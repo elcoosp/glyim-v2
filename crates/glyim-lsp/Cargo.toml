@@ -1,0 +1,9 @@
+[package]
+name = "glyim-lsp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-lsp = { workspace = true }
+tower = { workspace = true }
+rowan = { workspace = true }

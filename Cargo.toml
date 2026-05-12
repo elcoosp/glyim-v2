@@ -1,0 +1,88 @@
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[workspace]
+resolver = "3"
+members = [
+    # Layer 0: Foundation
+    "crates/glyim-interner",
+    "crates/glyim-span",
+    "crates/glyim-db",
+
+    # Layer 1: Frontend
+    "crates/glyim-vfs",
+    "crates/glyim-lex",
+    "crates/glyim-parse",
+    "crates/glyim-def-map",
+
+    # Layer 2: Metaprogramming
+    "crates/glyim-meta",
+    "crates/glyim-mir-interp",
+    "crates/glyim-hygiene",
+
+    # Layer 3: Analysis
+    "crates/glyim-infer",
+    "crates/glyim-solve",
+    "crates/glyim-typeck",
+    "crates/glyim-thir",
+    "crates/glyim-lower",
+    "crates/glyim-mir",
+    "crates/glyim-lifetime",
+    "crates/glyim-borrowck",
+    "crates/glyim-egraph",
+
+    # Layer 4: Backend
+    "crates/glyim-codegen",
+    "crates/glyim-codegen-llvm",
+    "crates/glyim-bytecode",
+
+    # Layer 5: Tools & Runtime
+    "crates/glyim-diag",
+    "crates/glyim-lsp",
+    "crates/glyim-cli",
+    "crates/glyim-runtime",
+    "crates/glyim-test",
+]
+
+[workspace.dependencies]
+# Foundation
+salsa = "0.26.0"
+lasso = "0.7.3"
+tracing = "0.1.40"
+parking_lot = "0.12"
+dashmap = "7.0.0-rc2"
+
+# Frontend
+chumsky = "0.9.3"
+rowan = "0.16.1"
+smol_str = "0.3.6"
+
+# Analysis & Metaprogramming
+chalk-solve = "0.96.0"
+chalk-ir = "0.96.0"
+rayon = "1.12.0"
+regalloc2 = "0.15.1"
+
+# Optimization
+egg = "0.11.0"
+petgraph = "0.6.5"
+fixedbitset = "0.5.7"
+
+# Tooling
+async-lsp = "0.2.4"
+tower = "0.5.3"
+clap = "4.5.31"
+insta = "1.47.2"
+
+# Backend
+inkwell = "0.9.0"
+llvm-sys = "221.0.0"
+
+# Runtime & Utilities
+serde = "1.0.228"
+tokio = "1.52.3"
+anyhow = "1.0.0"
+miette = "7.6.0"
+owo-colors = "4.0"
+textwrap = "0.16"

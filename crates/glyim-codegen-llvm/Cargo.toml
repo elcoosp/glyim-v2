@@ -1,0 +1,7 @@
+[package]
+name = "glyim-codegen-llvm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+inkwell = { workspace = true, features = ["llvm22-1"] }

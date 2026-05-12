@@ -1,0 +1,6 @@
+[package]
+name = "glyim-vfs"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

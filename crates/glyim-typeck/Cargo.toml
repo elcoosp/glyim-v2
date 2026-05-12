@@ -1,0 +1,9 @@
+[package]
+name = "glyim-typeck"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chalk-solve = { workspace = true }
+chalk-ir = { workspace = true }
+rayon = { workspace = true }

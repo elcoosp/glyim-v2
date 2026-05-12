@@ -1,0 +1,7 @@
+[package]
+name = "glyim-interner"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+lasso = { workspace = true }

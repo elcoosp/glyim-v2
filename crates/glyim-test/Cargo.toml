@@ -1,0 +1,7 @@
+[package]
+name = "glyim-test"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+insta = { workspace = true }

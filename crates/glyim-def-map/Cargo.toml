@@ -1,0 +1,8 @@
+[package]
+name = "glyim-def-map"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+petgraph = { workspace = true }
+fixedbitset = { workspace = true }

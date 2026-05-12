@@ -1,0 +1,6 @@
+[package]
+name = "glyim-lower"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
