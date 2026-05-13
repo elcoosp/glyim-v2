@@ -15,7 +15,8 @@ You are implementing Stream S{ID}: {NAME} for the Glyim compiler.
    cargo fmt --check -p <crate>
    cargo check --workspace
    ```
-5. Output: Provide complete modified files using the bash script format. Never truncate, never use placeholders, never omit lines.
+5. **IMPORTANT – Worktree Usage:** Your first script MUST create a git worktree in `../glyim-worktrees/stream-S{ID}/` and cd into it. All subsequent scripts MUST cd into that worktree before executing any git or cargo commands. See the `plan-to-cat-scripts` skill for the exact structure.
+6. Output: Provide complete modified files using the bash script format. Never truncate, never use placeholders, never omit lines.
 
 ## Output Skill: plan-to-cat-scripts (MANDATORY)
 
@@ -23,9 +24,9 @@ You MUST follow the plan-to-cat-scripts skill exactly. This is non-negotiable.
 
 ### Skill Summary
 - Every message is exactly one fenced bash code block -- no other text, no explanations.
-- First script: Set STREAM_ID, create branch stream-SXX/v0.1.0 from main, checkout.
-- Subsequent scripts: Set STREAM_ID, assume branch already checked out.
-- Fix scripts: Set STREAM_ID, assume branch already checked out.
+- First script: Set STREAM_ID, create worktree `../glyim-worktrees/stream-SXX/`, cd into it, create branch stream-SXX/v0.1.0 from main.
+- Subsequent scripts: Set STREAM_ID, cd into worktree, assume branch already checked out.
+- Fix scripts: Set STREAM_ID, cd into worktree, assume branch already checked out.
 - File writes: Use heredoc with unique delimiters that do not appear in content.
 - Patches: Trivial single-line use sed. Everything else use Python with temp files.
 - No hash-comment lines: Every action logged with echo.
@@ -41,9 +42,9 @@ You MUST follow the plan-to-cat-scripts skill exactly. This is non-negotiable.
 - ALWAYS use glyim-test dev-dependency for test helpers, mocks, and assertions.
 - ALWAYS use sentinels (Ty::ERROR, Ty::NEVER, etc.) instead of Ty::from_raw().
 - ALWAYS use ctx.intern_substitution(vec![...]) instead of Substitution::from_raw().
-- ALWAYS pass andmut TyCtxMut to InferenceTable methods.
+- ALWAYS pass &mut TyCtxMut to InferenceTable methods.
 - ALWAYS emit one fenced bash code block per message -- no other text.
 - ALWAYS use echo for logging -- no hash-comment lines.
 - ALWAYS write complete file content -- never truncate, never use placeholders.
-- ALWAYS create the stream branch in the first script.
+- ALWAYS create the stream worktree and branch in the first script.
 - ALWAYS prefix commit messages with stream-SXX:.

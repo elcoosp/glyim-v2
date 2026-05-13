@@ -1,4 +1,4 @@
-# Skill: plan-to-cat-scripts (File-Watcher Friendly, Branch-Aware)
+# Skill: plan-to-cat-scripts (File-Watcher Friendly, Branch-Aware, Worktree-Aware)
 
 ### Purpose
 Given an implementation plan, the LLM outputs a sequence of self-contained bash scripts, one per message, that write or surgically patch every file to its exact state, never truncate or use placeholders, and automatically test and commit.
@@ -29,15 +29,23 @@ When users paste error logs, the LLM switches to surgical fix mode, producing a 
 Every script starts with:
 
     STREAM_ID="S01"
-    BRANCH_NAME="stream-${STREAM_ID}/v0.1.0"
+    WORKTREE_DIR="../glyim-worktrees/stream-${STREAM_ID}"
     COMPILE_OK=true
     INCOMPLETE=false
 
+**IMPORTANT:** All scripts MUST change directory into the worktree before doing anything else. The first script creates the worktree; subsequent scripts assume it exists.
+
 ---
 
-0. Branch Setup (First Script Only) -- Every stream starts by creating and switching to a feature branch:
+0. Worktree & Branch Setup (First Script Only)
 
-    echo "Setting up branch: $BRANCH_NAME"
+    echo "Setting up worktree for stream ${STREAM_ID}"
+    if [ ! -d "$WORKTREE_DIR" ]; then
+      git worktree add "$WORKTREE_DIR" main
+    fi
+    cd "$WORKTREE_DIR" || { echo "ERROR: cannot cd to $WORKTREE_DIR"; exit 1; }
+
+    BRANCH_NAME="stream-${STREAM_ID}/v0.1.0"
     if git rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
       echo "Branch $BRANCH_NAME already exists, checking it out"
       git checkout "$BRANCH_NAME"
@@ -51,8 +59,8 @@ Every script starts with:
 This ensures:
 - No work happens on main directly.
 - The branch follows the convention stream-SXX/v0.1.0.
-- If the branch already exists (e.g., resuming work), we just check it out.
-- Subsequent scripts in the same stream do NOT repeat branch creation.
+- The worktree is created once and reused.
+- Subsequent scripts in the same stream do NOT repeat worktree creation.
 
 1. Write a complete file -- use a heredoc with a safe delimiter:
 
@@ -146,7 +154,12 @@ Why this is safe: The old/new strings live in temp files written via heredocs --
 ---
 
 ### Surgical Fixes for User-Reported Errors
-When the user pastes a terminal log that ends with a non-zero exit, the LLM responds with a single-message fenced script that fixes only the operation that failed. Surgical fix scripts do NOT create a new branch -- they assume the branch is already checked out.
+When the user pastes a terminal log that ends with a non-zero exit, the LLM responds with a single-message fenced script that fixes only the operation that failed. Surgical fix scripts **must**:
+
+- Set `STREAM_ID` and `WORKTREE_DIR` as usual.
+- `cd "$WORKTREE_DIR"` (the worktree already exists).
+- Do NOT create a new branch or worktree.
+- Perform the minimal patch to correct the error.
 
 ---
 
@@ -167,19 +180,19 @@ stream-S01: fix(lex): correct keyword recognition
 
 ### Execution Contract
 1. Strip the leading triple-backtick-bash line and trailing triple-backtick line from each LLM message, save the result as a .sh file.
-2. Execute them one at a time, in the order they were emitted.
-3. If a script exits non-zero (commit not possible), stop and paste the entire terminal output into the chat. The LLM will respond with a surgical fix.
+2. Execute them **one at a time**, in the order they were emitted.
+3. If a script exits non-zero (commit not possible), **stop** and paste the entire terminal output into the chat. The LLM will respond with a surgical fix.
 4. If a script exits zero, proceed to the next script.
-5. The first script in a stream creates the branch. Subsequent scripts and fix scripts assume the branch is already checked out.
+5. The first script in a stream creates the worktree and branch. Subsequent scripts and fix scripts assume the worktree exists and cd into it.
 
 ---
 
-### Branch Workflow
-- First script: Creates stream-SXX/v0.1.0 from main and checks it out.
-- Subsequent scripts: Assume the branch is already checked out. Do NOT create or switch branches.
-- Fix scripts: Assume the branch is already checked out. Do NOT create or switch branches.
-- Never commit to main directly. All work happens on the stream branch.
-- When the stream is complete, push the branch and create a PR against main.
+### Worktree Workflow
+- First script: Creates `../glyim-worktrees/stream-SXX` (relative to the main repo root), adds it as a worktree pointing to `main`, then checks out/creates the stream branch.
+- Subsequent scripts: Assume the worktree exists, `cd` into it, and proceed.
+- Fix scripts: Same as subsequent scripts.
+- Never commit to main directly. All work happens in the worktree on the stream branch.
+- When the stream is complete, push the branch from the worktree and create a PR against main. The worktree can be deleted after merging.
 
 ---
 
@@ -193,4 +206,4 @@ Errors are logged but never abort the script early; every operation is attempted
 Messages are fenced bash code blocks -- easy to copy, fences stripped automatically.
 Repository always passes compilation and tests after a successful (exit 0) script.
 Error logs enable precise, restart-free surgical fixes.
-All work happens on a stream-specific branch -- main is never modified directly.
+All work happens in a dedicated worktree on a stream-specific branch -- main is never modified directly.
