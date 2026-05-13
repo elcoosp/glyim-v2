@@ -322,7 +322,7 @@ impl Body {
     }
 
     pub fn args(&self) -> &[LocalDecl] {
-        &self.locals.as_slice()[..self.arg_count]
+        &self.locals.as_slice()[1..1 + self.arg_count]
     }
     pub fn return_place(&self) -> Place {
         Place::new(LocalIdx::from_raw(0))
