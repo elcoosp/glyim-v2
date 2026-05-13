@@ -63,7 +63,8 @@ fn unicode_error_span_is_correct() {
     assert_eq!(error_tokens[0].text, "\u{00A9}");
     let range = error_tokens[0].span.range();
     assert_eq!(range.start, 3);
-    assert_eq!(range.end, 4);
+    // \u{00A9} is 2 bytes in UTF-8, so end is 3+2=5
+    assert_eq!(range.end, 5);
 }
 
 #[test]
