@@ -187,7 +187,7 @@ pub enum ConstRef {
     Error,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
     pub kind: PathKind,
