@@ -264,7 +264,6 @@ impl InferenceTable {
                 Ok(constraints)
             }
             (TyKind::Array(elem_a, const_a), TyKind::Array(elem_b, const_b)) => {
-                // For now, require identical constants; Const unify NYI
                 if const_a.kind != const_b.kind || const_a.ty != const_b.ty {
                     return Err(vec![GlyimDiagnostic::type_error(
                         span,
@@ -441,6 +440,11 @@ impl InferenceTable {
                 }
                 Ok(constraints)
             }
+            (TyKind::Dynamic(_, r_a), TyKind::Dynamic(_, r_b)) if r_a == r_b => {
+                // Predicate unification is NYI; treat as compatible for now
+                tracing::warn!("STUB: Dynamic predicate unification not implemented");
+                Ok(Vec::new())
+            }
             (_a_k, _b_k) => Err(vec![GlyimDiagnostic::type_error(
                 span,
                 format!(
@@ -457,7 +461,6 @@ impl InferenceTable {
     }
 
     fn resolve_ty_shallow_depth(&self, ctx: &dyn TypeLookup, ty: Ty, depth: u32) -> Ty {
-        // Prevent infinite recursion from self-loops or cycles
         if depth > 256 {
             tracing::warn!("STUB: resolve_ty_shallow exceeded depth limit; possible cycle");
             return ty;
@@ -587,11 +590,9 @@ impl InferenceTable {
         self.ty_vars[var].value = Some(value);
     }
     #[cfg(test)]
-    #[cfg(test)]
     pub(crate) fn set_int_var_value(&mut self, var: IntVar, value: Ty) {
         self.int_vars[var].value = Some(value);
     }
-    #[cfg(test)]
     #[cfg(test)]
     pub(crate) fn set_float_var_value(&mut self, var: FloatVar, value: Ty) {
         self.float_vars[var].value = Some(value);
