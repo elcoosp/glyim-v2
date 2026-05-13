@@ -627,6 +627,10 @@ impl InferenceTable {
 
     // Test helpers
     #[cfg(test)]
+    pub(crate) fn ty_var_kind(&self, var: TyVar) -> Option<VariableKind> {
+        self.ty_vars.get(var).map(|tv| tv.kind)
+    }
+    #[cfg(test)]
     pub(crate) fn set_ty_var_value(&mut self, var: TyVar, value: Ty) {
         self.ty_vars[var].value = Some(value);
     }
