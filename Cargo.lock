@@ -350,6 +350,7 @@ dependencies = [
  "glyim-mir",
  "glyim-test",
  "inkwell",
+ "tempfile",
 ]
 
 [[package]]

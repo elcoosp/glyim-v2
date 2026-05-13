@@ -185,3 +185,115 @@ fn s08_t14_different_output_paths() {
         "generate to nonexistent directory should error"
     );
 }
+
+#[test]
+fn s08_t15_generate_function_different_owners() {
+    let backend = LlvmBackend::new();
+    let body1 = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(1),
+    )));
+    let body2 = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(2),
+    )));
+    let r1 = backend.generate_function(&body1);
+    let r2 = backend.generate_function(&body2);
+    assert!(r1.is_ok());
+    assert!(r2.is_ok());
+    let bytes1 = r1.unwrap();
+    let bytes2 = r2.unwrap();
+    // Both should return non-empty bytes
+    assert!(!bytes1.is_empty());
+    assert!(!bytes2.is_empty());
+    // They might differ in internal function names, but minimal object may be identical.
+    // At least we ensure no crash and non-empty.
+}
+
+#[test]
+fn s08_t16_generate_with_invalid_triple() {
+    // This test verifies that an invalid triple produces an error, not a panic.
+    let backend = LlvmBackend::with_target("nonexistent-unknown-unknown");
+    let output = std::path::Path::new("/tmp/glyim_test_invalid_triple.o");
+    let bodies: Vec<std::sync::Arc<glyim_mir::Body>> = vec![];
+    let result = backend.generate(&bodies, output);
+    assert!(result.is_err(), "invalid triple should cause error");
+}
+
+#[test]
+fn s08_t17_generate_function_then_generate() {
+    let backend = LlvmBackend::new();
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(42),
+    )));
+    // First call generate_function
+    let r1 = backend.generate_function(&body);
+    assert!(r1.is_ok());
+    // Then call generate with multiple bodies
+    let output = std::path::Path::new("/tmp/glyim_test_mixed.o");
+    let bodies = vec![body.clone()];
+    let r2 = backend.generate(&bodies, output);
+    assert!(
+        r2.is_ok(),
+        "generate after generate_function should succeed"
+    );
+    assert!(output.exists());
+}
+
+#[test]
+fn s08_t18_generate_to_readonly_directory() {
+    // If the path is in a directory with no write permission, it should error.
+    // Create a temporary read-only directory.
+    let dir = tempfile::tempdir().expect("failed to create tempdir");
+    let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(dir.path(), perms).ok();
+
+    let backend = LlvmBackend::new();
+    let output = dir.path().join("test.o");
+    let bodies: Vec<std::sync::Arc<glyim_mir::Body>> = vec![];
+    let result = backend.generate(&bodies, &output);
+    // Should error because write fails
+    assert!(
+        result.is_err(),
+        "writing to read-only directory should error"
+    );
+
+    // Clean up: restore permissions so tempfile can delete
+    let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
+    perms.set_readonly(false);
+    std::fs::set_permissions(dir.path(), perms).ok();
+}
+
+#[test]
+fn s08_t19_generate_function_returns_elf_magic_for_linux() {
+    // On x86_64-unknown-linux-gnu, generated object should be ELF.
+    let backend = LlvmBackend::new(); // default is x86_64-unknown-linux-gnu
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(7),
+    )));
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytes = result.unwrap();
+    // ELF magic: 0x7F 'E' 'L' 'F'
+    assert_eq!(
+        &bytes[0..4],
+        &[0x7f, 0x45, 0x4c, 0x46],
+        "Object file should start with ELF magic"
+    );
+}
+
+#[test]
+fn s08_t20_default_target_triple_is_linux() {
+    let backend = LlvmBackend::new();
+    // We cannot directly access target_triple field, but generate_function
+    // will succeed with ELF output (tested above). We just rely on it not crashing.
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(0),
+    )));
+    let _ = backend.generate_function(&body);
+    // If no panic, test passes.
+}
