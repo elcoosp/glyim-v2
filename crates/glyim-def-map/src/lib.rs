@@ -1,13 +1,13 @@
 //! Module graph and lightweight definition map.
 //!
-//! [F6] `PathKind::Super(n)` is destructured directly.
+//! [F6] `PathKind::Super(n)` destructured directly.
 //! [F12] Uses `glyim_core::path::{Path, PathSegment, PathKind}`.
 
-use glyim_core::arena::{IndexVec, IdxLike};
-use glyim_core::def_id::{CrateId, DefId, LocalDefId, AdtId, FnDefId, TraitDefId, ImplDefId};
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::primitives::Visibility;
-use glyim_core::interner::Name;
-use glyim_core::path::{Path, PathSegment, PathKind};
+use glyim_core::interner::{Interner, Name};
+use glyim_core::path::{Path, PathKind};
 use glyim_span::{Span, FileId};
 use glyim_syntax::SyntaxNode;
 use glyim_diag::GlyimDiagnostic;
@@ -152,21 +152,31 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         span: Span::DUMMY,
     });
 
-    // Stub: collect items from CST
+    // Dummy interner for placeholder names (only used in stubs)
+    let interner = Interner::default();
+
     for child in root.children() {
-        collect_item(&child, root_module, &mut modules, &mut diagnostics);
+        collect_item(&child, root_module, &mut modules, &mut diagnostics, &interner);
     }
 
     let def_map = CrateDefMap { root: root_module, modules, krate };
     (def_map, diagnostics)
 }
 
-fn collect_item(node: &SyntaxNode, module: ModuleId, _modules: &mut IndexVec<ModuleId, ModuleData>, _diagnostics: &mut Vec<GlyimDiagnostic>) {
+fn collect_item(
+    node: &SyntaxNode,
+    module: ModuleId,
+    _modules: &mut IndexVec<ModuleId, ModuleData>,
+    _diagnostics: &mut Vec<GlyimDiagnostic>,
+    interner: &Interner,
+) {
     use glyim_syntax::SyntaxKind::*;
     match node.kind() {
         FnDef | StructDef | EnumDef | TraitDef | ImplDef | TypeAlias
         | ConstDef | StaticDef | UseDecl | ExternBlock | Module => {
-            // STUB: real implementation extracts name, visibility, etc.
+            // STUB: In a real implementation, we would extract the name and visibility,
+            // then declare it in the module's scope. For now, we create placeholder names.
+            let _placeholder_name = interner.intern("placeholder");
         }
         _ => {}
     }
