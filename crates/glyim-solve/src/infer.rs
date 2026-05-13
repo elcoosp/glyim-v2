@@ -324,6 +324,126 @@ impl InferenceTable {
                 constraints.extend(self.unify_tys(ctx, sig_a.output, sig_b.output, span)?);
                 Ok(constraints)
             }
+            (TyKind::Adt(id_a, substs_a), TyKind::Adt(id_b, substs_b)) => {
+                if id_a != id_b {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "mismatched types: {} vs {}",
+                            PrintTy::new(a, ctx),
+                            PrintTy::new(b, ctx)
+                        ),
+                    )]);
+                }
+                let args_a = ctx.substitution_args(substs_a);
+                let args_b = ctx.substitution_args(substs_b);
+                if args_a.len() != args_b.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched type argument counts".to_string(),
+                    )]);
+                }
+                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                    .zip(args_b.iter())
+                    .filter_map(|(ga, gb)| {
+                        match (ga, gb) {
+                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                if pairs.len() != args_a.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched generic argument kinds in Adt".to_string(),
+                    )]);
+                }
+                let mut constraints = Vec::new();
+                for (ta, tb) in pairs {
+                    constraints.extend(self.unify_tys(ctx, ta, tb, span)?);
+                }
+                Ok(constraints)
+            }
+            (TyKind::FnDef(id_a, substs_a), TyKind::FnDef(id_b, substs_b)) => {
+                if id_a != id_b {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "mismatched types: {} vs {}",
+                            PrintTy::new(a, ctx),
+                            PrintTy::new(b, ctx)
+                        ),
+                    )]);
+                }
+                let args_a = ctx.substitution_args(substs_a);
+                let args_b = ctx.substitution_args(substs_b);
+                if args_a.len() != args_b.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched type argument counts".to_string(),
+                    )]);
+                }
+                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                    .zip(args_b.iter())
+                    .filter_map(|(ga, gb)| {
+                        match (ga, gb) {
+                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                if pairs.len() != args_a.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched generic argument kinds in FnDef".to_string(),
+                    )]);
+                }
+                let mut constraints = Vec::new();
+                for (ta, tb) in pairs {
+                    constraints.extend(self.unify_tys(ctx, ta, tb, span)?);
+                }
+                Ok(constraints)
+            }
+            (TyKind::Closure(id_a, substs_a), TyKind::Closure(id_b, substs_b)) => {
+                if id_a != id_b {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "mismatched types: {} vs {}",
+                            PrintTy::new(a, ctx),
+                            PrintTy::new(b, ctx)
+                        ),
+                    )]);
+                }
+                let args_a = ctx.substitution_args(substs_a);
+                let args_b = ctx.substitution_args(substs_b);
+                if args_a.len() != args_b.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched type argument counts".to_string(),
+                    )]);
+                }
+                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                    .zip(args_b.iter())
+                    .filter_map(|(ga, gb)| {
+                        match (ga, gb) {
+                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                if pairs.len() != args_a.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched generic argument kinds in Closure".to_string(),
+                    )]);
+                }
+                let mut constraints = Vec::new();
+                for (ta, tb) in pairs {
+                    constraints.extend(self.unify_tys(ctx, ta, tb, span)?);
+                }
+                Ok(constraints)
+            }
             (_a_k, _b_k) => Err(vec![GlyimDiagnostic::type_error(
                 span,
                 format!(
