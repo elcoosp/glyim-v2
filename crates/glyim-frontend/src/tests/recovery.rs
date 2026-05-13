@@ -67,7 +67,7 @@ fn diagnostic_spans_match_error_tokens() {
     let result = lex_result("\u{00A9}");
     assert_eq!(result.diagnostics.len(), 1);
     assert_eq!(result.tokens.len(), 1);
-    let diag_span = result.diagnostics[0].span;
+    let diag_span = result.diagnostics[0].span.primary;
     let token_span = result.tokens[0].span;
     assert_eq!(diag_span.range(), token_span.range());
 }
