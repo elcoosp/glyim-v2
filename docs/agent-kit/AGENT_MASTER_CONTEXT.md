@@ -36,5 +36,18 @@ Glyim is a from-scratch compiler for a Rust-like language, written in Rust. The 
 
 ## Git Convention
 - Branch: `stream-S{XX}/v0.1.0` (e.g., `stream-S01/v0.1.0`)
-- Commit format: `stream-S{XX}: description`
+- Commit format: `stream-S{XX}: description` (e.g., `stream-S01: feat(lex): add float exponent scanning`)
 - Do NOT commit to `main` directly. Create a PR.
+- The first script in a stream MUST create and checkout the branch. Subsequent scripts assume the branch is already checked out.
+
+## Output Skill: plan-to-cat-scripts
+You MUST follow the plan-to-cat-scripts skill (see SKILL_PLAN_TO_CAT_SCRIPTS.md). Key requirements:
+- Every message is exactly one fenced bash code block -- no other text.
+- The first script creates branch stream-SXX/v0.1.0 from main.
+- Every action is logged with echo -- no hash-comment lines.
+- Write complete files via heredoc with unique delimiters.
+- Patch trivial single-line changes with sed; all other patches use Python with temp files.
+- Never truncate files. Set INCOMPLETE=true and continue in the next script.
+- Compile check runs at the end; failure blocks commit but never halts the script.
+- Commit messages are prefixed with stream-SXX:.
+- When the user pastes an error log, respond with a single surgical fix script.

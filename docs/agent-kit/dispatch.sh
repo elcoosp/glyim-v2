@@ -22,8 +22,9 @@ MASTER_CTX="$SCRIPT_DIR/AGENT_MASTER_CONTEXT.md"
 CONTRACTS="$SCRIPT_DIR/CONTRACTS_LOCKED.md"
 TEST_INSTR="$SCRIPT_DIR/GLYIM_TEST_INSTRUCTIONS.md"
 PROMPT_TEMPLATE="$SCRIPT_DIR/agent-prompt-template.md"
+SKILL_DOC="$SCRIPT_DIR/SKILL_PLAN_TO_CAT_SCRIPTS.md"
 
-for f in "$MASTER_CTX" "$CONTRACTS" "$TEST_INSTR" "$PROMPT_TEMPLATE"; do
+for f in "$MASTER_CTX" "$CONTRACTS" "$TEST_INSTR" "$PROMPT_TEMPLATE" "$SKILL_DOC"; do
     if [ ! -f "$f" ]; then
         echo "ERROR: Missing $f" >&2
         exit 1
@@ -91,6 +92,12 @@ echo ""
 echo "---"
 echo ""
 cat "$TEST_INSTR"
+echo ""
+echo "---"
+echo ""
+echo "## Output Skill (MANDATORY)"
+echo ""
+cat "$SKILL_DOC"
 echo ""
 echo "---"
 echo ""

@@ -13,8 +13,10 @@ This directory contains the complete system for dispatching parallel LLM agents 
 | `agent-prompt-template.md` | The exact prompt template to copy-paste into the LLM. |
 | `stream-template.md` | Template for individual stream briefs. |
 | `generate-stream.sh` | Script to generate a brief from `streams.json` using the template. |
+| `dispatch.sh` | Assembles the complete agent prompt (system + user + source context). |
 | `streams.json` | Single source of truth for all 20 streams (scope, tests, dependencies). |
 | `briefs/` | Generated per-stream markdown files (e.g., `briefs/S01.md`). |
+| `SKILL_PLAN_TO_CAT_SCRIPTS.md` | The output skill every agent MUST follow. Defines script format, branch workflow, patching rules, and error recovery. |
 
 ## Setup
 
