@@ -1,9 +1,7 @@
 [package]
 name = "glyim-lsp"
-version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+version.workspace = true
 
 [dependencies]
-async-lsp = { workspace = true }
-tower = { workspace = true }
-rowan = { workspace = true }
+# Dependencies will be added in later scripts

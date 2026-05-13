@@ -1,123 +1,82 @@
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
+license = "MIT"
 
 [workspace]
 resolver = "3"
 members = [
-    # Layer 0: Foundation
-    "crates/glyim-interner",
+    "crates/glyim-core",
     "crates/glyim-span",
-    "crates/glyim-db",
-
-    # Layer 1: Frontend
+    "crates/glyim-diag",
     "crates/glyim-vfs",
-    "crates/glyim-lex",
-    "crates/glyim-parse",
+    "crates/glyim-syntax",
+    "crates/glyim-frontend",
     "crates/glyim-def-map",
-
-    # Layer 2: Metaprogramming
     "crates/glyim-meta",
-    "crates/glyim-mir-interp",
-    "crates/glyim-hygiene",
-
-    # Layer 3: Analysis
-    "crates/glyim-infer",
+    "crates/glyim-type",
+    "crates/glyim-hir",
+    "crates/glyim-mir",
+    "crates/glyim-layout",
     "crates/glyim-solve",
     "crates/glyim-typeck",
-    "crates/glyim-thir",
     "crates/glyim-lower",
-    "crates/glyim-mir",
-    "crates/glyim-lifetime",
     "crates/glyim-borrowck",
-    "crates/glyim-egraph",
-
-    # Layer 4: Backend
+    "crates/glyim-opt",
+    "crates/glyim-mir-interp",
     "crates/glyim-codegen",
     "crates/glyim-codegen-llvm",
-    "crates/glyim-bytecode",
-
-    # Layer 5: Tools & Runtime
-    "crates/glyim-diag",
-    "crates/glyim-lsp",
+    "crates/glyim-db",
+    "crates/glyim-pipeline",
     "crates/glyim-cli",
+    "crates/glyim-lsp",
     "crates/glyim-runtime",
     "crates/glyim-test",
 ]
 
 [workspace.dependencies]
-glyim-arena        = { path = "crates/glyim-arena" }
-glyim-primitives   = { path = "crates/glyim-primitives" }
-glyim-interner     = { path = "crates/glyim-interner" }
-glyim-span         = { path = "crates/glyim-span" }
-glyim-diag         = { path = "crates/glyim-diag" }
-glyim-vfs          = { path = "crates/glyim-vfs" }
-glyim-syntax       = { path = "crates/glyim-syntax" }
-glyim-lex          = { path = "crates/glyim-lex" }
-glyim-parse        = { path = "crates/glyim-parse" }
-glyim-def-map      = { path = "crates/glyim-def-map" }
-glyim-hygiene      = { path = "crates/glyim-hygiene" }
-glyim-meta         = { path = "crates/glyim-meta" }
-glyim-type         = { path = "crates/glyim-type" }
-glyim-hir          = { path = "crates/glyim-hir" }
-glyim-thir         = { path = "crates/glyim-thir" }
-glyim-mir          = { path = "crates/glyim-mir" }
-glyim-layout       = { path = "crates/glyim-layout" }
-glyim-infer        = { path = "crates/glyim-infer" }
-glyim-solve        = { path = "crates/glyim-solve" }
-glyim-typeck       = { path = "crates/glyim-typeck" }
-glyim-lower        = { path = "crates/glyim-lower" }
-glyim-mono         = { path = "crates/glyim-mono" }
-glyim-lifetime     = { path = "crates/glyim-lifetime" }
-glyim-borrowck     = { path = "crates/glyim-borrowck" }
-glyim-opt          = { path = "crates/glyim-opt" }
-glyim-mir-interp   = { path = "crates/glyim-mir-interp" }
-glyim-codegen      = { path = "crates/glyim-codegen" }
-glyim-codegen-llvm = { path = "crates/glyim-codegen-llvm" }
-glyim-bytecode     = { path = "crates/glyim-bytecode" }
-glyim-db           = { path = "crates/glyim-db" }
-glyim-cli          = { path = "crates/glyim-cli" }
-glyim-lsp          = { path = "crates/glyim-lsp" }
-glyim-runtime      = { path = "crates/glyim-runtime" }
-glyim-test         = { path = "crates/glyim-test" }
+glyim-core            = { path = "crates/glyim-core" }
+glyim-span            = { path = "crates/glyim-span" }
+glyim-diag            = { path = "crates/glyim-diag" }
+glyim-vfs             = { path = "crates/glyim-vfs" }
+glyim-syntax          = { path = "crates/glyim-syntax" }
+glyim-frontend        = { path = "crates/glyim-frontend" }
+glyim-def-map         = { path = "crates/glyim-def-map" }
+glyim-meta            = { path = "crates/glyim-meta" }
+glyim-type            = { path = "crates/glyim-type" }
+glyim-hir             = { path = "crates/glyim-hir" }
+glyim-mir             = { path = "crates/glyim-mir" }
+glyim-layout          = { path = "crates/glyim-layout" }
+glyim-solve           = { path = "crates/glyim-solve" }
+glyim-typeck          = { path = "crates/glyim-typeck" }
+glyim-lower           = { path = "crates/glyim-lower" }
+glyim-borrowck        = { path = "crates/glyim-borrowck" }
+glyim-opt             = { path = "crates/glyim-opt" }
+glyim-mir-interp      = { path = "crates/glyim-mir-interp" }
+glyim-codegen         = { path = "crates/glyim-codegen" }
+glyim-codegen-llvm    = { path = "crates/glyim-codegen-llvm" }
+glyim-db              = { path = "crates/glyim-db" }
+glyim-pipeline        = { path = "crates/glyim-pipeline" }
+glyim-cli             = { path = "crates/glyim-cli" }
+glyim-lsp             = { path = "crates/glyim-lsp" }
+glyim-runtime         = { path = "crates/glyim-runtime" }
+glyim-test            = { path = "crates/glyim-test" }
 
-# Foundation
-salsa = "0.26.0"
-lasso = "0.7.3"
-tracing = "0.1.40"
-parking_lot = "0.12"
-dashmap = "7.0.0-rc2"
-
-# Frontend
-chumsky = "0.9.3"
-rowan = "0.16.1"
-smol_str = "0.3.6"
-
-# Analysis & Metaprogramming
-chalk-solve = "0.96.0"
-chalk-ir = "0.96.0"
-rayon = "1.12.0"
-regalloc2 = "0.15.1"
-
-# Optimization
-egg = "0.11.0"
-petgraph = "0.6.5"
-fixedbitset = "0.5.7"
-
-# Tooling
-async-lsp = "0.2.4"
-tower = "0.5.3"
-clap = "4.5.31"
-insta = "1.47.2"
-
-# Backend
-inkwell = "0.9.0"
-llvm-sys = "221.0.0"
-
-# Runtime & Utilities
-serde = "1.0.228"
-tokio = "1.52.3"
-anyhow = "1.0.0"
-miette = "7.6.0"
-owo-colors = "4.0"
-textwrap = "0.16"
+lasso              = "0.7.3"
+tracing            = "0.1.40"
+tracing-subscriber = "0.3"
+parking_lot        = "0.12"
+indexmap           = "2.7"
+smallvec           = "1.13"
+rowan              = "0.16.1"
+smol_str           = "0.3.6"
+rayon              = "1.12.0"
+inkwell            = "0.9.0"
+clap               = "4.5"
+insta              = "1.47"
+miette             = "7.6"
+serde              = "1.0"
+serde_json         = "1.0"
+tokio              = "1.52"
+bitflags           = "2.6"
+num_enum           = "0.7"

@@ -1,9 +1,9 @@
 [package]
 name = "glyim-diag"
-version.workspace = true
 edition.workspace = true
+version.workspace = true
 
 [dependencies]
+glyim-span = { workspace = true }
 miette = { workspace = true }
-owo-colors = { workspace = true }
-textwrap = { workspace = true }
+tracing = { workspace = true }

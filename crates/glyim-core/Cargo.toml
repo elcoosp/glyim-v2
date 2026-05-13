@@ -1,7 +1,8 @@
 [package]
 name = "glyim-core"
-version.workspace = true
 edition.workspace = true
+version.workspace = true
 
 [dependencies]
-fixedbitset = { workspace = true }
+lasso = { workspace = true, features = ["multi-threaded"] }
+smallvec = { workspace = true }

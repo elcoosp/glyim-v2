@@ -1,8 +1,7 @@
 [package]
 name = "glyim-solve"
-version.workspace = true
 edition.workspace = true
+version.workspace = true
 
 [dependencies]
-chalk-solve = { workspace = true }
-chalk-ir = { workspace = true }
+# Dependencies will be added in later scripts

@@ -1,7 +1,7 @@
 [package]
 name = "glyim-borrowck"
-version.workspace = true
 edition.workspace = true
+version.workspace = true
 
 [dependencies]
-fixedbitset = { workspace = true }
+# Dependencies will be added in later scripts

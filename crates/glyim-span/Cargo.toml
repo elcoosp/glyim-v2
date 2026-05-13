@@ -1,6 +1,9 @@
 [package]
 name = "glyim-span"
-version.workspace = true
 edition.workspace = true
+version.workspace = true
 
 [dependencies]
+glyim-core = { workspace = true }
+miette = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,7 @@
+[package]
+name = "glyim-opt"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+# Dependencies will be added in later scripts

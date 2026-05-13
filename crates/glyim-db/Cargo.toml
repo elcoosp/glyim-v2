@@ -1,8 +1,7 @@
 [package]
 name = "glyim-db"
-version.workspace = true
 edition.workspace = true
+version.workspace = true
 
 [dependencies]
-salsa = { workspace = true }
-tracing = { workspace = true }
+# Dependencies will be added in later scripts
