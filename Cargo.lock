@@ -474,6 +474,7 @@ version = "0.1.0"
 dependencies = [
  "glyim-core",
  "glyim-span",
+ "glyim-test",
  "glyim-type",
  "tracing",
 ]
