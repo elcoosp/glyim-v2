@@ -90,13 +90,16 @@ fn s04_t13_layout_dyn_is_unsized() {
 #[test]
 fn s04_t14_fn_abi_of_basic_signature() {
     let (ctx, fn_sig) = with_fresh_ty_ctx(|c| {
+        let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
+        let bool_ty = c.bool_ty();
+        let unit_ty = c.unit_ty();
         let inputs = c.intern_substitution(vec![
-            GenericArg::Ty(c.mk_ty(TyKind::Int(IntTy::I32))),
-            GenericArg::Ty(c.bool_ty()),
+            GenericArg::Ty(i32_ty),
+            GenericArg::Ty(bool_ty),
         ]);
         FnSig {
             inputs,
-            output: c.unit_ty(),
+            output: unit_ty,
             c_variadic: false,
             unsafety: Safety::Safe,
             abi: Abi::Glyim,
