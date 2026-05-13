@@ -148,13 +148,13 @@ impl<'tcx> Interpreter<'tcx> {
                     cleanup: _,
                 } => {
                     let callee_id = self.resolve_callee(&func)?;
-                    let callee_body = self
-                        .function_table
-                        .get(&callee_id)
-                        .cloned()
-                        .ok_or_else(|| {
-                            InterpError::Panic(format!("function not found: {:?}", callee_id))
-                        })?;
+                    let callee_body =
+                        self.function_table
+                            .get(&callee_id)
+                            .cloned()
+                            .ok_or_else(|| {
+                                InterpError::Panic(format!("function not found: {:?}", callee_id))
+                            })?;
 
                     let mut arg_values = Vec::new();
                     for arg_op in &args {
@@ -280,9 +280,7 @@ impl<'tcx> Interpreter<'tcx> {
             }
             Rvalue::Repeat(_, _) => {
                 tracing::warn!("STUB: Repeat rvalue not implemented");
-                Err(InterpError::Panic(
-                    "Repeat rvalue not implemented".into(),
-                ))
+                Err(InterpError::Panic("Repeat rvalue not implemented".into()))
             }
         }
     }
@@ -349,7 +347,7 @@ impl<'tcx> Interpreter<'tcx> {
                         return Err(InterpError::Panic(format!(
                             "unsupported integer binop: {:?}",
                             op
-                        )))
+                        )));
                     }
                 };
                 Ok(InterpValue::Int(result))
@@ -373,15 +371,16 @@ impl<'tcx> Interpreter<'tcx> {
         match (op, val) {
             (UnOp::Not, InterpValue::Bool(b)) => Ok(InterpValue::Bool(!b)),
             (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-i)),
-            _ => Err(InterpError::Panic(format!("unsupported unary op: {:?}", op))),
+            _ => Err(InterpError::Panic(format!(
+                "unsupported unary op: {:?}",
+                op
+            ))),
         }
     }
 
     fn read_place(&self, place: &Place) -> InterpResult<InterpValue> {
         if !place.projection.is_empty() {
-            return Err(InterpError::Panic(
-                "projections not implemented".into(),
-            ));
+            return Err(InterpError::Panic("projections not implemented".into()));
         }
         let idx = place.local.index();
         self.locals
@@ -393,9 +392,7 @@ impl<'tcx> Interpreter<'tcx> {
 
     fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
         if !place.projection.is_empty() {
-            return Err(InterpError::Panic(
-                "projections not implemented".into(),
-            ));
+            return Err(InterpError::Panic("projections not implemented".into()));
         }
         let idx = place.local.index();
         if idx >= self.locals.len() {

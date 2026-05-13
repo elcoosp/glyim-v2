@@ -23,8 +23,16 @@ pub fn build_add_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(ty.clone(), Mutability::Mut),
     ]);
-    let c1 = MirConst { kind: MirConstKind::Int(lhs), ty: ty.clone(), span: Span::DUMMY };
-    let c2 = MirConst { kind: MirConstKind::Int(rhs), ty: ty.clone(), span: Span::DUMMY };
+    let c1 = MirConst {
+        kind: MirConstKind::Int(lhs),
+        ty: ty.clone(),
+        span: Span::DUMMY,
+    };
+    let c2 = MirConst {
+        kind: MirConstKind::Int(rhs),
+        ty: ty.clone(),
+        span: Span::DUMMY,
+    };
     let stmt = Statement {
         kind: StatementKind::Assign(
             Place::new(res_local),
@@ -54,8 +62,16 @@ pub fn build_sub_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(ty.clone(), Mutability::Mut),
     ]);
-    let c1 = MirConst { kind: MirConstKind::Int(lhs), ty: ty.clone(), span: Span::DUMMY };
-    let c2 = MirConst { kind: MirConstKind::Int(rhs), ty: ty.clone(), span: Span::DUMMY };
+    let c1 = MirConst {
+        kind: MirConstKind::Int(lhs),
+        ty: ty.clone(),
+        span: Span::DUMMY,
+    };
+    let c2 = MirConst {
+        kind: MirConstKind::Int(rhs),
+        ty: ty.clone(),
+        span: Span::DUMMY,
+    };
     let stmt = Statement {
         kind: StatementKind::Assign(
             Place::new(res_local),
@@ -101,10 +117,8 @@ pub fn build_branch_body(cond: bool, then_unreachable: bool, else_unreachable: b
     };
     let then_target = BasicBlockIdx::from_raw(1);
     let else_target = BasicBlockIdx::from_raw(2);
-    let switch_targets = SwitchTargets::new(
-        vec![(0u128, else_target)].into_boxed_slice(),
-        then_target,
-    );
+    let switch_targets =
+        SwitchTargets::new(vec![(0u128, else_target)].into_boxed_slice(), then_target);
     let switch = Terminator {
         kind: TerminatorKind::SwitchInt {
             discr: Operand::Copy(Place::new(discr_local)),
@@ -158,28 +172,24 @@ pub fn build_branch_body(cond: bool, then_unreachable: bool, else_unreachable: b
 /// Build an infinite loop body (Goto to itself).
 pub fn build_infinite_loop_body() -> Body {
     let mut body = Body::dummy(dummy_def_id());
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-    ]);
-    body.basic_blocks = IndexVec::from_raw(vec![
-        BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Goto { target: BasicBlockIdx::from_raw(0) },
-                source_info: SourceInfo::new(Span::DUMMY),
+    body.locals = IndexVec::from_raw(vec![local_decl(Ty::UNIT, Mutability::Mut)]);
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![],
+        terminator: Terminator {
+            kind: TerminatorKind::Goto {
+                target: BasicBlockIdx::from_raw(0),
             },
-            is_cleanup: false,
+            source_info: SourceInfo::new(Span::DUMMY),
         },
-    ]);
+        is_cleanup: false,
+    }]);
     body
 }
 
 /// Build a recursive body: calls itself.
 pub fn build_recursive_body(def_id: DefId) -> Body {
     let mut body = Body::dummy(def_id);
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-    ]);
+    body.locals = IndexVec::from_raw(vec![local_decl(Ty::UNIT, Mutability::Mut)]);
     let call_terminator = Terminator {
         kind: TerminatorKind::Call {
             func: Operand::Constant(MirConst {
@@ -215,19 +225,15 @@ pub fn build_recursive_body(def_id: DefId) -> Body {
 /// Build a body with an unreachable terminator.
 pub fn build_unreachable_body() -> Body {
     let mut body = Body::dummy(dummy_def_id());
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-    ]);
-    body.basic_blocks = IndexVec::from_raw(vec![
-        BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Unreachable,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
+    body.locals = IndexVec::from_raw(vec![local_decl(Ty::UNIT, Mutability::Mut)]);
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![],
+        terminator: Terminator {
+            kind: TerminatorKind::Unreachable,
+            source_info: SourceInfo::new(Span::DUMMY),
         },
-    ]);
+        is_cleanup: false,
+    }]);
     body
 }
 
@@ -240,28 +246,27 @@ pub fn build_allocation_body(tcx: &mut TyCtxMut, val: i128) -> Body {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(ty.clone(), Mutability::Mut),
     ]);
-    let c = MirConst { kind: MirConstKind::Int(val), ty: ty.clone(), span: Span::DUMMY };
-    body.basic_blocks = IndexVec::from_raw(vec![
-        BasicBlockData {
-            statements: vec![
-                Statement {
-                    kind: StatementKind::StorageLive(local),
-                    source_info: SourceInfo::new(Span::DUMMY),
-                },
-                Statement {
-                    kind: StatementKind::Assign(
-                        Place::new(local),
-                        Rvalue::Use(Operand::Constant(c)),
-                    ),
-                    source_info: SourceInfo::new(Span::DUMMY),
-                },
-            ],
-            terminator: Terminator {
-                kind: TerminatorKind::Return,
+    let c = MirConst {
+        kind: MirConstKind::Int(val),
+        ty: ty.clone(),
+        span: Span::DUMMY,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![
+            Statement {
+                kind: StatementKind::StorageLive(local),
                 source_info: SourceInfo::new(Span::DUMMY),
             },
-            is_cleanup: false,
+            Statement {
+                kind: StatementKind::Assign(Place::new(local), Rvalue::Use(Operand::Constant(c))),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+        ],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
         },
-    ]);
+        is_cleanup: false,
+    }]);
     body
 }

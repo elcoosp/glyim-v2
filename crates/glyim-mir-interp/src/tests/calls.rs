@@ -12,13 +12,11 @@ fn build_callee_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let mut body = Body::dummy(dummy_def_id());
     let ret_local = LocalIdx::from_raw(0);
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    body.locals = IndexVec::from_raw(vec![
-        LocalDecl {
-            ty: i32_ty.clone(),
-            mutability: Mutability::Mut,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-    ]);
+    body.locals = IndexVec::from_raw(vec![LocalDecl {
+        ty: i32_ty.clone(),
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }]);
     let c = MirConst {
         kind: MirConstKind::Int(val),
         ty: i32_ty,
@@ -26,10 +24,7 @@ fn build_callee_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(ret_local),
-                Rvalue::Use(Operand::Constant(c)),
-            ),
+            kind: StatementKind::Assign(Place::new(ret_local), Rvalue::Use(Operand::Constant(c))),
             source_info: SourceInfo::new(Span::DUMMY),
         }],
         terminator: Terminator {
