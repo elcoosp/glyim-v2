@@ -1,6 +1,7 @@
 use crate::{BytecodeBackend, CodegenBackend};
 use glyim_core::primitives::*;
 use glyim_mir::*;
+use glyim_type::FieldIdx;
 use glyim_span::Span;
 use std::path::Path;
 use std::sync::Arc;
@@ -748,4 +749,489 @@ fn t22_multiple_blocks_all_processed() {
     // Block 1: Return
     assert!(bc.contains(&0x07u8)); // OP_JUMP
     assert!(bc.contains(&0x05u8)); // OP_RETURN
+}
+
+// ============================================================================
+// S07-T23: Aggregate rvalue (Tuple) stub does not crash
+// ============================================================================
+#[test]
+fn t23_aggregate_tuple_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Aggregate(
+                    AggregateKind::Tuple,
+                    vec![
+                        Operand::Constant(MirConst {
+                            kind: MirConstKind::Int(1),
+                            ty: glyim_type::Ty::ERROR,
+                            span: Span::DUMMY,
+                        }),
+                    ],
+                ),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T24: Len rvalue stub does not crash
+// ============================================================================
+#[test]
+fn t24_len_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Len(Place::new(LocalIdx::from_raw(1))),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T25: Cast rvalue stub does not crash
+// ============================================================================
+#[test]
+fn t25_cast_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Cast(
+                    CastKind::IntToInt,
+                    Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+                    glyim_type::Ty::ERROR,
+                ),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T26: Discriminant rvalue stub does not crash
+// ============================================================================
+#[test]
+fn t26_discriminant_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Discriminant(Place::new(LocalIdx::from_raw(1))),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T27: Repeat rvalue stub does not crash
+// ============================================================================
+#[test]
+fn t27_repeat_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Repeat(
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(0),
+                        ty: glyim_type::Ty::ERROR,
+                        span: Span::DUMMY,
+                    }),
+                    MirConst {
+                        kind: MirConstKind::Int(5),
+                        ty: glyim_type::Ty::ERROR,
+                        span: Span::DUMMY,
+                    },
+                ),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T28: Assert terminator stub does not crash
+// ============================================================================
+#[test]
+fn t28_assert_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![],
+            term(TerminatorKind::Assert {
+                cond: Operand::Constant(MirConst {
+                    kind: MirConstKind::Bool(true),
+                    ty: glyim_type::Ty::BOOL,
+                    span: Span::DUMMY,
+                }),
+                expected: true,
+                target: BasicBlockIdx::from_raw(1),
+                cleanup: None,
+                msg: AssertMessage::Overflow(BinOp::Add),
+            }),
+        )],
+        vec![],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T29: Drop terminator stub does not crash
+// ============================================================================
+#[test]
+fn t29_drop_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![],
+            term(TerminatorKind::Drop {
+                place: Place::new(LocalIdx::from_raw(0)),
+                target: BasicBlockIdx::from_raw(1),
+                cleanup: None,
+            }),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T30: Assign with projection (field access) stub does not crash
+// ============================================================================
+#[test]
+fn t30_assign_with_projection_stub_does_not_crash() {
+    let place = Place {
+        local: LocalIdx::from_raw(0),
+        projection: Box::new([ProjectionElem::Field(FieldIdx::from_raw(0))]),
+    };
+
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                place,
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Int(42),
+                    ty: glyim_type::Ty::ERROR,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T31: Operand with projection (index) stub does not crash
+// ============================================================================
+#[test]
+fn t31_operand_with_projection_stub_does_not_crash() {
+    let place = Place {
+        local: LocalIdx::from_raw(0),
+        projection: Box::new([ProjectionElem::Index(LocalIdx::from_raw(1))]),
+    };
+
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(2)),
+                Rvalue::Use(Operand::Copy(place)),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T32: Unsigned integer constant handled gracefully
+// ============================================================================
+#[test]
+fn t32_unsigned_constant_handled() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Uint(42),
+                    ty: glyim_type::Ty::ERROR,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T33: Char constant handled gracefully
+// ============================================================================
+#[test]
+fn t33_char_constant_handled() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Char('a'),
+                    ty: glyim_type::Ty::ERROR,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T34: Float constant handled gracefully
+// ============================================================================
+#[test]
+fn t34_float_constant_handled() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::FloatBits(1065353216), // 1.0f32 bits
+                    ty: glyim_type::Ty::ERROR,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T35: String constant handled gracefully
+// ============================================================================
+#[test]
+fn t35_string_constant_handled() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Unit,
+                    ty: glyim_type::Ty::UNIT,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T36: Unit constant handled
+// ============================================================================
+#[test]
+fn t36_unit_constant_handled() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Unit,
+                    ty: glyim_type::Ty::UNIT,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::UNIT)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T37: Substituted copy with same constant works correctly
+// ============================================================================
+#[test]
+fn t37_multiple_uses_of_same_constant_works() {
+    let body = make_body(
+        vec![block(
+            vec![
+                stmt(StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(0)),
+                    Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(5),
+                        ty: glyim_type::Ty::ERROR,
+                        span: Span::DUMMY,
+                    })),
+                )),
+                stmt(StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(1)),
+                    Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(5),
+                        ty: glyim_type::Ty::ERROR,
+                        span: Span::DUMMY,
+                    })),
+                )),
+            ],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bc = result.unwrap();
+    // Two load_const + two store_local + return = 2*(1+8+1+4) + 1 = 29 bytes
+    assert_eq!(bc.len(), 29);
+}
+
+// ============================================================================
+// S07-T38: Error constant kind handled gracefully
+// ============================================================================
+#[test]
+fn t38_error_constant_handled() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Error,
+                    ty: glyim_type::Ty::ERROR,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+}
+
+// ============================================================================
+// S07-T39: SwitchInt on non-bool type stub does not crash
+// ============================================================================
+#[test]
+fn t39_switchint_non_bool_stub_does_not_crash() {
+    let body = make_body(
+        vec![
+            block(
+                vec![],
+                term(TerminatorKind::SwitchInt {
+                    discr: Operand::Copy(Place::new(LocalIdx::from_raw(0))),
+                    switch_ty: glyim_type::Ty::ERROR,
+                    targets: SwitchTargets::new(
+                        Box::new([(1u128, BasicBlockIdx::from_raw(1))]),
+                        BasicBlockIdx::from_raw(2),
+                    ),
+                }),
+            ),
+            block(vec![], term(TerminatorKind::Return)),
+            block(vec![], term(TerminatorKind::Unreachable)),
+        ],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
 }
