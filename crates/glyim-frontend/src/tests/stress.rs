@@ -300,28 +300,21 @@ fn float_various_formats() {
 
 #[test]
 fn string_various_contents() {
-    let cases = vec![
-        "\"\"",
-        "\"\"",
-        "\"a\"",
-        "\"a\"",
-        "\"hello world\"",
-        "\"hello world\"",
-        "\"\\n\"",
-        "\"\\n\"",
-        "\"\\t\\n\\r\"",
-        "\"\\t\\n\\r\"",
-        "\"\\\\\"",
-        "\"\\\\\"",
-        "\"\\\"\"",
-        "\"\\\"\"",
+    let cases: Vec<(&str, &str)> = vec![
+        ("""", """"),
+        (""a"", ""a""),
+        (""hello world"", ""hello world""),
+        (""\n"", ""\n""),
+        (""\t\n\r"", ""\t\n\r""),
+        (""\\"", ""\\""),
+        (""\""", ""\"""),
     ];
-    for (source, expected_text) in cases {
+    for (source, expected_text) in &cases {
         let tokens = lex_tokens(source);
         assert_eq!(tokens.len(), 1, "should lex {} as single token", source);
         assert_eq!(tokens[0].kind, SyntaxKind::StringLit);
         assert_eq!(
-            tokens[0].text, expected_text,
+            tokens[0].text, *expected_text,
             "text mismatch for {}",
             source
         );
@@ -334,18 +327,18 @@ fn char_various_contents() {
         ("'a'", "'a'"),
         ("'Z'", "'Z'"),
         ("'0'", "'0'"),
-        ("'\\n'", "'\\n'"),
-        ("'\\t'", "'\\t'"),
-        ("'\\\\'", "'\\\\'"),
-        ("'\\''", "'\\''"),
-        ("'\\0'", "'\\0'"),
+        ("'\n'", "'\n'"),
+        ("'\t'", "'\t'"),
+        ("'\\'", "'\\'"),
+        ("'\''", "'\''"),
+        ("'\0'", "'\0'"),
     ];
-    for (source, expected_text) in cases {
+    for (source, expected_text) in &cases {
         let tokens = lex_tokens(source);
         assert_eq!(tokens.len(), 1, "should lex {} as single token", source);
         assert_eq!(tokens[0].kind, SyntaxKind::CharLit);
         assert_eq!(
-            tokens[0].text, expected_text,
+            tokens[0].text, *expected_text,
             "text mismatch for {}",
             source
         );
