@@ -4,5 +4,6 @@ mod arithmetic;
 mod branching;
 mod calls;
 mod common;
+mod edge_cases;
 mod limits;
 mod terminator;

@@ -355,6 +355,8 @@ impl<'tcx> Interpreter<'tcx> {
             (InterpValue::Bool(l), InterpValue::Bool(r)) => match op {
                 BinOp::Eq => Ok(InterpValue::Bool(l == r)),
                 BinOp::Ne => Ok(InterpValue::Bool(l != r)),
+                BinOp::And => Ok(InterpValue::Bool(*l && *r)),
+                BinOp::Or => Ok(InterpValue::Bool(*l || *r)),
                 _ => Err(InterpError::Panic(format!(
                     "unsupported bool binop: {:?}",
                     op
