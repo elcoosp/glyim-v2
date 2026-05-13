@@ -102,19 +102,19 @@ fn discriminant_rvalue_returns_error() {
 
 // ============ Cast (unsupported kind) ============
 #[test]
-fn float_to_int_cast_returns_error() {
+fn unsupported_cast_returns_error() {
     let mut tcx_mut = test_ty_ctx();
-    let f32_ty = tcx_mut.mk_ty(TyKind::Float(glyim_core::FloatTy::F32));
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    let i64_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I64));
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(f32_ty.clone(), Mutability::Mut),
         local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i64_ty.clone(), Mutability::Mut),
     ]);
     let c = MirConst {
-        kind: MirConstKind::FloatBits(0u64),
-        ty: f32_ty,
+        kind: MirConstKind::Int(42),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -130,9 +130,9 @@ fn float_to_int_cast_returns_error() {
                 kind: StatementKind::Assign(
                     Place::new(LocalIdx::from_raw(2)),
                     Rvalue::Cast(
-                        CastKind::FloatToInt,
+                        CastKind::PtrToPtr,
                         Operand::Copy(Place::new(LocalIdx::from_raw(1))),
-                        i32_ty,
+                        i64_ty,
                     ),
                 ),
                 source_info: SourceInfo::new(Span::DUMMY),
