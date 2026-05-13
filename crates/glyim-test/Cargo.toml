@@ -3,15 +3,43 @@ name = "glyim-test"
 edition.workspace = true
 version.workspace = true
 
+[features]
+default = []
+json-output = ["serde", "serde_json"]
+
 [dependencies]
-glyim-core = { workspace = true }
-glyim-span = { workspace = true }
-glyim-diag = { workspace = true }
-glyim-frontend = { workspace = true }
-glyim-type = { workspace = true }
-glyim-mir = { workspace = true }
-glyim-lower = { workspace = true }
-glyim-borrowck = { workspace = true }
-glyim-codegen = { workspace = true }
-insta = { workspace = true }
-tracing = { workspace = true }
+glyim-core       = { workspace = true }
+glyim-span       = { workspace = true }
+glyim-diag       = { workspace = true }
+glyim-vfs        = { workspace = true }
+glyim-syntax     = { workspace = true }
+glyim-frontend   = { workspace = true }
+glyim-def-map    = { workspace = true }
+glyim-type       = { workspace = true }
+glyim-hir        = { workspace = true }
+glyim-mir        = { workspace = true }
+glyim-solve      = { workspace = true }
+glyim-typeck     = { workspace = true }
+glyim-lower      = { workspace = true }
+glyim-borrowck   = { workspace = true }
+glyim-codegen    = { workspace = true }
+glyim-db         = { workspace = true }
+glyim-pipeline   = { workspace = true }
+glyim-layout     = { workspace = true }
+glyim-opt        = { workspace = true }
+insta            = { workspace = true }
+tracing          = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot      = { workspace = true }
+rayon            = { workspace = true }
+similar          = "2"
+termcolor        = "1.4"
+walkdir          = "2"
+regex            = "1"
+shell-words      = "1.1"
+rand             = "0.8"
+serde            = { version = "1.0", optional = true }
+serde_json       = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = "3"
