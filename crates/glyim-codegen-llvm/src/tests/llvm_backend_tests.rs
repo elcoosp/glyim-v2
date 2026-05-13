@@ -297,3 +297,81 @@ fn s08_t20_default_target_triple_is_linux() {
     let _ = backend.generate_function(&body);
     // If no panic, test passes.
 }
+
+#[test]
+fn s08_t27_generate_with_directory_path_errors() {
+    let backend = LlvmBackend::new();
+    // Use a path that is an existing directory
+    let dir = tempfile::tempdir().expect("failed to create tempdir");
+    let output = dir.path(); // This is a directory, not a file
+    let bodies: Vec<std::sync::Arc<glyim_mir::Body>> = vec![];
+    let result = backend.generate(&bodies, output);
+    assert!(
+        result.is_err(),
+        "generate with a directory path should error"
+    );
+    // Cleanup handled by tempdir
+}
+
+#[test]
+fn s08_t28_different_owners_produce_different_output() {
+    let backend = LlvmBackend::new();
+    let body_a = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(1),
+    )));
+    let body_b = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(2),
+    )));
+    let bytes_a = backend.generate_function(&body_a).expect("should succeed");
+    let bytes_b = backend.generate_function(&body_b).expect("should succeed");
+    // The function names differ, so the object files should differ.
+    assert_ne!(
+        bytes_a, bytes_b,
+        "different owners should yield different object code"
+    );
+}
+
+#[test]
+fn s08_t29_name_after_with_target() {
+    let backend = LlvmBackend::with_target("x86_64-unknown-linux-gnu");
+    assert_eq!(backend.name(), "llvm");
+    // Also test after another target
+    let backend2 = LlvmBackend::with_target("wasm32-unknown-unknown");
+    assert_eq!(backend2.name(), "llvm");
+}
+
+#[test]
+fn s08_t30_generate_function_returns_vec_u8() {
+    let backend = LlvmBackend::new();
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(3),
+    )));
+    let bytes = backend.generate_function(&body).expect("should succeed");
+    // bytes must be a valid Vec<u8> (not empty, not a slice pointing to invalid memory)
+    assert!(!bytes.is_empty());
+    // Ensure we can read the entire buffer without panic
+    let _ = bytes[0];
+}
+
+#[test]
+fn s08_t31_multiple_backends_independent() {
+    let b1 = LlvmBackend::new();
+    let b2 = LlvmBackend::new();
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(10),
+    )));
+    let r1 = b1.generate_function(&body);
+    let r2 = b2.generate_function(&body);
+    assert!(r1.is_ok());
+    assert!(r2.is_ok());
+    // Both should produce identical output (deterministic codegen)
+    assert_eq!(
+        r1.unwrap(),
+        r2.unwrap(),
+        "independent backends should produce identical output for same input"
+    );
+}
