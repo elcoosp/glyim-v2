@@ -1,12 +1,20 @@
-//! Mid-Level IR (CFG form)
-use glyim_core::arena::IndexVec;
-use glyim_core::def_id::DefId;
-use glyim_type::Ty;
+//! Mid-Level IR — CFG form.
+//!
+//! [F2] Uses `Ty::ERROR` instead of `Ty::from_raw(0)`.
+//! [F9] `Place::ty()` matches on `&TyKind` and extracts `Copy`
+//! fields (`Ty`, `Substitution`) without cloning the entire TyKind.
+
+use glyim_core::arena::{IdxLike, IndexVec};
+use glyim_core::def_id::*;
+use glyim_core::primitives::*;
+use glyim_core::interner::Name;
 use glyim_span::Span;
+use glyim_type::*;
+use std::sync::Arc;
 
 glyim_core::define_idx!(BasicBlockIdx);
 glyim_core::define_idx!(LocalIdx);
-glyim_core::define_idx!(FieldIdx);
+glyim_core::define_idx!(VariantIdx);
 
 #[derive(Clone, Debug)]
 pub struct Body {
@@ -21,7 +29,7 @@ pub struct Body {
 
 #[derive(Clone, Debug)]
 pub struct VarDebugInfo {
-    pub name: glyim_core::interner::Name,
+    pub name: Name,
     pub value: VarDebugInfoValue,
 }
 
@@ -65,6 +73,8 @@ pub enum Rvalue {
     BinaryOp(BinOp, Box<(Operand, Operand)>),
     UnaryOp(UnOp, Operand),
     Aggregate(AggregateKind, Vec<Operand>),
+    Discriminant(Place),
+    Len(Place),
     Cast(CastKind, Operand, Ty),
     Repeat(Operand, MirConst),
 }
@@ -73,10 +83,9 @@ pub enum Rvalue {
 pub enum AggregateKind {
     Array(Ty),
     Tuple,
-    Adt(glyim_core::def_id::AdtId, VariantIdx, glyim_type::Substitution),
-    Closure(glyim_core::def_id::ClosureId, glyim_type::Substitution),
+    Adt(AdtId, VariantIdx, Substitution),
+    Closure(ClosureId, Substitution),
 }
-glyim_core::define_idx!(VariantIdx);
 
 #[derive(Clone, Debug)]
 pub enum Operand {
@@ -95,6 +104,49 @@ impl Place {
     pub fn new(local: LocalIdx) -> Self {
         Self { local, projection: Box::new([]) }
     }
+
+    /// [F9] Compute the type of this Place by walking the projection chain.
+    pub fn ty(&self, ctx: &impl TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
+        let mut ty = local_decls[self.local].ty;
+
+        for elem in self.projection.iter() {
+            ty = match elem {
+                ProjectionElem::Deref => {
+                    match ctx.ty_kind(ty) {
+                        TyKind::Ref(_, inner_ty, _) => *inner_ty,
+                        TyKind::RawPtr(inner_ty, _) => *inner_ty,
+                        _ => ctx.error_ty(),
+                    }
+                }
+                ProjectionElem::Field(idx) => {
+                    match ctx.ty_kind(ty) {
+                        TyKind::Tuple(substs) => {
+                            let args = ctx.substitution_args(*substs);
+                            if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
+                                *field_ty
+                            } else {
+                                ctx.error_ty()
+                            }
+                        }
+                        TyKind::Adt(_adt_id, _substs) => {
+                            // STUB: Look up the field's type from the ADT definition
+                            ty
+                        }
+                        _ => ctx.error_ty(),
+                    }
+                }
+                ProjectionElem::Index(_) => {
+                    match ctx.ty_kind(ty) {
+                        TyKind::Array(inner_ty, _) => *inner_ty,
+                        TyKind::Slice(inner_ty) => *inner_ty,
+                        _ => ctx.error_ty(),
+                    }
+                }
+                ProjectionElem::Downcast(_) => ty,
+            };
+        }
+        ty
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -112,9 +164,6 @@ pub struct LocalDecl {
     pub source_info: SourceInfo,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mutability { Not, Mut }
-
 #[derive(Clone, Debug)]
 pub struct MirConst {
     pub kind: MirConstKind,
@@ -124,10 +173,8 @@ pub struct MirConst {
 
 #[derive(Clone, Debug)]
 pub enum MirConstKind {
-    Int(i128),
-    Bool(bool),
-    Unit,
-    Error,
+    Int(i128), Uint(u128), FloatBits(u64), Bool(bool),
+    Char(char), String(Name), Unit, Error,
 }
 
 #[derive(Clone, Debug)]
@@ -139,6 +186,7 @@ pub struct Terminator {
 #[derive(Clone, Debug)]
 pub enum TerminatorKind {
     Goto { target: BasicBlockIdx },
+    SwitchInt { discr: Operand, switch_ty: Ty, targets: SwitchTargets },
     Return,
     Unreachable,
     Call {
@@ -148,32 +196,78 @@ pub enum TerminatorKind {
         target: Option<BasicBlockIdx>,
         cleanup: Option<BasicBlockIdx>,
     },
+    Assert {
+        cond: Operand,
+        expected: bool,
+        target: BasicBlockIdx,
+        cleanup: Option<BasicBlockIdx>,
+        msg: AssertMessage,
+    },
     Drop { place: Place, target: BasicBlockIdx, cleanup: Option<BasicBlockIdx> },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum BorrowKind { Shared, Unique, Mut }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CastKind { IntToInt, PtrToPtr }
+#[derive(Clone, Debug)]
+pub enum AssertMessage {
+    Overflow(BinOp),
+    DivisionByZero,
+    RemainderByZero,
+    BoundsCheck,
+}
 
 #[derive(Clone, Debug)]
-pub struct SourceInfo { pub span: Span }
-impl SourceInfo { pub fn new(span: Span) -> Self { Self { span } } }
+pub struct SwitchTargets {
+    branches: Box<[(u128, BasicBlockIdx)]>,
+    otherwise: BasicBlockIdx,
+}
+
+impl SwitchTargets {
+    pub fn new(branches: Box<[(u128, BasicBlockIdx)]>, otherwise: BasicBlockIdx) -> Self {
+        Self { branches, otherwise }
+    }
+    pub fn otherwise(&self) -> BasicBlockIdx { self.otherwise }
+    pub fn iter(&self) -> impl Iterator<Item = (u128, BasicBlockIdx)> + '_ { self.branches.iter().copied() }
+    pub fn if_switch(then_bb: BasicBlockIdx, else_bb: BasicBlockIdx) -> Self {
+        Self { branches: Box::new([(1, then_bb)]), otherwise: else_bb }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceInfo {
+    pub span: Span,
+}
+
+impl SourceInfo {
+    pub fn new(span: Span) -> Self { Self { span } }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BorrowKind {
+    Shared,
+    Unique,
+    Mut { allow_two_phase_borrow: bool },
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BinOp { Add, Sub, Eq, Ne }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnOp { Not, Neg }
+pub enum CastKind {
+    IntToInt, FloatToInt, IntToFloat, PtrToPtr, FnPtrToPtr,
+}
 
 impl Body {
+    /// [F2] Uses `Ty::ERROR` instead of `Ty::from_raw(0)`.
     pub fn dummy(owner: DefId) -> Self {
         let mut basic_blocks = IndexVec::new();
-        basic_blocks.push(BasicBlockData::new(Terminator {
+        let _bb0 = basic_blocks.push(BasicBlockData::new(Terminator {
             kind: TerminatorKind::Unreachable,
             source_info: SourceInfo::new(Span::DUMMY),
         }));
-        let locals = IndexVec::new();
+
+        let mut locals = IndexVec::new();
+        locals.push(LocalDecl {
+            ty: Ty::ERROR,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
         Self {
             owner,
             basic_blocks,
@@ -184,4 +278,7 @@ impl Body {
             var_debug_info: Vec::new(),
         }
     }
+
+    pub fn args(&self) -> &[LocalDecl] { &self.locals.as_slice()[..self.arg_count] }
+    pub fn return_place(&self) -> Place { Place::new(LocalIdx::from_raw(0)) }
 }
