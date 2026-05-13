@@ -120,30 +120,37 @@ impl Place {
                 ProjectionElem::Deref => match ctx.ty_kind(ty) {
                     TyKind::Ref(_, inner_ty, _) => *inner_ty,
                     TyKind::RawPtr(inner_ty, _) => *inner_ty,
-                    _ => ctx.error_ty(),
-                },
-                ProjectionElem::Field(idx) => {
-                    match ctx.ty_kind(ty) {
-                        TyKind::Tuple(substs) => {
-                            let args = ctx.substitution_args(*substs);
-                            if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize)
-                            {
-                                *field_ty
-                            } else {
-                                ctx.error_ty()
-                            }
-                        }
-                        TyKind::Adt(_adt_id, _substs) => {
-                            // STUB: Look up the field's type from the ADT definition
-                            ty
-                        }
-                        _ => ctx.error_ty(),
+                    _ => {
+                        tracing::error!("Place::ty(): Deref on non-pointer type");
+                        ctx.error_ty()
                     }
-                }
+                },
+                ProjectionElem::Field(idx) => match ctx.ty_kind(ty) {
+                    TyKind::Tuple(substs) => {
+                        let args = ctx.substitution_args(*substs);
+                        if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
+                            *field_ty
+                        } else {
+                            tracing::error!("Place::ty(): Field index out of bounds for tuple");
+                            ctx.error_ty()
+                        }
+                    }
+                    TyKind::Adt(_adt_id, _substs) => {
+                        tracing::warn!("STUB: ADT field type lookup not yet implemented");
+                        ty
+                    }
+                    _ => {
+                        tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
+                        ctx.error_ty()
+                    }
+                },
                 ProjectionElem::Index(_) => match ctx.ty_kind(ty) {
                     TyKind::Array(inner_ty, _) => *inner_ty,
                     TyKind::Slice(inner_ty) => *inner_ty,
-                    _ => ctx.error_ty(),
+                    _ => {
+                        tracing::error!("Place::ty(): Index on non-array/slice type");
+                        ctx.error_ty()
+                    }
                 },
                 ProjectionElem::Downcast(_) => ty,
             };
@@ -315,9 +322,12 @@ impl Body {
     }
 
     pub fn args(&self) -> &[LocalDecl] {
-        &self.locals.as_slice()[..self.arg_count]
+        &self.locals.as_slice()[1..1 + self.arg_count]
     }
     pub fn return_place(&self) -> Place {
         Place::new(LocalIdx::from_raw(0))
     }
 }
+
+#[cfg(test)]
+mod tests;
