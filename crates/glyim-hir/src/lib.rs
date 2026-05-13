@@ -1,13 +1,30 @@
-//! High-Level IR (name-resolved, untyped)
+//! High-Level IR — name-resolved, untyped.
+//!
+//! This crate depends only on `glyim-core` and `glyim-span`,
+//! NOT on `glyim-type`. This ensures the frontend does not pull
+//! in the heavy type system machinery.
+//!
+//! [F12] Uses `glyim_core::path::PathKind` (shared). Defines its
+//! own `PathSegment` with `generic_args: Option<Vec<TypeRef>>`,
+//! which differs from `glyim_core::path::PathSegment` (name-only).
+
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
+use glyim_core::primitives::*;
 use glyim_core::interner::Name;
+use glyim_core::path::PathKind;
 use glyim_span::Span;
 
 glyim_core::define_idx!(ExprId);
 glyim_core::define_idx!(PatId);
 glyim_core::define_idx!(BodyId);
 glyim_core::define_idx!(ItemId);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct HirId {
+    pub owner: LocalDefId,
+    pub local: u32,
+}
 
 #[derive(Clone, Debug)]
 pub struct CrateHir {
@@ -18,8 +35,10 @@ pub struct CrateHir {
 
 #[derive(Clone, Debug)]
 pub struct Item {
+    pub id: ItemId,
     pub name: Name,
     pub kind: ItemKind,
+    pub visibility: Visibility,
     pub span: Span,
 }
 
@@ -28,13 +47,96 @@ pub enum ItemKind {
     Fn(FnItem),
     Struct(StructItem),
     Enum(EnumItem),
+    Trait(TraitItem),
+    Impl(ImplItem),
+    TypeAlias(TypeAliasItem),
+    Const(ConstItem),
+    Static(StaticItem),
+    Mod(ModItem),
+    Use(UseItem),
+    Extern(ExternBlockItem),
 }
 
 #[derive(Clone, Debug)]
 pub struct FnItem {
-    pub body: Option<BodyId>,
     pub params: Vec<Param>,
     pub return_ty: Option<TypeRef>,
+    pub body: Option<BodyId>,
+    pub is_unsafe: bool,
+    pub is_async: bool,
+    pub generic_params: Vec<GenericParam>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructItem {
+    pub fields: Vec<Field>,
+    pub kind: StructKind,
+    pub generic_params: Vec<GenericParam>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EnumItem {
+    pub variants: Vec<Variant>,
+    pub generic_params: Vec<GenericParam>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Variant {
+    pub name: Name,
+    pub fields: Vec<Field>,
+    pub kind: StructKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct TraitItem {
+    pub associated_types: Vec<Name>,
+    pub methods: Vec<Name>,
+    pub generic_params: Vec<GenericParam>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImplItem {
+    pub trait_ref: Option<Path>,
+    pub self_ty: TypeRef,
+    pub methods: Vec<Name>,
+    pub generic_params: Vec<GenericParam>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TypeAliasItem {
+    pub ty: Option<TypeRef>,
+    pub generic_params: Vec<GenericParam>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConstItem {
+    pub ty: TypeRef,
+    pub body: Option<BodyId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StaticItem {
+    pub ty: TypeRef,
+    pub body: Option<BodyId>,
+    pub is_mut: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ModItem {
+    pub children: Vec<ItemId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct UseItem {
+    pub path: Path,
+    pub alias: Option<Name>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExternBlockItem {
+    pub items: Vec<ItemId>,
+    pub abi: Option<Name>,
 }
 
 #[derive(Clone, Debug)]
@@ -45,11 +147,6 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug)]
-pub struct StructItem {
-    pub fields: Vec<Field>,
-}
-
-#[derive(Clone, Debug)]
 pub struct Field {
     pub name: Name,
     pub ty: TypeRef,
@@ -57,42 +154,58 @@ pub struct Field {
 }
 
 #[derive(Clone, Debug)]
-pub struct EnumItem {
-    pub variants: Vec<Variant>,
+pub struct GenericParam {
+    pub name: Name,
+    pub kind: GenericParamKind,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]
-pub struct Variant {
-    pub name: Name,
-    pub fields: Vec<Field>,
-    pub span: Span,
+pub enum GenericParamKind {
+    Type { default: Option<TypeRef> },
+    Lifetime,
+    Const { ty: TypeRef, default: Option<ConstRef> },
 }
 
 #[derive(Clone, Debug)]
 pub enum TypeRef {
     Path(Path),
+    Fn { params: Vec<TypeRef>, ret: Option<Box<TypeRef>> },
+    Ref { inner: Box<TypeRef>, mutability: Mutability },
+    Slice(Box<TypeRef>),
+    Array { inner: Box<TypeRef>, len: ConstRef },
+    Tuple(Vec<TypeRef>),
     Never,
+    Infer,
     Error,
 }
 
 #[derive(Clone, Debug)]
+pub enum ConstRef {
+    Literal(Literal),
+    Path(Path),
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
     pub kind: PathKind,
+}
+
+impl Path {
+    pub fn from_single(name: Name) -> Self {
+        Self { segments: vec![PathSegment { name, generic_args: None }], kind: PathKind::Plain }
+    }
+    pub fn as_name(&self) -> Option<Name> {
+        if self.segments.len() == 1 && self.kind == PathKind::Plain { Some(self.segments[0].name) } else { None }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct PathSegment {
     pub name: Name,
     pub generic_args: Option<Vec<TypeRef>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PathKind {
-    Plain,
-    SelfPath,
-    Super(u32),
-    Crate,
 }
 
 #[derive(Clone, Debug)]
@@ -110,34 +223,57 @@ pub enum Expr {
     Path(Path),
     Literal(Literal),
     Block { stmts: Vec<ExprId>, tail: Option<ExprId> },
+    If { cond: ExprId, then_branch: ExprId, else_branch: Option<ExprId> },
+    While { cond: ExprId, body: ExprId },
+    For { pat: PatId, iterable: ExprId, body: ExprId },
+    Match { scrutinee: ExprId, arms: Vec<MatchArm> },
     Call { func: ExprId, args: Vec<ExprId> },
+    MethodCall { receiver: ExprId, method: Name, args: Vec<ExprId> },
+    Field { receiver: ExprId, field: Name },
+    Index { base: ExprId, index: ExprId },
+    Unary { op: UnOp, expr: ExprId },
+    Binary { op: BinOp, lhs: ExprId, rhs: ExprId },
+    Cast { expr: ExprId, ty: TypeRef },
+    Ref { expr: ExprId, mutability: Mutability },
+    Assign { lhs: ExprId, rhs: ExprId },
     Return { value: Option<ExprId> },
+    Break { value: Option<ExprId> },
+    Continue,
+    Closure { params: Vec<PatId>, body: ExprId },
+    Array(Vec<ExprId>),
+    Tuple(Vec<ExprId>),
+    Struct { path: Path, fields: Vec<(Name, ExprId)>, spread: Option<ExprId> },
+    Range { start: Option<ExprId>, end: Option<ExprId>, inclusive: bool },
     Err,
+}
+
+#[derive(Clone, Debug)]
+pub struct MatchArm {
+    pub pat: PatId,
+    pub guard: Option<ExprId>,
+    pub body: ExprId,
 }
 
 #[derive(Clone, Debug)]
 pub enum Pat {
     Wild,
     Binding { name: Name, mutability: Mutability, subpattern: Option<PatId> },
+    Struct { path: Path, fields: Vec<(Name, PatId)>, rest: bool },
+    Tuple(Vec<PatId>),
+    Or(Vec<PatId>),
+    Literal(Literal),
+    Range { start: Option<Literal>, end: Option<Literal>, inclusive: bool },
+    Path(Path),
     Err,
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mutability { Not, Mut }
 
 #[derive(Clone, Debug)]
 pub enum Literal {
     Int(i128, Option<IntTy>),
+    Uint(u128, Option<UintTy>),
+    Float(u64, FloatTy),
     Bool(bool),
+    Char(char),
     String(Name),
     Unit,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IntTy { I32, I64, Isize }
-
-impl IntTy {
-    pub fn name(self) -> &'static str {
-        match self { Self::I32 => "i32", Self::I64 => "i64", Self::Isize => "isize" }
-    }
 }
