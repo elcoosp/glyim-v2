@@ -1,6 +1,7 @@
 mod advanced;
 mod allocation;
 mod arithmetic;
+mod boundaries;
 mod branching;
 mod calls;
 mod common;

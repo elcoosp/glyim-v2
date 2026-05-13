@@ -20,6 +20,7 @@ pub struct Interpreter<'tcx> {
     current_body: Option<Body>,
     current_bb: BasicBlockIdx,
     locals: Vec<Option<InterpValue>>,
+    local_decls: Vec<LocalDecl>,
     call_stack: Vec<CallFrame>,
 }
 
@@ -44,6 +45,7 @@ impl<'tcx> Interpreter<'tcx> {
             current_body: None,
             current_bb: BasicBlockIdx::from_raw(0),
             locals: Vec::new(),
+            local_decls: Vec::new(),
             call_stack: Vec::new(),
         }
     }
@@ -74,6 +76,7 @@ impl<'tcx> Interpreter<'tcx> {
         self.current_body = Some(body.clone());
         self.current_bb = BasicBlockIdx::from_raw(0);
         self.locals = vec![None; body.locals.len()];
+        self.local_decls = body.locals.iter().cloned().collect();
         self.call_stack.clear();
         self.step_count = 0;
         self.recursion_depth = 1;
@@ -179,9 +182,11 @@ impl<'tcx> Interpreter<'tcx> {
                     };
 
                     self.call_stack.push(caller_frame);
+                    let new_decls: Vec<LocalDecl> = callee_body.locals.iter().cloned().collect();
                     body = callee_body;
                     self.current_bb = BasicBlockIdx::from_raw(0);
                     self.locals = callee_locals;
+                    self.local_decls = new_decls;
                 }
                 TerminatorKind::Assert {
                     cond,
@@ -278,19 +283,11 @@ impl<'tcx> Interpreter<'tcx> {
                 ))
             }
             Rvalue::Len(place) => {
-                // For Len, we interpret the place as an array and return its length.
-                // We need to look up the type of the place from the body's local decls.
-                // Since we don't have easy access to body here, we check if the
-                // local has a Const operand that encodes the length.
-                // For now: look at the local decl type and extract array length.
-                let body = self
-                    .current_body
-                    .as_ref()
-                    .ok_or_else(|| InterpError::Panic("Len: no current body".into()))?;
-                let local_decl = &body.locals[place.local];
+                let local_decl = &self.local_decls[place.local.index()];
                 let len = self.array_length_from_ty(&local_decl.ty)?;
                 Ok(InterpValue::Int(len as i128))
             }
+
             Rvalue::Cast(kind, operand, _target_ty) => {
                 let val = self.eval_operand(operand)?;
                 match kind {
