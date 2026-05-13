@@ -346,8 +346,12 @@ fn test_annotation_severity_help() {
 }
 
 #[test]
-fn test_annotation_invalid_severity() {
-    assert!(annotations::Annotation::parse_all("fn main() {} //~ ERRR msg").is_err());
+fn test_annotation_invalid_severity_treated_as_message() {
+    let anns = annotations::Annotation::parse_all("fn main() {} //~ ERRR msg").unwrap();
+    assert_eq!(anns.len(), 1);
+    assert_eq!(anns[0].severity, glyim_diag::DiagSeverity::Error);
+    assert!(matches!(anns[0].pattern, annotations::pattern::MatchPattern::Substring(_)));
+    assert_eq!(anns[0].pattern.description(), "contains \"ERRR msg\"");
 }
 
 #[test]
