@@ -10,6 +10,7 @@ pub use interp_error::InterpError;
 pub use interp_value::InterpValue;
 
 pub struct Interpreter<'tcx> {
+    #[allow(dead_code)]
     tcx: &'tcx TyCtx,
     step_limit: usize,
     recursion_limit: usize,
@@ -24,6 +25,7 @@ pub struct Interpreter<'tcx> {
 
 struct CallFrame {
     body: Body,
+    #[allow(dead_code)]
     bb: BasicBlockIdx,
     locals: Vec<Option<InterpValue>>,
     return_place: Place,

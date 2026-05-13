@@ -16,7 +16,7 @@ fn local_decl(ty: Ty, mutability: Mutability) -> LocalDecl {
 }
 
 /// Build a body that computes lhs + rhs and stores in local 1.
-pub fn build_add_body(tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
+pub fn build_add_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
@@ -47,7 +47,7 @@ pub fn build_add_body(tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
 }
 
 /// Build a body that computes lhs - rhs and stores in local 1.
-pub fn build_sub_body(tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
+pub fn build_sub_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
