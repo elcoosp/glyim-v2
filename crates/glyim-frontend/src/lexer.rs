@@ -485,7 +485,9 @@ impl<'a> Lexer<'a> {
                     self.span(exp_start, exp_end),
                     format!("incomplete float exponent: '{}'", exp_text),
                 ));
-                is_float = true;
+                // Backtrack: the 'e' (and optional sign) are not part of the number token.
+                // They will be lexed as separate tokens in the next iteration.
+                self.pos = exp_start;
             } else {
                 is_float = true;
             }
