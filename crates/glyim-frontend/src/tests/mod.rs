@@ -9,7 +9,7 @@ mod operators;
 mod programs;
 mod recovery;
 mod spans;
-mod strings;
 mod stress;
+mod strings;
 mod suffixes;
 mod trivia;

@@ -163,7 +163,10 @@ fn unterminated_block_comment() {
     let result = lex_result("42 /* never closed");
     assert_eq!(result.tokens.len(), 1);
     assert_eq!(result.tokens[0].kind, SyntaxKind::IntLit);
-    assert!(result.diagnostics.is_empty(), "unterminated block comment is just trivia");
+    assert!(
+        result.diagnostics.is_empty(),
+        "unterminated block comment is just trivia"
+    );
 }
 
 #[test]
@@ -258,7 +261,7 @@ fn mixed_line_endings() {
 
 #[test]
 fn vertical_tab_whitespace() {
-    let result = lex_result("1\v2");
+    let result = lex_result("1\u{000B}2");
     assert_eq!(result.tokens.len(), 2);
 }
 
