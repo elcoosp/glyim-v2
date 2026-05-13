@@ -116,7 +116,7 @@ fn test_expr_precedence() {
     let expr_stmt = assert_child_node(&block, SyntaxKind::ExprStmt);
     // The top-level binary expression should be '+'
     let bin_expr = assert_child_node(&expr_stmt, SyntaxKind::BinaryExpr);
-    let plus_token = bin_expr
+    let _plus_token = bin_expr
         .children_with_tokens()
         .find_map(|e| {
             if e.kind() == SyntaxKind::Plus { Some(e) } else { None }

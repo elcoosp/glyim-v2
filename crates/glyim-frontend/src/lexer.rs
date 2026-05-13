@@ -709,6 +709,7 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
         "in" => SyntaxKind::KwIn,
         "break" => SyntaxKind::KwBreak,
         "continue" => SyntaxKind::KwContinue,
+        "loop" => SyntaxKind::KwLoop,
         "trait" => SyntaxKind::KwTrait,
         "impl" => SyntaxKind::KwImpl,
         "where" => SyntaxKind::KwWhere,

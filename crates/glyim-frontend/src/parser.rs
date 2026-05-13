@@ -286,7 +286,7 @@ impl<'a> Parser<'a> {
 
     // ---- STRUCT ----
 
-fn parse_struct_def(&mut self) {
+    fn parse_struct_def(&mut self) {
         self.start_node(SyntaxKind::StructDef);
         self.expect(SyntaxKind::KwStruct);
         self.expect(SyntaxKind::Ident);
@@ -566,6 +566,18 @@ fn parse_struct_def(&mut self) {
         self.finish_node();
     }
 
+    fn parse_type_arg_list(&mut self) {
+        // Already inside a path type node; consume < and type args
+        self.bump(); // <
+        while self.current_kind() != SyntaxKind::Gt && self.current().is_some() {
+            self.parse_type();
+            if self.current_kind() == SyntaxKind::Comma {
+                self.bump();
+            }
+        }
+        self.expect(SyntaxKind::Gt);
+    }
+
     // ---- BLOCKS & STMTS ----
 
     fn parse_block(&mut self) {
@@ -607,7 +619,7 @@ fn parse_struct_def(&mut self) {
             }
             SyntaxKind::KwIf
             | SyntaxKind::KwWhile
-            | SyntaxKind::KwFor
+            | SyntaxKind::KwFor | SyntaxKind::KwLoop
             | SyntaxKind::KwReturn
             | SyntaxKind::KwBreak
             | SyntaxKind::KwContinue => {
@@ -632,6 +644,25 @@ fn parse_struct_def(&mut self) {
                 self.finish_node();
             }
             _ => {
+                // Before parsing as expression, check if token is a known expression starter.
+                // If not, report error and skip to avoid infinite loops.
+                if !matches!(self.current_kind(),
+                    SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit |
+                    SyntaxKind::StringLit | SyntaxKind::CharLit | SyntaxKind::KwTrue |
+                    SyntaxKind::KwFalse | SyntaxKind::KwSelf | SyntaxKind::KwSuper |
+                    SyntaxKind::KwCrate | SyntaxKind::LParen | SyntaxKind::LBrace |
+                    SyntaxKind::KwIf | SyntaxKind::KwWhile | SyntaxKind::KwFor |
+                    SyntaxKind::KwLoop | SyntaxKind::KwMatch | SyntaxKind::KwReturn |
+                    SyntaxKind::KwBreak | SyntaxKind::KwContinue | SyntaxKind::Bang |
+                    SyntaxKind::Minus | SyntaxKind::Star | SyntaxKind::And |
+                    SyntaxKind::KwUnsafe
+                ) {
+                    self.error(format!("unexpected token in statement: {:?}", self.current_kind()));
+                    if self.current().is_some() {
+                        self.bump();
+                    }
+                    return;
+                }
                 self.start_node(SyntaxKind::ExprStmt);
                 self.parse_expr();
                 if self.current_kind() == SyntaxKind::Semicolon {
@@ -655,7 +686,7 @@ fn parse_struct_def(&mut self) {
     }
 
     fn parse_assignment_expr(&mut self) {
-        self.parse_or_expr();
+        self.parse_range_expr();
         if self.current_kind() == SyntaxKind::Eq {
             self.bump();
             let _prec = self.finish_node_hack();
@@ -683,6 +714,19 @@ fn parse_struct_def(&mut self) {
         // This is intentionally a no-op; the actual tree restructuring
         // for assignments requires checkpoint/rewind which we don't have yet.
         // The diagnostic-free parse is the priority for v0.1.0.
+    }
+
+    fn parse_range_expr(&mut self) {
+        self.parse_or_expr();
+        if matches!(self.current_kind(), SyntaxKind::DotDot | SyntaxKind::DotDotEq) {
+            self.bump(); // .. or ..=
+            if !matches!(self.current_kind(),
+                SyntaxKind::Eq | SyntaxKind::Semicolon | SyntaxKind::Comma |
+                SyntaxKind::RParen | SyntaxKind::RBrace | SyntaxKind::RBracket)
+            {
+                self.parse_or_expr();
+            }
+        }
     }
 
     fn parse_or_expr(&mut self) {
@@ -867,6 +911,7 @@ fn parse_struct_def(&mut self) {
             SyntaxKind::LBrace => self.parse_block(),
             SyntaxKind::KwIf => self.parse_if_expr(),
             SyntaxKind::KwWhile => self.parse_while_expr(),
+            SyntaxKind::KwLoop => self.parse_loop_expr(),
             SyntaxKind::KwFor => self.parse_for_expr(),
             SyntaxKind::KwReturn => {
                 self.bump(); // return
@@ -903,7 +948,10 @@ fn parse_struct_def(&mut self) {
                     "expected expression, found {:?}",
                     self.current_kind()
                 ));
-                // Don't bump here; let caller's error recovery handle it
+                // CRITICAL: always consume token to prevent infinite loop
+                if self.current().is_some() {
+                    self.bump();
+                }
             }
         }
     }
@@ -969,7 +1017,15 @@ fn parse_struct_def(&mut self) {
     fn parse_if_expr(&mut self) {
         self.start_node(SyntaxKind::IfExpr);
         self.expect(SyntaxKind::KwIf);
-        self.parse_expr();
+        // Check for if-let: if let Pat = Expr
+        if self.current_kind() == SyntaxKind::KwLet {
+            self.bump(); // let
+            self.parse_pat();
+            self.expect(SyntaxKind::Eq);
+            self.parse_expr();
+        } else {
+            self.parse_expr();
+        }
         self.parse_block();
         if self.current_kind() == SyntaxKind::KwElse {
             self.bump(); // else
@@ -983,10 +1039,30 @@ fn parse_struct_def(&mut self) {
     }
 
     fn parse_while_expr(&mut self) {
-        tracing::warn!("STUB: while expression parsing");
+        self.start_node(SyntaxKind::WhileExpr);
         self.bump(); // while
-        self.parse_expr();
+        // Check for while-let: while let Pat = Expr
+        if self.current_kind() == SyntaxKind::KwLet {
+            self.bump(); // let
+            self.parse_pat();
+            self.expect(SyntaxKind::Eq);
+            self.parse_expr();
+        } else {
+            self.parse_expr();
+        }
         self.parse_block();
+        self.finish_node();
+    }
+
+    fn parse_loop_expr(&mut self) {
+        self.start_node(SyntaxKind::LoopExpr);
+        self.bump(); // loop
+        if self.current_kind() == SyntaxKind::LBrace {
+            self.parse_block();
+        } else {
+            self.error("expected '{' after loop");
+        }
+        self.finish_node();
     }
 
     fn parse_for_expr(&mut self) {
@@ -1024,6 +1100,15 @@ fn parse_struct_def(&mut self) {
     // ---- PATTERNS ----
 
     fn parse_pat(&mut self) {
+        // Handle or-patterns: A | B
+        self.parse_pat_single();
+        while self.current_kind() == SyntaxKind::Or {
+            self.bump(); // |
+            self.parse_pat_single();
+        }
+    }
+
+    fn parse_pat_single(&mut self) {
         match self.current_kind() {
             SyntaxKind::KwRef => {
                 self.bump(); // ref
@@ -1086,9 +1171,14 @@ fn parse_struct_def(&mut self) {
             }
             _ => {
                 self.error(format!("expected pattern, found {:?}", self.current_kind()));
+                // Consume token to prevent infinite loop
+                if self.current().is_some() {
+                    self.bump();
+                }
             }
         }
     }
+
 
     // ---- TYPES ----
 
@@ -1173,11 +1263,18 @@ fn parse_struct_def(&mut self) {
             | SyntaxKind::KwCrate => {
                 self.start_node(SyntaxKind::PathType);
                 self.parse_path();
+                // Optional generic type arguments: Option<i32>
+                if self.current_kind() == SyntaxKind::Lt {
+                    self.parse_type_arg_list();
+                }
                 self.finish_node();
             }
             _ => {
                 self.error(format!("expected type, found {:?}", self.current_kind()));
-                // Error recovery: don't bump, let caller handle unexpected token
+                // Consume token to prevent infinite loop
+                if self.current().is_some() {
+                    self.bump();
+                }
             }
         }
     }

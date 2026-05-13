@@ -1,0 +1,101 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..127
+  EnumDef@0..28
+    KwEnum@0..4 "enum"
+    Ident@4..10 "Option"
+    TypeParamList@10..13
+      Lt@10..11 "<"
+      TypeParam@11..12
+        Ident@11..12 "T"
+      Gt@12..13 ">"
+    LBrace@13..14 "{"
+    VariantList@14..27
+      EnumVariant@14..21
+        Ident@14..18 "Some"
+        LParen@18..19 "("
+        PathType@19..20
+          UsePath@19..20
+            Ident@19..20 "T"
+        RParen@20..21 ")"
+      Comma@21..22 ","
+      EnumVariant@22..26
+        Ident@22..26 "None"
+      Comma@26..27 ","
+    RBrace@27..28 "}"
+  FnDef@28..127
+    KwFn@28..30 "fn"
+    Ident@30..39 "unwrap_or"
+    TypeParamList@39..42
+      Lt@39..40 "<"
+      TypeParam@40..41
+        Ident@40..41 "T"
+      Gt@41..42 ">"
+    LParen@42..43 "("
+    ParamList@43..66
+      Param@43..56
+        Ident@43..46 "opt"
+        Colon@46..47 ":"
+        PathType@47..56
+          UsePath@47..53
+            Ident@47..53 "Option"
+          Lt@53..54 "<"
+          PathType@54..55
+            UsePath@54..55
+              Ident@54..55 "T"
+          Gt@55..56 ">"
+      Comma@56..57 ","
+      Param@57..66
+        Ident@57..64 "default"
+        Colon@64..65 ":"
+        PathType@65..66
+          UsePath@65..66
+            Ident@65..66 "T"
+    RParen@66..67 ")"
+    Arrow@67..69 "->"
+    PathType@69..70
+      UsePath@69..70
+        Ident@69..70 "T"
+    Block@70..127
+      LBrace@70..71 "{"
+      ExprStmt@71..126
+        KwMatch@71..76 "match"
+        PathExpr@76..79
+          UsePath@76..79
+            Ident@76..79 "opt"
+        LBrace@79..80 "{"
+        MatchArm@80..88
+          PatIdent@80..86
+            Ident@80..86 "Option"
+          ColonColon@86..88 "::"
+        MatchArm@88..97
+          PatIdent@88..92
+            Ident@88..92 "Some"
+          LParen@92..93 "("
+          PathExpr@93..96
+            UsePath@93..96
+              Ident@93..96 "val"
+          RParen@96..97 ")"
+        MatchArm@97..103
+          FatArrow@97..99 "=>"
+          PathExpr@99..102
+            UsePath@99..102
+              Ident@99..102 "val"
+          Comma@102..103 ","
+        MatchArm@103..111
+          PatIdent@103..109
+            Ident@103..109 "Option"
+          ColonColon@109..111 "::"
+        MatchArm@111..125
+          PatIdent@111..115
+            Ident@111..115 "None"
+          FatArrow@115..117 "=>"
+          PathExpr@117..124
+            UsePath@117..124
+              Ident@117..124 "default"
+          Comma@124..125 ","
+        RBrace@125..126 "}"
+      RBrace@126..127 "}"

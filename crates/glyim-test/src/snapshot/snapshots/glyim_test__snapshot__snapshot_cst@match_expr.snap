@@ -1,0 +1,73 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..86
+  FnDef@0..86
+    KwFn@0..2 "fn"
+    Ident@2..10 "classify"
+    LParen@10..11 "("
+    ParamList@11..16
+      Param@11..16
+        Ident@11..12 "x"
+        Colon@12..13 ":"
+        PathType@13..16
+          UsePath@13..16
+            Ident@13..16 "i32"
+    RParen@16..17 ")"
+    Arrow@17..19 "->"
+    RefType@19..23
+      And@19..20 "&"
+      PathType@20..23
+        UsePath@20..23
+          Ident@20..23 "str"
+    Block@23..86
+      LBrace@23..24 "{"
+      ExprStmt@24..85
+        KwMatch@24..29 "match"
+        PathExpr@29..30
+          UsePath@29..30
+            Ident@29..30 "x"
+        LBrace@30..31 "{"
+        MatchArm@31..41
+          PatLit@31..32
+            IntLit@31..32 "0"
+          FatArrow@32..34 "=>"
+          LitExpr@34..40
+            StringLit@34..40 "\"zero\""
+          Comma@40..41 ","
+        MatchArm@41..54
+          PatLit@41..42
+            IntLit@41..42 "1"
+          Or@42..43 "|"
+          PatLit@43..44
+            IntLit@43..44 "2"
+          FatArrow@44..46 "=>"
+          LitExpr@46..53
+            StringLit@46..53 "\"small\""
+          Comma@53..54 ","
+        MatchArm@54..73
+          PatIdent@54..55
+            Ident@54..55 "n"
+          KwIf@55..57 "if"
+          PathExpr@57..58
+            UsePath@57..58
+              Ident@57..58 "n"
+          BinaryExpr@58..60
+            Lt@58..59 "<"
+            LitExpr@59..60
+              IntLit@59..60 "0"
+          FatArrow@60..62 "=>"
+          LitExpr@62..72
+            StringLit@62..72 "\"negative\""
+          Comma@72..73 ","
+        MatchArm@73..84
+          PatWild@73..74
+            Underscore@73..74 "_"
+          FatArrow@74..76 "=>"
+          LitExpr@76..83
+            StringLit@76..83 "\"large\""
+          Comma@83..84 ","
+        RBrace@84..85 "}"
+      RBrace@85..86 "}"
