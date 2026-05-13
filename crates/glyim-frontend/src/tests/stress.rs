@@ -330,7 +330,7 @@ fn string_various_contents() {
 
 #[test]
 fn char_various_contents() {
-    let cases = vec![
+    let cases: Vec<(&str, &str)> = vec![
         ("'a'", "'a'"),
         ("'Z'", "'Z'"),
         ("'0'", "'0'"),
