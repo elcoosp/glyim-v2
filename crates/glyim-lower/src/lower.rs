@@ -34,14 +34,15 @@ pub struct AdtVariant {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdtKind { Struct, Enum, Union }
 
+#[allow(dead_code)]
 struct MirBuilder<'a> {
-    ctx: &'a dyn LowerCtx,
-    locals: IndexVec<glyim_mir::LocalIdx, glyim_mir::LocalDecl>,
-    basic_blocks: IndexVec<glyim_mir::BasicBlockIdx, glyim_mir::BasicBlockData>,
-    arg_count: usize,
-    return_ty: Ty,
-    owner: glyim_core::def_id::DefId,
-    span: Span,
+    _ctx: &'a dyn LowerCtx,
+    _locals: IndexVec<glyim_mir::LocalIdx, glyim_mir::LocalDecl>,
+    _basic_blocks: IndexVec<glyim_mir::BasicBlockIdx, glyim_mir::BasicBlockData>,
+    _arg_count: usize,
+    _return_ty: Ty,
+    _owner: glyim_core::def_id::DefId,
+    _span: Span,
     diagnostics: Vec<GlyimDiagnostic>,
 }
 
@@ -54,18 +55,20 @@ impl<'a> MirBuilder<'a> {
             source_info: glyim_mir::SourceInfo::new(thir.span),
         });
         Self {
-            ctx, locals,
-            basic_blocks: IndexVec::new(),
-            arg_count: thir.params.len(),
-            return_ty: thir.return_ty,
-            owner: thir.owner,
-            span: thir.span,
+            _ctx: ctx,
+            _locals: locals,
+            _basic_blocks: IndexVec::new(),
+            _arg_count: thir.params.len(),
+            _return_ty: thir.return_ty,
+            _owner: thir.owner,
+            _span: thir.span,
             diagnostics: Vec::new(),
         }
     }
 
-    fn alloc_local(&mut self, ty: Ty, mutability: Mutability, span: Span) -> glyim_mir::LocalIdx {
-        self.locals.push(glyim_mir::LocalDecl {
+    #[allow(dead_code)]
+    fn _alloc_local(&mut self, ty: Ty, mutability: Mutability, span: Span) -> glyim_mir::LocalIdx {
+        self._locals.push(glyim_mir::LocalDecl {
             ty,
             mutability,
             source_info: glyim_mir::SourceInfo::new(span),
@@ -75,7 +78,6 @@ impl<'a> MirBuilder<'a> {
 
 pub fn lower_body(ctx: &dyn LowerCtx, thir: &thir::Body) -> LowerResult {
     let builder = MirBuilder::new(ctx, thir);
-    // STUB: actual lowering logic would go here
-    let body = glyim_mir::Body::dummy(builder.owner);
+    let body = glyim_mir::Body::dummy(builder._owner);
     LowerResult { body, diagnostics: builder.diagnostics }
 }

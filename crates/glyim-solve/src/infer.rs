@@ -190,7 +190,7 @@ impl InferenceTable {
                 Ok(constraints)
             }
             (TyKind::Error, _) | (_, TyKind::Error) => Ok(Vec::new()),
-            (a_k, b_k) => {
+            (_a_k, _b_k) => {
                 Err(vec![GlyimDiagnostic::type_error(
                     span,
                     format!("mismatched types: {} vs {}",

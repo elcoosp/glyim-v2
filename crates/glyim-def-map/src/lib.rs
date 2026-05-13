@@ -88,11 +88,11 @@ impl PerNs {
 
 pub struct Resolver<'a> {
     def_map: &'a CrateDefMap,
-    module: ModuleId,
+    _module: ModuleId,
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(def_map: &'a CrateDefMap, module: ModuleId) -> Self {
+    pub fn new(def_map: &'a CrateDefMap, _module: ModuleId) -> Self {
         Self { def_map, module }
     }
 
@@ -165,7 +165,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
 
 fn collect_item(
     node: &SyntaxNode,
-    module: ModuleId,
+    _module: ModuleId,
     _modules: &mut IndexVec<ModuleId, ModuleData>,
     _diagnostics: &mut Vec<GlyimDiagnostic>,
     interner: &Interner,

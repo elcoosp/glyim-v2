@@ -3,7 +3,7 @@ use std::sync::Arc;
 use glyim_mir::Body;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use inkwell::context::Context;
-use inkwell::targets::{Target, TargetMachine, InitializationConfig, TargetTriple};
+use inkwell::targets::{Target, InitializationConfig, TargetTriple};
 use std::path::Path;
 
 pub struct LlvmBackend {
@@ -49,7 +49,7 @@ impl CodegenBackend for LlvmBackend {
             let builder = self.context.create_builder();
             builder.position_at_end(basic_block);
             let return_val = i32_type.const_int(42, false);
-            builder.build_return(Some(&return_val));
+            let _ = builder.build_return(Some(builder.build_return(Some(&return_val));return_val));
         }
 
         // Write object file

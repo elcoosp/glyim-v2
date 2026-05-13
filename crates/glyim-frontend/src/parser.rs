@@ -10,7 +10,7 @@ pub struct ParseResult {
     pub root: SyntaxNode,
 }
 
-struct Checkpoint { inner: rowan::Checkpoint }
+// struct Checkpoint { inner: rowan::Checkpoint }
 
 struct Parser<'a> {
     tokens: &'a [crate::lexer::Token],
@@ -52,7 +52,7 @@ impl<'a> Parser<'a> {
     }
     fn finish_node(&mut self) { self.builder.finish_node(); }
 
-    fn checkpoint(&self) -> Checkpoint { Checkpoint { inner: self.builder.checkpoint() } }
+//    fn checkpoint(&self) -> Checkpoint { Checkpoint { inner: self.builder.checkpoint() } }
 
     fn parse_source_file(&mut self) {
         self.start_node(SyntaxKind::SourceFile);

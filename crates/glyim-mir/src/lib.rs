@@ -4,13 +4,12 @@
 //! [F9] `Place::ty()` matches on `&TyKind` and extracts `Copy`
 //! fields (`Ty`, `Substitution`) without cloning the entire TyKind.
 
-use glyim_core::arena::{IdxLike, IndexVec};
+use glyim_core::arena::IndexVec;
 use glyim_core::def_id::*;
 use glyim_core::primitives::*;
 use glyim_core::interner::Name;
 use glyim_span::Span;
 use glyim_type::*;
-use std::sync::Arc;
 
 glyim_core::define_idx!(BasicBlockIdx);
 glyim_core::define_idx!(LocalIdx);
