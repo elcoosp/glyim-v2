@@ -1,6 +1,5 @@
 use crate::*;
 use glyim_core::{CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
-use glyim_mir::*;
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
 use glyim_type::{Ty, TyCtxMut, TyKind};
@@ -9,7 +8,7 @@ fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
 }
 
-fn build_callee_body(tcx: &TyCtxMut, val: i128) -> Body {
+fn build_callee_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let mut body = Body::dummy(dummy_def_id());
     let ret_local = LocalIdx::from_raw(1);
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
@@ -51,7 +50,7 @@ fn build_callee_body(tcx: &TyCtxMut, val: i128) -> Body {
 fn interpret_function_call() {
     let mut tcx_mut = test_ty_ctx();
     let callee_id = dummy_def_id();
-    let callee_body = build_callee_body(&tcx_mut, 42);
+    let callee_body = build_callee_body(&mut tcx_mut, 42);
 
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let caller_body = {

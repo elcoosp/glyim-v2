@@ -7,7 +7,7 @@ use glyim_test::test_ty_ctx;
 fn interpret_allocate_write_read() {
     let mut tcx_mut = test_ty_ctx();
     let val = 99;
-    let body = build_allocation_body(&tcx_mut, val);
+    let body = build_allocation_body(&mut tcx_mut, val);
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.run_body(&body).unwrap();

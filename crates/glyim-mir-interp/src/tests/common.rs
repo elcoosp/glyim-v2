@@ -1,7 +1,7 @@
 use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{Ty, TyCtxMut, TyKind};
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
@@ -232,7 +232,7 @@ pub fn build_unreachable_body() -> Body {
 }
 
 /// Build a body with StorageLive, assign, StorageDead.
-pub fn build_allocation_body(tcx: &TyCtxMut, val: i128) -> Body {
+pub fn build_allocation_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let mut body = Body::dummy(dummy_def_id());
     let local = LocalIdx::from_raw(1);
     let ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
