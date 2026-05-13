@@ -1,15 +1,18 @@
 use glyim_core::arena::IndexVec;
+use glyim_core::def_id::AdtId;
 use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::Mutability; // ADDED
-use indexmap::IndexSet;
-use smallvec::SmallVec;
-use std::marker::PhantomData;
+use glyim_core::primitives::Mutability;
 
 use crate::display::TypeLookup;
 use crate::flags::*;
+use crate::fn_sig::FnSig;
 use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
+
+use indexmap::IndexSet;
+use smallvec::SmallVec;
+use std::marker::PhantomData;
 
 pub struct TyCtxMut {
     types: Vec<TyKind>,
@@ -30,22 +33,27 @@ impl TyCtxMut {
             resolver,
             _not_send_sync: PhantomData,
         };
-        // Pre-intern sentinels
+        // Pre-intern sentinels — must be in this order:
+        // Ty::ERROR=0, Ty::NEVER=1, Ty::UNIT=2, Ty::BOOL=3
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Error).to_raw(),
-            Ty::ERROR.to_raw()
+            Ty::ERROR.to_raw(),
+            "Ty::ERROR sentinel mismatch"
         );
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Never).to_raw(),
-            Ty::NEVER.to_raw()
+            Ty::NEVER.to_raw(),
+            "Ty::NEVER sentinel mismatch"
         );
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Unit).to_raw(),
-            Ty::UNIT.to_raw()
+            Ty::UNIT.to_raw(),
+            "Ty::UNIT sentinel mismatch"
         );
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Bool).to_raw(),
-            Ty::BOOL.to_raw()
+            Ty::BOOL.to_raw(),
+            "Ty::BOOL sentinel mismatch"
         );
         ctx
     }
@@ -65,9 +73,11 @@ impl TyCtxMut {
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
         &self.types[ty.index()]
     }
+
     pub fn ty_kind_mut(&mut self, ty: Ty) -> &mut TyKind {
         &mut self.types[ty.index()]
     }
+
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
         self.type_flags[ty.index()]
     }
@@ -86,18 +96,35 @@ impl TyCtxMut {
     pub fn mk_ty(&mut self, kind: TyKind) -> Ty {
         self.alloc_ty(kind)
     }
+
     pub fn mk_ref(&mut self, region: Region, ty: Ty, mutability: Mutability) -> Ty {
         self.mk_ty(TyKind::Ref(region, ty, mutability))
     }
+
+    pub fn mk_adt(&mut self, adt_id: AdtId, substs: Substitution) -> Ty {
+        self.mk_ty(TyKind::Adt(adt_id, substs))
+    }
+
+    pub fn mk_tuple(&mut self, substs: Substitution) -> Ty {
+        self.mk_ty(TyKind::Tuple(substs))
+    }
+
+    pub fn mk_fn_ptr(&mut self, sig: FnSig) -> Ty {
+        self.mk_ty(TyKind::FnPtr(sig))
+    }
+
     pub fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
+
     pub fn never_ty(&self) -> Ty {
         Ty::NEVER
     }
+
     pub fn unit_ty(&self) -> Ty {
         Ty::UNIT
     }
+
     pub fn bool_ty(&self) -> Ty {
         Ty::BOOL
     }
@@ -105,8 +132,24 @@ impl TyCtxMut {
     pub fn resolver(&self) -> &Interner {
         &self.resolver
     }
+
     pub fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)
+    }
+
+    /// Allocate a new region variable with the given initial value.
+    pub fn new_region_var(&mut self, initial: Region) -> RegionVid {
+        self.regions.push(initial)
+    }
+
+    /// Retrieve the region associated with a region variable.
+    pub fn region_var(&self, vid: RegionVid) -> &Region {
+        &self.regions[vid]
+    }
+
+    /// Return the number of allocated region variables.
+    pub fn region_var_count(&self) -> usize {
+        self.regions.len()
     }
 
     pub fn freeze(self) -> TyCtx {
@@ -150,36 +193,47 @@ impl TyCtx {
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
         &self.types[ty.index()]
     }
+
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
         self.type_flags[ty.index()]
     }
+
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
         &self.substitution_data[sub.index() as usize]
     }
+
     pub fn region(&self, vid: RegionVid) -> &Region {
         &self.regions[vid]
     }
+
     pub fn resolver(&self) -> &Interner {
         &self.resolver
     }
+
     pub fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)
     }
+
     pub fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
+
     pub fn never_ty(&self) -> Ty {
         Ty::NEVER
     }
+
     pub fn unit_ty(&self) -> Ty {
         Ty::UNIT
     }
+
     pub fn bool_ty(&self) -> Ty {
         Ty::BOOL
     }
+
     pub fn ty_is_error(&self, ty: Ty) -> bool {
         self.ty_flags(ty).contains(TypeFlags::HAS_ERROR)
     }
+
     pub fn ty_has_depth_overflow(&self, ty: Ty) -> bool {
         self.ty_flags(ty).contains(TypeFlags::HAS_DEPTH_OVERFLOW)
     }

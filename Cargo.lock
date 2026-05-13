@@ -600,6 +600,7 @@ dependencies = [
  "bitflags",
  "glyim-core",
  "glyim-span",
+ "glyim-test",
  "indexmap",
  "smallvec",
  "tracing",

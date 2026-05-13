@@ -48,7 +48,8 @@ pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFla
         TyKind::Adt(_, substs)
         | TyKind::FnDef(_, substs)
         | TyKind::Closure(_, substs)
-        | TyKind::Tuple(substs) => {
+        | TyKind::Tuple(substs)
+        | TyKind::Opaque(_, substs) => {
             for arg in ctx.substitution_args(*substs) {
                 if let GenericArg::Ty(t) = arg {
                     flags |= ctx.ty_flags(*t);
