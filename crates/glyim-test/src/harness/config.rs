@@ -89,8 +89,8 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
         }
         let content = trimmed[2..].trim();
 
-        if let Some(rest) = content.strip_prefix('[') {
-            if let Some(bracket_end) = rest.find(']') {
+        if let Some(rest) = content.strip_prefix('[')
+            && let Some(bracket_end) = rest.find(']') {
                 let rev = &rest[..bracket_end];
                 let directive = rest[bracket_end + 1..].trim();
                 if let Some(value) = directive.strip_prefix("compile-flags:") {
@@ -105,7 +105,6 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
                 }
                 continue;
             }
-        }
 
         if let Some(value) = content.strip_prefix("test-mode:") {
             config.mode = value.parse::<TestMode>()?;

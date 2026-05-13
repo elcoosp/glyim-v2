@@ -50,7 +50,7 @@ impl TyCtxBuilder {
         self
     }
     pub fn build_mut(self) -> TyCtxMut {
-        let interner = self.interner.unwrap_or_else(Interner::new);
+        let interner = self.interner.unwrap_or_default();
         TyCtxMut::new(interner)
     }
     pub fn build(self) -> TyCtx {

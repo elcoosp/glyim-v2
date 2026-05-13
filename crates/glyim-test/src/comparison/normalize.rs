@@ -15,11 +15,10 @@ pub fn normalize_output(output: &str, test_path: &Path, rules: &NormalizeRules) 
     if rules.normalize_slashes {
         result = result.replace('\\', "/");
     }
-    if rules.substitute_dir {
-        if let Some(parent) = test_path.parent() {
+    if rules.substitute_dir
+        && let Some(parent) = test_path.parent() {
             let dir_str = parent.to_string_lossy().replace('\\', "/");
             result = result.replace(&dir_str, "$DIR");
         }
-    }
     result
 }
