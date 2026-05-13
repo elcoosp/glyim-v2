@@ -36,3 +36,6 @@ impl CodegenBackend for BytecodeBackend {
         Ok(Vec::new())
     }
 }
+
+#[cfg(test)]
+mod tests;

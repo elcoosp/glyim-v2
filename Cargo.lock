@@ -338,6 +338,7 @@ version = "0.1.0"
 dependencies = [
  "glyim-diag",
  "glyim-mir",
+ "glyim-test",
 ]
 
 [[package]]

@@ -6,3 +6,6 @@ version.workspace = true
 [dependencies]
 glyim-mir = { workspace = true }
 glyim-diag = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }
