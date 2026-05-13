@@ -1,7 +1,4 @@
 //! Module graph and lightweight definition map.
-//!
-//! [F6] `PathKind::Super(n)` destructured directly.
-//! [F12] Uses `glyim_core::path::{Path, PathSegment, PathKind}`.
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
@@ -88,11 +85,11 @@ impl PerNs {
 
 pub struct Resolver<'a> {
     def_map: &'a CrateDefMap,
-    _module: ModuleId,
+    module: ModuleId,
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(def_map: &'a CrateDefMap, _module: ModuleId) -> Self {
+    pub fn new(def_map: &'a CrateDefMap, module: ModuleId) -> Self {
         Self { def_map, module }
     }
 
@@ -152,7 +149,6 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         span: Span::DUMMY,
     });
 
-    // Dummy interner for placeholder names (only used in stubs)
     let interner = Interner::default();
 
     for child in root.children() {
@@ -168,15 +164,13 @@ fn collect_item(
     _module: ModuleId,
     _modules: &mut IndexVec<ModuleId, ModuleData>,
     _diagnostics: &mut Vec<GlyimDiagnostic>,
-    interner: &Interner,
+    _interner: &Interner,
 ) {
     use glyim_syntax::SyntaxKind::*;
     match node.kind() {
         FnDef | StructDef | EnumDef | TraitDef | ImplDef | TypeAlias
         | ConstDef | StaticDef | UseDecl | ExternBlock | Module => {
-            // STUB: In a real implementation, we would extract the name and visibility,
-            // then declare it in the module's scope. For now, we create placeholder names.
-            let _placeholder_name = interner.intern("placeholder");
+            // STUB: real implementation extracts name, visibility, etc.
         }
         _ => {}
     }

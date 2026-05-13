@@ -39,7 +39,6 @@ impl CodegenBackend for LlvmBackend {
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
 
-        // Create a simple function for each MIR body (stub)
         for (idx, _body) in bodies.iter().enumerate() {
             let fn_name = format!("func_{}", idx);
             let i32_type = self.context.i32_type();
@@ -49,10 +48,9 @@ impl CodegenBackend for LlvmBackend {
             let builder = self.context.create_builder();
             builder.position_at_end(basic_block);
             let return_val = i32_type.const_int(42, false);
-            let _ = builder.build_return(Some(builder.build_return(Some(&return_val));return_val));
+            let _ = builder.build_return(Some(&return_val));
         }
 
-        // Write object file
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
         })?;
@@ -68,7 +66,6 @@ impl CodegenBackend for LlvmBackend {
     }
 
     fn generate_function(&self, _body: &Arc<Body>) -> CompResult<Vec<u8>> {
-        // STUB: return empty bytecode
         Ok(Vec::new())
     }
 }
