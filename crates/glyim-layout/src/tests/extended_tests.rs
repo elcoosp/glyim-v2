@@ -60,10 +60,11 @@ fn s04_e08_error_type_is_unknown() {
 // ========== Unknown ADT type returns UnknownType ==========
 #[test]
 fn s04_e09_unknown_adt_type() {
-    let ctx = test_frozen_ty_ctx();
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|c| {
+        let substs = c.intern_substitution(vec![]);
+        c.mk_ty(TyKind::Adt(AdtId::from_raw(42), substs))
+    });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    // ADT not supported yet -> UnknownType
-    let adt_ty = Ty::from_raw(1000.into()); // safe because from_raw is pub(crate)
     let result = computer.layout_of(adt_ty);
     assert!(matches!(result, Err(LayoutError::UnknownType(_))));
 }
