@@ -6,4 +6,5 @@ mod calls;
 mod common;
 mod edge_cases;
 mod limits;
+mod stub_coverage;
 mod terminator;
