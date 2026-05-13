@@ -1,5 +1,5 @@
 use glyim_codegen::CodegenBackend;
-use glyim_codegen_llvm::LlvmBackend;
+use crate::LlvmBackend;
 use std::path::Path;
 
 #[test]
