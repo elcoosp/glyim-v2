@@ -24,4 +24,5 @@ mod substitution;
 mod substitution_extra;
 mod traits;
 mod type_construction;
+mod type_display;
 mod type_idx;
