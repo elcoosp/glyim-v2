@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: ./dispatch.sh S01
-# Outputs the complete agent prompt to stdout.
-# Redirect to file or clipboard:
-#   ./dispatch.sh S01 > /tmp/s01_prompt.md
-#   ./dispatch.sh S01 | pbcopy
-#   ./dispatch.sh S01 | xclip -selection clipboard
-
 STREAM_ID="${1:?Usage: dispatch.sh SXX}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BRIEF="$SCRIPT_DIR/briefs/${STREAM_ID}.md"
@@ -31,53 +24,45 @@ for f in "$MASTER_CTX" "$CONTRACTS" "$TEST_INSTR" "$PROMPT_TEMPLATE" "$SKILL_DOC
     fi
 done
 
-# Extract stream name from brief
-STREAM_NAME=$(grep '^# Stream' "$BRIEF" | head -1 | sed 's/# Stream [A-Z0-9]*: //')
+echo "Extracting stream name from brief" >&2
+STREAM_NAME=$(sed -n 's/^# Stream [A-Z0-9]*: //p' "$BRIEF" | head -1)
 
-# Find the crate name from brief
-CRATE_NAME=$(grep -oP 'cargo (?:test|clippy|fmt|check) -p \K[a-z_-]+' "$BRIEF" | head -1)
+echo "Extracting crate name from brief" >&2
+CRATE_NAME=$(sed -n 's/.*cargo test -p \([a-z_\-]*\).*/\1/p' "$BRIEF" | head -1)
+if [ -z "$CRATE_NAME" ]; then
+    CRATE_NAME=$(sed -n 's/.*cargo clippy -p \([a-z_\-]*\).*/\1/p' "$BRIEF" | head -1)
+fi
+if [ -z "$CRATE_NAME" ]; then
+    CRATE_NAME=$(sed -n 's/.*cargo check -p \([a-z_\-]*\).*/\1/p' "$BRIEF" | head -1)
+fi
 if [ -z "$CRATE_NAME" ]; then
     CRATE_NAME="unknown"
 fi
+echo "Detected crate: $CRATE_NAME" >&2
 
-# Find relevant source files
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CRATE_DIR="$PROJECT_ROOT/crates/$CRATE_NAME"
 
 SOURCE_CONTEXT=""
 if [ -d "$CRATE_DIR/src" ]; then
-    SOURCE_CONTEXT=$(
+    SOURCE_CONTEXT=$(find "$CRATE_DIR/src" -name '*.rs' -not -path '*/tests/*' | sort | while read -r src_file; do
+        rel_path="${src_file#$PROJECT_ROOT/}"
+        echo "### $rel_path"
         echo ""
-        echo "## Source Code Context ($CRATE_NAME)"
+        echo '```rust'
+        cat "$src_file"
+        echo '```'
         echo ""
-        find "$CRATE_DIR/src" -name '*.rs' -not -path '*/tests/*' | sort | while read -r src_file; do
-            rel_path="${src_file#$PROJECT_ROOT/}"
-            echo "### $rel_path"
-            echo ""
-            echo '```rust'
-            cat "$src_file"
-            echo '```'
-            echo ""
-        done
-    )
+    done)
 fi
 
-# Find glyim-test lib.rs if relevant
 TEST_CTX=""
 TEST_LIB="$PROJECT_ROOT/crates/glyim-test/src/lib.rs"
 if [ -f "$TEST_LIB" ]; then
-    TEST_CTX=$(
-        echo ""
-        echo "## glyim-test Public API"
-        echo ""
-        echo '```rust'
-        cat "$TEST_LIB"
-        echo '```'
-    )
+    TEST_CTX=$(echo "## glyim-test Public API"; echo ""; echo '```rust'; cat "$TEST_LIB"; echo '```')
 fi
 
-# Assemble the prompt
-echo "# Agent Dispatch: Stream $STREAM_ID — $STREAM_NAME"
+echo "# Agent Dispatch: Stream $STREAM_ID - $STREAM_NAME"
 echo ""
 echo "---"
 echo ""
@@ -103,11 +88,7 @@ echo "---"
 echo ""
 echo "## USER PROMPT (paste into user message)"
 echo ""
-# Build user prompt from template, replacing placeholders
-sed \
-    -e "s|{ID}|$STREAM_ID|g" \
-    -e "s|{NAME}|$STREAM_NAME|g" \
-    "$PROMPT_TEMPLATE"
+sed -e "s|{ID}|$STREAM_ID|g" -e "s|{NAME}|$STREAM_NAME|g" "$PROMPT_TEMPLATE"
 echo ""
 echo "---"
 echo ""
@@ -115,14 +96,21 @@ echo "## Your Stream Brief"
 echo ""
 cat "$BRIEF"
 echo ""
+
 if [ -n "$SOURCE_CONTEXT" ]; then
     echo "---"
+    echo ""
+    echo "## Source Code Context ($CRATE_NAME)"
+    echo ""
     echo "$SOURCE_CONTEXT"
 fi
+
 if [ -n "$TEST_CTX" ]; then
     echo "---"
+    echo ""
     echo "$TEST_CTX"
 fi
+
 echo ""
 echo "---"
 echo ""
