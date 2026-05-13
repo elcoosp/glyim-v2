@@ -6,10 +6,6 @@ fn lex_result(source: &str) -> crate::lexer::LexResult {
     lex(source, FileId::from_raw(0))
 }
 
-fn lex_tokens(source: &str) -> Vec<crate::lexer::Token> {
-    lex_result(source).tokens
-}
-
 #[test]
 fn error_between_valid_tokens_recovers() {
     let result = lex_result("fn \u{00A9} foo() {}");

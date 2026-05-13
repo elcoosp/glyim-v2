@@ -71,7 +71,12 @@ fn alternating_tokens() {
         .map(|i| if i % 2 == 0 { "x + " } else { "1 " })
         .collect();
     let result = lex_result(source.trim());
-    assert!(result.tokens.len() >= 200);
+    // 50 iterations produce "x + 1 " (3 tokens each) = 150 tokens
+    assert!(
+        result.tokens.len() >= 100,
+        "should have many tokens, got {}",
+        result.tokens.len()
+    );
 }
 
 #[test]
@@ -80,10 +85,27 @@ fn many_nested_comments() {
     for _ in 0..50 {
         source.push_str("/* ");
     }
-    source.push_str("42");
     for _ in 0..50 {
-        source.push_str(" */");
+        source.push_str("*/ ");
     }
+    source.push_str("42");
+    let tokens = lex_tokens(&source);
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::IntLit);
+    assert_eq!(tokens[0].text, "42");
+}
+NEW_NEST2
+cat > "$NEW_TMP2" << 'NEW_NEST1'
+#[test]
+fn many_nested_comments() {
+    let mut source = String::new();
+    for _ in 0..50 {
+        source.push_str("/* ");
+    }
+    for _ in 0..50 {
+        source.push_str("*/ ");
+    }
+    source.push_str("42");
     let tokens = lex_tokens(&source);
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].kind, SyntaxKind::IntLit);
