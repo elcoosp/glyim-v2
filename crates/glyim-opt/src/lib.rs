@@ -1,7 +1,16 @@
+//! MIR optimizations (constant propagation, dead code elimination, etc.)
+
 use std::sync::Arc;
 use glyim_mir::Body;
 use glyim_type::TyCtx;
-pub struct Optimized { pub body: Body }
-pub fn optimize(_ctx: &TyCtx, _body: &Arc<Body>) -> Optimized {
-    unimplemented!("STUB: optimize")
+
+#[derive(Clone, Debug)]
+pub struct Optimized {
+    pub body: Body,
+}
+
+pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
+    // STUB: for v0.1.0, just clone the body unchanged
+    let _ = ctx;
+    Optimized { body: (**body).clone() }
 }
