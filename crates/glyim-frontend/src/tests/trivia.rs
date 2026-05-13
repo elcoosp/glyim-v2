@@ -13,7 +13,7 @@ fn lex_result(source: &str) -> crate::lexer::LexResult {
 #[test]
 fn space_between_all_tokens() {
     let tokens = lex_tokens("fn foo ( x : i32 ) { }");
-    assert_eq!(tokens.len(), 8);
+    assert_eq!(tokens.len(), 9);
     assert_eq!(tokens[0].kind, SyntaxKind::KwFn);
     assert_eq!(tokens[1].kind, SyntaxKind::Ident);
     assert_eq!(tokens[2].kind, SyntaxKind::LParen);
@@ -22,6 +22,7 @@ fn space_between_all_tokens() {
     assert_eq!(tokens[5].kind, SyntaxKind::Ident);
     assert_eq!(tokens[6].kind, SyntaxKind::RParen);
     assert_eq!(tokens[7].kind, SyntaxKind::LBrace);
+    assert_eq!(tokens[8].kind, SyntaxKind::RBrace);
 }
 
 #[test]
@@ -260,15 +261,27 @@ fn mixed_line_endings() {
 }
 
 #[test]
-fn vertical_tab_whitespace() {
+fn vertical_tab_is_not_trivia() {
+    // The lexer only recognizes space, tab, newline, carriage return as trivia.
+    // Vertical tab (\u{000B}) is treated as an unexpected character.
     let result = lex_result("1\u{000B}2");
-    assert_eq!(result.tokens.len(), 2);
+    assert_eq!(result.tokens.len(), 3, "should be: IntLit, Error, IntLit");
+    assert_eq!(result.tokens[0].kind, SyntaxKind::IntLit);
+    assert_eq!(result.tokens[1].kind, SyntaxKind::Error);
+    assert_eq!(result.tokens[2].kind, SyntaxKind::IntLit);
+    assert!(!result.diagnostics.is_empty());
 }
 
 #[test]
-fn form_feed_whitespace() {
+fn form_feed_is_not_trivia() {
+    // The lexer only recognizes space, tab, newline, carriage return as trivia.
+    // Form feed (\u{000C}) is treated as an unexpected character.
     let result = lex_result("1\u{000C}2");
-    assert_eq!(result.tokens.len(), 2);
+    assert_eq!(result.tokens.len(), 3, "should be: IntLit, Error, IntLit");
+    assert_eq!(result.tokens[0].kind, SyntaxKind::IntLit);
+    assert_eq!(result.tokens[1].kind, SyntaxKind::Error);
+    assert_eq!(result.tokens[2].kind, SyntaxKind::IntLit);
+    assert!(!result.diagnostics.is_empty());
 }
 
 #[test]
