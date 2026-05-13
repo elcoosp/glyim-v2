@@ -345,6 +345,7 @@ name = "glyim-codegen-llvm"
 version = "0.1.0"
 dependencies = [
  "glyim-codegen",
+ "glyim-core",
  "glyim-diag",
  "glyim-mir",
  "glyim-test",

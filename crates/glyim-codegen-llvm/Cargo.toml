@@ -9,4 +9,5 @@ glyim-codegen = { workspace = true }
 glyim-mir = { workspace = true }
 glyim-diag = { workspace = true }
 [dev-dependencies]
+glyim-core = { workspace = true }
 glyim-test = { workspace = true }
