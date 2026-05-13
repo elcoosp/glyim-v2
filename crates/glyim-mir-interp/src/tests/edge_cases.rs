@@ -473,7 +473,7 @@ fn bool_not_false() {
 
 #[test]
 fn uint_constant_interpreted_as_int() {
-    let tcx_mut = test_ty_ctx();
+    let mut tcx_mut = test_ty_ctx();
     let u32_ty = tcx_mut.mk_ty(TyKind::Uint(glyim_core::UintTy::U32));
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
@@ -595,7 +595,7 @@ fn drop_terminator_proceeds_to_target() {
 
 #[test]
 fn sequential_binary_ops() {
-    let tcx_mut = test_ty_ctx();
+    let mut tcx_mut = test_ty_ctx();
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let mut body = Body::dummy(dummy_def_id());
     let loc_a = LocalIdx::from_raw(1);

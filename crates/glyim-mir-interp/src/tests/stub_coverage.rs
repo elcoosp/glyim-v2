@@ -3,7 +3,7 @@
 //! implementation code. Every stub must emit a warning on first execution."
 
 use crate::*;
-use glyim_core::{CrateId, DefId, FloatTy, IndexVec, IntTy, LocalDefId, Mutability};
+use glyim_core::{CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
 #[allow(unused_imports)]
 use glyim_mir::*;
 use glyim_span::Span;
@@ -197,8 +197,10 @@ fn string_const_returns_error() {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(str_ty, Mutability::Mut),
     ]);
+    let mut interner = glyim_core::Interner::new();
+    let name = interner.intern("test");
     let c = MirConst {
-        kind: MirConstKind::String(glyim_core::Name::from(0)),
+        kind: MirConstKind::String(name),
         ty: str_ty,
         span: Span::DUMMY,
     };
