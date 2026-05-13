@@ -93,7 +93,7 @@ fn build_three_way_switch_body(tcx: &mut TyCtxMut, val: i128) -> Body {
         source_info: SourceInfo::new(Span::DUMMY),
     };
     // Each target assigns a marker value to local 1 and returns
-    fn marker_block(bb_idx: u32, val: i128, ty: Ty) -> BasicBlockData {
+    fn marker_block(_bb_idx: u32, val: i128, ty: Ty) -> BasicBlockData {
         BasicBlockData {
             statements: vec![Statement {
                 kind: StatementKind::Assign(
@@ -134,7 +134,7 @@ fn build_callee_with_args_body(tcx: &mut TyCtxMut) -> Body {
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     body.locals = IndexVec::from_raw(vec![
         local_decl(i32_ty.clone(), Mutability::Mut), // return
-        local_decl(i32_ty.clone(), Mutability::Not),  // arg0
+        local_decl(i32_ty.clone(), Mutability::Not), // arg0
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
@@ -385,6 +385,339 @@ fn step_limit_exact_plus_one_fails() {
     let tcx = glyim_test::test_frozen_ty_ctx();
     let body = build_two_step_body();
     let mut interp = Interpreter::new(&tcx).with_step_limit(1);
+    let res = interp.run_body(&body);
+    assert_eq!(res, Err(InterpError::TimedOut));
+}
+
+// ============ Bool Not (Unary) ============
+
+#[test]
+fn bool_not_true() {
+    use glyim_core::UnOp;
+    let mut tcx_mut = test_ty_ctx();
+    let bool_ty = Ty::BOOL;
+    let mut body = Body::dummy(dummy_def_id());
+    let res_local = LocalIdx::from_raw(1);
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(bool_ty, Mutability::Mut),
+    ]);
+    let c = MirConst {
+        kind: MirConstKind::Bool(true),
+        ty: bool_ty,
+        span: Span::DUMMY,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![Statement {
+            kind: StatementKind::Assign(
+                Place::new(res_local),
+                Rvalue::UnaryOp(UnOp::Not, Operand::Constant(c)),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        }],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    }]);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap();
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(1)),
+        Some(&InterpValue::Bool(false))
+    );
+}
+
+#[test]
+fn bool_not_false() {
+    use glyim_core::UnOp;
+    let mut tcx_mut = test_ty_ctx();
+    let bool_ty = Ty::BOOL;
+    let mut body = Body::dummy(dummy_def_id());
+    let res_local = LocalIdx::from_raw(1);
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(bool_ty, Mutability::Mut),
+    ]);
+    let c = MirConst {
+        kind: MirConstKind::Bool(false),
+        ty: bool_ty,
+        span: Span::DUMMY,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![Statement {
+            kind: StatementKind::Assign(
+                Place::new(res_local),
+                Rvalue::UnaryOp(UnOp::Not, Operand::Constant(c)),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        }],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    }]);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap();
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(1)),
+        Some(&InterpValue::Bool(true))
+    );
+}
+
+// ============ Uint constant ============
+
+#[test]
+fn uint_constant_interpreted_as_int() {
+    let mut tcx_mut = test_ty_ctx();
+    let u32_ty = tcx_mut.mk_ty(TyKind::Uint(glyim_core::UintTy::U32));
+    let mut body = Body::dummy(dummy_def_id());
+    let res_local = LocalIdx::from_raw(1);
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(u32_ty, Mutability::Mut),
+    ]);
+    let c = MirConst {
+        kind: MirConstKind::Uint(42),
+        ty: u32_ty,
+        span: Span::DUMMY,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![Statement {
+            kind: StatementKind::Assign(Place::new(res_local), Rvalue::Use(Operand::Constant(c))),
+            source_info: SourceInfo::new(Span::DUMMY),
+        }],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    }]);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap();
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(1)),
+        Some(&InterpValue::Int(42))
+    );
+}
+
+// ============ Unit value ============
+
+#[test]
+fn unit_constant() {
+    let mut tcx_mut = test_ty_ctx();
+    let mut body = Body::dummy(dummy_def_id());
+    let res_local = LocalIdx::from_raw(1);
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(Ty::UNIT, Mutability::Mut),
+    ]);
+    let c = MirConst {
+        kind: MirConstKind::Unit,
+        ty: Ty::UNIT,
+        span: Span::DUMMY,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![Statement {
+            kind: StatementKind::Assign(Place::new(res_local), Rvalue::Use(Operand::Constant(c))),
+            source_info: SourceInfo::new(Span::DUMMY),
+        }],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    }]);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap();
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(1)),
+        Some(&InterpValue::Unit)
+    );
+}
+
+// ============ Drop terminator ============
+
+#[test]
+fn drop_terminator_proceeds_to_target() {
+    let tcx = glyim_test::test_frozen_ty_ctx();
+    let mut body = Body::dummy(dummy_def_id());
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(Ty::BOOL, Mutability::Mut),
+    ]);
+    let local_to_drop = LocalIdx::from_raw(1);
+    // BB0: assign true to local 1, then Drop(local 1) -> BB1
+    // BB1: Return
+    body.basic_blocks = IndexVec::from_raw(vec![
+        BasicBlockData {
+            statements: vec![Statement {
+                kind: StatementKind::Assign(
+                    Place::new(local_to_drop),
+                    Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Bool(true),
+                        ty: Ty::BOOL,
+                        span: Span::DUMMY,
+                    })),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            }],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(local_to_drop),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            is_cleanup: false,
+        },
+        BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            is_cleanup: false,
+        },
+    ]);
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap(); // should reach Return via Drop
+}
+
+// ============ Sequential binary ops ============
+
+#[test]
+fn sequential_binary_ops() {
+    let mut tcx_mut = test_ty_ctx();
+    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    let mut body = Body::dummy(dummy_def_id());
+    let loc_a = LocalIdx::from_raw(1);
+    let loc_b = LocalIdx::from_raw(2);
+    let loc_result = LocalIdx::from_raw(3);
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty.clone(), Mutability::Mut),
+    ]);
+    let c10 = MirConst {
+        kind: MirConstKind::Int(10),
+        ty: i32_ty.clone(),
+        span: Span::DUMMY,
+    };
+    let c3 = MirConst {
+        kind: MirConstKind::Int(3),
+        ty: i32_ty.clone(),
+        span: Span::DUMMY,
+    };
+    let c2 = MirConst {
+        kind: MirConstKind::Int(2),
+        ty: i32_ty.clone(),
+        span: Span::DUMMY,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![
+            // a = 10 + 3 = 13
+            Statement {
+                kind: StatementKind::Assign(
+                    Place::new(loc_a),
+                    Rvalue::BinaryOp(
+                        BinOp::Add,
+                        Box::new((Operand::Constant(c10), Operand::Constant(c3))),
+                    ),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            // b = a * 2 = 26
+            Statement {
+                kind: StatementKind::Assign(
+                    Place::new(loc_b),
+                    Rvalue::BinaryOp(
+                        BinOp::Mul,
+                        Box::new((Operand::Copy(Place::new(loc_a)), Operand::Constant(c2))),
+                    ),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            // result = b - 6 = 20
+            Statement {
+                kind: StatementKind::Assign(
+                    Place::new(loc_result),
+                    Rvalue::BinaryOp(
+                        BinOp::Sub,
+                        Box::new((
+                            Operand::Copy(Place::new(loc_b)),
+                            Operand::Constant(MirConst {
+                                kind: MirConstKind::Int(6),
+                                ty: i32_ty,
+                                span: Span::DUMMY,
+                            }),
+                        )),
+                    ),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+        ],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    }]);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap();
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(1)),
+        Some(&InterpValue::Int(13))
+    );
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(2)),
+        Some(&InterpValue::Int(26))
+    );
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(3)),
+        Some(&InterpValue::Int(20))
+    );
+}
+
+// ============ get_local_value on uninitialized ============
+
+#[test]
+fn get_local_value_none_for_uninitialized() {
+    let tcx = glyim_test::test_frozen_ty_ctx();
+    let mut body = Body::dummy(dummy_def_id());
+    body.locals = IndexVec::from_raw(vec![
+        local_decl(Ty::UNIT, Mutability::Mut),
+        local_decl(Ty::BOOL, Mutability::Mut),
+    ]);
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    }]);
+    let mut interp = Interpreter::new(&tcx);
+    interp.run_body(&body).unwrap();
+    assert_eq!(interp.get_local_value(LocalIdx::from_raw(1)), None);
+}
+
+// ============ Step limit 0 ============
+
+#[test]
+fn step_limit_zero_always_timed_out() {
+    let tcx = glyim_test::test_frozen_ty_ctx();
+    let body = build_two_step_body();
+    let mut interp = Interpreter::new(&tcx).with_step_limit(0);
     let res = interp.run_body(&body);
     assert_eq!(res, Err(InterpError::TimedOut));
 }
