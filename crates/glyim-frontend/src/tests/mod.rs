@@ -1,0 +1,16 @@
+mod comments;
+mod edge_cases;
+mod errors;
+mod floats;
+mod integers;
+mod integration;
+mod keywords;
+mod operators;
+mod programs;
+mod recovery;
+mod spans;
+mod stress;
+mod strings;
+mod suffixes;
+mod trivia;
+mod unicode;

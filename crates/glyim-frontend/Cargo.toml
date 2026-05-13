@@ -10,3 +10,6 @@ glyim-diag = { workspace = true }
 smol_str = { workspace = true }
 tracing = { workspace = true }
 rowan = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }
