@@ -1,10 +1,10 @@
-type EmitCallback = Box<dyn FnMut(&GlyimDiagnostic)>;
 pub use glyim_span::{MultiSpan, Span};
 pub use miette::{Diagnostic as MietteDiagnostic, Report, Severity, SourceSpan};
 
 use std::fmt;
 use std::sync::Arc;
 
+type EmitCallback = Box<dyn FnMut(&GlyimDiagnostic)>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ErrorCode {
     pub category: ErrorCategory,
