@@ -4,4 +4,4 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-# Dependencies will be added in later scripts
+regalloc2 = { workspace = true }

@@ -1,5 +1,5 @@
 use glyim_syntax::SyntaxKind;
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use glyim_span::{FileId, Span};
 use glyim_diag::GlyimDiagnostic;
 use smol_str::SmolStr;
 
@@ -22,8 +22,7 @@ pub struct LexResult {
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
 
-#[tracing::instrument(skip(source))]
-pub fn lex(source: &str, file_id: FileId) -> LexResult {
-    // STUB: Incomplete implementation – will be fleshed out later
+#[tracing::instrument(skip(_source))]
+pub fn lex(_source: &str, _file_id: FileId) -> LexResult {
     LexResult { tokens: Vec::new(), diagnostics: Vec::new() }
 }

@@ -1,2 +1,5 @@
-//! Stub crate – will be replaced with full implementation in subsequent scripts.
-#![allow(unused, dead_code)]
+use glyim_mir::Body;
+use glyim_diag::GlyimDiagnostic;
+pub struct BorrowckResult { pub errors: Vec<GlyimDiagnostic> }
+pub trait BorrowckCtx {}
+pub fn check_borrows(_ctx: &dyn BorrowckCtx, _body: &Body) -> BorrowckResult { BorrowckResult { errors: Vec::new() } }

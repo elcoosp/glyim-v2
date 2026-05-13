@@ -4,4 +4,5 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-type = { workspace = true }
+glyim-mir = { workspace = true }

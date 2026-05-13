@@ -1,11 +1,12 @@
+#![allow(dead_code)]
 use glyim_core::interner::Name;
 use glyim_span::{Span, HygieneCtx};
 use glyim_syntax::SyntaxNode;
 use glyim_diag::GlyimDiagnostic;
 
 pub struct Expander<'a> {
-    hygiene: &'a mut HygieneCtx,
-    macros: Vec<MacroDef>,
+    pub hygiene: &'a mut HygieneCtx,
+    pub macros: Vec<MacroDef>,
 }
 
 #[derive(Clone, Debug)]

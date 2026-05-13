@@ -2,6 +2,12 @@
 name = "glyim-typeck"
 edition.workspace = true
 version.workspace = true
-
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-core = { workspace = true }
+glyim-type = { workspace = true }
+glyim-hir = { workspace = true }
+glyim-solve = { workspace = true }
+glyim-def-map = { workspace = true }
+glyim-diag = { workspace = true }
+glyim-span = { workspace = true }
+tracing = { workspace = true }

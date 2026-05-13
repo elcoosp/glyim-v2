@@ -73,7 +73,7 @@ impl rowan::Language for GlyimLang {
         Self::Kind::try_from_raw(raw.0 as u16).unwrap_or(Self::Kind::Error)
     }
     fn kind_to_raw(kind: Self::Kind) -> rowan::SyntaxKind {
-        rowan::SyntaxKind(kind as u16 as u32)
+        rowan::SyntaxKind(kind as u16)
     }
 }
 

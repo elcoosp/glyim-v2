@@ -4,4 +4,9 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-core = { workspace = true }
+glyim-span = { workspace = true }
+indexmap = { workspace = true }
+smallvec = { workspace = true }
+bitflags = { workspace = true }
+tracing = { workspace = true }

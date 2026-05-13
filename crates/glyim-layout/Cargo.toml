@@ -2,6 +2,6 @@
 name = "glyim-layout"
 edition.workspace = true
 version.workspace = true
-
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-core = { workspace = true }
+glyim-type = { workspace = true }

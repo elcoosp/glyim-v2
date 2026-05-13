@@ -36,7 +36,7 @@ pub struct ItemScope {
     pub macros: Vec<(glyim_core::interner::Name, glyim_core::def_id::LocalDefId, glyim_core::primitives::Visibility, Span)>,
 }
 
-pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
+pub fn build_def_map(_root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
     let modules = IndexVec::new();
     let root_module = ModuleId::from_raw(0);
     let def_map = CrateDefMap { root: root_module, modules, krate };

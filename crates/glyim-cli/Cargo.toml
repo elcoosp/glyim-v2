@@ -4,4 +4,11 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-db = { workspace = true }
+glyim-pipeline = { workspace = true }
+glyim-codegen-llvm = { workspace = true }
+glyim-codegen = { workspace = true }
+glyim-diag = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

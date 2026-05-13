@@ -1,2 +1,7 @@
-//! Stub crate – will be replaced with full implementation in subsequent scripts.
-#![allow(unused, dead_code)]
+pub mod infer;
+pub mod fulfill;
+pub mod solver;
+
+pub use infer::*;
+pub use fulfill::*;
+pub use solver::*;
