@@ -1,8 +1,10 @@
 mod comments;
+mod edge_cases;
 mod errors;
 mod floats;
 mod integers;
 mod keywords;
 mod operators;
+mod programs;
 mod spans;
 mod strings;
