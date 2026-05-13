@@ -1,6 +1,0 @@
-[package]
-name = "glyim-thir"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]

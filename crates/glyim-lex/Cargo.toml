@@ -1,9 +1,0 @@
-[package]
-name = "glyim-lex"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-chumsky = { workspace = true }
-rowan = { workspace = true }
-smol_str = { workspace = true }

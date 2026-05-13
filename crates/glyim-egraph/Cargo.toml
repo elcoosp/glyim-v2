@@ -1,8 +1,0 @@
-[package]
-name = "glyim-egraph"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-egg = { workspace = true }
-rayon = { workspace = true }

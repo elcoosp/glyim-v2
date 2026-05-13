@@ -1,6 +1,0 @@
-[package]
-name = "glyim-lifetime"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
