@@ -19,16 +19,29 @@ pub struct MockCodegen {
 
 impl MockCodegen {
     pub fn new() -> Self {
-        Self { calls: Mutex::new(Vec::new()), function_calls: AtomicUsize::new(0) }
+        Self {
+            calls: Mutex::new(Vec::new()),
+            function_calls: AtomicUsize::new(0),
+        }
     }
-    pub fn calls(&self) -> Vec<CodegenCall> { self.calls.lock().clone() }
-    pub fn function_call_count(&self) -> usize { self.function_calls.load(Ordering::Relaxed) }
+    pub fn calls(&self) -> Vec<CodegenCall> {
+        self.calls.lock().clone()
+    }
+    pub fn function_call_count(&self) -> usize {
+        self.function_calls.load(Ordering::Relaxed)
+    }
 }
 
-impl Default for MockCodegen { fn default() -> Self { Self::new() } }
+impl Default for MockCodegen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CodegenBackend for MockCodegen {
-    fn name(&self) -> &'static str { "mock" }
+    fn name(&self) -> &'static str {
+        "mock"
+    }
     fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<Vec<u8>> {
         self.calls.lock().push(CodegenCall {
             body_count: bodies.len(),

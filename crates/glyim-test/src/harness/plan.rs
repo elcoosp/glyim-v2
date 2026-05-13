@@ -1,5 +1,5 @@
-use super::config::TestMode;
 use super::collector::TestCollector;
+use super::config::TestMode;
 use super::executor::TestExecutor;
 use super::reporter::TestReporter;
 use crate::error::TestDiscoveryError;
@@ -28,12 +28,30 @@ impl TestRunner {
             use_pipeline: true,
         }
     }
-    pub fn mode(mut self, mode: TestMode) -> Self { self.mode_override = Some(mode); self }
-    pub fn parallel(mut self, yes: bool) -> Self { self.parallel = yes; self }
-    pub fn filter(mut self, f: impl Into<String>) -> Self { self.filter = Some(f.into()); self }
-    pub fn timeout(mut self, d: Duration) -> Self { self.timeout = d; self }
-    pub fn max_concurrent(mut self, n: usize) -> Self { self.max_concurrent = n; self }
-    pub fn frontend_only(mut self) -> Self { self.use_pipeline = false; self }
+    pub fn mode(mut self, mode: TestMode) -> Self {
+        self.mode_override = Some(mode);
+        self
+    }
+    pub fn parallel(mut self, yes: bool) -> Self {
+        self.parallel = yes;
+        self
+    }
+    pub fn filter(mut self, f: impl Into<String>) -> Self {
+        self.filter = Some(f.into());
+        self
+    }
+    pub fn timeout(mut self, d: Duration) -> Self {
+        self.timeout = d;
+        self
+    }
+    pub fn max_concurrent(mut self, n: usize) -> Self {
+        self.max_concurrent = n;
+        self
+    }
+    pub fn frontend_only(mut self) -> Self {
+        self.use_pipeline = false;
+        self
+    }
 
     pub fn build(self) -> Result<TestPlan, TestDiscoveryError> {
         let collector = TestCollector::new(&self.root);
@@ -73,14 +91,20 @@ impl TestPlan {
 
         if self.tests.is_empty() {
             eprintln!("no test files found");
-            return ExecutionResult { results: Vec::new(), summary: TestSummary::default() };
+            return ExecutionResult {
+                results: Vec::new(),
+                summary: TestSummary::default(),
+            };
         }
 
         eprintln!("running {} tests", self.tests.len());
 
         let executor = TestExecutor::new(
-            self.default_timeout, self.bless, self.verbose,
-            self.max_concurrent, self.use_pipeline,
+            self.default_timeout,
+            self.bless,
+            self.verbose,
+            self.max_concurrent,
+            self.use_pipeline,
         );
         let results = if self.parallel {
             executor.run_parallel(&self.tests)
@@ -97,7 +121,9 @@ impl TestPlan {
     pub fn run(self) {
         let result = self.execute();
         if result.summary.failed > 0 {
-            let failed_names: Vec<_> = result.results.iter()
+            let failed_names: Vec<_> = result
+                .results
+                .iter()
                 .filter(|r| matches!(r.outcome, super::executor::TestOutcome::Failed { .. }))
                 .map(|r| format!("{} [{}]", r.test.name, r.revision))
                 .collect();

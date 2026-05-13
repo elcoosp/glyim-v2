@@ -11,9 +11,15 @@ pub struct FrontendTester {
 impl FrontendTester {
     pub fn new(source: impl Into<String>) -> Self {
         let file_id = FileId::from_raw(NEXT_FE_ID.fetch_add(1, Ordering::Relaxed));
-        Self { source: source.into(), file_id }
+        Self {
+            source: source.into(),
+            file_id,
+        }
     }
-    pub fn with_file_id(mut self, id: FileId) -> Self { self.file_id = id; self }
+    pub fn with_file_id(mut self, id: FileId) -> Self {
+        self.file_id = id;
+        self
+    }
     pub fn run(self) -> super::CompilationTrace {
         let mut trace = super::CompilationTrace::default();
         tracing::info!(phase = "parse", file_id = self.file_id.to_raw());

@@ -11,9 +11,10 @@ impl CompilePassStrategy {
     pub fn evaluate(
         &self,
         diagnostics: &[GlyimDiagnostic],
-        source: &str,
+        _source: &str,
     ) -> super::executor::TestOutcome {
-        let errors: Vec<String> = diagnostics.iter()
+        let errors: Vec<String> = diagnostics
+            .iter()
             .filter(|d| d.is_error())
             .map(|e| e.message.clone())
             .collect();
@@ -40,12 +41,16 @@ impl CompileFailStrategy {
             Ok(a) => a,
             Err(e) => {
                 return super::executor::TestOutcome::Failed {
-                    reason: FailureReason::AnnotationParseError { line: 0, message: e },
+                    reason: FailureReason::AnnotationParseError {
+                        line: 0,
+                        message: e,
+                    },
                 };
             }
         };
 
-        let normalized: Vec<NormalizedDiag> = diagnostics.iter()
+        let normalized: Vec<NormalizedDiag> = diagnostics
+            .iter()
             .map(|d| NormalizedDiag::from_glyim_diag(d, source))
             .collect();
 
@@ -55,7 +60,9 @@ impl CompileFailStrategy {
             for pattern in error_patterns {
                 if !diagnostics.iter().any(|d| d.message.contains(pattern)) {
                     return super::executor::TestOutcome::Failed {
-                        reason: FailureReason::ErrorPatternNotFound { pattern: pattern.clone() },
+                        reason: FailureReason::ErrorPatternNotFound {
+                            pattern: pattern.clone(),
+                        },
                     };
                 }
             }
@@ -79,7 +86,7 @@ impl UiTestStrategy {
     pub fn evaluate(
         &self,
         output: &CompileOutput,
-        source: &str,
+        _source: &str,
         test_path: &Path,
         bless: bool,
     ) -> super::executor::TestOutcome {
@@ -108,13 +115,14 @@ impl UiTestStrategy {
         for diag in &output.diagnostics {
             text.push_str(&format!(
                 "{}[{}]: {}\n",
-                diag.severity.display_name(), diag.code, diag.message,
+                diag.severity.display_name(),
+                diag.code,
+                diag.message,
             ));
         }
 
-        let normalized = crate::comparison::normalize::normalize_output(
-            &text, test_path, &Default::default(),
-        );
+        let normalized =
+            crate::comparison::normalize::normalize_output(&text, test_path, &Default::default());
 
         let expected_path = test_path.with_extension("expected");
 
@@ -125,7 +133,9 @@ impl UiTestStrategy {
 
         if !expected_path.exists() {
             return super::executor::TestOutcome::Failed {
-                reason: FailureReason::UiNoExpectedFile { path: expected_path },
+                reason: FailureReason::UiNoExpectedFile {
+                    path: expected_path,
+                },
             };
         }
 
@@ -164,7 +174,9 @@ fn format_mismatch(result: &comparison::ComparisonResult) -> String {
     for u in &result.unexpected {
         reasons.push(format!(
             "line {}: unexpected {} : {}",
-            u.line + 1, u.severity.display_name(), u.message
+            u.line + 1,
+            u.severity.display_name(),
+            u.message
         ));
     }
     for w in &result.wrong_severity {

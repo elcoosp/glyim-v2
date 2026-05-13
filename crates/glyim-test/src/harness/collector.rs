@@ -12,10 +12,14 @@ pub struct DiscoveredTest {
     pub revisions: Vec<String>,
 }
 
-pub struct TestCollector<'a> { root: &'a Path }
+pub struct TestCollector<'a> {
+    root: &'a Path,
+}
 
 impl<'a> TestCollector<'a> {
-    pub fn new(root: &'a Path) -> Self { Self { root } }
+    pub fn new(root: &'a Path) -> Self {
+        Self { root }
+    }
 
     pub fn collect(
         &self,
@@ -28,31 +32,44 @@ impl<'a> TestCollector<'a> {
 
         let mut tests = Vec::new();
 
-        for entry in walkdir::WalkDir::new(self.root).into_iter().filter_map(|e| e.ok()) {
+        for entry in walkdir::WalkDir::new(self.root)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("g") { continue; }
+            if path.extension().and_then(|e| e.to_str()) != Some("g") {
+                continue;
+            }
             if let Some(f) = filter {
-                if !path.to_string_lossy().contains(f) { continue; }
+                if !path.to_string_lossy().contains(f) {
+                    continue;
+                }
             }
 
             let source: Arc<str> = std::fs::read_to_string(path)
                 .map_err(|e| TestDiscoveryError::ReadFailed {
-                    path: path.to_path_buf(), source: e,
+                    path: path.to_path_buf(),
+                    source: e,
                 })?
                 .into();
 
-            let ParsedConfig { config: header_config, has_explicit_mode } =
-                super::config::parse_test_config(&source)
-                    .map_err(|msg| TestDiscoveryError::InvalidConfig {
-                        path: path.to_path_buf(), message: msg,
-                    })?;
+            let ParsedConfig {
+                config: header_config,
+                has_explicit_mode,
+            } = super::config::parse_test_config(&source).map_err(|msg| {
+                TestDiscoveryError::InvalidConfig {
+                    path: path.to_path_buf(),
+                    message: msg,
+                }
+            })?;
 
             let mut config = TestConfig::default();
 
             if has_explicit_mode {
                 config.mode = header_config.mode;
             } else {
-                let dir_mode = path.parent()
+                let dir_mode = path
+                    .parent()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .and_then(|s| s.parse::<TestMode>().ok());
@@ -74,7 +91,8 @@ impl<'a> TestCollector<'a> {
             config.min_version = header_config.min_version;
             config.only_target = header_config.only_target;
 
-            let name = path.strip_prefix(self.root)
+            let name = path
+                .strip_prefix(self.root)
                 .unwrap_or(path)
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -86,7 +104,11 @@ impl<'a> TestCollector<'a> {
             };
 
             tests.push(Arc::new(DiscoveredTest {
-                path: path.to_path_buf(), name, config, source, revisions,
+                path: path.to_path_buf(),
+                name,
+                config,
+                source,
+                revisions,
             }));
         }
 

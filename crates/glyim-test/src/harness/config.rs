@@ -50,14 +50,17 @@ impl FromStr for TestMode {
             "compile-fail" => Ok(Self::CompileFail),
             "ui" => Ok(Self::Ui),
             other => Err(format!(
-                "unknown test-mode: {:?}. Expected: compile-pass, compile-fail, ui", other
+                "unknown test-mode: {:?}. Expected: compile-pass, compile-fail, ui",
+                other
             )),
         }
     }
 }
 
 impl TestMode {
-    pub fn from_str_exact(s: &str) -> Result<Self, String> { s.parse() }
+    pub fn from_str_exact(s: &str) -> Result<Self, String> {
+        s.parse()
+    }
     pub fn dir_name(self) -> &'static str {
         match self {
             Self::CompilePass => "compile-pass",
@@ -79,7 +82,9 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
     for line in source.lines() {
         let trimmed = line.trim();
         if !trimmed.starts_with("//") {
-            if trimmed.is_empty() { continue; }
+            if trimmed.is_empty() {
+                continue;
+            }
             break;
         }
         let content = trimmed[2..].trim();
@@ -89,7 +94,8 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
                 let rev = &rest[..bracket_end];
                 let directive = rest[bracket_end + 1..].trim();
                 if let Some(value) = directive.strip_prefix("compile-flags:") {
-                    config.revision_compile_flags
+                    config
+                        .revision_compile_flags
                         .entry(rev.to_string())
                         .or_default()
                         .extend(
@@ -128,5 +134,8 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
         }
     }
 
-    Ok(ParsedConfig { config, has_explicit_mode })
+    Ok(ParsedConfig {
+        config,
+        has_explicit_mode,
+    })
 }

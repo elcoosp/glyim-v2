@@ -8,11 +8,19 @@ pub struct MockBorrowckCtx<'a> {
 }
 
 impl<'a> MockBorrowckCtx<'a> {
-    pub fn new(ty_ctx: &'a TyCtx, body: &'a Body) -> Self { Self { ty_ctx, body } }
+    pub fn new(ty_ctx: &'a TyCtx, body: &'a Body) -> Self {
+        Self { ty_ctx, body }
+    }
 }
 
 impl BorrowckCtx for MockBorrowckCtx<'_> {
-    fn ty_ctx(&self) -> &TyCtx { self.ty_ctx }
-    fn local_decl(&self, local: LocalIdx) -> &LocalDecl { &self.body.locals[local] }
-    fn is_copy(&self, _ty: Ty) -> bool { false }
+    fn ty_ctx(&self) -> &TyCtx {
+        self.ty_ctx
+    }
+    fn local_decl(&self, local: LocalIdx) -> &LocalDecl {
+        &self.body.locals[local]
+    }
+    fn is_copy(&self, _ty: Ty) -> bool {
+        false
+    }
 }

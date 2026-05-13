@@ -3,9 +3,19 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub enum TestDiscoveryError {
     RootNotFound(PathBuf),
-    ReadFailed { path: PathBuf, source: std::io::Error },
-    InvalidConfig { path: PathBuf, message: String },
-    InvalidAnnotation { path: PathBuf, line: usize, message: String },
+    ReadFailed {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    InvalidConfig {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidAnnotation {
+        path: PathBuf,
+        line: usize,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for TestDiscoveryError {
@@ -16,8 +26,16 @@ impl std::fmt::Display for TestDiscoveryError {
             Self::InvalidConfig { path, message } => {
                 write!(f, "invalid config in {:?}: {}", path, message)
             }
-            Self::InvalidAnnotation { path, line, message } => {
-                write!(f, "invalid annotation in {:?} line {}: {}", path, line, message)
+            Self::InvalidAnnotation {
+                path,
+                line,
+                message,
+            } => {
+                write!(
+                    f,
+                    "invalid annotation in {:?} line {}: {}",
+                    path, line, message
+                )
             }
         }
     }
@@ -34,43 +52,71 @@ impl std::error::Error for TestDiscoveryError {
 
 #[derive(Clone, Debug)]
 pub enum FailureReason {
-    CompilePassUnexpectedErrors { errors: Vec<String> },
-    AnnotationParseError { line: usize, message: String },
+    CompilePassUnexpectedErrors {
+        errors: Vec<String>,
+    },
+    AnnotationParseError {
+        line: usize,
+        message: String,
+    },
     DiagnosticMismatch {
         missing_count: usize,
         unexpected_count: usize,
         wrong_severity_count: usize,
         details: String,
     },
-    ErrorPatternNotFound { pattern: String },
-    UiOutputDiffers { diff: String },
-    UiNoExpectedFile { path: PathBuf },
-    TimeoutExceeded { timeout_secs: u64 },
-    CompilationFailed { phase: String, message: String },
+    ErrorPatternNotFound {
+        pattern: String,
+    },
+    UiOutputDiffers {
+        diff: String,
+    },
+    UiNoExpectedFile {
+        path: PathBuf,
+    },
+    TimeoutExceeded {
+        timeout_secs: u64,
+    },
+    CompilationFailed {
+        phase: String,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for FailureReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::CompilePassUnexpectedErrors { errors } => {
-                write!(f, "expected compilation to succeed, got {} error(s):\n  {}",
-                    errors.len(), errors.join("\n  "))
+                write!(
+                    f,
+                    "expected compilation to succeed, got {} error(s):\n  {}",
+                    errors.len(),
+                    errors.join("\n  ")
+                )
             }
             Self::AnnotationParseError { line, message } => {
                 write!(f, "annotation parse error at line {}: {}", line, message)
             }
             Self::DiagnosticMismatch {
-                missing_count, unexpected_count, wrong_severity_count, details
+                missing_count,
+                unexpected_count,
+                wrong_severity_count,
+                details,
             } => {
-                write!(f, "diagnostic mismatch ({} missing, {} unexpected, {} wrong severity):\n  {}",
-                    missing_count, unexpected_count, wrong_severity_count, details)
+                write!(
+                    f,
+                    "diagnostic mismatch ({} missing, {} unexpected, {} wrong severity):\n  {}",
+                    missing_count, unexpected_count, wrong_severity_count, details
+                )
             }
             Self::ErrorPatternNotFound { pattern } => {
                 write!(f, "error-pattern '{}' not found", pattern)
             }
             Self::UiOutputDiffers { diff } => write!(f, "output differs:\n{}", diff),
             Self::UiNoExpectedFile { path } => write!(f, "no expected file: {:?}", path),
-            Self::TimeoutExceeded { timeout_secs } => write!(f, "exceeded {}s timeout", timeout_secs),
+            Self::TimeoutExceeded { timeout_secs } => {
+                write!(f, "exceeded {}s timeout", timeout_secs)
+            }
             Self::CompilationFailed { phase, message } => {
                 write!(f, "compilation failed at {}: {}", phase, message)
             }
@@ -79,7 +125,9 @@ impl std::fmt::Display for FailureReason {
 }
 
 #[derive(Clone, Debug)]
-pub struct TimeoutError { pub timeout_secs: u64 }
+pub struct TimeoutError {
+    pub timeout_secs: u64,
+}
 
 impl std::fmt::Display for TimeoutError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

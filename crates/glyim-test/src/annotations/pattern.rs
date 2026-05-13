@@ -9,8 +9,12 @@ pub enum MatchPattern {
 }
 
 impl MatchPattern {
-    pub fn substring(s: &str) -> Self { Self::Substring(s.to_string()) }
-    pub fn exact(s: &str) -> Self { Self::Exact(s.to_string()) }
+    pub fn substring(s: &str) -> Self {
+        Self::Substring(s.to_string())
+    }
+    pub fn exact(s: &str) -> Self {
+        Self::Exact(s.to_string())
+    }
     pub fn regex(pattern: &str) -> Result<Self, regex::Error> {
         Ok(Self::Regex(regex::Regex::new(pattern)?))
     }
@@ -35,7 +39,9 @@ impl MatchPattern {
 }
 
 impl fmt::Display for MatchPattern {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.description()) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.description())
+    }
 }
 
 impl PartialEq for MatchPattern {

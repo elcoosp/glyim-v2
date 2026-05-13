@@ -1,12 +1,12 @@
-pub mod frontend;
 pub mod analysis;
-pub mod mir_gen;
 pub mod codegen_phase;
+pub mod frontend;
+pub mod mir_gen;
 
-pub use frontend::FrontendTester;
 pub use analysis::AnalysisTester;
-pub use mir_gen::MirGenTester;
 pub use codegen_phase::CodegenTester;
+pub use frontend::FrontendTester;
+pub use mir_gen::MirGenTester;
 
 use glyim_diag::GlyimDiagnostic;
 use std::sync::Arc;
@@ -38,5 +38,7 @@ impl CompilationTrace {
         diags.extend(self.borrowck_diagnostics.iter().cloned());
         diags
     }
-    pub fn has_errors(&self) -> bool { self.all_diagnostics().iter().any(|d| d.is_error()) }
+    pub fn has_errors(&self) -> bool {
+        self.all_diagnostics().iter().any(|d| d.is_error())
+    }
 }

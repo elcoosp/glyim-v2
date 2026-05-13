@@ -2,17 +2,41 @@ use glyim_solve::InferenceTable;
 use glyim_span::Span;
 use glyim_type::{Ty, TyCtxMut};
 
-pub fn test_unify_var_with_concrete(ctx: &mut TyCtxMut, infer: &mut InferenceTable, var_ty: Ty, concrete: Ty) {
+pub fn test_unify_var_with_concrete(
+    ctx: &mut TyCtxMut,
+    infer: &mut InferenceTable,
+    var_ty: Ty,
+    concrete: Ty,
+) {
     let result = infer.unify(ctx, var_ty, concrete, Span::DUMMY);
-    assert!(result.is_ok(), "unification failed: {:?} with {:?}", var_ty, concrete);
+    assert!(
+        result.is_ok(),
+        "unification failed: {:?} with {:?}",
+        var_ty,
+        concrete
+    );
 }
 
-pub fn test_unify_different_types_fails(ctx: &mut TyCtxMut, infer: &mut InferenceTable, a: Ty, b: Ty) {
+pub fn test_unify_different_types_fails(
+    ctx: &mut TyCtxMut,
+    infer: &mut InferenceTable,
+    a: Ty,
+    b: Ty,
+) {
     let result = infer.unify(ctx, a, b, Span::DUMMY);
-    assert!(result.is_err(), "unification should fail for different types: {:?} vs {:?}", a, b);
+    assert!(
+        result.is_err(),
+        "unification should fail for different types: {:?} vs {:?}",
+        a,
+        b
+    );
 }
 
 pub fn test_unify_same_type_succeeds(ctx: &mut TyCtxMut, infer: &mut InferenceTable, ty: Ty) {
     let result = infer.unify(ctx, ty, ty, Span::DUMMY);
-    assert!(result.is_ok(), "unification of same type should succeed: {:?}", ty);
+    assert!(
+        result.is_ok(),
+        "unification of same type should succeed: {:?}",
+        ty
+    );
 }

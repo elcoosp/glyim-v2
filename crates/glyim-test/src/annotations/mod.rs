@@ -100,13 +100,14 @@ impl Annotation {
 fn parse_severity_strict(s: &str) -> Result<(DiagSeverity, &str), String> {
     let (word, rest) = s.split_once(char::is_whitespace).unwrap_or((s, ""));
     match word {
-        "ERROR"   => Ok((DiagSeverity::Error,   rest.trim_start())),
+        "ERROR" => Ok((DiagSeverity::Error, rest.trim_start())),
         "WARNING" => Ok((DiagSeverity::Warning, rest.trim_start())),
-        "NOTE"    => Ok((DiagSeverity::Note,    rest.trim_start())),
-        "HELP"    => Ok((DiagSeverity::Help,    rest.trim_start())),
-        ""        => Ok((DiagSeverity::Error,   rest)),
-        other     => Err(format!(
-            "invalid severity: {:?}. Expected ERROR, WARNING, NOTE, or HELP", other
+        "NOTE" => Ok((DiagSeverity::Note, rest.trim_start())),
+        "HELP" => Ok((DiagSeverity::Help, rest.trim_start())),
+        "" => Ok((DiagSeverity::Error, rest)),
+        other => Err(format!(
+            "invalid severity: {:?}. Expected ERROR, WARNING, NOTE, or HELP",
+            other
         )),
     }
 }

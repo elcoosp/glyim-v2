@@ -49,9 +49,9 @@ impl TestExecutor {
         use_pipeline: bool,
     ) -> Self {
         let compiler: Arc<dyn TestCompiler> = if use_pipeline {
-            Arc::new(PipelineCompiler::new(
-                Arc::new(crate::mock::MockCodegen::new())
-            ))
+            Arc::new(PipelineCompiler::new(Arc::new(
+                crate::mock::MockCodegen::new(),
+            )))
         } else {
             Arc::new(FrontendOnlyCompiler)
         };
@@ -77,7 +77,8 @@ impl TestExecutor {
     }
 
     pub fn run_sequential(&self, tests: &[Arc<DiscoveredTest>]) -> Vec<TestResult> {
-        tests.iter()
+        tests
+            .iter()
             .flat_map(|t| {
                 let revs: Vec<String> = t.revisions.clone();
                 revs.into_iter().map(|r| {
@@ -103,20 +104,15 @@ impl TestExecutor {
         let bless = self.bless;
         let target_triple = self.target_triple.clone();
         pool.install(move || {
-            tests_c.par_iter()
+            tests_c
+                .par_iter()
                 .flat_map(|t| {
                     let revs: Vec<String> = t.revisions.clone();
                     let comp = Arc::clone(&compiler);
                     let tgt = target_triple.clone();
                     revs.into_iter()
                         .map(move |r| {
-                            execute_test(
-                                Arc::clone(t),
-                                r,
-                                Arc::clone(&comp),
-                                bless,
-                                tgt.clone(),
-                            )
+                            execute_test(Arc::clone(t), r, Arc::clone(&comp), bless, tgt.clone())
                         })
                         .collect::<Vec<_>>()
                 })
@@ -138,16 +134,20 @@ fn execute_test(
 
     if test.config.ignore {
         return TestResult {
-            test, revision,
-            outcome: TestOutcome::Ignored, duration: start.elapsed(),
+            test,
+            revision,
+            outcome: TestOutcome::Ignored,
+            duration: start.elapsed(),
             diagnostics: Vec::new(),
         };
     }
 
     if test.config.needs_llvm && std::env::var("GLYIM_LLVM").is_err() {
         return TestResult {
-            test, revision,
-            outcome: TestOutcome::Ignored, duration: start.elapsed(),
+            test,
+            revision,
+            outcome: TestOutcome::Ignored,
+            duration: start.elapsed(),
             diagnostics: Vec::new(),
         };
     }
@@ -155,8 +155,10 @@ fn execute_test(
     if let Some(ref target) = test.config.only_target {
         if target != &target_triple {
             return TestResult {
-                test, revision,
-                outcome: TestOutcome::Ignored, duration: start.elapsed(),
+                test,
+                revision,
+                outcome: TestOutcome::Ignored,
+                duration: start.elapsed(),
                 diagnostics: Vec::new(),
             };
         }
@@ -183,7 +185,13 @@ fn execute_test(
     let duration = start.elapsed();
     tracing::info!(duration_ms = duration.as_millis(), "done");
 
-    TestResult { test, revision, outcome, duration, diagnostics }
+    TestResult {
+        test,
+        revision,
+        outcome,
+        duration,
+        diagnostics,
+    }
 }
 
 fn execute_inner(
@@ -206,15 +214,13 @@ fn execute_inner(
         super::config::TestMode::CompilePass => {
             strategy::CompilePassStrategy.evaluate(&output.diagnostics, &test.source)
         }
-        super::config::TestMode::CompileFail => {
-            strategy::CompileFailStrategy.evaluate(
-                &output.diagnostics, &test.source, &test.config.error_patterns,
-            )
-        }
+        super::config::TestMode::CompileFail => strategy::CompileFailStrategy.evaluate(
+            &output.diagnostics,
+            &test.source,
+            &test.config.error_patterns,
+        ),
         super::config::TestMode::Ui => {
-            strategy::UiTestStrategy.evaluate(
-                &output, &test.source, &test.path, bless,
-            )
+            strategy::UiTestStrategy.evaluate(&output, &test.source, &test.path, bless)
         }
     };
 

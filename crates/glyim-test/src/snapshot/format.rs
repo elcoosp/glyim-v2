@@ -11,7 +11,9 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
         };
         out.push_str(&format!(
             "    ${}: {} ({})\n",
-            idx.to_raw(), glyim_type::PrintTy::new(local.ty, ctx), mut_str,
+            idx.to_raw(),
+            glyim_type::PrintTy::new(local.ty, ctx),
+            mut_str,
         ));
     }
     for (idx, block) in body.basic_blocks.iter_enumerated() {
@@ -26,7 +28,10 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
 
 pub fn format_def_map(def_map: &glyim_def_map::CrateDefMap) -> String {
     let mut out = String::new();
-    out.push_str(&format!("CrateDefMap (root: {:?}, krate: {:?})\n", def_map.root, def_map.krate));
+    out.push_str(&format!(
+        "CrateDefMap (root: {:?}, krate: {:?})\n",
+        def_map.root, def_map.krate
+    ));
     for (idx, module) in def_map.modules.iter_enumerated() {
         out.push_str(&format!("  module {:?}:\n", idx));
         out.push_str(&format!("    parent: {:?}\n", module.parent));

@@ -10,10 +10,10 @@ pub trait DiagSeverityExt {
 impl DiagSeverityExt for DiagSeverity {
     fn display_name(self) -> &'static str {
         match self {
-            DiagSeverity::Error   => "ERROR",
+            DiagSeverity::Error => "ERROR",
             DiagSeverity::Warning => "WARNING",
-            DiagSeverity::Note    => "NOTE",
-            DiagSeverity::Help    => "HELP",
+            DiagSeverity::Note => "NOTE",
+            DiagSeverity::Help => "HELP",
         }
     }
 }
@@ -28,7 +28,11 @@ pub struct NormalizedDiag {
 impl NormalizedDiag {
     pub fn from_glyim_diag(diag: &GlyimDiagnostic, source: &str) -> Self {
         let line = byte_offset_to_line(source, diag.span.primary.lo.to_usize());
-        Self { severity: diag.severity, line, message: diag.message.clone() }
+        Self {
+            severity: diag.severity,
+            line,
+            message: diag.message.clone(),
+        }
     }
 }
 
@@ -43,14 +47,15 @@ pub struct ComparisonResult {
 
 impl ComparisonResult {
     pub fn passed(&self) -> bool {
-        self.missing.is_empty()
-            && self.unexpected.is_empty()
-            && self.wrong_severity.is_empty()
+        self.missing.is_empty() && self.unexpected.is_empty() && self.wrong_severity.is_empty()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct MatchedPair { pub annotation: Annotation, pub diagnostic: NormalizedDiag }
+pub struct MatchedPair {
+    pub annotation: Annotation,
+    pub diagnostic: NormalizedDiag,
+}
 
 #[derive(Clone, Debug)]
 pub struct SeverityMismatch {
@@ -75,7 +80,9 @@ pub fn compare_diagnostics(
         let mut found = false;
 
         for (i, diag) in diagnostics.iter().enumerate() {
-            if diag_used[i] { continue; }
+            if diag_used[i] {
+                continue;
+            }
 
             let line_matches = if annotation.fuzzy {
                 diag.line.abs_diff(target_line) <= 1
@@ -87,11 +94,16 @@ pub fn compare_diagnostics(
                 diag_used[i] = true;
                 found = true;
                 if diag.severity == annotation.severity {
-                    matched.push(MatchedPair { annotation: annotation.clone(), diagnostic: diag.clone() });
+                    matched.push(MatchedPair {
+                        annotation: annotation.clone(),
+                        diagnostic: diag.clone(),
+                    });
                 } else {
                     wrong_severity.push(SeverityMismatch {
-                        annotation: annotation.clone(), diagnostic: diag.clone(),
-                        expected: annotation.severity, actual: diag.severity,
+                        annotation: annotation.clone(),
+                        diagnostic: diag.clone(),
+                        expected: annotation.severity,
+                        actual: diag.severity,
                     });
                 }
                 break;
@@ -107,14 +119,25 @@ pub fn compare_diagnostics(
         }
     }
 
-    let unexpected: Vec<NormalizedDiag> = diagnostics.iter().enumerate()
+    let unexpected: Vec<NormalizedDiag> = diagnostics
+        .iter()
+        .enumerate()
         .filter(|(i, _)| !diag_used[*i])
         .map(|(_, d)| d.clone())
         .collect();
 
-    ComparisonResult { matched, missing, unexpected, wrong_severity, optional_unmatched }
+    ComparisonResult {
+        matched,
+        missing,
+        unexpected,
+        wrong_severity,
+        optional_unmatched,
+    }
 }
 
 fn byte_offset_to_line(source: &str, offset: usize) -> usize {
-    source[..offset.min(source.len())].chars().filter(|&c| c == '\n').count()
+    source[..offset.min(source.len())]
+        .chars()
+        .filter(|&c| c == '\n')
+        .count()
 }

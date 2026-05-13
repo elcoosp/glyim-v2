@@ -9,8 +9,12 @@ pub struct NormalizeRules {
 
 pub fn normalize_output(output: &str, test_path: &Path, rules: &NormalizeRules) -> String {
     let mut result = output.to_string();
-    if rules.normalize_line_endings { result = result.replace("\r\n", "\n"); }
-    if rules.normalize_slashes { result = result.replace('\\', "/"); }
+    if rules.normalize_line_endings {
+        result = result.replace("\r\n", "\n");
+    }
+    if rules.normalize_slashes {
+        result = result.replace('\\', "/");
+    }
     if rules.substitute_dir {
         if let Some(parent) = test_path.parent() {
             let dir_str = parent.to_string_lossy().replace('\\', "/");

@@ -13,23 +13,13 @@ pub struct CompileOutput {
 }
 
 pub trait TestCompiler: Send + Sync {
-    fn compile(
-        &self,
-        source: &str,
-        file_id: FileId,
-        flags: &[String],
-    ) -> CompileOutput;
+    fn compile(&self, source: &str, file_id: FileId, flags: &[String]) -> CompileOutput;
 }
 
 pub struct FrontendOnlyCompiler;
 
 impl TestCompiler for FrontendOnlyCompiler {
-    fn compile(
-        &self,
-        source: &str,
-        file_id: FileId,
-        _flags: &[String],
-    ) -> CompileOutput {
+    fn compile(&self, source: &str, file_id: FileId, _flags: &[String]) -> CompileOutput {
         tracing::info!(phase = "parse", file_id = file_id.to_raw());
         let result = glyim_frontend::parse_to_syntax(source, file_id);
         CompileOutput {
@@ -53,12 +43,7 @@ impl PipelineCompiler {
 }
 
 impl TestCompiler for PipelineCompiler {
-    fn compile(
-        &self,
-        source: &str,
-        file_id: FileId,
-        _flags: &[String],
-    ) -> CompileOutput {
+    fn compile(&self, source: &str, file_id: FileId, _flags: &[String]) -> CompileOutput {
         use glyim_db::{CrateConfig, Database};
 
         tracing::info!(phase = "full-pipeline", file_id = file_id.to_raw());
@@ -74,24 +59,20 @@ impl TestCompiler for PipelineCompiler {
         db.vfs().add_file_content(&path, Arc::from(source));
 
         match glyim_pipeline::Pipeline::compile_file(&mut db, &path, &*self.backend) {
-            Ok(()) => {
-                CompileOutput {
-                    diagnostics: Vec::new(),
-                    syntax_tree: None,
-                    def_map: None,
-                    typeck_result: None,
-                    mir_bodies: Vec::new(),
-                }
-            }
-            Err(diags) => {
-                CompileOutput {
-                    diagnostics: diags,
-                    syntax_tree: None,
-                    def_map: None,
-                    typeck_result: None,
-                    mir_bodies: Vec::new(),
-                }
-            }
+            Ok(()) => CompileOutput {
+                diagnostics: Vec::new(),
+                syntax_tree: None,
+                def_map: None,
+                typeck_result: None,
+                mir_bodies: Vec::new(),
+            },
+            Err(diags) => CompileOutput {
+                diagnostics: diags,
+                syntax_tree: None,
+                def_map: None,
+                typeck_result: None,
+                mir_bodies: Vec::new(),
+            },
         }
     }
 }

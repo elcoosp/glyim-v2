@@ -3,10 +3,14 @@ use super::plan::TestSummary;
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-pub struct TestReporter { verbose: bool }
+pub struct TestReporter {
+    verbose: bool,
+}
 
 impl TestReporter {
-    pub fn new(verbose: bool) -> Self { Self { verbose } }
+    pub fn new(verbose: bool) -> Self {
+        Self { verbose }
+    }
 
     pub fn report(&self, results: &[TestResult]) -> TestSummary {
         let mut stderr = StandardStream::stderr(ColorChoice::Always);
@@ -36,7 +40,8 @@ impl TestReporter {
 
         let _ = writeln!(stderr, "\n---");
         let _ = writeln!(
-            stderr, "{} run, {} passed, {} failed, {} ignored",
+            stderr,
+            "{} run, {} passed, {} failed, {} ignored",
             summary.total, summary.passed, summary.failed, summary.ignored,
         );
 
@@ -57,22 +62,46 @@ impl TestReporter {
     fn write_json(&self, results: &[TestResult], summary: &TestSummary) {
         use serde::Serialize;
         #[derive(Serialize)]
-        struct Out { total: usize, passed: usize, failed: usize, ignored: usize, tests: Vec<Test> }
+        struct Out {
+            total: usize,
+            passed: usize,
+            failed: usize,
+            ignored: usize,
+            tests: Vec<Test>,
+        }
         #[derive(Serialize)]
-        struct Test { name: String, revision: String, outcome: String, duration_ms: u64, reason: Option<String> }
+        struct Test {
+            name: String,
+            revision: String,
+            outcome: String,
+            duration_ms: u64,
+            reason: Option<String>,
+        }
 
-        let tests: Vec<Test> = results.iter().map(|r| {
-            let (outcome, reason) = match &r.outcome {
-                TestOutcome::Passed => ("passed".into(), None),
-                TestOutcome::Failed { reason: fr } => ("failed".into(), Some(fr.to_string())),
-                TestOutcome::Ignored => ("ignored".into(), None),
-            };
-            Test { name: r.test.name.clone(), revision: r.revision.clone(), outcome, duration_ms: r.duration.as_millis() as u64, reason }
-        }).collect();
+        let tests: Vec<Test> = results
+            .iter()
+            .map(|r| {
+                let (outcome, reason) = match &r.outcome {
+                    TestOutcome::Passed => ("passed".into(), None),
+                    TestOutcome::Failed { reason: fr } => ("failed".into(), Some(fr.to_string())),
+                    TestOutcome::Ignored => ("ignored".into(), None),
+                };
+                Test {
+                    name: r.test.name.clone(),
+                    revision: r.revision.clone(),
+                    outcome,
+                    duration_ms: r.duration.as_millis() as u64,
+                    reason,
+                }
+            })
+            .collect();
 
         let out = Out {
-            total: summary.total, passed: summary.passed,
-            failed: summary.failed, ignored: summary.ignored, tests,
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            ignored: summary.ignored,
+            tests,
         };
         if let Ok(s) = serde_json::to_string_pretty(&out) {
             let _ = std::fs::write("target/test-results.json", s);

@@ -14,17 +14,34 @@ enum PredicateMatcher {
 
 impl MockSolver {
     pub fn new() -> Self {
-        Self { responses: Vec::new(), calls: Vec::new(), default: SolverResult::Ambiguous }
+        Self {
+            responses: Vec::new(),
+            calls: Vec::new(),
+            default: SolverResult::Ambiguous,
+        }
     }
-    pub fn default_result(mut self, result: SolverResult) -> Self { self.default = result; self }
-    pub fn respond_for_trait(mut self, id: glyim_core::def_id::TraitDefId, result: SolverResult) -> Self {
-        self.responses.push((PredicateMatcher::TraitId(id), result)); self
+    pub fn default_result(mut self, result: SolverResult) -> Self {
+        self.default = result;
+        self
+    }
+    pub fn respond_for_trait(
+        mut self,
+        id: glyim_core::def_id::TraitDefId,
+        result: SolverResult,
+    ) -> Self {
+        self.responses.push((PredicateMatcher::TraitId(id), result));
+        self
     }
     pub fn respond_for_any(mut self, result: SolverResult) -> Self {
-        self.responses.push((PredicateMatcher::Any, result)); self
+        self.responses.push((PredicateMatcher::Any, result));
+        self
     }
-    pub fn call_count(&self) -> usize { self.calls.len() }
-    pub fn calls(&self) -> &[TraitPredicate] { &self.calls }
+    pub fn call_count(&self) -> usize {
+        self.calls.len()
+    }
+    pub fn calls(&self) -> &[TraitPredicate] {
+        &self.calls
+    }
 
     fn find_response(&self, predicate: &TraitPredicate) -> Option<SolverResult> {
         self.responses.iter().find_map(|(m, r)| match m {
@@ -35,12 +52,17 @@ impl MockSolver {
     }
 }
 
-impl Default for MockSolver { fn default() -> Self { Self::new() } }
+impl Default for MockSolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TraitSolver for MockSolver {
     fn can_prove(&mut self, _ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult {
         self.calls.push(predicate.clone());
-        self.find_response(predicate).unwrap_or_else(|| self.default.clone())
+        self.find_response(predicate)
+            .unwrap_or_else(|| self.default.clone())
     }
     fn evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult {
         match predicate {
