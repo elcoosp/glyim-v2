@@ -347,6 +347,7 @@ dependencies = [
  "glyim-codegen",
  "glyim-diag",
  "glyim-mir",
+ "glyim-test",
  "inkwell",
 ]
 

@@ -6,6 +6,9 @@ use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
 pub struct LlvmBackend {
     context: Context,
     target_triple: String,
