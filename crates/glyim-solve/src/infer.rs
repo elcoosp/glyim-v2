@@ -144,7 +144,7 @@ impl InferenceTable {
                         ),
                     )]),
                 }
-            },
+            }
             (TyKind::Infer(InferVar::Float(var)), other)
             | (other, TyKind::Infer(InferVar::Float(var))) => {
                 let float_ty = if a_is_float { a } else { b };
@@ -165,7 +165,7 @@ impl InferenceTable {
                         ),
                     )]),
                 }
-            },
+            }
             (TyKind::Infer(InferVar::Ty(var)), other)
             | (other, TyKind::Infer(InferVar::Ty(var))) => {
                 let tv = &self.ty_vars[var];
@@ -223,7 +223,9 @@ impl InferenceTable {
             }
             (TyKind::Int(int_a), TyKind::Int(int_b)) if int_a == int_b => Ok(Vec::new()),
             (TyKind::Uint(uint_a), TyKind::Uint(uint_b)) if uint_a == uint_b => Ok(Vec::new()),
-            (TyKind::Float(float_a), TyKind::Float(float_b)) if float_a == float_b => Ok(Vec::new()),
+            (TyKind::Float(float_a), TyKind::Float(float_b)) if float_a == float_b => {
+                Ok(Vec::new())
+            }
             (TyKind::Bool, TyKind::Bool) => Ok(Vec::new()),
             (TyKind::Char, TyKind::Char) => Ok(Vec::new()),
             (TyKind::String, TyKind::String) => Ok(Vec::new()),
@@ -241,13 +243,12 @@ impl InferenceTable {
                         ),
                     )]);
                 }
-                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                let pairs: Vec<(Ty, Ty)> = args_a
+                    .iter()
                     .zip(args_b.iter())
-                    .filter_map(|(ga, gb)| {
-                        match (ga, gb) {
-                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
-                            _ => None,
-                        }
+                    .filter_map(|(ga, gb)| match (ga, gb) {
+                        (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                        _ => None,
                     })
                     .collect();
                 if pairs.len() != args_a.len() {
@@ -302,13 +303,12 @@ impl InferenceTable {
                         "mismatched function argument counts".to_string(),
                     )]);
                 }
-                let pairs: Vec<(Ty, Ty)> = inputs_a.iter()
+                let pairs: Vec<(Ty, Ty)> = inputs_a
+                    .iter()
                     .zip(inputs_b.iter())
-                    .filter_map(|(ga, gb)| {
-                        match (ga, gb) {
-                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
-                            _ => None,
-                        }
+                    .filter_map(|(ga, gb)| match (ga, gb) {
+                        (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                        _ => None,
                     })
                     .collect();
                 if pairs.len() != inputs_a.len() {
@@ -343,13 +343,12 @@ impl InferenceTable {
                         "mismatched type argument counts".to_string(),
                     )]);
                 }
-                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                let pairs: Vec<(Ty, Ty)> = args_a
+                    .iter()
                     .zip(args_b.iter())
-                    .filter_map(|(ga, gb)| {
-                        match (ga, gb) {
-                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
-                            _ => None,
-                        }
+                    .filter_map(|(ga, gb)| match (ga, gb) {
+                        (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                        _ => None,
                     })
                     .collect();
                 if pairs.len() != args_a.len() {
@@ -383,13 +382,12 @@ impl InferenceTable {
                         "mismatched type argument counts".to_string(),
                     )]);
                 }
-                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                let pairs: Vec<(Ty, Ty)> = args_a
+                    .iter()
                     .zip(args_b.iter())
-                    .filter_map(|(ga, gb)| {
-                        match (ga, gb) {
-                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
-                            _ => None,
-                        }
+                    .filter_map(|(ga, gb)| match (ga, gb) {
+                        (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                        _ => None,
                     })
                     .collect();
                 if pairs.len() != args_a.len() {
@@ -423,13 +421,12 @@ impl InferenceTable {
                         "mismatched type argument counts".to_string(),
                     )]);
                 }
-                let pairs: Vec<(Ty, Ty)> = args_a.iter()
+                let pairs: Vec<(Ty, Ty)> = args_a
+                    .iter()
                     .zip(args_b.iter())
-                    .filter_map(|(ga, gb)| {
-                        match (ga, gb) {
-                            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
-                            _ => None,
-                        }
+                    .filter_map(|(ga, gb)| match (ga, gb) {
+                        (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                        _ => None,
                     })
                     .collect();
                 if pairs.len() != args_a.len() {
@@ -500,12 +497,11 @@ impl InferenceTable {
     fn has_unresolved_non_ty_infer(&self, ctx: &dyn TypeLookup, ty: Ty) -> bool {
         match ctx.ty_kind(ty) {
             TyKind::Infer(InferVar::Int(var)) => {
-                self.int_vars.get(*var).map_or(true, |v| v.value.is_none())
+                self.int_vars.get(*var).is_none_or(|v| v.value.is_none())
             }
-            TyKind::Infer(InferVar::Float(var)) => self
-                .float_vars
-                .get(*var)
-                .map_or(true, |v| v.value.is_none()),
+            TyKind::Infer(InferVar::Float(var)) => {
+                self.float_vars.get(*var).is_none_or(|v| v.value.is_none())
+            }
             TyKind::Infer(InferVar::Ty(_)) => false,
             TyKind::Ref(_, inner, _) => self.has_unresolved_non_ty_infer(ctx, *inner),
             TyKind::RawPtr(inner, _) => self.has_unresolved_non_ty_infer(ctx, *inner),
@@ -516,20 +512,20 @@ impl InferenceTable {
             | TyKind::Closure(_, substs)
             | TyKind::Tuple(substs) => {
                 for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg {
-                        if self.has_unresolved_non_ty_infer(ctx, *t) {
-                            return true;
-                        }
+                    if let GenericArg::Ty(t) = arg
+                        && self.has_unresolved_non_ty_infer(ctx, *t)
+                    {
+                        return true;
                     }
                 }
                 false
             }
             TyKind::FnPtr(sig) => {
                 for arg in ctx.substitution_args(sig.inputs) {
-                    if let GenericArg::Ty(t) = arg {
-                        if self.has_unresolved_non_ty_infer(ctx, *t) {
-                            return true;
-                        }
+                    if let GenericArg::Ty(t) = arg
+                        && self.has_unresolved_non_ty_infer(ctx, *t)
+                    {
+                        return true;
                     }
                 }
                 self.has_unresolved_non_ty_infer(ctx, sig.output)
