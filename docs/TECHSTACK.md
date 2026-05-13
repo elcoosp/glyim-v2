@@ -41,8 +41,6 @@ The "Brain" of the compiler, handling type inference, trait resolution, and the 
 
 | Crate | Version | Purpose | Rationale |
 | :--- | :--- | :--- | :--- |
-| **`chalk-solve`** | `0.96.0` | Trait Solver | Extracted from Chalk project to handle Haskell-style type classes and trait constraints. Latest version fixes bugs in handling coinductive logic. |
-| **`chalk-ir`** | `0.96.0` | Intermediate Representation for Types | Provides the logical structure for the trait solver. |
 | **`rayon`** | `1.12.0` | Parallelism Framework | Used to parallelize heavy lifting phases (type checking, monomorphization) in `glyim-db` and `glyim-egraph`. |
 | **`regalloc2`** | `0.15.1` | Register Allocator | High-performance register allocator for `glyim-mir-interp` (MIR Interpreter) to execute `comptime` functions efficiently. |
 
@@ -95,7 +93,6 @@ A matrix view of how external dependencies map to internal crates (non-exhaustiv
 | :--- | :--- |
 | `glyim-db` | `salsa`, `parking_lot`, `tracing` |
 | `glyim-lex` / `glyim-parse` | `chumsky`, `rowan`, `smol_str` |
-| `glyim-solve` / `glyim-typeck` | `chalk-solve`, `chalk-ir` |
 | `glyim-mir-interp` | `regalloc2` |
 | `glyim-egraph` | `egg`, `rayon` |
 | `glyim-def-map` | `petgraph`, `fixedbitset` |
