@@ -2,6 +2,7 @@
 name = "glyim-solve"
 edition.workspace = true
 version.workspace = true
+
 [dependencies]
 glyim-core = { workspace = true }
 glyim-type = { workspace = true }
