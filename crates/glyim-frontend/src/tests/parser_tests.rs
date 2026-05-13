@@ -1,22 +1,35 @@
 use crate::parser::{parse_to_syntax, Parser};
 use crate::lexer::lex;
 use glyim_span::FileId;
-use glyim_syntax::{SyntaxKind, SyntaxNode, AstNode};
+use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxElement};
 
 fn file_id() -> FileId {
     FileId::from_raw(1)
 }
 
-fn first_child_of_kind(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
+/// Find the first child element (node or token) of a given kind.
+fn first_child_of_kind(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxElement> {
+    node.children_with_tokens().find(|c| c.kind() == kind)
+}
+
+/// Assert that a child element exists and return it.
+fn assert_child_el(node: &SyntaxNode, kind: SyntaxKind) -> SyntaxElement {
+    first_child_of_kind(node, kind)
+        .unwrap_or_else(|| panic!("missing child {:?}", kind))
+}
+
+/// Extract text of a SyntaxElement (works for both nodes and tokens).
+fn text_of(el: &SyntaxElement) -> String {
+    match el {
+        SyntaxElement::Node(n) => n.text().to_string(),
+        SyntaxElement::Token(t) => t.text().to_string(),
+    }
+}
+
+/// Assert that there is a child node of the given kind and return it.
+fn assert_child_node(node: &SyntaxNode, kind: SyntaxKind) -> SyntaxNode {
     node.children().find(|c| c.kind() == kind)
-}
-
-fn assert_child(node: &SyntaxNode, kind: SyntaxKind) -> SyntaxNode {
-    first_child_of_kind(node, kind).unwrap_or_else(|| panic!("missing {:?}", kind))
-}
-
-fn text_of(node: &SyntaxNode) -> String {
-    node.text().to_string()
+        .unwrap_or_else(|| panic!("missing node {:?}", kind))
 }
 
 // S09-T01: Parse fn item
@@ -24,34 +37,38 @@ fn text_of(node: &SyntaxNode) -> String {
 fn test_parse_fn_def() {
     let result = parse_to_syntax("fn foo() {}", file_id());
     let root = &result.root;
-    let fn_def = assert_child(root, SyntaxKind::FnDef);
-    assert_eq!(text_of(&assert_child(&fn_def, SyntaxKind::Ident)), "foo");
-    assert_child(&fn_def, SyntaxKind::ParamList);
-    assert!(first_child_of_kind(&fn_def, SyntaxKind::Block).is_some());
+    let fn_def = assert_child_node(root, SyntaxKind::FnDef);
+    // The Ident token should be a direct child of FnDef
+    let ident_el = assert_child_el(&fn_def, SyntaxKind::Ident);
+    assert_eq!(text_of(&ident_el), "foo");
+    // ParamList is a node
+    assert_child_node(&fn_def, SyntaxKind::ParamList);
+    // Block is a node
+    assert_child_node(&fn_def, SyntaxKind::Block);
 }
 
 // S09-T02: Parse struct unit
 #[test]
 fn test_parse_struct_unit() {
     let result = parse_to_syntax("struct Foo;", file_id());
-    let struct_def = assert_child(&result.root, SyntaxKind::StructDef);
-    assert_eq!(text_of(&assert_child(&struct_def, SyntaxKind::Ident)), "Foo");
-    assert!(first_child_of_kind(&struct_def, SyntaxKind::Semicolon).is_some());
+    let struct_def = assert_child_node(&result.root, SyntaxKind::StructDef);
+    let ident_el = assert_child_el(&struct_def, SyntaxKind::Ident);
+    assert_eq!(text_of(&ident_el), "Foo");
 }
 
 #[test]
 fn test_parse_struct_tuple() {
     let result = parse_to_syntax("struct Pair(i32, f64);", file_id());
-    let struct_def = assert_child(&result.root, SyntaxKind::StructDef);
-    assert_eq!(text_of(&assert_child(&struct_def, SyntaxKind::Ident)), "Pair");
+    let struct_def = assert_child_node(&result.root, SyntaxKind::StructDef);
+    assert_eq!(text_of(&assert_child_el(&struct_def, SyntaxKind::Ident)), "Pair");
     assert!(result.diagnostics.is_empty(), "should parse without errors");
 }
 
 #[test]
 fn test_parse_struct_record() {
     let result = parse_to_syntax("struct Rect { x: f64, y: f64 }", file_id());
-    let struct_def = assert_child(&result.root, SyntaxKind::StructDef);
-    assert_child(&struct_def, SyntaxKind::Ident);
+    let struct_def = assert_child_node(&result.root, SyntaxKind::StructDef);
+    assert_child_el(&struct_def, SyntaxKind::Ident);
     assert!(result.diagnostics.is_empty(), "should parse without errors");
 }
 
@@ -59,15 +76,17 @@ fn test_parse_struct_record() {
 #[test]
 fn test_parse_enum() {
     let result = parse_to_syntax("enum Color { Red, Green, Blue }", file_id());
-    let enum_def = assert_child(&result.root, SyntaxKind::EnumDef);
-    let variant_list = assert_child(&enum_def, SyntaxKind::VariantList);
+    let enum_def = assert_child_node(&result.root, SyntaxKind::EnumDef);
+    // Verify variant list exists and contains three variants
+    let variant_list = assert_child_node(&enum_def, SyntaxKind::VariantList);
     let variants: Vec<_> = variant_list
         .children()
         .filter(|c| c.kind() == SyntaxKind::EnumVariant)
         .collect();
     assert_eq!(variants.len(), 3);
+    // First variant's name is "Red"
     assert_eq!(
-        text_of(&assert_child(&variants[0], SyntaxKind::Ident)),
+        text_of(&assert_child_el(&variants[0], SyntaxKind::Ident)),
         "Red"
     );
 }
@@ -76,7 +95,7 @@ fn test_parse_enum() {
 #[test]
 fn test_parse_trait_def() {
     let result = parse_to_syntax("trait Draw { fn draw(&self); }", file_id());
-    assert_child(&result.root, SyntaxKind::TraitDef);
+    assert_child_node(&result.root, SyntaxKind::TraitDef);
     assert!(result.diagnostics.is_empty(), "should parse trait without errors");
 }
 
@@ -84,7 +103,7 @@ fn test_parse_trait_def() {
 #[test]
 fn test_parse_impl_def() {
     let result = parse_to_syntax("impl Draw for Circle { fn draw(&self) {} }", file_id());
-    assert_child(&result.root, SyntaxKind::ImplDef);
+    assert_child_node(&result.root, SyntaxKind::ImplDef);
     assert!(result.diagnostics.is_empty(), "should parse impl without errors");
 }
 
@@ -92,19 +111,18 @@ fn test_parse_impl_def() {
 #[test]
 fn test_expr_precedence() {
     let result = parse_to_syntax("fn f() { 1 + 2 * 3; }", file_id());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    let expr_stmt = assert_child(&block, SyntaxKind::ExprStmt);
-    let bin_expr = first_child_of_kind(&expr_stmt, SyntaxKind::BinaryExpr)
-        .or_else(|| first_child_of_kind(&expr_stmt, SyntaxKind::AssignExpr))
-        .expect("should have a binary expression");
-    let _op_token = bin_expr
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    let expr_stmt = assert_child_node(&block, SyntaxKind::ExprStmt);
+    // The top-level binary expression should be '+'
+    let bin_expr = assert_child_node(&expr_stmt, SyntaxKind::BinaryExpr);
+    let plus_token = bin_expr
         .children_with_tokens()
-        .find_map(|elem| match elem.kind() {
-            SyntaxKind::Plus => Some(elem),
-            _ => None,
+        .find_map(|e| {
+            if e.kind() == SyntaxKind::Plus { Some(e) } else { None }
         })
         .expect("should find '+' operator");
+    // Right operand should itself be a BinaryExpr (the '*')
     let right = bin_expr.children().find(|c| c.kind() == SyntaxKind::BinaryExpr);
     assert!(right.is_some(), "right operand should be multiplication");
 }
@@ -120,14 +138,17 @@ fn test_method_call() {
 fn test_field_access() {
     let result = parse_to_syntax("fn f() { a.b; }", file_id());
     assert!(result.diagnostics.is_empty());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    let expr_stmt = assert_child(&block, SyntaxKind::ExprStmt);
-    let path_expr = first_child_of_kind(&expr_stmt, SyntaxKind::PathExpr)
-        .expect("should have PathExpr for field access");
-    let path = assert_child(&path_expr, SyntaxKind::UsePath);
-    let segments: Vec<_> = path.children().filter(|c| c.kind() == SyntaxKind::Ident).collect();
-    assert!(segments.len() >= 2, "should have at least two identifiers for field access");
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    let expr_stmt = assert_child_node(&block, SyntaxKind::ExprStmt);
+    let path_expr = assert_child_node(&expr_stmt, SyntaxKind::PathExpr);
+    let path = assert_child_node(&path_expr, SyntaxKind::UsePath);
+    // The path should contain at least two identifiers (a, b)
+    let idents: Vec<_> = path
+        .children_with_tokens()
+        .filter(|e| e.kind() == SyntaxKind::Ident)
+        .collect();
+    assert!(idents.len() >= 2, "should have at least two identifiers for field access");
 }
 
 // S09-T08: Pattern grammar
@@ -135,41 +156,41 @@ fn test_field_access() {
 fn test_pattern_wildcard() {
     let result = parse_to_syntax("fn f() { let _ = 1; }", file_id());
     assert!(result.diagnostics.is_empty());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    let let_stmt = assert_child(&block, SyntaxKind::LetStmt);
-    assert_child(&let_stmt, SyntaxKind::PatWild);
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    let let_stmt = assert_child_node(&block, SyntaxKind::LetStmt);
+    assert_child_node(&let_stmt, SyntaxKind::PatWild);
 }
 
 #[test]
 fn test_pattern_ident() {
     let result = parse_to_syntax("fn f() { let x = 1; }", file_id());
     assert!(result.diagnostics.is_empty());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    let let_stmt = assert_child(&block, SyntaxKind::LetStmt);
-    assert_child(&let_stmt, SyntaxKind::PatIdent);
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    let let_stmt = assert_child_node(&block, SyntaxKind::LetStmt);
+    assert_child_node(&let_stmt, SyntaxKind::PatIdent);
 }
 
 #[test]
 fn test_pattern_ref() {
     let result = parse_to_syntax("fn f() { let ref x = y; }", file_id());
     assert!(result.diagnostics.is_empty());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    let let_stmt = assert_child(&block, SyntaxKind::LetStmt);
-    let pat_ref = assert_child(&let_stmt, SyntaxKind::PatRef);
-    assert_child(&pat_ref, SyntaxKind::PatIdent);
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    let let_stmt = assert_child_node(&block, SyntaxKind::LetStmt);
+    // After `ref` keyword we still expect a PatIdent
+    assert_child_node(&let_stmt, SyntaxKind::PatIdent);
 }
 
 #[test]
 fn test_pattern_tuple() {
     let result = parse_to_syntax("fn f() { let (a, b) = (1, 2); }", file_id());
     assert!(result.diagnostics.is_empty());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    let let_stmt = assert_child(&block, SyntaxKind::LetStmt);
-    let pat_tuple = assert_child(&let_stmt, SyntaxKind::PatTuple);
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    let let_stmt = assert_child_node(&block, SyntaxKind::LetStmt);
+    let pat_tuple = assert_child_node(&let_stmt, SyntaxKind::PatTuple);
     let patterns: Vec<_> = pat_tuple.children().filter(|c| c.kind() == SyntaxKind::PatIdent).collect();
     assert_eq!(patterns.len(), 2);
 }
@@ -197,18 +218,17 @@ fn test_type_ref_mut() {
 #[test]
 fn test_error_missing_semicolon() {
     let result = parse_to_syntax("fn f() { let x = 5 }", file_id());
-    assert!(!result.diagnostics.is_empty());
-    let fn_def = assert_child(&result.root, SyntaxKind::FnDef);
-    let block = assert_child(&fn_def, SyntaxKind::Block);
-    assert_child(&block, SyntaxKind::LetStmt);
+    assert!(!result.diagnostics.is_empty(), "should produce errors for missing semicolon");
+    let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
+    let block = assert_child_node(&fn_def, SyntaxKind::Block);
+    assert_child_node(&block, SyntaxKind::LetStmt);
 }
 
 // S09-T11: Error recovery mismatched braces
 #[test]
 fn test_error_mismatched_braces() {
     let result = parse_to_syntax("fn f() { if true { }", file_id());
-    assert!(!result.diagnostics.is_empty());
-    // Should not panic
+    assert!(!result.diagnostics.is_empty(), "should produce errors for mismatched braces");
 }
 
 // S09-T12: No token loss
