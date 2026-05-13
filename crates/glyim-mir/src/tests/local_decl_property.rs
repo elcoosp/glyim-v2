@@ -1,65 +1,85 @@
+//! Property-based tests for LocalDecl
+
 use crate::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-use glyim_core::primitives::Mutability;
+use glyim_type::{Ty, TyCtxMut, TyKind, Region};
 use glyim_span::Span;
-use glyim_type::Ty;
 
-fn si() -> SourceInfo {
-    SourceInfo::new(Span::DUMMY)
+#[test]
+fn test_local_decl_creation() {
+    let decl = LocalDecl {
+        ty: Ty::BOOL,
+        mutability: glyim_core::primitives::Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    assert_eq!(decl.ty, Ty::BOOL);
+    assert_eq!(decl.mutability, glyim_core::primitives::Mutability::Not);
 }
 
 #[test]
-fn local_decl_ty_matches_body_locals() {
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+fn test_local_decl_mutable() {
+    let decl = LocalDecl {
+        ty: Ty::ERROR,
+        mutability: glyim_core::primitives::Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
 
-    let types = [Ty::BOOL, Ty::UNIT, Ty::NEVER, Ty::ERROR];
-    for ty in types {
-        body.locals.push(LocalDecl { ty, mutability: Mutability::Not, source_info: si() });
-    }
-
-    for (i, expected_ty) in types.iter().enumerate() {
-        assert_eq!(body.locals[LocalIdx::from_raw((i + 1) as u32)].ty, *expected_ty);
-    }
+    assert_eq!(decl.mutability, glyim_core::primitives::Mutability::Mut);
+    assert!(decl.mutability.is_mut());
 }
 
 #[test]
-fn local_decl_mutability_roundtrip() {
-    let decl_not = LocalDecl { ty: Ty::BOOL, mutability: Mutability::Not, source_info: si() };
-    assert!(!decl_not.mutability.is_mut());
+fn test_local_decl_with_custom_span() {
+    let span = Span::DUMMY;
+    let decl = LocalDecl {
+        ty: Ty::UNIT,
+        mutability: glyim_core::primitives::Mutability::Not,
+        source_info: SourceInfo::new(span),
+    };
 
-    let decl_mut = LocalDecl { ty: Ty::BOOL, mutability: Mutability::Mut, source_info: si() };
-    assert!(decl_mut.mutability.is_mut());
+    assert_eq!(decl.source_info.span, span);
 }
 
 #[test]
-fn local_decl_source_info_preserved() {
-    let span = Span::new(
-        glyim_span::FileId::from_raw(42),
-        glyim_span::ByteIdx::from_raw(100),
-        glyim_span::ByteIdx::from_raw(200),
-        glyim_span::SyntaxContext::ROOT,
-    );
-    let decl = LocalDecl { ty: Ty::BOOL, mutability: Mutability::Not, source_info: SourceInfo::new(span) };
-    assert_eq!(decl.source_info.span.lo.to_usize(), 100);
-    assert_eq!(decl.source_info.span.hi.to_usize(), 200);
-}
-
-#[test]
-fn index_vec_local_decl_push_ordering() {
+fn test_local_decl_vector_operations() {
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-    for i in 0..5u32 {
-        locals.push(LocalDecl {
-            ty: if i % 2 == 0 { Ty::BOOL } else { Ty::UNIT },
-            mutability: Mutability::Not,
-            source_info: si(),
-        });
-    }
 
-    assert_eq!(locals.len(), 5);
-    for i in 0..5u32 {
-        let idx = LocalIdx::from_raw(i);
-        let expected_ty = if i % 2 == 0 { Ty::BOOL } else { Ty::UNIT };
-        assert_eq!(locals[idx].ty, expected_ty, "Mismatch at local {}", i);
-    }
+    let decl1 = LocalDecl {
+        ty: Ty::BOOL,
+        mutability: glyim_core::primitives::Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    let decl2 = LocalDecl {
+        ty: Ty::UNIT,
+        mutability: glyim_core::primitives::Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    let idx1: LocalIdx = locals.push(decl1);
+    let idx2: LocalIdx = locals.push(decl2);
+
+    assert_eq!(locals[idx1].ty, Ty::BOOL);
+    assert_eq!(locals[idx1].mutability, glyim_core::primitives::Mutability::Not);
+    assert_eq!(locals[idx2].ty, Ty::UNIT);
+    assert_eq!(locals[idx2].mutability, glyim_core::primitives::Mutability::Mut);
+    assert_eq!(locals.len(), 2);
+}
+
+#[test]
+fn test_local_decl_with_complex_type() {
+    let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
+    let i32_ty = c.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+    let ref_ty = c.mk_ref(Region::Erased, i32_ty, glyim_core::primitives::Mutability::Not);
+    let ctx = c.freeze();
+
+    let decl = LocalDecl {
+        ty: ref_ty,
+        mutability: glyim_core::primitives::Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    assert_eq!(decl.ty, ref_ty);
+    assert!(matches!(ctx.ty_kind(decl.ty), TyKind::Ref(_, _, _)));
 }

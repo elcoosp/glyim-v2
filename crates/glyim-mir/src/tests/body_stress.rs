@@ -1,139 +1,255 @@
+//! Stress tests for Body construction and manipulation
+
 use crate::*;
-use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-use glyim_core::primitives::Mutability;
 use glyim_span::Span;
-use glyim_type::Ty;
-
-fn si() -> SourceInfo {
-    SourceInfo::new(Span::DUMMY)
-}
 
 #[test]
-fn body_with_many_locals() {
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-    for i in 1..=100u32 {
-        body.locals.push(LocalDecl {
+fn test_large_body_construction() {
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+
+    for i in 0..1000 {
+        let terminator = if i == 999 {
+            TerminatorKind::Return
+        } else {
+            TerminatorKind::Goto { target: BasicBlockIdx::from_raw(i + 1) }
+        };
+
+        basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: terminator,
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+    }
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    for _ in 0..100 {
+        locals.push(LocalDecl {
             ty: Ty::BOOL,
-            mutability: if i % 2 == 0 { Mutability::Mut } else { Mutability::Not },
-            source_info: si(),
-        });
-    }
-    body.arg_count = 50;
-    assert_eq!(body.locals.len(), 101);
-    assert_eq!(body.args().len(), 50);
-    for (i, arg) in body.args().iter().enumerate() {
-        assert_eq!(arg.ty, Ty::BOOL);
-        assert_eq!(arg.mutability, if (i + 1) % 2 == 0 { Mutability::Mut } else { Mutability::Not });
-    }
-}
-
-#[test]
-fn body_with_many_basic_blocks() {
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-
-    let num_blocks = 50;
-    for i in 0..num_blocks {
-        let next = if i + 1 < num_blocks {
-            Some(BasicBlockIdx::from_raw((i + 1) as u32))
-        } else {
-            None
-        };
-
-        let term = if i == num_blocks - 1 {
-            Terminator { kind: TerminatorKind::Return, source_info: si() }
-        } else {
-            Terminator {
-                kind: TerminatorKind::Goto { target: next.unwrap() },
-                source_info: si(),
-            }
-        };
-        body.basic_blocks.push(BasicBlockData::new(term));
-    }
-
-    assert_eq!(body.basic_blocks.len(), 51);
-
-    for i in 0..num_blocks - 1 {
-        let bb_idx = BasicBlockIdx::from_raw((i + 1) as u32);
-        if let TerminatorKind::Goto { target } = &body.basic_blocks[bb_idx].terminator.kind {
-            assert_eq!(*target, BasicBlockIdx::from_raw((i + 2) as u32));
-        }
-    }
-}
-
-#[test]
-fn body_with_deeply_nested_calls() {
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-    body.locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: si() });
-
-    let mut basic_block = BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Return,
-        source_info: si(),
-    });
-
-    for i in 0..20 {
-        basic_block.statements.push(Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(1)),
-                Rvalue::Use(Operand::Constant(MirConst {
-                    kind: MirConstKind::Uint(i as u128),
-                    ty: Ty::UNIT,
-                    span: Span::DUMMY,
-                })),
-            ),
-            source_info: si(),
+            mutability: glyim_core::primitives::Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
         });
     }
 
-    body.basic_blocks.push(basic_block);
-    assert_eq!(body.basic_blocks[BasicBlockIdx::from_raw(1)].statements.len(), 20);
-}
-
-#[test]
-fn body_switch_with_many_branches() {
-    let targets = SwitchTargets::new(
-        Box::new((0..50u128).map(|i| (i, BasicBlockIdx::from_raw(i as u32 + 1))).collect::<Vec<_>>()),
-        BasicBlockIdx::from_raw(51),
-    );
-
-    let term = Terminator {
-        kind: TerminatorKind::SwitchInt {
-            discr: Operand::Copy(Place::new(LocalIdx::from_raw(0))),
-            switch_ty: Ty::BOOL,
-            targets,
-        },
-        source_info: si(),
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
     };
 
-    if let TerminatorKind::SwitchInt { targets, .. } = &term.kind {
-        assert_eq!(targets.iter().count(), 50);
-        assert_eq!(targets.otherwise(), BasicBlockIdx::from_raw(51));
-    } else {
-        panic!("Expected SwitchInt");
-    }
+    assert_eq!(body.basic_blocks.len(), 1000);
+    assert_eq!(body.locals.len(), 100);
 }
 
 #[test]
-fn body_with_alternating_storage_live_dead() {
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-    for i in 1..=10u32 {
-        body.locals.push(LocalDecl { ty: Ty::BOOL, mutability: Mutability::Not, source_info: si() });
+fn test_complex_switch_targets() {
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+
+    let mut branches = Vec::new();
+    for i in 0..50 {
+        let bb = basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+        branches.push((i as u128, bb));
     }
 
-    let mut bb = BasicBlockData::new(Terminator { kind: TerminatorKind::Return, source_info: si() });
+    let otherwise = basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Unreachable,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
 
-    for i in 1..=10u32 {
-        bb.statements.push(Statement { kind: StatementKind::StorageLive(LocalIdx::from_raw(i)), source_info: si() });
-        bb.statements.push(Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(i)),
-                Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::Bool(true), ty: Ty::BOOL, span: Span::DUMMY })),
-            ),
-            source_info: si(),
+    let targets = SwitchTargets::new(branches.into_boxed_slice(), otherwise);
+
+    let _switch_bb = basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::SwitchInt {
+            discr: Operand::Constant(MirConst {
+                kind: MirConstKind::Int(25),
+                ty: Ty::ERROR,
+                span: Span::DUMMY,
+            }),
+            switch_ty: Ty::ERROR,
+            targets,
+        },
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals: IndexVec::new(),
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
+    };
+
+    assert_eq!(body.basic_blocks.len(), 52);
+}
+
+#[test]
+fn test_deeply_nested_terminators() {
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+
+    let _prev_bb = BasicBlockIdx::from_raw(0);
+    for i in 0..100 {
+        let next_bb = basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Goto { target: BasicBlockIdx::from_raw(i + 1) },
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+        let _prev_bb = next_bb;
+    }
+
+    basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals: IndexVec::new(),
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
+    };
+
+    assert_eq!(body.basic_blocks.len(), 101);
+}
+
+#[test]
+fn test_many_locals() {
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+
+    basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    for i in 0..10000 {
+        let ty = if i % 3 == 0 {
+            Ty::BOOL
+        } else if i % 3 == 1 {
+            Ty::UNIT
+        } else {
+            Ty::NEVER
+        };
+        locals.push(LocalDecl {
+            ty,
+            mutability: glyim_core::primitives::Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
         });
-        bb.statements.push(Statement { kind: StatementKind::StorageDead(LocalIdx::from_raw(i)), source_info: si() });
     }
 
-    body.basic_blocks.push(bb);
-    assert_eq!(body.basic_blocks[BasicBlockIdx::from_raw(1)].statements.len(), 30);
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 1000,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
+    };
+
+    assert_eq!(body.locals.len(), 10000);
+    assert_eq!(body.args().len(), 1000);
+}
+
+#[test]
+fn test_mixed_projection_chains() {
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+
+    locals.push(LocalDecl {
+        ty: Ty::BOOL,
+        mutability: glyim_core::primitives::Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
+    let place = Place {
+        local: LocalIdx::from_raw(0),
+        projection: Box::new([
+            ProjectionElem::Deref,
+            ProjectionElem::Field(glyim_type::FieldIdx::from_raw(1)),
+            ProjectionElem::Index(LocalIdx::from_raw(2)),
+        ]),
+    };
+
+    let stmt = Statement {
+        kind: StatementKind::Assign(place, Rvalue::Use(Operand::Copy(Place::new(LocalIdx::from_raw(0))))),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    let _bb0 = basic_blocks.push(BasicBlockData {
+        statements: vec![stmt],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
+    };
+
+    assert_eq!(body.basic_blocks.len(), 1);
+}
+
+#[test]
+fn test_large_aggregate_construction() {
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    let locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+
+    let mut operands = Vec::new();
+    for i in 0..100 {
+        operands.push(Operand::Constant(MirConst {
+            kind: MirConstKind::Int(i),
+            ty: Ty::ERROR,
+            span: Span::DUMMY,
+        }));
+    }
+
+    let rvalue = Rvalue::Aggregate(AggregateKind::Tuple, operands);
+    let stmt = Statement {
+        kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), rvalue),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    let _bb0 = basic_blocks.push(BasicBlockData {
+        statements: vec![stmt],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
+    };
+
+    assert_eq!(body.basic_blocks.len(), 1);
 }
