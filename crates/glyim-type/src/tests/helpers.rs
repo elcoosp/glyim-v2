@@ -1,18 +1,15 @@
-//! Local test helpers — standalone so we don't depend on glyim-test availability.
-
-use crate::TyCtx;
-use crate::TyCtxMut;
+use crate::context::{TyCtx, TyCtxMut};
 use glyim_core::interner::Interner;
 
-pub fn test_ty_ctx() -> TyCtxMut {
-    TyCtxMut::new(Interner::new())
+pub(crate) fn test_ty_ctx() -> TyCtxMut {
+    TyCtxMut::new(Interner::default())
 }
 
-pub fn test_frozen_ty_ctx() -> TyCtx {
+pub(crate) fn test_frozen_ty_ctx() -> TyCtx {
     test_ty_ctx().freeze()
 }
 
-pub fn with_fresh_ty_ctx<F, R>(f: F) -> (TyCtx, R)
+pub(crate) fn with_fresh_ty_ctx<F, R>(f: F) -> (TyCtx, R)
 where
     F: FnOnce(&mut TyCtxMut) -> R,
 {
