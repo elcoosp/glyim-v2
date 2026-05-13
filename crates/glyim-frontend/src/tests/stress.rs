@@ -71,7 +71,6 @@ fn alternating_tokens() {
         .map(|i| if i % 2 == 0 { "x + " } else { "1 " })
         .collect();
     let result = lex_result(source.trim());
-    // 50 iterations produce "x + 1 " (3 tokens each) = 150 tokens
     assert!(
         result.tokens.len() >= 100,
         "should have many tokens, got {}",
@@ -79,23 +78,6 @@ fn alternating_tokens() {
     );
 }
 
-#[test]
-fn many_nested_comments() {
-    let mut source = String::new();
-    for _ in 0..50 {
-        source.push_str("/* ");
-    }
-    for _ in 0..50 {
-        source.push_str("*/ ");
-    }
-    source.push_str("42");
-    let tokens = lex_tokens(&source);
-    assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind, SyntaxKind::IntLit);
-    assert_eq!(tokens[0].text, "42");
-}
-NEW_NEST2
-cat > "$NEW_TMP2" << 'NEW_NEST1'
 #[test]
 fn many_nested_comments() {
     let mut source = String::new();
@@ -337,7 +319,6 @@ fn string_various_contents() {
         );
     }
 
-    // Escaped strings tested separately for clarity
     let escaped_cases: Vec<(&str, SyntaxKind)> = vec![
         (r#""\n""#, SyntaxKind::StringLit),
         (r#""\t\n\r""#, SyntaxKind::StringLit),
@@ -365,7 +346,6 @@ fn char_various_contents() {
         );
     }
 
-    // Escaped chars tested separately
     let escaped_cases: Vec<(&str, SyntaxKind)> = vec![
         (r"'\n'", SyntaxKind::CharLit),
         (r"'\t'", SyntaxKind::CharLit),
