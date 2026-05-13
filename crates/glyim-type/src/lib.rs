@@ -20,3 +20,6 @@ pub use predicate::*;
 pub use region::*;
 pub use substitution::*;
 pub use ty::*;
+
+#[cfg(test)]
+mod tests;
