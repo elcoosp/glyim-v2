@@ -80,7 +80,7 @@ impl UiTestStrategy {
     pub fn evaluate(
         &self,
         output: &CompileOutput,
-        source: &str,
+        _source: &str,
         test_path: &Path,
         bless: bool,
     ) -> super::executor::TestOutcome {
