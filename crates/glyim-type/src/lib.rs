@@ -2,6 +2,7 @@
 pub mod ty;
 pub mod region;
 pub mod substitution;
+pub mod predicate;
 pub mod binder;
 pub mod flags;
 pub mod display;
@@ -10,11 +11,12 @@ pub mod fn_sig;
 pub mod context;
 
 pub use ty::*;
-pub use region::BoundRegionKind;
-pub use binder::{Binder, BoundVariableKind};
-pub use const_val::{Const, ConstKind};
-pub use fn_sig::FnSig;
-pub use flags::TypeFlags;
-pub use display::TypeLookup;
-pub use context::{TyCtxMut, TyCtx};
-pub use display::PrintTy;
+pub use region::*;
+pub use substitution::*;
+pub use predicate::*;
+pub use binder::*;
+pub use flags::*;
+pub use display::*;
+pub use const_val::*;
+pub use fn_sig::*;
+pub use context::*;

@@ -2,9 +2,17 @@ use glyim_core::def_id::*;
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use std::fmt;
+use crate::region::*;
+use crate::substitution::*;
+use crate::const_val::*;
+use crate::fn_sig::*;
+use crate::predicate::*;
+use crate::binder::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Ty { raw: u32 }
+pub struct Ty {
+    raw: u32,
+}
 
 impl Ty {
     #[inline]
@@ -53,43 +61,3 @@ pub struct BoundTy { pub var: u32, pub kind: BoundTyKind }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BoundTyKind { Anon, Param(Name) }
-
-// Substitution with pub(crate) fields
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Substitution {
-    pub(crate) index: u32,
-    pub(crate) len: u16,
-}
-impl Substitution {
-    pub fn is_empty(self) -> bool { self.len == 0 }
-    pub fn index(self) -> u32 { self.index }
-    pub fn len(self) -> u16 { self.len }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Predicate { Trait(TraitPredicate) }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TraitPredicate { pub trait_ref: TraitRef }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TraitRef { pub def_id: TraitDefId, pub substs: Substitution }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FnSig { pub inputs: Substitution, pub output: Ty }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Region { Static, Var(RegionVid), Error }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Const { pub kind: ConstKind, pub ty: Ty }
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum ConstKind { Int(i128), Unit, Error }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Binder<T> { pub value: T, pub bound_vars: Box<[BoundVariableKind]> }
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BoundVariableKind { Ty(BoundTyKind), Region(BoundRegionKind), Const }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BoundRegionKind { BrAnon(u32), BrNamed(Name), BrEnv }
