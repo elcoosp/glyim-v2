@@ -229,6 +229,7 @@ impl GlyimDiagnostic {
 
 pub type CompResult<T> = Result<T, Vec<GlyimDiagnostic>>;
 
+#[allow(clippy::type_complexity)]
 pub struct DiagSink {
     diagnostics: Vec<GlyimDiagnostic>,
     error_count: usize,

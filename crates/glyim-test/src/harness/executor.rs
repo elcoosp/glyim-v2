@@ -31,6 +31,7 @@ pub struct TestResult {
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
 
+#[allow(dead_code)]
 pub struct TestExecutor {
     default_timeout: Duration,
     bless: bool,

@@ -75,6 +75,7 @@ impl Span {
         self.hi.to_raw().saturating_sub(self.lo.to_raw())
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn is_empty(self) -> bool {
         self.len() == 0
     }
