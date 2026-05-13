@@ -252,3 +252,6 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
         &self.target
     }
 }
+
+#[cfg(test)]
+mod tests;

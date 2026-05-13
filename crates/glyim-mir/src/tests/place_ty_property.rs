@@ -3,14 +3,18 @@
 use crate::*;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::IntTy;
-use glyim_type::{FieldIdx, GenericArg, Region, Ty, TyCtxMut, TyKind, Const, ConstKind};
 use glyim_span::Span;
+use glyim_type::{Const, ConstKind, FieldIdx, GenericArg, Region, Ty, TyCtxMut, TyKind};
 
 #[test]
 fn test_place_ty_deref_on_ref() {
     let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
     let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
-    let ref_ty = c.mk_ref(Region::Erased, i32_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        i32_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let ctx = c.freeze();
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -33,7 +37,11 @@ fn test_place_ty_deref_on_ref() {
 fn test_place_ty_deref_on_mut_ref() {
     let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
     let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
-    let ref_ty = c.mk_ref(Region::Erased, i32_ty, glyim_core::primitives::Mutability::Mut);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        i32_ty,
+        glyim_core::primitives::Mutability::Mut,
+    );
     let ctx = c.freeze();
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -56,7 +64,10 @@ fn test_place_ty_deref_on_mut_ref() {
 fn test_place_ty_deref_on_raw_ptr() {
     let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
     let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
-    let ptr_ty = c.mk_ty(TyKind::RawPtr(i32_ty, glyim_core::primitives::Mutability::Not));
+    let ptr_ty = c.mk_ty(TyKind::RawPtr(
+        i32_ty,
+        glyim_core::primitives::Mutability::Not,
+    ));
     let ctx = c.freeze();
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -173,7 +184,11 @@ fn test_place_ty_chained_deref_field() {
         let subst = c.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(i32_ty)]);
         c.mk_ty(TyKind::Tuple(subst))
     };
-    let ref_ty = c.mk_ref(Region::Erased, tuple_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        tuple_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let ctx = c.freeze();
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -185,7 +200,10 @@ fn test_place_ty_chained_deref_field() {
 
     let place = Place {
         local: LocalIdx::from_raw(0),
-        projection: Box::new([ProjectionElem::Deref, ProjectionElem::Field(FieldIdx::from_raw(0))]),
+        projection: Box::new([
+            ProjectionElem::Deref,
+            ProjectionElem::Field(FieldIdx::from_raw(0)),
+        ]),
     };
 
     let ty = place.ty(&ctx, &locals);

@@ -3,8 +3,8 @@
 use crate::*;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::IntTy;
-use glyim_type::{FieldIdx, GenericArg, Region, TyCtxMut, TyKind, Const, ConstKind};
 use glyim_span::Span;
+use glyim_type::{Const, ConstKind, FieldIdx, GenericArg, Region, TyCtxMut, TyKind};
 
 #[test]
 fn test_nested_ref_field_access() {
@@ -14,8 +14,16 @@ fn test_nested_ref_field_access() {
         let subst = c.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(i32_ty)]);
         c.mk_ty(TyKind::Tuple(subst))
     };
-    let ref_ty = c.mk_ref(Region::Erased, tuple_ty, glyim_core::primitives::Mutability::Not);
-    let ref_ref_ty = c.mk_ref(Region::Erased, ref_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        tuple_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
+    let ref_ref_ty = c.mk_ref(
+        Region::Erased,
+        ref_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let ctx = c.freeze();
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -42,7 +50,11 @@ fn test_nested_ref_field_access() {
 fn test_array_of_refs() {
     let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
     let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
-    let ref_ty = c.mk_ref(Region::Erased, i32_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        i32_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let const_len = Const {
         kind: ConstKind::Int(10),
         ty: c.mk_ty(TyKind::Uint(glyim_core::primitives::UintTy::Usize)),
@@ -73,7 +85,11 @@ fn test_array_of_refs() {
 fn test_slice_of_refs() {
     let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
     let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
-    let ref_ty = c.mk_ref(Region::Erased, i32_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        i32_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let slice_ty = c.mk_ty(TyKind::Slice(ref_ty));
     let ctx = c.freeze();
 

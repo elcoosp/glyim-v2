@@ -2,8 +2,8 @@
 
 use crate::*;
 use glyim_core::arena::IndexVec;
-use glyim_type::{Ty, TyCtxMut, TyKind, Region};
 use glyim_span::Span;
+use glyim_type::{Region, Ty, TyCtxMut, TyKind};
 
 #[test]
 fn test_local_decl_creation() {
@@ -61,9 +61,15 @@ fn test_local_decl_vector_operations() {
     let idx2: LocalIdx = locals.push(decl2);
 
     assert_eq!(locals[idx1].ty, Ty::BOOL);
-    assert_eq!(locals[idx1].mutability, glyim_core::primitives::Mutability::Not);
+    assert_eq!(
+        locals[idx1].mutability,
+        glyim_core::primitives::Mutability::Not
+    );
     assert_eq!(locals[idx2].ty, Ty::UNIT);
-    assert_eq!(locals[idx2].mutability, glyim_core::primitives::Mutability::Mut);
+    assert_eq!(
+        locals[idx2].mutability,
+        glyim_core::primitives::Mutability::Mut
+    );
     assert_eq!(locals.len(), 2);
 }
 
@@ -71,7 +77,11 @@ fn test_local_decl_vector_operations() {
 fn test_local_decl_with_complex_type() {
     let mut c = TyCtxMut::new(glyim_core::interner::Interner::new());
     let i32_ty = c.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
-    let ref_ty = c.mk_ref(Region::Erased, i32_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = c.mk_ref(
+        Region::Erased,
+        i32_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let ctx = c.freeze();
 
     let decl = LocalDecl {
