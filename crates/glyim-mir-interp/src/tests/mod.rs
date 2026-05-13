@@ -5,6 +5,7 @@ mod boundaries;
 mod branching;
 mod calls;
 mod common;
+mod comprehensive;
 mod edge_cases;
 mod limits;
 mod stub_coverage;
