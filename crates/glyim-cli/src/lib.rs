@@ -2,7 +2,6 @@ use clap::Parser;
 use glyim_db::{Database, CrateConfig};
 use glyim_pipeline::Pipeline;
 use glyim_codegen_llvm::LlvmBackend;
-use glyim_codegen::CodegenBackend;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -25,7 +24,7 @@ pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let output = args.output.unwrap_or_else(|| {
+    let _output = args.output.unwrap_or_else(|| {
         let mut out = args.input.clone();
         out.set_extension("o");
         out

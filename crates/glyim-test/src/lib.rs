@@ -3,7 +3,6 @@ use glyim_core::interner::Interner;
 use glyim_type::{Ty, TyCtx, TyCtxMut, TyKind, TypeLookup, PrintTy};
 use glyim_mir::{Body, SourceInfo};
 use glyim_span::{Span};
-use glyim_diag::GlyimDiagnostic;
 
 pub struct TestCtxBuilder {
     interner: Option<Interner>,

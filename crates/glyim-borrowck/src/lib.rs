@@ -5,7 +5,6 @@
 
 use glyim_mir::Body;
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::Span;
 
 #[derive(Clone, Debug)]
 pub struct BorrowckResult {
