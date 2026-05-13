@@ -1,7 +1,6 @@
 use glyim_test::{assert_layout, test_frozen_ty_ctx, with_fresh_ty_ctx};
 use glyim_core::primitives::*;
 use crate::*;
-use glyim_type::*;
 
 #[test]
 fn s04_t01_layout_i8() {
@@ -80,7 +79,7 @@ fn s04_t12_layout_slice_is_unsized() {
 #[test]
 fn s04_t13_layout_dyn_is_unsized() {
     let (ctx, ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Dynamic(
-        glyim_type::Binder { bound_vars: vec![], value: Box::new([]) },
+        glyim_type::Binder { bound_vars: vec![].into(), value: Box::new([]) },
         Region::Erased,
     )));
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
