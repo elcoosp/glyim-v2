@@ -3,11 +3,12 @@
 //! implementation code. Every stub must emit a warning on first execution."
 
 use crate::*;
-use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
+use glyim_core::{CrateId, DefId, FloatTy, IndexVec, IntTy, LocalDefId, Mutability};
+#[allow(unused_imports)]
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
-use glyim_type::{Ty, TyCtxMut, TyKind};
+use glyim_type::{Ty, TyKind};
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
@@ -103,7 +104,7 @@ fn discriminant_rvalue_returns_error() {
 #[test]
 fn float_to_int_cast_returns_error() {
     let mut tcx_mut = test_ty_ctx();
-    let f32_ty = tcx_mut.mk_ty(TyKind::Float(glyim_type::FloatTy::F32));
+    let f32_ty = tcx_mut.mk_ty(TyKind::Float(glyim_core::FloatTy::F32));
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
@@ -154,7 +155,7 @@ fn float_to_int_cast_returns_error() {
 #[test]
 fn float_const_returns_error() {
     let mut tcx_mut = test_ty_ctx();
-    let f32_ty = tcx_mut.mk_ty(TyKind::Float(glyim_type::FloatTy::F32));
+    let f32_ty = tcx_mut.mk_ty(TyKind::Float(glyim_core::FloatTy::F32));
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
@@ -197,7 +198,7 @@ fn string_const_returns_error() {
         local_decl(str_ty, Mutability::Mut),
     ]);
     let c = MirConst {
-        kind: MirConstKind::String(glyim_core::Name::from_raw(0)),
+        kind: MirConstKind::String(glyim_core::Name::from(0)),
         ty: str_ty,
         span: Span::DUMMY,
     };
@@ -408,9 +409,10 @@ fn repeat_rvalue_returns_operand() {
                 Place::new(LocalIdx::from_raw(1)),
                 Rvalue::Repeat(
                     Operand::Constant(c),
-                    glyim_type::Const {
-                        kind: glyim_type::ConstKind::Int(3),
-                        ty: glyim_type::Ty::BOOL,
+                    MirConst {
+                        kind: MirConstKind::Int(3),
+                        ty: i32_ty,
+                        span: Span::DUMMY,
                     },
                 ),
             ),

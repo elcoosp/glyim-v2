@@ -394,7 +394,7 @@ fn step_limit_exact_plus_one_fails() {
 #[test]
 fn bool_not_true() {
     use glyim_core::UnOp;
-    let mut tcx_mut = test_ty_ctx();
+    let tcx_mut = test_ty_ctx();
     let bool_ty = Ty::BOOL;
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
@@ -433,7 +433,7 @@ fn bool_not_true() {
 #[test]
 fn bool_not_false() {
     use glyim_core::UnOp;
-    let mut tcx_mut = test_ty_ctx();
+    let tcx_mut = test_ty_ctx();
     let bool_ty = Ty::BOOL;
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
@@ -473,7 +473,7 @@ fn bool_not_false() {
 
 #[test]
 fn uint_constant_interpreted_as_int() {
-    let mut tcx_mut = test_ty_ctx();
+    let tcx_mut = test_ty_ctx();
     let u32_ty = tcx_mut.mk_ty(TyKind::Uint(glyim_core::UintTy::U32));
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
@@ -510,7 +510,7 @@ fn uint_constant_interpreted_as_int() {
 
 #[test]
 fn unit_constant() {
-    let mut tcx_mut = test_ty_ctx();
+    let tcx_mut = test_ty_ctx();
     let mut body = Body::dummy(dummy_def_id());
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
@@ -595,7 +595,7 @@ fn drop_terminator_proceeds_to_target() {
 
 #[test]
 fn sequential_binary_ops() {
-    let mut tcx_mut = test_ty_ctx();
+    let tcx_mut = test_ty_ctx();
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let mut body = Body::dummy(dummy_def_id());
     let loc_a = LocalIdx::from_raw(1);
