@@ -1,8 +1,8 @@
 use crate::{BytecodeBackend, CodegenBackend};
 use glyim_core::primitives::*;
 use glyim_mir::*;
-use glyim_type::FieldIdx;
 use glyim_span::Span;
+use glyim_type::FieldIdx;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -73,14 +73,7 @@ fn stmt(kind: StatementKind) -> Statement {
 // ============================================================================
 #[test]
 fn t01_empty_function_returns_module_with_return_opcode() {
-    let body = make_body(
-        vec![block(
-            vec![],
-            term(TerminatorKind::Return),
-        )],
-        vec![],
-        0,
-    );
+    let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
 
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&body);
@@ -140,7 +133,10 @@ fn t02_integer_constants_and_add_yields_loadconst_add_return() {
     let bytecode = result.unwrap();
     assert!(!bytecode.is_empty(), "Bytecode should not be empty");
     // Should contain at least LoadConst-like patterns and Add and Return
-    assert!(bytecode.len() > 2, "Expected more than 2 bytes for multiple operations");
+    assert!(
+        bytecode.len() > 2,
+        "Expected more than 2 bytes for multiple operations"
+    );
 }
 
 // ============================================================================
@@ -179,7 +175,10 @@ fn t03_locals_yield_loadlocal_storelocal() {
     let bytecode = result.unwrap();
     assert!(!bytecode.is_empty(), "Bytecode should not be empty");
     // Should contain LoadLocal (or equivalent) operations
-    assert!(bytecode.len() > 1, "Expected more than 1 byte for local operations");
+    assert!(
+        bytecode.len() > 1,
+        "Expected more than 1 byte for local operations"
+    );
 }
 
 // ============================================================================
@@ -222,7 +221,10 @@ fn t04_branch_yields_jumpif_and_jump() {
     let bytecode = result.unwrap();
     assert!(!bytecode.is_empty(), "Bytecode should not be empty");
     // Should contain branch/jump instructions
-    assert!(bytecode.len() > 1, "Expected more than 1 byte for branch operations");
+    assert!(
+        bytecode.len() > 1,
+        "Expected more than 1 byte for branch operations"
+    );
 }
 
 // ============================================================================
@@ -230,18 +232,17 @@ fn t04_branch_yields_jumpif_and_jump() {
 // ============================================================================
 #[test]
 fn t05_generate_returns_non_empty_vec_u8() {
-    let body = make_body(
-        vec![block(vec![], term(TerminatorKind::Return))],
-        vec![],
-        0,
-    );
+    let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
 
     let backend = BytecodeBackend::new();
     let output_path = Path::new("/tmp/test_output.bc");
     let result = backend.generate(&[body], output_path);
     assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
     let bytecode = result.unwrap();
-    assert!(!bytecode.is_empty(), "generate() should return non-empty Vec<u8>");
+    assert!(
+        !bytecode.is_empty(),
+        "generate() should return non-empty Vec<u8>"
+    );
 }
 
 // ============================================================================
@@ -335,10 +336,7 @@ fn t09_storage_live_dead_ignored() {
 fn t10_nop_emits_nothing() {
     let body = make_body(
         vec![block(
-            vec![
-                stmt(StatementKind::Nop),
-                stmt(StatementKind::Nop),
-            ],
+            vec![stmt(StatementKind::Nop), stmt(StatementKind::Nop)],
             term(TerminatorKind::Return),
         )],
         vec![],
@@ -359,16 +357,8 @@ fn t10_nop_emits_nothing() {
 // ============================================================================
 #[test]
 fn t11_generate_multiple_bodies_combines() {
-    let body1 = make_body(
-        vec![block(vec![], term(TerminatorKind::Return))],
-        vec![],
-        0,
-    );
-    let body2 = make_body(
-        vec![block(vec![], term(TerminatorKind::Return))],
-        vec![],
-        0,
-    );
+    let body1 = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
+    let body2 = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
 
     let backend = BytecodeBackend::new();
     let output_path = Path::new("/tmp/test_output_multi.bc");
@@ -401,16 +391,14 @@ fn t12_generate_empty_bodies_returns_empty() {
 fn t13_bool_constant_encodes_correctly() {
     let body = make_body(
         vec![block(
-            vec![
-                stmt(StatementKind::Assign(
-                    Place::new(LocalIdx::from_raw(0)),
-                    Rvalue::Use(Operand::Constant(MirConst {
-                        kind: MirConstKind::Bool(false),
-                        ty: glyim_type::Ty::BOOL,
-                        span: Span::DUMMY,
-                    })),
-                )),
-            ],
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Bool(false),
+                    ty: glyim_type::Ty::BOOL,
+                    span: Span::DUMMY,
+                })),
+            ))],
             term(TerminatorKind::Return),
         )],
         vec![local_decl(glyim_type::Ty::BOOL)],
@@ -506,10 +494,7 @@ fn t16_ref_stub_does_not_crash() {
         vec![block(
             vec![stmt(StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
-                Rvalue::Ref(
-                    Place::new(LocalIdx::from_raw(1)),
-                    BorrowKind::Shared,
-                ),
+                Rvalue::Ref(Place::new(LocalIdx::from_raw(1)), BorrowKind::Shared),
             ))],
             term(TerminatorKind::Return),
         )],
@@ -535,10 +520,7 @@ fn t17_unary_op_stub_does_not_crash() {
         vec![block(
             vec![stmt(StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
-                Rvalue::UnaryOp(
-                    UnOp::Neg,
-                    Operand::Copy(Place::new(LocalIdx::from_raw(1))),
-                ),
+                Rvalue::UnaryOp(UnOp::Neg, Operand::Copy(Place::new(LocalIdx::from_raw(1)))),
             ))],
             term(TerminatorKind::Return),
         )],
@@ -762,13 +744,11 @@ fn t23_aggregate_tuple_stub_does_not_crash() {
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Aggregate(
                     AggregateKind::Tuple,
-                    vec![
-                        Operand::Constant(MirConst {
-                            kind: MirConstKind::Int(1),
-                            ty: glyim_type::Ty::ERROR,
-                            span: Span::DUMMY,
-                        }),
-                    ],
+                    vec![Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(1),
+                        ty: glyim_type::Ty::ERROR,
+                        span: Span::DUMMY,
+                    })],
                 ),
             ))],
             term(TerminatorKind::Return),

@@ -6,7 +6,6 @@ use glyim_mir::*;
 use glyim_type::Ty;
 use std::path::Path;
 use std::sync::Arc;
-use tracing;
 
 pub trait CodegenBackend {
     fn name(&self) -> &'static str;
@@ -57,7 +56,7 @@ impl CodegenBackend for BytecodeBackend {
             for stmt in &block.statements {
                 emit_statement(&mut bc, &stmt.kind)?;
             }
-            let ref term = block.terminator;
+            let term = &block.terminator;
             emit_terminator(&mut bc, &term.kind, bb_idx.to_raw())?;
         }
         Ok(bc)
