@@ -9,8 +9,8 @@ mod interp_value;
 pub use interp_error::InterpError;
 pub use interp_value::InterpValue;
 
-pub struct Interpreter {
-    tcx: TyCtx,
+pub struct Interpreter<'tcx> {
+    tcx: &'tcx TyCtx,
     step_limit: usize,
     recursion_limit: usize,
     step_count: usize,
@@ -23,8 +23,8 @@ struct Frame {
     locals: Vec<Option<InterpValue>>,
 }
 
-impl Interpreter {
-    pub fn new(tcx: TyCtx) -> Self {
+impl<'tcx> Interpreter<'tcx> {
+    pub fn new(tcx: &'tcx TyCtx) -> Self {
         Interpreter {
             tcx,
             step_limit: 1_000_000,
