@@ -251,3 +251,501 @@ fn t06_name_returns_bytecode() {
     let backend = BytecodeBackend::new();
     assert_eq!(backend.name(), "bytecode");
 }
+
+// ============================================================================
+// S07-T07: Goto terminator emits Jump opcode
+// ============================================================================
+#[test]
+fn t07_goto_emits_jump() {
+    let body = make_body(
+        vec![
+            block(
+                vec![],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
+            ),
+            block(vec![], term(TerminatorKind::Return)),
+        ],
+        vec![],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    assert!(!bytecode.is_empty());
+    // Should contain OP_JUMP (0x07)
+    assert!(bytecode.contains(&0x07u8));
+    // Should also contain OP_RETURN (0x05)
+    assert!(bytecode.contains(&0x05u8));
+}
+
+// ============================================================================
+// S07-T08: Unreachable terminator emits nothing
+// ============================================================================
+#[test]
+fn t08_unreachable_emits_nothing() {
+    let body = make_body(
+        vec![block(vec![], term(TerminatorKind::Unreachable))],
+        vec![],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    // Unreachable should not emit any opcode
+    assert!(bytecode.is_empty());
+}
+
+// ============================================================================
+// S07-T09: StorageLive/StorageDead are ignored
+// ============================================================================
+#[test]
+fn t09_storage_live_dead_ignored() {
+    let body = make_body(
+        vec![block(
+            vec![
+                stmt(StatementKind::StorageLive(LocalIdx::from_raw(0))),
+                stmt(StatementKind::StorageDead(LocalIdx::from_raw(0))),
+            ],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    // Only OP_RETURN should be emitted
+    assert_eq!(bytecode.len(), 1);
+    assert_eq!(bytecode[0], 0x05); // OP_RETURN
+}
+
+// ============================================================================
+// S07-T10: Nop statement emits nothing
+// ============================================================================
+#[test]
+fn t10_nop_emits_nothing() {
+    let body = make_body(
+        vec![block(
+            vec![
+                stmt(StatementKind::Nop),
+                stmt(StatementKind::Nop),
+            ],
+            term(TerminatorKind::Return),
+        )],
+        vec![],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    // Only OP_RETURN should be emitted
+    assert_eq!(bytecode.len(), 1);
+    assert_eq!(bytecode[0], 0x05);
+}
+
+// ============================================================================
+// S07-T11: generate() with multiple bodies combines bytecode
+// ============================================================================
+#[test]
+fn t11_generate_multiple_bodies_combines() {
+    let body1 = make_body(
+        vec![block(vec![], term(TerminatorKind::Return))],
+        vec![],
+        0,
+    );
+    let body2 = make_body(
+        vec![block(vec![], term(TerminatorKind::Return))],
+        vec![],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let output_path = Path::new("/tmp/test_output_multi.bc");
+    let result = backend.generate(&[body1, body2], output_path);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    // Should have 2 OP_RETURN bytes
+    assert_eq!(bytecode.len(), 2);
+    assert_eq!(bytecode[0], 0x05);
+    assert_eq!(bytecode[1], 0x05);
+}
+
+// ============================================================================
+// S07-T12: generate() with empty bodies returns empty Vec
+// ============================================================================
+#[test]
+fn t12_generate_empty_bodies_returns_empty() {
+    let backend = BytecodeBackend::new();
+    let output_path = Path::new("/tmp/test_empty.bc");
+    let result = backend.generate(&[], output_path);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    assert!(bytecode.is_empty());
+}
+
+// ============================================================================
+// S07-T13: Bool constant emits correct integer encoding
+// ============================================================================
+#[test]
+fn t13_bool_constant_encodes_correctly() {
+    let body = make_body(
+        vec![block(
+            vec![
+                stmt(StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(0)),
+                    Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Bool(false),
+                        ty: glyim_type::Ty::BOOL,
+                        span: Span::DUMMY,
+                    })),
+                )),
+            ],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::BOOL)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    // OP_LOAD_CONST (0x01) + 8 bytes (false=0i64) + OP_STORE_LOCAL (0x04) + 4 bytes local index + OP_RETURN (0x05)
+    assert!(bytecode.len() > 9);
+    assert_eq!(bytecode[0], 0x01); // OP_LOAD_CONST
+    // bytes 1-8: false as i64 = all zeros
+    for i in 1..=8 {
+        assert_eq!(bytecode[i], 0u8, "Expected zero at byte {}", i);
+    }
+}
+
+// ============================================================================
+// S07-T14: Stress test - many statements in one function
+// ============================================================================
+#[test]
+fn t14_stress_many_statements() {
+    let num_locals: usize = 20;
+    let mut stmts = Vec::new();
+    for i in 0..num_locals {
+        stmts.push(stmt(StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(i as u32)),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(i as i128),
+                ty: glyim_type::Ty::ERROR,
+                span: Span::DUMMY,
+            })),
+        )));
+    }
+    let body = make_body(
+        vec![block(stmts, term(TerminatorKind::Return))],
+        vec![local_decl(glyim_type::Ty::ERROR); num_locals],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    assert!(!bytecode.is_empty());
+    // Each constant assign: OP_LOAD_CONST (1) + 8 bytes const + OP_STORE_LOCAL (1) + 4 bytes local = 14 bytes
+    // Plus OP_RETURN (1)
+    let expected_min = num_locals * 14 + 1;
+    assert_eq!(bytecode.len(), expected_min);
+}
+
+// ============================================================================
+// S07-T15: Call terminator stub does not crash
+// ============================================================================
+#[test]
+fn t15_call_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![],
+            term(TerminatorKind::Call {
+                func: Operand::Constant(MirConst {
+                    kind: MirConstKind::Unit,
+                    ty: glyim_type::Ty::UNIT,
+                    span: Span::DUMMY,
+                }),
+                args: vec![],
+                destination: Place::new(LocalIdx::from_raw(0)),
+                target: Some(BasicBlockIdx::from_raw(1)),
+                cleanup: None,
+            }),
+        )],
+        vec![local_decl(glyim_type::Ty::UNIT)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bytecode = result.unwrap();
+    // Call stub should emit a warning but not crash; may emit OPERAND + empty or nothing
+    // Just verify it doesn't panic and returns Ok
+    assert!(bytecode.is_empty() || !bytecode.is_empty());
+}
+
+// ============================================================================
+// S07-T16: Ref rvalue stub does not crash
+// ============================================================================
+#[test]
+fn t16_ref_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Ref(
+                    Place::new(LocalIdx::from_raw(1)),
+                    BorrowKind::Shared,
+                ),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    // Ref stub should not crash
+}
+
+// ============================================================================
+// S07-T17: UnaryOp stub does not crash
+// ============================================================================
+#[test]
+fn t17_unary_op_stub_does_not_crash() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::UnaryOp(
+                    UnOp::Neg,
+                    Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+                ),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    // UnaryOp stub should not crash
+}
+
+// ============================================================================
+// S07-T18: Sub/Mul/Div stubs do not crash
+// ============================================================================
+#[test]
+fn t18_arithmetic_stubs_do_not_crash() {
+    for op in &[BinOp::Sub, BinOp::Mul, BinOp::Div] {
+        let body = make_body(
+            vec![block(
+                vec![
+                    stmt(StatementKind::Assign(
+                        Place::new(LocalIdx::from_raw(0)),
+                        Rvalue::Use(Operand::Constant(MirConst {
+                            kind: MirConstKind::Int(10),
+                            ty: glyim_type::Ty::ERROR,
+                            span: Span::DUMMY,
+                        })),
+                    )),
+                    stmt(StatementKind::Assign(
+                        Place::new(LocalIdx::from_raw(1)),
+                        Rvalue::Use(Operand::Constant(MirConst {
+                            kind: MirConstKind::Int(3),
+                            ty: glyim_type::Ty::ERROR,
+                            span: Span::DUMMY,
+                        })),
+                    )),
+                    stmt(StatementKind::Assign(
+                        Place::new(LocalIdx::from_raw(2)),
+                        Rvalue::BinaryOp(
+                            *op,
+                            Box::new((
+                                Operand::Copy(Place::new(LocalIdx::from_raw(0))),
+                                Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+                            )),
+                        ),
+                    )),
+                ],
+                term(TerminatorKind::Return),
+            )],
+            vec![
+                local_decl(glyim_type::Ty::ERROR),
+                local_decl(glyim_type::Ty::ERROR),
+                local_decl(glyim_type::Ty::ERROR),
+            ],
+            0,
+        );
+
+        let backend = BytecodeBackend::new();
+        let result = backend.generate_function(&body);
+        assert!(result.is_ok(), "Op {:?} failed: {:?}", op, result.err());
+    }
+}
+
+// ============================================================================
+// S07-T19: Verify exact bytecode for simple constant+return
+// ============================================================================
+#[test]
+fn t19_exact_bytecode_constant_and_return() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Int(42),
+                    ty: glyim_type::Ty::ERROR,
+                    span: Span::DUMMY,
+                })),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bc = result.unwrap();
+    // OP_LOAD_CONST (1) + 8 bytes (42) + OP_STORE_LOCAL (1) + 4 bytes (local 0) + OP_RETURN (1) = 15 bytes
+    assert_eq!(bc.len(), 15);
+    assert_eq!(bc[0], 0x01); // OP_LOAD_CONST
+    let const_bytes = &bc[1..9];
+    let val = i64::from_le_bytes(const_bytes.try_into().unwrap());
+    assert_eq!(val, 42);
+    assert_eq!(bc[9], 0x04); // OP_STORE_LOCAL
+    let local_bytes = &bc[10..14];
+    let local_idx = u32::from_le_bytes(local_bytes.try_into().unwrap());
+    assert_eq!(local_idx, 0);
+    assert_eq!(bc[14], 0x05); // OP_RETURN
+}
+
+// ============================================================================
+// S07-T20: SwitchInt on bool with false value jumps to false target
+// ============================================================================
+#[test]
+fn t20_switchint_false_jumps_to_false_target() {
+    let body = make_body(
+        vec![
+            block(
+                vec![stmt(StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(0)),
+                    Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Bool(false),
+                        ty: glyim_type::Ty::BOOL,
+                        span: Span::DUMMY,
+                    })),
+                ))],
+                term(TerminatorKind::SwitchInt {
+                    discr: Operand::Copy(Place::new(LocalIdx::from_raw(0))),
+                    switch_ty: glyim_type::Ty::BOOL,
+                    targets: SwitchTargets::new(
+                        Box::new([(0u128, BasicBlockIdx::from_raw(1))]),
+                        BasicBlockIdx::from_raw(2),
+                    ),
+                }),
+            ),
+            block(vec![], term(TerminatorKind::Return)),
+            block(vec![], term(TerminatorKind::Unreachable)),
+        ],
+        vec![local_decl(glyim_type::Ty::BOOL)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bc = result.unwrap();
+    // Should contain OP_JUMP_IF (0x06) and OP_JUMP (0x07)
+    assert!(bc.contains(&0x06u8));
+    assert!(bc.contains(&0x07u8));
+}
+
+// ============================================================================
+// S07-T21: Move operand treated same as Copy
+// ============================================================================
+#[test]
+fn t21_move_operand_works_like_copy() {
+    let body = make_body(
+        vec![block(
+            vec![stmt(StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Move(Place::new(LocalIdx::from_raw(1)))),
+            ))],
+            term(TerminatorKind::Return),
+        )],
+        vec![
+            local_decl(glyim_type::Ty::ERROR),
+            local_decl(glyim_type::Ty::ERROR),
+        ],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bc = result.unwrap();
+    // OP_LOAD_LOCAL (1) + 4 bytes local + OP_STORE_LOCAL (1) + 4 bytes local + OP_RETURN (1)
+    assert_eq!(bc.len(), 11);
+    assert_eq!(bc[0], 0x03); // OP_LOAD_LOCAL
+}
+
+// ============================================================================
+// S07-T22: Multiple basic blocks all processed
+// ============================================================================
+#[test]
+fn t22_multiple_blocks_all_processed() {
+    let body = make_body(
+        vec![
+            block(
+                vec![stmt(StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(0)),
+                    Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(1),
+                        ty: glyim_type::Ty::ERROR,
+                        span: Span::DUMMY,
+                    })),
+                ))],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
+            ),
+            block(vec![], term(TerminatorKind::Return)),
+        ],
+        vec![local_decl(glyim_type::Ty::ERROR)],
+        0,
+    );
+
+    let backend = BytecodeBackend::new();
+    let result = backend.generate_function(&body);
+    assert!(result.is_ok());
+    let bc = result.unwrap();
+    // Block 0: LoadConst + StoreLocal + Jump
+    // Block 1: Return
+    assert!(bc.contains(&0x07u8)); // OP_JUMP
+    assert!(bc.contains(&0x05u8)); // OP_RETURN
+}
