@@ -6,3 +6,6 @@ version.workspace = true
 [dependencies]
 glyim-core = { workspace = true }
 glyim-type = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }

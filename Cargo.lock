@@ -427,6 +427,7 @@ name = "glyim-layout"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "glyim-test",
  "glyim-type",
 ]
 
