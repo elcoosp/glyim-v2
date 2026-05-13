@@ -30,7 +30,8 @@ impl<'a> Parser<'a> {
     fn bump(&mut self) {
         if let Some(token) = self.current() {
             let kind = GlyimLang::kind_to_raw(token.kind);
-            self.builder.token(kind, token.text.as_str());
+            let text = token.text.clone();
+            self.builder.token(kind, text.as_str());
             self.pos += 1;
         }
     }

@@ -1,0 +1,8 @@
+fn bump(&mut self) {
+    if let Some(token) = self.current() {
+        let kind = GlyimLang::kind_to_raw(token.kind);
+        let text = token.text.clone();
+        self.builder.token(kind, text.as_str());
+        self.pos += 1;
+    }
+}
