@@ -1,20 +1,5 @@
 You are implementing Stream S{ID}: {NAME} for the Glyim compiler.
 
-## Master Context
-{PASTE: AGENT_MASTER_CONTEXT.md}
-
-## Locked Contracts
-{PASTE: CONTRACTS_LOCKED.md}
-
-## Test Framework Instructions
-{PASTE: GLYIM_TEST_INSTRUCTIONS.md}
-
-## Your Stream Brief
-{PASTE: briefs/S{ID}.md}
-
-## Source Code Context
-{PASTE: relevant crate source files}
-
 ## Instructions
 
 1. Read your stream brief completely before writing any code.
@@ -37,5 +22,9 @@ You are implementing Stream S{ID}: {NAME} for the Glyim compiler.
 - NEVER use `todo!()` in non-test code — use `tracing::warn!("STUB: reason")`.
 - NEVER write integration tests in `tests/` — write unit tests in `src/tests/`.
 - ALWAYS use `glyim-test` dev-dependency for test helpers, mocks, and assertions.
-- ALWAYS use `Ty::ERROR`, `Ty::NEVER`, etc. instead of `Ty::from_raw()`.
+- ALWAYS use sentinels (`Ty::ERROR`, `Ty::NEVER`, etc.) instead of `Ty::from_raw()`.
+- ALWAYS use `ctx.intern_substitution(vec![...])` instead of `Substitution::from_raw()`.
+- ALWAYS pass `&mut TyCtxMut` to `InferenceTable::new_ty_var/int_var/float_var`.
 - ALWAYS emit one fenced bash code block per message with the script inside.
+- ALWAYS use `echo` for logging — no `#` comment lines.
+- ALWAYS write complete file content — never truncate, never use `...` placeholders.

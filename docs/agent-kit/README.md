@@ -44,32 +44,46 @@ Generated files appear in `docs/agent-kit/briefs/SXX.md`.
 
 ## Dispatching an Agent
 
-For each stream, open a new chat with your LLM agent and provide exactly these documents:
+### Option A: Automatic (Recommended)
 
-### System Prompt
+Use the dispatch script to assemble the complete prompt:
 
-Paste the contents of:
+```bash
+# Generate prompt for S01 and copy to clipboard
+./docs/agent-kit/dispatch.sh S01 | pbcopy        # macOS
+./docs/agent-kit/dispatch.sh S01 | xclip -sel clip  # Linux
+
+# Or save to file
+./docs/agent-kit/dispatch.sh S01 > /tmp/s01_prompt.md
+```
+
+The script automatically includes:
+- System prompt (master context + locked contracts + test instructions)
+- User prompt (template filled with stream ID and name)
+- Stream brief
+- Source code from the owned crate
+- `glyim-test/src/lib.rs` public API
+
+Then paste into your LLM chat:
+1. Copy the **SYSTEM PROMPT** section into the system/developer message
+2. Copy everything from **USER PROMPT** onward into the user message
+
+### Option B: Manual
+
+For each stream, open a new chat and provide:
+
+**System prompt** — paste these 3 files:
 1. `AGENT_MASTER_CONTEXT.md`
 2. `CONTRACTS_LOCKED.md`
 3. `GLYIM_TEST_INSTRUCTIONS.md`
 
-### User Prompt
+**User prompt** — use `agent-prompt-template.md`, fill in `{ID}` and `{NAME}`, then paste:
+- The filled template
+- `briefs/S01.md`
+- Source code from the owned crate
+- `glyim-test/src/lib.rs` if relevant
 
-Use the template from `agent-prompt-template.md`. Fill in:
-- `{ID}` with the stream ID (e.g., `S01`)
-- `{NAME}` with the stream name (e.g., `Lexer`)
-- Paste the contents of `briefs/S01.md`
-- Paste relevant source code files the agent needs context for
-
-### Source Code Context
-
-Attach the source files the agent needs:
-- Their owned crate's `src/lib.rs` and existing modules
-- `glyim-test/src/lib.rs` (if they need test utilities)
-- Relevant `glyim-type/src/*.rs` files (for type system contracts)
-- Any upstream crate sources they depend on
-
-**Do NOT attach the entire codebase.** Only attach what they need to avoid context window overflow.
+**Do NOT attach the entire codebase.** Only attach what the agent needs.
 
 ## Wave Execution Order
 
