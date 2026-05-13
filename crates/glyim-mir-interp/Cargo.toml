@@ -2,6 +2,5 @@
 name = "glyim-mir-interp"
 edition.workspace = true
 version.workspace = true
-
 [dependencies]
 regalloc2 = { workspace = true }

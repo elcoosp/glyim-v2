@@ -2,6 +2,13 @@
 name = "glyim-lsp"
 edition.workspace = true
 version.workspace = true
-
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-core = { workspace = true }
+glyim-db = { workspace = true }
+glyim-diag = { workspace = true }
+glyim-span = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }

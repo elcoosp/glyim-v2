@@ -2,7 +2,6 @@
 name = "glyim-codegen-llvm"
 edition.workspace = true
 version.workspace = true
-
 [dependencies]
 inkwell = { workspace = true, features = ["llvm22-1"] }
 glyim-codegen = { workspace = true }

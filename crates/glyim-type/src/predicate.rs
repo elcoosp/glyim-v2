@@ -1,4 +1,4 @@
-use glyim_core::def_id::{TraitDefId, ImplDefId};
+use glyim_core::def_id::TraitDefId;
 use crate::ty::Ty;
 use crate::region::Region;
 use crate::substitution::Substitution;

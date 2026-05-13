@@ -1,16 +1,14 @@
-use glyim_core::arena::{IdxLike, IndexVec};
+use glyim_core::arena::IndexVec;
 use glyim_core::interner::{Interner, Name};
+use glyim_core::primitives::Mutability;  // ADDED
 use indexmap::IndexSet;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
+
 use crate::ty::*;
 use crate::region::*;
 use crate::substitution::*;
 use crate::flags::*;
-use crate::const_val::*;
-use crate::fn_sig::*;
-use crate::predicate::*;
-use crate::binder::*;
 use crate::display::TypeLookup;
 
 pub struct TyCtxMut {

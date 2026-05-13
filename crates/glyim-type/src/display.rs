@@ -1,11 +1,9 @@
 use std::fmt;
 use crate::ty::*;
-use crate::region::*;
 use crate::substitution::*;
-use crate::const_val::*;
-use crate::fn_sig::*;
 use crate::flags::TypeFlags;
 use glyim_core::interner::Name;
+use glyim_core::primitives::Mutability;  // ADDED
 
 pub trait TypeLookup {
     fn ty_kind(&self, ty: Ty) -> &TyKind;

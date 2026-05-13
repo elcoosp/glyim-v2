@@ -2,7 +2,6 @@
 name = "glyim-test"
 edition.workspace = true
 version.workspace = true
-
 [dependencies]
 glyim-core = { workspace = true }
 glyim-span = { workspace = true }

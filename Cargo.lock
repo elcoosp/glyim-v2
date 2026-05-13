@@ -400,6 +400,17 @@ dependencies = [
 [[package]]
 name = "glyim-lsp"
 version = "0.1.0"
+dependencies = [
+ "glyim-core",
+ "glyim-db",
+ "glyim-diag",
+ "glyim-span",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "glyim-meta"
@@ -463,6 +474,9 @@ dependencies = [
 [[package]]
 name = "glyim-runtime"
 version = "0.1.0"
+dependencies = [
+ "glyim-core",
+]
 
 [[package]]
 name = "glyim-solve"
@@ -1074,6 +1088,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tokio"
+version = "1.52.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
+dependencies = [
+ "pin-project-lite",
 ]
 
 [[package]]

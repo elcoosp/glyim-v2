@@ -2,9 +2,6 @@ use bitflags::bitflags;
 use crate::ty::*;
 use crate::region::*;
 use crate::substitution::*;
-use crate::const_val::*;
-use crate::fn_sig::*;
-use crate::predicate::*;
 use crate::display::TypeLookup;
 
 bitflags! {

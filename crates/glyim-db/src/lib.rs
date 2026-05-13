@@ -1,13 +1,11 @@
 use glyim_core::interner::Interner;
 use glyim_vfs::Vfs;
 use parking_lot::RwLock;
-
 pub struct Database {
     interner: Interner,
     vfs: Vfs,
-    _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,  // prefix with underscore to suppress warning
+    _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,
 }
-
 impl Database {
     pub fn new() -> Self {
         Self {
