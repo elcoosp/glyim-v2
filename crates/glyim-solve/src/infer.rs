@@ -571,6 +571,20 @@ impl InferenceTable {
             _ => {}
         }
     }
+
+    // Test helpers
+    #[cfg(test)]
+    pub(crate) fn set_ty_var_value(&mut self, var: TyVar, value: Ty) {
+        self.ty_vars[var].value = Some(value);
+    }
+    #[cfg(test)]
+    pub(crate) fn set_int_var_value(&mut self, var: IntVar, value: Ty) {
+        self.int_vars[var].value = Some(value);
+    }
+    #[cfg(test)]
+    pub(crate) fn set_float_var_value(&mut self, var: FloatVar, value: Ty) {
+        self.float_vars[var].value = Some(value);
+    }
 }
 
 impl Default for InferenceTable {
