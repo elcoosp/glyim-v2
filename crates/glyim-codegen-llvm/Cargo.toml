@@ -8,3 +8,7 @@ inkwell = { workspace = true, features = ["llvm22-1"] }
 glyim-codegen = { workspace = true }
 glyim-mir = { workspace = true }
 glyim-diag = { workspace = true }
+[dev-dependencies]
+tempfile = "3"
+glyim-core = { workspace = true }
+glyim-test = { workspace = true }
