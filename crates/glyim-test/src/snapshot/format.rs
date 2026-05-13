@@ -33,7 +33,7 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
         }
     }
     for (idx, block) in body.basic_blocks.iter_enumerated() {
-        let cleanup_tag = if block.is_cleanup { " (cleanup)" } else { "" };
+        let _cleanup_tag = if block.is_cleanup { " (cleanup)" } else { "" };
         out.push_str(&format!("  bb{}:\n", idx.to_raw()));
         for stmt in &block.statements {
             out.push_str(&format!("    {}\n", format_statement(&stmt.kind)));
