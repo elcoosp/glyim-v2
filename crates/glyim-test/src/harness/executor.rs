@@ -153,8 +153,8 @@ fn execute_test(
         };
     }
 
-    if let Some(ref target) = test.config.only_target
-        && target != &target_triple {
+    if let Some(ref target) = test.config.only_target {
+        if target != &target_triple {
             return TestResult {
                 test,
                 revision,
@@ -163,6 +163,7 @@ fn execute_test(
                 diagnostics: Vec::new(),
             };
         }
+    }
 
     let timeout = Duration::from_secs(test.config.timeout_secs);
     let test_clone = Arc::clone(&test);
@@ -210,17 +211,39 @@ fn execute_inner(
     let compile_span = tracing::info_span!("compile", file_id = file_id.to_raw());
     let output = compile_span.in_scope(|| compiler.compile(&test.source, file_id, &flags));
 
+    let run_timeout = std::time::Duration::from_secs(test.config.timeout_secs);
+
     let outcome = match test.config.mode {
         super::config::TestMode::CompilePass => {
             strategy::CompilePassStrategy.evaluate(&output.diagnostics, &test.source)
         }
-        super::config::TestMode::CompileFail => strategy::CompileFailStrategy.evaluate(
-            &output.diagnostics,
-            &test.source,
-            &test.config.error_patterns,
-        ),
+        super::config::TestMode::CompileFail => {
+            strategy::CompileFailStrategy.evaluate(
+                &output.diagnostics,
+                &test.source,
+                &test.config.error_patterns,
+            )
+        }
         super::config::TestMode::Ui => {
             strategy::UiTestStrategy.evaluate(&output, &test.source, &test.path, bless)
+        }
+        super::config::TestMode::RunPass => {
+            strategy::RunPassStrategy.evaluate(
+                &output,
+                &test.source,
+                None,
+                &test.config,
+                run_timeout,
+            )
+        }
+        super::config::TestMode::RunFail => {
+            strategy::RunFailStrategy.evaluate(
+                &output,
+                &test.source,
+                None,
+                &test.config,
+                run_timeout,
+            )
         }
     };
 

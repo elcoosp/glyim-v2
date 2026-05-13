@@ -1,4 +1,5 @@
 use super::compiler::CompileOutput;
+use super::runner::{OutputCheck, ProgramRunner};
 use crate::annotations::Annotation;
 use crate::comparison::{self, DiagSeverityExt, NormalizedDiag};
 use crate::error::FailureReason;
@@ -13,8 +14,7 @@ impl CompilePassStrategy {
         diagnostics: &[GlyimDiagnostic],
         _source: &str,
     ) -> super::executor::TestOutcome {
-        let errors: Vec<String> = diagnostics
-            .iter()
+        let errors: Vec<String> = diagnostics.iter()
             .filter(|d| d.is_error())
             .map(|e| e.message.clone())
             .collect();
@@ -41,16 +41,12 @@ impl CompileFailStrategy {
             Ok(a) => a,
             Err(e) => {
                 return super::executor::TestOutcome::Failed {
-                    reason: FailureReason::AnnotationParseError {
-                        line: 0,
-                        message: e,
-                    },
+                    reason: FailureReason::AnnotationParseError { line: 0, message: e },
                 };
             }
         };
 
-        let normalized: Vec<NormalizedDiag> = diagnostics
-            .iter()
+        let normalized: Vec<NormalizedDiag> = diagnostics.iter()
             .map(|d| NormalizedDiag::from_glyim_diag(d, source))
             .collect();
 
@@ -60,9 +56,7 @@ impl CompileFailStrategy {
             for pattern in error_patterns {
                 if !diagnostics.iter().any(|d| d.message.contains(pattern)) {
                     return super::executor::TestOutcome::Failed {
-                        reason: FailureReason::ErrorPatternNotFound {
-                            pattern: pattern.clone(),
-                        },
+                        reason: FailureReason::ErrorPatternNotFound { pattern: pattern.clone() },
                     };
                 }
             }
@@ -86,7 +80,7 @@ impl UiTestStrategy {
     pub fn evaluate(
         &self,
         output: &CompileOutput,
-        _source: &str,
+        source: &str,
         test_path: &Path,
         bless: bool,
     ) -> super::executor::TestOutcome {
@@ -115,14 +109,13 @@ impl UiTestStrategy {
         for diag in &output.diagnostics {
             text.push_str(&format!(
                 "{}[{}]: {}\n",
-                diag.severity.display_name(),
-                diag.code,
-                diag.message,
+                diag.severity.display_name(), diag.code, diag.message,
             ));
         }
 
-        let normalized =
-            crate::comparison::normalize::normalize_output(&text, test_path, &Default::default());
+        let normalized = crate::comparison::normalize::normalize_output(
+            &text, test_path, &Default::default(),
+        );
 
         let expected_path = test_path.with_extension("expected");
 
@@ -133,9 +126,7 @@ impl UiTestStrategy {
 
         if !expected_path.exists() {
             return super::executor::TestOutcome::Failed {
-                reason: FailureReason::UiNoExpectedFile {
-                    path: expected_path,
-                },
+                reason: FailureReason::UiNoExpectedFile { path: expected_path },
             };
         }
 
@@ -160,6 +151,136 @@ impl UiTestStrategy {
     }
 }
 
+pub struct RunPassStrategy;
+
+impl RunPassStrategy {
+    pub fn evaluate(
+        &self,
+        output: &CompileOutput,
+        _source: &str,
+        executable_path: Option<&Path>,
+        config: &super::config::TestConfig,
+        timeout: std::time::Duration,
+    ) -> super::executor::TestOutcome {
+        let errors: Vec<String> = output.diagnostics.iter()
+            .filter(|d| d.is_error())
+            .map(|e| e.message.clone())
+            .collect();
+        if !errors.is_empty() {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::CompilePassUnexpectedErrors { errors },
+            };
+        }
+
+        let Some(exe_path) = executable_path else {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::CompilationFailed {
+                    phase: "run-pass".to_string(),
+                    message: "no executable produced".to_string(),
+                },
+            };
+        };
+
+        if !exe_path.exists() {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::CompilationFailed {
+                    phase: "run-pass".to_string(),
+                    message: format!("executable not found: {:?}", exe_path),
+                },
+            };
+        }
+
+        let runner = ProgramRunner::new(exe_path);
+        let result = runner.run(timeout);
+
+        if result.timed_out {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::RunTimeout { timeout_secs: timeout.as_secs() },
+            };
+        }
+
+        let mut check = OutputCheck::new().exit_code(0);
+
+        if let Some(ref expected) = config.check_stdout {
+            check = check.stdout(expected);
+        }
+        if let Some(ref expected) = config.check_stderr {
+            check = check.stderr(expected);
+        }
+
+        match check.check(&result) {
+            Ok(()) => super::executor::TestOutcome::Passed,
+            Err(reason) => super::executor::TestOutcome::Failed { reason },
+        }
+    }
+}
+
+pub struct RunFailStrategy;
+
+impl RunFailStrategy {
+    pub fn evaluate(
+        &self,
+        output: &CompileOutput,
+        _source: &str,
+        executable_path: Option<&Path>,
+        config: &super::config::TestConfig,
+        timeout: std::time::Duration,
+    ) -> super::executor::TestOutcome {
+        let errors: Vec<String> = output.diagnostics.iter()
+            .filter(|d| d.is_error())
+            .map(|e| e.message.clone())
+            .collect();
+        if !errors.is_empty() {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::CompilePassUnexpectedErrors { errors },
+            };
+        }
+
+        let Some(exe_path) = executable_path else {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::CompilationFailed {
+                    phase: "run-fail".to_string(),
+                    message: "no executable produced".to_string(),
+                },
+            };
+        };
+
+        if !exe_path.exists() {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::CompilationFailed {
+                    phase: "run-fail".to_string(),
+                    message: format!("executable not found: {:?}", exe_path),
+                },
+            };
+        }
+
+        let runner = ProgramRunner::new(exe_path);
+        let result = runner.run(timeout);
+
+        if result.timed_out {
+            return super::executor::TestOutcome::Failed {
+                reason: FailureReason::RunTimeout { timeout_secs: timeout.as_secs() },
+            };
+        }
+
+        let expected_exit = config.expected_exit_code.unwrap_or(1);
+
+        let mut check = OutputCheck::new().exit_code(expected_exit);
+
+        if let Some(ref expected) = config.check_stderr {
+            check = check.stderr(expected);
+        }
+        if let Some(ref expected) = config.check_stdout {
+            check = check.stdout(expected);
+        }
+
+        match check.check(&result) {
+            Ok(()) => super::executor::TestOutcome::Passed,
+            Err(reason) => super::executor::TestOutcome::Failed { reason },
+        }
+    }
+}
+
 fn format_mismatch(result: &comparison::ComparisonResult) -> String {
     let mut reasons = Vec::new();
     for m in &result.missing {
@@ -174,9 +295,7 @@ fn format_mismatch(result: &comparison::ComparisonResult) -> String {
     for u in &result.unexpected {
         reasons.push(format!(
             "line {}: unexpected {} : {}",
-            u.line + 1,
-            u.severity.display_name(),
-            u.message
+            u.line + 1, u.severity.display_name(), u.message
         ));
     }
     for w in &result.wrong_severity {

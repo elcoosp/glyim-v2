@@ -11,7 +11,7 @@ pub mod fixtures;
 
 pub use error::{TestDiscoveryError, FailureReason, TimeoutError, AssertionFailure};
 
-pub use harness::{TestRunner, TestPlan, TestMode};
+pub use harness::{TestRunner, TestPlan, TestMode, runner::{ProgramRunner, RunResult, OutputCheck}};
 pub use mock::{MockSolver, MockCodegen, MockBorrowckCtx, MockLowerCtx, TestDbBuilder};
 pub use assertions::{
     assert_ty, TyAssert, check_ty, TyCheck,

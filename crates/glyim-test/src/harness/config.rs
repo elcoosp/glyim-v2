@@ -15,6 +15,9 @@ pub struct TestConfig {
     pub only_target: Option<String>,
     pub aux_files: Vec<PathBuf>,
     pub timeout_secs: u64,
+    pub check_stdout: Option<String>,
+    pub check_stderr: Option<String>,
+    pub expected_exit_code: Option<i32>,
 }
 
 impl Default for TestConfig {
@@ -31,6 +34,9 @@ impl Default for TestConfig {
             only_target: None,
             aux_files: Vec::new(),
             timeout_secs: 60,
+            check_stdout: None,
+            check_stderr: None,
+            expected_exit_code: None,
         }
     }
 }
@@ -40,6 +46,8 @@ pub enum TestMode {
     CompilePass,
     CompileFail,
     Ui,
+    RunPass,
+    RunFail,
 }
 
 impl FromStr for TestMode {
@@ -49,23 +57,24 @@ impl FromStr for TestMode {
             "compile-pass" => Ok(Self::CompilePass),
             "compile-fail" => Ok(Self::CompileFail),
             "ui" => Ok(Self::Ui),
+            "run-pass" => Ok(Self::RunPass),
+            "run-fail" => Ok(Self::RunFail),
             other => Err(format!(
-                "unknown test-mode: {:?}. Expected: compile-pass, compile-fail, ui",
-                other
+                "unknown test-mode: {:?}. Expected: compile-pass, compile-fail, ui, run-pass, run-fail", other
             )),
         }
     }
 }
 
 impl TestMode {
-    pub fn from_str_exact(s: &str) -> Result<Self, String> {
-        s.parse()
-    }
+    pub fn from_str_exact(s: &str) -> Result<Self, String> { s.parse() }
     pub fn dir_name(self) -> &'static str {
         match self {
             Self::CompilePass => "compile-pass",
             Self::CompileFail => "compile-fail",
             Self::Ui => "ui",
+            Self::RunPass => "run-pass",
+            Self::RunFail => "run-fail",
         }
     }
 }
@@ -82,20 +91,17 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
     for line in source.lines() {
         let trimmed = line.trim();
         if !trimmed.starts_with("//") {
-            if trimmed.is_empty() {
-                continue;
-            }
+            if trimmed.is_empty() { continue; }
             break;
         }
         let content = trimmed[2..].trim();
 
-        if let Some(rest) = content.strip_prefix('[')
-            && let Some(bracket_end) = rest.find(']') {
+        if let Some(rest) = content.strip_prefix('[') {
+            if let Some(bracket_end) = rest.find(']') {
                 let rev = &rest[..bracket_end];
                 let directive = rest[bracket_end + 1..].trim();
                 if let Some(value) = directive.strip_prefix("compile-flags:") {
-                    config
-                        .revision_compile_flags
+                    config.revision_compile_flags
                         .entry(rev.to_string())
                         .or_default()
                         .extend(
@@ -105,6 +111,7 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
                 }
                 continue;
             }
+        }
 
         if let Some(value) = content.strip_prefix("test-mode:") {
             config.mode = value.parse::<TestMode>()?;
@@ -130,11 +137,14 @@ pub fn parse_test_config(source: &str) -> Result<ParsedConfig, String> {
             config.aux_files.push(PathBuf::from(value.trim()));
         } else if let Some(value) = content.strip_prefix("timeout:") {
             config.timeout_secs = value.trim().parse().unwrap_or(60);
+        } else if let Some(value) = content.strip_prefix("check-stdout:") {
+            config.check_stdout = Some(value.trim().to_string());
+        } else if let Some(value) = content.strip_prefix("check-stderr:") {
+            config.check_stderr = Some(value.trim().to_string());
+        } else if let Some(value) = content.strip_prefix("exit-code:") {
+            config.expected_exit_code = Some(value.trim().parse().unwrap_or(1));
         }
     }
 
-    Ok(ParsedConfig {
-        config,
-        has_explicit_mode,
-    })
+    Ok(ParsedConfig { config, has_explicit_mode })
 }
