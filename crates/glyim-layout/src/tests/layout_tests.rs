@@ -1,6 +1,6 @@
-use glyim_test::{assert_layout, test_frozen_ty_ctx, with_fresh_ty_ctx};
-use glyim_core::primitives::*;
 use crate::*;
+use glyim_core::primitives::*;
+use glyim_test::{assert_layout, test_frozen_ty_ctx, with_fresh_ty_ctx};
 
 #[test]
 fn s04_t01_layout_i8() {
@@ -78,10 +78,15 @@ fn s04_t12_layout_slice_is_unsized() {
 
 #[test]
 fn s04_t13_layout_dyn_is_unsized() {
-    let (ctx, ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Dynamic(
-        glyim_type::Binder { bound_vars: vec![].into(), value: Box::new([]) },
-        Region::Erased,
-    )));
+    let (ctx, ty) = with_fresh_ty_ctx(|c| {
+        c.mk_ty(TyKind::Dynamic(
+            glyim_type::Binder {
+                bound_vars: vec![].into(),
+                value: Box::new([]),
+            },
+            Region::Erased,
+        ))
+    });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
     let result = computer.layout_of(ty);
     assert!(matches!(result, Err(LayoutError::Unsized(_))));
@@ -93,10 +98,7 @@ fn s04_t14_fn_abi_of_basic_signature() {
         let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
         let bool_ty = c.bool_ty();
         let unit_ty = c.unit_ty();
-        let inputs = c.intern_substitution(vec![
-            GenericArg::Ty(i32_ty),
-            GenericArg::Ty(bool_ty),
-        ]);
+        let inputs = c.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(bool_ty)]);
         FnSig {
             inputs,
             output: unit_ty,
