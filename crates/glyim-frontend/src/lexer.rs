@@ -487,7 +487,13 @@ impl<'a> Lexer<'a> {
                 ));
                 // Backtrack: the 'e' (and optional sign) are not part of the number token.
                 // They will be lexed as separate tokens in the next iteration.
+                // Return early to avoid lex_number_suffix consuming the backtracked chars.
                 self.pos = exp_start;
+                return if is_float {
+                    SyntaxKind::FloatLit
+                } else {
+                    SyntaxKind::IntLit
+                };
             } else {
                 is_float = true;
             }
