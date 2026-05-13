@@ -147,6 +147,11 @@ impl TyCtxMut {
         &self.regions[vid]
     }
 
+    /// Return the number of allocated region variables.
+    pub fn region_var_count(&self) -> usize {
+        self.regions.len()
+    }
+
     pub fn freeze(self) -> TyCtx {
         TyCtx {
             types: self.types,
