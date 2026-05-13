@@ -68,3 +68,6 @@ impl Interpreter {
 }
 
 pub type InterpResult<T> = Result<T, InterpError>;
+
+#[cfg(test)]
+mod tests;
