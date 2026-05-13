@@ -2,6 +2,7 @@
 name = "glyim-borrowck"
 edition.workspace = true
 version.workspace = true
+
 [dependencies]
 fixedbitset = { workspace = true }
 glyim-type = { workspace = true }
