@@ -80,11 +80,10 @@ impl ProgramRunner {
             }
         };
 
-        if let Some(ref input) = self.stdin_input {
-            if let Some(mut stdin) = child.stdin.take() {
+        if let Some(ref input) = self.stdin_input
+            && let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(input.as_bytes());
             }
-        }
 
         let result = run_child_with_timeout(child, timeout);
         let duration = start.elapsed();
@@ -183,23 +182,21 @@ impl OutputCheck {
             }
         }
 
-        if let Some(expected) = &self.expected_stdout {
-            if !result.stdout.contains(expected.as_str()) {
+        if let Some(expected) = &self.expected_stdout
+            && !result.stdout.contains(expected.as_str()) {
                 return Err(crate::error::FailureReason::StdoutMismatch {
                     expected: expected.clone(),
                     actual: result.stdout.clone(),
                 });
             }
-        }
 
-        if let Some(expected) = &self.expected_stderr {
-            if !result.stderr.contains(expected.as_str()) {
+        if let Some(expected) = &self.expected_stderr
+            && !result.stderr.contains(expected.as_str()) {
                 return Err(crate::error::FailureReason::StderrMismatch {
                     expected: expected.clone(),
                     actual: result.stderr.clone(),
                 });
             }
-        }
 
         Ok(())
     }

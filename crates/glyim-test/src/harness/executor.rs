@@ -153,8 +153,8 @@ fn execute_test(
         };
     }
 
-    if let Some(ref target) = test.config.only_target {
-        if target != &target_triple {
+    if let Some(ref target) = test.config.only_target
+        && target != &target_triple {
             return TestResult {
                 test,
                 revision,
@@ -163,7 +163,6 @@ fn execute_test(
                 diagnostics: Vec::new(),
             };
         }
-    }
 
     let timeout = Duration::from_secs(test.config.timeout_secs);
     let test_clone = Arc::clone(&test);
