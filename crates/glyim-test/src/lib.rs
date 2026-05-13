@@ -1,29 +1,34 @@
-pub mod annotations;
-pub mod assertions;
-pub mod comparison;
 pub mod error;
-pub mod fixtures;
 pub mod harness;
+pub mod annotations;
+pub mod comparison;
 pub mod mock;
+pub mod assertions;
+pub mod snapshot;
 pub mod phase;
 pub mod property;
-pub mod snapshot;
+pub mod fixtures;
 
-pub use error::{AssertionFailure, FailureReason, TestDiscoveryError, TimeoutError};
+pub use error::{TestDiscoveryError, FailureReason, TimeoutError, AssertionFailure};
 
+pub use harness::{TestRunner, TestPlan, TestMode};
+pub use mock::{MockSolver, MockCodegen, MockBorrowckCtx, MockLowerCtx, TestDbBuilder};
 pub use assertions::{
-    MirAssert, TyAssert, TyCheck, assert_diag_code, assert_diag_contains, assert_error_count,
-    assert_has_errors, assert_has_severity, assert_layout, assert_mir, assert_no_errors, assert_ty,
-    check_ty,
+    assert_ty, TyAssert, check_ty, TyCheck,
+    assert_mir, MirAssert,
+    assert_no_errors, assert_has_errors, assert_error_count,
+    assert_diag_contains, assert_diag_code, assert_has_severity,
+    assert_layout,
 };
+pub use snapshot::{snapshot_cst, snapshot_mir, snapshot_def_map};
+pub use phase::{FrontendTester, AnalysisTester, MirGenTester, CodegenTester, CompilationTrace};
 pub use fixtures::{SourceBuilder, TyCtxBuilder, TyFactory};
-pub use harness::{TestMode, TestPlan, TestRunner};
-pub use mock::{MockBorrowckCtx, MockCodegen, MockLowerCtx, MockSolver, TestDbBuilder};
-pub use phase::{AnalysisTester, CodegenTester, CompilationTrace, FrontendTester, MirGenTester};
 pub use property::check_ty_property;
-pub use snapshot::{snapshot_cst, snapshot_def_map, snapshot_mir};
 
 use glyim_type::{TyCtx, TyCtxMut};
+
+#[cfg(test)]
+mod tests;
 
 pub fn test_ty_ctx() -> TyCtxMut {
     TyCtxBuilder::new().build_mut()

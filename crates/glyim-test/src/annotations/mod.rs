@@ -59,7 +59,7 @@ impl Annotation {
                 };
                 let rest = rest.trim_start();
 
-                let (severity, rest) = parse_severity_strict(rest)?;
+                let (severity, rest) = parse_severity(rest);
 
                 let pattern_text = rest.trim();
                 let pattern = if pattern_text.is_empty() {
@@ -97,17 +97,13 @@ impl Annotation {
     }
 }
 
-fn parse_severity_strict(s: &str) -> Result<(DiagSeverity, &str), String> {
+fn parse_severity(s: &str) -> (DiagSeverity, &str) {
     let (word, rest) = s.split_once(char::is_whitespace).unwrap_or((s, ""));
     match word {
-        "ERROR" => Ok((DiagSeverity::Error, rest.trim_start())),
-        "WARNING" => Ok((DiagSeverity::Warning, rest.trim_start())),
-        "NOTE" => Ok((DiagSeverity::Note, rest.trim_start())),
-        "HELP" => Ok((DiagSeverity::Help, rest.trim_start())),
-        "" => Ok((DiagSeverity::Error, rest)),
-        other => Err(format!(
-            "invalid severity: {:?}. Expected ERROR, WARNING, NOTE, or HELP",
-            other
-        )),
+        "ERROR"   => (DiagSeverity::Error,   rest.trim_start()),
+        "WARNING" => (DiagSeverity::Warning, rest.trim_start()),
+        "NOTE"    => (DiagSeverity::Note,    rest.trim_start()),
+        "HELP"    => (DiagSeverity::Help,    rest.trim_start()),
+        _         => (DiagSeverity::Error,   s),
     }
 }
