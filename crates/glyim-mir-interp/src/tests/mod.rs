@@ -8,6 +8,7 @@ mod common;
 mod comprehensive;
 mod edge_cases;
 mod limits;
+mod more_edges;
 mod stress;
 mod stub_coverage;
 mod terminator;
