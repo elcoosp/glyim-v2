@@ -1,5 +1,8 @@
 fn main() {
-    if let Err(_) = glyim_cli::run() {
+    if let Err(diags) = glyim_cli::run() {
+        for diag in diags {
+            eprintln!("{}", diag);
+        }
         std::process::exit(1);
     }
 }

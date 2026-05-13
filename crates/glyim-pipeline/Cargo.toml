@@ -2,6 +2,7 @@
 name = "glyim-pipeline"
 edition.workspace = true
 version.workspace = true
+
 [dependencies]
 glyim-core = { workspace = true }
 glyim-span = { workspace = true }
@@ -19,4 +20,5 @@ glyim-codegen = { workspace = true }
 glyim-codegen-llvm = { workspace = true }
 glyim-solve = { workspace = true }
 glyim-db = { workspace = true }
+glyim-mir = { workspace = true }
 tracing = { workspace = true }
