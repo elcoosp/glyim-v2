@@ -1,30 +1,29 @@
 use crate::lexer::lex;
 use glyim_span::FileId;
-use glyim_syntax::SyntaxKind;
 
 #[test]
 fn token_spans_are_contiguous() {
     let source = "fn main() {}";
     let result = lex(source, FileId::from_raw(0));
-    let mut expected_start = 0u32;
+    let mut expected_start = 0usize;
     for token in &result.tokens {
-        let (lo, hi) = token.span.range();
+        let range = token.span.range();
         assert_eq!(
-            lo.to_raw(),
+            range.start,
             expected_start,
             "token '{}' span should start at {}, got {}",
             token.text,
             expected_start,
-            lo.to_raw()
+            range.start
         );
-        let text_len = token.text.len() as u32;
+        let text_len = token.text.len();
         assert_eq!(
-            hi.to_raw(),
+            range.end,
             expected_start + text_len,
             "token '{}' span end mismatch",
             token.text
         );
-        expected_start = hi.to_raw();
+        expected_start = range.end;
     }
 }
 
@@ -33,9 +32,9 @@ fn spans_cover_entire_source() {
     let source = "fn main() { let x = 42; }";
     let result = lex(source, FileId::from_raw(0));
     if let Some(last) = result.tokens.last() {
-        let (_, hi) = last.span.range();
+        let range = last.span.range();
         assert_eq!(
-            hi.to_raw() as usize,
+            range.end,
             source.len(),
             "last token span end should equal source length"
         );
@@ -90,14 +89,14 @@ fn span_for_multibyte_source() {
     let result = lex("1 2 3", FileId::from_raw(0));
     assert_eq!(result.tokens.len(), 3);
     assert_eq!(result.tokens[0].text, "1");
-    assert_eq!(result.tokens[0].span.range().0.to_raw(), 0);
-    assert_eq!(result.tokens[0].span.range().1.to_raw(), 1);
+    assert_eq!(result.tokens[0].span.range().start, 0);
+    assert_eq!(result.tokens[0].span.range().end, 1);
 
     assert_eq!(result.tokens[1].text, "2");
-    assert_eq!(result.tokens[1].span.range().0.to_raw(), 2);
-    assert_eq!(result.tokens[1].span.range().1.to_raw(), 3);
+    assert_eq!(result.tokens[1].span.range().start, 2);
+    assert_eq!(result.tokens[1].span.range().end, 3);
 
     assert_eq!(result.tokens[2].text, "3");
-    assert_eq!(result.tokens[2].span.range().0.to_raw(), 4);
-    assert_eq!(result.tokens[2].span.range().1.to_raw(), 5);
+    assert_eq!(result.tokens[2].span.range().start, 4);
+    assert_eq!(result.tokens[2].span.range().end, 5);
 }
