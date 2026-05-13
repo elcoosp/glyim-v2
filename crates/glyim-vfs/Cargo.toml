@@ -4,4 +4,6 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-# Dependencies will be added in later scripts
+glyim-span = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }

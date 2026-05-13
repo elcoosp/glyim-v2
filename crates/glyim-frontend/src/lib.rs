@@ -1,2 +1,6 @@
-//! Stub crate – will be replaced with full implementation in subsequent scripts.
-#![allow(unused, dead_code)]
+//! Frontend: lexer + parser merged.
+pub mod lexer;
+pub mod parser;
+
+pub use lexer::{lex, Token, LexResult};
+pub use parser::{parse_to_syntax, ParseResult};
