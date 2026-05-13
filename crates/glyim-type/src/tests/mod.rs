@@ -7,6 +7,7 @@ mod display;
 mod display_complex;
 mod edge_cases;
 mod flags;
+mod flags_compute;
 mod flags_propagation;
 mod fn_sig;
 mod freeze;
