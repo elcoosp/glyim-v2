@@ -1,6 +1,9 @@
 use crate::*;
 use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
-use glyim_mir::*;
+use glyim_mir::{
+    BasicBlockData, BasicBlockIdx, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
+    Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
+};
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
 use glyim_type::{Ty, TyCtxMut, TyKind};
@@ -55,14 +58,10 @@ fn build_bool_binop_body(op: BinOp, left: bool, right: bool) -> Body {
 }
 
 // ============ Nested SwitchInt (3-way) ============
-fn build_three_way_switch_body(val: i128, expected: i128) -> Body {
+fn build_three_way_switch_body(tcx: &mut TyCtxMut, val: i128) -> Body {
+    let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let mut body = Body::dummy(dummy_def_id());
     let discr_local = LocalIdx::from_raw(1);
-    let int_ty = glyim_test::test_frozen_ty_ctx()
-        .mk_ty(TyKind::Int(IntTy::I32)); // will be replaced, just placeholder
-    // Actually use a concrete ty: we'll build with a temp context
-    let mut tcx_mut = test_ty_ctx();
-    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(i32_ty, Mutability::Not),
@@ -78,7 +77,6 @@ fn build_three_way_switch_body(val: i128, expected: i128) -> Body {
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    // BB0: SwitchInt -> BB1 if 1, BB2 if 2, BB3 otherwise
     let then_target = BasicBlockIdx::from_raw(1);
     let else_target = BasicBlockIdx::from_raw(2);
     let otherwise_target = BasicBlockIdx::from_raw(3);
@@ -94,20 +92,15 @@ fn build_three_way_switch_body(val: i128, expected: i128) -> Body {
         },
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    // Each target assigns a marker value and returns
-    fn marker_block(val: i128, bb_idx: u32) -> BasicBlockData {
-        let local = LocalIdx::from_raw(1);
-        let ty = glyim_test::test_frozen_ty_ctx()
-            .mk_ty(TyKind::Int(IntTy::I32)); // placeholder; overwritten later
-        // Better: use a simple constant approach
+    // Each target assigns a marker value to local 1 and returns
+    fn marker_block(bb_idx: u32, val: i128, ty: Ty) -> BasicBlockData {
         BasicBlockData {
             statements: vec![Statement {
                 kind: StatementKind::Assign(
-                    Place::new(local),
+                    Place::new(LocalIdx::from_raw(1)),
                     Rvalue::Use(Operand::Constant(MirConst {
                         kind: MirConstKind::Int(val),
-                        ty: glyim_test::test_frozen_ty_ctx()
-                            .mk_ty(TyKind::Int(IntTy::I32)),
+                        ty,
                         span: Span::DUMMY,
                     })),
                 ),
@@ -126,9 +119,9 @@ fn build_three_way_switch_body(val: i128, expected: i128) -> Body {
             terminator: switch,
             is_cleanup: false,
         },
-        marker_block(100, 1), // BB1: when discr == 1
-        marker_block(200, 2), // BB2: when discr == 2
-        marker_block(300, 3), // BB3: otherwise
+        marker_block(1, 100, i32_ty),
+        marker_block(2, 200, i32_ty),
+        marker_block(3, 300, i32_ty),
     ]);
     body
 }
@@ -143,7 +136,6 @@ fn build_callee_with_args_body(tcx: &mut TyCtxMut) -> Body {
         local_decl(i32_ty.clone(), Mutability::Mut), // return
         local_decl(i32_ty.clone(), Mutability::Not),  // arg0
     ]);
-    // return arg0 * 2
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
@@ -171,9 +163,8 @@ fn build_callee_with_args_body(tcx: &mut TyCtxMut) -> Body {
     body
 }
 
-fn build_caller_with_args_body(callee_def_id: DefId, arg_val: i128) -> Body {
-    let mut tcx_mut = test_ty_ctx();
-    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
+fn build_caller_with_args_body(tcx: &mut TyCtxMut, callee_def_id: DefId, arg_val: i128) -> Body {
+    let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let mut body = Body::dummy(dummy_def_id());
     let ret_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
@@ -243,7 +234,6 @@ fn build_nop_body() -> Body {
 
 // ============ Step limit exact ============
 fn build_two_step_body() -> Body {
-    // Body that takes exactly 2 steps: one Goto, one Return
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(Ty::UNIT, Mutability::Mut)]);
     body.basic_blocks = IndexVec::from_raw(vec![
@@ -321,8 +311,9 @@ fn bool_or_false() {
 
 #[test]
 fn nested_switch_first_case() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let body = build_three_way_switch_body(1, 100);
+    let mut tcx_mut = test_ty_ctx();
+    let body = build_three_way_switch_body(&mut tcx_mut, 1);
+    let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.run_body(&body).unwrap();
     assert_eq!(
@@ -333,8 +324,9 @@ fn nested_switch_first_case() {
 
 #[test]
 fn nested_switch_second_case() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let body = build_three_way_switch_body(2, 200);
+    let mut tcx_mut = test_ty_ctx();
+    let body = build_three_way_switch_body(&mut tcx_mut, 2);
+    let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.run_body(&body).unwrap();
     assert_eq!(
@@ -345,8 +337,9 @@ fn nested_switch_second_case() {
 
 #[test]
 fn nested_switch_otherwise() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let body = build_three_way_switch_body(99, 300);
+    let mut tcx_mut = test_ty_ctx();
+    let body = build_three_way_switch_body(&mut tcx_mut, 99);
+    let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.run_body(&body).unwrap();
     assert_eq!(
@@ -360,12 +353,11 @@ fn call_with_args_and_return() {
     let mut tcx_mut = test_ty_ctx();
     let callee_body = build_callee_with_args_body(&mut tcx_mut);
     let callee_id = callee_body.owner;
-    let caller_body = build_caller_with_args_body(callee_id, 21);
+    let caller_body = build_caller_with_args_body(&mut tcx_mut, callee_id, 21);
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.add_function(callee_id, callee_body);
     interp.run_body(&caller_body).unwrap();
-    // arg 21, callee returns 21*2 = 42
     assert_eq!(
         interp.get_local_value(LocalIdx::from_raw(1)),
         Some(&InterpValue::Int(42))
@@ -377,7 +369,7 @@ fn nop_statements_run_ok() {
     let tcx = glyim_test::test_frozen_ty_ctx();
     let body = build_nop_body();
     let mut interp = Interpreter::new(&tcx);
-    interp.run_body(&body).unwrap(); // No panic
+    interp.run_body(&body).unwrap();
 }
 
 #[test]
