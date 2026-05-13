@@ -234,32 +234,30 @@ fn int_zero_then_ident() {
 
 #[test]
 fn zero_x_non_hex() {
+    // "0xG" is consumed as one IntLit "0xG" because lex_number_suffix eats the 'G'
+    // Semantic validation of invalid hex digits happens later in the compiler.
     let tokens = lex_tokens("0xG");
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].kind, SyntaxKind::IntLit);
-    assert_eq!(tokens[0].text, "0x");
-    assert_eq!(tokens[1].kind, SyntaxKind::Ident);
-    assert_eq!(tokens[1].text, "G");
+    assert_eq!(tokens[0].text, "0xG");
 }
 
 #[test]
 fn zero_b_non_binary() {
+    // "0b2" is consumed as one IntLit "0b2" because lex_number_suffix eats the '2'
     let tokens = lex_tokens("0b2");
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].kind, SyntaxKind::IntLit);
-    assert_eq!(tokens[0].text, "0b");
-    assert_eq!(tokens[1].kind, SyntaxKind::IntLit);
-    assert_eq!(tokens[1].text, "2");
+    assert_eq!(tokens[0].text, "0b2");
 }
 
 #[test]
 fn zero_o_non_octal() {
+    // "0o9" is consumed as one IntLit "0o9" because lex_number_suffix eats the '9'
     let tokens = lex_tokens("0o9");
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].kind, SyntaxKind::IntLit);
-    assert_eq!(tokens[0].text, "0o");
-    assert_eq!(tokens[1].kind, SyntaxKind::IntLit);
-    assert_eq!(tokens[1].text, "9");
+    assert_eq!(tokens[0].text, "0o9");
 }
 
 #[test]

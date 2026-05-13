@@ -522,11 +522,14 @@ fn shift_operators() {
 
 #[test]
 fn compound_assignment() {
+    // x += 1; y -= 2; z *= 3; w /= 4;
+    // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // x += 1 ;  y -= 2 ;  z *= 3 ;  w /= 4 ;
     let kinds = lex_kinds("x += 1; y -= 2; z *= 3; w /= 4;");
     assert_eq!(kinds[1], SyntaxKind::PlusEq);
-    assert_eq!(kinds[6], SyntaxKind::MinusEq);
-    assert_eq!(kinds[11], SyntaxKind::StarEq);
-    assert_eq!(kinds[16], SyntaxKind::SlashEq);
+    assert_eq!(kinds[5], SyntaxKind::MinusEq);
+    assert_eq!(kinds[9], SyntaxKind::StarEq);
+    assert_eq!(kinds[13], SyntaxKind::SlashEq);
 }
 
 #[test]
