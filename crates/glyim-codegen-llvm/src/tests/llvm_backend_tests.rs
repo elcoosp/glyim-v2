@@ -375,3 +375,77 @@ fn s08_t31_multiple_backends_independent() {
         "independent backends should produce identical output for same input"
     );
 }
+
+#[test]
+fn s08_t32_wasm_triple_produces_wasm_object() {
+    let backend = LlvmBackend::with_target("wasm32-unknown-unknown");
+    let output = std::path::Path::new("/tmp/glyim_test_wasm.o");
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(200),
+    )));
+    let bodies = vec![body];
+    let result = backend.generate(&bodies, output);
+    // If LLVM has wasm target support, this will succeed; if not, may error.
+    // We just care that it doesn't panic.
+    if result.is_ok() {
+        // Check wasm magic: \0asm
+        let mut file = std::fs::File::open(output).expect("output file should exist");
+        let mut magic = [0u8; 4];
+        use std::io::Read;
+        file.read_exact(&mut magic).expect("should read magic");
+        assert_eq!(
+            &magic, b"\0asm",
+            "wasm object should start with \\0asm magic"
+        );
+        std::fs::remove_file(output).ok();
+    }
+    // If error (e.g., target not compiled in), we just skip.
+}
+
+#[test]
+fn s08_t33_generate_function_body_not_mutated() {
+    // Ensure that calling generate_function does not alter the Arc<Body> itself.
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(300),
+    )));
+    let original_owner = body.owner;
+    let backend = LlvmBackend::new();
+    let _ = backend.generate_function(&body).expect("should succeed");
+    assert_eq!(
+        body.owner, original_owner,
+        "Arc<Body> owner should remain unchanged"
+    );
+    // Also check that the Arc strong count hasn't leaked (just be 1: the single owner)
+    assert_eq!(std::sync::Arc::strong_count(&body), 1);
+}
+
+#[test]
+fn s08_t34_codegen_backend_trait_object_safe() {
+    // Ensure CodegenBackend trait is object-safe (can be used as &dyn)
+    let backend: &dyn glyim_codegen::CodegenBackend = &LlvmBackend::new();
+    assert_eq!(backend.name(), "llvm");
+    // generate_function should also be callable
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(400),
+    )));
+    let result = backend.generate_function(&body);
+    assert!(
+        result.is_ok(),
+        "generate_function via trait object should succeed"
+    );
+}
+
+#[test]
+fn s08_t35_with_target_empty_string() {
+    // Empty target triple should not panic, but likely cause error on generate.
+    let backend = LlvmBackend::with_target("");
+    assert_eq!(backend.name(), "llvm");
+    let output = std::path::Path::new("/tmp/glyim_test_empty_triple.o");
+    let bodies: Vec<std::sync::Arc<glyim_mir::Body>> = vec![];
+    let result = backend.generate(&bodies, output);
+    // Should error because empty triple is invalid.
+    assert!(result.is_err(), "empty triple should cause generate error");
+}
