@@ -12,7 +12,9 @@ fn test_large_body_construction() {
         let terminator = if i == 999 {
             TerminatorKind::Return
         } else {
-            TerminatorKind::Goto { target: BasicBlockIdx::from_raw(i + 1) }
+            TerminatorKind::Goto {
+                target: BasicBlockIdx::from_raw(i + 1),
+            }
         };
 
         basic_blocks.push(BasicBlockData::new(Terminator {
@@ -99,7 +101,9 @@ fn test_deeply_nested_terminators() {
     let _prev_bb = BasicBlockIdx::from_raw(0);
     for i in 0..100 {
         let next_bb = basic_blocks.push(BasicBlockData::new(Terminator {
-            kind: TerminatorKind::Goto { target: BasicBlockIdx::from_raw(i + 1) },
+            kind: TerminatorKind::Goto {
+                target: BasicBlockIdx::from_raw(i + 1),
+            },
             source_info: SourceInfo::new(Span::DUMMY),
         }));
         let _prev_bb = next_bb;
@@ -185,7 +189,10 @@ fn test_mixed_projection_chains() {
     };
 
     let stmt = Statement {
-        kind: StatementKind::Assign(place, Rvalue::Use(Operand::Copy(Place::new(LocalIdx::from_raw(0))))),
+        kind: StatementKind::Assign(
+            place,
+            Rvalue::Use(Operand::Copy(Place::new(LocalIdx::from_raw(0)))),
+        ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
 
