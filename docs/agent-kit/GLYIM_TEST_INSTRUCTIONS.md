@@ -44,7 +44,7 @@ Each test file is a normal Rust file with `#[test]` functions. They have full ac
 
 ## Using `glyim-test` Crate
 
-`glyim-test` is a workspace crate that provides testing utilities, mocks, assertions, and fixtures. Add it as a dev-dependency in your crate's `Cargo.toml`:
+`glyim-test` is a workspace crate that provides testing utilities, mocks, assertions, and fixtures. Add it as a dev-dependency:
 
 ```toml
 [dev-dependencies]
@@ -109,6 +109,7 @@ Use `TyFactory` or `TyCtxMut` methods. **NEVER call `Ty::from_raw()` or `Substit
 | `ctx.unit_ty()` | `Ty::UNIT` |
 | `ctx.mk_ty(TyKind::Int(IntTy::I32))` | `i32` type |
 | `ctx.mk_ref(Region::Erased, inner, Mutability::Not)` | `&T` |
+| `ctx.intern_substitution(vec![GenericArg::Ty(ty)])` | `Substitution` |
 | `TyFactory::i32(ctx)` | `i32` type |
 | `TyFactory::ref_to(ctx, inner, Mutability::Mut)` | `&mut T` |
 
@@ -194,7 +195,7 @@ let mut solver = MockSolver::new()
     .respond_for_any(glyim_solve::SolverResult::Proven);
 
 // After calling solver.can_prove(...)
-solver.assert_call_count(1);
+assert_eq!(solver.call_count(), 1);
 ```
 
 ### MockCodegen (implements `glyim_codegen::CodegenBackend`)
@@ -207,7 +208,6 @@ let mock = MockCodegen::new();
 assert_eq!(mock.name(), "mock");
 
 mock.generate(&bodies, &output_path).unwrap();
-mock.assert_generated(2);
 ```
 
 ### MockLowerCtx (implements `glyim_lower::LowerCtx`)
@@ -256,23 +256,10 @@ let db = TestDbBuilder::new()
 use glyim_test::check_ty_property;
 
 let result = check_ty_property(42, 100, |ctx, ty| {
-    // Your property here
     if ctx.ty_is_error(ty) { return Ok(()); }
     Ok(())
 });
 assert!(result.is_ok());
-```
-
-### With Inference Variables
-
-```rust
-use glyim_test::property::check_ty_property_with_infer;
-use glyim_solve::InferenceTable;
-
-let result = check_ty_property_with_infer(42, 100, |ctx, infer, ty| {
-    // Property that exercises InferenceTable
-    Ok(())
-});
 ```
 
 ### Unification Testing
@@ -289,7 +276,6 @@ let var_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)));
 let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
 
 unify::test_unify_var_with_concrete(&mut ctx, &mut infer, var_ty, i32_ty);
-unify::test_unify_same_type_succeeds(&mut ctx, &mut infer, i32_ty);
 ```
 
 ---
@@ -312,9 +298,10 @@ assert_no_errors(&trace.parse_diagnostics);
 use glyim_test::harness::compiler::PipelineCompiler;
 use glyim_test::mock::MockCodegen;
 use glyim_codegen::CodegenBackend;
+use std::sync::Arc;
 
-let backend = MockCodegen::new();
-let compiler = PipelineCompiler::new(&backend);
+let backend = Arc::new(MockCodegen::new());
+let compiler = PipelineCompiler::new(backend);
 let output = compiler.compile("fn main() {}", FileId::from_raw(1), &[]);
 assert_no_errors(&output.diagnostics);
 ```
@@ -334,6 +321,24 @@ fn compile_pass_tests() {
     TestRunner::new("tests/compile-pass")
         .mode(TestMode::CompilePass)
         .parallel(true)
+        .build()
+        .expect("failed to discover tests")
+        .run();
+}
+
+#[test]
+fn compile_fail_tests() {
+    TestRunner::new("tests/compile-fail")
+        .mode(TestMode::CompileFail)
+        .build()
+        .expect("failed to discover tests")
+        .run();
+}
+
+#[test]
+fn ui_tests() {
+    TestRunner::new("tests/ui")
+        .mode(TestMode::Ui)
         .build()
         .expect("failed to discover tests")
         .run();
@@ -360,6 +365,57 @@ Annotation syntax:
 - `//~| NOTE sub` — continuation (same target line as previous)
 - `//~^^ ERROR msg` — offset by N lines up
 
+Test file header directives:
+- `// test-mode: compile-fail` — explicit mode (overrides directory name)
+- `// revisions: a b` — run test in multiple configurations
+- `// compile-flags: --opt 2` — pass flags to compiler
+- `// error-pattern: msg` — require this message somewhere in output
+- `// needs-llvm` — skip if LLVM not available
+- `// ignore` — skip this test
+- `// timeout: 30` — set per-test timeout in seconds
+
+### TestRunner API
+
+```rust
+use glyim_test::harness::{TestRunner, TestMode};
+use std::time::Duration;
+
+TestRunner::new("tests/compile-fail")
+    .mode(TestMode::CompileFail)     // override mode
+    .parallel(true)                   // run tests in parallel (default)
+    .filter("type_mismatch")          // only run tests matching substring
+    .timeout(Duration::from_secs(30)) // per-test timeout
+    .max_concurrent(4)                // parallel thread count
+    .frontend_only()                  // use FrontendOnlyCompiler instead of full pipeline
+    .build()                          // discover tests, returns Result<TestPlan, TestDiscoveryError>
+    .expect("discovery failed")
+    .run();                           // execute; panics on failure
+
+// Or use .execute() to get results without panicking:
+let result = plan.execute();
+println!("{} passed, {} failed", result.summary.passed, result.summary.failed);
+```
+
+### Environment Variables
+
+- `GLYIM_BLESS=1` — update `.expected` files for ui tests
+- `GLYIM_TEST_SHOW_OUTPUT=1` — verbose output on failure
+- `GLYIM_TEST_JSON=1` — write JSON results to `target/test-results.json`
+- `GLYIM_LLVM` — set to enable tests marked `needs-llvm`
+
+### Directory Convention
+
+```
+tests/
+├── compile-pass/    ← files that must compile without errors
+│   └── basic_fn.g
+├── compile-fail/    ← files that must produce expected errors
+│   └── type_mismatch.g
+└── ui/              ← files compared against .expected snapshots
+    └── parse_fn.g
+    └── parse_fn.expected
+```
+
 ---
 
 ## TDD Workflow for Agents
@@ -381,9 +437,10 @@ Annotation syntax:
 | Don't | Do |
 |-------|----|
 | `Ty::from_raw(0)` | `Ty::ERROR` sentinel |
-| `Substitution::from_raw(...)` | `ctx.mk_substitution(...)` |
+| `Substitution::from_raw(...)` | `ctx.intern_substitution(...)` |
 | Integration tests in `tests/` | Unit tests in `src/tests/` |
 | `todo!()` in non-test code | `tracing::warn!("STUB: reason")` |
 | Silent no-ops / `let _ = x` | Visible stub with tracing warning |
 | Stringly-typed errors | `GlyimDiagnostic` constructors |
 | Writing tests after implementation | Write ALL tests first (TDD) |
+| `InferenceTable::new_ty_var()` without `&mut TyCtxMut` | Always pass `&mut TyCtxMut` |

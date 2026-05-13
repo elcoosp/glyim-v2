@@ -1,7 +1,7 @@
 # Glyim Compiler — Master Agent Context
 
 ## Project Overview
-Glyim is a from-scratch compiler for a Rust-like language, written in Rust. The codebase uses 25 crates organized in layers. You are implementing one stream of work within this project.
+Glyim is a from-scratch compiler for a Rust-like language, written in Rust. The codebase uses 26 crates organized in layers (edition 2024, resolver 3). You are implementing one stream of work within this project.
 
 ## Architecture Rules (NON-NEGOTIABLE)
 1. **No `pub` signature changes.** If a public type or function exists in a crate you don't own, you MAY NOT modify it. If you need a change, add a `pub(crate)` helper instead.
@@ -13,7 +13,7 @@ Glyim is a from-scratch compiler for a Rust-like language, written in Rust. The 
 7. **Test-first:** Write all test cases from your stream's TDD plan BEFORE implementing. Tests must compile before implementation begins.
 
 ## Crate Dependency Rules
-- Frontend crates (`glyim-syntax`, `glyim-frontend`, `glyim-hir`, `glyim-def-map`) NEVER depend on `glyim-type`.
+- Frontend crates (`glyim-syntax`, `glyim-frontend`, `glyim-hir`, `glyim-def-map`, `glyim-meta`) NEVER depend on `glyim-type`.
 - `glyim-lsp` depends ONLY on `glyim-db` (no LLVM transitive dependency).
 - `glyim-db` does NOT use Salsa (removed for v0.1.0 honesty).
 - `TyCtxMut` is `!Send + !Sync`. Post-typeck, only `TyCtx` (frozen, `Send + Sync`) is used.
@@ -22,8 +22,12 @@ Glyim is a from-scratch compiler for a Rust-like language, written in Rust. The 
 - `Ty` does NOT implement `IdxLike`. Construction via `Ty::from_raw()` is `pub(crate)`. Use sentinels: `Ty::ERROR`, `Ty::NEVER`, `Ty::UNIT`, `Ty::BOOL`.
 - `TypeLookup` trait bridges `TyCtx` and `TyCtxMut` for display and flag computation.
 - `InferVar` has separate index types: `TyVar`, `IntVar`, `FloatVar`. Cross-kind construction is impossible by type.
-- `compute_flags` is generic over `TypeLookup`: `fn compute_flags<L: TypeLookup>(kind: &TyKind, ctx: &L, depth: u32) -> TypeFlags`.
-- `Substitution` is interned as `(u32 index, u16 len)`. Access via `ctx.substitution_args(sub)`.
+- `compute_flags` is generic over `TypeLookup`: `fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFlags`.
+- `Substitution` is interned as `(u32 index, u16 len)`. Access via `ctx.substitution_args(sub)`. Construction via `TyCtxMut::intern_substitution()`.
+- `Place::ty()` takes `&impl TypeLookup` and `&IndexVec<LocalIdx, LocalDecl>`.
+- `InferenceTable::new_ty_var/int_var/float_var` all take `&mut TyCtxMut`.
+- `SimpleTraitSolver::new` takes `&TraitContext`.
+- `Database::new` takes `CrateConfig { name, target_triple, opt_level }`.
 
 ## Error Handling
 - Use `GlyimDiagnostic` for all errors. Constructors: `lex_error`, `parse_error`, `type_error`, `borrow_error`, `internal_error`.

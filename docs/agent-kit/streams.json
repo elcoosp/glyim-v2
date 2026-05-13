@@ -8,7 +8,7 @@
     "owned_crates": ["glyim-frontend::lexer"],
     "locked_interfaces": [
       "glyim_syntax::SyntaxKind (all variants, try_from_raw)",
-      "glyim_span::FileId, Span, ByteIdx",
+      "glyim_span::FileId, Span, ByteIdx, SyntaxContext",
       "glyim_diag::GlyimDiagnostic (lex_error constructor)",
       "glyim_frontend::Token, LexResult (public types)"
     ],
@@ -49,6 +49,8 @@
       "glyim_type::Substitution (index, len, is_empty)",
       "glyim_type::TypeLookup trait",
       "glyim_type::TypeFlags",
+      "glyim_type::Region (all variants)",
+      "glyim_type::GenericArg (Ty, Lifetime, Const)",
       "glyim_core::interner::Interner"
     ],
     "tests": {
@@ -82,7 +84,12 @@
       "glyim_type::Ty (ERROR, NEVER, UNIT, BOOL sentinels)",
       "glyim_type::TypeLookup trait",
       "glyim_type::TyKind (Ref, RawPtr, Slice, Array, Tuple, Adt variants)",
-      "glyim_type::Substitution"
+      "glyim_type::Substitution",
+      "glyim_type::GenericArg",
+      "glyim_core::arena::IndexVec, IdxLike",
+      "glyim_core::def_id (AdtId, FnDefId, ClosureId, DefId)",
+      "glyim_core::primitives (Mutability, BinOp, UnOp, Safety, Abi)",
+      "glyim_span::Span"
     ],
     "tests": {
       "S03-T01": "Body::dummy creates valid structure",
@@ -115,7 +122,10 @@
       "glyim_type::TyCtx",
       "glyim_type::Ty (ERROR, etc.)",
       "glyim_type::TyKind (Int, Uint, Float, Bool, Char, Ref, RawPtr, Slice, Dynamic, Error)",
-      "glyim_core::primitives::TargetInfo",
+      "glyim_type::TypeLookup trait",
+      "glyim_type::FnSig",
+      "glyim_type::Substitution, GenericArg",
+      "glyim_core::primitives::TargetInfo, Abi, Safety",
       "glyim_core::abi::ALIGN_MAX"
     ],
     "tests": {
@@ -150,8 +160,8 @@
       "glyim_type::Ty, TyKind, InferVar, TyVar, IntVar, FloatVar",
       "glyim_type::Region, RegionVid",
       "glyim_type::Substitution, GenericArg",
-      "glyim_type::TypeLookup",
-      "glyim_type::PrintTy",
+      "glyim_type::TypeLookup, TypeFlags, PrintTy",
+      "glyim_type::UniverseIndex",
       "glyim_diag::GlyimDiagnostic (type_error)",
       "glyim_span::Span"
     ],
@@ -188,10 +198,13 @@
     "owned_crates": ["glyim-mir-interp"],
     "locked_interfaces": [
       "glyim_mir::Body, BasicBlockData, Statement, Terminator",
-      "glyim_mir::TerminatorKind (Goto, Return, Unreachable, Call)",
+      "glyim_mir::TerminatorKind (Goto, SwitchInt, Return, Unreachable, Call, Assert, Drop)",
       "glyim_mir::StatementKind (Assign, StorageLive, StorageDead, Nop)",
-      "glyim_mir::Rvalue (Use, BinaryOp, Ref, Aggregate)",
-      "glyim_mir::Operand, Place, LocalDecl, MirConst"
+      "glyim_mir::Rvalue (Use, BinaryOp, UnaryOp, Ref, Aggregate, Discriminant, Len, Cast, Repeat)",
+      "glyim_mir::Operand (Copy, Move, Constant), Place, LocalDecl, MirConst",
+      "glyim_mir::BorrowKind (Shared, Unique, Mut)",
+      "glyim_mir::SwitchTargets, SourceInfo, MirConstKind",
+      "glyim_mir::BasicBlockIdx, LocalIdx, VariantIdx"
     ],
     "tests": {
       "S06-T01": "Interpret integer add → 3 + 4 = 7",
@@ -218,8 +231,9 @@
     "scope_summary": "Emit opcodes from hand-crafted MIR",
     "owned_crates": ["glyim-codegen"],
     "locked_interfaces": [
-      "glyim_codegen::CodegenBackend trait",
-      "glyim_mir::Body, Statement, Terminator, Rvalue, Operand"
+      "glyim_codegen::CodegenBackend trait (name, generate, generate_function)",
+      "glyim_mir::Body, Statement, Terminator, Rvalue, Operand",
+      "glyim_diag::CompResult"
     ],
     "tests": {
       "S07-T01": "Empty function → produces module with Return opcode",
@@ -266,7 +280,9 @@
       "glyim_syntax::SyntaxKind (all variants)",
       "glyim_syntax::GlyimLang, SyntaxNode, GreenNode",
       "glyim_frontend::lexer (Token, lex function)",
-      "glyim_frontend::ParseResult"
+      "glyim_frontend::ParseResult",
+      "glyim_diag::GlyimDiagnostic (parse_error constructor)",
+      "glyim_span::FileId"
     ],
     "tests": {
       "S09-T01": "Parse fn item → FnDef node",
@@ -297,7 +313,11 @@
     "locked_interfaces": [
       "glyim_type::TypeLookup trait",
       "glyim_type::Ty, TyKind (all variants)",
-      "glyim_type::TypeFlags"
+      "glyim_type::TypeFlags",
+      "glyim_type::InferVar, TyVar, IntVar, FloatVar",
+      "glyim_type::Region",
+      "glyim_type::Substitution, GenericArg",
+      "glyim_core::primitives::Mutability"
     ],
     "tests": {
       "S10-T01": "PrintTy renders i32, u32, f64, bool, char, !, ()",
@@ -325,9 +345,15 @@
     "scope_summary": "SimpleTraitSolver, TraitContext, FulfillmentCtx with BFS",
     "owned_crates": ["glyim-solve::solver", "glyim-solve::fulfill"],
     "locked_interfaces": [
-      "glyim_solve::TraitSolver trait",
+      "glyim_solve::TraitSolver trait (can_prove, evaluate_predicate)",
+      "glyim_solve::SolverResult (Proven, Ambiguous, DefiniteNo)",
       "glyim_type::TyCtx",
-      "glyim_type::Predicate, TraitPredicate, TraitRef"
+      "glyim_type::Predicate, TraitPredicate, TraitRef, ImplPolarity",
+      "glyim_type::Substitution",
+      "glyim_core::def_id::TraitDefId, ImplDefId",
+      "glyim_core::interner::Name",
+      "glyim_diag::GlyimDiagnostic (type_error)",
+      "glyim_span::Span"
     ],
     "tests": {
       "S11-T01": "Register trait → appears in trait_defs",
@@ -354,9 +380,16 @@
     "scope_summary": "CST → HIR conversion producing populated CrateHir",
     "owned_crates": ["glyim-hir"],
     "locked_interfaces": [
-      "glyim_syntax::SyntaxNode, SyntaxKind",
-      "glyim_hir::CrateHir, Item, Expr, Pat, Body (public types)",
-      "glyim_core::interner::Name"
+      "glyim_syntax::SyntaxNode, SyntaxKind, GlyimLang",
+      "glyim_hir::CrateHir, Item, ItemKind, Expr, Pat, Body (public types)",
+      "glyim_hir::FnItem, StructItem, EnumItem, TraitItem, ImplItem",
+      "glyim_hir::TypeRef, Path, PathSegment, Literal, Param, Field, Variant",
+      "glyim_core::interner::Name, Interner",
+      "glyim_core::path::PathKind",
+      "glyim_core::primitives (Mutability, Visibility, StructKind, BinOp, UnOp, IntTy, UintTy, FloatTy)",
+      "glyim_core::arena::IndexVec",
+      "glyim_core::def_id::LocalDefId",
+      "glyim_span::Span"
     ],
     "tests": {
       "S12-T01": "Fn item → FnItem with params",
@@ -384,10 +417,18 @@
     "scope_summary": "Path resolution, scope population, module graph",
     "owned_crates": ["glyim-def-map"],
     "locked_interfaces": [
-      "glyim_def_map::CrateDefMap, ModuleData, ItemScope",
+      "glyim_def_map::CrateDefMap, ModuleData, ItemScope, ModuleId",
+      "glyim_def_map::PerNs, Namespace, ModuleOrigin",
+      "glyim_def_map::Resolver",
       "glyim_def_map::build_def_map",
-      "glyim_syntax::SyntaxNode",
-      "glyim_core::path::Path, PathKind"
+      "glyim_syntax::SyntaxNode, SyntaxKind",
+      "glyim_core::path::Path, PathKind, PathSegment",
+      "glyim_core::interner::Name, Interner",
+      "glyim_core::def_id::CrateId, LocalDefId",
+      "glyim_core::primitives::Visibility",
+      "glyim_core::arena::IndexVec",
+      "glyim_diag::GlyimDiagnostic",
+      "glyim_span::FileId, Span"
     ],
     "tests": {
       "S13-T01": "Empty file → root module",
@@ -416,10 +457,16 @@
     "locked_interfaces": [
       "glyim_typeck::typeck_crate",
       "glyim_typeck::TypeckResult",
-      "glyim_type::TyCtxMut, TyCtx",
-      "glyim_solve::InferenceTable, TraitSolver",
+      "glyim_typeck::TypeckCtx, Adjustment, AdjustKind",
+      "glyim_typeck::thir (Body, Param, Stmt, Expr, ExprKind, Pattern, PatternKind, Literal, LocalVarId)",
+      "glyim_type::TyCtxMut, TyCtx, Ty, TyKind",
+      "glyim_type::InferVar, Region, Substitution",
+      "glyim_solve::InferenceTable, TraitSolver, SolverResult",
+      "glyim_solve::FulfillmentCtx, Obligation, ObligationCause",
       "glyim_hir::CrateHir",
-      "glyim_def_map::CrateDefMap"
+      "glyim_def_map::CrateDefMap",
+      "glyim_diag::GlyimDiagnostic",
+      "glyim_span::Span"
     ],
     "tests": {
       "S14-T01": "Typecheck empty crate → no errors",
@@ -443,11 +490,15 @@
     "crate": "glyim-lower",
     "wave": 3,
     "scope_summary": "THIR → MIR producing Body with real basic blocks",
-    "owned_crates": ["glyim-lower"],
+    "owned_crates": ["glyim-lower::lower", "glyim-lower::mono"],
     "locked_interfaces": [
-      "glyim_lower::lower_body, LowerCtx",
-      "glyim_typeck::thir::Body",
-      "glyim_mir::Body"
+      "glyim_lower::lower_body, LowerCtx, LowerResult, AdtDef, AdtKind",
+      "glyim_lower::MonoCtx, MonoItem, MonoItemData",
+      "glyim_typeck::thir::Body, Stmt, Expr, ExprKind, Pattern, Literal",
+      "glyim_mir::Body, BasicBlockData, Statement, Terminator, Rvalue, Operand, Place",
+      "glyim_type::Ty, TyKind, TyCtx, Region, Substitution",
+      "glyim_diag::GlyimDiagnostic",
+      "glyim_span::Span"
     ],
     "tests": {
       "S15-T01": "Lower empty function → Return",
@@ -472,7 +523,10 @@
     "owned_crates": ["glyim-borrowck"],
     "locked_interfaces": [
       "glyim_borrowck::check_borrows, BorrowckCtx, BorrowckResult",
-      "glyim_mir::Body"
+      "glyim_mir::Body, LocalDecl, LocalIdx, Place, Rvalue, TerminatorKind",
+      "glyim_type::Ty, TyCtx",
+      "glyim_diag::GlyimDiagnostic",
+      "glyim_span::Span"
     ],
     "tests": {
       "S16-T01": "No borrows → no errors",
@@ -484,7 +538,7 @@
       "S16-T07": "Error diagnostics include span",
       "S16-T08": "BorrowckCtx.local_ty returns correct type"
     },
-    "mocking": "Hand-craft Body with known borrow patterns.",
+    "mocking": "Hand-craft Body with known borrow patterns. Use MockBorrowckCtx from glyim-test.",
     "upstream": ["S03-MIRCore"],
     "downstream": ["S18-Pipeline"]
   },
@@ -520,8 +574,17 @@
     "owned_crates": ["glyim-pipeline", "glyim-db"],
     "locked_interfaces": [
       "glyim_pipeline::Pipeline::compile_file",
-      "glyim_db::Database",
-      "glyim_codegen::CodegenBackend"
+      "glyim_db::Database, CrateConfig",
+      "glyim_codegen::CodegenBackend",
+      "glyim_frontend::lex, parse_to_syntax",
+      "glyim_def_map::build_def_map",
+      "glyim_typeck::typeck_crate",
+      "glyim_lower::lower_body",
+      "glyim_borrowck::check_borrows",
+      "glyim_opt::optimize",
+      "glyim_diag::DiagSink, GlyimDiagnostic, CompResult",
+      "glyim_vfs::Vfs",
+      "glyim_solve::SimpleTraitSolver, TraitContext"
     ],
     "tests": {
       "S18-T01": "Compile empty file → Ok",
@@ -531,7 +594,7 @@
       "S18-T05": "Missing file → I/O error",
       "S18-T06": "Backend selection"
     },
-    "mocking": "Real files on disk. Real Database.",
+    "mocking": "Real files on disk. Real Database. Use MockCodegen from glyim-test.",
     "upstream": ["ALL"],
     "downstream": []
   },
@@ -543,8 +606,11 @@
     "scope_summary": "did_open, did_change, diagnostics, URI handling",
     "owned_crates": ["glyim-lsp"],
     "locked_interfaces": [
-      "glyim_db::Database",
-      "glyim_diag::GlyimDiagnostic"
+      "glyim_db::Database, CrateConfig, Vfs",
+      "glyim_diag::GlyimDiagnostic, DiagSink",
+      "glyim_span::FileId, Span",
+      "glyim_pipeline::Pipeline",
+      "glyim_vfs::Vfs"
     ],
     "tests": {
       "S19-T01": "did_open registers file",
@@ -555,7 +621,7 @@
       "S19-T06": "path_to_uri roundtrip",
       "S19-T07": "Byte offset to position"
     },
-    "mocking": "Database instance.",
+    "mocking": "Database instance. Use TestDbBuilder from glyim-test.",
     "upstream": ["S18-Pipeline"],
     "downstream": []
   },
@@ -569,7 +635,10 @@
     "locked_interfaces": [
       "glyim_cli::CliArgs, run",
       "glyim_pipeline::Pipeline",
-      "glyim_codegen::CodegenBackend"
+      "glyim_codegen::CodegenBackend",
+      "glyim_codegen_llvm::LlvmBackend",
+      "glyim_db::Database, CrateConfig",
+      "glyim_diag::GlyimDiagnostic"
     ],
     "tests": {
       "S20-T01": "Compile valid file → exit 0",
