@@ -453,22 +453,31 @@ impl InferenceTable {
     }
 
     pub fn resolve_ty_shallow(&self, ctx: &dyn TypeLookup, ty: Ty) -> Ty {
+        self.resolve_ty_shallow_depth(ctx, ty, 0)
+    }
+
+    fn resolve_ty_shallow_depth(&self, ctx: &dyn TypeLookup, ty: Ty, depth: u32) -> Ty {
+        // Prevent infinite recursion from self-loops or cycles
+        if depth > 256 {
+            tracing::warn!("STUB: resolve_ty_shallow exceeded depth limit; possible cycle");
+            return ty;
+        }
         match ctx.ty_kind(ty) {
             TyKind::Infer(InferVar::Ty(var)) => {
                 if let Some(value) = self.ty_vars.get(*var).and_then(|v| v.value) {
-                    return self.resolve_ty_shallow(ctx, value);
+                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1);
                 }
                 ty
             }
             TyKind::Infer(InferVar::Int(var)) => {
                 if let Some(value) = self.int_vars.get(*var).and_then(|v| v.value) {
-                    return self.resolve_ty_shallow(ctx, value);
+                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1);
                 }
                 ty
             }
             TyKind::Infer(InferVar::Float(var)) => {
                 if let Some(value) = self.float_vars.get(*var).and_then(|v| v.value) {
-                    return self.resolve_ty_shallow(ctx, value);
+                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1);
                 }
                 ty
             }
@@ -578,9 +587,11 @@ impl InferenceTable {
         self.ty_vars[var].value = Some(value);
     }
     #[cfg(test)]
+    #[cfg(test)]
     pub(crate) fn set_int_var_value(&mut self, var: IntVar, value: Ty) {
         self.int_vars[var].value = Some(value);
     }
+    #[cfg(test)]
     #[cfg(test)]
     pub(crate) fn set_float_var_value(&mut self, var: FloatVar, value: Ty) {
         self.float_vars[var].value = Some(value);
