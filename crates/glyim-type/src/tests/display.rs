@@ -2,6 +2,7 @@
 
 use glyim_core::primitives::{FloatTy, IntTy, Mutability, UintTy};
 
+use super::helpers::test_ty_ctx;
 use super::helpers::{test_frozen_ty_ctx, with_fresh_ty_ctx};
 use crate::display::PrintTy;
 use crate::*;
@@ -146,8 +147,8 @@ fn display_ty_debug() {
 
 #[test]
 fn display_unknown_kind_falls_back_to_debug() {
-    // TyKind::Char falls through to the _ => write!(f, "{:?}", ...) arm
-    let (ctx, ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Char));
-    let printed = format!("{}", PrintTy::new(ty, &ctx));
-    assert!(printed.contains("Char"));
+    let mut ctx = test_ty_ctx();
+    let char_ty = ctx.mk_ty(TyKind::Char);
+    let printed = PrintTy::new(char_ty, &ctx).to_string();
+    assert_eq!(printed, "char");
 }

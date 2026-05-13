@@ -3,6 +3,7 @@
 use glyim_core::def_id::AdtId;
 use glyim_core::primitives::{Abi, IntTy, Mutability, Safety, UintTy};
 
+use super::helpers::test_ty_ctx;
 use super::helpers::with_fresh_ty_ctx;
 use crate::display::PrintTy;
 use crate::*;
@@ -110,29 +111,31 @@ fn display_fallthrough_for_adt() {
 
 #[test]
 fn display_fallthrough_for_tuple() {
-    let (ctx, ty) = with_fresh_ty_ctx(|c| {
-        let substs = c.intern_substitution(vec![GenericArg::Ty(c.bool_ty())]);
-        c.mk_tuple(substs)
-    });
-    let printed = format!("{}", PrintTy::new(ty, &ctx));
-    assert!(printed.contains("Tuple"));
+    let mut ctx = test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let bool_ty = ctx.bool_ty();
+    let subst = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(bool_ty)]);
+    let tuple_ty = ctx.mk_ty(TyKind::Tuple(subst));
+    let printed = PrintTy::new(tuple_ty, &ctx).to_string();
+    assert_eq!(printed, "(i32, bool)");
 }
 
 #[test]
 fn display_fallthrough_for_fn_ptr() {
-    let (ctx, ty) = with_fresh_ty_ctx(|c| {
-        let inputs = c.intern_substitution(vec![GenericArg::Ty(c.bool_ty())]);
-        let sig = FnSig {
-            inputs,
-            output: c.unit_ty(),
-            c_variadic: false,
-            unsafety: Safety::Safe,
-            abi: Abi::Glyim,
-        };
-        c.mk_fn_ptr(sig)
-    });
-    let printed = format!("{}", PrintTy::new(ty, &ctx));
-    assert!(printed.contains("FnPtr"));
+    let mut ctx = test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let bool_ty = ctx.bool_ty();
+    let inputs = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(bool_ty)]);
+    let sig = FnSig {
+        inputs,
+        output: bool_ty,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    };
+    let fn_ptr_ty = ctx.mk_ty(TyKind::FnPtr(sig));
+    let printed = PrintTy::new(fn_ptr_ty, &ctx).to_string();
+    assert_eq!(printed, "fn(i32, bool) -> bool");
 }
 
 #[test]
