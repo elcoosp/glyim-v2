@@ -305,10 +305,8 @@ fn test_visibility_pub_struct() {
 // S09-T35: Complex types
 #[test]
 fn test_type_ref_ref() {
-    // Known limitation: && is lexed as AndAnd, causing parse errors for double refs.
-    // This test only checks that parsing does not panic.
-    let _result = parse_to_syntax("fn f(x: &&i32) {}", file_id());
-    // diagnostics expected, not checked.
+    let result = parse_to_syntax("fn f(x: &&i32) {}", file_id());
+    assert!(result.diagnostics.is_empty());
 }
 
 #[test]

@@ -86,6 +86,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Skip the current token without emitting it to the tree.
+    fn skip_token(&mut self) {
+        if self.current().is_some() {
+            self.pos += 1;
+        }
+    }
+
     fn start_node(&mut self, kind: SyntaxKind) {
         let raw_kind = GlyimLang::kind_to_raw(kind);
         self.builder.start_node(raw_kind);
@@ -1122,6 +1129,14 @@ impl<'a> Parser<'a> {
                 self.bump(); // mut
                 self.parse_pat_inner();
             }
+            SyntaxKind::AndAnd => {
+                // Double reference pattern: &&x
+                // Consume the combined token and build two synthetic & patterns.
+                // Note: patterns don't create PatRef nodes (by design), we just skip the tokens.
+                self.skip_token(); // skip &&
+                // parse inner pattern (which will be a single & if followed by And, or identifier)
+                self.parse_pat_inner();
+            }
             SyntaxKind::And => {
                 self.bump(); // &
                 if self.current_kind() == SyntaxKind::KwMut {
@@ -1184,6 +1199,25 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) {
         match self.current_kind() {
+            SyntaxKind::AndAnd => {
+                // Double reference: &&T  →  & & T  (two nested RefType nodes)
+                // Consume the combined AndAnd token without emitting it,
+                // then build two synthetic RefType nodes.
+                if let Some(tok) = self.current() {
+                    let span = tok.span;
+                    // outer &
+                    self.start_node(SyntaxKind::RefType);
+                    self.builder.token(GlyimLang::kind_to_raw(SyntaxKind::And), "&");
+                    // inner &
+                    self.start_node(SyntaxKind::RefType);
+                    self.builder.token(GlyimLang::kind_to_raw(SyntaxKind::And), "&");
+                    // parse the target type (may nest further references)
+                    self.skip_token(); // discard the && token
+                    self.parse_type();
+                    self.finish_node(); // inner RefType
+                    self.finish_node(); // outer RefType
+                }
+            }
             SyntaxKind::And => {
                 self.start_node(SyntaxKind::RefType);
                 self.bump(); // &
