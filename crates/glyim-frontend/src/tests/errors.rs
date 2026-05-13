@@ -5,7 +5,10 @@ use glyim_syntax::SyntaxKind;
 #[test]
 fn unexpected_unicode_produces_error() {
     let result = lex("\u{00A9}", FileId::from_raw(0));
-    assert!(!result.diagnostics.is_empty(), "unicode char should produce a diagnostic");
+    assert!(
+        !result.diagnostics.is_empty(),
+        "unicode char should produce a diagnostic"
+    );
     assert_eq!(result.tokens.len(), 1);
     assert_eq!(result.tokens[0].kind, SyntaxKind::Error);
 }

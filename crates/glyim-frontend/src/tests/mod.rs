@@ -1,8 +1,8 @@
-mod keywords;
-mod integers;
-mod floats;
-mod strings;
-mod operators;
 mod comments;
 mod errors;
+mod floats;
+mod integers;
+mod keywords;
+mod operators;
 mod spans;
+mod strings;

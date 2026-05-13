@@ -102,9 +102,13 @@ fn float_error_incomplete_exponent_1e() {
         !result.diagnostics.is_empty(),
         "1e should produce an error diagnostic"
     );
-    assert!(result.tokens.len() >= 1, "1e should produce at least one token");
+    assert!(
+        result.tokens.len() >= 1,
+        "1e should produce at least one token"
+    );
     assert_eq!(
-        result.tokens[0].kind, SyntaxKind::IntLit,
+        result.tokens[0].kind,
+        SyntaxKind::IntLit,
         "1e should produce IntLit for the digits, got {:?}",
         result.tokens[0].kind
     );
@@ -118,9 +122,13 @@ fn float_error_exponent_sign_only_1e_plus() {
         !result.diagnostics.is_empty(),
         "1e+ should produce an error diagnostic"
     );
-    assert!(result.tokens.len() >= 1, "1e+ should produce at least one token");
+    assert!(
+        result.tokens.len() >= 1,
+        "1e+ should produce at least one token"
+    );
     assert_eq!(
-        result.tokens[0].kind, SyntaxKind::IntLit,
+        result.tokens[0].kind,
+        SyntaxKind::IntLit,
         "1e+ should produce IntLit for the digits, got {:?}",
         result.tokens[0].kind
     );
@@ -134,9 +142,13 @@ fn float_error_incomplete_exponent_with_fraction() {
         !result.diagnostics.is_empty(),
         "1.0e should produce an error diagnostic"
     );
-    assert!(result.tokens.len() >= 1, "1.0e should produce at least one token");
+    assert!(
+        result.tokens.len() >= 1,
+        "1.0e should produce at least one token"
+    );
     assert_eq!(
-        result.tokens[0].kind, SyntaxKind::FloatLit,
+        result.tokens[0].kind,
+        SyntaxKind::FloatLit,
         "1.0e should produce FloatLit for the digits, got {:?}",
         result.tokens[0].kind
     );

@@ -45,7 +45,10 @@ fn span_file_id_preserved() {
 #[test]
 fn empty_input_no_tokens_no_diagnostics() {
     let result = lex("", FileId::from_raw(0));
-    assert!(result.tokens.is_empty(), "empty input should produce no tokens");
+    assert!(
+        result.tokens.is_empty(),
+        "empty input should produce no tokens"
+    );
     assert!(
         result.diagnostics.is_empty(),
         "empty input should produce no diagnostics"
