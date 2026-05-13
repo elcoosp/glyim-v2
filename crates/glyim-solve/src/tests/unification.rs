@@ -389,3 +389,221 @@ fn test_inference_table_default() {
     let infer = InferenceTable::default();
     assert_eq!(infer.universe(), UniverseIndex(0));
 }
+#[test]
+fn test_resolve_ty_shallow_no_binding() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let var = infer.new_ty_var(&mut ctx);
+    let var_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)));
+    let resolved = infer.resolve_ty_shallow(&ctx, var_ty);
+    assert_eq!(resolved, var_ty);
+}
+
+#[test]
+fn test_unify_tuple_equal_length() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let _u32_ty = ctx.mk_ty(TyKind::Uint(glyim_core::primitives::UintTy::U32));
+    let bool_ty = ctx.bool_ty();
+    let subst = ctx.intern_substitution(vec![
+        GenericArg::Ty(i32_ty),
+        GenericArg::Ty(bool_ty),
+    ]);
+    let tup_a = ctx.mk_ty(TyKind::Tuple(subst));
+    let tup_b = ctx.mk_ty(TyKind::Tuple(subst));
+    let result = infer.unify(&mut ctx, tup_a, tup_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_array_equal() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let const_val = glyim_type::Const {
+        kind: glyim_type::ConstKind::Int(10),
+        ty: i32_ty,
+    };
+    let arr_a = ctx.mk_ty(TyKind::Array(i32_ty, const_val.clone()));
+    let arr_b = ctx.mk_ty(TyKind::Array(i32_ty, const_val));
+    let result = infer.unify(&mut ctx, arr_a, arr_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_slice_equal() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let slice_a = ctx.mk_ty(TyKind::Slice(i32_ty));
+    let slice_b = ctx.mk_ty(TyKind::Slice(i32_ty));
+    let result = infer.unify(&mut ctx, slice_a, slice_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_raw_ptr_equal() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let ptr_a = ctx.mk_ty(TyKind::RawPtr(i32_ty, Mutability::Mut));
+    let ptr_b = ctx.mk_ty(TyKind::RawPtr(i32_ty, Mutability::Mut));
+    let result = infer.unify(&mut ctx, ptr_a, ptr_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_fn_ptr_equal() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let inputs = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let sig = FnSig {
+        inputs,
+        output: i32_ty,
+        c_variadic: false,
+        unsafety: glyim_core::primitives::Safety::Safe,
+        abi: glyim_core::primitives::Abi::Glyim,
+    };
+    let fn_a = ctx.mk_ty(TyKind::FnPtr(sig.clone()));
+    let fn_b = ctx.mk_ty(TyKind::FnPtr(sig));
+    let result = infer.unify(&mut ctx, fn_a, fn_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_fully_resolve_nested_ref() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let inner_var = infer.new_ty_var(&mut ctx);
+    let inner_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(inner_var)));
+    let ref_ty = ctx.mk_ref(Region::Erased, inner_ty, Mutability::Not);
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    infer.unify(&mut ctx, inner_ty, i32_ty, glyim_span::Span::DUMMY).unwrap();
+    let frozen = ctx.freeze();
+    let result = infer.fully_resolve(&frozen, ref_ty);
+    assert!(result.is_ok());
+    // fully_resolve guarantees all vars are bound, but may not have substituted them.
+    // Resolve the inner type manually.
+    if let TyKind::Ref(_, inner, _) = frozen.ty_kind(ref_ty) {
+        let concrete_inner = infer.resolve_ty_shallow(&frozen, *inner);
+        assert_ty(&frozen, concrete_inner).is_int(IntTy::I32);
+    } else {
+        panic!("expected ref type");
+    }
+}
+
+#[test]
+fn test_fully_resolve_deeply_nested() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let var = infer.new_ty_var(&mut ctx);
+    let var_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)));
+    let inner_ref = ctx.mk_ref(Region::Erased, var_ty, Mutability::Not);
+    let outer_ref = ctx.mk_ref(Region::Erased, inner_ref, Mutability::Mut);
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    infer.unify(&mut ctx, var_ty, i32_ty, glyim_span::Span::DUMMY).unwrap();
+    let frozen = ctx.freeze();
+    let result = infer.fully_resolve(&frozen, outer_ref);
+    assert!(result.is_ok());
+    // fully_resolve guarantees all vars are bound, but may not have substituted them.
+    // Resolve inner chain manually.
+    if let TyKind::Ref(_, inner, _) = frozen.ty_kind(outer_ref) {
+        if let TyKind::Ref(_, deep_inner, _) = frozen.ty_kind(*inner) {
+            let concrete_inner = infer.resolve_ty_shallow(&frozen, *deep_inner);
+            assert_ty(&frozen, concrete_inner).is_int(IntTy::I32);
+        } else {
+            panic!("expected inner ref");
+        }
+    } else {
+        panic!("expected outer ref");
+    }
+}
+
+#[test]
+fn test_unify_never_with_anything_ok() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let result = infer.unify(&mut ctx, Ty::NEVER, i32_ty, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_unit_with_unit_ok() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let result = infer.unify(&mut ctx, Ty::UNIT, Ty::UNIT, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_bool_with_bool_ok() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let result = infer.unify(&mut ctx, Ty::BOOL, Ty::BOOL, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_char_with_char_ok() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let char_ty_a = ctx.mk_ty(TyKind::Char);
+    let char_ty_b = ctx.mk_ty(TyKind::Char);
+    let result = infer.unify(&mut ctx, char_ty_a, char_ty_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_string_with_string_ok() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let str_a = ctx.mk_ty(TyKind::String);
+    let str_b = ctx.mk_ty(TyKind::String);
+    let result = infer.unify(&mut ctx, str_a, str_b, glyim_span::Span::DUMMY);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_unify_different_ints_error() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let i64_ty = ctx.mk_ty(TyKind::Int(IntTy::I64));
+    let result = infer.unify(&mut ctx, i32_ty, i64_ty, glyim_span::Span::DUMMY);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_unify_string_with_slice_u8() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let str_ty = ctx.mk_ty(TyKind::String);
+    let u8_ty = ctx.mk_ty(TyKind::Uint(glyim_core::primitives::UintTy::U8));
+    let u8_slice = ctx.mk_ty(TyKind::Slice(u8_ty));
+    let result = infer.unify(&mut ctx, str_ty, u8_slice, glyim_span::Span::DUMMY);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_probe_unbound_returns_none() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let var = infer.new_ty_var(&mut ctx);
+    assert_eq!(infer.probe_ty_var(var), None);
+}
+
+#[test]
+fn test_constrained_general_var_becomes_integer() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let gen_var = infer.new_ty_var(&mut ctx);
+    let gen_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(gen_var)));
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    infer.unify(&mut ctx, gen_ty, i32_ty, glyim_span::Span::DUMMY).unwrap();
+    // After binding, resolve should give i32
+    let resolved = infer.resolve_ty_shallow(&ctx, gen_ty);
+    assert_eq!(resolved, i32_ty);
+}
