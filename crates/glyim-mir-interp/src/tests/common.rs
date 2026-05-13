@@ -255,10 +255,6 @@ pub fn build_allocation_body(tcx: &mut TyCtxMut, val: i128) -> Body {
                     ),
                     source_info: SourceInfo::new(Span::DUMMY),
                 },
-                Statement {
-                    kind: StatementKind::StorageDead(local),
-                    source_info: SourceInfo::new(Span::DUMMY),
-                },
             ],
             terminator: Terminator {
                 kind: TerminatorKind::Return,

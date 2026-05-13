@@ -10,14 +10,9 @@ fn dummy_def_id() -> DefId {
 
 fn build_callee_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let mut body = Body::dummy(dummy_def_id());
-    let ret_local = LocalIdx::from_raw(1);
+    let ret_local = LocalIdx::from_raw(0);
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     body.locals = IndexVec::from_raw(vec![
-        LocalDecl {
-            ty: Ty::UNIT,
-            mutability: Mutability::Mut,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
         LocalDecl {
             ty: i32_ty.clone(),
             mutability: Mutability::Mut,
