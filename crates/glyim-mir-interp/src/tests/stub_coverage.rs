@@ -197,7 +197,7 @@ fn string_const_returns_error() {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(str_ty, Mutability::Mut),
     ]);
-    let mut interner = glyim_core::Interner::new();
+    let interner = glyim_core::Interner::new();
     let name = interner.intern("test");
     let c = MirConst {
         kind: MirConstKind::String(name),
@@ -319,7 +319,9 @@ fn indirect_call_returns_error() {
 // ============ Aggregate ADT (unsupported) ============
 #[test]
 fn aggregate_adt_returns_error() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
+    let mut tcx_mut = test_ty_ctx();
+    let empty_subst = tcx_mut.intern_substitution(vec![]);
+    let tcx = tcx_mut.freeze();
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
@@ -333,7 +335,7 @@ fn aggregate_adt_returns_error() {
                     AggregateKind::Adt(
                         glyim_core::AdtId::from_raw(0),
                         glyim_mir::VariantIdx::from_raw(0),
-                        glyim_type::Substitution { index: 0, len: 0 },
+                        empty_subst,
                     ),
                     vec![],
                 ),
