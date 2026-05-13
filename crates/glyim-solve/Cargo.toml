@@ -9,3 +9,7 @@ glyim-type = { workspace = true }
 glyim-diag = { workspace = true }
 glyim-span = { workspace = true }
 tracing = { workspace = true }
+
+
+[dev-dependencies]
+glyim-test = { workspace = true }

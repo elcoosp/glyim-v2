@@ -534,6 +534,7 @@ dependencies = [
  "glyim-core",
  "glyim-diag",
  "glyim-span",
+ "glyim-test",
  "glyim-type",
  "tracing",
 ]
