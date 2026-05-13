@@ -1,8 +1,8 @@
+use crate::assertions::span::{assert_span_pushed, assert_spans_balanced};
+use crate::assertions::ty::assert_ty_eq;
 use crate::*;
 use glyim_core::primitives::*;
-use glyim_type::{Ty, TyKind, Region, InferVar};
-use crate::assertions::ty::assert_ty_eq;
-use crate::assertions::span::{assert_span_pushed, assert_spans_balanced};
+use glyim_type::{InferVar, Region, Ty, TyKind};
 
 #[test]
 fn test_ty_assert_is_int() {
@@ -173,8 +173,7 @@ fn test_unification_different_types_fail() {
 #[test]
 fn test_mock_solver() {
     use glyim_solve::TraitSolver;
-    let mut solver = mock::MockSolver::new()
-        .respond_for_any(glyim_solve::SolverResult::Proven);
+    let mut solver = mock::MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);
     assert_eq!(solver.call_count(), 0);
 
     let mut ctx_mut = test_ty_ctx();
@@ -226,12 +225,10 @@ fn test_mock_codegen() {
 fn test_mock_codegen_generate() {
     use glyim_codegen::CodegenBackend;
     let mock = mock::MockCodegen::new();
-    let body = std::sync::Arc::new(glyim_mir::Body::dummy(
-        glyim_core::def_id::DefId::new(
-            glyim_core::def_id::CrateId::from_raw(0),
-            glyim_core::def_id::LocalDefId::from_raw(0),
-        ),
-    ));
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::def_id::DefId::new(
+        glyim_core::def_id::CrateId::from_raw(0),
+        glyim_core::def_id::LocalDefId::from_raw(0),
+    )));
     let result = mock.generate(&[body], std::path::Path::new("test.o"));
     assert!(result.is_ok());
     assert_eq!(mock.calls().len(), 1);
@@ -242,12 +239,10 @@ fn test_mock_codegen_generate() {
 fn test_mock_codegen_generate_function() {
     use glyim_codegen::CodegenBackend;
     let mock = mock::MockCodegen::new();
-    let body = std::sync::Arc::new(glyim_mir::Body::dummy(
-        glyim_core::def_id::DefId::new(
-            glyim_core::def_id::CrateId::from_raw(0),
-            glyim_core::def_id::LocalDefId::from_raw(0),
-        ),
-    ));
+    let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::def_id::DefId::new(
+        glyim_core::def_id::CrateId::from_raw(0),
+        glyim_core::def_id::LocalDefId::from_raw(0),
+    )));
     let result = mock.generate_function(&body);
     assert!(result.is_ok());
     assert_eq!(mock.function_call_count(), 1);
@@ -350,20 +345,27 @@ fn test_annotation_invalid_severity_treated_as_message() {
     let anns = annotations::Annotation::parse_all("fn main() {} //~ ERRR msg").unwrap();
     assert_eq!(anns.len(), 1);
     assert_eq!(anns[0].severity, glyim_diag::DiagSeverity::Error);
-    assert!(matches!(anns[0].pattern, annotations::pattern::MatchPattern::Substring(_)));
+    assert!(matches!(
+        anns[0].pattern,
+        annotations::pattern::MatchPattern::Substring(_)
+    ));
     assert_eq!(anns[0].pattern.description(), "contains \"ERRR msg\"");
 }
 
 #[test]
 fn test_comparison_invariant_with_optional() {
-    use comparison;
     use annotations::Annotation;
     use annotations::pattern::MatchPattern;
+    use comparison;
     use glyim_diag::DiagSeverity;
 
     let ann = Annotation {
-        line: 0, line_offset: 0, severity: DiagSeverity::Error,
-        pattern: MatchPattern::Any, optional: true, fuzzy: false,
+        line: 0,
+        line_offset: 0,
+        severity: DiagSeverity::Error,
+        pattern: MatchPattern::Any,
+        optional: true,
+        fuzzy: false,
     };
     let result = comparison::compare_diagnostics(&[ann], &[]);
     assert!(result.passed());
@@ -372,14 +374,18 @@ fn test_comparison_invariant_with_optional() {
 
 #[test]
 fn test_comparison_exact_match() {
-    use comparison;
     use annotations::Annotation;
     use annotations::pattern::MatchPattern;
+    use comparison;
     use glyim_diag::DiagSeverity;
 
     let ann = Annotation {
-        line: 0, line_offset: 0, severity: DiagSeverity::Error,
-        pattern: MatchPattern::Any, optional: false, fuzzy: false,
+        line: 0,
+        line_offset: 0,
+        severity: DiagSeverity::Error,
+        pattern: MatchPattern::Any,
+        optional: false,
+        fuzzy: false,
     };
     let diag = comparison::NormalizedDiag {
         severity: DiagSeverity::Error,
@@ -393,14 +399,18 @@ fn test_comparison_exact_match() {
 
 #[test]
 fn test_comparison_wrong_severity() {
-    use comparison;
     use annotations::Annotation;
     use annotations::pattern::MatchPattern;
+    use comparison;
     use glyim_diag::DiagSeverity;
 
     let ann = Annotation {
-        line: 0, line_offset: 0, severity: DiagSeverity::Error,
-        pattern: MatchPattern::Any, optional: false, fuzzy: false,
+        line: 0,
+        line_offset: 0,
+        severity: DiagSeverity::Error,
+        pattern: MatchPattern::Any,
+        optional: false,
+        fuzzy: false,
     };
     let diag = comparison::NormalizedDiag {
         severity: DiagSeverity::Warning,
@@ -414,14 +424,18 @@ fn test_comparison_wrong_severity() {
 
 #[test]
 fn test_comparison_fuzzy_match() {
-    use comparison;
     use annotations::Annotation;
     use annotations::pattern::MatchPattern;
+    use comparison;
     use glyim_diag::DiagSeverity;
 
     let ann = Annotation {
-        line: 5, line_offset: 0, severity: DiagSeverity::Error,
-        pattern: MatchPattern::Any, optional: false, fuzzy: true,
+        line: 5,
+        line_offset: 0,
+        severity: DiagSeverity::Error,
+        pattern: MatchPattern::Any,
+        optional: false,
+        fuzzy: true,
     };
     let diag = comparison::NormalizedDiag {
         severity: DiagSeverity::Error,
@@ -449,14 +463,18 @@ fn test_comparison_unexpected_diagnostic() {
 
 #[test]
 fn test_comparison_substring_pattern() {
-    use comparison;
     use annotations::Annotation;
     use annotations::pattern::MatchPattern;
+    use comparison;
     use glyim_diag::DiagSeverity;
 
     let ann = Annotation {
-        line: 0, line_offset: 0, severity: DiagSeverity::Error,
-        pattern: MatchPattern::substring("mismatch"), optional: false, fuzzy: false,
+        line: 0,
+        line_offset: 0,
+        severity: DiagSeverity::Error,
+        pattern: MatchPattern::substring("mismatch"),
+        optional: false,
+        fuzzy: false,
     };
     let diag = comparison::NormalizedDiag {
         severity: DiagSeverity::Error,
@@ -474,7 +492,10 @@ fn test_test_db_builder() {
         .name("my_test")
         .target_triple("aarch64-unknown-linux-gnu")
         .opt_level(2)
-        .file(std::path::PathBuf::from("main.g"), Arc::from("fn main() {}"))
+        .file(
+            std::path::PathBuf::from("main.g"),
+            Arc::from("fn main() {}"),
+        )
         .build();
 }
 
@@ -543,9 +564,8 @@ fn test_check_ty_property_failure() {
 #[test]
 fn test_pipeline_compiler_construction() {
     let backend = mock::MockCodegen::new();
-    let _compiler = harness::compiler::PipelineCompiler::new(
-        std::sync::Arc::new(backend) as std::sync::Arc<dyn glyim_codegen::CodegenBackend + Send + Sync>
-    );
+    let _compiler = harness::compiler::PipelineCompiler::new(std::sync::Arc::new(backend)
+        as std::sync::Arc<dyn glyim_codegen::CodegenBackend + Send + Sync>);
 }
 
 #[test]
@@ -565,11 +585,12 @@ fn test_frontend_tester() {
 #[test]
 fn test_diag_assertions() {
     let diags = vec![
-        glyim_diag::GlyimDiagnostic::type_error(
-            glyim_span::Span::DUMMY, "test error"
-        ),
+        glyim_diag::GlyimDiagnostic::type_error(glyim_span::Span::DUMMY, "test error"),
         glyim_diag::GlyimDiagnostic::new(
-            glyim_diag::ErrorCode { category: glyim_diag::ErrorCategory::Type, number: 2 },
+            glyim_diag::ErrorCode {
+                category: glyim_diag::ErrorCategory::Type,
+                number: 2,
+            },
             glyim_diag::DiagSeverity::Warning,
             "test warning",
             glyim_diag::MultiSpan::from_span(glyim_span::Span::DUMMY),
@@ -583,14 +604,15 @@ fn test_diag_assertions() {
 
 #[test]
 fn test_assert_no_errors() {
-    let diags = vec![
-        glyim_diag::GlyimDiagnostic::new(
-            glyim_diag::ErrorCode { category: glyim_diag::ErrorCategory::Type, number: 1 },
-            glyim_diag::DiagSeverity::Warning,
-            "just a warning",
-            glyim_diag::MultiSpan::from_span(glyim_span::Span::DUMMY),
-        ),
-    ];
+    let diags = vec![glyim_diag::GlyimDiagnostic::new(
+        glyim_diag::ErrorCode {
+            category: glyim_diag::ErrorCategory::Type,
+            number: 1,
+        },
+        glyim_diag::DiagSeverity::Warning,
+        "just a warning",
+        glyim_diag::MultiSpan::from_span(glyim_span::Span::DUMMY),
+    )];
     assert_no_errors(&diags);
 }
 
@@ -649,16 +671,31 @@ fn test_config_revision_flags() {
 
 #[test]
 fn test_test_mode_from_str() {
-    assert_eq!("compile-pass".parse::<harness::config::TestMode>().unwrap(), harness::config::TestMode::CompilePass);
-    assert_eq!("compile-fail".parse::<harness::config::TestMode>().unwrap(), harness::config::TestMode::CompileFail);
-    assert_eq!("ui".parse::<harness::config::TestMode>().unwrap(), harness::config::TestMode::Ui);
+    assert_eq!(
+        "compile-pass".parse::<harness::config::TestMode>().unwrap(),
+        harness::config::TestMode::CompilePass
+    );
+    assert_eq!(
+        "compile-fail".parse::<harness::config::TestMode>().unwrap(),
+        harness::config::TestMode::CompileFail
+    );
+    assert_eq!(
+        "ui".parse::<harness::config::TestMode>().unwrap(),
+        harness::config::TestMode::Ui
+    );
     assert!("invalid".parse::<harness::config::TestMode>().is_err());
 }
 
 #[test]
 fn test_test_mode_dir_name() {
-    assert_eq!(harness::config::TestMode::CompilePass.dir_name(), "compile-pass");
-    assert_eq!(harness::config::TestMode::CompileFail.dir_name(), "compile-fail");
+    assert_eq!(
+        harness::config::TestMode::CompilePass.dir_name(),
+        "compile-pass"
+    );
+    assert_eq!(
+        harness::config::TestMode::CompileFail.dir_name(),
+        "compile-fail"
+    );
     assert_eq!(harness::config::TestMode::Ui.dir_name(), "ui");
 }
 
@@ -685,11 +722,7 @@ fn test_normalize_substitute_dir() {
         substitute_dir: true,
     };
     let dir = std::path::Path::new("/some/dir/test.g");
-    let result = comparison::normalize::normalize_output(
-        "error at /some/dir/file.g",
-        dir,
-        &rules,
-    );
+    let result = comparison::normalize::normalize_output("error at /some/dir/file.g", dir, &rules);
     assert!(result.contains("$DIR"));
 }
 
@@ -735,7 +768,9 @@ fn test_diag_severity_ext() {
 fn test_failure_reason_display() {
     let reason = error::FailureReason::TimeoutExceeded { timeout_secs: 30 };
     assert!(reason.to_string().contains("30"));
-    let reason = error::FailureReason::ErrorPatternNotFound { pattern: "test".into() };
+    let reason = error::FailureReason::ErrorPatternNotFound {
+        pattern: "test".into(),
+    };
     assert!(reason.to_string().contains("test"));
 }
 
@@ -763,19 +798,20 @@ fn test_ty_factory() {
     assert!(matches!(frozen.ty_kind(f), TyKind::Float(FloatTy::F64)));
     assert!(matches!(frozen.ty_kind(n), TyKind::Never));
     assert!(matches!(frozen.ty_kind(un), TyKind::Unit));
-    assert!(matches!(frozen.ty_kind(r), TyKind::Ref(_, _, Mutability::Not)));
+    assert!(matches!(
+        frozen.ty_kind(r),
+        TyKind::Ref(_, _, Mutability::Not)
+    ));
     assert!(matches!(frozen.ty_kind(s), TyKind::Slice(_)));
 }
 
 #[test]
 fn test_mir_assert() {
     let ctx = test_frozen_ty_ctx();
-    let body = glyim_mir::Body::dummy(
-        glyim_core::def_id::DefId::new(
-            glyim_core::def_id::CrateId::from_raw(0),
-            glyim_core::def_id::LocalDefId::from_raw(0),
-        ),
-    );
+    let body = glyim_mir::Body::dummy(glyim_core::def_id::DefId::new(
+        glyim_core::def_id::CrateId::from_raw(0),
+        glyim_core::def_id::LocalDefId::from_raw(0),
+    ));
     assert_mir(&ctx, &body)
         .block_count(1)
         .local_count(1)
@@ -792,8 +828,14 @@ fn test_span_assertions() {
 
 #[test]
 fn test_run_pass_mode_from_str() {
-    assert_eq!("run-pass".parse::<harness::config::TestMode>().unwrap(), harness::config::TestMode::RunPass);
-    assert_eq!("run-fail".parse::<harness::config::TestMode>().unwrap(), harness::config::TestMode::RunFail);
+    assert_eq!(
+        "run-pass".parse::<harness::config::TestMode>().unwrap(),
+        harness::config::TestMode::RunPass
+    );
+    assert_eq!(
+        "run-fail".parse::<harness::config::TestMode>().unwrap(),
+        harness::config::TestMode::RunFail
+    );
 }
 
 #[test]
@@ -900,7 +942,9 @@ fn test_output_check_timeout() {
 
 #[test]
 fn test_output_check_run_fail_pass() {
-    let check = harness::runner::OutputCheck::new().exit_code(1).stderr("panic");
+    let check = harness::runner::OutputCheck::new()
+        .exit_code(1)
+        .stderr("panic");
     let result = harness::runner::RunResult {
         exit_code: Some(1),
         stdout: String::new(),
@@ -921,7 +965,11 @@ fn test_program_runner_nonexistent() {
 
 #[test]
 fn test_program_runner_echo() {
-    let echo_path = if cfg!(target_os = "macos") { "/bin/echo" } else { "/bin/echo" };
+    let echo_path = if cfg!(target_os = "macos") {
+        "/bin/echo"
+    } else {
+        "/bin/echo"
+    };
     let runner = harness::runner::ProgramRunner::new(echo_path).arg("hello world");
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);
@@ -931,7 +979,11 @@ fn test_program_runner_echo() {
 
 #[test]
 fn test_program_runner_false() {
-    let false_path = if cfg!(target_os = "macos") { "/usr/bin/false" } else { "/bin/false" };
+    let false_path = if cfg!(target_os = "macos") {
+        "/usr/bin/false"
+    } else {
+        "/bin/false"
+    };
     let runner = harness::runner::ProgramRunner::new(false_path);
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);
@@ -940,7 +992,11 @@ fn test_program_runner_false() {
 
 #[test]
 fn test_program_runner_with_stdin() {
-    let cat_path = if cfg!(target_os = "macos") { "/bin/cat" } else { "/bin/cat" };
+    let cat_path = if cfg!(target_os = "macos") {
+        "/bin/cat"
+    } else {
+        "/bin/cat"
+    };
     let runner = harness::runner::ProgramRunner::new(cat_path).stdin("input data");
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);

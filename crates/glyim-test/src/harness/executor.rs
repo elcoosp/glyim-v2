@@ -154,15 +154,16 @@ fn execute_test(
     }
 
     if let Some(ref target) = test.config.only_target
-        && target != &target_triple {
-            return TestResult {
-                test,
-                revision,
-                outcome: TestOutcome::Ignored,
-                duration: start.elapsed(),
-                diagnostics: Vec::new(),
-            };
-        }
+        && target != &target_triple
+    {
+        return TestResult {
+            test,
+            revision,
+            outcome: TestOutcome::Ignored,
+            duration: start.elapsed(),
+            diagnostics: Vec::new(),
+        };
+    }
 
     let timeout = Duration::from_secs(test.config.timeout_secs);
     let test_clone = Arc::clone(&test);
@@ -216,34 +217,28 @@ fn execute_inner(
         super::config::TestMode::CompilePass => {
             strategy::CompilePassStrategy.evaluate(&output.diagnostics, &test.source)
         }
-        super::config::TestMode::CompileFail => {
-            strategy::CompileFailStrategy.evaluate(
-                &output.diagnostics,
-                &test.source,
-                &test.config.error_patterns,
-            )
-        }
+        super::config::TestMode::CompileFail => strategy::CompileFailStrategy.evaluate(
+            &output.diagnostics,
+            &test.source,
+            &test.config.error_patterns,
+        ),
         super::config::TestMode::Ui => {
             strategy::UiTestStrategy.evaluate(&output, &test.source, &test.path, bless)
         }
-        super::config::TestMode::RunPass => {
-            strategy::RunPassStrategy.evaluate(
-                &output,
-                &test.source,
-                None,
-                &test.config,
-                run_timeout,
-            )
-        }
-        super::config::TestMode::RunFail => {
-            strategy::RunFailStrategy.evaluate(
-                &output,
-                &test.source,
-                None,
-                &test.config,
-                run_timeout,
-            )
-        }
+        super::config::TestMode::RunPass => strategy::RunPassStrategy.evaluate(
+            &output,
+            &test.source,
+            None,
+            &test.config,
+            run_timeout,
+        ),
+        super::config::TestMode::RunFail => strategy::RunFailStrategy.evaluate(
+            &output,
+            &test.source,
+            None,
+            &test.config,
+            run_timeout,
+        ),
     };
 
     (outcome, output.diagnostics)

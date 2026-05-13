@@ -81,9 +81,10 @@ impl ProgramRunner {
         };
 
         if let Some(ref input) = self.stdin_input
-            && let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(input.as_bytes());
-            }
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            let _ = stdin.write_all(input.as_bytes());
+        }
 
         let result = run_child_with_timeout(child, timeout);
         let duration = start.elapsed();
@@ -148,7 +149,9 @@ pub struct OutputCheck {
 }
 
 impl OutputCheck {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn stdout(mut self, expected: impl Into<String>) -> Self {
         self.expected_stdout = Some(expected.into());
@@ -183,20 +186,22 @@ impl OutputCheck {
         }
 
         if let Some(expected) = &self.expected_stdout
-            && !result.stdout.contains(expected.as_str()) {
-                return Err(crate::error::FailureReason::StdoutMismatch {
-                    expected: expected.clone(),
-                    actual: result.stdout.clone(),
-                });
-            }
+            && !result.stdout.contains(expected.as_str())
+        {
+            return Err(crate::error::FailureReason::StdoutMismatch {
+                expected: expected.clone(),
+                actual: result.stdout.clone(),
+            });
+        }
 
         if let Some(expected) = &self.expected_stderr
-            && !result.stderr.contains(expected.as_str()) {
-                return Err(crate::error::FailureReason::StderrMismatch {
-                    expected: expected.clone(),
-                    actual: result.stderr.clone(),
-                });
-            }
+            && !result.stderr.contains(expected.as_str())
+        {
+            return Err(crate::error::FailureReason::StderrMismatch {
+                expected: expected.clone(),
+                actual: result.stderr.clone(),
+            });
+        }
 
         Ok(())
     }

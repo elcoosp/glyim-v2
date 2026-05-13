@@ -57,7 +57,11 @@ fn interpret_bodies(bodies: &[std::sync::Arc<glyim_mir::Body>]) -> InterpOutput 
     let mut stderr = String::new();
 
     if bodies.is_empty() {
-        return InterpOutput { exit_code: 0, stdout, stderr };
+        return InterpOutput {
+            exit_code: 0,
+            stdout,
+            stderr,
+        };
     }
 
     let body = &bodies[0];
@@ -75,5 +79,9 @@ fn interpret_bodies(bodies: &[std::sync::Arc<glyim_mir::Body>]) -> InterpOutput 
         }
     }
 
-    InterpOutput { exit_code, stdout, stderr }
+    InterpOutput {
+        exit_code,
+        stdout,
+        stderr,
+    }
 }

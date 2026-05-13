@@ -16,9 +16,10 @@ pub fn normalize_output(output: &str, test_path: &Path, rules: &NormalizeRules) 
         result = result.replace('\\', "/");
     }
     if rules.substitute_dir
-        && let Some(parent) = test_path.parent() {
-            let dir_str = parent.to_string_lossy().replace('\\', "/");
-            result = result.replace(&dir_str, "$DIR");
-        }
+        && let Some(parent) = test_path.parent()
+    {
+        let dir_str = parent.to_string_lossy().replace('\\', "/");
+        result = result.replace(&dir_str, "$DIR");
+    }
     result
 }

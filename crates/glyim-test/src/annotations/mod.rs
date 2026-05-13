@@ -100,10 +100,10 @@ impl Annotation {
 fn parse_severity(s: &str) -> (DiagSeverity, &str) {
     let (word, rest) = s.split_once(char::is_whitespace).unwrap_or((s, ""));
     match word {
-        "ERROR"   => (DiagSeverity::Error,   rest.trim_start()),
+        "ERROR" => (DiagSeverity::Error, rest.trim_start()),
         "WARNING" => (DiagSeverity::Warning, rest.trim_start()),
-        "NOTE"    => (DiagSeverity::Note,    rest.trim_start()),
-        "HELP"    => (DiagSeverity::Help,    rest.trim_start()),
-        _         => (DiagSeverity::Error,   s),
+        "NOTE" => (DiagSeverity::Note, rest.trim_start()),
+        "HELP" => (DiagSeverity::Help, rest.trim_start()),
+        _ => (DiagSeverity::Error, s),
     }
 }

@@ -4,7 +4,10 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
     let mut out = String::new();
     out.push_str(&format!("fn {}():\n", body.owner));
     out.push_str(&format!("  arg_count: {}\n", body.arg_count));
-    out.push_str(&format!("  return_ty: {}\n", glyim_type::PrintTy::new(body.return_ty, ctx)));
+    out.push_str(&format!(
+        "  return_ty: {}\n",
+        glyim_type::PrintTy::new(body.return_ty, ctx)
+    ));
     out.push_str("  locals:\n");
     for (idx, local) in body.locals.iter_enumerated() {
         let mut_str = match local.mutability {
@@ -38,7 +41,10 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
         for stmt in &block.statements {
             out.push_str(&format!("    {}\n", format_statement(&stmt.kind)));
         }
-        out.push_str(&format!("    -> {}\n", format_terminator(&block.terminator.kind)));
+        out.push_str(&format!(
+            "    -> {}\n",
+            format_terminator(&block.terminator.kind)
+        ));
     }
     out
 }
@@ -65,14 +71,23 @@ fn format_rvalue(rvalue: &glyim_mir::Rvalue) -> String {
             format!("Ref({}, {})", format_borrow_kind(bk), format_place(place))
         }
         glyim_mir::Rvalue::BinaryOp(op, pair) => {
-            format!("BinaryOp({:?}, {}, {})", op, format_operand(&pair.0), format_operand(&pair.1))
+            format!(
+                "BinaryOp({:?}, {}, {})",
+                op,
+                format_operand(&pair.0),
+                format_operand(&pair.1)
+            )
         }
         glyim_mir::Rvalue::UnaryOp(op, val) => {
             format!("UnaryOp({:?}, {})", op, format_operand(val))
         }
         glyim_mir::Rvalue::Aggregate(kind, ops) => {
             let args: Vec<String> = ops.iter().map(format_operand).collect();
-            format!("Aggregate({}, [{}])", format_aggregate_kind(kind), args.join(", "))
+            format!(
+                "Aggregate({}, [{}])",
+                format_aggregate_kind(kind),
+                args.join(", ")
+            )
         }
         glyim_mir::Rvalue::Discriminant(place) => {
             format!("Discriminant({})", format_place(place))
@@ -81,7 +96,12 @@ fn format_rvalue(rvalue: &glyim_mir::Rvalue) -> String {
             format!("Len({})", format_place(place))
         }
         glyim_mir::Rvalue::Cast(kind, op, ty) => {
-            format!("Cast({}, {}, {:?})", format_cast_kind(kind), format_operand(op), ty)
+            format!(
+                "Cast({}, {}, {:?})",
+                format_cast_kind(kind),
+                format_operand(op),
+                ty
+            )
         }
         glyim_mir::Rvalue::Repeat(op, count) => {
             format!("Repeat({}, {})", format_operand(op), format_const(count))
@@ -94,7 +114,12 @@ fn format_aggregate_kind(kind: &glyim_mir::AggregateKind) -> String {
         glyim_mir::AggregateKind::Array(ty) => format!("Array({:?})", ty),
         glyim_mir::AggregateKind::Tuple => "Tuple".to_string(),
         glyim_mir::AggregateKind::Adt(adt_id, variant, substs) => {
-            format!("Adt({:?}, variant={:?}, substs={:?})", adt_id, variant.to_raw(), substs)
+            format!(
+                "Adt({:?}, variant={:?}, substs={:?})",
+                adt_id,
+                variant.to_raw(),
+                substs
+            )
         }
         glyim_mir::AggregateKind::Closure(closure_id, substs) => {
             format!("Closure({:?}, substs={:?})", closure_id, substs)
@@ -106,7 +131,9 @@ fn format_borrow_kind(bk: &glyim_mir::BorrowKind) -> String {
     match bk {
         glyim_mir::BorrowKind::Shared => "Shared".to_string(),
         glyim_mir::BorrowKind::Unique => "Unique".to_string(),
-        glyim_mir::BorrowKind::Mut { allow_two_phase_borrow } => {
+        glyim_mir::BorrowKind::Mut {
+            allow_two_phase_borrow,
+        } => {
             format!("Mut(two_phase={})", allow_two_phase_borrow)
         }
     }
@@ -127,8 +154,13 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
         glyim_mir::TerminatorKind::Goto { target } => {
             format!("Goto(bb{})", target.to_raw())
         }
-        glyim_mir::TerminatorKind::SwitchInt { discr, switch_ty, targets } => {
-            let branches: Vec<String> = targets.iter()
+        glyim_mir::TerminatorKind::SwitchInt {
+            discr,
+            switch_ty,
+            targets,
+        } => {
+            let branches: Vec<String> = targets
+                .iter()
                 .map(|(val, bb)| format!("{}: bb{}", val, bb.to_raw()))
                 .collect();
             format!(
@@ -141,7 +173,13 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
         }
         glyim_mir::TerminatorKind::Return => "Return".to_string(),
         glyim_mir::TerminatorKind::Unreachable => "Unreachable".to_string(),
-        glyim_mir::TerminatorKind::Call { func, args, destination, target, cleanup } => {
+        glyim_mir::TerminatorKind::Call {
+            func,
+            args,
+            destination,
+            target,
+            cleanup,
+        } => {
             let args_fmt: Vec<String> = args.iter().map(format_operand).collect();
             let target_fmt = match target {
                 Some(bb) => format!("Some(bb{})", bb.to_raw()),
@@ -160,7 +198,13 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
                 cleanup_fmt,
             )
         }
-        glyim_mir::TerminatorKind::Assert { cond, expected, target, cleanup, msg } => {
+        glyim_mir::TerminatorKind::Assert {
+            cond,
+            expected,
+            target,
+            cleanup,
+            msg,
+        } => {
             let cleanup_fmt = match cleanup {
                 Some(bb) => format!("Some(bb{})", bb.to_raw()),
                 None => "None".to_string(),
@@ -174,7 +218,11 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
                 format_assert_message(msg),
             )
         }
-        glyim_mir::TerminatorKind::Drop { place, target, cleanup } => {
+        glyim_mir::TerminatorKind::Drop {
+            place,
+            target,
+            cleanup,
+        } => {
             let cleanup_fmt = match cleanup {
                 Some(bb) => format!("Some(bb{})", bb.to_raw()),
                 None => "None".to_string(),
@@ -203,7 +251,11 @@ fn format_place(place: &glyim_mir::Place) -> String {
     if place.projection.is_empty() {
         base
     } else {
-        let proj: Vec<String> = place.projection.iter().map(format_projection_elem).collect();
+        let proj: Vec<String> = place
+            .projection
+            .iter()
+            .map(format_projection_elem)
+            .collect();
         format!("{}.{}", base, proj.join("."))
     }
 }
@@ -213,7 +265,9 @@ fn format_projection_elem(elem: &glyim_mir::ProjectionElem) -> String {
         glyim_mir::ProjectionElem::Deref => "Deref".to_string(),
         glyim_mir::ProjectionElem::Field(idx) => format!("Field({})", idx.to_raw()),
         glyim_mir::ProjectionElem::Index(idx) => format!("Index(${})", idx.to_raw()),
-        glyim_mir::ProjectionElem::Downcast(variant) => format!("Downcast(variant={})", variant.to_raw()),
+        glyim_mir::ProjectionElem::Downcast(variant) => {
+            format!("Downcast(variant={})", variant.to_raw())
+        }
     }
 }
 
@@ -240,15 +294,27 @@ fn format_const(c: &glyim_mir::MirConst) -> String {
 
 pub fn format_def_map(def_map: &glyim_def_map::CrateDefMap) -> String {
     let mut out = String::new();
-    out.push_str(&format!("CrateDefMap (root: {:?}, krate: {:?})\n", def_map.root, def_map.krate));
+    out.push_str(&format!(
+        "CrateDefMap (root: {:?}, krate: {:?})\n",
+        def_map.root, def_map.krate
+    ));
     for (idx, module) in def_map.modules.iter_enumerated() {
         out.push_str(&format!("  module {:?}:\n", idx));
         out.push_str(&format!("    parent: {:?}\n", module.parent));
-        out.push_str(&format!("    origin: {}\n", format_module_origin(&module.origin)));
+        out.push_str(&format!(
+            "    origin: {}\n",
+            format_module_origin(&module.origin)
+        ));
         out.push_str(&format!("    children: {}\n", module.children.len()));
         out.push_str(&format!("    scope.types: {}\n", module.scope.types.len()));
-        out.push_str(&format!("    scope.values: {}\n", module.scope.values.len()));
-        out.push_str(&format!("    scope.macros: {}\n", module.scope.macros.len()));
+        out.push_str(&format!(
+            "    scope.values: {}\n",
+            module.scope.values.len()
+        ));
+        out.push_str(&format!(
+            "    scope.macros: {}\n",
+            module.scope.macros.len()
+        ));
     }
     out
 }

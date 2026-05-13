@@ -41,9 +41,10 @@ impl<'a> TestCollector<'a> {
                 continue;
             }
             if let Some(f) = filter
-                && !path.to_string_lossy().contains(f) {
-                    continue;
-                }
+                && !path.to_string_lossy().contains(f)
+            {
+                continue;
+            }
 
             let source: Arc<str> = std::fs::read_to_string(path)
                 .map_err(|e| TestDiscoveryError::ReadFailed {
