@@ -40,6 +40,137 @@ Glyim is a from-scratch compiler for a Rust-like language, written in Rust. The 
 - Do NOT commit to `main` directly. Create a PR.
 - The first script in a stream MUST create and checkout the branch. Subsequent scripts assume the branch is already checked out.
 
+## PR Description Assembly Process (When Stream is Finished)
+
+When the user declares a stream is "finished" or "ready for PR", you MUST:
+
+1. **Get the diff from main** to understand what changed
+2. **Get the commit log from main** to understand the commit history
+3. **Assemble a comprehensive PR description** following the template below
+
+### Commands to Run:
+
+```bash
+# Navigate to the worktree
+cd /Users/adm/Documents/Repos/glyim-worktrees/stream-SXX
+
+# Get commit log (commits not in main)
+git log main..HEAD --oneline > /tmp/sXX_commits.txt
+
+# Get full commit details
+git log main..HEAD >> /tmp/sXX_commits_full.txt
+
+# Get diff from main
+git diff main..HEAD > /tmp/sXX_diff.txt
+
+# Get diff stats
+git diff main..HEAD --stat > /tmp/sXX_stats.txt
+```
+
+### PR Description Template:
+
+```markdown
+## PR: [Stream Name] - [Brief Description]
+
+This PR implements [core functionality] for the Glyim compiler.
+
+### Related Issues
+- Stream SXX: [Stream Name]
+- Required for downstream streams: [list]
+
+### Changes Overview
+
+#### Core Implementation
+- [List major features/changes]
+
+#### Bug Fixes
+- [List critical fixes]
+
+### Test Coverage (X modules, Y+ tests)
+
+#### [Category 1] Tests (X modules)
+- `module1.rs` - Description
+- `module2.rs` - Description
+
+#### [Category 2] Tests (X modules)
+- `module3.rs` - Description
+
+### Commits
+
+| Commit | Description |
+|--------|-------------|
+| [hash](url) | Description |
+| [hash](url) | Description |
+
+### Files Changed
+
+**Modified:**
+- `path/to/file.rs` - Description
+
+**Added (X files):**
+- `path/to/file1.rs`
+- `path/to/file2.rs`
+
+### Key Design Decisions
+
+1. **Decision 1** - Rationale
+2. **Decision 2** - Rationale
+
+### Test Results
+
+```
+running Y+ tests across X modules
+test result: ok. 0 failed; 0 ignored
+```
+
+### Breaking Changes
+
+None (or describe if any)
+
+### Dependencies
+
+- New dev-dependency: `crate-name` (workspace)
+
+### Next Steps
+
+This PR unblocks:
+- **SXX: Downstream** - Description
+
+### Checklist
+
+- [x] Code compiles without warnings
+- [x] All Y+ tests pass
+- [x] API documentation in comments
+- [x] No breaking changes to existing APIs
+- [x] Stress tests included
+- [x] Property-based tests for invariants
+- [x] Regression tests for fixed bugs
+
+---
+
+**Branch:** `stream-SXX/v0.1.0` → `main`
+
+**Ready for review!** 🚀
+```
+
+### Example: Assembling PR Description
+
+When the user says "S03 is finished", you:
+
+1. **Run the collection commands** (or ask the user to run them)
+2. **Parse the output** to extract:
+   - Commit hashes and messages
+   - Files changed
+   - Test modules added
+3. **Fill in the template** with the extracted information
+4. **Output the PR description** to the user (and optionally to pbcopy)
+
+### One-Liner for Quick Collection:
+
+```bash
+echo "=== COMMITS ===" && git log main..HEAD --oneline && echo "=== STATS ===" && git diff main..HEAD --stat && echo "=== DIFF (first 200 lines) ===" && git diff main..HEAD | head -200
+```
+
 ## Output Skill: plan-to-cat-scripts
 You MUST follow the plan-to-cat-scripts skill (see SKILL_PLAN_TO_CAT_SCRIPTS.md). Key requirements:
 - Every message is exactly one fenced bash code block -- no other text.
@@ -51,3 +182,101 @@ You MUST follow the plan-to-cat-scripts skill (see SKILL_PLAN_TO_CAT_SCRIPTS.md)
 - Compile check runs at the end; failure blocks commit but never halts the script.
 - Commit messages are prefixed with stream-SXX:.
 - When the user pastes an error log, respond with a single surgical fix script.
+
+## Parallel Worktree Workflow (MANDATORY)
+To allow multiple streams to run in parallel without branch conflicts, **each stream MUST operate inside its own git worktree**.
+
+- **Worktree location:** `../glyim-worktrees/stream-SXX/` (relative to the main repository root).
+- **Branch naming:** `stream-SXX/v0.1.0`
+- **Main repository:** The main clone is never modified directly; all changes happen in the worktree.
+
+**Why worktrees?** Worktrees allow multiple branches to be checked out simultaneously in separate directories, avoiding the need to stash or switch branches.
+
+### First Script Worktree Setup (CORRECTED)
+
+**CRITICAL:** You cannot add a worktree for a branch that is already checked out elsewhere. The correct approach:
+
+```bash
+STREAM_ID="S01"
+WORKTREE_DIR="../glyim-worktrees/stream-${STREAM_ID}"
+BRANCH_NAME="stream-${STREAM_ID}/v0.1.0"
+
+echo "Setting up worktree for stream ${STREAM_ID}"
+
+# Check if worktree already exists
+if [ -d "$WORKTREE_DIR" ]; then
+  echo "Worktree directory already exists, reusing it"
+else
+  # Create worktree with a detached HEAD (--detach), then create the branch
+  git worktree add --detach "$WORKTREE_DIR" main
+  cd "$WORKTREE_DIR" || { echo "ERROR: cannot cd to $WORKTREE_DIR"; exit 1; }
+  # Create the stream branch from the detached state
+  git checkout -b "$BRANCH_NAME"
+  cd - > /dev/null
+fi
+
+cd "$WORKTREE_DIR" || { echo "ERROR: cannot cd to $WORKTREE_DIR"; exit 1; }
+
+# Ensure we're on the correct branch
+git checkout "$BRANCH_NAME" 2>/dev/null || git checkout -b "$BRANCH_NAME"
+
+# Optional: Pull latest main changes
+git fetch origin main 2>/dev/null || true
+git merge main --no-edit 2>/dev/null || true
+```
+
+**Alternative (simpler) - use a unique base branch:**
+```bash
+# Create a temporary base branch for the worktree
+git branch "worktree-base-${STREAM_ID}" main 2>/dev/null || true
+git worktree add "$WORKTREE_DIR" "worktree-base-${STREAM_ID}"
+cd "$WORKTREE_DIR" || exit 1
+git checkout -b "$BRANCH_NAME"
+```
+
+**Important:**
+- Never use `git worktree add "$WORKTREE_DIR" main` directly - this fails because `main` is already checked out.
+- Always use `--detach` or a unique base branch.
+- The worktree directory is **outside** the main repository (sibling directory `glyim-worktrees/`).
+
+## PR Description Collection Script
+
+When a stream is finished, run this to collect all needed data:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+STREAM_ID="${1:-S03}"
+WORKTREE_DIR="/Users/adm/Documents/Repos/glyim-worktrees/stream-${STREAM_ID}"
+
+if [ ! -d "$WORKTREE_DIR" ]; then
+    echo "ERROR: Worktree not found at $WORKTREE_DIR"
+    exit 1
+fi
+
+cd "$WORKTREE_DIR"
+
+echo "=== Collecting PR data for stream $STREAM_ID ==="
+echo ""
+echo "=== COMMIT LOG ==="
+git log main..HEAD --oneline
+echo ""
+echo "=== FULL COMMITS ==="
+git log main..HEAD
+echo ""
+echo "=== DIFF STATS ==="
+git diff main..HEAD --stat
+echo ""
+echo "=== DIFF (first 500 lines) ==="
+git diff main..HEAD | head -500
+
+# Copy full diff to clipboard
+git diff main..HEAD | pbcopy
+echo ""
+echo "✅ Full diff copied to clipboard"
+
+# Save to files
+git log main..HEAD --oneline > "/tmp/s${STREAM_ID}_commits.txt"
+git diff main..HEAD --stat > "/tmp/s${STREAM_ID}_stats.txt"
+echo "✅ Saved to /tmp/s${STREAM_ID}_commits.txt and /tmp/s${STREAM_ID}_stats.txt"

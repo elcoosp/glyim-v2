@@ -39,22 +39,42 @@ Every script starts with:
 
 0. Worktree & Branch Setup (First Script Only)
 
-    echo "Setting up worktree for stream ${STREAM_ID}"
-    if [ ! -d "$WORKTREE_DIR" ]; then
-      git worktree add "$WORKTREE_DIR" main
-    fi
-    cd "$WORKTREE_DIR" || { echo "ERROR: cannot cd to $WORKTREE_DIR"; exit 1; }
+**CRITICAL:** `git worktree add "$WORKTREE_DIR" main` fails because `main` is already checked out in the main repo. Use `--detach` instead.
 
+    echo "Setting up worktree for stream ${STREAM_ID}"
     BRANCH_NAME="stream-${STREAM_ID}/v0.1.0"
-    if git rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
-      echo "Branch $BRANCH_NAME already exists, checking it out"
-      git checkout "$BRANCH_NAME"
+
+    if [ -d "$WORKTREE_DIR" ]; then
+      echo "Worktree already exists, reusing"
     else
-      echo "Creating branch $BRANCH_NAME from main"
-      git checkout main
-      git pull origin main 2>/dev/null || true
+      # Create worktree with detached HEAD, then create branch
+      git worktree add --detach "$WORKTREE_DIR" main
+      cd "$WORKTREE_DIR" || { echo "ERROR: cannot cd to $WORKTREE_DIR"; exit 1; }
       git checkout -b "$BRANCH_NAME"
+      cd - > /dev/null
     fi
+
+    cd "$WORKTREE_DIR" || { echo "ERROR: cannot cd to $WORKTREE_DIR"; exit 1; }
+    git checkout "$BRANCH_NAME" 2>/dev/null || git checkout -b "$BRANCH_NAME"
+
+    # Optional: Merge latest main changes
+    git fetch origin main 2>/dev/null || true
+    git merge main --no-edit 2>/dev/null || true
+
+**Alternative (if --detach is problematic):**
+
+    # Create a unique base branch first
+    BASE_BRANCH="worktree-base-${STREAM_ID}"
+    git branch "$BASE_BRANCH" main 2>/dev/null || true
+    git worktree add "$WORKTREE_DIR" "$BASE_BRANCH"
+    cd "$WORKTREE_DIR" || exit 1
+    git checkout -b "$BRANCH_NAME"
+    git branch -d "$BASE_BRANCH" 2>/dev/null || true
+
+**What this solves:**
+- Prevents "fatal: 'main' is already used by worktree" error
+- Ensures each stream gets an isolated worktree
+- Branch creation happens inside the worktree, not conflicting with main
 
 This ensures:
 - No work happens on main directly.
@@ -188,11 +208,21 @@ stream-S01: fix(lex): correct keyword recognition
 ---
 
 ### Worktree Workflow
-- First script: Creates `../glyim-worktrees/stream-SXX` (relative to the main repo root), adds it as a worktree pointing to `main`, then checks out/creates the stream branch.
+- First script:
+  1. Creates `../glyim-worktrees/stream-SXX` (relative to the main repo root)
+  2. Uses `git worktree add --detach` to avoid branch conflicts
+  3. Creates the stream branch inside the worktree
 - Subsequent scripts: Assume the worktree exists, `cd` into it, and proceed.
 - Fix scripts: Same as subsequent scripts.
 - Never commit to main directly. All work happens in the worktree on the stream branch.
-- When the stream is complete, push the branch from the worktree and create a PR against main. The worktree can be deleted after merging.
+- When the stream is complete:
+  ```bash
+  cd ../glyim-worktrees/stream-SXX
+  git push origin stream-SXX/v0.1.0
+  cd "$REPO_ROOT"
+  git worktree remove ../glyim-worktrees/stream-SXX
+  ```
+- The worktree can be deleted after merging.
 
 ---
 

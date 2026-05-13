@@ -15,7 +15,12 @@ You are implementing Stream S{ID}: {NAME} for the Glyim compiler.
    cargo fmt --check -p <crate>
    cargo check --workspace
    ```
-5. **IMPORTANT – Worktree Usage:** Your first script MUST create a git worktree in `../glyim-worktrees/stream-S{ID}/` and cd into it. All subsequent scripts MUST cd into that worktree before executing any git or cargo commands. See the `plan-to-cat-scripts` skill for the exact structure.
+5. **IMPORTANT – Worktree Usage (CORRECTED):**
+   - Your first script MUST create a git worktree using `git worktree add --detach` (NOT `git worktree add ... main` directly, as this fails because main is already checked out).
+   - Worktree location: `../glyim-worktrees/stream-S{ID}/`
+   - After creating the worktree, cd into it and create your branch `stream-S{ID}/v0.1.0`
+   - All subsequent scripts MUST cd into that worktree before executing any git or cargo commands.
+   - See the `plan-to-cat-scripts` skill for the exact corrected structure.
 6. Output: Provide complete modified files using the bash script format. Never truncate, never use placeholders, never omit lines.
 
 ## Output Skill: plan-to-cat-scripts (MANDATORY)
