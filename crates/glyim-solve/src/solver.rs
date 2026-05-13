@@ -52,6 +52,15 @@ impl TraitContext {
             .iter()
             .filter(move |i| i.trait_ref.def_id == trait_id)
     }
+
+    #[cfg(test)]
+    pub(crate) fn trait_defs(&self) -> &[TraitDef] {
+        &self.trait_defs
+    }
+    #[cfg(test)]
+    pub(crate) fn impl_defs(&self) -> &[ImplDef] {
+        &self.impl_defs
+    }
 }
 
 impl Default for TraitContext {

@@ -89,6 +89,15 @@ impl<'a> FulfillmentCtx<'a> {
     pub fn into_diagnostics(self) -> Vec<GlyimDiagnostic> {
         self.diagnostics
     }
+
+    #[cfg(test)]
+    pub(crate) fn pending_count(&self) -> usize {
+        self.obligations.len()
+    }
+    #[cfg(test)]
+    pub(crate) fn processed_count(&self) -> usize {
+        self.processed_count
+    }
 }
 
 impl<'a> Extend<Obligation> for FulfillmentCtx<'a> {
