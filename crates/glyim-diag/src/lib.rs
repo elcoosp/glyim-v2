@@ -1,3 +1,4 @@
+type EmitCallback = Box<dyn FnMut(&GlyimDiagnostic)>;
 pub use miette::{Diagnostic as MietteDiagnostic, Report, Severity, SourceSpan};
 pub use glyim_span::{Span, MultiSpan};
 
@@ -118,7 +119,7 @@ pub struct DiagSink {
     error_count: usize,
     suppressed_count: usize,
     error_limit: usize,
-    on_emit: Option<Box<dyn FnMut(&GlyimDiagnostic)>>,
+    on_emit: Option<EmitCallback>,
 }
 
 impl DiagSink {
@@ -140,7 +141,7 @@ impl DiagSink {
 
     pub fn with_error_limit(limit: usize) -> Self { Self { error_limit: limit, ..Self::new() } }
 
-    pub fn with_on_emit(on_emit: Option<Box<dyn FnMut(&GlyimDiagnostic)>>) -> Self {
+    pub fn with_on_emit(on_emit: Option<EmitCallback>) -> Self {
         Self { on_emit, ..Self::new() }
     }
 

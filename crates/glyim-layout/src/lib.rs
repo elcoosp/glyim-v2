@@ -117,7 +117,7 @@ pub struct SimpleLayoutComputer<'a> {
 
 impl<'a> SimpleLayoutComputer<'a> {
     pub fn new(ctx: &'a TyCtx, target: TargetInfo) -> Self {
-        assert!(ALIGN_MAX >= 8, "ALIGN_MAX must be at least 8");
+        const _: () = assert!(ALIGN_MAX >= 8, "ALIGN_MAX must be at least 8");
         Self { ctx, target }
     }
 }

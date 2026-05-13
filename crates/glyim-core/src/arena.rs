@@ -4,7 +4,6 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
-// No derive macro – we implement everything manually to avoid requiring T: Copy/Eq
 pub struct Idx<T> {
     raw: u32,
     _marker: PhantomData<T>,
@@ -23,7 +22,7 @@ impl<T> std::hash::Hash for Idx<T> {
 }
 impl<T> PartialOrd for Idx<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.raw.partial_cmp(&other.raw)
+        Some(self.cmp(other))
     }
 }
 impl<T> Ord for Idx<T> {
@@ -54,7 +53,6 @@ pub trait IdxLike: Copy + Eq + fmt::Debug + 'static {
     fn index(self) -> usize { self.to_raw() as usize }
 }
 
-// T must be 'static to satisfy the trait bound, but Idx<T> itself is 'static if T: 'static
 impl<T: 'static> IdxLike for Idx<T> {
     fn from_raw(raw: u32) -> Self { Idx::from_raw(raw) }
     fn to_raw(self) -> u32 { self.to_raw() }

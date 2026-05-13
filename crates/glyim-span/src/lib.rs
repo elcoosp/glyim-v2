@@ -50,6 +50,8 @@ impl Span {
     pub fn sans_ctx(self) -> Span { Span { ctx: SyntaxContext::ROOT, ..self } }
     pub fn len(self) -> u32 { self.hi.to_raw().saturating_sub(self.lo.to_raw()) }
 
+    pub fn is_empty(self) -> bool { self.len() == 0 }
+
     pub fn to(self, other: Span) -> Span {
         debug_assert_eq!(self.file, other.file, "Cannot merge spans from different files");
         Span {
