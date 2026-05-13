@@ -14,3 +14,6 @@ pub mod solver;
 pub use fulfill::*;
 pub use infer::*;
 pub use solver::*;
+
+#[cfg(test)]
+mod tests;

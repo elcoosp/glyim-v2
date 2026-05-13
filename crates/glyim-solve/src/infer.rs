@@ -241,6 +241,9 @@ impl InferenceTable {
 
     pub fn fully_resolve(&self, ctx: &dyn TypeLookup, ty: Ty) -> Result<Ty, Vec<TyVar>> {
         let resolved = self.resolve_ty_shallow(ctx, ty);
+        if self.has_unresolved_non_ty_infer(ctx, resolved) {
+            return Err(Vec::new());
+        }
         if ctx.ty_flags(resolved).contains(TypeFlags::HAS_TY_INFER) {
             let mut unresolved = Vec::new();
             self.collect_unresolved_vars(ctx, resolved, &mut unresolved);
@@ -251,6 +254,42 @@ impl InferenceTable {
             }
         } else {
             Ok(resolved)
+        }
+    }
+
+    fn has_unresolved_non_ty_infer(&self, ctx: &dyn TypeLookup, ty: Ty) -> bool {
+        match ctx.ty_kind(ty) {
+            TyKind::Infer(InferVar::Int(var)) => self.int_vars.get(*var).map_or(true, |v| v.value.is_none()),
+            TyKind::Infer(InferVar::Float(var)) => self.float_vars.get(*var).map_or(true, |v| v.value.is_none()),
+            TyKind::Infer(InferVar::Ty(_)) => false,
+            TyKind::Ref(_, inner, _) => self.has_unresolved_non_ty_infer(ctx, *inner),
+            TyKind::RawPtr(inner, _) => self.has_unresolved_non_ty_infer(ctx, *inner),
+            TyKind::Slice(inner) => self.has_unresolved_non_ty_infer(ctx, *inner),
+            TyKind::Array(inner, _) => self.has_unresolved_non_ty_infer(ctx, *inner),
+            TyKind::Adt(_, substs)
+            | TyKind::FnDef(_, substs)
+            | TyKind::Closure(_, substs)
+            | TyKind::Tuple(substs) => {
+                for arg in ctx.substitution_args(*substs) {
+                    if let GenericArg::Ty(t) = arg {
+                        if self.has_unresolved_non_ty_infer(ctx, *t) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            TyKind::FnPtr(sig) => {
+                for arg in ctx.substitution_args(sig.inputs) {
+                    if let GenericArg::Ty(t) = arg {
+                        if self.has_unresolved_non_ty_infer(ctx, *t) {
+                            return true;
+                        }
+                    }
+                }
+                self.has_unresolved_non_ty_infer(ctx, sig.output)
+            }
+            _ => false,
         }
     }
 
