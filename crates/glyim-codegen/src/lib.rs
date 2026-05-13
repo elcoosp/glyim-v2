@@ -136,6 +136,15 @@ fn emit_operand(bc: &mut Vec<u8>, operand: &Operand) {
                 MirConstKind::Bool(b) => {
                     bc.extend_from_slice(&(if *b { 1i64 } else { 0i64 }).to_le_bytes());
                 }
+                MirConstKind::Char(c) => {
+                    bc.extend_from_slice(&(*c as i64).to_le_bytes());
+                }
+                MirConstKind::Uint(val) => {
+                    bc.extend_from_slice(&(*val as i64).to_le_bytes());
+                }
+                MirConstKind::FloatBits(bits) => {
+                    bc.extend_from_slice(&(*bits as i64).to_le_bytes());
+                }
                 _ => {
                     tracing::warn!("STUB: unsupported constant kind");
                     bc.extend_from_slice(&0i64.to_le_bytes());
