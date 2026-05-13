@@ -1,8 +1,8 @@
-use glyim_core::interner::Interner;
 use glyim_core::def_id::CrateId;
+use glyim_core::interner::Interner;
+use glyim_solve::TraitContext;
 use glyim_vfs::Vfs;
 use parking_lot::RwLock;
-use glyim_solve::TraitContext;
 
 pub struct Database {
     interner: Interner,
@@ -10,7 +10,7 @@ pub struct Database {
     _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,
     trait_ctx: TraitContext,
     krate: CrateId,
-    _config: CrateConfig,  // renamed to _config
+    _config: CrateConfig, // renamed to _config
 }
 
 #[derive(Clone, Debug)]
@@ -32,10 +32,18 @@ impl Database {
         }
     }
 
-    pub fn interner(&self) -> &Interner { &self.interner }
-    pub fn vfs(&self) -> &Vfs { &self.vfs }
-    pub fn trait_ctx(&self) -> &TraitContext { &self.trait_ctx }
-    pub fn krate(&self) -> CrateId { self.krate }
+    pub fn interner(&self) -> &Interner {
+        &self.interner
+    }
+    pub fn vfs(&self) -> &Vfs {
+        &self.vfs
+    }
+    pub fn trait_ctx(&self) -> &TraitContext {
+        &self.trait_ctx
+    }
+    pub fn krate(&self) -> CrateId {
+        self.krate
+    }
 
     pub fn set_ty_ctx(&self, ctx: glyim_type::TyCtx) {
         *self._ty_ctx.write() = Some(ctx);

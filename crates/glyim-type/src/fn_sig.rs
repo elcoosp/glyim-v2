@@ -1,6 +1,6 @@
-use glyim_core::primitives::*;
-use crate::ty::Ty;
 use crate::substitution::Substitution;
+use crate::ty::Ty;
+use glyim_core::primitives::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FnSig {

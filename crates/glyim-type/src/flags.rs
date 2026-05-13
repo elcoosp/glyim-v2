@@ -1,8 +1,8 @@
-use bitflags::bitflags;
-use crate::ty::*;
+use crate::display::TypeLookup;
 use crate::region::*;
 use crate::substitution::*;
-use crate::display::TypeLookup;
+use crate::ty::*;
+use bitflags::bitflags;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -21,7 +21,11 @@ bitflags! {
 pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFlags {
     const MAX_DEPTH: u32 = 64;
     if depth > MAX_DEPTH {
-        tracing::warn!("compute_flags exceeded depth limit at depth {}; TyKind summary: {:?}", depth, kind);
+        tracing::warn!(
+            "compute_flags exceeded depth limit at depth {}; TyKind summary: {:?}",
+            depth,
+            kind
+        );
         return TypeFlags::HAS_DEPTH_OVERFLOW;
     }
     let mut flags = TypeFlags::empty();
@@ -31,20 +35,31 @@ pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFla
         TyKind::Error => flags |= TypeFlags::HAS_ERROR,
         TyKind::Ref(region, ty, _) => {
             flags |= ctx.ty_flags(*ty);
-            if let Region::Var(_) = region { flags |= TypeFlags::HAS_RE_INFER; }
-            if let Region::EarlyBound(_) = region { flags |= TypeFlags::HAS_RE_PARAM; }
+            if let Region::Var(_) = region {
+                flags |= TypeFlags::HAS_RE_INFER;
+            }
+            if let Region::EarlyBound(_) = region {
+                flags |= TypeFlags::HAS_RE_PARAM;
+            }
         }
         TyKind::RawPtr(ty, _) => flags |= ctx.ty_flags(*ty),
         TyKind::Slice(ty) => flags |= ctx.ty_flags(*ty),
         TyKind::Array(ty, _) => flags |= ctx.ty_flags(*ty),
-        TyKind::Adt(_, substs) | TyKind::FnDef(_, substs) | TyKind::Closure(_, substs) | TyKind::Tuple(substs) => {
+        TyKind::Adt(_, substs)
+        | TyKind::FnDef(_, substs)
+        | TyKind::Closure(_, substs)
+        | TyKind::Tuple(substs) => {
             for arg in ctx.substitution_args(*substs) {
-                if let GenericArg::Ty(t) = arg { flags |= ctx.ty_flags(*t); }
+                if let GenericArg::Ty(t) = arg {
+                    flags |= ctx.ty_flags(*t);
+                }
             }
         }
         TyKind::FnPtr(sig) => {
             for arg in ctx.substitution_args(sig.inputs) {
-                if let GenericArg::Ty(t) = arg { flags |= ctx.ty_flags(*t); }
+                if let GenericArg::Ty(t) = arg {
+                    flags |= ctx.ty_flags(*t);
+                }
             }
             flags |= ctx.ty_flags(sig.output);
         }

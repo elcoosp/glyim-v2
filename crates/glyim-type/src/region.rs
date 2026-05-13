@@ -1,5 +1,5 @@
-use glyim_core::interner::Name;
 use crate::ty::RegionVid;
+use glyim_core::interner::Name;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Region {
@@ -22,9 +22,15 @@ pub struct DebruijnIndex(pub u32);
 
 impl DebruijnIndex {
     pub const INNERMOST: DebruijnIndex = DebruijnIndex(0);
-    pub fn shifted_in(self) -> Self { DebruijnIndex(self.0 + 1) }
+    pub fn shifted_in(self) -> Self {
+        DebruijnIndex(self.0 + 1)
+    }
     pub fn shifted_out(self) -> Option<Self> {
-        if self.0 > 0 { Some(DebruijnIndex(self.0 - 1)) } else { None }
+        if self.0 > 0 {
+            Some(DebruijnIndex(self.0 - 1))
+        } else {
+            None
+        }
     }
 }
 

@@ -9,10 +9,10 @@ pub mod thir;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::primitives::Mutability;
-use glyim_type::*;
-use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
 use glyim_diag::GlyimDiagnostic;
+use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
 use glyim_span::Span;
+use glyim_type::*;
 
 #[derive(Clone, Debug)]
 pub struct TypeckResult {
@@ -47,7 +47,10 @@ impl<'a> TypeckCtx<'a> {
     pub fn unify(&mut self, a: Ty, b: Ty, span: Span) -> bool {
         match self.infer.unify(self.ctx, a, b, span) {
             Ok(_) => true,
-            Err(diags) => { self.diagnostics.extend(diags); false }
+            Err(diags) => {
+                self.diagnostics.extend(diags);
+                false
+            }
         }
     }
 
@@ -55,7 +58,10 @@ impl<'a> TypeckCtx<'a> {
         let _ = ty;
         self.pending_obligations.push(Obligation {
             predicate: Predicate::Trait(trait_pred),
-            cause: ObligationCause { span, code: glyim_solve::ObligationCauseCode::TypeConstruction },
+            cause: ObligationCause {
+                span,
+                code: glyim_solve::ObligationCauseCode::TypeConstruction,
+            },
         });
     }
 }

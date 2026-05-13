@@ -1,6 +1,6 @@
-use glyim_syntax::SyntaxKind;
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_diag::GlyimDiagnostic;
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use glyim_syntax::SyntaxKind;
 use smol_str::SmolStr;
 
 #[derive(Clone, Debug)]
@@ -12,7 +12,11 @@ pub struct Token {
 
 impl Token {
     pub fn new(kind: SyntaxKind, span: Span, text: impl AsRef<str>) -> Self {
-        Self { kind, span, text: SmolStr::from(text.as_ref()) }
+        Self {
+            kind,
+            span,
+            text: SmolStr::from(text.as_ref()),
+        }
     }
 }
 
@@ -31,14 +35,26 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str, file_id: FileId) -> Self {
-        Self { source, file_id, pos: 0, diagnostics: Vec::new() }
+        Self {
+            source,
+            file_id,
+            pos: 0,
+            diagnostics: Vec::new(),
+        }
     }
 
     fn span(&self, start: usize, end: usize) -> Span {
-        Span::new(self.file_id, ByteIdx::from_raw(start as u32), ByteIdx::from_raw(end as u32), SyntaxContext::ROOT)
+        Span::new(
+            self.file_id,
+            ByteIdx::from_raw(start as u32),
+            ByteIdx::from_raw(end as u32),
+            SyntaxContext::ROOT,
+        )
     }
 
-    fn peek(&self) -> Option<char> { self.source[self.pos..].chars().next() }
+    fn peek(&self) -> Option<char> {
+        self.source[self.pos..].chars().next()
+    }
     fn peek_next(&self) -> Option<char> {
         let mut chars = self.source[self.pos..].chars();
         chars.next();
@@ -46,7 +62,9 @@ impl<'a> Lexer<'a> {
     }
     fn advance(&mut self) -> Option<char> {
         let ch = self.source[self.pos..].chars().next();
-        if let Some(c) = ch { self.pos += c.len_utf8(); }
+        if let Some(c) = ch {
+            self.pos += c.len_utf8();
+        }
         ch
     }
 
@@ -55,8 +73,12 @@ impl<'a> Lexer<'a> {
 
         while self.pos < self.source.len() {
             let start = self.pos;
-            if self.lex_trivia() { continue; }
-            if self.pos >= self.source.len() { break; }
+            if self.lex_trivia() {
+                continue;
+            }
+            if self.pos >= self.source.len() {
+                break;
+            }
             let Some(ch) = self.peek() else { break };
 
             match ch {
@@ -74,70 +96,284 @@ impl<'a> Lexer<'a> {
                 '"' => {
                     self.lex_string();
                     let text = &self.source[start..self.pos];
-                    tokens.push(Token::new(SyntaxKind::StringLit, self.span(start, self.pos), text));
+                    tokens.push(Token::new(
+                        SyntaxKind::StringLit,
+                        self.span(start, self.pos),
+                        text,
+                    ));
                 }
                 '\'' => {
                     self.lex_char();
                     let text = &self.source[start..self.pos];
-                    tokens.push(Token::new(SyntaxKind::CharLit, self.span(start, self.pos), text));
+                    tokens.push(Token::new(
+                        SyntaxKind::CharLit,
+                        self.span(start, self.pos),
+                        text,
+                    ));
                 }
-                '(' => { self.advance(); tokens.push(Token::new(SyntaxKind::LParen, self.span(start, self.pos), "(")); }
-                ')' => { self.advance(); tokens.push(Token::new(SyntaxKind::RParen, self.span(start, self.pos), ")")); }
-                '{' => { self.advance(); tokens.push(Token::new(SyntaxKind::LBrace, self.span(start, self.pos), "{")); }
-                '}' => { self.advance(); tokens.push(Token::new(SyntaxKind::RBrace, self.span(start, self.pos), "}")); }
-                '[' => { self.advance(); tokens.push(Token::new(SyntaxKind::LBracket, self.span(start, self.pos), "[")); }
-                ']' => { self.advance(); tokens.push(Token::new(SyntaxKind::RBracket, self.span(start, self.pos), "]")); }
-                ',' => { self.advance(); tokens.push(Token::new(SyntaxKind::Comma, self.span(start, self.pos), ",")); }
-                ';' => { self.advance(); tokens.push(Token::new(SyntaxKind::Semicolon, self.span(start, self.pos), ";")); }
-                '.' => { let kind = self.lex_dot(); let text = &self.source[start..self.pos]; tokens.push(Token::new(kind, self.span(start, self.pos), text)); }
-                ':' => { let kind = self.lex_colon(); let text = &self.source[start..self.pos]; tokens.push(Token::new(kind, self.span(start, self.pos), text)); }
-                '+' => { let k = self.lex_plus(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '-' => { let k = self.lex_minus(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '*' => { let k = self.lex_star(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '/' => { let k = self.lex_slash(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '%' => { self.advance(); tokens.push(Token::new(SyntaxKind::Percent, self.span(start, self.pos), "%")); }
-                '=' => { let k = self.lex_eq(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '!' => { let k = self.lex_bang(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '<' => { let k = self.lex_lt(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '>' => { let k = self.lex_gt(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '&' => { let k = self.lex_and(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '|' => { let k = self.lex_or(); tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos])); }
-                '^' => { self.advance(); tokens.push(Token::new(SyntaxKind::Caret, self.span(start, self.pos), "^")); }
-                '@' => { self.advance(); tokens.push(Token::new(SyntaxKind::At, self.span(start, self.pos), "@")); }
-                '#' => { self.advance(); tokens.push(Token::new(SyntaxKind::Hash, self.span(start, self.pos), "#")); }
-                '$' => { self.advance(); tokens.push(Token::new(SyntaxKind::Dollar, self.span(start, self.pos), "$")); }
-                '~' => { self.advance(); tokens.push(Token::new(SyntaxKind::Tilde, self.span(start, self.pos), "~")); }
-                '?' => { self.advance(); tokens.push(Token::new(SyntaxKind::Question, self.span(start, self.pos), "?")); }
+                '(' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::LParen,
+                        self.span(start, self.pos),
+                        "(",
+                    ));
+                }
+                ')' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::RParen,
+                        self.span(start, self.pos),
+                        ")",
+                    ));
+                }
+                '{' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::LBrace,
+                        self.span(start, self.pos),
+                        "{",
+                    ));
+                }
+                '}' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::RBrace,
+                        self.span(start, self.pos),
+                        "}",
+                    ));
+                }
+                '[' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::LBracket,
+                        self.span(start, self.pos),
+                        "[",
+                    ));
+                }
+                ']' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::RBracket,
+                        self.span(start, self.pos),
+                        "]",
+                    ));
+                }
+                ',' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Comma,
+                        self.span(start, self.pos),
+                        ",",
+                    ));
+                }
+                ';' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Semicolon,
+                        self.span(start, self.pos),
+                        ";",
+                    ));
+                }
+                '.' => {
+                    let kind = self.lex_dot();
+                    let text = &self.source[start..self.pos];
+                    tokens.push(Token::new(kind, self.span(start, self.pos), text));
+                }
+                ':' => {
+                    let kind = self.lex_colon();
+                    let text = &self.source[start..self.pos];
+                    tokens.push(Token::new(kind, self.span(start, self.pos), text));
+                }
+                '+' => {
+                    let k = self.lex_plus();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '-' => {
+                    let k = self.lex_minus();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '*' => {
+                    let k = self.lex_star();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '/' => {
+                    let k = self.lex_slash();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '%' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Percent,
+                        self.span(start, self.pos),
+                        "%",
+                    ));
+                }
+                '=' => {
+                    let k = self.lex_eq();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '!' => {
+                    let k = self.lex_bang();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '<' => {
+                    let k = self.lex_lt();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '>' => {
+                    let k = self.lex_gt();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '&' => {
+                    let k = self.lex_and();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '|' => {
+                    let k = self.lex_or();
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
+                }
+                '^' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Caret,
+                        self.span(start, self.pos),
+                        "^",
+                    ));
+                }
+                '@' => {
+                    self.advance();
+                    tokens.push(Token::new(SyntaxKind::At, self.span(start, self.pos), "@"));
+                }
+                '#' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Hash,
+                        self.span(start, self.pos),
+                        "#",
+                    ));
+                }
+                '$' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Dollar,
+                        self.span(start, self.pos),
+                        "$",
+                    ));
+                }
+                '~' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Tilde,
+                        self.span(start, self.pos),
+                        "~",
+                    ));
+                }
+                '?' => {
+                    self.advance();
+                    tokens.push(Token::new(
+                        SyntaxKind::Question,
+                        self.span(start, self.pos),
+                        "?",
+                    ));
+                }
                 _ => {
                     self.advance();
                     self.diagnostics.push(GlyimDiagnostic::lex_error(
-                        self.span(start, self.pos), format!("unexpected character: '{}'", ch),
+                        self.span(start, self.pos),
+                        format!("unexpected character: '{}'", ch),
                     ));
-                    tokens.push(Token::new(SyntaxKind::Error, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        SyntaxKind::Error,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
             }
         }
 
-        LexResult { tokens, diagnostics: self.diagnostics }
+        LexResult {
+            tokens,
+            diagnostics: self.diagnostics,
+        }
     }
 
     fn lex_trivia(&mut self) -> bool {
         let start = self.pos;
         while let Some(ch) = self.peek() {
             match ch {
-                ' ' | '\t' | '\n' | '\r' => { self.advance(); }
+                ' ' | '\t' | '\n' | '\r' => {
+                    self.advance();
+                }
                 '/' if self.peek_next() == Some('/') => {
-                    self.advance(); self.advance();
-                    while let Some(c) = self.peek() { if c == '\n' { break; } self.advance(); }
+                    self.advance();
+                    self.advance();
+                    while let Some(c) = self.peek() {
+                        if c == '\n' {
+                            break;
+                        }
+                        self.advance();
+                    }
                 }
                 '/' if self.peek_next() == Some('*') => {
-                    self.advance(); self.advance();
+                    self.advance();
+                    self.advance();
                     let mut depth = 1u32;
                     while depth > 0 {
                         match self.peek() {
-                            Some('/') if self.peek_next() == Some('*') => { self.advance(); self.advance(); depth += 1; }
-                            Some('*') if self.peek_next() == Some('/') => { self.advance(); self.advance(); depth -= 1; }
-                            Some(_) => { self.advance(); }
+                            Some('/') if self.peek_next() == Some('*') => {
+                                self.advance();
+                                self.advance();
+                                depth += 1;
+                            }
+                            Some('*') if self.peek_next() == Some('/') => {
+                                self.advance();
+                                self.advance();
+                                depth -= 1;
+                            }
+                            Some(_) => {
+                                self.advance();
+                            }
                             None => break,
                         }
                     }
@@ -150,7 +386,11 @@ impl<'a> Lexer<'a> {
 
     fn lex_ident_or_keyword(&mut self) {
         while let Some(ch) = self.peek() {
-            if ch.is_alphanumeric() || ch == '_' { self.advance(); } else { break; }
+            if ch.is_alphanumeric() || ch == '_' {
+                self.advance();
+            } else {
+                break;
+            }
         }
     }
 
@@ -159,18 +399,39 @@ impl<'a> Lexer<'a> {
         if self.peek() == Some('0') {
             let next = self.peek_next();
             if next == Some('x') || next == Some('X') {
-                self.advance(); self.advance();
-                while let Some(ch) = self.peek() { if ch.is_ascii_hexdigit() || ch == '_' { self.advance(); } else { break; } }
+                self.advance();
+                self.advance();
+                while let Some(ch) = self.peek() {
+                    if ch.is_ascii_hexdigit() || ch == '_' {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
                 self.lex_number_suffix();
                 return SyntaxKind::IntLit;
             } else if next == Some('b') || next == Some('B') {
-                self.advance(); self.advance();
-                while let Some(ch) = self.peek() { if ch == '0' || ch == '1' || ch == '_' { self.advance(); } else { break; } }
+                self.advance();
+                self.advance();
+                while let Some(ch) = self.peek() {
+                    if ch == '0' || ch == '1' || ch == '_' {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
                 self.lex_number_suffix();
                 return SyntaxKind::IntLit;
             } else if next == Some('o') || next == Some('O') {
-                self.advance(); self.advance();
-                while let Some(ch) = self.peek() { if ('0'..='7').contains(&ch) || ch == '_' { self.advance(); } else { break; } }
+                self.advance();
+                self.advance();
+                while let Some(ch) = self.peek() {
+                    if ('0'..='7').contains(&ch) || ch == '_' {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
                 self.lex_number_suffix();
                 return SyntaxKind::IntLit;
             }
@@ -180,14 +441,24 @@ impl<'a> Lexer<'a> {
 
         // Decimal integer part
         while let Some(ch) = self.peek() {
-            if ch.is_ascii_digit() || ch == '_' { self.advance(); } else { break; }
+            if ch.is_ascii_digit() || ch == '_' {
+                self.advance();
+            } else {
+                break;
+            }
         }
 
         // Fractional part
         if self.peek() == Some('.') && self.peek_next().is_some_and(|n| n.is_ascii_digit()) {
             is_float = true;
             self.advance();
-            while let Some(ch) = self.peek() { if ch.is_ascii_digit() || ch == '_' { self.advance(); } else { break; } }
+            while let Some(ch) = self.peek() {
+                if ch.is_ascii_digit() || ch == '_' {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
         }
 
         // Exponent part with validation (F7)
@@ -203,7 +474,9 @@ impl<'a> Lexer<'a> {
                 if ch.is_ascii_digit() || ch == '_' {
                     self.advance();
                     has_exponent_digits = true;
-                } else { break; }
+                } else {
+                    break;
+                }
             }
             if !has_exponent_digits {
                 let exp_end = self.pos;
@@ -220,26 +493,58 @@ impl<'a> Lexer<'a> {
 
         self.lex_number_suffix();
 
-        if is_float { SyntaxKind::FloatLit } else { SyntaxKind::IntLit }
+        if is_float {
+            SyntaxKind::FloatLit
+        } else {
+            SyntaxKind::IntLit
+        }
     }
 
     fn lex_number_suffix(&mut self) {
         while let Some(ch) = self.peek() {
-            if ch.is_alphanumeric() || ch == '_' { self.advance(); } else { break; }
+            if ch.is_alphanumeric() || ch == '_' {
+                self.advance();
+            } else {
+                break;
+            }
         }
     }
 
     fn lex_string(&mut self) {
         self.advance();
         while let Some(ch) = self.peek() {
-            match ch { '"' => { self.advance(); break; } '\\' => { self.advance(); self.advance(); } _ => { self.advance(); } }
+            match ch {
+                '"' => {
+                    self.advance();
+                    break;
+                }
+                '\\' => {
+                    self.advance();
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
         }
     }
 
     fn lex_char(&mut self) {
         self.advance();
         while let Some(ch) = self.peek() {
-            match ch { '\'' => { self.advance(); break; } '\\' => { self.advance(); self.advance(); } _ => { self.advance(); } }
+            match ch {
+                '\'' => {
+                    self.advance();
+                    break;
+                }
+                '\\' => {
+                    self.advance();
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
         }
     }
 
@@ -247,45 +552,166 @@ impl<'a> Lexer<'a> {
         self.advance();
         if self.peek() == Some('.') {
             self.advance();
-            if self.peek() == Some('=') { self.advance(); SyntaxKind::DotDotEq } else { SyntaxKind::DotDot }
-        } else { SyntaxKind::Dot }
+            if self.peek() == Some('=') {
+                self.advance();
+                SyntaxKind::DotDotEq
+            } else {
+                SyntaxKind::DotDot
+            }
+        } else {
+            SyntaxKind::Dot
+        }
     }
 
     fn lex_colon(&mut self) -> SyntaxKind {
         self.advance();
-        if self.peek() == Some(':') { self.advance(); SyntaxKind::ColonColon } else { SyntaxKind::Colon }
+        if self.peek() == Some(':') {
+            self.advance();
+            SyntaxKind::ColonColon
+        } else {
+            SyntaxKind::Colon
+        }
     }
-    fn lex_plus(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::PlusEq } else { SyntaxKind::Plus } }
-    fn lex_minus(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('>') { self.advance(); SyntaxKind::Arrow } else if self.peek() == Some('=') { self.advance(); SyntaxKind::MinusEq } else { SyntaxKind::Minus } }
-    fn lex_star(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::StarEq } else { SyntaxKind::Star } }
-    fn lex_slash(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::SlashEq } else { SyntaxKind::Slash } }
-    fn lex_eq(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::EqEq } else if self.peek() == Some('>') { self.advance(); SyntaxKind::FatArrow } else { SyntaxKind::Eq } }
-    fn lex_bang(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::BangEq } else { SyntaxKind::Bang } }
-    fn lex_lt(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::LtEq } else if self.peek() == Some('<') { self.advance(); SyntaxKind::Shl } else { SyntaxKind::Lt } }
-    fn lex_gt(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('=') { self.advance(); SyntaxKind::GtEq } else if self.peek() == Some('>') { self.advance(); SyntaxKind::Shr } else { SyntaxKind::Gt } }
-    fn lex_and(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('&') { self.advance(); SyntaxKind::AndAnd } else { SyntaxKind::And } }
-    fn lex_or(&mut self) -> SyntaxKind { self.advance(); if self.peek() == Some('|') { self.advance(); SyntaxKind::OrOr } else { SyntaxKind::Or } }
+    fn lex_plus(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::PlusEq
+        } else {
+            SyntaxKind::Plus
+        }
+    }
+    fn lex_minus(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('>') {
+            self.advance();
+            SyntaxKind::Arrow
+        } else if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::MinusEq
+        } else {
+            SyntaxKind::Minus
+        }
+    }
+    fn lex_star(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::StarEq
+        } else {
+            SyntaxKind::Star
+        }
+    }
+    fn lex_slash(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::SlashEq
+        } else {
+            SyntaxKind::Slash
+        }
+    }
+    fn lex_eq(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::EqEq
+        } else if self.peek() == Some('>') {
+            self.advance();
+            SyntaxKind::FatArrow
+        } else {
+            SyntaxKind::Eq
+        }
+    }
+    fn lex_bang(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::BangEq
+        } else {
+            SyntaxKind::Bang
+        }
+    }
+    fn lex_lt(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::LtEq
+        } else if self.peek() == Some('<') {
+            self.advance();
+            SyntaxKind::Shl
+        } else {
+            SyntaxKind::Lt
+        }
+    }
+    fn lex_gt(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::GtEq
+        } else if self.peek() == Some('>') {
+            self.advance();
+            SyntaxKind::Shr
+        } else {
+            SyntaxKind::Gt
+        }
+    }
+    fn lex_and(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('&') {
+            self.advance();
+            SyntaxKind::AndAnd
+        } else {
+            SyntaxKind::And
+        }
+    }
+    fn lex_or(&mut self) -> SyntaxKind {
+        self.advance();
+        if self.peek() == Some('|') {
+            self.advance();
+            SyntaxKind::OrOr
+        } else {
+            SyntaxKind::Or
+        }
+    }
 }
 
 fn lookup_keyword(ident: &str) -> SyntaxKind {
     match ident {
-        "fn" => SyntaxKind::KwFn, "let" => SyntaxKind::KwLet,
-        "struct" => SyntaxKind::KwStruct, "enum" => SyntaxKind::KwEnum,
-        "if" => SyntaxKind::KwIf, "else" => SyntaxKind::KwElse,
-        "return" => SyntaxKind::KwReturn, "match" => SyntaxKind::KwMatch,
-        "mod" => SyntaxKind::KwMod, "comptime" => SyntaxKind::KwComptime,
-        "self" => SyntaxKind::KwSelf, "super" => SyntaxKind::KwSuper,
-        "crate" => SyntaxKind::KwCrate, "true" => SyntaxKind::KwTrue,
-        "false" => SyntaxKind::KwFalse, "mut" => SyntaxKind::KwMut,
-        "ref" => SyntaxKind::KwRef, "as" => SyntaxKind::KwAs,
-        "while" => SyntaxKind::KwWhile, "for" => SyntaxKind::KwFor,
-        "in" => SyntaxKind::KwIn, "break" => SyntaxKind::KwBreak,
-        "continue" => SyntaxKind::KwContinue, "trait" => SyntaxKind::KwTrait,
-        "impl" => SyntaxKind::KwImpl, "where" => SyntaxKind::KwWhere,
-        "type" => SyntaxKind::KwType, "pub" => SyntaxKind::KwPub,
-        "priv" => SyntaxKind::KwPriv, "extern" => SyntaxKind::KwExtern,
-        "unsafe" => SyntaxKind::KwUnsafe, "const" => SyntaxKind::KwConst,
-        "static" => SyntaxKind::KwStatic, "_" => SyntaxKind::Underscore,
+        "fn" => SyntaxKind::KwFn,
+        "let" => SyntaxKind::KwLet,
+        "struct" => SyntaxKind::KwStruct,
+        "enum" => SyntaxKind::KwEnum,
+        "if" => SyntaxKind::KwIf,
+        "else" => SyntaxKind::KwElse,
+        "return" => SyntaxKind::KwReturn,
+        "match" => SyntaxKind::KwMatch,
+        "mod" => SyntaxKind::KwMod,
+        "comptime" => SyntaxKind::KwComptime,
+        "self" => SyntaxKind::KwSelf,
+        "super" => SyntaxKind::KwSuper,
+        "crate" => SyntaxKind::KwCrate,
+        "true" => SyntaxKind::KwTrue,
+        "false" => SyntaxKind::KwFalse,
+        "mut" => SyntaxKind::KwMut,
+        "ref" => SyntaxKind::KwRef,
+        "as" => SyntaxKind::KwAs,
+        "while" => SyntaxKind::KwWhile,
+        "for" => SyntaxKind::KwFor,
+        "in" => SyntaxKind::KwIn,
+        "break" => SyntaxKind::KwBreak,
+        "continue" => SyntaxKind::KwContinue,
+        "trait" => SyntaxKind::KwTrait,
+        "impl" => SyntaxKind::KwImpl,
+        "where" => SyntaxKind::KwWhere,
+        "type" => SyntaxKind::KwType,
+        "pub" => SyntaxKind::KwPub,
+        "priv" => SyntaxKind::KwPriv,
+        "extern" => SyntaxKind::KwExtern,
+        "unsafe" => SyntaxKind::KwUnsafe,
+        "const" => SyntaxKind::KwConst,
+        "static" => SyntaxKind::KwStatic,
+        "_" => SyntaxKind::Underscore,
         _ => SyntaxKind::Ident,
     }
 }

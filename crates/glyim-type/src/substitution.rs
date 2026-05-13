@@ -1,7 +1,7 @@
-use std::fmt;
-use crate::ty::Ty;
-use crate::region::Region;
 use crate::const_val::Const;
+use crate::region::Region;
+use crate::ty::Ty;
+use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Substitution {
@@ -10,10 +10,18 @@ pub struct Substitution {
 }
 
 impl Substitution {
-    pub(crate) fn from_raw(index: u32, len: u16) -> Self { Self { index, len } }
-    pub fn index(self) -> u32 { self.index }
-    pub fn len(self) -> u16 { self.len }
-    pub fn is_empty(self) -> bool { self.len == 0 }
+    pub(crate) fn from_raw(index: u32, len: u16) -> Self {
+        Self { index, len }
+    }
+    pub fn index(self) -> u32 {
+        self.index
+    }
+    pub fn len(self) -> u16 {
+        self.len
+    }
+    pub fn is_empty(self) -> bool {
+        self.len == 0
+    }
 }
 
 impl fmt::Debug for Substitution {

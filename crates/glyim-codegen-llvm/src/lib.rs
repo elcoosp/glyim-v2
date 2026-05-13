@@ -1,10 +1,10 @@
 use glyim_codegen::CodegenBackend;
-use std::sync::Arc;
-use glyim_mir::Body;
 use glyim_diag::{CompResult, GlyimDiagnostic};
+use glyim_mir::Body;
 use inkwell::context::Context;
-use inkwell::targets::{Target, InitializationConfig, TargetTriple};
+use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use std::path::Path;
+use std::sync::Arc;
 
 pub struct LlvmBackend {
     context: Context,
@@ -58,15 +58,34 @@ impl CodegenBackend for LlvmBackend {
         }
 
         let target = Target::from_triple(&triple).map_err(|e| {
-            vec![GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
+            vec![GlyimDiagnostic::internal_error(format!(
+                "Target error: {}",
+                e
+            ))]
         })?;
         let target_machine = target
-            .create_target_machine(&triple, "generic", "", inkwell::OptimizationLevel::Default, inkwell::targets::RelocMode::Default, inkwell::targets::CodeModel::Default)
-            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("Failed to create target machine")])?;
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                inkwell::OptimizationLevel::Default,
+                inkwell::targets::RelocMode::Default,
+                inkwell::targets::CodeModel::Default,
+            )
+            .ok_or_else(|| {
+                vec![GlyimDiagnostic::internal_error(
+                    "Failed to create target machine",
+                )]
+            })?;
 
-        target_machine.write_to_file(&module, inkwell::targets::FileType::Object, output).map_err(|e| {
-            vec![GlyimDiagnostic::internal_error(format!("Failed to write object file: {:?}", e))]
-        })?;
+        target_machine
+            .write_to_file(&module, inkwell::targets::FileType::Object, output)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to write object file: {:?}",
+                    e
+                ))]
+            })?;
 
         Ok(Vec::new())
     }

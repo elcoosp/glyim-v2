@@ -7,10 +7,10 @@
 //! `FloatVar`. The type system prevents constructing
 //! `InferVar::Int(TyVar(0))` because `Int` takes an `IntVar`.
 
-pub mod infer;
 pub mod fulfill;
+pub mod infer;
 pub mod solver;
 
-pub use infer::*;
 pub use fulfill::*;
+pub use infer::*;
 pub use solver::*;

@@ -2,12 +2,12 @@
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
-use glyim_core::primitives::Visibility;
 use glyim_core::interner::{Interner, Name};
 use glyim_core::path::{Path, PathKind};
-use glyim_span::{Span, FileId};
-use glyim_syntax::SyntaxNode;
+use glyim_core::primitives::Visibility;
 use glyim_diag::GlyimDiagnostic;
+use glyim_span::{FileId, Span};
+use glyim_syntax::SyntaxNode;
 
 glyim_core::define_idx!(ModuleId);
 
@@ -49,12 +49,21 @@ pub struct ItemScope {
 
 impl ItemScope {
     pub fn resolve(&self, name: Name) -> Option<(LocalDefId, Visibility)> {
-        self.types.iter().chain(self.values.iter())
+        self.types
+            .iter()
+            .chain(self.values.iter())
             .find(|(n, _, _, _)| *n == name)
             .map(|(_, id, vis, _)| (*id, *vis))
     }
 
-    pub fn declare(&mut self, name: Name, id: LocalDefId, vis: Visibility, span: Span, ns: Namespace) {
+    pub fn declare(
+        &mut self,
+        name: Name,
+        id: LocalDefId,
+        vis: Visibility,
+        span: Span,
+        ns: Namespace,
+    ) {
         let entry = (name, id, vis, span);
         match ns {
             Namespace::Types => self.types.push(entry),
@@ -65,7 +74,11 @@ impl ItemScope {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Namespace { Types, Values, Macros }
+pub enum Namespace {
+    Types,
+    Values,
+    Macros,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct PerNs {
@@ -79,7 +92,11 @@ impl PerNs {
         self.types.is_none() && self.values.is_none() && self.macros.is_none()
     }
     pub fn from_types(id: LocalDefId, vis: Visibility) -> Self {
-        Self { types: Some((id, vis)), values: None, macros: None }
+        Self {
+            types: Some((id, vis)),
+            values: None,
+            macros: None,
+        }
     }
 }
 
@@ -104,7 +121,9 @@ impl<'a> Resolver<'a> {
                 for _ in 0..n {
                     if let Some(parent) = self.def_map.modules[module].parent {
                         module = parent;
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 current_module = module;
                 0
@@ -118,11 +137,16 @@ impl<'a> Resolver<'a> {
         for (i, segment) in path.segments.iter().enumerate().skip(start_idx) {
             let module_data = &self.def_map.modules[current_module];
             if i == path.segments.len() - 1 {
-                return module_data.resolve(segment.name)
+                return module_data
+                    .resolve(segment.name)
                     .map(|(id, vis)| PerNs::from_types(id, vis))
                     .unwrap_or_default();
             } else {
-                if let Some((_, child_id)) = module_data.children.iter().find(|(n, _)| *n == segment.name) {
+                if let Some((_, child_id)) = module_data
+                    .children
+                    .iter()
+                    .find(|(n, _)| *n == segment.name)
+                {
                     current_module = *child_id;
                 } else {
                     return PerNs::default();
@@ -132,8 +156,12 @@ impl<'a> Resolver<'a> {
         PerNs::default()
     }
 
-    pub fn def_map(&self) -> &CrateDefMap { self.def_map }
-    pub fn module(&self) -> ModuleId { self.module }
+    pub fn def_map(&self) -> &CrateDefMap {
+        self.def_map
+    }
+    pub fn module(&self) -> ModuleId {
+        self.module
+    }
 }
 
 #[tracing::instrument(skip(root))]
@@ -152,10 +180,20 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
     let interner = Interner::default();
 
     for child in root.children() {
-        collect_item(&child, root_module, &mut modules, &mut diagnostics, &interner);
+        collect_item(
+            &child,
+            root_module,
+            &mut modules,
+            &mut diagnostics,
+            &interner,
+        );
     }
 
-    let def_map = CrateDefMap { root: root_module, modules, krate };
+    let def_map = CrateDefMap {
+        root: root_module,
+        modules,
+        krate,
+    };
     (def_map, diagnostics)
 }
 
@@ -168,8 +206,8 @@ fn collect_item(
 ) {
     use glyim_syntax::SyntaxKind::*;
     match node.kind() {
-        FnDef | StructDef | EnumDef | TraitDef | ImplDef | TypeAlias
-        | ConstDef | StaticDef | UseDecl | ExternBlock | Module => {
+        FnDef | StructDef | EnumDef | TraitDef | ImplDef | TypeAlias | ConstDef | StaticDef
+        | UseDecl | ExternBlock | Module => {
             // STUB: real implementation extracts name, visibility, etc.
         }
         _ => {}

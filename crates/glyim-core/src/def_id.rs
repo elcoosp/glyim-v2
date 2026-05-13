@@ -1,5 +1,5 @@
-use std::fmt;
 use crate::arena::IdxLike;
+use std::fmt;
 
 macro_rules! define_def_id {
     ($($name:ident),* $(,)?) => {
@@ -24,17 +24,36 @@ macro_rules! define_def_id {
 define_def_id!(CrateId, LocalDefId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct DefId { pub krate: CrateId, pub local_id: LocalDefId }
+pub struct DefId {
+    pub krate: CrateId,
+    pub local_id: LocalDefId,
+}
 
 impl DefId {
-    pub fn new(krate: CrateId, local_id: LocalDefId) -> Self { Self { krate, local_id } }
+    pub fn new(krate: CrateId, local_id: LocalDefId) -> Self {
+        Self { krate, local_id }
+    }
 }
 
 impl fmt::Display for CrateId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "crate[{}]", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "crate[{}]", self.0)
+    }
 }
 impl fmt::Display for DefId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}::{}", self.krate, self.local_id.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}::{}", self.krate, self.local_id.0)
+    }
 }
 
-define_def_id!(AdtId, FnDefId, ClosureId, TraitDefId, ImplDefId, OpaqueTyId, TypeAliasId, ConstDefId, StaticDefId);
+define_def_id!(
+    AdtId,
+    FnDefId,
+    ClosureId,
+    TraitDefId,
+    ImplDefId,
+    OpaqueTyId,
+    TypeAliasId,
+    ConstDefId,
+    StaticDefId
+);

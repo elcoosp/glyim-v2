@@ -1,8 +1,8 @@
 //! Typed High-Level IR — fully typed, still generic.
 
-use glyim_core::def_id::{DefId, AdtId, FnDefId};
-use glyim_core::primitives::*;
+use glyim_core::def_id::{AdtId, DefId, FnDefId};
 use glyim_core::interner::Name;
+use glyim_core::primitives::*;
 use glyim_span::Span;
 use glyim_type::*;
 
@@ -27,10 +27,25 @@ pub struct Param {
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
-    Let { name: Name, ty: Ty, pat: Pattern, init: Option<Expr>, span: Span },
-    Assign { lhs: Expr, rhs: Expr, span: Span },
-    Return { value: Option<Expr>, span: Span },
-    Expr { expr: Expr },
+    Let {
+        name: Name,
+        ty: Ty,
+        pat: Pattern,
+        init: Option<Expr>,
+        span: Span,
+    },
+    Assign {
+        lhs: Expr,
+        rhs: Expr,
+        span: Span,
+    },
+    Return {
+        value: Option<Expr>,
+        span: Span,
+    },
+    Expr {
+        expr: Expr,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -45,17 +60,52 @@ pub enum ExprKind {
     Literal(Literal),
     VarRef(LocalVarId),
     FnRef(FnDefId),
-    Binary { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr> },
-    Unary { op: UnOp, operand: Box<Expr> },
-    Call { func: Box<Expr>, args: Vec<Expr> },
-    If { cond: Box<Expr>, then_branch: Box<Expr>, else_branch: Option<Box<Expr>> },
-    Match { scrutinee: Box<Expr>, arms: Vec<MatchArm> },
-    Block { stmts: Vec<Stmt>, tail: Option<Box<Expr>> },
-    Ref { mutability: Mutability, operand: Box<Expr> },
-    Field { receiver: Box<Expr>, field: Name, ty: Ty },
-    Index { base: Box<Expr>, index: Box<Expr> },
-    Cast { expr: Box<Expr> },
-    Closure { body: Box<Body>, captures: Vec<Capture> },
+    Binary {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Unary {
+        op: UnOp,
+        operand: Box<Expr>,
+    },
+    Call {
+        func: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    If {
+        cond: Box<Expr>,
+        then_branch: Box<Expr>,
+        else_branch: Option<Box<Expr>>,
+    },
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    Block {
+        stmts: Vec<Stmt>,
+        tail: Option<Box<Expr>>,
+    },
+    Ref {
+        mutability: Mutability,
+        operand: Box<Expr>,
+    },
+    Field {
+        receiver: Box<Expr>,
+        field: Name,
+        ty: Ty,
+    },
+    Index {
+        base: Box<Expr>,
+        index: Box<Expr>,
+    },
+    Cast {
+        expr: Box<Expr>,
+    },
+    Closure {
+        body: Box<Body>,
+        captures: Vec<Capture>,
+    },
     Err,
 }
 
@@ -76,8 +126,17 @@ pub struct Pattern {
 #[derive(Clone, Debug)]
 pub enum PatternKind {
     Wild,
-    Binding { name: Name, mutability: Mutability, subpattern: Option<Box<Pattern>> },
-    Struct { adt_id: AdtId, variant_idx: u32, fields: Vec<FieldPat>, rest: bool },
+    Binding {
+        name: Name,
+        mutability: Mutability,
+        subpattern: Option<Box<Pattern>>,
+    },
+    Struct {
+        adt_id: AdtId,
+        variant_idx: u32,
+        fields: Vec<FieldPat>,
+        rest: bool,
+    },
     Tuple(Vec<Pattern>),
     Or(Vec<Pattern>),
     Literal(Literal),

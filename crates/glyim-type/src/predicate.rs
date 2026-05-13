@@ -1,7 +1,7 @@
-use glyim_core::def_id::TraitDefId;
-use crate::ty::Ty;
 use crate::region::Region;
 use crate::substitution::Substitution;
+use crate::ty::Ty;
+use glyim_core::def_id::TraitDefId;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Predicate {
@@ -25,10 +25,19 @@ pub struct TraitRef {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ImplPolarity { Positive, Negative }
+pub enum ImplPolarity {
+    Positive,
+    Negative,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RegionOutlivesPredicate { pub a: Region, pub b: Region }
+pub struct RegionOutlivesPredicate {
+    pub a: Region,
+    pub b: Region,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TypeOutlivesPredicate { pub ty: Ty, pub region: Region }
+pub struct TypeOutlivesPredicate {
+    pub ty: Ty,
+    pub region: Region,
+}

@@ -3,11 +3,11 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
 use glyim_core::primitives::Mutability;
-use glyim_mir;
-use glyim_typeck::thir;
-use glyim_type::*;
-use glyim_span::Span;
 use glyim_diag::GlyimDiagnostic;
+use glyim_mir;
+use glyim_span::Span;
+use glyim_type::*;
+use glyim_typeck::thir;
 
 #[derive(Clone, Debug)]
 pub struct LowerResult {
@@ -32,7 +32,11 @@ pub struct AdtVariant {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AdtKind { Struct, Enum, Union }
+pub enum AdtKind {
+    Struct,
+    Enum,
+    Union,
+}
 
 #[allow(dead_code)]
 struct MirBuilder<'a> {
@@ -79,5 +83,8 @@ impl<'a> MirBuilder<'a> {
 pub fn lower_body(ctx: &dyn LowerCtx, thir: &thir::Body) -> LowerResult {
     let builder = MirBuilder::new(ctx, thir);
     let body = glyim_mir::Body::dummy(builder._owner);
-    LowerResult { body, diagnostics: builder.diagnostics }
+    LowerResult {
+        body,
+        diagnostics: builder.diagnostics,
+    }
 }

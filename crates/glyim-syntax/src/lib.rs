@@ -8,52 +8,186 @@ pub use glyim_core::primitives::{BinOp, UnOp};
 #[repr(u16)]
 pub enum SyntaxKind {
     // Keywords
-    KwFn, KwLet, KwStruct, KwEnum, KwIf, KwElse, KwReturn,
-    KwMatch, KwMod, KwComptime, KwSelf, KwSuper, KwCrate,
-    KwTrue, KwFalse, KwMut, KwRef, KwAs, KwWhile, KwFor,
-    KwIn, KwBreak, KwContinue, KwTrait, KwImpl, KwWhere,
-    KwType, KwPub, KwPriv, KwExtern, KwUnsafe, KwConst, KwStatic,
+    KwFn,
+    KwLet,
+    KwStruct,
+    KwEnum,
+    KwIf,
+    KwElse,
+    KwReturn,
+    KwMatch,
+    KwMod,
+    KwComptime,
+    KwSelf,
+    KwSuper,
+    KwCrate,
+    KwTrue,
+    KwFalse,
+    KwMut,
+    KwRef,
+    KwAs,
+    KwWhile,
+    KwFor,
+    KwIn,
+    KwBreak,
+    KwContinue,
+    KwTrait,
+    KwImpl,
+    KwWhere,
+    KwType,
+    KwPub,
+    KwPriv,
+    KwExtern,
+    KwUnsafe,
+    KwConst,
+    KwStatic,
     // Literals
-    IntLit, FloatLit, StringLit, CharLit, BoolLit, Ident,
+    IntLit,
+    FloatLit,
+    StringLit,
+    CharLit,
+    BoolLit,
+    Ident,
     // Operators
-    Plus, Minus, Star, Slash, Percent, Eq, EqEq, Bang, BangEq,
-    Lt, Gt, LtEq, GtEq, And, Or, AndAnd, OrOr, Caret, Shl, Shr,
-    PlusEq, MinusEq, StarEq, SlashEq,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Eq,
+    EqEq,
+    Bang,
+    BangEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    And,
+    Or,
+    AndAnd,
+    OrOr,
+    Caret,
+    Shl,
+    Shr,
+    PlusEq,
+    MinusEq,
+    StarEq,
+    SlashEq,
     // Punctuation
-    Arrow, FatArrow, Dot, DotDot, DotDotEq, Comma, Semicolon,
-    Colon, ColonColon, At, Hash, Dollar, Tilde, Underscore, Question,
+    Arrow,
+    FatArrow,
+    Dot,
+    DotDot,
+    DotDotEq,
+    Comma,
+    Semicolon,
+    Colon,
+    ColonColon,
+    At,
+    Hash,
+    Dollar,
+    Tilde,
+    Underscore,
+    Question,
     // Delimiters
-    LParen, RParen, LBrace, RBrace, LBracket, RBracket,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
     // Trivia
-    Whitespace, LineComment, BlockComment, DocComment,
+    Whitespace,
+    LineComment,
+    BlockComment,
+    DocComment,
     // Nodes
-    SourceFile, Module, FnDef, StructDef, EnumDef, TraitDef, ImplDef,
-    TypeAlias, ConstDef, StaticDef, UseDecl, ExternBlock,
-    ParamList, Param, TypeParamList, TypeParam, WhereClause,
-    Block, LetStmt, ExprStmt,
-    IfExpr, WhileExpr, ForExpr, MatchExpr, MatchArmList, MatchArm,
-    CallExpr, MethodCallExpr, FieldExpr, IndexExpr,
-    UnaryExpr, BinaryExpr, CastExpr, RefExpr, ClosureExpr,
-    PathExpr, LitExpr, ArrayExpr, TupleExpr, StructExpr,
-    RangeExpr, BreakExpr, ContinueExpr, AssignExpr,
-    PathType, FnType, RefType, SliceType, ArrayType, TupleType,
-    NeverType, InferType, GenericArgList,
-    PatIdent, PatStruct, PatTuple, PatOr, PatLit, PatWild,
-    UsePath, UseTree, MacroCall, TokenTree,
-    StructField, EnumVariant, FieldList, VariantList,
+    SourceFile,
+    Module,
+    FnDef,
+    StructDef,
+    EnumDef,
+    TraitDef,
+    ImplDef,
+    TypeAlias,
+    ConstDef,
+    StaticDef,
+    UseDecl,
+    ExternBlock,
+    ParamList,
+    Param,
+    TypeParamList,
+    TypeParam,
+    WhereClause,
+    Block,
+    LetStmt,
+    ExprStmt,
+    IfExpr,
+    WhileExpr,
+    ForExpr,
+    MatchExpr,
+    MatchArmList,
+    MatchArm,
+    CallExpr,
+    MethodCallExpr,
+    FieldExpr,
+    IndexExpr,
+    UnaryExpr,
+    BinaryExpr,
+    CastExpr,
+    RefExpr,
+    ClosureExpr,
+    PathExpr,
+    LitExpr,
+    ArrayExpr,
+    TupleExpr,
+    StructExpr,
+    RangeExpr,
+    BreakExpr,
+    ContinueExpr,
+    AssignExpr,
+    PathType,
+    FnType,
+    RefType,
+    SliceType,
+    ArrayType,
+    TupleType,
+    NeverType,
+    InferType,
+    GenericArgList,
+    PatIdent,
+    PatStruct,
+    PatTuple,
+    PatOr,
+    PatLit,
+    PatWild,
+    UsePath,
+    UseTree,
+    MacroCall,
+    TokenTree,
+    StructField,
+    EnumVariant,
+    FieldList,
+    VariantList,
     // Error
     Error,
 }
 
 impl SyntaxKind {
     pub fn is_trivia(self) -> bool {
-        matches!(self, Self::Whitespace | Self::LineComment | Self::BlockComment | Self::DocComment)
+        matches!(
+            self,
+            Self::Whitespace | Self::LineComment | Self::BlockComment | Self::DocComment
+        )
     }
     pub fn is_keyword(self) -> bool {
         (self as u16) >= Self::KwFn as u16 && (self as u16) <= Self::KwStatic as u16
     }
     pub fn is_literal(self) -> bool {
-        matches!(self, Self::IntLit | Self::FloatLit | Self::StringLit | Self::CharLit | Self::BoolLit)
+        matches!(
+            self,
+            Self::IntLit | Self::FloatLit | Self::StringLit | Self::CharLit | Self::BoolLit
+        )
     }
     pub fn is_node(self) -> bool {
         (self as u16) >= Self::SourceFile as u16 && (self as u16) < Self::Error as u16
@@ -85,7 +219,9 @@ pub type GreenToken = rowan::GreenToken;
 
 pub trait AstNode {
     fn can_cast(kind: SyntaxKind) -> bool;
-    fn cast(node: SyntaxNode) -> Option<Self> where Self: Sized;
+    fn cast(node: SyntaxNode) -> Option<Self>
+    where
+        Self: Sized;
     fn syntax(&self) -> &SyntaxNode;
 }
 
@@ -97,9 +233,19 @@ macro_rules! ast_node {
     ($name:ident, $kind:expr) => {
         pub struct $name(SyntaxNode);
         impl AstNode for $name {
-            fn can_cast(kind: SyntaxKind) -> bool { kind == $kind }
-            fn cast(node: SyntaxNode) -> Option<Self> { if node.kind() == $kind { Some(Self(node)) } else { None } }
-            fn syntax(&self) -> &SyntaxNode { &self.0 }
+            fn can_cast(kind: SyntaxKind) -> bool {
+                kind == $kind
+            }
+            fn cast(node: SyntaxNode) -> Option<Self> {
+                if node.kind() == $kind {
+                    Some(Self(node))
+                } else {
+                    None
+                }
+            }
+            fn syntax(&self) -> &SyntaxNode {
+                &self.0
+            }
         }
     };
 }

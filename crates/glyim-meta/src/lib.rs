@@ -6,9 +6,9 @@
 //! Uses `HygieneCtx` from `glyim-span` (the merged hygiene crate).
 
 use glyim_core::interner::Name;
-use glyim_span::{Span, HygieneCtx, Mark, Transparency};
-use glyim_syntax::SyntaxNode;
 use glyim_diag::GlyimDiagnostic;
+use glyim_span::{HygieneCtx, Mark, Span, Transparency};
+use glyim_syntax::SyntaxNode;
 
 #[derive(Clone, Debug)]
 pub enum MacroKind {
@@ -46,7 +46,10 @@ pub struct Expander<'a> {
 
 impl<'a> Expander<'a> {
     pub fn new(hygiene: &'a mut HygieneCtx) -> Self {
-        Self { hygiene, macros: Vec::new() }
+        Self {
+            hygiene,
+            macros: Vec::new(),
+        }
     }
 
     pub fn register_macro(&mut self, def: MacroDef) {
@@ -54,12 +57,7 @@ impl<'a> Expander<'a> {
     }
 
     #[tracing::instrument(level = "debug", skip(self, args, call_site))]
-    pub fn expand(
-        &mut self,
-        name: Name,
-        args: &SyntaxNode,
-        call_site: Span,
-    ) -> ExpansionResult {
+    pub fn expand(&mut self, name: Name, args: &SyntaxNode, call_site: Span) -> ExpansionResult {
         let _ = (args, call_site);
 
         if let Some(_def) = self.macros.iter().find(|m| m.name == name) {

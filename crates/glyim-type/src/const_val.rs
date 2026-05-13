@@ -1,5 +1,5 @@
+use crate::ty::{ConstVar, Ty};
 use glyim_core::interner::Name;
-use crate::ty::{Ty, ConstVar};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Const {

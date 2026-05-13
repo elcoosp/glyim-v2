@@ -1,5 +1,5 @@
-use glyim_type::*;
 use glyim_diag::GlyimDiagnostic;
+use glyim_type::*;
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,13 @@ pub struct OverflowError {
 
 impl<'a> FulfillmentCtx<'a> {
     pub fn new(ctx: &'a TyCtx, solver: &'a mut dyn crate::solver::TraitSolver) -> Self {
-        Self { solver, ctx, obligations: VecDeque::new(), processed_count: 0, diagnostics: Vec::new() }
+        Self {
+            solver,
+            ctx,
+            obligations: VecDeque::new(),
+            processed_count: 0,
+            diagnostics: Vec::new(),
+        }
     }
 
     pub fn register_obligation(&mut self, obligation: Obligation) {
@@ -49,39 +55,46 @@ impl<'a> FulfillmentCtx<'a> {
         while let Some(obligation) = self.obligations.pop_front() {
             self.processed_count += 1;
             if self.processed_count > limit {
-                return Err(OverflowError { predicate: obligation.predicate.clone(), depth: self.processed_count });
+                return Err(OverflowError {
+                    predicate: obligation.predicate.clone(),
+                    depth: self.processed_count,
+                });
             }
 
             match &obligation.predicate {
-                Predicate::Trait(trait_pred) => {
-                    match self.solver.can_prove(self.ctx, trait_pred) {
-                        crate::solver::SolverResult::Proven => {}
-                        crate::solver::SolverResult::Ambiguous => {
-                            self.diagnostics.push(GlyimDiagnostic::type_error(
-                                obligation.cause.span,
-                                format!("ambiguous trait bound: {:?}", trait_pred),
-                            ));
-                        }
-                        crate::solver::SolverResult::DefiniteNo => {
-                            self.diagnostics.push(GlyimDiagnostic::type_error(
-                                obligation.cause.span,
-                                format!("trait bound not satisfied: {:?}", trait_pred),
-                            ));
-                        }
+                Predicate::Trait(trait_pred) => match self.solver.can_prove(self.ctx, trait_pred) {
+                    crate::solver::SolverResult::Proven => {}
+                    crate::solver::SolverResult::Ambiguous => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            obligation.cause.span,
+                            format!("ambiguous trait bound: {:?}", trait_pred),
+                        ));
                     }
-                }
-                Predicate::WellFormed(_) | Predicate::TypeOutlives(_) | Predicate::RegionOutlives(_) => {}
+                    crate::solver::SolverResult::DefiniteNo => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            obligation.cause.span,
+                            format!("trait bound not satisfied: {:?}", trait_pred),
+                        ));
+                    }
+                },
+                Predicate::WellFormed(_)
+                | Predicate::TypeOutlives(_)
+                | Predicate::RegionOutlives(_) => {}
                 Predicate::Coerce(_, _) => {}
             }
         }
         Ok(())
     }
 
-    pub fn into_diagnostics(self) -> Vec<GlyimDiagnostic> { self.diagnostics }
+    pub fn into_diagnostics(self) -> Vec<GlyimDiagnostic> {
+        self.diagnostics
+    }
 }
 
 impl<'a> Extend<Obligation> for FulfillmentCtx<'a> {
     fn extend<T: IntoIterator<Item = Obligation>>(&mut self, iter: T) {
-        for ob in iter { self.register_obligation(ob); }
+        for ob in iter {
+            self.register_obligation(ob);
+        }
     }
 }

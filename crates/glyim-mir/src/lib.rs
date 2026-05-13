@@ -6,8 +6,8 @@
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::*;
-use glyim_core::primitives::*;
 use glyim_core::interner::Name;
+use glyim_core::primitives::*;
 use glyim_span::Span;
 use glyim_type::*;
 
@@ -47,7 +47,11 @@ pub struct BasicBlockData {
 
 impl BasicBlockData {
     pub fn new(terminator: Terminator) -> Self {
-        Self { statements: Vec::new(), terminator, is_cleanup: false }
+        Self {
+            statements: Vec::new(),
+            terminator,
+            is_cleanup: false,
+        }
     }
 }
 
@@ -101,7 +105,10 @@ pub struct Place {
 
 impl Place {
     pub fn new(local: LocalIdx) -> Self {
-        Self { local, projection: Box::new([]) }
+        Self {
+            local,
+            projection: Box::new([]),
+        }
     }
 
     /// [F9] Compute the type of this Place by walking the projection chain.
@@ -110,18 +117,17 @@ impl Place {
 
         for elem in self.projection.iter() {
             ty = match elem {
-                ProjectionElem::Deref => {
-                    match ctx.ty_kind(ty) {
-                        TyKind::Ref(_, inner_ty, _) => *inner_ty,
-                        TyKind::RawPtr(inner_ty, _) => *inner_ty,
-                        _ => ctx.error_ty(),
-                    }
-                }
+                ProjectionElem::Deref => match ctx.ty_kind(ty) {
+                    TyKind::Ref(_, inner_ty, _) => *inner_ty,
+                    TyKind::RawPtr(inner_ty, _) => *inner_ty,
+                    _ => ctx.error_ty(),
+                },
                 ProjectionElem::Field(idx) => {
                     match ctx.ty_kind(ty) {
                         TyKind::Tuple(substs) => {
                             let args = ctx.substitution_args(*substs);
-                            if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
+                            if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize)
+                            {
                                 *field_ty
                             } else {
                                 ctx.error_ty()
@@ -134,13 +140,11 @@ impl Place {
                         _ => ctx.error_ty(),
                     }
                 }
-                ProjectionElem::Index(_) => {
-                    match ctx.ty_kind(ty) {
-                        TyKind::Array(inner_ty, _) => *inner_ty,
-                        TyKind::Slice(inner_ty) => *inner_ty,
-                        _ => ctx.error_ty(),
-                    }
-                }
+                ProjectionElem::Index(_) => match ctx.ty_kind(ty) {
+                    TyKind::Array(inner_ty, _) => *inner_ty,
+                    TyKind::Slice(inner_ty) => *inner_ty,
+                    _ => ctx.error_ty(),
+                },
                 ProjectionElem::Downcast(_) => ty,
             };
         }
@@ -172,8 +176,14 @@ pub struct MirConst {
 
 #[derive(Clone, Debug)]
 pub enum MirConstKind {
-    Int(i128), Uint(u128), FloatBits(u64), Bool(bool),
-    Char(char), String(Name), Unit, Error,
+    Int(i128),
+    Uint(u128),
+    FloatBits(u64),
+    Bool(bool),
+    Char(char),
+    String(Name),
+    Unit,
+    Error,
 }
 
 #[derive(Clone, Debug)]
@@ -184,8 +194,14 @@ pub struct Terminator {
 
 #[derive(Clone, Debug)]
 pub enum TerminatorKind {
-    Goto { target: BasicBlockIdx },
-    SwitchInt { discr: Operand, switch_ty: Ty, targets: SwitchTargets },
+    Goto {
+        target: BasicBlockIdx,
+    },
+    SwitchInt {
+        discr: Operand,
+        switch_ty: Ty,
+        targets: SwitchTargets,
+    },
     Return,
     Unreachable,
     Call {
@@ -202,7 +218,11 @@ pub enum TerminatorKind {
         cleanup: Option<BasicBlockIdx>,
         msg: AssertMessage,
     },
-    Drop { place: Place, target: BasicBlockIdx, cleanup: Option<BasicBlockIdx> },
+    Drop {
+        place: Place,
+        target: BasicBlockIdx,
+        cleanup: Option<BasicBlockIdx>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -221,12 +241,22 @@ pub struct SwitchTargets {
 
 impl SwitchTargets {
     pub fn new(branches: Box<[(u128, BasicBlockIdx)]>, otherwise: BasicBlockIdx) -> Self {
-        Self { branches, otherwise }
+        Self {
+            branches,
+            otherwise,
+        }
     }
-    pub fn otherwise(&self) -> BasicBlockIdx { self.otherwise }
-    pub fn iter(&self) -> impl Iterator<Item = (u128, BasicBlockIdx)> + '_ { self.branches.iter().copied() }
+    pub fn otherwise(&self) -> BasicBlockIdx {
+        self.otherwise
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (u128, BasicBlockIdx)> + '_ {
+        self.branches.iter().copied()
+    }
     pub fn if_switch(then_bb: BasicBlockIdx, else_bb: BasicBlockIdx) -> Self {
-        Self { branches: Box::new([(1, then_bb)]), otherwise: else_bb }
+        Self {
+            branches: Box::new([(1, then_bb)]),
+            otherwise: else_bb,
+        }
     }
 }
 
@@ -236,7 +266,9 @@ pub struct SourceInfo {
 }
 
 impl SourceInfo {
-    pub fn new(span: Span) -> Self { Self { span } }
+    pub fn new(span: Span) -> Self {
+        Self { span }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -248,7 +280,11 @@ pub enum BorrowKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CastKind {
-    IntToInt, FloatToInt, IntToFloat, PtrToPtr, FnPtrToPtr,
+    IntToInt,
+    FloatToInt,
+    IntToFloat,
+    PtrToPtr,
+    FnPtrToPtr,
 }
 
 impl Body {
@@ -278,6 +314,10 @@ impl Body {
         }
     }
 
-    pub fn args(&self) -> &[LocalDecl] { &self.locals.as_slice()[..self.arg_count] }
-    pub fn return_place(&self) -> Place { Place::new(LocalIdx::from_raw(0)) }
+    pub fn args(&self) -> &[LocalDecl] {
+        &self.locals.as_slice()[..self.arg_count]
+    }
+    pub fn return_place(&self) -> Place {
+        Place::new(LocalIdx::from_raw(0))
+    }
 }

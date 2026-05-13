@@ -21,7 +21,10 @@ pub struct Path {
 
 impl Path {
     pub fn from_single(name: Name) -> Self {
-        Self { segments: vec![PathSegment { name }], kind: PathKind::Plain }
+        Self {
+            segments: vec![PathSegment { name }],
+            kind: PathKind::Plain,
+        }
     }
 
     pub fn as_name(&self) -> Option<Name> {

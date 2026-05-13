@@ -10,15 +10,21 @@ pub struct Idx<T> {
 }
 
 impl<T> Clone for Idx<T> {
-    fn clone(&self) -> Self { *self }
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 impl<T> Copy for Idx<T> {}
 impl<T> PartialEq for Idx<T> {
-    fn eq(&self, other: &Self) -> bool { self.raw == other.raw }
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
 }
 impl<T> Eq for Idx<T> {}
 impl<T> std::hash::Hash for Idx<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.raw.hash(state); }
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.raw.hash(state);
+    }
 }
 impl<T> PartialOrd for Idx<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -39,23 +45,36 @@ impl<T> fmt::Debug for Idx<T> {
 impl<T> Idx<T> {
     #[inline]
     pub fn from_raw(raw: u32) -> Self {
-        Self { raw, _marker: PhantomData }
+        Self {
+            raw,
+            _marker: PhantomData,
+        }
     }
     #[inline]
-    pub fn to_raw(self) -> u32 { self.raw }
+    pub fn to_raw(self) -> u32 {
+        self.raw
+    }
     #[inline]
-    pub fn index(self) -> usize { self.raw as usize }
+    pub fn index(self) -> usize {
+        self.raw as usize
+    }
 }
 
 pub trait IdxLike: Copy + Eq + fmt::Debug + 'static {
     fn from_raw(raw: u32) -> Self;
     fn to_raw(self) -> u32;
-    fn index(self) -> usize { self.to_raw() as usize }
+    fn index(self) -> usize {
+        self.to_raw() as usize
+    }
 }
 
 impl<T: 'static> IdxLike for Idx<T> {
-    fn from_raw(raw: u32) -> Self { Idx::from_raw(raw) }
-    fn to_raw(self) -> u32 { self.to_raw() }
+    fn from_raw(raw: u32) -> Self {
+        Idx::from_raw(raw)
+    }
+    fn to_raw(self) -> u32 {
+        self.to_raw()
+    }
 }
 
 #[macro_export]
@@ -66,16 +85,26 @@ macro_rules! define_idx {
 
         impl $name {
             #[inline]
-            pub fn from_raw(raw: u32) -> Self { Self(raw) }
+            pub fn from_raw(raw: u32) -> Self {
+                Self(raw)
+            }
             #[inline]
-            pub fn to_raw(self) -> u32 { self.0 }
+            pub fn to_raw(self) -> u32 {
+                self.0
+            }
             #[inline]
-            pub fn index(self) -> usize { self.0 as usize }
+            pub fn index(self) -> usize {
+                self.0 as usize
+            }
         }
 
         impl $crate::arena::IdxLike for $name {
-            fn from_raw(raw: u32) -> Self { Self(raw) }
-            fn to_raw(self) -> u32 { self.0 }
+            fn from_raw(raw: u32) -> Self {
+                Self(raw)
+            }
+            fn to_raw(self) -> u32 {
+                self.0
+            }
         }
     };
 }
@@ -87,42 +116,91 @@ pub struct IndexVec<I: IdxLike, T> {
 }
 
 impl<I: IdxLike, T> IndexVec<I, T> {
-    pub fn new() -> Self { Self { raw: Vec::new(), _marker: PhantomData } }
-    pub fn with_capacity(cap: usize) -> Self { Self { raw: Vec::with_capacity(cap), _marker: PhantomData } }
-    pub fn from_raw(raw: Vec<T>) -> Self { Self { raw, _marker: PhantomData } }
+    pub fn new() -> Self {
+        Self {
+            raw: Vec::new(),
+            _marker: PhantomData,
+        }
+    }
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            raw: Vec::with_capacity(cap),
+            _marker: PhantomData,
+        }
+    }
+    pub fn from_raw(raw: Vec<T>) -> Self {
+        Self {
+            raw,
+            _marker: PhantomData,
+        }
+    }
     pub fn push(&mut self, val: T) -> I {
         let idx = I::from_raw(self.raw.len() as u32);
         self.raw.push(val);
         idx
     }
-    pub fn reserve(&mut self, additional: usize) { self.raw.reserve(additional); }
-    pub fn len(&self) -> usize { self.raw.len() }
-    pub fn is_empty(&self) -> bool { self.raw.is_empty() }
-    pub fn get(&self, idx: I) -> Option<&T> { self.raw.get(idx.index()) }
-    pub fn get_mut(&mut self, idx: I) -> Option<&mut T> { self.raw.get_mut(idx.index()) }
-    pub fn iter(&self) -> impl Iterator<Item = &T> { self.raw.iter() }
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> { self.raw.iter_mut() }
+    pub fn reserve(&mut self, additional: usize) {
+        self.raw.reserve(additional);
+    }
+    pub fn len(&self) -> usize {
+        self.raw.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.raw.is_empty()
+    }
+    pub fn get(&self, idx: I) -> Option<&T> {
+        self.raw.get(idx.index())
+    }
+    pub fn get_mut(&mut self, idx: I) -> Option<&mut T> {
+        self.raw.get_mut(idx.index())
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.raw.iter()
+    }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.raw.iter_mut()
+    }
     pub fn iter_enumerated(&self) -> impl Iterator<Item = (I, &T)> {
-        self.raw.iter().enumerate().map(|(i, v)| (I::from_raw(i as u32), v))
+        self.raw
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (I::from_raw(i as u32), v))
     }
     pub fn into_iter_enumerated(self) -> impl Iterator<Item = (I, T)> {
-        self.raw.into_iter().enumerate().map(|(i, v)| (I::from_raw(i as u32), v))
+        self.raw
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| (I::from_raw(i as u32), v))
     }
-    pub fn into_raw(self) -> Vec<T> { self.raw }
-    pub fn as_slice(&self) -> &[T] { &self.raw }
-    pub fn as_mut_slice(&mut self) -> &mut [T] { &mut self.raw }
-    pub fn last(&self) -> Option<&T> { self.raw.last() }
+    pub fn into_raw(self) -> Vec<T> {
+        self.raw
+    }
+    pub fn as_slice(&self) -> &[T] {
+        &self.raw
+    }
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        &mut self.raw
+    }
+    pub fn last(&self) -> Option<&T> {
+        self.raw.last()
+    }
 }
 
 impl<I: IdxLike, T> Default for IndexVec<I, T> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<I: IdxLike, T> Index<I> for IndexVec<I, T> {
     type Output = T;
-    fn index(&self, idx: I) -> &T { &self.raw[idx.index()] }
+    fn index(&self, idx: I) -> &T {
+        &self.raw[idx.index()]
+    }
 }
 
 impl<I: IdxLike, T> IndexMut<I> for IndexVec<I, T> {
-    fn index_mut(&mut self, idx: I) -> &mut T { &mut self.raw[idx.index()] }
+    fn index_mut(&mut self, idx: I) -> &mut T {
+        &mut self.raw[idx.index()]
+    }
 }

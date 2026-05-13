@@ -1,9 +1,9 @@
-use std::fmt;
-use crate::ty::*;
-use crate::substitution::*;
 use crate::flags::TypeFlags;
+use crate::substitution::*;
+use crate::ty::*;
 use glyim_core::interner::Name;
-use glyim_core::primitives::Mutability;  // ADDED
+use glyim_core::primitives::Mutability;
+use std::fmt; // ADDED
 
 pub trait TypeLookup {
     fn ty_kind(&self, ty: Ty) -> &TyKind;
@@ -23,10 +23,18 @@ pub struct PrintTy<'a, L: TypeLookup> {
 
 impl<'a, L: TypeLookup> PrintTy<'a, L> {
     pub fn new(ty: Ty, lookup: &'a L) -> Self {
-        Self { ty, lookup, depth: 0 }
+        Self {
+            ty,
+            lookup,
+            depth: 0,
+        }
     }
     fn nested(&self, ty: Ty) -> Self {
-        Self { ty, lookup: self.lookup, depth: self.depth + 1 }
+        Self {
+            ty,
+            lookup: self.lookup,
+            depth: self.depth + 1,
+        }
     }
 }
 

@@ -1,9 +1,9 @@
 //! Abstract code generation backend.
 
+use glyim_diag::CompResult;
+use glyim_mir::Body;
 use std::path::Path;
 use std::sync::Arc;
-use glyim_mir::Body;
-use glyim_diag::CompResult;
 
 pub trait CodegenBackend {
     fn name(&self) -> &'static str;
@@ -20,11 +20,19 @@ impl Default for BytecodeBackend {
 }
 
 impl BytecodeBackend {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl CodegenBackend for BytecodeBackend {
-    fn name(&self) -> &'static str { "bytecode" }
-    fn generate(&self, _bodies: &[Arc<Body>], _output: &Path) -> CompResult<Vec<u8>> { Ok(Vec::new()) }
-    fn generate_function(&self, _body: &Arc<Body>) -> CompResult<Vec<u8>> { Ok(Vec::new()) }
+    fn name(&self) -> &'static str {
+        "bytecode"
+    }
+    fn generate(&self, _bodies: &[Arc<Body>], _output: &Path) -> CompResult<Vec<u8>> {
+        Ok(Vec::new())
+    }
+    fn generate_function(&self, _body: &Arc<Body>) -> CompResult<Vec<u8>> {
+        Ok(Vec::new())
+    }
 }

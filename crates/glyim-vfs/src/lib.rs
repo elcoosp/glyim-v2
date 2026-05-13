@@ -28,7 +28,13 @@ pub struct Vfs {
 
 impl Vfs {
     pub fn new() -> Self {
-        Self { inner: RwLock::new(VfsInner { files: Vec::new(), path_to_id: HashMap::new(), next_id: 0 }) }
+        Self {
+            inner: RwLock::new(VfsInner {
+                files: Vec::new(),
+                path_to_id: HashMap::new(),
+                next_id: 0,
+            }),
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -40,27 +46,40 @@ impl Vfs {
     #[tracing::instrument(skip(self, content))]
     pub fn add_file_content(&self, path: &Path, content: Arc<str>) -> FileId {
         let mut inner = self.inner.write();
-        if let Some(&id) = inner.path_to_id.get(path) { return id; }
+        if let Some(&id) = inner.path_to_id.get(path) {
+            return id;
+        }
         let id = FileId::from_raw(inner.next_id);
         inner.next_id += 1;
-        inner.files.push(VfsFile { path: path.to_path_buf(), content });
+        inner.files.push(VfsFile {
+            path: path.to_path_buf(),
+            content,
+        });
         inner.path_to_id.insert(path.to_path_buf(), id);
         id
     }
 
     pub fn set_file_content(&self, file_id: FileId, content: Arc<str>) {
         let mut inner = self.inner.write();
-        if let Some(file) = inner.files.get_mut(file_id.index()) { file.content = content; }
+        if let Some(file) = inner.files.get_mut(file_id.index()) {
+            file.content = content;
+        }
     }
 
     pub fn file_content(&self, file_id: FileId) -> Option<Arc<str>> {
         let inner = self.inner.read();
-        inner.files.get(file_id.index()).map(|f| Arc::clone(&f.content))
+        inner
+            .files
+            .get(file_id.index())
+            .map(|f| Arc::clone(&f.content))
     }
 
     pub fn file_content_ref<R>(&self, file_id: FileId, f: impl FnOnce(&str) -> R) -> Option<R> {
         let inner = self.inner.read();
-        inner.files.get(file_id.index()).map(|file| f(&file.content))
+        inner
+            .files
+            .get(file_id.index())
+            .map(|file| f(&file.content))
     }
 
     pub fn file_path(&self, file_id: FileId) -> Option<PathBuf> {
@@ -73,8 +92,16 @@ impl Vfs {
         inner.path_to_id.get(path).copied()
     }
 
-    pub fn len(&self) -> usize { self.inner.read().files.len() }
-    pub fn is_empty(&self) -> bool { self.inner.read().files.is_empty() }
+    pub fn len(&self) -> usize {
+        self.inner.read().files.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.inner.read().files.is_empty()
+    }
 }
 
-impl Default for Vfs { fn default() -> Self { Self::new() } }
+impl Default for Vfs {
+    fn default() -> Self {
+        Self::new()
+    }
+}

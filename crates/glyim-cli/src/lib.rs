@@ -1,7 +1,7 @@
 use clap::Parser;
-use glyim_db::{Database, CrateConfig};
-use glyim_pipeline::Pipeline;
 use glyim_codegen_llvm::LlvmBackend;
+use glyim_db::{CrateConfig, Database};
+use glyim_pipeline::Pipeline;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -31,13 +31,24 @@ pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     });
 
     let config = CrateConfig {
-        name: args.input.file_stem().unwrap_or_default().to_string_lossy().to_string(),
-        target_triple: args.target.clone().unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
+        name: args
+            .input
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        target_triple: args
+            .target
+            .clone()
+            .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
         opt_level: args.opt_level,
     };
 
     let mut db = Database::new(config);
-    let backend = LlvmBackend::with_target(args.target.unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()));
+    let backend = LlvmBackend::with_target(
+        args.target
+            .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
+    );
 
     Pipeline::compile_file(&mut db, &args.input, &backend)?;
     Ok(())

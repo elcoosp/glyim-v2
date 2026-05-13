@@ -1,7 +1,7 @@
 use glyim_core::arena::IndexVec;
-use glyim_type::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;
+use glyim_type::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VariableKind {
@@ -74,7 +74,9 @@ impl InferenceTable {
         })
     }
 
-    pub fn universe(&self) -> UniverseIndex { self.universe }
+    pub fn universe(&self) -> UniverseIndex {
+        self.universe
+    }
     pub fn create_universe(&mut self) -> UniverseIndex {
         self.universe = UniverseIndex(self.universe.0 + 1);
         self.universe
@@ -111,7 +113,9 @@ impl InferenceTable {
         b: Ty,
         span: Span,
     ) -> Result<Vec<Constraint>, Vec<GlyimDiagnostic>> {
-        if a == b { return Ok(Vec::new()); }
+        if a == b {
+            return Ok(Vec::new());
+        }
         let a_kind = ctx.ty_kind(a).clone();
         let b_kind = ctx.ty_kind(b).clone();
 
@@ -124,80 +128,90 @@ impl InferenceTable {
                         self.ty_vars[var].value = Some(b);
                         Ok(Vec::new())
                     }
-                    VariableKind::Integer => {
-                        match &other {
-                            TyKind::Int(_) | TyKind::Error => {
-                                self.ty_vars[var].value = Some(b);
-                                Ok(Vec::new())
-                            }
-                            TyKind::Infer(InferVar::Int(_)) | TyKind::Infer(InferVar::Ty(_)) => {
-                                self.ty_vars[var].value = Some(b);
-                                Ok(Vec::new())
-                            }
-                            _ => Err(vec![GlyimDiagnostic::type_error(span,
-                                format!("mismatched types: expected integer type, found {}",
-                                    PrintTy::new(b, ctx)))]),
+                    VariableKind::Integer => match &other {
+                        TyKind::Int(_) | TyKind::Error => {
+                            self.ty_vars[var].value = Some(b);
+                            Ok(Vec::new())
                         }
-                    }
-                    VariableKind::Float => {
-                        match &other {
-                            TyKind::Float(_) | TyKind::Error => {
-                                self.ty_vars[var].value = Some(b);
-                                Ok(Vec::new())
-                            }
-                            TyKind::Infer(InferVar::Float(_)) | TyKind::Infer(InferVar::Ty(_)) => {
-                                self.ty_vars[var].value = Some(b);
-                                Ok(Vec::new())
-                            }
-                            _ => Err(vec![GlyimDiagnostic::type_error(span,
-                                format!("mismatched types: expected float type, found {}",
-                                    PrintTy::new(b, ctx)))]),
+                        TyKind::Infer(InferVar::Int(_)) | TyKind::Infer(InferVar::Ty(_)) => {
+                            self.ty_vars[var].value = Some(b);
+                            Ok(Vec::new())
                         }
-                    }
+                        _ => Err(vec![GlyimDiagnostic::type_error(
+                            span,
+                            format!(
+                                "mismatched types: expected integer type, found {}",
+                                PrintTy::new(b, ctx)
+                            ),
+                        )]),
+                    },
+                    VariableKind::Float => match &other {
+                        TyKind::Float(_) | TyKind::Error => {
+                            self.ty_vars[var].value = Some(b);
+                            Ok(Vec::new())
+                        }
+                        TyKind::Infer(InferVar::Float(_)) | TyKind::Infer(InferVar::Ty(_)) => {
+                            self.ty_vars[var].value = Some(b);
+                            Ok(Vec::new())
+                        }
+                        _ => Err(vec![GlyimDiagnostic::type_error(
+                            span,
+                            format!(
+                                "mismatched types: expected float type, found {}",
+                                PrintTy::new(b, ctx)
+                            ),
+                        )]),
+                    },
                 }
             }
             (TyKind::Infer(InferVar::Int(var)), other)
-            | (other, TyKind::Infer(InferVar::Int(var))) => {
-                match &other {
-                    TyKind::Int(_) | TyKind::Infer(InferVar::Int(_)) | TyKind::Error => {
-                        self.int_vars[var].value = Some(b);
-                        Ok(Vec::new())
-                    }
-                    _ => Err(vec![GlyimDiagnostic::type_error(span,
-                        format!("mismatched types: expected integer type, found {}",
-                            PrintTy::new(b, ctx)))]),
+            | (other, TyKind::Infer(InferVar::Int(var))) => match &other {
+                TyKind::Int(_) | TyKind::Infer(InferVar::Int(_)) | TyKind::Error => {
+                    self.int_vars[var].value = Some(b);
+                    Ok(Vec::new())
                 }
-            }
+                _ => Err(vec![GlyimDiagnostic::type_error(
+                    span,
+                    format!(
+                        "mismatched types: expected integer type, found {}",
+                        PrintTy::new(b, ctx)
+                    ),
+                )]),
+            },
             (TyKind::Infer(InferVar::Float(var)), other)
-            | (other, TyKind::Infer(InferVar::Float(var))) => {
-                match &other {
-                    TyKind::Float(_) | TyKind::Infer(InferVar::Float(_)) | TyKind::Error => {
-                        self.float_vars[var].value = Some(b);
-                        Ok(Vec::new())
-                    }
-                    _ => Err(vec![GlyimDiagnostic::type_error(span,
-                        format!("mismatched types: expected float type, found {}",
-                            PrintTy::new(b, ctx)))]),
+            | (other, TyKind::Infer(InferVar::Float(var))) => match &other {
+                TyKind::Float(_) | TyKind::Infer(InferVar::Float(_)) | TyKind::Error => {
+                    self.float_vars[var].value = Some(b);
+                    Ok(Vec::new())
                 }
-            }
+                _ => Err(vec![GlyimDiagnostic::type_error(
+                    span,
+                    format!(
+                        "mismatched types: expected float type, found {}",
+                        PrintTy::new(b, ctx)
+                    ),
+                )]),
+            },
             (TyKind::Ref(r_a, ty_a, mut_a), TyKind::Ref(r_b, ty_b, mut_b)) => {
                 if mut_a != mut_b {
-                    return Err(vec![GlyimDiagnostic::type_error(span,
-                        format!("mismatched mutability: {:?} vs {:?}", mut_a, mut_b))]);
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!("mismatched mutability: {:?} vs {:?}", mut_a, mut_b),
+                    )]);
                 }
                 let mut constraints = vec![Constraint::RegionEq { a: r_a, b: r_b }];
                 constraints.extend(self.unify_tys(ctx, ty_a, ty_b, span)?);
                 Ok(constraints)
             }
             (TyKind::Error, _) | (_, TyKind::Error) => Ok(Vec::new()),
-            (_a_k, _b_k) => {
-                Err(vec![GlyimDiagnostic::type_error(
-                    span,
-                    format!("mismatched types: {} vs {}",
-                        PrintTy::new(a, ctx),
-                        PrintTy::new(b, ctx)),
-                )])
-            }
+            (_a_k, _b_k) => Err(vec![GlyimDiagnostic::type_error(
+                span,
+                format!(
+                    "mismatched types: {} vs {}",
+                    PrintTy::new(a, ctx),
+                    PrintTy::new(b, ctx)
+                ),
+            )]),
         }
     }
 
@@ -230,7 +244,11 @@ impl InferenceTable {
         if ctx.ty_flags(resolved).contains(TypeFlags::HAS_TY_INFER) {
             let mut unresolved = Vec::new();
             self.collect_unresolved_vars(ctx, resolved, &mut unresolved);
-            if unresolved.is_empty() { Ok(resolved) } else { Err(unresolved) }
+            if unresolved.is_empty() {
+                Ok(resolved)
+            } else {
+                Err(unresolved)
+            }
         } else {
             Ok(resolved)
         }
@@ -240,8 +258,11 @@ impl InferenceTable {
         match ctx.ty_kind(ty) {
             TyKind::Infer(InferVar::Ty(var)) => {
                 if let Some(tv) = self.ty_vars.get(*var) {
-                    if tv.value.is_none() { vars.push(*var); }
-                    else if let Some(resolved) = tv.value { self.collect_unresolved_vars(ctx, resolved, vars); }
+                    if tv.value.is_none() {
+                        vars.push(*var);
+                    } else if let Some(resolved) = tv.value {
+                        self.collect_unresolved_vars(ctx, resolved, vars);
+                    }
                 }
             }
             TyKind::Infer(InferVar::Int(_)) | TyKind::Infer(InferVar::Float(_)) => {}
@@ -249,14 +270,21 @@ impl InferenceTable {
             TyKind::RawPtr(inner, _) => self.collect_unresolved_vars(ctx, *inner, vars),
             TyKind::Slice(inner) => self.collect_unresolved_vars(ctx, *inner, vars),
             TyKind::Array(inner, _) => self.collect_unresolved_vars(ctx, *inner, vars),
-            TyKind::Adt(_, substs) | TyKind::FnDef(_, substs) | TyKind::Closure(_, substs) | TyKind::Tuple(substs) => {
+            TyKind::Adt(_, substs)
+            | TyKind::FnDef(_, substs)
+            | TyKind::Closure(_, substs)
+            | TyKind::Tuple(substs) => {
                 for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg { self.collect_unresolved_vars(ctx, *t, vars); }
+                    if let GenericArg::Ty(t) = arg {
+                        self.collect_unresolved_vars(ctx, *t, vars);
+                    }
                 }
             }
             TyKind::FnPtr(sig) => {
                 for arg in ctx.substitution_args(sig.inputs) {
-                    if let GenericArg::Ty(t) = arg { self.collect_unresolved_vars(ctx, *t, vars); }
+                    if let GenericArg::Ty(t) = arg {
+                        self.collect_unresolved_vars(ctx, *t, vars);
+                    }
                 }
                 self.collect_unresolved_vars(ctx, sig.output, vars);
             }
@@ -266,7 +294,9 @@ impl InferenceTable {
 }
 
 impl Default for InferenceTable {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -10,9 +10,9 @@
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
-use glyim_core::primitives::*;
 use glyim_core::interner::Name;
 use glyim_core::path::PathKind;
+use glyim_core::primitives::*;
 use glyim_span::Span;
 
 glyim_core::define_idx!(ExprId);
@@ -162,18 +162,32 @@ pub struct GenericParam {
 
 #[derive(Clone, Debug)]
 pub enum GenericParamKind {
-    Type { default: Option<TypeRef> },
+    Type {
+        default: Option<TypeRef>,
+    },
     Lifetime,
-    Const { ty: TypeRef, default: Option<ConstRef> },
+    Const {
+        ty: TypeRef,
+        default: Option<ConstRef>,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub enum TypeRef {
     Path(Path),
-    Fn { params: Vec<TypeRef>, ret: Option<Box<TypeRef>> },
-    Ref { inner: Box<TypeRef>, mutability: Mutability },
+    Fn {
+        params: Vec<TypeRef>,
+        ret: Option<Box<TypeRef>>,
+    },
+    Ref {
+        inner: Box<TypeRef>,
+        mutability: Mutability,
+    },
     Slice(Box<TypeRef>),
-    Array { inner: Box<TypeRef>, len: ConstRef },
+    Array {
+        inner: Box<TypeRef>,
+        len: ConstRef,
+    },
     Tuple(Vec<TypeRef>),
     Never,
     Infer,
@@ -195,10 +209,20 @@ pub struct Path {
 
 impl Path {
     pub fn from_single(name: Name) -> Self {
-        Self { segments: vec![PathSegment { name, generic_args: None }], kind: PathKind::Plain }
+        Self {
+            segments: vec![PathSegment {
+                name,
+                generic_args: None,
+            }],
+            kind: PathKind::Plain,
+        }
     }
     pub fn as_name(&self) -> Option<Name> {
-        if self.segments.len() == 1 && self.kind == PathKind::Plain { Some(self.segments[0].name) } else { None }
+        if self.segments.len() == 1 && self.kind == PathKind::Plain {
+            Some(self.segments[0].name)
+        } else {
+            None
+        }
     }
 }
 
@@ -222,28 +246,89 @@ pub enum Expr {
     Missing,
     Path(Path),
     Literal(Literal),
-    Block { stmts: Vec<ExprId>, tail: Option<ExprId> },
-    If { cond: ExprId, then_branch: ExprId, else_branch: Option<ExprId> },
-    While { cond: ExprId, body: ExprId },
-    For { pat: PatId, iterable: ExprId, body: ExprId },
-    Match { scrutinee: ExprId, arms: Vec<MatchArm> },
-    Call { func: ExprId, args: Vec<ExprId> },
-    MethodCall { receiver: ExprId, method: Name, args: Vec<ExprId> },
-    Field { receiver: ExprId, field: Name },
-    Index { base: ExprId, index: ExprId },
-    Unary { op: UnOp, expr: ExprId },
-    Binary { op: BinOp, lhs: ExprId, rhs: ExprId },
-    Cast { expr: ExprId, ty: TypeRef },
-    Ref { expr: ExprId, mutability: Mutability },
-    Assign { lhs: ExprId, rhs: ExprId },
-    Return { value: Option<ExprId> },
-    Break { value: Option<ExprId> },
+    Block {
+        stmts: Vec<ExprId>,
+        tail: Option<ExprId>,
+    },
+    If {
+        cond: ExprId,
+        then_branch: ExprId,
+        else_branch: Option<ExprId>,
+    },
+    While {
+        cond: ExprId,
+        body: ExprId,
+    },
+    For {
+        pat: PatId,
+        iterable: ExprId,
+        body: ExprId,
+    },
+    Match {
+        scrutinee: ExprId,
+        arms: Vec<MatchArm>,
+    },
+    Call {
+        func: ExprId,
+        args: Vec<ExprId>,
+    },
+    MethodCall {
+        receiver: ExprId,
+        method: Name,
+        args: Vec<ExprId>,
+    },
+    Field {
+        receiver: ExprId,
+        field: Name,
+    },
+    Index {
+        base: ExprId,
+        index: ExprId,
+    },
+    Unary {
+        op: UnOp,
+        expr: ExprId,
+    },
+    Binary {
+        op: BinOp,
+        lhs: ExprId,
+        rhs: ExprId,
+    },
+    Cast {
+        expr: ExprId,
+        ty: TypeRef,
+    },
+    Ref {
+        expr: ExprId,
+        mutability: Mutability,
+    },
+    Assign {
+        lhs: ExprId,
+        rhs: ExprId,
+    },
+    Return {
+        value: Option<ExprId>,
+    },
+    Break {
+        value: Option<ExprId>,
+    },
     Continue,
-    Closure { params: Vec<PatId>, body: ExprId },
+    Closure {
+        params: Vec<PatId>,
+        body: ExprId,
+    },
     Array(Vec<ExprId>),
     Tuple(Vec<ExprId>),
-    Struct { path: Path, fields: Vec<(Name, ExprId)>, spread: Option<ExprId> },
-    Range { start: Option<ExprId>, end: Option<ExprId>, inclusive: bool },
+    Struct {
+        path: Path,
+        fields: Vec<(Name, ExprId)>,
+        spread: Option<ExprId>,
+    },
+    Range {
+        start: Option<ExprId>,
+        end: Option<ExprId>,
+        inclusive: bool,
+    },
     Err,
 }
 
@@ -257,12 +342,24 @@ pub struct MatchArm {
 #[derive(Clone, Debug)]
 pub enum Pat {
     Wild,
-    Binding { name: Name, mutability: Mutability, subpattern: Option<PatId> },
-    Struct { path: Path, fields: Vec<(Name, PatId)>, rest: bool },
+    Binding {
+        name: Name,
+        mutability: Mutability,
+        subpattern: Option<PatId>,
+    },
+    Struct {
+        path: Path,
+        fields: Vec<(Name, PatId)>,
+        rest: bool,
+    },
     Tuple(Vec<PatId>),
     Or(Vec<PatId>),
     Literal(Literal),
-    Range { start: Option<Literal>, end: Option<Literal>, inclusive: bool },
+    Range {
+        start: Option<Literal>,
+        end: Option<Literal>,
+        inclusive: bool,
+    },
     Path(Path),
     Err,
 }

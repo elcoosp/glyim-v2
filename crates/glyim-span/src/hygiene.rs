@@ -1,13 +1,20 @@
-use crate::{Span, SyntaxContext, ExpnId, Transparency, HygieneKey};
+use crate::{ExpnId, HygieneKey, Span, SyntaxContext, Transparency};
 use glyim_core::interner::Name;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Mark { pub expn_id: ExpnId, pub transparency: Transparency }
+pub struct Mark {
+    pub expn_id: ExpnId,
+    pub transparency: Transparency,
+}
 
 #[derive(Clone, Debug)]
 pub struct ExpnData {
-    pub expn_id: ExpnId, pub parent: ExpnId, pub kind: ExpnKind,
-    pub call_site: Span, pub def_site: Span, pub transparency: Transparency,
+    pub expn_id: ExpnId,
+    pub parent: ExpnId,
+    pub kind: ExpnKind,
+    pub call_site: Span,
+    pub def_site: Span,
+    pub transparency: Transparency,
 }
 
 #[derive(Clone, Debug)]
@@ -38,9 +45,12 @@ impl HygieneCtx {
     pub fn new() -> Self {
         Self {
             expansions: vec![ExpnData {
-                expn_id: ExpnId::ROOT, parent: ExpnId::ROOT,
-                kind: ExpnKind::Root, call_site: Span::DUMMY,
-                def_site: Span::DUMMY, transparency: Transparency::Opaque,
+                expn_id: ExpnId::ROOT,
+                parent: ExpnId::ROOT,
+                kind: ExpnKind::Root,
+                call_site: Span::DUMMY,
+                def_site: Span::DUMMY,
+                transparency: Transparency::Opaque,
             }],
             next_expn_id: 1,
             syntax_contexts: Vec::new(),
@@ -71,17 +81,27 @@ impl HygieneCtx {
     }
 
     pub fn remove_mark(&self, span: Span) -> (Span, Option<Mark>) {
-        if span.ctx.is_root() { return (span, None); }
+        if span.ctx.is_root() {
+            return (span, None);
+        }
         let idx = span.ctx.to_raw() as usize - 1;
         if let Some(ctx_data) = self.syntax_contexts.get(idx) {
-            let mark = Mark { expn_id: ctx_data.outer_expn, transparency: ctx_data.outer_transparency };
-            (Span::new(span.file, span.lo, span.hi, ctx_data.parent), Some(mark))
+            let mark = Mark {
+                expn_id: ctx_data.outer_expn,
+                transparency: ctx_data.outer_transparency,
+            };
+            (
+                Span::new(span.file, span.lo, span.hi, ctx_data.parent),
+                Some(mark),
+            )
         } else {
             (span, None)
         }
     }
 
-    pub fn expn_data(&self, id: ExpnId) -> Option<&ExpnData> { self.expansions.get(id.to_raw() as usize) }
+    pub fn expn_data(&self, id: ExpnId) -> Option<&ExpnData> {
+        self.expansions.get(id.to_raw() as usize)
+    }
 
     pub fn adjust(&mut self, span: Span, _scope_ctx: SyntaxContext) -> Span {
         if !self.adjust_warned {
@@ -92,12 +112,22 @@ impl HygieneCtx {
     }
 }
 
-impl Default for HygieneCtx { fn default() -> Self { Self::new() } }
+impl Default for HygieneCtx {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SyntaxContext {
-    fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self { let _ = _key; SyntaxContext(raw) }
+    fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
+        let _ = _key;
+        SyntaxContext(raw)
+    }
 }
 
 impl ExpnId {
-    fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self { let _ = _key; ExpnId(raw) }
+    fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
+        let _ = _key;
+        ExpnId(raw)
+    }
 }

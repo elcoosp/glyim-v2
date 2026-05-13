@@ -3,8 +3,8 @@
 //! This is a minimal implementation for v0.1.0.
 //! It currently only reports errors via a stub.
 
-use glyim_mir::Body;
 use glyim_diag::GlyimDiagnostic;
+use glyim_mir::Body;
 
 #[derive(Clone, Debug)]
 pub struct BorrowckResult {
