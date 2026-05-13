@@ -1041,6 +1041,20 @@ fn test_region_var_creation_and_probe() {
 }
 
 #[test]
+fn test_resolve_ty_shallow_recursive_does_not_loop() {
+    let mut ctx = test_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let var = infer.new_ty_var(&mut ctx);
+    let var_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)));
+    // Bind var to itself (self-loop) - should not overflow due to depth limit
+    infer.set_ty_var_value(var, var_ty);
+    let resolved = infer.resolve_ty_shallow(&ctx, var_ty);
+    // With the 256-depth limit, it returns the variable itself after hitting the limit
+    // Since the chain is a cycle, after 256 steps it returns the ty at that point (var_ty)
+    assert_eq!(resolved, var_ty);
+}
+
+#[test]
 fn test_resolve_deep_chain_ty_var() {
     let mut ctx = test_ty_ctx();
     let mut infer = InferenceTable::new();
