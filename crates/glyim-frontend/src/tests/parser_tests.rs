@@ -1,7 +1,7 @@
-use crate::parser::{parse_to_syntax, Parser};
 use crate::lexer::lex;
+use crate::parser::{Parser, parse_to_syntax};
 use glyim_span::FileId;
-use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxElement};
+use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
 fn file_id() -> FileId {
     FileId::from_raw(1)
@@ -14,8 +14,7 @@ fn first_child_of_kind(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxElem
 
 /// Assert that a child element exists and return it.
 fn assert_child_el(node: &SyntaxNode, kind: SyntaxKind) -> SyntaxElement {
-    first_child_of_kind(node, kind)
-        .unwrap_or_else(|| panic!("missing child {:?}", kind))
+    first_child_of_kind(node, kind).unwrap_or_else(|| panic!("missing child {:?}", kind))
 }
 
 /// Extract text of a SyntaxElement (works for both nodes and tokens).
@@ -28,7 +27,8 @@ fn text_of(el: &SyntaxElement) -> String {
 
 /// Assert that there is a child node of the given kind and return it.
 fn assert_child_node(node: &SyntaxNode, kind: SyntaxKind) -> SyntaxNode {
-    node.children().find(|c| c.kind() == kind)
+    node.children()
+        .find(|c| c.kind() == kind)
         .unwrap_or_else(|| panic!("missing node {:?}", kind))
 }
 
@@ -60,7 +60,10 @@ fn test_parse_struct_unit() {
 fn test_parse_struct_tuple() {
     let result = parse_to_syntax("struct Pair(i32, f64);", file_id());
     let struct_def = assert_child_node(&result.root, SyntaxKind::StructDef);
-    assert_eq!(text_of(&assert_child_el(&struct_def, SyntaxKind::Ident)), "Pair");
+    assert_eq!(
+        text_of(&assert_child_el(&struct_def, SyntaxKind::Ident)),
+        "Pair"
+    );
     assert!(result.diagnostics.is_empty(), "should parse without errors");
 }
 
@@ -96,7 +99,10 @@ fn test_parse_enum() {
 fn test_parse_trait_def() {
     let result = parse_to_syntax("trait Draw { fn draw(&self); }", file_id());
     assert_child_node(&result.root, SyntaxKind::TraitDef);
-    assert!(result.diagnostics.is_empty(), "should parse trait without errors");
+    assert!(
+        result.diagnostics.is_empty(),
+        "should parse trait without errors"
+    );
 }
 
 // S09-T05: Parse impl def
@@ -104,7 +110,10 @@ fn test_parse_trait_def() {
 fn test_parse_impl_def() {
     let result = parse_to_syntax("impl Draw for Circle { fn draw(&self) {} }", file_id());
     assert_child_node(&result.root, SyntaxKind::ImplDef);
-    assert!(result.diagnostics.is_empty(), "should parse impl without errors");
+    assert!(
+        result.diagnostics.is_empty(),
+        "should parse impl without errors"
+    );
 }
 
 // S09-T06: Expression precedence
@@ -119,11 +128,17 @@ fn test_expr_precedence() {
     let _plus_token = bin_expr
         .children_with_tokens()
         .find_map(|e| {
-            if e.kind() == SyntaxKind::Plus { Some(e) } else { None }
+            if e.kind() == SyntaxKind::Plus {
+                Some(e)
+            } else {
+                None
+            }
         })
         .expect("should find '+' operator");
     // Right operand should itself be a BinaryExpr (the '*')
-    let right = bin_expr.children().find(|c| c.kind() == SyntaxKind::BinaryExpr);
+    let right = bin_expr
+        .children()
+        .find(|c| c.kind() == SyntaxKind::BinaryExpr);
     assert!(right.is_some(), "right operand should be multiplication");
 }
 
@@ -148,7 +163,10 @@ fn test_field_access() {
         .children_with_tokens()
         .filter(|e| e.kind() == SyntaxKind::Ident)
         .collect();
-    assert!(idents.len() >= 2, "should have at least two identifiers for field access");
+    assert!(
+        idents.len() >= 2,
+        "should have at least two identifiers for field access"
+    );
 }
 
 // S09-T08: Pattern grammar
@@ -191,7 +209,10 @@ fn test_pattern_tuple() {
     let block = assert_child_node(&fn_def, SyntaxKind::Block);
     let let_stmt = assert_child_node(&block, SyntaxKind::LetStmt);
     let pat_tuple = assert_child_node(&let_stmt, SyntaxKind::PatTuple);
-    let patterns: Vec<_> = pat_tuple.children().filter(|c| c.kind() == SyntaxKind::PatIdent).collect();
+    let patterns: Vec<_> = pat_tuple
+        .children()
+        .filter(|c| c.kind() == SyntaxKind::PatIdent)
+        .collect();
     assert_eq!(patterns.len(), 2);
 }
 
@@ -218,7 +239,10 @@ fn test_type_ref_mut() {
 #[test]
 fn test_error_missing_semicolon() {
     let result = parse_to_syntax("fn f() { let x = 5 }", file_id());
-    assert!(!result.diagnostics.is_empty(), "should produce errors for missing semicolon");
+    assert!(
+        !result.diagnostics.is_empty(),
+        "should produce errors for missing semicolon"
+    );
     let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
     let block = assert_child_node(&fn_def, SyntaxKind::Block);
     assert_child_node(&block, SyntaxKind::LetStmt);
@@ -228,7 +252,10 @@ fn test_error_missing_semicolon() {
 #[test]
 fn test_error_mismatched_braces() {
     let result = parse_to_syntax("fn f() { if true { }", file_id());
-    assert!(!result.diagnostics.is_empty(), "should produce errors for mismatched braces");
+    assert!(
+        !result.diagnostics.is_empty(),
+        "should produce errors for mismatched braces"
+    );
 }
 
 // S09-T12: No token loss

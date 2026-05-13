@@ -15,6 +15,8 @@ pub(crate) struct Parser<'a> {
     pos: usize,
     builder: rowan::GreenNodeBuilder<'a>,
     diagnostics: Vec<GlyimDiagnostic>,
+    last_was_path: bool,
+    suppress_struct_lit: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -24,6 +26,8 @@ impl<'a> Parser<'a> {
             pos: 0,
             builder: rowan::GreenNodeBuilder::new(),
             diagnostics: Vec::new(),
+            last_was_path: false,
+            suppress_struct_lit: false,
         }
     }
 
@@ -70,9 +74,6 @@ impl<'a> Parser<'a> {
             .push(GlyimDiagnostic::parse_error(span, message));
     }
 
-    /// Consume the current token regardless of its kind, reporting
-    /// an error if it does not match `expected`.  Always places the
-    /// token into the CST so that downstream nodes are not lost.
     fn bump_expected(&mut self, expected: SyntaxKind) {
         if self.current_kind() != expected {
             self.error(format!(
@@ -86,7 +87,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Skip the current token without emitting it to the tree.
+    fn peek_kind(&self) -> Option<SyntaxKind> {
+        self.tokens.get(self.pos + 1).map(|t| t.kind)
+    }
+
     fn skip_token(&mut self) {
         if self.current().is_some() {
             self.pos += 1;
@@ -113,8 +117,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) {
-        // Skip optional visibility
         let _vis = self.parse_visibility();
+
+        if self.current_kind() == SyntaxKind::KwUnsafe {
+            self.bump(); // unsafe
+            // unsafe applied to following item; just parse it.
+        }
 
         match self.current_kind() {
             SyntaxKind::KwFn => self.parse_fn_def(),
@@ -125,7 +133,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwMod => {
                 tracing::warn!("STUB: module parsing not yet implemented");
                 self.bump(); // mod
-                self.expect(SyntaxKind::Ident);
+                self.bump_expected(SyntaxKind::Ident);
                 if self.current_kind() == SyntaxKind::LBrace {
                     self.parse_block_inner();
                 } else {
@@ -135,7 +143,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwConst => {
                 tracing::warn!("STUB: const parsing not yet implemented");
                 self.bump(); // const
-                self.expect(SyntaxKind::Ident);
+                self.bump_expected(SyntaxKind::Ident);
                 self.expect(SyntaxKind::Colon);
                 self.parse_type();
                 if self.current_kind() == SyntaxKind::Eq {
@@ -153,7 +161,7 @@ impl<'a> Parser<'a> {
                 if self.current_kind() == SyntaxKind::KwMut {
                     self.bump();
                 }
-                self.expect(SyntaxKind::Ident);
+                self.bump_expected(SyntaxKind::Ident);
                 self.expect(SyntaxKind::Colon);
                 self.parse_type();
                 if self.current_kind() == SyntaxKind::Eq {
@@ -165,7 +173,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwType => {
                 tracing::warn!("STUB: type alias parsing not yet implemented");
                 self.bump(); // type
-                self.expect(SyntaxKind::Ident);
+                self.bump_expected(SyntaxKind::Ident);
                 if self.current_kind() == SyntaxKind::Lt {
                     self.parse_type_param_list();
                 }
@@ -189,7 +197,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.error(format!("expected item, found {:?}", self.current_kind()));
-                // Error recovery: skip tokens until we find a likely item start or EOF
+                // Error recovery: skip tokens until a likely item start or EOF
                 while self.current().is_some()
                     && !matches!(
                         self.current_kind(),
@@ -204,6 +212,7 @@ impl<'a> Parser<'a> {
                             | SyntaxKind::KwType
                             | SyntaxKind::KwExtern
                             | SyntaxKind::KwPub
+                            | SyntaxKind::KwUnsafe
                     )
                 {
                     self.bump();
@@ -254,7 +263,6 @@ impl<'a> Parser<'a> {
 
     fn parse_param(&mut self) {
         self.start_node(SyntaxKind::Param);
-        // Handle &self, &mut self, self, mut self
         if self.current_kind() == SyntaxKind::And {
             self.bump(); // &
             if self.current_kind() == SyntaxKind::KwMut {
@@ -262,29 +270,28 @@ impl<'a> Parser<'a> {
             }
             if self.current_kind() == SyntaxKind::KwSelf {
                 self.bump(); // self
-                self.finish_node(); // Param
+                self.finish_node();
                 return;
             }
-            // & + ident
-            self.expect(SyntaxKind::Ident);
+            self.bump_expected(SyntaxKind::Ident);
             self.expect(SyntaxKind::Colon);
             self.parse_type();
         } else if self.current_kind() == SyntaxKind::KwMut {
             self.bump(); // mut
             if self.current_kind() == SyntaxKind::KwSelf {
                 self.bump(); // self
-                self.finish_node(); // Param
+                self.finish_node();
                 return;
             }
-            self.expect(SyntaxKind::Ident);
+            self.bump_expected(SyntaxKind::Ident);
             self.expect(SyntaxKind::Colon);
             self.parse_type();
         } else if self.current_kind() == SyntaxKind::KwSelf {
             self.bump(); // self
-            self.finish_node(); // Param
+            self.finish_node();
             return;
         } else {
-            self.expect(SyntaxKind::Ident);
+            self.bump_expected(SyntaxKind::Ident);
             self.expect(SyntaxKind::Colon);
             self.parse_type();
         }
@@ -295,14 +302,13 @@ impl<'a> Parser<'a> {
 
     fn parse_struct_def(&mut self) {
         self.start_node(SyntaxKind::StructDef);
-        self.expect(SyntaxKind::KwStruct);
-        self.expect(SyntaxKind::Ident);
+        self.bump_expected(SyntaxKind::KwStruct);
+        self.bump_expected(SyntaxKind::Ident);
         if self.current_kind() == SyntaxKind::Lt {
             self.parse_type_param_list();
         }
         match self.current_kind() {
             SyntaxKind::LParen => {
-                // Tuple struct: just consume tokens until ');'
                 self.bump(); // (
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
                     self.parse_type();
@@ -314,10 +320,8 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::Semicolon);
             }
             SyntaxKind::LBrace => {
-                // Record struct: skip field declarations
                 self.bump(); // {
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                    // parse field: ident : type
                     if self.current_kind() == SyntaxKind::Ident {
                         self.bump();
                         if self.current_kind() == SyntaxKind::Colon {
@@ -335,7 +339,6 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::RBrace);
             }
             _ => {
-                // Unit struct
                 self.expect(SyntaxKind::Semicolon);
             }
         }
@@ -355,8 +358,7 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::VariantList);
         while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
             self.start_node(SyntaxKind::EnumVariant);
-            self.expect(SyntaxKind::Ident);
-            // Tuple variant: Red(i32)
+            self.bump_expected(SyntaxKind::Ident);
             if self.current_kind() == SyntaxKind::LParen {
                 self.bump(); // (
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
@@ -367,11 +369,9 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(SyntaxKind::RParen);
             }
-            // Record variant: Green { r: u8, g: u8, b: u8 }
             if self.current_kind() == SyntaxKind::LBrace {
                 self.bump(); // {
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                    // parse field: ident : type
                     if self.current_kind() == SyntaxKind::Ident {
                         self.bump();
                         if self.current_kind() == SyntaxKind::Colon {
@@ -388,7 +388,6 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(SyntaxKind::RBrace);
             }
-            // Discriminant: Red = 1
             if self.current_kind() == SyntaxKind::Eq {
                 self.bump();
                 self.parse_expr();
@@ -414,7 +413,6 @@ impl<'a> Parser<'a> {
         }
         if self.current_kind() == SyntaxKind::Colon {
             self.bump(); // :
-            // supertraits
             loop {
                 self.parse_type();
                 if self.current_kind() == SyntaxKind::Plus {
@@ -429,16 +427,14 @@ impl<'a> Parser<'a> {
         }
         self.expect(SyntaxKind::LBrace);
         while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-            // Trait items: fn, type, const
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
                     tracing::warn!("STUB: associated type in trait");
                     self.bump(); // type
-                    self.expect(SyntaxKind::Ident);
+                    self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Colon {
                         self.bump();
-                        // bounds
                         loop {
                             self.parse_type();
                             if self.current_kind() == SyntaxKind::Plus {
@@ -453,7 +449,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::KwConst => {
                     tracing::warn!("STUB: associated const in trait");
                     self.bump(); // const
-                    self.expect(SyntaxKind::Ident);
+                    self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
                     self.parse_type();
                     if self.current_kind() == SyntaxKind::Eq {
@@ -483,9 +479,6 @@ impl<'a> Parser<'a> {
         if self.current_kind() == SyntaxKind::Lt {
             self.parse_type_param_list();
         }
-        // Trait or inherent?
-        
-        // Parse the first type
         self.parse_type();
         if self.current_kind() == SyntaxKind::KwFor {
             self.bump(); // for
@@ -501,7 +494,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::KwType => {
                     tracing::warn!("STUB: associated type in impl");
                     self.bump(); // type
-                    self.expect(SyntaxKind::Ident);
+                    self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Eq {
                         self.bump();
                         self.parse_type();
@@ -511,7 +504,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::KwConst => {
                     tracing::warn!("STUB: associated const in impl");
                     self.bump(); // const
-                    self.expect(SyntaxKind::Ident);
+                    self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
                     self.parse_type();
                     self.expect(SyntaxKind::Eq);
@@ -532,14 +525,35 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_where_clause(&mut self) {
-        tracing::warn!("STUB: where clause parsing not fully implemented");
         self.start_node(SyntaxKind::WhereClause);
         self.expect(SyntaxKind::KwWhere);
         while self.current_kind() != SyntaxKind::LBrace
             && self.current_kind() != SyntaxKind::Semicolon
             && self.current().is_some()
         {
-            self.bump();
+            self.parse_type();
+            if self.current_kind() == SyntaxKind::Colon {
+                self.bump(); // :
+                loop {
+                    self.parse_type();
+                    if self.current_kind() == SyntaxKind::Lt {
+                        self.parse_type_param_list();
+                    }
+                    if self.current_kind() == SyntaxKind::Plus {
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if self.current_kind() == SyntaxKind::Comma {
+                self.bump();
+            } else if self.current_kind() != SyntaxKind::LBrace
+                && self.current_kind() != SyntaxKind::Semicolon
+            {
+                self.error("expected ',' or end of where clause");
+                break;
+            }
         }
         self.finish_node();
     }
@@ -551,8 +565,7 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::Lt);
         while self.current_kind() != SyntaxKind::Gt && self.current().is_some() {
             self.start_node(SyntaxKind::TypeParam);
-            self.expect(SyntaxKind::Ident);
-            // Optional bounds
+            self.bump_expected(SyntaxKind::Ident);
             if self.current_kind() == SyntaxKind::Colon {
                 self.bump();
                 loop {
@@ -564,6 +577,10 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            if self.current_kind() == SyntaxKind::Eq {
+                self.bump();
+                self.parse_type();
+            }
             self.finish_node(); // TypeParam
             if self.current_kind() == SyntaxKind::Comma {
                 self.bump();
@@ -574,7 +591,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_arg_list(&mut self) {
-        // Already inside a path type node; consume < and type args
         self.bump(); // <
         while self.current_kind() != SyntaxKind::Gt && self.current().is_some() {
             self.parse_type();
@@ -605,7 +621,7 @@ impl<'a> Parser<'a> {
         match self.current_kind() {
             SyntaxKind::KwLet => {
                 self.start_node(SyntaxKind::LetStmt);
-                self.expect(SyntaxKind::KwLet);
+                self.bump(); // let
                 self.parse_pat();
                 if self.current_kind() == SyntaxKind::Colon {
                     self.bump();
@@ -615,18 +631,17 @@ impl<'a> Parser<'a> {
                     self.bump();
                     self.parse_expr();
                 }
-                // Always require semicolon, even before a closing brace.
                 if self.current_kind() == SyntaxKind::Semicolon {
                     self.bump();
                 } else {
                     self.error("expected ';' after let statement");
-                    // Do not bump the unexpected token; let the next iteration recover.
                 }
                 self.finish_node();
             }
             SyntaxKind::KwIf
             | SyntaxKind::KwWhile
-            | SyntaxKind::KwFor | SyntaxKind::KwLoop
+            | SyntaxKind::KwFor
+            | SyntaxKind::KwLoop
             | SyntaxKind::KwReturn
             | SyntaxKind::KwBreak
             | SyntaxKind::KwContinue => {
@@ -637,34 +652,47 @@ impl<'a> Parser<'a> {
                 }
                 self.finish_node();
             }
-            SyntaxKind::KwFn => {
-                // Item-level fn inside block (unusual but allowed in some languages)
-                self.parse_fn_def();
-            }
-            SyntaxKind::KwStruct | SyntaxKind::KwEnum => {
-                self.parse_item();
-            }
+            SyntaxKind::KwFn => self.parse_fn_def(),
+            SyntaxKind::KwStruct | SyntaxKind::KwEnum => self.parse_item(),
             SyntaxKind::LBrace => {
-                // Block expression as statement
                 self.start_node(SyntaxKind::ExprStmt);
                 self.parse_block();
                 self.finish_node();
             }
             _ => {
-                // Before parsing as expression, check if token is a known expression starter.
-                // If not, report error and skip to avoid infinite loops.
-                if !matches!(self.current_kind(),
-                    SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit |
-                    SyntaxKind::StringLit | SyntaxKind::CharLit | SyntaxKind::KwTrue |
-                    SyntaxKind::KwFalse | SyntaxKind::KwSelf | SyntaxKind::KwSuper |
-                    SyntaxKind::KwCrate | SyntaxKind::LParen | SyntaxKind::LBrace |
-                    SyntaxKind::KwIf | SyntaxKind::KwWhile | SyntaxKind::KwFor |
-                    SyntaxKind::KwLoop | SyntaxKind::KwMatch | SyntaxKind::KwReturn |
-                    SyntaxKind::KwBreak | SyntaxKind::KwContinue | SyntaxKind::Bang |
-                    SyntaxKind::Minus | SyntaxKind::Star | SyntaxKind::And |
-                    SyntaxKind::KwUnsafe
+                if !matches!(
+                    self.current_kind(),
+                    SyntaxKind::Ident
+                        | SyntaxKind::IntLit
+                        | SyntaxKind::FloatLit
+                        | SyntaxKind::StringLit
+                        | SyntaxKind::CharLit
+                        | SyntaxKind::KwTrue
+                        | SyntaxKind::KwFalse
+                        | SyntaxKind::KwSelf
+                        | SyntaxKind::KwSuper
+                        | SyntaxKind::KwCrate
+                        | SyntaxKind::LParen
+                        | SyntaxKind::LBrace
+                        | SyntaxKind::Or
+                        | SyntaxKind::KwIf
+                        | SyntaxKind::KwWhile
+                        | SyntaxKind::KwFor
+                        | SyntaxKind::KwLoop
+                        | SyntaxKind::KwMatch
+                        | SyntaxKind::KwReturn
+                        | SyntaxKind::KwBreak
+                        | SyntaxKind::KwContinue
+                        | SyntaxKind::Bang
+                        | SyntaxKind::Minus
+                        | SyntaxKind::Star
+                        | SyntaxKind::And
+                        | SyntaxKind::KwUnsafe
                 ) {
-                    self.error(format!("unexpected token in statement: {:?}", self.current_kind()));
+                    self.error(format!(
+                        "unexpected token in statement: {:?}",
+                        self.current_kind()
+                    ));
                     if self.current().is_some() {
                         self.bump();
                     }
@@ -675,10 +703,8 @@ impl<'a> Parser<'a> {
                 if self.current_kind() == SyntaxKind::Semicolon {
                     self.bump();
                 } else if self.current_kind() == SyntaxKind::RBrace {
-                    // Expression without semicolon at end of block (e.g., tail expression)
-                    // This is fine - the value is the return expression
+                    // tail expression
                 } else {
-                    // Error recovery: missing semicolon
                     self.error("expected ';' after expression");
                 }
                 self.finish_node();
@@ -694,43 +720,35 @@ impl<'a> Parser<'a> {
 
     fn parse_assignment_expr(&mut self) {
         self.parse_range_expr();
-        if self.current_kind() == SyntaxKind::Eq {
-            self.bump();
-            let _prec = self.finish_node_hack();
-            // Start AssignExpr, re-insert LHS as child? No - we'll just
-            // wrap: the current implementation outputs a flat sequence.
-            // For now, emit AssignExpr around the whole thing
-            self.parse_assignment_expr();
-        } else if matches!(
+        if matches!(
             self.current_kind(),
-            SyntaxKind::PlusEq
+            SyntaxKind::Eq
+                | SyntaxKind::PlusEq
                 | SyntaxKind::MinusEq
                 | SyntaxKind::StarEq
                 | SyntaxKind::SlashEq
-                | SyntaxKind::AndAnd
         ) {
-            // Compound assignment - just bump and parse RHS for now
-            // Full AST rewriting would require checkpoint/rewind
             self.bump();
             self.parse_assignment_expr();
         }
     }
 
-    // HACK: finish_node but tell caller we did (for assignment wrapping)
-    fn finish_node_hack(&mut self) {
-        // This is intentionally a no-op; the actual tree restructuring
-        // for assignments requires checkpoint/rewind which we don't have yet.
-        // The diagnostic-free parse is the priority for v0.1.0.
-    }
-
     fn parse_range_expr(&mut self) {
         self.parse_or_expr();
-        if matches!(self.current_kind(), SyntaxKind::DotDot | SyntaxKind::DotDotEq) {
-            self.bump(); // .. or ..=
-            if !matches!(self.current_kind(),
-                SyntaxKind::Eq | SyntaxKind::Semicolon | SyntaxKind::Comma |
-                SyntaxKind::RParen | SyntaxKind::RBrace | SyntaxKind::RBracket)
-            {
+        if matches!(
+            self.current_kind(),
+            SyntaxKind::DotDot | SyntaxKind::DotDotEq
+        ) {
+            self.bump();
+            if !matches!(
+                self.current_kind(),
+                SyntaxKind::Eq
+                    | SyntaxKind::Semicolon
+                    | SyntaxKind::Comma
+                    | SyntaxKind::RParen
+                    | SyntaxKind::RBrace
+                    | SyntaxKind::RBracket
+            ) {
                 self.parse_or_expr();
             }
         }
@@ -813,31 +831,24 @@ impl<'a> Parser<'a> {
 
     fn parse_postfix_expr(&mut self) {
         self.parse_primary_expr();
-
-        // Postfix operations: method calls, field access, indexing, function calls
         loop {
             match self.current_kind() {
                 SyntaxKind::Dot => {
                     self.bump(); // .
-                    if self.current_kind() == SyntaxKind::Ident {
-                        self.bump(); // field/method name
-                    } else if self.current_kind() == SyntaxKind::IntLit
-                        || self.current_kind() == SyntaxKind::FloatLit
-                    {
-                        // Tuple field access: expr.0
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit
+                    ) {
                         self.bump();
                     } else {
                         self.error("expected field name or index after '.'");
                     }
-                    // After .field, check for turbofish or args
                     if self.current_kind() == SyntaxKind::ColonColon {
-                        // Turbofish: expr.method::<Type>()
                         self.bump(); // ::
                         if self.current_kind() == SyntaxKind::Lt {
                             self.parse_type_param_list();
                         }
                     }
-                    // Method call: expr.method()
                     if self.current_kind() == SyntaxKind::LParen {
                         self.bump(); // (
                         if self.current_kind() != SyntaxKind::RParen {
@@ -851,7 +862,6 @@ impl<'a> Parser<'a> {
                     }
                 }
                 SyntaxKind::LParen => {
-                    // Function call
                     self.bump(); // (
                     if self.current_kind() != SyntaxKind::RParen {
                         self.parse_expr();
@@ -863,19 +873,44 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::RParen);
                 }
                 SyntaxKind::LBracket => {
-                    // Index expression: expr[index]
                     self.bump(); // [
                     self.parse_expr();
                     self.expect(SyntaxKind::RBracket);
                 }
                 SyntaxKind::Question => {
-                    // Try operator: expr?
-                    self.bump();
+                    self.bump(); // ?
                 }
                 SyntaxKind::KwAs => {
-                    // Cast: expr as Type
                     self.bump();
                     self.parse_type();
+                }
+                SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
+                    self.start_node(SyntaxKind::StructExpr);
+                    self.bump(); // {
+                    while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                        if self.current_kind() == SyntaxKind::Ident {
+                            self.bump();
+                            if self.current_kind() == SyntaxKind::Colon {
+                                self.bump();
+                                self.parse_expr();
+                            }
+                        } else if self.current_kind() == SyntaxKind::DotDot {
+                            self.bump();
+                            if self.current_kind() != SyntaxKind::RBrace {
+                                self.parse_expr();
+                            }
+                        } else {
+                            self.error("expected field name or '..'");
+                            if self.current().is_some() {
+                                self.bump();
+                            }
+                        }
+                        if self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                        }
+                    }
+                    self.expect(SyntaxKind::RBrace);
+                    self.finish_node(); // StructExpr
                 }
                 _ => break,
             }
@@ -883,11 +918,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary_expr(&mut self) {
+        self.last_was_path = false;
         match self.current_kind() {
-            SyntaxKind::Ident
-            | SyntaxKind::KwSelf
-            | SyntaxKind::KwSuper
-            | SyntaxKind::KwCrate => {
+            SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                 self.parse_path_expr();
             }
             SyntaxKind::IntLit
@@ -903,16 +936,22 @@ impl<'a> Parser<'a> {
             SyntaxKind::LParen => {
                 self.bump(); // (
                 if self.current_kind() == SyntaxKind::RParen {
-                    // Empty tuple
                     self.bump();
                 } else {
                     self.parse_expr();
-                    // Could be tuple: (a, b)
                     while self.current_kind() == SyntaxKind::Comma {
                         self.bump();
                         self.parse_expr();
                     }
                     self.expect(SyntaxKind::RParen);
+                }
+            }
+            SyntaxKind::Or => self.parse_closure_expr(),
+            SyntaxKind::KwUnsafe => {
+                if self.current_kind() == SyntaxKind::LBrace {
+                    self.parse_block();
+                } else {
+                    self.error("expected '{' after unsafe");
                 }
             }
             SyntaxKind::LBrace => self.parse_block(),
@@ -921,7 +960,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwLoop => self.parse_loop_expr(),
             SyntaxKind::KwFor => self.parse_for_expr(),
             SyntaxKind::KwReturn => {
-                self.bump(); // return
+                self.bump();
                 if !matches!(
                     self.current_kind(),
                     SyntaxKind::Semicolon | SyntaxKind::RBrace
@@ -930,7 +969,7 @@ impl<'a> Parser<'a> {
                 }
             }
             SyntaxKind::KwBreak => {
-                self.bump(); // break
+                self.bump();
                 if !matches!(
                     self.current_kind(),
                     SyntaxKind::Semicolon | SyntaxKind::RBrace
@@ -939,11 +978,34 @@ impl<'a> Parser<'a> {
                 }
             }
             SyntaxKind::KwContinue => {
-                self.bump(); // continue
+                self.bump();
+            }
+            SyntaxKind::LBracket => {
+                self.start_node(SyntaxKind::ArrayExpr);
+                self.bump(); // [
+                if self.current_kind() != SyntaxKind::RBracket {
+                    self.parse_expr();
+                    if self.current_kind() == SyntaxKind::Semicolon {
+                        self.bump();
+                        self.parse_expr();
+                    } else {
+                        while self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                            if self.current_kind() == SyntaxKind::RBracket {
+                                break;
+                            }
+                            self.parse_expr();
+                        }
+                    }
+                }
+                self.expect(SyntaxKind::RBracket);
+                self.finish_node();
             }
             SyntaxKind::KwMatch => {
-                self.bump(); // match
+                self.bump();
+                self.suppress_struct_lit = true;
                 self.parse_expr();
+                self.suppress_struct_lit = false;
                 self.expect(SyntaxKind::LBrace);
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
                     self.parse_match_arm();
@@ -955,7 +1017,6 @@ impl<'a> Parser<'a> {
                     "expected expression, found {:?}",
                     self.current_kind()
                 ));
-                // CRITICAL: always consume token to prevent infinite loop
                 if self.current().is_some() {
                     self.bump();
                 }
@@ -967,16 +1028,19 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::PathExpr);
         self.parse_path();
         self.finish_node();
+        self.last_was_path = true;
     }
 
     fn parse_path(&mut self) {
         self.start_node(SyntaxKind::UsePath);
+        self.parse_path_inner();
+        self.finish_node();
+    }
+
+    fn parse_path_inner(&mut self) {
         // First segment
         match self.current_kind() {
-            SyntaxKind::Ident
-            | SyntaxKind::KwSelf
-            | SyntaxKind::KwSuper
-            | SyntaxKind::KwCrate => {
+            SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                 self.bump();
             }
             _ => {
@@ -984,19 +1048,15 @@ impl<'a> Parser<'a> {
                 return;
             }
         }
-        // Subsequent segments with :: (module paths) or . (field access)
         loop {
             match self.current_kind() {
                 SyntaxKind::ColonColon => {
                     self.bump(); // ::
                     match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper => {
+                        SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper => {
                             self.bump();
                         }
                         SyntaxKind::Lt => {
-                            // turbofish: path::<Type>
                             self.parse_type_param_list();
                         }
                         _ => {
@@ -1006,25 +1066,22 @@ impl<'a> Parser<'a> {
                     }
                 }
                 SyntaxKind::Dot => {
-                    // Field access: a.b
                     self.bump(); // .
                     if self.current_kind() == SyntaxKind::Ident {
                         self.bump();
                     } else {
                         self.error("expected field name after '.'");
-                        // break? Keep going for error recovery
                     }
                 }
                 _ => break,
             }
         }
-        self.finish_node();
     }
 
     fn parse_if_expr(&mut self) {
         self.start_node(SyntaxKind::IfExpr);
-        self.expect(SyntaxKind::KwIf);
-        // Check for if-let: if let Pat = Expr
+        self.bump_expected(SyntaxKind::KwIf);
+        self.suppress_struct_lit = true;
         if self.current_kind() == SyntaxKind::KwLet {
             self.bump(); // let
             self.parse_pat();
@@ -1033,9 +1090,10 @@ impl<'a> Parser<'a> {
         } else {
             self.parse_expr();
         }
+        self.suppress_struct_lit = false;
         self.parse_block();
         if self.current_kind() == SyntaxKind::KwElse {
-            self.bump(); // else
+            self.bump();
             if self.current_kind() == SyntaxKind::KwIf {
                 self.parse_if_expr();
             } else {
@@ -1048,7 +1106,7 @@ impl<'a> Parser<'a> {
     fn parse_while_expr(&mut self) {
         self.start_node(SyntaxKind::WhileExpr);
         self.bump(); // while
-        // Check for while-let: while let Pat = Expr
+        self.suppress_struct_lit = true;
         if self.current_kind() == SyntaxKind::KwLet {
             self.bump(); // let
             self.parse_pat();
@@ -1057,6 +1115,7 @@ impl<'a> Parser<'a> {
         } else {
             self.parse_expr();
         }
+        self.suppress_struct_lit = false;
         self.parse_block();
         self.finish_node();
     }
@@ -1075,21 +1134,53 @@ impl<'a> Parser<'a> {
     fn parse_for_expr(&mut self) {
         tracing::warn!("STUB: for expression parsing");
         self.bump(); // for
+        self.suppress_struct_lit = true;
         self.parse_pat();
         self.expect(SyntaxKind::KwIn);
         self.parse_expr();
+        self.suppress_struct_lit = false;
         self.parse_block();
+    }
+
+    fn parse_closure_expr(&mut self) {
+        self.start_node(SyntaxKind::ClosureExpr);
+        if self.current_kind() == SyntaxKind::KwMove {
+            self.bump(); // move
+        }
+        if self.current_kind() == SyntaxKind::Or {
+            self.bump(); // |
+            while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
+                self.parse_pat();
+                if self.current_kind() == SyntaxKind::Colon {
+                    self.bump();
+                    self.parse_type();
+                }
+                if self.current_kind() == SyntaxKind::Comma {
+                    self.bump();
+                }
+            }
+            self.expect(SyntaxKind::Or);
+        }
+        if self.current_kind() == SyntaxKind::Arrow {
+            self.bump();
+            self.parse_type();
+        }
+        if self.current_kind() == SyntaxKind::LBrace {
+            self.parse_block();
+        } else {
+            self.parse_expr();
+        }
+        self.finish_node();
     }
 
     fn parse_match_arm(&mut self) {
         self.start_node(SyntaxKind::MatchArm);
         self.parse_pat();
         if self.current_kind() == SyntaxKind::KwIf {
-            self.bump(); // if guard
+            self.bump();
             self.parse_expr();
         }
         self.expect(SyntaxKind::FatArrow);
-        // Arm body: either expression (with comma) or block
         if self.current_kind() == SyntaxKind::LBrace {
             self.parse_block();
             if self.current_kind() == SyntaxKind::Comma {
@@ -1107,7 +1198,6 @@ impl<'a> Parser<'a> {
     // ---- PATTERNS ----
 
     fn parse_pat(&mut self) {
-        // Handle or-patterns: A | B
         self.parse_pat_single();
         while self.current_kind() == SyntaxKind::Or {
             self.bump(); // |
@@ -1122,7 +1212,6 @@ impl<'a> Parser<'a> {
                 if self.current_kind() == SyntaxKind::KwMut {
                     self.bump(); // mut
                 }
-                // parse inner pattern (no PatRef node)
                 self.parse_pat_inner();
             }
             SyntaxKind::KwMut => {
@@ -1130,11 +1219,7 @@ impl<'a> Parser<'a> {
                 self.parse_pat_inner();
             }
             SyntaxKind::AndAnd => {
-                // Double reference pattern: &&x
-                // Consume the combined token and build two synthetic & patterns.
-                // Note: patterns don't create PatRef nodes (by design), we just skip the tokens.
                 self.skip_token(); // skip &&
-                // parse inner pattern (which will be a single & if followed by And, or identifier)
                 self.parse_pat_inner();
             }
             SyntaxKind::And => {
@@ -1154,7 +1239,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 self.expect(SyntaxKind::RParen);
-                self.finish_node(); // PatTuple
+                self.finish_node();
             }
             _ => {
                 self.parse_pat_inner();
@@ -1169,10 +1254,57 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.finish_node();
             }
-            SyntaxKind::Ident | SyntaxKind::KwSelf => {
-                self.start_node(SyntaxKind::PatIdent);
-                self.bump();
-                self.finish_node();
+            SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                // If the next token is '::' or '(', it's a path pattern; otherwise simple ident.
+                let next = self.peek_kind().unwrap_or(SyntaxKind::Error);
+                if next == SyntaxKind::ColonColon || next == SyntaxKind::LParen {
+                    self.start_node(SyntaxKind::UsePath);
+                    self.parse_path_inner();
+                    self.finish_node();
+                } else {
+                    // Simple identifier pattern
+                    self.start_node(SyntaxKind::PatIdent);
+                    self.bump(); // ident
+                    self.finish_node();
+                    return; // no further path segments
+                }
+                if self.current_kind() == SyntaxKind::LParen {
+                    self.start_node(SyntaxKind::PatTuple);
+                    self.bump(); // (
+                    while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
+                        self.parse_pat();
+                        if self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                        }
+                    }
+                    self.expect(SyntaxKind::RParen);
+                    self.finish_node();
+                } else if self.current_kind() == SyntaxKind::LBrace {
+                    self.start_node(SyntaxKind::PatStruct);
+                    self.bump(); // {
+                    while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                        if self.current_kind() == SyntaxKind::Ident {
+                            self.bump();
+                            if self.current_kind() == SyntaxKind::Colon {
+                                self.bump();
+                                self.parse_pat();
+                            }
+                        } else if self.current_kind() == SyntaxKind::DotDot {
+                            self.bump();
+                        } else {
+                            self.error("expected field pattern");
+                            if self.current().is_some() {
+                                self.bump();
+                            }
+                        }
+                        if self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                        }
+                    }
+                    self.expect(SyntaxKind::RBrace);
+                    self.finish_node();
+                }
+                // else it's a simple identifier pattern; the UsePath node stands as-is.
             }
             SyntaxKind::IntLit
             | SyntaxKind::FloatLit
@@ -1186,7 +1318,6 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.error(format!("expected pattern, found {:?}", self.current_kind()));
-                // Consume token to prevent infinite loop
                 if self.current().is_some() {
                     self.bump();
                 }
@@ -1194,28 +1325,22 @@ impl<'a> Parser<'a> {
         }
     }
 
-
     // ---- TYPES ----
 
     fn parse_type(&mut self) {
         match self.current_kind() {
             SyntaxKind::AndAnd => {
-                // Double reference: &&T  →  & & T  (two nested RefType nodes)
-                // Consume the combined AndAnd token without emitting it,
-                // then build two synthetic RefType nodes.
-                if let Some(tok) = self.current() {
-                    let span = tok.span;
-                    // outer &
+                if let Some(_tok) = self.current() {
                     self.start_node(SyntaxKind::RefType);
-                    self.builder.token(GlyimLang::kind_to_raw(SyntaxKind::And), "&");
-                    // inner &
+                    self.builder
+                        .token(GlyimLang::kind_to_raw(SyntaxKind::And), "&");
                     self.start_node(SyntaxKind::RefType);
-                    self.builder.token(GlyimLang::kind_to_raw(SyntaxKind::And), "&");
-                    // parse the target type (may nest further references)
-                    self.skip_token(); // discard the && token
+                    self.builder
+                        .token(GlyimLang::kind_to_raw(SyntaxKind::And), "&");
+                    self.skip_token();
                     self.parse_type();
-                    self.finish_node(); // inner RefType
-                    self.finish_node(); // outer RefType
+                    self.finish_node(); // inner
+                    self.finish_node(); // outer
                 }
             }
             SyntaxKind::And => {
@@ -1230,7 +1355,9 @@ impl<'a> Parser<'a> {
             SyntaxKind::Star => {
                 tracing::warn!("STUB: raw pointer type not supported");
                 self.bump(); // *
-                if self.current_kind() == SyntaxKind::KwConst || self.current_kind() == SyntaxKind::KwMut {
+                if self.current_kind() == SyntaxKind::KwConst
+                    || self.current_kind() == SyntaxKind::KwMut
+                {
                     self.bump();
                 }
                 self.parse_type();
@@ -1241,7 +1368,7 @@ impl<'a> Parser<'a> {
                 self.parse_type();
                 if self.current_kind() == SyntaxKind::Semicolon {
                     self.bump(); // ;
-                    self.parse_expr(); // const expr for size
+                    self.parse_expr();
                 }
                 self.expect(SyntaxKind::RBracket);
                 self.finish_node();
@@ -1291,13 +1418,9 @@ impl<'a> Parser<'a> {
                     self.parse_type();
                 }
             }
-            SyntaxKind::Ident
-            | SyntaxKind::KwSelf
-            | SyntaxKind::KwSuper
-            | SyntaxKind::KwCrate => {
+            SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                 self.start_node(SyntaxKind::PathType);
                 self.parse_path();
-                // Optional generic type arguments: Option<i32>
                 if self.current_kind() == SyntaxKind::Lt {
                     self.parse_type_arg_list();
                 }
@@ -1305,7 +1428,6 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.error(format!("expected type, found {:?}", self.current_kind()));
-                // Consume token to prevent infinite loop
                 if self.current().is_some() {
                     self.bump();
                 }

@@ -42,6 +42,7 @@ pub enum SyntaxKind {
     KwUnsafe,
     KwConst,
     KwStatic,
+    KwMove,
     // Literals
     IntLit,
     FloatLit,

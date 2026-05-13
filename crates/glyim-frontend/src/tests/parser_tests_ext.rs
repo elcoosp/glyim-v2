@@ -4,12 +4,11 @@ use glyim_syntax::{SyntaxKind, SyntaxNode};
 
 fn file_id() -> FileId {
     FileId::from_raw(1)
-
-
 }
 
 fn assert_child_node(node: &SyntaxNode, kind: SyntaxKind) -> SyntaxNode {
-    node.children().find(|c| c.kind() == kind)
+    node.children()
+        .find(|c| c.kind() == kind)
         .unwrap_or_else(|| panic!("missing node {:?}", kind))
 }
 
@@ -27,7 +26,10 @@ fn test_if_else_expr() {
 
 #[test]
 fn test_if_else_if_chain() {
-    let result = parse_to_syntax("fn f() { if a { 1 } else if b { 2 } else { 3 } }", file_id());
+    let result = parse_to_syntax(
+        "fn f() { if a { 1 } else if b { 2 } else { 3 } }",
+        file_id(),
+    );
     assert!(result.diagnostics.is_empty());
     let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
     let block = assert_child_node(&fn_def, SyntaxKind::Block);
@@ -116,7 +118,10 @@ fn test_match_with_arms() {
 
 #[test]
 fn test_match_with_if_guard() {
-    let result = parse_to_syntax("fn f(x: i32) { match x { n if n > 0 => n, _ => 0 } }", file_id());
+    let result = parse_to_syntax(
+        "fn f(x: i32) { match x { n if n > 0 => n, _ => 0 } }",
+        file_id(),
+    );
     assert!(result.diagnostics.is_empty());
 }
 
@@ -259,7 +264,10 @@ fn test_trait_with_supertraits() {
 
 #[test]
 fn test_trait_with_associated_fn() {
-    let result = parse_to_syntax("trait Iterator { fn next(&mut self) -> Option<Self::Item>; }", file_id());
+    let result = parse_to_syntax(
+        "trait Iterator { fn next(&mut self) -> Option<Self::Item>; }",
+        file_id(),
+    );
     assert!(result.diagnostics.is_empty());
 }
 
@@ -272,7 +280,10 @@ fn test_enum_tuple_variants() {
 
 #[test]
 fn test_enum_record_variants() {
-    let result = parse_to_syntax("enum Shape { Circle { r: f64 }, Rect { w: f64, h: f64 } }", file_id());
+    let result = parse_to_syntax(
+        "enum Shape { Circle { r: f64 }, Rect { w: f64, h: f64 } }",
+        file_id(),
+    );
     assert!(result.diagnostics.is_empty());
 }
 
@@ -478,21 +489,30 @@ fn test_try_operator() {
 #[test]
 fn test_error_missing_brace() {
     let result = parse_to_syntax("fn f() { let x = 5;", file_id());
-    assert!(!result.diagnostics.is_empty(), "should produce errors for missing brace");
+    assert!(
+        !result.diagnostics.is_empty(),
+        "should produce errors for missing brace"
+    );
 }
 
 // S09-T47: Error recovery: missing paren
 #[test]
 fn test_error_missing_paren() {
     let result = parse_to_syntax("fn f( { }", file_id());
-    assert!(!result.diagnostics.is_empty(), "should produce errors for missing paren");
+    assert!(
+        !result.diagnostics.is_empty(),
+        "should produce errors for missing paren"
+    );
 }
 
 // S09-T48: Error recovery: unexpected token at top level
 #[test]
 fn test_error_unexpected_top_level() {
     let result = parse_to_syntax("+", file_id());
-    assert!(!result.diagnostics.is_empty(), "should produce errors for unexpected token");
+    assert!(
+        !result.diagnostics.is_empty(),
+        "should produce errors for unexpected token"
+    );
 }
 
 // S09-T49: Path with crate and super
@@ -518,7 +538,9 @@ fn test_turbofish() {
 // S09-T51: Snapshot: complex program
 #[test]
 fn test_snapshot_complex_program() {
-    glyim_test::snapshot_cst("complex_program", r#"
+    glyim_test::snapshot_cst(
+        "complex_program",
+        r#"
 pub struct Point<T> {
     x: T,
     y: T,
@@ -541,13 +563,16 @@ fn main() {
         return;
     }
 }
-"#);
+"#,
+    );
 }
 
 // S09-T52: Snapshot: match expression
 #[test]
 fn test_snapshot_match() {
-    glyim_test::snapshot_cst("match_expr", r#"
+    glyim_test::snapshot_cst(
+        "match_expr",
+        r#"
 fn classify(x: i32) -> &str {
     match x {
         0 => "zero",
@@ -556,13 +581,16 @@ fn classify(x: i32) -> &str {
         _ => "large",
     }
 }
-"#);
+"#,
+    );
 }
 
 // S09-T53: Snapshot: enum and pattern
 #[test]
 fn test_snapshot_enum_pattern() {
-    glyim_test::snapshot_cst("enum_pattern", r#"
+    glyim_test::snapshot_cst(
+        "enum_pattern",
+        r#"
 enum Option<T> {
     Some(T),
     None,
@@ -574,5 +602,6 @@ fn unwrap_or<T>(opt: Option<T>, default: T) -> T {
         Option::None => default,
     }
 }
-"#);
+"#,
+    );
 }

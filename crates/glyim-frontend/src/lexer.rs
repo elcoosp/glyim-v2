@@ -702,6 +702,7 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
         "true" => SyntaxKind::KwTrue,
         "false" => SyntaxKind::KwFalse,
         "mut" => SyntaxKind::KwMut,
+        "move" => SyntaxKind::KwMove,
         "ref" => SyntaxKind::KwRef,
         "as" => SyntaxKind::KwAs,
         "while" => SyntaxKind::KwWhile,

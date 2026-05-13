@@ -67,30 +67,25 @@ SourceFile@0..127
           UsePath@76..79
             Ident@76..79 "opt"
         LBrace@79..80 "{"
-        MatchArm@80..88
-          PatIdent@80..86
+        MatchArm@80..103
+          UsePath@80..92
             Ident@80..86 "Option"
-          ColonColon@86..88 "::"
-        MatchArm@88..97
-          PatIdent@88..92
+            ColonColon@86..88 "::"
             Ident@88..92 "Some"
-          LParen@92..93 "("
-          PathExpr@93..96
-            UsePath@93..96
+          PatTuple@92..97
+            LParen@92..93 "("
+            PatIdent@93..96
               Ident@93..96 "val"
-          RParen@96..97 ")"
-        MatchArm@97..103
+            RParen@96..97 ")"
           FatArrow@97..99 "=>"
           PathExpr@99..102
             UsePath@99..102
               Ident@99..102 "val"
           Comma@102..103 ","
-        MatchArm@103..111
-          PatIdent@103..109
+        MatchArm@103..125
+          UsePath@103..115
             Ident@103..109 "Option"
-          ColonColon@109..111 "::"
-        MatchArm@111..125
-          PatIdent@111..115
+            ColonColon@109..111 "::"
             Ident@111..115 "None"
           FatArrow@115..117 "=>"
           PathExpr@117..124
