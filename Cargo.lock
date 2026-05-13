@@ -336,9 +336,13 @@ dependencies = [
 name = "glyim-codegen"
 version = "0.1.0"
 dependencies = [
+ "glyim-core",
  "glyim-diag",
  "glyim-mir",
+ "glyim-span",
  "glyim-test",
+ "glyim-type",
+ "tracing",
 ]
 
 [[package]]

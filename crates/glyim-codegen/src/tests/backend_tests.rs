@@ -1,14 +1,13 @@
-use glyim_codegen::{BytecodeBackend, CodegenBackend};
+use crate::{BytecodeBackend, CodegenBackend};
 use glyim_core::primitives::*;
 use glyim_mir::*;
+use glyim_span::Span;
 use std::path::Path;
 use std::sync::Arc;
 
 /// Helper: create a minimal Body with given basic blocks.
-fn make_body(blocks: Vec<BasicBlockData>, locals: Vec<LocalDecl>, arg_count: u32) -> Arc<Body> {
-    use glyim_mir::{BasicBlockIdx, LocalIdx, SourceInfo};
+fn make_body(blocks: Vec<BasicBlockData>, locals: Vec<LocalDecl>, arg_count: usize) -> Arc<Body> {
     use glyim_core::IndexVec;
-    use glyim_span::Span;
 
     let mut bb_map = IndexVec::new();
     for block in blocks {
@@ -39,7 +38,7 @@ fn local_decl(ty: glyim_type::Ty) -> LocalDecl {
     LocalDecl {
         ty,
         mutability: Mutability::Not,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        source_info: SourceInfo::new(Span::DUMMY),
     }
 }
 
@@ -47,7 +46,7 @@ fn local_decl(ty: glyim_type::Ty) -> LocalDecl {
 fn block(stmts: Vec<Statement>, term: Terminator) -> BasicBlockData {
     BasicBlockData {
         statements: stmts,
-        terminator: Some(term),
+        terminator: term,
         is_cleanup: false,
     }
 }
@@ -56,7 +55,7 @@ fn block(stmts: Vec<Statement>, term: Terminator) -> BasicBlockData {
 fn term(kind: TerminatorKind) -> Terminator {
     Terminator {
         kind,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        source_info: SourceInfo::new(Span::DUMMY),
     }
 }
 
@@ -64,7 +63,7 @@ fn term(kind: TerminatorKind) -> Terminator {
 fn stmt(kind: StatementKind) -> Statement {
     Statement {
         kind,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        source_info: SourceInfo::new(Span::DUMMY),
     }
 }
 
@@ -100,17 +99,17 @@ fn t02_integer_constants_and_add_yields_loadconst_add_return() {
                 stmt(StatementKind::Assign(
                     Place::new(LocalIdx::from_raw(0)),
                     Rvalue::Use(Operand::Constant(MirConst {
-                        kind: MirConstKind::Int(42, 64),
+                        kind: MirConstKind::Int(42),
                         ty: glyim_type::Ty::ERROR,
-                        span: glyim_span::Span::DUMMY,
+                        span: Span::DUMMY,
                     })),
                 )),
                 stmt(StatementKind::Assign(
                     Place::new(LocalIdx::from_raw(1)),
                     Rvalue::Use(Operand::Constant(MirConst {
-                        kind: MirConstKind::Int(10, 64),
+                        kind: MirConstKind::Int(10),
                         ty: glyim_type::Ty::ERROR,
-                        span: glyim_span::Span::DUMMY,
+                        span: Span::DUMMY,
                     })),
                 )),
                 stmt(StatementKind::Assign(
@@ -154,9 +153,9 @@ fn t03_locals_yield_loadlocal_storelocal() {
                 stmt(StatementKind::Assign(
                     Place::new(LocalIdx::from_raw(0)),
                     Rvalue::Use(Operand::Constant(MirConst {
-                        kind: MirConstKind::Int(1, 64),
+                        kind: MirConstKind::Int(1),
                         ty: glyim_type::Ty::ERROR,
-                        span: glyim_span::Span::DUMMY,
+                        span: Span::DUMMY,
                     })),
                 )),
                 stmt(StatementKind::Assign(
@@ -197,14 +196,14 @@ fn t04_branch_yields_jumpif_and_jump() {
                     Rvalue::Use(Operand::Constant(MirConst {
                         kind: MirConstKind::Bool(true),
                         ty: glyim_type::Ty::BOOL,
-                        span: glyim_span::Span::DUMMY,
+                        span: Span::DUMMY,
                     })),
                 ))],
                 term(TerminatorKind::SwitchInt {
                     discr: Operand::Copy(Place::new(LocalIdx::from_raw(0))),
                     switch_ty: glyim_type::Ty::BOOL,
-                    targets: glyim_mir::SwitchTargets::new(
-                        vec![(0, BasicBlockIdx::from_raw(1))],
+                    targets: SwitchTargets::new(
+                        Box::new([(0u128, BasicBlockIdx::from_raw(1))]),
                         BasicBlockIdx::from_raw(2),
                     ),
                 }),
