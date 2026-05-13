@@ -1,0 +1,146 @@
+warning: unused import: `std::sync::Arc`
+  --> crates/glyim-mir/src/lib.rs:13:5
+   |
+13 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `IdxLike`
+ --> crates/glyim-mir/src/lib.rs:7:25
+  |
+7 | use glyim_core::arena::{IdxLike, IndexVec};
+  |                         ^^^^^^^
+
+warning: unused variable: `a_k`
+   --> crates/glyim-solve/src/infer.rs:193:14
+    |
+193 |             (a_k, b_k) => {
+    |              ^^^ help: if this is intentional, prefix it with an underscore: `_a_k`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `b_k`
+   --> crates/glyim-solve/src/infer.rs:193:19
+    |
+193 |             (a_k, b_k) => {
+    |                   ^^^ help: if this is intentional, prefix it with an underscore: `_b_k`
+
+warning: unused variable: `module`
+   --> crates/glyim-def-map/src/lib.rs:168:5
+    |
+168 |     module: ModuleId,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_module`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `glyim-mir` (lib) generated 2 warnings (run `cargo fix --lib -p glyim-mir` to apply 1 suggestion)
+warning: `glyim-solve` (lib) generated 2 warnings (run `cargo fix --lib -p glyim-solve` to apply 2 suggestions)
+warning: `glyim-def-map` (lib) generated 1 warning (run `cargo fix --lib -p glyim-def-map` to apply 1 suggestion)
+warning: fields `ctx`, `locals`, `basic_blocks`, `arg_count`, `return_ty`, and `span` are never read
+  --> crates/glyim-lower/src/lower.rs:38:5
+   |
+37 | struct MirBuilder<'a> {
+   |        ---------- fields in this struct
+38 |     ctx: &'a dyn LowerCtx,
+   |     ^^^
+39 |     locals: IndexVec<glyim_mir::LocalIdx, glyim_mir::LocalDecl>,
+   |     ^^^^^^
+40 |     basic_blocks: IndexVec<glyim_mir::BasicBlockIdx, glyim_mir::BasicBlockData>,
+   |     ^^^^^^^^^^^^
+41 |     arg_count: usize,
+   |     ^^^^^^^^^
+42 |     return_ty: Ty,
+   |     ^^^^^^^^^
+43 |     owner: glyim_core::def_id::DefId,
+44 |     span: Span,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `alloc_local` is never used
+  --> crates/glyim-lower/src/lower.rs:67:8
+   |
+48 | impl<'a> MirBuilder<'a> {
+   | ----------------------- method in this implementation
+...
+67 |     fn alloc_local(&mut self, ty: Ty, mutability: Mutability, span: Span) -> glyim_mir::LocalIdx {
+   |        ^^^^^^^^^^^
+
+warning: struct `Checkpoint` is never constructed
+  --> crates/glyim-frontend/src/parser.rs:13:8
+   |
+13 | struct Checkpoint { inner: rowan::Checkpoint }
+   |        ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `checkpoint` is never used
+  --> crates/glyim-frontend/src/parser.rs:55:8
+   |
+22 | impl<'a> Parser<'a> {
+   | ------------------- method in this implementation
+...
+55 |     fn checkpoint(&self) -> Checkpoint { Checkpoint { inner: self.builder.checkpoint() } }
+   |        ^^^^^^^^^^
+
+warning: unused import: `glyim_span::Span`
+ --> crates/glyim-borrowck/src/lib.rs:8:5
+  |
+8 | use glyim_span::Span;
+  |     ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `glyim-lower` (lib) generated 2 warnings
+warning: `glyim-frontend` (lib) generated 2 warnings
+warning: `glyim-borrowck` (lib) generated 1 warning (run `cargo fix --lib -p glyim-borrowck` to apply 1 suggestion)
+warning: unused import: `TargetMachine`
+ --> crates/glyim-codegen-llvm/src/lib.rs:6:32
+  |
+6 | use inkwell::targets::{Target, TargetMachine, InitializationConfig, TargetTriple};
+  |                                ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused `Result` that must be used
+  --> crates/glyim-codegen-llvm/src/lib.rs:52:13
+   |
+52 |             builder.build_return(Some(&return_val));
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+   = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+52 |             let _ = builder.build_return(Some(&return_val));
+   |             +++++++
+
+warning: `glyim-codegen-llvm` (lib) generated 2 warnings (run `cargo fix --lib -p glyim-codegen-llvm` to apply 1 suggestion)
+warning: unused import: `glyim_codegen::CodegenBackend`
+ --> crates/glyim-cli/src/lib.rs:5:5
+  |
+5 | use glyim_codegen::CodegenBackend;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `output`
+  --> crates/glyim-cli/src/lib.rs:28:9
+   |
+28 |     let output = args.output.unwrap_or_else(|| {
+   |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_output`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `glyim-cli` (lib) generated 2 warnings (run `cargo fix --lib -p glyim-cli` to apply 2 suggestions)
+warning: unused import: `glyim_diag::GlyimDiagnostic`
+ --> crates/glyim-test/src/lib.rs:6:5
+  |
+6 | use glyim_diag::GlyimDiagnostic;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `glyim-test` (lib) generated 1 warning (run `cargo fix --lib -p glyim-test` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
