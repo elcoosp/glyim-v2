@@ -65,7 +65,7 @@ impl From<Span> for SourceSpan {
     fn from(s: Span) -> SourceSpan {
         let start = s.lo.to_raw() as usize;
         let length = s.len() as usize;
-        SourceSpan::new(start.into(), length.into())
+        SourceSpan::new(start.into(), length)
     }
 }
 

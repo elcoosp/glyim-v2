@@ -70,7 +70,7 @@ pub enum GlyimLang {}
 impl rowan::Language for GlyimLang {
     type Kind = SyntaxKind;
     fn kind_from_raw(raw: rowan::SyntaxKind) -> Self::Kind {
-        Self::Kind::try_from_raw(raw.0 as u16).unwrap_or(Self::Kind::Error)
+        Self::Kind::try_from_raw(raw.0).unwrap_or(Self::Kind::Error)
     }
     fn kind_to_raw(kind: Self::Kind) -> rowan::SyntaxKind {
         rowan::SyntaxKind(kind as u16)

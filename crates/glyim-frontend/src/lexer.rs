@@ -184,7 +184,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Fractional part
-        if self.peek() == Some('.') && self.peek_next().map_or(false, |n| n.is_ascii_digit()) {
+        if self.peek() == Some('.') && self.peek_next().is_some_and(|n| n.is_ascii_digit()) {
             is_float = true;
             self.advance();
             while let Some(ch) = self.peek() { if ch.is_ascii_digit() || ch == '_' { self.advance(); } else { break; } }

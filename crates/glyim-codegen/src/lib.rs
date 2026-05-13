@@ -13,6 +13,12 @@ pub trait CodegenBackend {
 
 pub struct BytecodeBackend;
 
+impl Default for BytecodeBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BytecodeBackend {
     pub fn new() -> Self { Self }
 }

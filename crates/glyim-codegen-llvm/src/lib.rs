@@ -11,6 +11,12 @@ pub struct LlvmBackend {
     target_triple: String,
 }
 
+impl Default for LlvmBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LlvmBackend {
     pub fn new() -> Self {
         Target::initialize_all(&InitializationConfig::default());

@@ -10,7 +10,6 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::primitives::Mutability;
 use glyim_type::*;
-use glyim_hir;
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;

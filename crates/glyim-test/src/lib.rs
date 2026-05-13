@@ -15,7 +15,7 @@ impl TestCtxBuilder {
         self
     }
     pub fn build(self) -> TyCtxMut {
-        let interner = self.interner.unwrap_or_else(Interner::new);
+        let interner = self.interner.unwrap_or_default();
         TyCtxMut::new(interner)
     }
 }
