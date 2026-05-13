@@ -13,3 +13,4 @@ mod stress;
 mod strings;
 mod suffixes;
 mod trivia;
+mod unicode;
