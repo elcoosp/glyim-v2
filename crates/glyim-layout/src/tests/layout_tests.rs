@@ -1,6 +1,6 @@
 use glyim_test::{assert_layout, test_frozen_ty_ctx, with_fresh_ty_ctx};
 use glyim_core::primitives::*;
-use glyim_layout::*;
+use crate::*;
 use glyim_type::*;
 
 #[test]
