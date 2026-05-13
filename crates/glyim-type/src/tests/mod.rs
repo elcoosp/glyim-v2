@@ -1,9 +1,15 @@
+mod binder;
+mod compile_fail;
+mod const_val;
 mod context_api;
+mod display;
+mod edge_cases;
 mod flags;
 mod freeze;
 mod helpers;
 mod interning;
 mod more_interning;
+mod predicate;
 mod region;
 mod region_extra;
 mod substitution;
