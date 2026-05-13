@@ -411,6 +411,10 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub(crate) fn pos(&self) -> usize {
+        self.pos
+    }
+
     fn finish(self) -> (GreenNode, Vec<GlyimDiagnostic>) {
         (self.builder.finish(), self.diagnostics)
     }
