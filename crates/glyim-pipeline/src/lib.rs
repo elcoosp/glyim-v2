@@ -4,6 +4,7 @@ use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_solve::SimpleTraitSolver;
 use glyim_codegen::CodegenBackend;
+use glyim_mir::Body;
 
 pub struct Pipeline;
 
@@ -47,8 +48,10 @@ impl Pipeline {
 
         db.set_ty_ctx(ty_ctx);
 
-        // Phase 6-7: MIR and optimizations (stubs)
-        let optimized_bodies: Vec<Arc<glyim_mir::Body>> = Vec::new();
+        // Phase 6-7: MIR and optimizations (stub: create a dummy MIR body)
+        let dummy_owner = glyim_core::def_id::DefId::new(glyim_core::def_id::CrateId::from_raw(0), glyim_core::def_id::LocalDefId::from_raw(0));
+        let dummy_body = Arc::new(Body::dummy(dummy_owner));
+        let optimized_bodies = vec![dummy_body];
 
         // Phase 8: Codegen
         backend.generate(&optimized_bodies, Path::new("output.o"))?;

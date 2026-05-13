@@ -287,6 +287,7 @@ name = "glyim-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "glyim-codegen",
  "glyim-codegen-llvm",
  "glyim-db",
  "glyim-diag",

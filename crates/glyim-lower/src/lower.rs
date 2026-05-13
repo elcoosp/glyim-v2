@@ -74,7 +74,7 @@ impl<'a> MirBuilder<'a> {
 }
 
 pub fn lower_body(ctx: &dyn LowerCtx, thir: &thir::Body) -> LowerResult {
-    let mut builder = MirBuilder::new(ctx, thir);
+    let builder = MirBuilder::new(ctx, thir);
     // STUB: actual lowering logic would go here
     let body = glyim_mir::Body::dummy(builder.owner);
     LowerResult { body, diagnostics: builder.diagnostics }
