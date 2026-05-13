@@ -46,6 +46,41 @@ members = [
 ]
 
 [workspace.dependencies]
+glyim-arena        = { path = "crates/glyim-arena" }
+glyim-primitives   = { path = "crates/glyim-primitives" }
+glyim-interner     = { path = "crates/glyim-interner" }
+glyim-span         = { path = "crates/glyim-span" }
+glyim-diag         = { path = "crates/glyim-diag" }
+glyim-vfs          = { path = "crates/glyim-vfs" }
+glyim-syntax       = { path = "crates/glyim-syntax" }
+glyim-lex          = { path = "crates/glyim-lex" }
+glyim-parse        = { path = "crates/glyim-parse" }
+glyim-def-map      = { path = "crates/glyim-def-map" }
+glyim-hygiene      = { path = "crates/glyim-hygiene" }
+glyim-meta         = { path = "crates/glyim-meta" }
+glyim-type         = { path = "crates/glyim-type" }
+glyim-hir          = { path = "crates/glyim-hir" }
+glyim-thir         = { path = "crates/glyim-thir" }
+glyim-mir          = { path = "crates/glyim-mir" }
+glyim-layout       = { path = "crates/glyim-layout" }
+glyim-infer        = { path = "crates/glyim-infer" }
+glyim-solve        = { path = "crates/glyim-solve" }
+glyim-typeck       = { path = "crates/glyim-typeck" }
+glyim-lower        = { path = "crates/glyim-lower" }
+glyim-mono         = { path = "crates/glyim-mono" }
+glyim-lifetime     = { path = "crates/glyim-lifetime" }
+glyim-borrowck     = { path = "crates/glyim-borrowck" }
+glyim-opt          = { path = "crates/glyim-opt" }
+glyim-mir-interp   = { path = "crates/glyim-mir-interp" }
+glyim-codegen      = { path = "crates/glyim-codegen" }
+glyim-codegen-llvm = { path = "crates/glyim-codegen-llvm" }
+glyim-bytecode     = { path = "crates/glyim-bytecode" }
+glyim-db           = { path = "crates/glyim-db" }
+glyim-cli          = { path = "crates/glyim-cli" }
+glyim-lsp          = { path = "crates/glyim-lsp" }
+glyim-runtime      = { path = "crates/glyim-runtime" }
+glyim-test         = { path = "crates/glyim-test" }
+
 # Foundation
 salsa = "0.26.0"
 lasso = "0.7.3"
