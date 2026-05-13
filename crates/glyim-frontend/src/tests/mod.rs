@@ -6,5 +6,7 @@ mod integers;
 mod keywords;
 mod operators;
 mod programs;
+mod recovery;
 mod spans;
+mod stress;
 mod strings;
