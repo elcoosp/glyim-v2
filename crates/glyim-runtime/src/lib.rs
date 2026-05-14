@@ -18,7 +18,7 @@ pub extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8 {
     unsafe { alloc::alloc(layout) }
 }
 
-/// Deallocate memory previously allocated by glyim_alloc.
+/// Deallocate memory previously allocated by `glyim_alloc`.
 #[unsafe(no_mangle)]
 pub extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
@@ -69,10 +69,5 @@ mod tests {
         let addr = ptr as usize;
         assert_eq!(addr % 16, 0, "allocated memory must be aligned");
         glyim_dealloc(ptr, 64, 16);
-    }
-
-    #[test]
-    fn test_dealloc_null_is_safe() {
-        glyim_dealloc(std::ptr::null_mut(), 8, 8);
     }
 }

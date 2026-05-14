@@ -1179,13 +1179,7 @@ fn lower_loop_expr(
 ) -> Option<ExprId> {
     let body = node.children().find(|c| c.kind() == SyntaxKind::Block)?;
     let body_id = lower_expr(&body, interner, exprs, pats)?;
-    // Loop body can be While? Use While with condition always true? But HIR has no Loop expr.
-    // Use While with a true literal as condition.
-    let true_lit = Literal::Bool(true);
-    let true_expr = Expr::Literal(true_lit);
-    let true_id = exprs.push(true_expr);
-    let expr = Expr::While {
-        cond: true_id,
+    let expr = Expr::Loop {
         body: body_id,
     };
     Some(exprs.push(expr))
