@@ -74,10 +74,10 @@ SourceFile@0..173
       Block@72..84
         LBrace@72..73 "{"
         ExprStmt@73..83
-          PathExpr@73..78
-            UsePath@73..78
-              Ident@73..78 "Point"
-          StructExpr@78..83
+          StructExpr@73..83
+            PathExpr@73..78
+              UsePath@73..78
+                Ident@73..78 "Point"
             LBrace@78..79 "{"
             Ident@79..80 "x"
             Comma@80..81 ","
@@ -117,46 +117,49 @@ SourceFile@0..173
         PatIdent@120..121
           Ident@120..121 "p"
         Eq@121..122 "="
-        PathExpr@122..132
-          UsePath@122..132
-            Ident@122..127 "Point"
-            ColonColon@127..129 "::"
-            Ident@129..132 "new"
-        LParen@132..133 "("
-        LitExpr@133..136
-          FloatLit@133..136 "1.0"
-        Comma@136..137 ","
-        LitExpr@137..140
-          FloatLit@137..140 "2.0"
-        RParen@140..141 ")"
+        CallExpr@122..141
+          PathExpr@122..132
+            UsePath@122..132
+              Ident@122..127 "Point"
+              ColonColon@127..129 "::"
+              Ident@129..132 "new"
+          LParen@132..133 "("
+          LitExpr@133..136
+            FloatLit@133..136 "1.0"
+          Comma@136..137 ","
+          LitExpr@137..140
+            FloatLit@137..140 "2.0"
+          RParen@140..141 ")"
         Semicolon@141..142 ";"
       LetStmt@142..156
         KwLet@142..145 "let"
         PatIdent@145..146
           Ident@145..146 "d"
         Eq@146..147 "="
-        PathExpr@147..153
-          UsePath@147..153
-            Ident@147..148 "p"
-            Dot@148..149 "."
-            Ident@149..153 "dist"
-        LParen@153..154 "("
-        RParen@154..155 ")"
+        MethodCallExpr@147..155
+          PathExpr@147..148
+            UsePath@147..148
+              Ident@147..148 "p"
+          Dot@148..149 "."
+          Ident@149..153 "dist"
+          LParen@153..154 "("
+          RParen@154..155 ")"
         Semicolon@155..156 ";"
       ExprStmt@156..172
         IfExpr@156..172
           KwIf@156..158 "if"
-          PathExpr@158..159
-            UsePath@158..159
-              Ident@158..159 "d"
-          BinaryExpr@159..163
+          BinaryExpr@158..163
+            PathExpr@158..159
+              UsePath@158..159
+                Ident@158..159 "d"
             Gt@159..160 ">"
             LitExpr@160..163
               FloatLit@160..163 "0.0"
           Block@163..172
             LBrace@163..164 "{"
             ExprStmt@164..171
-              KwReturn@164..170 "return"
+              ReturnExpr@164..170
+                KwReturn@164..170 "return"
               Semicolon@170..171 ";"
             RBrace@171..172 "}"
       RBrace@172..173 "}"

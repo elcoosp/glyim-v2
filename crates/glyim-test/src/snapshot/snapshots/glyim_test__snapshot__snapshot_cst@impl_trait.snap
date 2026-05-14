@@ -53,12 +53,13 @@ SourceFile@0..138
       Block@85..105
         LBrace@85..86 "{"
         ExprStmt@86..104
-          LitExpr@86..92
-            StringLit@86..92 "\"woof\""
-          Dot@92..93 "."
-          Ident@93..102 "to_string"
-          LParen@102..103 "("
-          RParen@103..104 ")"
+          MethodCallExpr@86..104
+            LitExpr@86..92
+              StringLit@86..92 "\"woof\""
+            Dot@92..93 "."
+            Ident@93..102 "to_string"
+            LParen@102..103 "("
+            RParen@103..104 ")"
         RBrace@104..105 "}"
     RBrace@105..106 "}"
   FnDef@106..138

@@ -156,17 +156,10 @@ fn test_field_access() {
     let fn_def = assert_child_node(&result.root, SyntaxKind::FnDef);
     let block = assert_child_node(&fn_def, SyntaxKind::Block);
     let expr_stmt = assert_child_node(&block, SyntaxKind::ExprStmt);
-    let path_expr = assert_child_node(&expr_stmt, SyntaxKind::PathExpr);
-    let path = assert_child_node(&path_expr, SyntaxKind::UsePath);
-    // The path should contain at least two identifiers (a, b)
-    let idents: Vec<_> = path
-        .children_with_tokens()
-        .filter(|e| e.kind() == SyntaxKind::Ident)
-        .collect();
-    assert!(
-        idents.len() >= 2,
-        "should have at least two identifiers for field access"
-    );
+    // Field access is wrapped in FieldExpr with PathExpr as receiver
+    let field_expr = assert_child_node(&expr_stmt, SyntaxKind::FieldExpr);
+    // Check that it contains a PathExpr (the receiver)
+    let _path = assert_child_node(&field_expr, SyntaxKind::PathExpr);
 }
 
 // S09-T08: Pattern grammar

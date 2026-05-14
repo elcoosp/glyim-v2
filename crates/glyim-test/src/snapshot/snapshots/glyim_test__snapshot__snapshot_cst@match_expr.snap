@@ -25,49 +25,52 @@ SourceFile@0..86
     Block@23..86
       LBrace@23..24 "{"
       ExprStmt@24..85
-        KwMatch@24..29 "match"
-        PathExpr@29..30
-          UsePath@29..30
-            Ident@29..30 "x"
-        LBrace@30..31 "{"
-        MatchArm@31..41
-          PatLit@31..32
-            IntLit@31..32 "0"
-          FatArrow@32..34 "=>"
-          LitExpr@34..40
-            StringLit@34..40 "\"zero\""
-          Comma@40..41 ","
-        MatchArm@41..54
-          PatLit@41..42
-            IntLit@41..42 "1"
-          Or@42..43 "|"
-          PatLit@43..44
-            IntLit@43..44 "2"
-          FatArrow@44..46 "=>"
-          LitExpr@46..53
-            StringLit@46..53 "\"small\""
-          Comma@53..54 ","
-        MatchArm@54..73
-          PatIdent@54..55
-            Ident@54..55 "n"
-          KwIf@55..57 "if"
-          PathExpr@57..58
-            UsePath@57..58
-              Ident@57..58 "n"
-          BinaryExpr@58..60
-            Lt@58..59 "<"
-            LitExpr@59..60
-              IntLit@59..60 "0"
-          FatArrow@60..62 "=>"
-          LitExpr@62..72
-            StringLit@62..72 "\"negative\""
-          Comma@72..73 ","
-        MatchArm@73..84
-          PatWild@73..74
-            Underscore@73..74 "_"
-          FatArrow@74..76 "=>"
-          LitExpr@76..83
-            StringLit@76..83 "\"large\""
-          Comma@83..84 ","
-        RBrace@84..85 "}"
+        MatchExpr@24..85
+          KwMatch@24..29 "match"
+          PathExpr@29..30
+            UsePath@29..30
+              Ident@29..30 "x"
+          LBrace@30..31 "{"
+          MatchArmList@31..84
+            MatchArm@31..41
+              PatLit@31..32
+                IntLit@31..32 "0"
+              FatArrow@32..34 "=>"
+              LitExpr@34..40
+                StringLit@34..40 "\"zero\""
+              Comma@40..41 ","
+            MatchArm@41..54
+              PatOr@41..44
+                PatLit@41..42
+                  IntLit@41..42 "1"
+                Or@42..43 "|"
+                PatLit@43..44
+                  IntLit@43..44 "2"
+              FatArrow@44..46 "=>"
+              LitExpr@46..53
+                StringLit@46..53 "\"small\""
+              Comma@53..54 ","
+            MatchArm@54..73
+              PatIdent@54..55
+                Ident@54..55 "n"
+              KwIf@55..57 "if"
+              BinaryExpr@57..60
+                PathExpr@57..58
+                  UsePath@57..58
+                    Ident@57..58 "n"
+                Lt@58..59 "<"
+                LitExpr@59..60
+                  IntLit@59..60 "0"
+              FatArrow@60..62 "=>"
+              LitExpr@62..72
+                StringLit@62..72 "\"negative\""
+              Comma@72..73 ","
+            MatchArm@73..84
+              PatWild@73..74
+                Underscore@73..74 "_"
+              FatArrow@74..76 "=>"
+              LitExpr@76..83
+                StringLit@76..83 "\"large\""
+              Comma@83..84 ","
+          RBrace@84..85 "}"
       RBrace@85..86 "}"

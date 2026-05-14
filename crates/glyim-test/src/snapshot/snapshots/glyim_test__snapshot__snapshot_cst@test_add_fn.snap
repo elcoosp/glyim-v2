@@ -30,10 +30,10 @@ SourceFile@0..28
     Block@23..28
       LBrace@23..24 "{"
       ExprStmt@24..27
-        PathExpr@24..25
-          UsePath@24..25
-            Ident@24..25 "a"
-        BinaryExpr@25..27
+        BinaryExpr@24..27
+          PathExpr@24..25
+            UsePath@24..25
+              Ident@24..25 "a"
           Plus@25..26 "+"
           PathExpr@26..27
             UsePath@26..27
