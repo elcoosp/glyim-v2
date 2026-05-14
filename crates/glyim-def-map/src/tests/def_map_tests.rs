@@ -355,3 +355,75 @@ fn t19_resolve_nonexistent_module_path() {
     let result = resolve_path(&def_map, "nonexistent::x");
     assert!(result.is_none());
 }
+
+#[test]
+fn t24_use_decl_ignored() {
+    let (def_map, diags) = build_map("use std::path; fn real() {}");
+    assert!(diags.is_empty());
+    let scope = root_scope(&def_map);
+    // use decl is not collected
+    assert_eq!(scope.values.len(), 1);
+    assert_eq!(scope.values[0].0, def_map.interner.intern("real"));
+    assert!(scope.types.is_empty());
+}
+
+#[test]
+fn t25_duplicate_name_different_modules_no_error() {
+    let (_def_map, diags) = build_map("mod a { fn f() {} } mod b { fn f() {} }");
+    assert!(diags.is_empty());
+}
+
+#[test]
+fn t26_visibility_inside_module() {
+    let (def_map, diags) = build_map("mod m { pub fn visible() {} fn hidden() {} }");
+    assert!(diags.is_empty());
+    let mod_id = def_map.modules[def_map.root].children[0].1;
+    let mod_data = &def_map.modules[mod_id];
+    assert_eq!(mod_data.scope.values.len(), 2);
+    assert_eq!(mod_data.scope.values[0].2, Visibility::Public);
+    assert_eq!(mod_data.scope.values[1].2, Visibility::Inherited);
+}
+
+#[test]
+fn t27_unique_local_def_ids() {
+    let (def_map, diags) = build_map("fn a() {} fn b() {} struct C; struct D;");
+    assert!(diags.is_empty());
+    let scope = root_scope(&def_map);
+    let mut ids = Vec::new();
+    for &(_, id, _, _) in scope.values.iter().chain(scope.types.iter()) {
+        ids.push(id.to_raw());
+    }
+    // All ids should be unique
+    let unique: std::collections::HashSet<u32> = ids.iter().cloned().collect();
+    assert_eq!(ids.len(), unique.len());
+}
+
+#[test]
+fn t28_long_path_through_separate_modules() {
+    let (def_map, diags) = build_map("mod a { fn af() {} } mod b { fn bf() {} }");
+    assert!(diags.is_empty());
+    let af = resolve_path(&def_map, "a::af");
+    assert!(af.values.is_some());
+    let bf = resolve_path(&def_map, "b::bf");
+    assert!(bf.values.is_some());
+}
+
+#[test]
+fn t29_empty_source_only_comments() {
+    let (def_map, diags) = build_map("// just a comment");
+    assert!(diags.is_empty());
+    let scope = root_scope(&def_map);
+    assert!(scope.types.is_empty());
+    assert!(scope.values.is_empty());
+    assert!(scope.macros.is_empty());
+}
+
+#[test]
+fn t30_super_with_multi_segments() {
+    let (def_map, diags) = build_map("fn top() {} mod inner { fn inside() {} }");
+    assert!(diags.is_empty());
+    let mod_id = def_map.modules[def_map.root].children[0].1;
+    let result = resolve_from(&def_map, mod_id, "super::inner::inside");
+    // Should resolve inside via super to root then down into inner
+    assert!(result.values.is_some());
+}

@@ -211,7 +211,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
 }
 
 /// Collect items from `parent_node` into `parent_module`.
-/// Handles both proper AST nodes and token patterns for module declarations.
+/// Handles AST nodes for item kinds and token patterns for module declarations.
 fn collect_items(
     parent_node: &SyntaxNode,
     parent_module: ModuleId,
@@ -225,42 +225,38 @@ fn collect_items(
     while idx < children.len() {
         let elem = &children[idx];
 
-        // --- Module detection via token pattern: `mod` ident Block ---
-        if let Some(tok) = elem.as_token() {
-            if tok.kind() == SyntaxKind::KwMod
-                && idx + 2 < children.len()
-                && let Some(name_tok) = children[idx + 1].as_token()
-                && name_tok.kind() == SyntaxKind::Ident
-                && let Some(body_node) = children[idx + 2].as_node()
-                && body_node.kind() == SyntaxKind::Block
-            {
-                let name = interner.intern(name_tok.text());
-                let span = node_span(body_node);
-                let child_module = modules.push(ModuleData {
-                    parent: Some(parent_module),
-                    children: Vec::new(),
-                    scope: ItemScope::default(),
-                    origin: ModuleOrigin::Inline { span },
-                    span,
-                });
-                modules[parent_module].children.push((name, child_module));
-                collect_items(
-                    body_node,
-                    child_module,
-                    modules,
-                    diagnostics,
-                    interner,
-                    def_counter,
-                );
-                idx += 3;
-                continue;
-            }
-            // If pattern doesn't match, skip token.
-            idx += 1;
+        // --- Module detection via token pattern: KwMod Ident Block ---
+        if let Some(tok) = elem.as_token()
+            && tok.kind() == SyntaxKind::KwMod
+            && idx + 2 < children.len()
+            && let Some(name_tok) = children[idx + 1].as_token()
+            && name_tok.kind() == SyntaxKind::Ident
+            && let Some(body_node) = children[idx + 2].as_node()
+            && body_node.kind() == SyntaxKind::Block
+        {
+            let name = interner.intern(name_tok.text());
+            let span = node_span(body_node);
+            let child_module = modules.push(ModuleData {
+                parent: Some(parent_module),
+                children: Vec::new(),
+                scope: ItemScope::default(),
+                origin: ModuleOrigin::Inline { span },
+                span,
+            });
+            modules[parent_module].children.push((name, child_module));
+            collect_items(
+                body_node,
+                child_module,
+                modules,
+                diagnostics,
+                interner,
+                def_counter,
+            );
+            idx += 3;
             continue;
         }
 
-        // --- Proper node handling ---
+        // --- Proper AST node handling ---
         if let Some(node) = elem.as_node() {
             let kind = node.kind();
             match kind {
@@ -313,7 +309,7 @@ fn collect_items(
                     tracing::warn!("STUB: Module node not yet implemented");
                 }
                 SyntaxKind::Block => {
-                    // Check if this Block starts with `mod` keyword → module.
+                    // Check if this Block starts with `mod` keyword.
                     let block_children: Vec<SyntaxElement> = node.children_with_tokens().collect();
                     if block_children.len() >= 3
                         && block_children[0]
@@ -344,7 +340,6 @@ fn collect_items(
                         idx += 1;
                         continue;
                     }
-                    // Otherwise ignore this block.
                     tracing::warn!("STUB: top-level Block ignored (not a module)");
                 }
                 SyntaxKind::UseDecl => {
@@ -395,7 +390,6 @@ fn visibility_of_node(node: &SyntaxNode) -> Visibility {
             if token.kind() == SyntaxKind::KwPub {
                 return Visibility::Public;
             }
-            // Skip trivia, commas, semicolons
             if token.kind().is_trivia()
                 || token.kind() == SyntaxKind::Comma
                 || token.kind() == SyntaxKind::Semicolon
