@@ -71,14 +71,16 @@ fn emit_statement(bc: &mut Vec<u8>, kind: &StatementKind) -> CompResult<()> {
                 bc.push(OP_STORE_LOCAL);
                 bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
             } else {
-                tracing::warn!("STUB: assign with non-empty projection not supported");
+                return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                    "bytecode backend: assign with non-empty projection not yet implemented",
+                )]);
             }
         }
         StatementKind::StorageLive(_) => {
-            tracing::debug!("StorageLive ignored in bytecode backend");
+            // Valid no-op for bytecode
         }
         StatementKind::StorageDead(_) => {
-            tracing::debug!("StorageDead ignored in bytecode backend");
+            // Valid no-op for bytecode
         }
         StatementKind::Nop => {
             // nothing
@@ -98,20 +100,52 @@ fn emit_rvalue(bc: &mut Vec<u8>, rvalue: &Rvalue) -> CompResult<()> {
             emit_operand(bc, right);
             match op {
                 BinOp::Add => bc.push(OP_ADD),
-                BinOp::Sub => tracing::warn!("STUB: Sub not implemented"),
-                BinOp::Mul => tracing::warn!("STUB: Mul not implemented"),
-                BinOp::Div => tracing::warn!("STUB: Div not implemented"),
-                _ => tracing::warn!("STUB: binary operator {:?} not implemented", op),
+                BinOp::Sub | BinOp::Mul | BinOp::Div
+                | BinOp::Rem | BinOp::Eq | BinOp::Ne
+                | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq
+                | BinOp::And | BinOp::Or | BinOp::BitAnd
+                | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
+                    return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
+                        "bytecode backend: binary operator {:?} not yet implemented",
+                        op
+                    ))]);
+                }
             }
         }
         Rvalue::Ref(_, _) => {
-            tracing::warn!("STUB: Ref not implemented");
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::Ref not yet implemented",
+            )]);
         }
         Rvalue::UnaryOp(_, _) => {
-            tracing::warn!("STUB: UnaryOp not implemented");
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::UnaryOp not yet implemented",
+            )]);
         }
-        _ => {
-            tracing::warn!("STUB: rvalue {:?} not implemented", rvalue);
+        Rvalue::Aggregate(_, _) => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::Aggregate not yet implemented",
+            )]);
+        }
+        Rvalue::Discriminant(_) => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::Discriminant not yet implemented",
+            )]);
+        }
+        Rvalue::Len(_) => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::Len not yet implemented",
+            )]);
+        }
+        Rvalue::Cast(_, _, _) => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::Cast not yet implemented",
+            )]);
+        }
+        Rvalue::Repeat(_, _) => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Rvalue::Repeat not yet implemented",
+            )]);
         }
     }
     Ok(())
@@ -133,17 +167,17 @@ fn emit_operand(bc: &mut Vec<u8>, operand: &Operand) {
                 MirConstKind::Int(val) => {
                     bc.extend_from_slice(&(*val as i64).to_le_bytes());
                 }
+                MirConstKind::Uint(val) => {
+                    bc.extend_from_slice(&(*val as i64).to_le_bytes());
+                }
                 MirConstKind::Bool(b) => {
                     bc.extend_from_slice(&(if *b { 1i64 } else { 0i64 }).to_le_bytes());
                 }
                 MirConstKind::Char(c) => {
                     bc.extend_from_slice(&(*c as i64).to_le_bytes());
                 }
-                MirConstKind::Uint(val) => {
-                    bc.extend_from_slice(&(*val as i64).to_le_bytes());
-                }
                 MirConstKind::FloatBits(bits) => {
-                    bc.extend_from_slice(&(*bits as i64).to_le_bytes());
+                    bc.extend_from_slice(&bits.to_le_bytes());
                 }
                 _ => {
                     tracing::warn!("STUB: unsupported constant kind");
@@ -166,46 +200,138 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
         } => {
             if *switch_ty == Ty::BOOL {
                 emit_operand(bc, discr);
-                // For bool: SwitchTargets contains one entry for false (value 0)
-                // and the otherwise target for true.
                 let false_target = targets
                     .iter()
                     .next()
                     .map(|(_, idx)| idx)
                     .unwrap_or_else(|| targets.otherwise());
                 let true_target = targets.otherwise();
-                // Jump if true (non-zero)
                 bc.push(OP_JUMP_IF);
                 bc.extend_from_slice(&true_target.to_raw().to_le_bytes());
-                // Jump to false target
                 bc.push(OP_JUMP);
                 bc.extend_from_slice(&false_target.to_raw().to_le_bytes());
             } else {
-                tracing::warn!("STUB: SwitchInt for non-bool type not implemented");
+                return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                    "bytecode backend: SwitchInt for non-bool type not yet implemented",
+                )]);
             }
         }
         TerminatorKind::Goto { target } => {
             bc.push(OP_JUMP);
             bc.extend_from_slice(&target.to_raw().to_le_bytes());
         }
-        TerminatorKind::Call {
-            func: _,
-            args: _,
-            destination: _,
-            target: _,
-            cleanup: _,
-        } => {
-            tracing::warn!("STUB: Call not implemented");
+        TerminatorKind::Call { .. } => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "bytecode backend: Call terminator not yet implemented",
+            )]);
         }
         TerminatorKind::Unreachable => {
-            // nothing
+            // Valid no-op: unreachable code produces no bytecode
         }
-        _ => {
-            tracing::warn!("STUB: terminator {:?} not implemented", kind);
+        TerminatorKind::Assert { .. } | TerminatorKind::Drop { .. } => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
+                "bytecode backend: terminator {:?} not yet implemented",
+                kind
+            ))]);
         }
     }
     Ok(())
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use glyim_core::def_id::{CrateId, DefId, LocalDefId};
+    use glyim_mir::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_unsupported_ref_returns_error() {
+        let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+        let local_idx = LocalIdx::from_raw(1);
+        body.locals.push(glyim_mir::LocalDecl {
+            ty: glyim_type::Ty::ERROR,
+            mutability: glyim_core::primitives::Mutability::Not,
+            source_info: glyim_mir::SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        body.basic_blocks[BasicBlockIdx::from_raw(0)]
+            .statements
+            .push(glyim_mir::Statement {
+                kind: glyim_mir::StatementKind::Assign(
+                    glyim_mir::Place::new(local_idx),
+                    glyim_mir::Rvalue::Ref(
+                        glyim_mir::Place::new(LocalIdx::from_raw(0)),
+                        glyim_mir::BorrowKind::Shared,
+                    ),
+                ),
+                source_info: glyim_mir::SourceInfo::new(glyim_span::Span::DUMMY),
+            });
+
+        let backend = BytecodeBackend::new();
+        let result = backend.generate_function(&Arc::new(body));
+        assert!(result.is_err(), "Rvalue::Ref should return Err, not silently produce wrong bytecode");
+    }
+
+    #[test]
+    fn test_unsupported_call_returns_error() {
+        let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+        body.basic_blocks[BasicBlockIdx::from_raw(0)].terminator = Terminator {
+            kind: TerminatorKind::Call {
+                func: Operand::Constant(MirConst {
+                    kind: MirConstKind::Int(0),
+                    ty: glyim_type::Ty::ERROR,
+                    span: glyim_span::Span::DUMMY,
+                }),
+                args: Vec::new(),
+                destination: Place::new(LocalIdx::from_raw(0)),
+                target: Some(BasicBlockIdx::from_raw(1)),
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        };
+
+        let backend = BytecodeBackend::new();
+        let result = backend.generate_function(&Arc::new(body));
+        assert!(result.is_err(), "Call terminator should return Err");
+    }
+
+    #[test]
+    fn test_unsupported_projection_returns_error() {
+        let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+        let local_idx = LocalIdx::from_raw(1);
+        body.locals.push(glyim_mir::LocalDecl {
+            ty: glyim_type::Ty::ERROR,
+            mutability: glyim_core::primitives::Mutability::Not,
+            source_info: glyim_mir::SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        let place_with_proj = Place {
+            local: local_idx,
+            projection: Box::new([ProjectionElem::Deref]),
+        };
+        body.basic_blocks[BasicBlockIdx::from_raw(0)]
+            .statements
+            .push(glyim_mir::Statement {
+                kind: glyim_mir::StatementKind::Assign(
+                    place_with_proj,
+                    glyim_mir::Rvalue::Use(Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(1),
+                        ty: glyim_type::Ty::ERROR,
+                        span: glyim_span::Span::DUMMY,
+                    })),
+                ),
+                source_info: glyim_mir::SourceInfo::new(glyim_span::Span::DUMMY),
+            });
+
+        let backend = BytecodeBackend::new();
+        let result = backend.generate_function(&Arc::new(body));
+        assert!(result.is_err(), "Non-empty projection should return Err");
+    }
+
+    #[test]
+    fn test_dummy_body_succeeds() {
+        let body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+        let backend = BytecodeBackend::new();
+        let result = backend.generate_function(&Arc::new(body));
+        assert!(result.is_ok(), "Dummy body should compile successfully");
+    }
+}
