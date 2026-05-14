@@ -139,6 +139,23 @@ impl<'a> Parser<'a> {
         if self.current_kind() == SyntaxKind::KwUnsafe {
             self.bump(); // unsafe
             // unsafe applied to following item; just parse it.
+            // If nothing valid follows, it's an error but don't infinite loop.
+            if !matches!(
+                self.current_kind(),
+                SyntaxKind::KwFn
+                    | SyntaxKind::KwStruct
+                    | SyntaxKind::KwEnum
+                    | SyntaxKind::KwTrait
+                    | SyntaxKind::KwImpl
+                    | SyntaxKind::KwMod
+                    | SyntaxKind::KwConst
+                    | SyntaxKind::KwStatic
+                    | SyntaxKind::KwType
+                    | SyntaxKind::KwExtern
+            ) {
+                self.error("expected item after 'unsafe'");
+                return;
+            }
         }
 
         match self.current_kind() {
