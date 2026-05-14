@@ -70,107 +70,75 @@ fn emit_statement(bc: &mut Vec<u8>, kind: &StatementKind) -> CompResult<()> {
             if place.projection.is_empty() {
                 bc.push(OP_STORE_LOCAL);
                 bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
+                Ok(())
             } else {
-                return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
                     "bytecode backend: assign with non-empty projection not yet implemented",
-                )]);
+                )])
             }
         }
-        StatementKind::StorageLive(_) => {
-            // Valid no-op for bytecode
-        }
-        StatementKind::StorageDead(_) => {
-            // Valid no-op for bytecode
-        }
-        StatementKind::Nop => {
-            // nothing
-        }
+        StatementKind::StorageLive(_) => Ok(()),
+        StatementKind::StorageDead(_) => Ok(()),
+        StatementKind::Nop => Ok(()),
     }
-    Ok(())
 }
 
 fn emit_rvalue(bc: &mut Vec<u8>, rvalue: &Rvalue) -> CompResult<()> {
     match rvalue {
         Rvalue::Use(operand) => {
-            emit_operand(bc, operand);
+            emit_operand(bc, operand)?;
+            Ok(())
         }
         Rvalue::BinaryOp(op, operands_box) => {
             let (left, right) = operands_box.as_ref();
-            emit_operand(bc, left);
-            emit_operand(bc, right);
+            emit_operand(bc, left)?;
+            emit_operand(bc, right)?;
             match op {
                 BinOp::Add => bc.push(OP_ADD),
-                BinOp::Sub
-                | BinOp::Mul
-                | BinOp::Div
-                | BinOp::Rem
-                | BinOp::Eq
-                | BinOp::Ne
-                | BinOp::Lt
-                | BinOp::Gt
-                | BinOp::LtEq
-                | BinOp::GtEq
-                | BinOp::And
-                | BinOp::Or
-                | BinOp::BitAnd
-                | BinOp::BitOr
-                | BinOp::BitXor
-                | BinOp::Shl
-                | BinOp::Shr => {
+                _ => {
                     return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                         "bytecode backend: binary operator {:?} not yet implemented",
                         op
                     ))]);
                 }
             }
+            Ok(())
         }
-        Rvalue::Ref(_, _) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::Ref not yet implemented",
-            )]);
-        }
-        Rvalue::UnaryOp(_, _) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::UnaryOp not yet implemented",
-            )]);
-        }
-        Rvalue::Aggregate(_, _) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::Aggregate not yet implemented",
-            )]);
-        }
-        Rvalue::Discriminant(_) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::Discriminant not yet implemented",
-            )]);
-        }
-        Rvalue::Len(_) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::Len not yet implemented",
-            )]);
-        }
-        Rvalue::Cast(_, _, _) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::Cast not yet implemented",
-            )]);
-        }
-        Rvalue::Repeat(_, _) => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Rvalue::Repeat not yet implemented",
-            )]);
-        }
+        Rvalue::Ref(_, _) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::Ref not yet implemented",
+        )]),
+        Rvalue::UnaryOp(_, _) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::UnaryOp not yet implemented",
+        )]),
+        Rvalue::Aggregate(_, _) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::Aggregate not yet implemented",
+        )]),
+        Rvalue::Discriminant(_) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::Discriminant not yet implemented",
+        )]),
+        Rvalue::Len(_) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::Len not yet implemented",
+        )]),
+        Rvalue::Cast(_, _, _) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::Cast not yet implemented",
+        )]),
+        Rvalue::Repeat(_, _) => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Rvalue::Repeat not yet implemented",
+        )]),
     }
-    Ok(())
 }
 
-fn emit_operand(bc: &mut Vec<u8>, operand: &Operand) {
+fn emit_operand(bc: &mut Vec<u8>, operand: &Operand) -> CompResult<()> {
     match operand {
         Operand::Copy(place) | Operand::Move(place) => {
             if place.projection.is_empty() {
                 bc.push(OP_LOAD_LOCAL);
                 bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
+                Ok(())
             } else {
-                tracing::warn!("STUB: operand with non-empty projection not supported");
+                Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                    "bytecode backend: operand with non-empty projection not yet implemented",
+                )])
             }
         }
         Operand::Constant(mir_const) => {
@@ -196,6 +164,7 @@ fn emit_operand(bc: &mut Vec<u8>, operand: &Operand) {
                     bc.extend_from_slice(&0i64.to_le_bytes());
                 }
             }
+            Ok(())
         }
     }
 }
@@ -204,6 +173,7 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
     match kind {
         TerminatorKind::Return => {
             bc.push(OP_RETURN);
+            Ok(())
         }
         TerminatorKind::SwitchInt {
             discr,
@@ -211,7 +181,7 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
             targets,
         } => {
             if *switch_ty == Ty::BOOL {
-                emit_operand(bc, discr);
+                emit_operand(bc, discr)?;
                 let false_target = targets
                     .iter()
                     .next()
@@ -222,32 +192,29 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
                 bc.extend_from_slice(&true_target.to_raw().to_le_bytes());
                 bc.push(OP_JUMP);
                 bc.extend_from_slice(&false_target.to_raw().to_le_bytes());
+                Ok(())
             } else {
-                return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
                     "bytecode backend: SwitchInt for non-bool type not yet implemented",
-                )]);
+                )])
             }
         }
         TerminatorKind::Goto { target } => {
             bc.push(OP_JUMP);
             bc.extend_from_slice(&target.to_raw().to_le_bytes());
+            Ok(())
         }
-        TerminatorKind::Call { .. } => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "bytecode backend: Call terminator not yet implemented",
-            )]);
-        }
-        TerminatorKind::Unreachable => {
-            // Valid no-op: unreachable code produces no bytecode
-        }
-        TerminatorKind::Assert { .. } | TerminatorKind::Drop { .. } => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
+        TerminatorKind::Call { .. } => Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "bytecode backend: Call terminator not yet implemented",
+        )]),
+        TerminatorKind::Unreachable => Ok(()),
+        TerminatorKind::Assert { .. } | TerminatorKind::Drop { .. } => Err(vec![
+            glyim_diag::GlyimDiagnostic::internal_error(format!(
                 "bytecode backend: terminator {:?} not yet implemented",
                 kind
-            ))]);
-        }
+            )),
+        ]),
     }
-    Ok(())
 }
 
 #[cfg(test)]

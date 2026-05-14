@@ -622,14 +622,7 @@ fn lower_block_to_expr(
         }
     }
 
-    let tail = if last_has_semi {
-        if let Some(last) = pending.take() {
-            stmts.push(last);
-        }
-        None
-    } else {
-        pending.take()
-    };
+    let tail = if last_has_semi { if let Some(last) = pending.take() { stmts.push(last); } None } else { pending.take() };
 
     let expr = Expr::Block { stmts, tail };
     exprs.push(expr)
@@ -739,25 +732,14 @@ fn lower_expr(
 
 // ---------- sub-expressions ----------
 
+
 fn lower_binary_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     exprs: &mut IndexVec<ExprId, Expr>,
     pats: &mut IndexVec<PatId, Pat>,
 ) -> Option<ExprId> {
-    // BinaryExpr: lhs, op token, rhs (all direct children)
-    let mut children: Vec<SyntaxNode> = node
-        .children()
-        .filter(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)
-        .collect();
-    if children.len() < 2 {
-        tracing::warn!("BinaryExpr with fewer than 2 children");
-        return None;
-    }
-    let lhs = children.remove(0);
-    let rhs = children.remove(0);
-    let lhs_id = lower_expr(&lhs, interner, exprs, pats)?;
-    let rhs_id = lower_expr(&rhs, interner, exprs, pats)?;
+    // First, try to find operator and adjacent expressions by token position
     let op_token = node
         .children_with_tokens()
         .filter_map(|el| el.into_token())
@@ -766,15 +748,71 @@ fn lower_binary_expr(
                 && t.kind() != SyntaxKind::Ident
                 && t.kind() != SyntaxKind::LParen
                 && t.kind() != SyntaxKind::RParen
-        })?;
-    let op = lower_bin_op_token(&op_token);
-    let expr = Expr::Binary {
-        op,
-        lhs: lhs_id,
-        rhs: rhs_id,
-    };
+        });
+
+    if let Some(op_token) = op_token {
+        // Find LHS: expression node that ends before the operator starts
+        let lhs_node = node
+            .children_with_tokens()
+            .take_while(|el| match el {
+                glyim_syntax::SyntaxElement::Token(t) => t != &op_token,
+                _ => true,
+            })
+            .filter_map(|el| el.as_node().cloned())
+            .last()
+            .filter(|n| is_expr_node(n) || n.kind() == SyntaxKind::Block);
+
+        // Find RHS: expression node that starts after the operator ends
+        let rhs_node = node
+            .children_with_tokens()
+            .skip_while(|el| match el {
+                glyim_syntax::SyntaxElement::Token(t) => t != &op_token,
+                _ => true,
+            })
+            .skip(1)
+            .find_map(|el| el.as_node().cloned())
+            .filter(|n| is_expr_node(n) || n.kind() == SyntaxKind::Block);
+
+        if let (Some(lhs), Some(rhs)) = (lhs_node, rhs_node) {
+            let lhs_id = lower_expr(&lhs, interner, exprs, pats)?;
+            let rhs_id = lower_expr(&rhs, interner, exprs, pats)?;
+            let op = lower_bin_op_token(&op_token);
+            let expr = Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
+            return Some(exprs.push(expr));
+        }
+    }
+
+    // Fallback: collect all expression children in order
+    let expr_children: Vec<SyntaxNode> = node
+        .children()
+        .filter(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)
+        .collect();
+
+    if expr_children.len() < 2 {
+        tracing::warn!("BinaryExpr with fewer than 2 expression children");
+        return None;
+    }
+
+    let lhs_node = &expr_children[0];
+    let rhs_node = &expr_children[1];
+    let lhs_id = lower_expr(lhs_node, interner, exprs, pats)?;
+    let rhs_id = lower_expr(rhs_node, interner, exprs, pats)?;
+    // Find any operator token between them (for completeness)
+    let lhs_range = lhs_node.text_range();
+    let rhs_range = rhs_node.text_range();
+    let op_token = node
+        .children_with_tokens()
+        .filter_map(|el| el.into_token())
+        .find(|t| {
+            let range = t.text_range();
+            range.start() >= lhs_range.end() && range.end() <= rhs_range.start()
+                && !t.kind().is_trivia()
+        });
+    let op = op_token.map_or(BinOp::Add, |t| lower_bin_op_token(&t));
+    let expr = Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
     Some(exprs.push(expr))
 }
+
 
 fn lower_bin_op_token(token: &SyntaxToken) -> BinOp {
     match token.text() {
@@ -887,25 +925,126 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
     let text = token.text().to_string();
     match token.kind() {
         SyntaxKind::IntLit => {
-            if let Ok(i) = text.parse::<i128>() {
-                return Literal::Int(i, None);
+            // Strip suffix (e.g., 42i32 -> 42) and parse
+            let (num_str, suffix) = split_int_literal(&text);
+            let (value, is_unsigned) = parse_int_with_prefix(&num_str);
+            if let Some(suffix) = suffix {
+                match suffix.as_str() {
+                    "i8" => return Literal::Int(value, Some(IntTy::I8)),
+                    "i16" => return Literal::Int(value, Some(IntTy::I16)),
+                    "i32" => return Literal::Int(value, Some(IntTy::I32)),
+                    "i64" => return Literal::Int(value, Some(IntTy::I64)),
+                    "isize" => return Literal::Int(value, Some(IntTy::Isize)),
+                    "u8" => return Literal::Uint(value as u128, Some(UintTy::U8)),
+                    "u16" => return Literal::Uint(value as u128, Some(UintTy::U16)),
+                    "u32" => return Literal::Uint(value as u128, Some(UintTy::U32)),
+                    "u64" => return Literal::Uint(value as u128, Some(UintTy::U64)),
+                    "usize" => return Literal::Uint(value as u128, Some(UintTy::Usize)),
+                    _ => {
+                        tracing::warn!("Unknown integer suffix: {}", suffix);
+                        return Literal::Int(value, None);
+                    }
+                }
+            }
+            if is_unsigned {
+                Literal::Uint(value as u128, None)
+            } else {
+                Literal::Int(value, None)
             }
         }
         SyntaxKind::FloatLit => {
-            // Parse float to f64 then encode as u64 bits for storage
-            if let Ok(f) = text.parse::<f64>() {
+            let (num_str, _suffix) = split_float_literal(&text);
+            if let Ok(f) = num_str.parse::<f64>() {
                 return Literal::Float(f.to_bits(), FloatTy::F64);
             }
-            tracing::warn!("STUB: float literal not fully supported");
-            return Literal::Float(0, FloatTy::F64);
+            tracing::warn!("Failed to parse float literal: {}", text);
+            Literal::Unit
         }
-        SyntaxKind::KwTrue | SyntaxKind::BoolLit if text == "true" => return Literal::Bool(true),
-        SyntaxKind::KwFalse | SyntaxKind::BoolLit if text == "false" => {
-            return Literal::Bool(false);
+        SyntaxKind::KwTrue | SyntaxKind::BoolLit if text == "true" => Literal::Bool(true),
+        SyntaxKind::KwFalse | SyntaxKind::BoolLit if text == "false" => Literal::Bool(false),
+        SyntaxKind::CharLit => {
+            let inner = &text[1..text.len()-1];
+            if let Some(c) = parse_char_literal(inner) {
+                Literal::Char(c)
+            } else {
+                Literal::Unit
+            }
         }
-        _ => {}
+        SyntaxKind::StringLit => {
+            // For now, just create a dummy Name; real interner needed
+            // String literals not fully supported in HIR lowering yet; return unit.
+            Literal::Unit
+        }
+        _ => Literal::Unit
     }
-    Literal::Unit
+}
+
+// Helper functions (to be added above)
+fn split_int_literal(s: &str) -> (String, Option<String>) {
+    let mut digits_end = s.len();
+    for (i, ch) in s.char_indices() {
+        if !(ch.is_ascii_digit() || ch == '_' || ch == '-' || ch == '+' || ch == 'x' || ch == 'X' || ch == 'o' || ch == 'O' || ch == 'b' || ch == 'B') {
+            digits_end = i;
+            break;
+        }
+    }
+    let num_part = &s[..digits_end];
+    let suffix = if digits_end < s.len() { Some(&s[digits_end..]) } else { None };
+    (num_part.replace('_', ""), suffix.map(|s| s.to_string()))
+}
+
+fn parse_int_with_prefix(s: &str) -> (i128, bool) {
+    let s = s.trim_start_matches('+');
+    if s.starts_with("0x") || s.starts_with("0X") {
+        let hex = &s[2..];
+        let val = i128::from_str_radix(hex, 16).unwrap_or(0);
+        (val, false)
+    } else if s.starts_with("0o") || s.starts_with("0O") {
+        let oct = &s[2..];
+        let val = i128::from_str_radix(oct, 8).unwrap_or(0);
+        (val, false)
+    } else if s.starts_with("0b") || s.starts_with("0B") {
+        let bin = &s[2..];
+        let val = i128::from_str_radix(bin, 2).unwrap_or(0);
+        (val, false)
+    } else {
+        let val = s.parse::<i128>().unwrap_or(0);
+        (val, s.starts_with('-'))
+    }
+}
+
+fn split_float_literal(s: &str) -> (String, Option<String>) {
+    // Similar but simpler: find first non-digit, non-'.', non-'e', non-'E', non-'+', non'-'
+    let mut digits_end = s.len();
+    for (i, ch) in s.char_indices() {
+        if !(ch.is_ascii_digit() || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') {
+            digits_end = i;
+            break;
+        }
+    }
+    let num_part = &s[..digits_end];
+    let suffix = if digits_end < s.len() { Some(&s[digits_end..]) } else { None };
+    (num_part.to_string(), suffix.map(|s| s.to_string()))
+}
+
+fn parse_char_literal(s: &str) -> Option<char> {
+    if s.len() == 1 {
+        return s.chars().next();
+    }
+    // Basic escape handling
+    if s.starts_with('\\') {
+        match &s[1..] {
+            "n" => Some('\n'),
+            "r" => Some('\r'),
+            "t" => Some('\t'),
+            "\\" => Some('\\'),
+            "'" => Some('\''),
+            "\"" => Some('\"'),
+            _ => None,
+        }
+    } else {
+        None
+    }
 }
 
 fn lower_call_expr(

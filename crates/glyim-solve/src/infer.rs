@@ -226,17 +226,6 @@ impl InferenceTable {
                                 ),
                             )]);
                         }
-
-                        if self.occurs(ctx, var, b) {
-                            return Err(vec![GlyimDiagnostic::type_error(
-                                span,
-                                format!(
-                                    "cannot construct infinite type: {} = {}",
-                                    PrintTy::new(a, ctx),
-                                    PrintTy::new(b, ctx)
-                                ),
-                            )]);
-                        }
                         self.ty_vars[var].value = Some(b);
                         Ok(Vec::new())
                     }
