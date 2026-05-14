@@ -23,8 +23,11 @@ pub struct Interpreter<'tcx> {
     call_stack: Vec<CallFrame>,
 }
 
+#[allow(dead_code)]
 struct CallFrame {
-    body: Body,    locals: Vec<Option<InterpValue>>,
+    body: Body,
+    bb: BasicBlockIdx,
+    locals: Vec<Option<InterpValue>>,
     return_place: Place,
     target_bb: BasicBlockIdx,
 }
@@ -79,7 +82,7 @@ impl<'tcx> Interpreter<'tcx> {
         self.run_current_function()
     }
 
-        fn run_current_function(&mut self) -> InterpResult<()> {
+    fn run_current_function(&mut self) -> InterpResult<()> {
         let mut body = self.current_body.take().unwrap();
         let mut bb_idx = self.current_bb;
 
@@ -145,12 +148,25 @@ impl<'tcx> Interpreter<'tcx> {
                 TerminatorKind::Unreachable => {
                     self.current_body = Some(body);
                     self.current_bb = bb_idx;
-                    return Err(InterpError::Panic("reached unreachable terminator".to_string()));
+                    return Err(InterpError::Panic(
+                        "reached unreachable terminator".to_string(),
+                    ));
                 }
-                TerminatorKind::Call { func, args, destination, target, cleanup: _ } => {
+                TerminatorKind::Call {
+                    func,
+                    args,
+                    destination,
+                    target,
+                    cleanup: _,
+                } => {
                     let callee_id = self.resolve_callee(&func)?;
-                    let callee_body = self.function_table.get(&callee_id).cloned()
-                        .ok_or_else(|| InterpError::Panic(format!("function not found: {:?}", callee_id)))?;
+                    let callee_body =
+                        self.function_table
+                            .get(&callee_id)
+                            .cloned()
+                            .ok_or_else(|| {
+                                InterpError::Panic(format!("function not found: {:?}", callee_id))
+                            })?;
 
                     let mut arg_values = Vec::new();
                     for arg_op in &args {
@@ -169,7 +185,8 @@ impl<'tcx> Interpreter<'tcx> {
                         callee_locals[i + 1] = Some(val);
                     }
 
-                    let next_bb = target.unwrap_or_else(|| BasicBlockIdx::from_raw((bb_idx.index() + 1) as u32));
+                    let next_bb = target
+                        .unwrap_or_else(|| BasicBlockIdx::from_raw((bb_idx.index() + 1) as u32));
 
                     let caller_frame = CallFrame {
                         body,
@@ -185,14 +202,22 @@ impl<'tcx> Interpreter<'tcx> {
                     body = callee_body;
                     bb_idx = BasicBlockIdx::from_raw(0);
                 }
-                TerminatorKind::Assert { cond, expected, target, cleanup: _, msg } => {
+                TerminatorKind::Assert {
+                    cond,
+                    expected,
+                    target,
+                    cleanup: _,
+                    msg,
+                } => {
                     let val = self.eval_operand(&cond)?;
                     let is_true = match val {
                         InterpValue::Bool(b) => b,
                         _ => {
                             self.current_body = Some(body);
                             self.current_bb = bb_idx;
-                            return Err(InterpError::Panic("assert condition must be bool".to_string()));
+                            return Err(InterpError::Panic(
+                                "assert condition must be bool".to_string(),
+                            ));
                         }
                     };
                     if is_true == expected {
@@ -203,7 +228,11 @@ impl<'tcx> Interpreter<'tcx> {
                         return Err(InterpError::Panic(format!("assert failed: {:?}", msg)));
                     }
                 }
-                TerminatorKind::Drop { place: _, target, cleanup: _ } => {
+                TerminatorKind::Drop {
+                    place: _,
+                    target,
+                    cleanup: _,
+                } => {
                     bb_idx = target;
                 }
             }
@@ -244,27 +273,27 @@ impl<'tcx> Interpreter<'tcx> {
                 tracing::warn!("STUB: Ref rvalue not implemented");
                 Err(InterpError::Panic("Ref rvalue not implemented".into()))
             }
-            Rvalue::Aggregate(kind, operands) => {
-                match kind {
-                    AggregateKind::Tuple => {
-                        if operands.is_empty() {
-                            Ok(InterpValue::Unit)
-                        } else {
-                            self.eval_operand(&operands[0])
-                        }
-                    }
-                    _ => {
-                        tracing::warn!("STUB: Aggregate kind {:?} not implemented", kind);
-                        Err(InterpError::Panic(format!(
-                            "Aggregate kind {:?} not implemented",
-                            kind
-                        )))
+            Rvalue::Aggregate(kind, operands) => match kind {
+                AggregateKind::Tuple => {
+                    if operands.is_empty() {
+                        Ok(InterpValue::Unit)
+                    } else {
+                        self.eval_operand(&operands[0])
                     }
                 }
-            }
+                _ => {
+                    tracing::warn!("STUB: Aggregate kind {:?} not implemented", kind);
+                    Err(InterpError::Panic(format!(
+                        "Aggregate kind {:?} not implemented",
+                        kind
+                    )))
+                }
+            },
             Rvalue::Discriminant(_) => {
                 tracing::warn!("STUB: Discriminant rvalue not implemented");
-                Err(InterpError::Panic("Discriminant rvalue not implemented".into()))
+                Err(InterpError::Panic(
+                    "Discriminant rvalue not implemented".into(),
+                ))
             }
             Rvalue::Len(place) => {
                 let local_decl = &self.local_decls[place.local.index()];
@@ -315,13 +344,20 @@ impl<'tcx> Interpreter<'tcx> {
             }
             MirConstKind::FnRef(_) => {
                 tracing::warn!("STUB: FnRef constant used as value? Not supported");
-                Err(InterpError::Panic("FnRef constant not supported as value".into()))
+                Err(InterpError::Panic(
+                    "FnRef constant not supported as value".into(),
+                ))
             }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
         }
     }
 
-    fn eval_binary_op(&self, op: BinOp, left: &InterpValue, right: &InterpValue) -> InterpResult<InterpValue> {
+    fn eval_binary_op(
+        &self,
+        op: BinOp,
+        left: &InterpValue,
+        right: &InterpValue,
+    ) -> InterpResult<InterpValue> {
         match (left, right) {
             (InterpValue::Int(l), InterpValue::Int(r)) => {
                 let result = match op {
@@ -365,9 +401,15 @@ impl<'tcx> Interpreter<'tcx> {
                 BinOp::Ne => Ok(InterpValue::Bool(l != r)),
                 BinOp::And => Ok(InterpValue::Bool(*l && *r)),
                 BinOp::Or => Ok(InterpValue::Bool(*l || *r)),
-                _ => Err(InterpError::Panic(format!("unsupported bool binop: {:?}", op))),
+                _ => Err(InterpError::Panic(format!(
+                    "unsupported bool binop: {:?}",
+                    op
+                ))),
             },
-            _ => Err(InterpError::Panic(format!("unsupported binop types: {:?}", op))),
+            _ => Err(InterpError::Panic(format!(
+                "unsupported binop types: {:?}",
+                op
+            ))),
         }
     }
 
@@ -375,7 +417,10 @@ impl<'tcx> Interpreter<'tcx> {
         match (op, val) {
             (UnOp::Not, InterpValue::Bool(b)) => Ok(InterpValue::Bool(!b)),
             (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-i)),
-            _ => Err(InterpError::Panic(format!("unsupported unary op: {:?}", op))),
+            _ => Err(InterpError::Panic(format!(
+                "unsupported unary op: {:?}",
+                op
+            ))),
         }
     }
 
@@ -397,7 +442,10 @@ impl<'tcx> Interpreter<'tcx> {
         }
         let idx = place.local.index();
         if idx >= self.locals.len() {
-            return Err(InterpError::Panic(format!("local index out of bounds: {}", idx)));
+            return Err(InterpError::Panic(format!(
+                "local index out of bounds: {}",
+                idx
+            )));
         }
         self.locals[idx] = Some(val);
         Ok(())
@@ -407,12 +455,17 @@ impl<'tcx> Interpreter<'tcx> {
         match func {
             Operand::Constant(c) => match &c.kind {
                 MirConstKind::FnRef(def_id) => Ok(*def_id),
-                MirConstKind::Int(id) => {
-                    Ok(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(*id as u32)))
-                }
-                _ => Err(InterpError::Panic("callee must be a function reference".into())),
+                MirConstKind::Int(id) => Ok(DefId::new(
+                    CrateId::from_raw(0),
+                    LocalDefId::from_raw(*id as u32),
+                )),
+                _ => Err(InterpError::Panic(
+                    "callee must be a function reference".into(),
+                )),
             },
-            _ => Err(InterpError::Panic("indirect function calls not implemented".into())),
+            _ => Err(InterpError::Panic(
+                "indirect function calls not implemented".into(),
+            )),
         }
     }
 
@@ -440,7 +493,9 @@ impl<'tcx> Interpreter<'tcx> {
                 glyim_type::ConstKind::Uint(n) => Ok(*n as usize),
                 _ => {
                     tracing::warn!("STUB: Len for non-constant array length");
-                    Err(InterpError::Panic("Len: unsupported array length kind".into()))
+                    Err(InterpError::Panic(
+                        "Len: unsupported array length kind".into(),
+                    ))
                 }
             },
             _ => Err(InterpError::Panic("Len: expected array type".into())),
