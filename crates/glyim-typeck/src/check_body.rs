@@ -270,7 +270,7 @@ fn check_expr(
                     ty: tail_ty,
                     span: Span::DUMMY,
                 };
-                return (block_expr, tail_ty);
+                (block_expr, tail_ty)
             } else {
                 let unit_expr = thir::Expr {
                     kind: thir::ExprKind::Block {
@@ -280,7 +280,7 @@ fn check_expr(
                     ty: Ty::UNIT,
                     span: Span::DUMMY,
                 };
-                return (unit_expr, Ty::UNIT);
+                (unit_expr, Ty::UNIT)
             }
         }
         Expr::Missing => {
@@ -290,7 +290,7 @@ fn check_expr(
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             };
-            return (unit_expr, Ty::UNIT);
+            (unit_expr, Ty::UNIT)
         }
         _ => {
             chk.diagnostics.push(GlyimDiagnostic::type_error(
