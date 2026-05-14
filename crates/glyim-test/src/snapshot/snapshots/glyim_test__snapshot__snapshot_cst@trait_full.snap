@@ -9,9 +9,10 @@ SourceFile@0..163
     KwTrait@3..8 "trait"
     Ident@8..16 "Iterator"
     LBrace@16..17 "{"
-    KwType@17..21 "type"
-    Ident@21..25 "Item"
-    Semicolon@25..26 ";"
+    TypeAlias@17..26
+      KwType@17..21 "type"
+      Ident@21..25 "Item"
+      Semicolon@25..26 ";"
     FnDef@26..63
       KwFn@26..28 "fn"
       Ident@28..32 "next"

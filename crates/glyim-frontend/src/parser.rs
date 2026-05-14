@@ -181,6 +181,7 @@ impl<'a> Parser<'a> {
                 self.finish_node(); // Module
             }
             SyntaxKind::KwConst => {
+                self.start_node(SyntaxKind::ConstDef);
                 self.bump(); // const
                 self.bump_expected(SyntaxKind::Ident);
                 self.expect(SyntaxKind::Colon);
@@ -190,8 +191,10 @@ impl<'a> Parser<'a> {
                     self.parse_expr();
                 }
                 self.expect(SyntaxKind::Semicolon);
+                self.finish_node();
             }
             SyntaxKind::KwStatic => {
+                self.start_node(SyntaxKind::StaticDef);
                 self.bump(); // static
                 if self.current_kind() == SyntaxKind::KwRef {
                     self.bump();
@@ -207,8 +210,10 @@ impl<'a> Parser<'a> {
                     self.parse_expr();
                 }
                 self.expect(SyntaxKind::Semicolon);
+                self.finish_node();
             }
             SyntaxKind::KwType => {
+                self.start_node(SyntaxKind::TypeAlias);
                 self.bump(); // type
                 self.bump_expected(SyntaxKind::Ident);
                 if self.current_kind() == SyntaxKind::Lt {
@@ -219,8 +224,10 @@ impl<'a> Parser<'a> {
                     self.parse_type();
                 }
                 self.expect(SyntaxKind::Semicolon);
+                self.finish_node();
             }
             SyntaxKind::KwExtern => {
+                self.start_node(SyntaxKind::ExternBlock);
                 self.bump(); // extern
                 if self.current_kind() == SyntaxKind::StringLit {
                     self.bump(); // ABI string
@@ -230,6 +237,7 @@ impl<'a> Parser<'a> {
                 } else {
                     self.expect(SyntaxKind::Semicolon);
                 }
+                self.finish_node();
             }
             _ => {
                 self.error(format!("expected item, found {:?}", self.current_kind()));
@@ -471,6 +479,7 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
+                    self.start_node(SyntaxKind::TypeAlias);
                     self.bump(); // type
                     self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Colon {
@@ -485,8 +494,10 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 SyntaxKind::KwConst => {
+                    self.start_node(SyntaxKind::ConstDef);
                     self.bump(); // const
                     self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
@@ -496,6 +507,7 @@ impl<'a> Parser<'a> {
                         self.parse_expr();
                     }
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 _ => {
                     self.error(format!(
@@ -531,6 +543,7 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
+                    self.start_node(SyntaxKind::TypeAlias);
                     self.bump(); // type
                     self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Eq {
@@ -538,8 +551,10 @@ impl<'a> Parser<'a> {
                         self.parse_type();
                     }
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 SyntaxKind::KwConst => {
+                    self.start_node(SyntaxKind::ConstDef);
                     self.bump(); // const
                     self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
@@ -547,6 +562,7 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Eq);
                     self.parse_expr();
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 _ => {
                     self.error(format!(
