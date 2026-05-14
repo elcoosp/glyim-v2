@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 use crate::parser::parse_to_syntax;
 use glyim_span::FileId;
 
@@ -8,7 +9,7 @@ fn file_id() -> FileId {
 // ─── Tuple field access ───
 #[test]
 fn test_tuple_field_access() {
-    let _result = parse_to_syntax("fn f() { x.0 }", file_id());
+    let result = parse_to_syntax("fn f() { x.0 }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_tuple_field_access: {}", d.message);
     }
@@ -17,7 +18,7 @@ fn test_tuple_field_access() {
 
 #[test]
 fn test_tuple_field_method() {
-    let _result = parse_to_syntax("fn f() { x.0.method() }", file_id());
+    let result = parse_to_syntax("fn f() { x.0.method() }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_tuple_field_access: {}", d.message);
     }
@@ -30,7 +31,7 @@ fn test_tuple_field_method() {
 // ─── Deep nesting ───
 #[test]
 fn test_deeply_nested_blocks() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "fn f() { { { { { { { { { { 1 } } } } } } } } } }",
         file_id(),
     );
@@ -45,7 +46,7 @@ fn test_deeply_nested_blocks() {
 
 #[test]
 fn test_deeply_nested_if() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "fn f() { if a { if b { if c { if d { 1 } } } } }",
         file_id(),
     );
@@ -60,7 +61,7 @@ fn test_deeply_nested_if() {
 
 #[test]
 fn test_deeply_nested_types() {
-    let _result = parse_to_syntax("fn f(x: Option<Option<Option<Option<i32>>>>) {}", file_id());
+    let result = parse_to_syntax("fn f(x: Option<Option<Option<Option<i32>>>>) {}", file_id());
     for d in &result.diagnostics {
         eprintln!("test_deeply_nested_types: {}", d.message);
     }
@@ -76,7 +77,7 @@ fn test_deeply_nested_types() {
 // ─── Complex generics ───
 #[test]
 fn test_generic_with_multiple_bounds() {
-    let _result = parse_to_syntax("fn f<T: Clone + Eq + Display + Debug>(x: T) {}", file_id());
+    let result = parse_to_syntax("fn f<T: Clone + Eq + Display + Debug>(x: T) {}", file_id());
     for d in &result.diagnostics {
         eprintln!("test_deeply_nested_types: {}", d.message);
     }
@@ -91,13 +92,13 @@ fn test_generic_with_multiple_bounds() {
 
 #[test]
 fn test_generic_with_lifetime_like() {
-    let _result = parse_to_syntax("fn f<'a, T: 'a>(x: &'a T) {}", file_id());
+    let result = parse_to_syntax("fn f<'a, T: 'a>(x: &'a T) {}", file_id());
     // lifetimes not fully supported, just check no crash
 }
 
 #[test]
 fn test_generic_with_default_and_bounds() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "struct S<T: Clone + Eq = String, U = i32> { x: T, y: U }",
         file_id(),
     );
@@ -125,14 +126,14 @@ fn test_where_clause_complex() {
 // ─── Struct with visibility ───
 #[test]
 fn test_struct_pub_fields() {
-    let _result = parse_to_syntax("struct S { pub x: i32, y: f64 }", file_id());
+    let result = parse_to_syntax("struct S { pub x: i32, y: f64 }", file_id());
     // pub on fields may produce diagnostics but shouldn't crash
 }
 
 // ─── Complex patterns ───
 #[test]
 fn test_pattern_nested_struct() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "fn f() { match p { Outer { inner: Inner { x, y } } => x + y } }",
         file_id(),
     );
@@ -150,7 +151,7 @@ fn test_pattern_nested_struct() {
 
 #[test]
 fn test_pattern_with_guard_complex() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "fn f(x: i32) { match x { n if n > 0 && n < 10 => 1, _ => 0 } }",
         file_id(),
     );
@@ -168,7 +169,7 @@ fn test_pattern_with_guard_complex() {
 
 #[test]
 fn test_pattern_or_guard() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "fn f(x: i32) { match x { 0 | 1 | 2 if x > 0 => 1, _ => 0 } }",
         file_id(),
     );
@@ -186,7 +187,7 @@ fn test_pattern_or_guard() {
 
 #[test]
 fn test_pattern_ref_in_match() {
-    let _result = parse_to_syntax("fn f(x: &i32) { match x { &0 => 1, _ => 0 } }", file_id());
+    let result = parse_to_syntax("fn f(x: &i32) { match x { &0 => 1, _ => 0 } }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_deeply_nested_types: {}", d.message);
     }
@@ -202,7 +203,7 @@ fn test_pattern_ref_in_match() {
 // ─── Expression edge cases ───
 #[test]
 fn test_expr_paren_chain() {
-    let _result = parse_to_syntax("fn f() { ((((a + b)) * c) - d) }", file_id());
+    let result = parse_to_syntax("fn f() { ((((a + b)) * c) - d) }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_deeply_nested_types: {}", d.message);
     }
@@ -217,7 +218,7 @@ fn test_expr_paren_chain() {
 
 #[test]
 fn test_expr_chained_operators() {
-    let _result = parse_to_syntax("fn f() { a + b + c + d + e }", file_id());
+    let result = parse_to_syntax("fn f() { a + b + c + d + e }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_deeply_nested_types: {}", d.message);
     }
@@ -232,7 +233,7 @@ fn test_expr_chained_operators() {
 
 #[test]
 fn test_expr_mixed_unary_binary() {
-    let _result = parse_to_syntax("fn f() { -a + *b - !c }", file_id());
+    let result = parse_to_syntax("fn f() { -a + *b - !c }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_deeply_nested_types: {}", d.message);
     }
@@ -248,7 +249,7 @@ fn test_expr_mixed_unary_binary() {
 // ─── Array expressions ───
 #[test]
 fn test_array_repeat() {
-    let _result = parse_to_syntax("fn f() { [0; 10] }", file_id());
+    let result = parse_to_syntax("fn f() { [0; 10] }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -266,7 +267,7 @@ fn test_array_repeat() {
 
 #[test]
 fn test_array_multi_dim() {
-    let _result = parse_to_syntax("fn f() { [[0; 3]; 2] }", file_id());
+    let result = parse_to_syntax("fn f() { [[0; 3]; 2] }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -288,7 +289,7 @@ fn test_array_multi_dim() {
 // ─── Control flow expressions as values ───
 #[test]
 fn test_if_as_expression() {
-    let _result = parse_to_syntax("fn f() { let x = if true { 1 } else { 0 }; }", file_id());
+    let result = parse_to_syntax("fn f() { let x = if true { 1 } else { 0 }; }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -309,7 +310,7 @@ fn test_if_as_expression() {
 
 #[test]
 fn test_match_as_expression() {
-    let _result = parse_to_syntax("fn f() { let x = match y { 0 => 1, _ => 0 }; }", file_id());
+    let result = parse_to_syntax("fn f() { let x = match y { 0 => 1, _ => 0 }; }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -330,7 +331,7 @@ fn test_match_as_expression() {
 
 #[test]
 fn test_block_as_expression() {
-    let _result = parse_to_syntax("fn f() { let x = { let y = 1; y + 2 }; }", file_id());
+    let result = parse_to_syntax("fn f() { let x = { let y = 1; y + 2 }; }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -352,7 +353,7 @@ fn test_block_as_expression() {
 // ─── Method call chains ───
 #[test]
 fn test_method_chain_on_literal() {
-    let _result = parse_to_syntax("fn f() { 42.to_string().len() }", file_id());
+    let result = parse_to_syntax("fn f() { 42.to_string().len() }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -373,7 +374,7 @@ fn test_method_chain_on_literal() {
 
 #[test]
 fn test_method_with_generic_arg() {
-    let _result = parse_to_syntax("fn f() { foo.collect::<Vec<i32>>() }", file_id());
+    let result = parse_to_syntax("fn f() { foo.collect::<Vec<i32>>() }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -404,7 +405,7 @@ fn test_rpit() {
 // ─── Enum with complex variants ───
 #[test]
 fn test_enum_complex_variants() {
-    let _result = parse_to_syntax("enum E { A(i32, f64), B { x: i32, y: f64 }, C }", file_id());
+    let result = parse_to_syntax("enum E { A(i32, f64), B { x: i32, y: f64 }, C }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -435,7 +436,7 @@ fn test_type_alias_generic() {
 // ─── Const with type annotation ───
 #[test]
 fn test_const_complex() {
-    let _result = parse_to_syntax("const X: &str = \"hello\";", file_id());
+    let result = parse_to_syntax("const X: &str = \"hello\";", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -460,7 +461,7 @@ fn test_const_complex() {
 // ─── Static mut ───
 #[test]
 fn test_static_mut_with_type() {
-    let _result = parse_to_syntax("static mut COUNTER: usize = 0;", file_id());
+    let result = parse_to_syntax("static mut COUNTER: usize = 0;", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -491,7 +492,7 @@ fn test_use_underscore() {
 // ─── Trait with default type parameter ───
 #[test]
 fn test_trait_default_type_param() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "trait Add<Rhs = Self> { type Output; fn add(self, rhs: Rhs) -> Self::Output; }",
         file_id(),
     );
@@ -519,7 +520,7 @@ fn test_trait_default_type_param() {
 // ─── Impl with associated type ───
 #[test]
 fn test_impl_assoc_type() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "impl Iterator for Foo { type Item = i32; fn next(&mut self) -> Option<i32> { None } }",
         file_id(),
     );
@@ -556,7 +557,7 @@ fn test_extern_multiple_fns() {
 // ─── Unsafe trait ───
 #[test]
 fn test_unsafe_trait() {
-    let _result = parse_to_syntax("unsafe trait UnsafeCell { }", file_id());
+    let result = parse_to_syntax("unsafe trait UnsafeCell { }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -581,7 +582,7 @@ fn test_unsafe_trait() {
 // ─── Unsafe impl ───
 #[test]
 fn test_unsafe_impl() {
-    let _result = parse_to_syntax("unsafe impl Send for Foo { }", file_id());
+    let result = parse_to_syntax("unsafe impl Send for Foo { }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -606,7 +607,7 @@ fn test_unsafe_impl() {
 // ─── For loop patterns ───
 #[test]
 fn test_for_loop_destructure() {
-    let _result = parse_to_syntax("fn f() { for (a, b) in iter { } }", file_id());
+    let result = parse_to_syntax("fn f() { for (a, b) in iter { } }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -630,7 +631,7 @@ fn test_for_loop_destructure() {
 
 #[test]
 fn test_for_loop_ref_pattern() {
-    let _result = parse_to_syntax("fn f() { for &x in iter { } }", file_id());
+    let result = parse_to_syntax("fn f() { for &x in iter { } }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -672,7 +673,7 @@ fn test_continue_label() {
 // ─── Empty items ───
 #[test]
 fn test_empty_fn() {
-    let _result = parse_to_syntax("fn f() {}", file_id());
+    let result = parse_to_syntax("fn f() {}", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -696,7 +697,7 @@ fn test_empty_fn() {
 
 #[test]
 fn test_empty_trait() {
-    let _result = parse_to_syntax("trait Empty { }", file_id());
+    let result = parse_to_syntax("trait Empty { }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -720,7 +721,7 @@ fn test_empty_trait() {
 
 #[test]
 fn test_empty_impl() {
-    let _result = parse_to_syntax("impl Foo { }", file_id());
+    let result = parse_to_syntax("impl Foo { }", file_id());
     for d in &result.diagnostics {
         eprintln!("test_array_repeat: {}", d.message);
     }
@@ -745,7 +746,7 @@ fn test_empty_impl() {
 // ─── Many parameters ───
 #[test]
 fn test_many_params() {
-    let _result = parse_to_syntax(
+    let result = parse_to_syntax(
         "fn f(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) {}",
         file_id(),
     );

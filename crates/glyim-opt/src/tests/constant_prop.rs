@@ -176,7 +176,7 @@ fn make_body_projection_no_propagate(ctx: &mut glyim_type::TyCtxMut) -> Body {
 
 #[test]
 fn propagate_int_constants() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|_ctx_mut| {
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| {
         let int_ty = make_int_ty(ctx_mut);
         let stmts = vec![
             Statement {
@@ -240,7 +240,7 @@ fn propagate_int_constants() {
 
 #[test]
 fn propagate_through_chain() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|_ctx_mut| make_body_two_const_chain(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_two_const_chain(ctx_mut));
     crate::constant_prop::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     if let StatementKind::Assign(_, Rvalue::BinaryOp(_, box_ops)) = &block.statements[2].kind {
@@ -259,7 +259,7 @@ fn propagate_through_chain() {
 
 #[test]
 fn overwrite_removes_from_const_map() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|_ctx_mut| make_body_overwrite(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_overwrite(ctx_mut));
     crate::constant_prop::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     if let StatementKind::Assign(_, Rvalue::BinaryOp(_, box_ops)) = &block.statements[2].kind {
@@ -274,7 +274,7 @@ fn overwrite_removes_from_const_map() {
 
 #[test]
 fn projection_write_prevents_propagation() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|_ctx_mut| make_body_projection_no_propagate(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_projection_no_propagate(ctx_mut));
     crate::constant_prop::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     if let StatementKind::Assign(_, Rvalue::Use(op)) = &block.statements[2].kind {
@@ -290,7 +290,7 @@ fn projection_write_prevents_propagation() {
 #[test]
 fn re_constant_after_overwrite_propagates() {
     // local1 = 10; local1 = local0; local1 = 20; local2 = local1 + 1
-    let (ctx, mut body) = with_fresh_ty_ctx(|_ctx_mut| {
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| {
         let int_ty = make_int_ty(ctx_mut);
         let stmts = vec![
             Statement {
@@ -363,7 +363,7 @@ fn cross_block_constant_propagation() {
     // block0: local1 = 5; goto block1
     // block1: local2 = local1 + 1; SwitchInt(local2) -> block2
     // block2: return
-    let (ctx, mut body) = with_fresh_ty_ctx(|_ctx_mut| {
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| {
         let int_ty = make_int_ty(ctx_mut);
         let block0 = BasicBlockData {
             statements: vec![Statement {
