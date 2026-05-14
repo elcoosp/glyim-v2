@@ -236,22 +236,33 @@ fn collect_items(
         {
             let name = interner.intern(name_tok.text());
             let span = node_span(body_node);
-            let child_module = modules.push(ModuleData {
-                parent: Some(parent_module),
-                children: Vec::new(),
-                scope: ItemScope::default(),
-                origin: ModuleOrigin::Inline { span },
-                span,
-            });
-            modules[parent_module].children.push((name, child_module));
-            collect_items(
-                body_node,
-                child_module,
-                modules,
-                diagnostics,
-                interner,
-                def_counter,
-            );
+            let is_dup = modules[parent_module]
+                .children
+                .iter()
+                .any(|(n, _)| *n == name);
+            if is_dup {
+                diagnostics.push(GlyimDiagnostic::parse_error(
+                    span,
+                    format!("duplicate module `{}`", interner.resolve(name)),
+                ));
+            } else {
+                let child_module = modules.push(ModuleData {
+                    parent: Some(parent_module),
+                    children: Vec::new(),
+                    scope: ItemScope::default(),
+                    origin: ModuleOrigin::Inline { span },
+                    span,
+                });
+                modules[parent_module].children.push((name, child_module));
+                collect_items(
+                    body_node,
+                    child_module,
+                    modules,
+                    diagnostics,
+                    interner,
+                    def_counter,
+                );
+            }
             idx += 3;
             continue;
         }
@@ -321,22 +332,33 @@ fn collect_items(
                     {
                         let name = interner.intern(block_children[1].as_token().unwrap().text());
                         let span = node_span(node);
-                        let child_module = modules.push(ModuleData {
-                            parent: Some(parent_module),
-                            children: Vec::new(),
-                            scope: ItemScope::default(),
-                            origin: ModuleOrigin::Inline { span },
-                            span,
-                        });
-                        modules[parent_module].children.push((name, child_module));
-                        collect_items(
-                            node,
-                            child_module,
-                            modules,
-                            diagnostics,
-                            interner,
-                            def_counter,
-                        );
+                        let is_dup = modules[parent_module]
+                            .children
+                            .iter()
+                            .any(|(n, _)| *n == name);
+                        if is_dup {
+                            diagnostics.push(GlyimDiagnostic::parse_error(
+                                span,
+                                format!("duplicate module `{}`", interner.resolve(name)),
+                            ));
+                        } else {
+                            let child_module = modules.push(ModuleData {
+                                parent: Some(parent_module),
+                                children: Vec::new(),
+                                scope: ItemScope::default(),
+                                origin: ModuleOrigin::Inline { span },
+                                span,
+                            });
+                            modules[parent_module].children.push((name, child_module));
+                            collect_items(
+                                node,
+                                child_module,
+                                modules,
+                                diagnostics,
+                                interner,
+                                def_counter,
+                            );
+                        }
                         idx += 1;
                         continue;
                     }
@@ -351,7 +373,6 @@ fn collect_items(
         idx += 1;
     }
 }
-
 /// Extract the text of the first `Ident` token child of `node`.
 fn extract_ident(node: &SyntaxNode) -> Option<String> {
     if node.kind() == SyntaxKind::ImplDef {

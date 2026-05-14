@@ -427,3 +427,152 @@ fn t30_super_with_multi_segments() {
     // Should resolve inside via super to root then down into inner
     assert!(result.values.is_some());
 }
+
+// --- Advanced path resolution tests ---
+
+#[test]
+fn t31_resolve_shadowed_name_returns_first() {
+    // If two items share same name in same namespace, the first remains and second is error.
+    // But we can test that the first item IS still found.
+    let (def_map, diags) = build_map("fn shadow() {} fn shadow() {}");
+    assert!(!diags.is_empty()); // duplicate error
+    // The first definition should still be in scope
+    let scope = root_scope(&def_map);
+    assert!(
+        scope
+            .values
+            .iter()
+            .any(|(n, _, _, _)| *n == def_map.interner.intern("shadow"))
+    );
+}
+
+#[test]
+fn t32_resolve_after_error_still_works() {
+    // Even with duplicate errors, resolution for other names works.
+    let (def_map, _diags) = build_map("fn a() {} fn a() {} fn b() {}");
+    let result = resolve_path(&def_map, "b");
+    assert!(result.values.is_some());
+}
+
+#[test]
+fn t33_empty_module_body() {
+    let (def_map, diags) = build_map("mod empty {}");
+    assert!(diags.is_empty());
+    let root = &def_map.modules[def_map.root];
+    assert_eq!(root.children.len(), 1);
+    let child = def_map.modules[root.children[0].1].clone();
+    assert!(child.scope.types.is_empty());
+    assert!(child.scope.values.is_empty());
+}
+
+#[test]
+fn t34_multiple_modules_same_name_error() {
+    let (_def_map, diags) = build_map("mod m {} mod m {}");
+    assert!(!diags.is_empty());
+}
+
+#[test]
+fn t35_path_resolution_case_sensitive() {
+    let (def_map, diags) = build_map("fn Foo() {} fn foo() {}");
+    assert!(diags.is_empty());
+    let upper = resolve_path(&def_map, "Foo");
+    let lower = resolve_path(&def_map, "foo");
+    assert!(upper.values.is_some());
+    assert!(lower.values.is_some());
+    // They should have different IDs
+    let id1 = upper.values.unwrap().0;
+    let id2 = lower.values.unwrap().0;
+    assert_ne!(id1, id2);
+}
+
+#[test]
+fn t36_enum_variants_not_collected() {
+    // Enum variants are NOT items in the def map; only the enum itself is.
+    // This test verifies we don't accidentally collect variant names.
+    let (def_map, diags) = build_map("enum Color { Red, Blue }");
+    assert!(diags.is_empty());
+    let scope = root_scope(&def_map);
+    assert_eq!(scope.types.len(), 1); // only Color
+    assert!(scope.values.is_empty());
+}
+
+#[test]
+fn t37_trait_with_methods_only_trait_collected() {
+    let (def_map, diags) = build_map("trait Hash { fn hash(&self) -> u64; }");
+    assert!(diags.is_empty());
+    let scope = root_scope(&def_map);
+    assert_eq!(scope.types.len(), 1); // only Hash trait
+    assert!(scope.values.is_empty());
+}
+
+#[test]
+fn t38_struct_with_fields_only_struct_collected() {
+    let (def_map, diags) = build_map("struct Point { x: f64, y: f64 }");
+    assert!(diags.is_empty());
+    let scope = root_scope(&def_map);
+    assert_eq!(scope.types.len(), 1);
+    assert!(scope.values.is_empty());
+}
+
+#[test]
+fn t39_resolve_module_name_as_type() {
+    // A module name should not resolve as a type or value.
+    let (def_map, diags) = build_map("mod geometry {}");
+    assert!(diags.is_empty());
+    let result = resolve_path(&def_map, "geometry");
+    assert!(
+        result.is_none(),
+        "module name should not resolve to type/value"
+    );
+}
+
+#[test]
+fn t40_per_ns_from_types_constructor() {
+    use glyim_core::def_id::LocalDefId;
+    let id = LocalDefId::from_raw(42);
+    let per_ns = PerNs::from_types(id, Visibility::Public);
+    assert_eq!(per_ns.types, Some((id, Visibility::Public)));
+    assert!(per_ns.values.is_none());
+    assert!(per_ns.macros.is_none());
+}
+
+#[test]
+fn t41_per_ns_is_none_when_empty() {
+    let per_ns = PerNs::default();
+    assert!(per_ns.is_none());
+}
+
+#[test]
+fn t42_resolver_module_accessor() {
+    let (def_map, diags) = build_map("fn x() {}");
+    assert!(diags.is_empty());
+    let resolver = Resolver::new(&def_map, def_map.root);
+    assert_eq!(resolver.module(), def_map.root);
+    // def_map accessor returns reference
+    let _: &CrateDefMap = resolver.def_map();
+}
+
+#[test]
+fn t43_module_data_resolve_delegates_to_scope() {
+    let (def_map, _) = build_map("fn test_fn() {}");
+    let root_data = &def_map.modules[def_map.root];
+    let result = root_data.resolve(def_map.interner.intern("test_fn"));
+    assert!(result.is_some());
+}
+
+#[test]
+fn t44_self_path_with_no_segments_returns_empty() {
+    let (def_map, diags) = build_map("fn x() {}");
+    assert!(diags.is_empty());
+    // "self::" with no further segments
+    let result = resolve_path(&def_map, "self::");
+    assert!(result.is_none());
+}
+
+#[test]
+fn t45_crate_path_with_no_segments_returns_empty() {
+    let (def_map, diags) = build_map("fn x() {}");
+    assert!(diags.is_empty());
+    let result = resolve_path(&def_map, "crate::");
+    assert!(result.is_none());
+}
