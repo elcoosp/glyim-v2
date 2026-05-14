@@ -237,8 +237,6 @@ fn t05_borrow_expires_after_last_use_no_error() {
     );
 }
 
-
-
 #[test]
 fn t07_error_diagnostics_include_span() {
     let span1 = Span::new(
@@ -540,8 +538,6 @@ fn t13_error_message_contains_borrow_kind_info() {
         msg
     );
 }
-
-
 
 #[test]
 fn t15_no_borrow_check_for_copy_types_ignored() {

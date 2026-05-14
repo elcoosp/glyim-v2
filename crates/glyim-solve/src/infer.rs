@@ -226,18 +226,18 @@ impl InferenceTable {
                                 ),
                             )]);
                         }
-                        
-                if self.occurs(ctx, var, b) {
-                    return Err(vec![GlyimDiagnostic::type_error(
-                        span,
-                        format!(
-                            "cannot construct infinite type: {} = {}",
-                            PrintTy::new(a, ctx),
-                            PrintTy::new(b, ctx)
-                        ),
-                    )]);
-                }
-self.ty_vars[var].value = Some(b);
+
+                        if self.occurs(ctx, var, b) {
+                            return Err(vec![GlyimDiagnostic::type_error(
+                                span,
+                                format!(
+                                    "cannot construct infinite type: {} = {}",
+                                    PrintTy::new(a, ctx),
+                                    PrintTy::new(b, ctx)
+                                ),
+                            )]);
+                        }
+                        self.ty_vars[var].value = Some(b);
                         Ok(Vec::new())
                     }
                     VariableKind::Integer => match &other {
@@ -764,11 +764,10 @@ pub enum Constraint {
     TypeOutlives { ty: Ty, region: Region },
 }
 
-
 #[test]
 fn test_occurs_check_prevents_infinite_type() {
     use glyim_core::interner::Interner;
-    use glyim_type::{TyCtxMut, TyKind, InferVar};
+    use glyim_type::{InferVar, TyCtxMut, TyKind};
 
     let mut ctx = TyCtxMut::new(Interner::new());
     let mut infer = InferenceTable::new();
@@ -780,5 +779,8 @@ fn test_occurs_check_prevents_infinite_type() {
     let list_ty = ctx.mk_ty(TyKind::Slice(var_ty));
 
     let result = infer.unify(&mut ctx, var_ty, list_ty, glyim_span::Span::DUMMY);
-    assert!(result.is_err(), "Unifying ?T with List<?T> should fail occurs check");
+    assert!(
+        result.is_err(),
+        "Unifying ?T with List<?T> should fail occurs check"
+    );
 }

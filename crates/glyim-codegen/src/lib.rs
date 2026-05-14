@@ -100,11 +100,23 @@ fn emit_rvalue(bc: &mut Vec<u8>, rvalue: &Rvalue) -> CompResult<()> {
             emit_operand(bc, right);
             match op {
                 BinOp::Add => bc.push(OP_ADD),
-                BinOp::Sub | BinOp::Mul | BinOp::Div
-                | BinOp::Rem | BinOp::Eq | BinOp::Ne
-                | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq
-                | BinOp::And | BinOp::Or | BinOp::BitAnd
-                | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
+                BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::Eq
+                | BinOp::Ne
+                | BinOp::Lt
+                | BinOp::Gt
+                | BinOp::LtEq
+                | BinOp::GtEq
+                | BinOp::And
+                | BinOp::Or
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor
+                | BinOp::Shl
+                | BinOp::Shr => {
                     return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                         "bytecode backend: binary operator {:?} not yet implemented",
                         op
@@ -268,7 +280,10 @@ mod tests {
 
         let backend = BytecodeBackend::new();
         let result = backend.generate_function(&Arc::new(body));
-        assert!(result.is_err(), "Rvalue::Ref should return Err, not silently produce wrong bytecode");
+        assert!(
+            result.is_err(),
+            "Rvalue::Ref should return Err, not silently produce wrong bytecode"
+        );
     }
 
     #[test]

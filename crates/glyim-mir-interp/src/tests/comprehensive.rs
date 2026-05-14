@@ -81,7 +81,10 @@ fn call_with_non_int_callee_panics() {
         is_cleanup: false,
     }]);
     let res = run_single_assign(body, &tcx);
-    assert!(res.is_err(), "Expected error when callee is not a function reference");
+    assert!(
+        res.is_err(),
+        "Expected error when callee is not a function reference"
+    );
 }
 
 // ============ StorageDead then read ============

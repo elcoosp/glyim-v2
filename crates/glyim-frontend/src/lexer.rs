@@ -702,9 +702,17 @@ impl<'a> Lexer<'a> {
 fn is_valid_number_suffix(suffix: &str) -> bool {
     matches!(
         suffix,
-        "i8" | "i16" | "i32" | "i64" | "isize"
-        | "u8" | "u16" | "u32" | "u64" | "usize"
-        | "f32" | "f64"
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "usize"
+            | "f32"
+            | "f64"
     )
 }
 
@@ -752,8 +760,6 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
     }
 }
 
-
-
 pub fn lex(source: &str, file_id: FileId) -> LexResult {
     Lexer::new(source, file_id).lex()
 }
@@ -767,7 +773,10 @@ mod suffix_tests {
     fn test_invalid_number_suffix_produces_error() {
         let result = Lexer::new("42abc", FileId::from_raw(0)).lex();
         assert!(
-            result.diagnostics.iter().any(|d| d.message.contains("suffix") || d.message.contains("invalid")),
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("suffix") || d.message.contains("invalid")),
             "Expected error for invalid suffix 'abc', got: {:?}",
             result.diagnostics
         );
@@ -776,19 +785,36 @@ mod suffix_tests {
     #[test]
     fn test_valid_i32_suffix() {
         let result = Lexer::new("42i32", FileId::from_raw(0)).lex();
-        assert!(result.diagnostics.is_empty(), "i32 suffix should be valid: {:?}", result.diagnostics);
-        assert!(result.tokens.iter().any(|t| t.kind == SyntaxKind::IntLit && t.text == "42i32"));
+        assert!(
+            result.diagnostics.is_empty(),
+            "i32 suffix should be valid: {:?}",
+            result.diagnostics
+        );
+        assert!(
+            result
+                .tokens
+                .iter()
+                .any(|t| t.kind == SyntaxKind::IntLit && t.text == "42i32")
+        );
     }
 
     #[test]
     fn test_valid_u8_suffix() {
         let result = Lexer::new("255u8", FileId::from_raw(0)).lex();
-        assert!(result.diagnostics.is_empty(), "u8 suffix should be valid: {:?}", result.diagnostics);
+        assert!(
+            result.diagnostics.is_empty(),
+            "u8 suffix should be valid: {:?}",
+            result.diagnostics
+        );
     }
 
     #[test]
     fn test_valid_f64_suffix() {
         let result = Lexer::new("3.14f64", FileId::from_raw(0)).lex();
-        assert!(result.diagnostics.is_empty(), "f64 suffix should be valid: {:?}", result.diagnostics);
+        assert!(
+            result.diagnostics.is_empty(),
+            "f64 suffix should be valid: {:?}",
+            result.diagnostics
+        );
     }
 }

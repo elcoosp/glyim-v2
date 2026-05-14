@@ -2,7 +2,7 @@ use glyim_codegen::CodegenBackend;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_mir::Body;
 use inkwell::context::Context;
-use inkwell::targets::{Target, InitializationConfig, TargetTriple};
+use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -57,14 +57,12 @@ impl CodegenBackend for LlvmBackend {
             let builder = self.context.create_builder();
             builder.position_at_end(basic_block);
             let return_val = i32_type.const_int(42, false);
-            builder
-                .build_return(Some(&return_val))
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "LLVM build_return failed: {:?}",
-                        e
-                    ))]
-                })?;
+            builder.build_return(Some(&return_val)).map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "LLVM build_return failed: {:?}",
+                    e
+                ))]
+            })?;
         }
 
         let target = Target::from_triple(&triple).map_err(|e| {
@@ -117,14 +115,12 @@ impl CodegenBackend for LlvmBackend {
         let builder = self.context.create_builder();
         builder.position_at_end(basic_block);
         let return_val = i32_type.const_int(42, false);
-        builder
-            .build_return(Some(&return_val))
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "LLVM build_return failed: {:?}",
-                    e
-                ))]
-            })?;
+        builder.build_return(Some(&return_val)).map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "LLVM build_return failed: {:?}",
+                e
+            ))]
+        })?;
 
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
@@ -171,6 +167,9 @@ mod tests {
             glyim_core::def_id::LocalDefId::from_raw(0),
         )));
         let result = backend.generate_function(&body);
-        assert!(result.is_ok(), "generate_function for dummy body should succeed");
+        assert!(
+            result.is_ok(),
+            "generate_function for dummy body should succeed"
+        );
     }
 }

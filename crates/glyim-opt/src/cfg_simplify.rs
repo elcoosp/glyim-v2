@@ -19,13 +19,23 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
         }
         let mut delete = vec![false; blocks.len()];
         for i in 1..blocks.len() {
-            if delete[i] { continue; }
+            if delete[i] {
+                continue;
+            }
             if preds[i].len() == 1 {
                 let p = preds[i][0];
-                if !delete[p] && matches!(&blocks[p].terminator.kind, TerminatorKind::Goto { target } if target.to_raw() as usize == i) {
+                if !delete[p]
+                    && matches!(&blocks[p].terminator.kind, TerminatorKind::Goto { target } if target.to_raw() as usize == i)
+                {
                     let mut stmts = std::mem::take(&mut blocks[i].statements);
                     blocks[p].statements.append(&mut stmts);
-                    let term = std::mem::replace(&mut blocks[i].terminator, Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) });
+                    let term = std::mem::replace(
+                        &mut blocks[i].terminator,
+                        Terminator {
+                            kind: TerminatorKind::Return,
+                            source_info: SourceInfo::new(Span::DUMMY),
+                        },
+                    );
                     blocks[p].terminator = term;
                     delete[i] = true;
                     changed = true;
@@ -58,20 +68,34 @@ pub(crate) fn terminator_successors(term: &Terminator) -> Vec<BasicBlockIdx> {
             s.push(targets.otherwise());
             s
         }
-        TerminatorKind::Call { target, cleanup, .. } => {
+        TerminatorKind::Call {
+            target, cleanup, ..
+        } => {
             let mut s = Vec::new();
-            if let Some(t) = target { s.push(*t); }
-            if let Some(c) = cleanup { s.push(*c); }
+            if let Some(t) = target {
+                s.push(*t);
+            }
+            if let Some(c) = cleanup {
+                s.push(*c);
+            }
             s
         }
-        TerminatorKind::Assert { target, cleanup, .. } => {
+        TerminatorKind::Assert {
+            target, cleanup, ..
+        } => {
             let mut s = vec![*target];
-            if let Some(c) = cleanup { s.push(*c); }
+            if let Some(c) = cleanup {
+                s.push(*c);
+            }
             s
         }
-        TerminatorKind::Drop { target, cleanup, .. } => {
+        TerminatorKind::Drop {
+            target, cleanup, ..
+        } => {
             let mut s = vec![*target];
-            if let Some(c) = cleanup { s.push(*c); }
+            if let Some(c) = cleanup {
+                s.push(*c);
+            }
             s
         }
         _ => vec![],
@@ -87,23 +111,30 @@ pub(crate) fn remap_terminator(block: &mut BasicBlockData, remap: &[Option<usize
             BasicBlockIdx::from_raw(0)
         }
     };
-    let map_opt = |opt: &Option<BasicBlockIdx>| -> Option<BasicBlockIdx> { opt.as_ref().map(|x| map(x)) };
+    let map_opt = |opt: &Option<BasicBlockIdx>| -> Option<BasicBlockIdx> { opt.as_ref().map(&map) };
     match &mut block.terminator.kind {
         TerminatorKind::Goto { target } => *target = map(target),
         TerminatorKind::SwitchInt { targets, .. } => {
             let otherwise = map(&targets.otherwise());
-            let branches: Vec<(u128, BasicBlockIdx)> = targets.iter().map(|(v, t)| (v, map(&t))).collect();
+            let branches: Vec<(u128, BasicBlockIdx)> =
+                targets.iter().map(|(v, t)| (v, map(&t))).collect();
             *targets = SwitchTargets::new(branches.into_boxed_slice(), otherwise);
         }
-        TerminatorKind::Call { target, cleanup, .. } => {
+        TerminatorKind::Call {
+            target, cleanup, ..
+        } => {
             *target = map_opt(target);
             *cleanup = map_opt(cleanup);
         }
-        TerminatorKind::Assert { target, cleanup, .. } => {
+        TerminatorKind::Assert {
+            target, cleanup, ..
+        } => {
             *target = map(target);
             *cleanup = map_opt(cleanup);
         }
-        TerminatorKind::Drop { target, cleanup, .. } => {
+        TerminatorKind::Drop {
+            target, cleanup, ..
+        } => {
             *target = map(target);
             *cleanup = map_opt(cleanup);
         }

@@ -47,7 +47,10 @@ mod tests {
     #[test]
     fn test_alloc_returns_non_null() {
         let ptr = glyim_alloc(8, 8);
-        assert!(!ptr.is_null(), "glyim_alloc must return non-null for valid requests");
+        assert!(
+            !ptr.is_null(),
+            "glyim_alloc must return non-null for valid requests"
+        );
         unsafe {
             let typed = ptr as *mut u64;
             typed.write(42u64);

@@ -6,8 +6,6 @@ fn file_id() -> FileId {
     FileId::from_raw(1)
 }
 
-
-
 // ─── Closures ───
 #[test]
 fn test_closure_move() {

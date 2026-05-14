@@ -77,8 +77,6 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
     let mut bodies = IndexVec::new();
     let mut body_owners = IndexVec::new();
     let mut local_def_counter = 0u32;
-        
-
 
     let mut item_id_counter = 0u32;
 
@@ -97,12 +95,22 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
                 }
             }
             SyntaxKind::StructDef => {
-                if let Some(item) = lower_struct_def(&child, interner, &mut local_def_counter, &mut item_id_counter) {
+                if let Some(item) = lower_struct_def(
+                    &child,
+                    interner,
+                    &mut local_def_counter,
+                    &mut item_id_counter,
+                ) {
                     items.push(item);
                 }
             }
             SyntaxKind::EnumDef => {
-                if let Some(item) = lower_enum_def(&child, interner, &mut local_def_counter, &mut item_id_counter) {
+                if let Some(item) = lower_enum_def(
+                    &child,
+                    interner,
+                    &mut local_def_counter,
+                    &mut item_id_counter,
+                ) {
                     items.push(item);
                 }
             }
@@ -1181,9 +1189,7 @@ fn lower_loop_expr(
 ) -> Option<ExprId> {
     let body = node.children().find(|c| c.kind() == SyntaxKind::Block)?;
     let body_id = lower_expr(&body, interner, exprs, pats)?;
-    let expr = Expr::Loop {
-        body: body_id,
-    };
+    let expr = Expr::Loop { body: body_id };
     Some(exprs.push(expr))
 }
 

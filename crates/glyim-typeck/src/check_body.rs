@@ -75,7 +75,7 @@ pub(crate) fn check_function_body(
         pending_obligations,
         hir,
         local_var_types,
-};
+    };
 
     // Process all body expressions: non-final become statements, final becomes tail
     let mut thir_stmts = Vec::new();
@@ -130,7 +130,10 @@ fn check_expr(
             if let Some(name) = path.as_name() {
                 // First check local_var_types (for let bindings)
                 if let Some(&ty) = chk.local_var_types.get(&name) {
-                    let local_id = local_var_map.get(&name).copied().unwrap_or_else(|| LocalVarId::from_raw(0));
+                    let local_id = local_var_map
+                        .get(&name)
+                        .copied()
+                        .unwrap_or_else(|| LocalVarId::from_raw(0));
                     let thir_expr = thir::Expr {
                         kind: thir::ExprKind::VarRef(local_id),
                         ty,

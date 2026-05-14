@@ -51,7 +51,9 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
 fn replace_operand(op: &mut Operand, map: &HashMap<LocalIdx, MirConst>) -> bool {
     match op {
         Operand::Copy(place) | Operand::Move(place) => {
-            if place.projection.is_empty() && let Some(c) = map.get(&place.local) {
+            if place.projection.is_empty()
+                && let Some(c) = map.get(&place.local)
+            {
                 *op = Operand::Constant(c.clone());
                 true
             } else {

@@ -38,7 +38,6 @@ pub struct HygieneCtx {
     syntax_contexts: Vec<SyntaxContextData>,
     next_syntax_context: u32,
     key: HygieneKey,
-    
 }
 
 impl HygieneCtx {
@@ -56,7 +55,6 @@ impl HygieneCtx {
             syntax_contexts: Vec::new(),
             next_syntax_context: 1,
             key: HygieneKey::new(),
-            
         }
     }
 
@@ -116,7 +114,7 @@ impl Default for HygieneCtx {
 }
 
 impl SyntaxContext {
-        /// Create a SyntaxContext from a hygiene key and raw index.
+    /// Create a SyntaxContext from a hygiene key and raw index.
     /// The key parameter is reserved for future cross-session isolation
     /// and is currently unused. IDs are globally unique within a single
     /// compiler invocation.
@@ -127,7 +125,7 @@ impl SyntaxContext {
 }
 
 impl ExpnId {
-        /// Create a SyntaxContext from a hygiene key and raw index.
+    /// Create a SyntaxContext from a hygiene key and raw index.
     /// The key parameter is reserved for future cross-session isolation
     /// and is currently unused. IDs are globally unique within a single
     /// compiler invocation.
