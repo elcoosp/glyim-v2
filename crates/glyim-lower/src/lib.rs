@@ -4,3 +4,6 @@ pub mod mono;
 
 pub use lower::*;
 pub use mono::*;
+
+#[cfg(test)]
+mod tests;

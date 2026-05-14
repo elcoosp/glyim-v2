@@ -438,6 +438,7 @@ dependencies = [
  "glyim-diag",
  "glyim-mir",
  "glyim-span",
+ "glyim-test",
  "glyim-type",
  "glyim-typeck",
  "tracing",
