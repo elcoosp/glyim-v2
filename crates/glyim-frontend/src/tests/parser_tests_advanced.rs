@@ -48,6 +48,13 @@ fn test_unsafe_fn() {
     assert!(result.diagnostics.is_empty());
 }
 
+// ─── Unsafe ───
+#[test]
+fn test_unsafe_block_expr() {
+    let result = parse_to_syntax("fn f() { unsafe { } }", file_id());
+    assert!(result.diagnostics.is_empty());
+}
+
 // ─── Struct literals ───
 #[test]
 fn test_struct_literal_explicit() {

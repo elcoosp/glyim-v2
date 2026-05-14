@@ -229,34 +229,6 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Semicolon);
                 }
             }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
-            }
             _ => {
                 self.error(format!("expected item, found {:?}", self.current_kind()));
                 // Error recovery: skip tokens until a likely item start or EOF
@@ -399,34 +371,6 @@ impl<'a> Parser<'a> {
                     }
                 }
                 self.expect(SyntaxKind::RBrace);
-            }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
             }
             _ => {
                 self.expect(SyntaxKind::Semicolon);
@@ -815,34 +759,6 @@ impl<'a> Parser<'a> {
                 self.parse_block();
                 self.finish_node();
             }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
-            }
             _ => {
                 if !matches!(
                     self.current_kind(),
@@ -1161,6 +1077,7 @@ impl<'a> Parser<'a> {
             }
             SyntaxKind::Or => self.parse_closure_expr(),
             SyntaxKind::KwUnsafe => {
+                self.bump(); // unsafe
                 if self.current_kind() == SyntaxKind::LBrace {
                     self.parse_block();
                 } else {
@@ -1225,34 +1142,6 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(SyntaxKind::RBrace);
             }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
-            }
             _ => {
                 self.error(format!(
                     "expected expression, found {:?}",
@@ -1284,34 +1173,6 @@ impl<'a> Parser<'a> {
             SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                 self.bump();
             }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
-            }
             _ => {
                 self.error("expected identifier in path");
                 return;
@@ -1327,34 +1188,6 @@ impl<'a> Parser<'a> {
                         }
                         SyntaxKind::Lt => {
                             self.parse_type_param_list();
-                        }
-                        SyntaxKind::KwUse => {
-                            tracing::warn!("STUB: use declaration parsing");
-                            self.bump(); // use
-                            // consume path segments and optional braces
-                            loop {
-                                match self.current_kind() {
-                                    SyntaxKind::Ident
-                                    | SyntaxKind::KwSelf
-                                    | SyntaxKind::KwSuper
-                                    | SyntaxKind::KwCrate => self.bump(),
-                                    SyntaxKind::ColonColon => {
-                                        self.bump();
-                                        continue;
-                                    }
-                                    SyntaxKind::LBrace => {
-                                        self.bump(); // {
-                                        while self.current_kind() != SyntaxKind::RBrace
-                                            && self.current().is_some()
-                                        {
-                                            self.bump();
-                                        }
-                                        self.expect(SyntaxKind::RBrace);
-                                    }
-                                    _ => break,
-                                }
-                            }
-                            self.expect(SyntaxKind::Semicolon);
                         }
                         _ => {
                             self.error("expected identifier after '::'");
@@ -1560,34 +1393,6 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::RParen);
                 self.finish_node();
             }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
-            }
             _ => {
                 self.parse_pat_inner();
             }
@@ -1670,34 +1475,6 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::PatLit);
                 self.bump();
                 self.finish_node();
-            }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
             }
             _ => {
                 self.error(format!("expected pattern, found {:?}", self.current_kind()));
@@ -1827,34 +1604,6 @@ impl<'a> Parser<'a> {
                     self.parse_type_arg_list();
                 }
                 self.finish_node();
-            }
-            SyntaxKind::KwUse => {
-                tracing::warn!("STUB: use declaration parsing");
-                self.bump(); // use
-                // consume path segments and optional braces
-                loop {
-                    match self.current_kind() {
-                        SyntaxKind::Ident
-                        | SyntaxKind::KwSelf
-                        | SyntaxKind::KwSuper
-                        | SyntaxKind::KwCrate => self.bump(),
-                        SyntaxKind::ColonColon => {
-                            self.bump();
-                            continue;
-                        }
-                        SyntaxKind::LBrace => {
-                            self.bump(); // {
-                            while self.current_kind() != SyntaxKind::RBrace
-                                && self.current().is_some()
-                            {
-                                self.bump();
-                            }
-                            self.expect(SyntaxKind::RBrace);
-                        }
-                        _ => break,
-                    }
-                }
-                self.expect(SyntaxKind::Semicolon);
             }
             _ => {
                 self.error(format!("expected type, found {:?}", self.current_kind()));
