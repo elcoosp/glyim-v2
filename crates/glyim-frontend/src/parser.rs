@@ -98,6 +98,15 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn checkpoint(&self) -> rowan::Checkpoint {
+        self.builder.checkpoint()
+    }
+
+    fn start_node_at(&mut self, checkpoint: rowan::Checkpoint, kind: SyntaxKind) {
+        self.builder
+            .start_node_at(checkpoint, GlyimLang::kind_to_raw(kind));
+    }
+
     fn peek_kind(&self) -> Option<SyntaxKind> {
         self.tokens.get(self.pos + 1).map(|t| t.kind)
     }
@@ -157,14 +166,19 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwTrait => self.parse_trait_def(),
             SyntaxKind::KwImpl => self.parse_impl_def(),
             SyntaxKind::KwMod => {
-                tracing::warn!("STUB: module parsing not yet implemented");
+                self.start_node(SyntaxKind::Module);
                 self.bump(); // mod
                 self.bump_expected(SyntaxKind::Ident);
                 if self.current_kind() == SyntaxKind::LBrace {
-                    self.parse_block();
+                    self.bump(); // {
+                    while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                        self.parse_item();
+                    }
+                    self.expect(SyntaxKind::RBrace);
                 } else {
                     self.expect(SyntaxKind::Semicolon);
                 }
+                self.finish_node(); // Module
             }
             SyntaxKind::KwConst => {
                 tracing::warn!("STUB: const parsing not yet implemented");
@@ -395,22 +409,28 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::RParen);
             }
             if self.current_kind() == SyntaxKind::LBrace {
+                self.start_node(SyntaxKind::FieldList);
                 self.bump(); // {
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                    self.start_node(SyntaxKind::StructField);
                     if self.current_kind() == SyntaxKind::Ident {
-                        self.bump();
+                        self.bump(); // field name
                         if self.current_kind() == SyntaxKind::Colon {
-                            self.bump();
+                            self.bump(); // :
                             self.parse_type();
                         }
                     } else {
                         self.error("expected field name");
-                        self.bump();
+                        if self.current().is_some() {
+                            self.bump();
+                        }
                     }
+                    self.finish_node(); // StructField
                     if self.current_kind() == SyntaxKind::Comma {
                         self.bump();
                     }
                 }
+                self.finish_node(); // FieldList
                 self.expect(SyntaxKind::RBrace);
             }
             if self.current_kind() == SyntaxKind::Eq {
@@ -716,8 +736,27 @@ impl<'a> Parser<'a> {
                 }
                 self.finish_node();
             }
-            SyntaxKind::KwFn => self.parse_fn_def(),
-            SyntaxKind::KwStruct | SyntaxKind::KwEnum => self.parse_item(),
+            SyntaxKind::KwFn
+            | SyntaxKind::KwStruct
+            | SyntaxKind::KwEnum
+            | SyntaxKind::KwTrait
+            | SyntaxKind::KwImpl
+            | SyntaxKind::KwMod
+            | SyntaxKind::KwConst
+            | SyntaxKind::KwStatic
+            | SyntaxKind::KwType
+            | SyntaxKind::KwExtern
+            | SyntaxKind::KwPub => self.parse_item(),
+            SyntaxKind::KwUnsafe => {
+                // Look ahead: if next is LBrace, it's an unsafe block expression
+                if self.peek_kind() == Some(SyntaxKind::LBrace) {
+                    self.start_node(SyntaxKind::ExprStmt);
+                    self.parse_expr();
+                    self.finish_node();
+                } else {
+                    self.parse_item();
+                }
+            }
             SyntaxKind::LBrace => {
                 self.start_node(SyntaxKind::ExprStmt);
                 self.parse_expr();
@@ -785,6 +824,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_assignment_expr(&mut self) {
+        let cp = self.checkpoint();
         self.parse_range_expr();
         if matches!(
             self.current_kind(),
@@ -794,17 +834,21 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::StarEq
                 | SyntaxKind::SlashEq
         ) {
+            self.start_node_at(cp, SyntaxKind::AssignExpr);
             self.bump();
             self.parse_assignment_expr();
+            self.finish_node();
         }
     }
 
     fn parse_range_expr(&mut self) {
+        let cp = self.checkpoint();
         self.parse_or_expr();
         if matches!(
             self.current_kind(),
             SyntaxKind::DotDot | SyntaxKind::DotDotEq
         ) {
+            self.start_node_at(cp, SyntaxKind::RangeExpr);
             self.bump();
             if !matches!(
                 self.current_kind(),
@@ -817,6 +861,7 @@ impl<'a> Parser<'a> {
             ) {
                 self.parse_or_expr();
             }
+            self.finish_node();
         }
     }
 
@@ -841,6 +886,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_comparison_expr(&mut self) {
+        let cp = self.checkpoint();
         self.parse_bitwise_expr();
         if matches!(
             self.current_kind(),
@@ -851,7 +897,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::LtEq
                 | SyntaxKind::GtEq
         ) {
-            self.start_node(SyntaxKind::BinaryExpr);
+            self.start_node_at(cp, SyntaxKind::BinaryExpr);
             self.bump();
             self.parse_additive_expr();
             self.finish_node();
@@ -859,6 +905,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_bitwise_expr(&mut self) {
+        let mut cp = self.checkpoint();
         self.parse_additive_expr();
         while matches!(
             self.current_kind(),
@@ -868,33 +915,38 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::Shl
                 | SyntaxKind::Shr
         ) {
-            self.start_node(SyntaxKind::BinaryExpr);
+            self.start_node_at(cp, SyntaxKind::BinaryExpr);
             self.bump();
             self.parse_additive_expr();
             self.finish_node();
+            cp = self.checkpoint();
         }
     }
 
     fn parse_additive_expr(&mut self) {
+        let mut cp = self.checkpoint();
         self.parse_multiplicative_expr();
         while matches!(self.current_kind(), SyntaxKind::Plus | SyntaxKind::Minus) {
-            self.start_node(SyntaxKind::BinaryExpr);
+            self.start_node_at(cp, SyntaxKind::BinaryExpr);
             self.bump();
             self.parse_multiplicative_expr();
             self.finish_node();
+            cp = self.checkpoint();
         }
     }
 
     fn parse_multiplicative_expr(&mut self) {
+        let mut cp = self.checkpoint();
         self.parse_unary_expr();
         while matches!(
             self.current_kind(),
             SyntaxKind::Star | SyntaxKind::Slash | SyntaxKind::Percent
         ) {
-            self.start_node(SyntaxKind::BinaryExpr);
+            self.start_node_at(cp, SyntaxKind::BinaryExpr);
             self.bump();
             self.parse_unary_expr();
             self.finish_node();
+            cp = self.checkpoint();
         }
     }
 
@@ -913,11 +965,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_postfix_expr(&mut self) {
+        let cp = self.checkpoint();
         self.parse_primary_expr();
         loop {
             match self.current_kind() {
                 SyntaxKind::Dot => {
-                    self.bump(); // .
+                    self.bump();
                     if matches!(
                         self.current_kind(),
                         SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit
@@ -927,13 +980,14 @@ impl<'a> Parser<'a> {
                         self.error("expected field name or index after '.'");
                     }
                     if self.current_kind() == SyntaxKind::ColonColon {
-                        self.bump(); // ::
+                        self.bump();
                         if self.current_kind() == SyntaxKind::Lt {
                             self.parse_type_arg_list();
                         }
                     }
                     if self.current_kind() == SyntaxKind::LParen {
-                        self.bump(); // (
+                        self.start_node_at(cp, SyntaxKind::MethodCallExpr);
+                        self.bump();
                         if self.current_kind() != SyntaxKind::RParen {
                             self.parse_expr();
                             while self.current_kind() == SyntaxKind::Comma {
@@ -945,10 +999,15 @@ impl<'a> Parser<'a> {
                             }
                         }
                         self.expect(SyntaxKind::RParen);
+                        self.finish_node();
+                    } else {
+                        self.start_node_at(cp, SyntaxKind::FieldExpr);
+                        self.finish_node();
                     }
                 }
                 SyntaxKind::LParen => {
-                    self.bump(); // (
+                    self.start_node_at(cp, SyntaxKind::CallExpr);
+                    self.bump();
                     if self.current_kind() != SyntaxKind::RParen {
                         self.parse_expr();
                         while self.current_kind() == SyntaxKind::Comma {
@@ -960,22 +1019,27 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(SyntaxKind::RParen);
+                    self.finish_node();
                 }
                 SyntaxKind::LBracket => {
-                    self.bump(); // [
+                    self.start_node_at(cp, SyntaxKind::IndexExpr);
+                    self.bump();
                     self.parse_expr();
                     self.expect(SyntaxKind::RBracket);
+                    self.finish_node();
                 }
                 SyntaxKind::Question => {
-                    self.bump(); // ?
+                    self.bump();
                 }
                 SyntaxKind::KwAs => {
+                    self.start_node_at(cp, SyntaxKind::CastExpr);
                     self.bump();
                     self.parse_type();
+                    self.finish_node();
                 }
                 SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
-                    self.start_node(SyntaxKind::StructExpr);
-                    self.bump(); // {
+                    self.start_node_at(cp, SyntaxKind::StructExpr);
+                    self.bump();
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
                         if self.current_kind() == SyntaxKind::Ident {
                             self.bump();
@@ -999,7 +1063,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(SyntaxKind::RBrace);
-                    self.finish_node(); // StructExpr
+                    self.finish_node();
                 }
                 _ => break,
             }
@@ -1023,16 +1087,28 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::LParen => {
+                let cp = self.checkpoint();
                 self.bump(); // (
                 if self.current_kind() == SyntaxKind::RParen {
-                    self.bump();
+                    self.bump(); // )
+                    // empty tuple
+                    self.start_node_at(cp, SyntaxKind::TupleExpr);
+                    self.finish_node();
                 } else {
                     self.parse_expr();
-                    while self.current_kind() == SyntaxKind::Comma {
-                        self.bump();
-                        self.parse_expr();
+                    if self.current_kind() == SyntaxKind::Comma {
+                        // Multiple elements: wrap in TupleExpr
+                        self.start_node_at(cp, SyntaxKind::TupleExpr);
+                        while self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                            self.parse_expr();
+                        }
+                        self.expect(SyntaxKind::RParen);
+                        self.finish_node(); // TupleExpr
+                    } else {
+                        // Single expression: just parenthesized, not a tuple
+                        self.expect(SyntaxKind::RParen);
                     }
-                    self.expect(SyntaxKind::RParen);
                 }
             }
             SyntaxKind::KwMove => {
@@ -1053,25 +1129,31 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwLoop => self.parse_loop_expr(),
             SyntaxKind::KwFor => self.parse_for_expr(),
             SyntaxKind::KwReturn => {
-                self.bump();
+                self.start_node(SyntaxKind::ReturnExpr);
+                self.bump(); // return
                 if !matches!(
                     self.current_kind(),
                     SyntaxKind::Semicolon | SyntaxKind::RBrace
                 ) {
                     self.parse_expr();
                 }
+                self.finish_node(); // ReturnExpr
             }
             SyntaxKind::KwBreak => {
-                self.bump();
+                self.start_node(SyntaxKind::BreakExpr);
+                self.bump(); // break
                 if !matches!(
                     self.current_kind(),
                     SyntaxKind::Semicolon | SyntaxKind::RBrace
                 ) {
                     self.parse_expr();
                 }
+                self.finish_node(); // BreakExpr
             }
             SyntaxKind::KwContinue => {
-                self.bump();
+                self.start_node(SyntaxKind::ContinueExpr);
+                self.bump(); // continue
+                self.finish_node(); // ContinueExpr
             }
             SyntaxKind::LBracket => {
                 self.start_node(SyntaxKind::ArrayExpr);
@@ -1097,15 +1179,19 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::KwMatch => {
-                self.bump();
+                self.start_node(SyntaxKind::MatchExpr);
+                self.bump(); // match
                 self.suppress_struct_lit = true;
                 self.parse_expr();
                 self.suppress_struct_lit = false;
                 self.expect(SyntaxKind::LBrace);
+                self.start_node(SyntaxKind::MatchArmList);
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
                     self.parse_match_arm();
                 }
+                self.finish_node(); // MatchArmList
                 self.expect(SyntaxKind::RBrace);
+                self.finish_node(); // MatchExpr
             }
             _ => {
                 self.error(format!(
@@ -1143,35 +1229,19 @@ impl<'a> Parser<'a> {
                 return;
             }
         }
-        loop {
+        while self.current_kind() == SyntaxKind::ColonColon {
+            self.bump(); // ::
             match self.current_kind() {
-                SyntaxKind::ColonColon => {
-                    self.bump(); // ::
-                    match self.current_kind() {
-                        SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper => {
-                            self.bump();
-                        }
-                        SyntaxKind::Lt => {
-                            self.parse_type_arg_list();
-                        }
-                        _ => {
-                            self.error("expected identifier after '::'");
-                            break;
-                        }
-                    }
+                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper => {
+                    self.bump();
                 }
-                SyntaxKind::Dot => {
-                    self.bump(); // .
-                    if matches!(
-                        self.current_kind(),
-                        SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit
-                    ) {
-                        self.bump();
-                    } else {
-                        self.error("expected field name or tuple index after '.'");
-                    }
+                SyntaxKind::Lt => {
+                    self.parse_type_arg_list();
                 }
-                _ => break,
+                _ => {
+                    self.error("expected identifier after '::'");
+                    break;
+                }
             }
         }
     }
@@ -1240,7 +1310,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_for_expr(&mut self) {
-        tracing::warn!("STUB: for expression parsing");
+        self.start_node(SyntaxKind::ForExpr);
         self.bump(); // for
         self.suppress_struct_lit = true;
         self.parse_pat();
@@ -1248,6 +1318,7 @@ impl<'a> Parser<'a> {
         self.parse_expr();
         self.suppress_struct_lit = false;
         self.parse_block();
+        self.finish_node();
     }
 
     fn parse_closure_expr(&mut self) {
@@ -1310,10 +1381,15 @@ impl<'a> Parser<'a> {
     // ---- PATTERNS ----
 
     fn parse_pat(&mut self) {
+        let cp = self.checkpoint();
         self.parse_pat_single();
-        while self.current_kind() == SyntaxKind::Or {
-            self.bump(); // |
-            self.parse_pat_single();
+        if self.current_kind() == SyntaxKind::Or {
+            self.start_node_at(cp, SyntaxKind::PatOr);
+            while self.current_kind() == SyntaxKind::Or {
+                self.bump(); // |
+                self.parse_pat_single();
+            }
+            self.finish_node(); // PatOr
         }
     }
 

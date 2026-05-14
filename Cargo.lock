@@ -418,7 +418,11 @@ name = "glyim-hir"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "glyim-frontend",
  "glyim-span",
+ "glyim-syntax",
+ "glyim-test",
+ "tracing",
 ]
 
 [[package]]

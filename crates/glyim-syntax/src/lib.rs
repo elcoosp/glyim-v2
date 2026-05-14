@@ -150,6 +150,7 @@ pub enum SyntaxKind {
     RangeExpr,
     BreakExpr,
     ContinueExpr,
+    ReturnExpr,
     AssignExpr,
     PathType,
     FnType,

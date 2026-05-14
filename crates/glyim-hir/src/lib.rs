@@ -364,7 +364,7 @@ pub enum Pat {
     Err,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Literal {
     Int(i128, Option<IntTy>),
     Uint(u128, Option<UintTy>),
@@ -374,3 +374,8 @@ pub enum Literal {
     String(Name),
     Unit,
 }
+
+mod lower;
+
+#[cfg(test)]
+mod tests;
