@@ -692,6 +692,371 @@ fn t18_is_copy_delegates_to_ctx() {
         ty_ctx: glyim_type::TyCtx,
         body: Body,
     }
+
+    #[test]
+    fn t19_unique_vs_shared_conflict() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let unique_ref = make_ref_ty(ctx_mut, unit, true); // Unique is like mutable for conflict
+            let shared_ref = make_ref_ty(ctx_mut, unit, false);
+            let locals = vec![
+                local_decl(unit),
+                local_decl(unique_ref),
+                local_decl(shared_ref),
+                local_decl(unit),
+            ];
+            make_body(
+                vec![
+                    assign_borrow(
+                        LocalIdx::from_raw(1),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Unique,
+                    ),
+                    assign_borrow(
+                        LocalIdx::from_raw(2),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Shared,
+                    ),
+                    use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(1)),
+                    use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2)),
+                ],
+                locals,
+            )
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(
+            !result.errors.is_empty(),
+            "Unique and shared borrow conflict"
+        );
+    }
+
+    #[test]
+    fn t20_unique_vs_mutable_conflict() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let unique_ref = make_ref_ty(ctx_mut, unit, true);
+            let mut_ref = make_ref_ty(ctx_mut, unit, true);
+            let locals = vec![
+                local_decl(unit),
+                local_decl(unique_ref),
+                local_decl(mut_ref),
+                local_decl(unit),
+            ];
+            make_body(
+                vec![
+                    assign_borrow(
+                        LocalIdx::from_raw(1),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Unique,
+                    ),
+                    assign_borrow(
+                        LocalIdx::from_raw(2),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Mut {
+                            allow_two_phase_borrow: false,
+                        },
+                    ),
+                    use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(1)),
+                    use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2)),
+                ],
+                locals,
+            )
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(
+            !result.errors.is_empty(),
+            "Unique and mutable borrow conflict"
+        );
+    }
+
+    #[test]
+    fn t21_unique_vs_unique_conflict() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let unique1 = make_ref_ty(ctx_mut, unit, true);
+            let unique2 = make_ref_ty(ctx_mut, unit, true);
+            let locals = vec![
+                local_decl(unit),
+                local_decl(unique1),
+                local_decl(unique2),
+                local_decl(unit),
+            ];
+            make_body(
+                vec![
+                    assign_borrow(
+                        LocalIdx::from_raw(1),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Unique,
+                    ),
+                    assign_borrow(
+                        LocalIdx::from_raw(2),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Unique,
+                    ),
+                    use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(1)),
+                    use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2)),
+                ],
+                locals,
+            )
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(!result.errors.is_empty(), "Two unique borrows conflict");
+    }
+
+    #[test]
+    fn t22_shared_after_unique_expires_no_error() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let unique_ref = make_ref_ty(ctx_mut, unit, true);
+            let shared_ref = make_ref_ty(ctx_mut, unit, false);
+            let locals = vec![
+                local_decl(unit),
+                local_decl(unique_ref),
+                local_decl(unit),
+                local_decl(shared_ref),
+                local_decl(unit),
+            ];
+            make_body(
+                vec![
+                    assign_borrow(
+                        LocalIdx::from_raw(1),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Unique,
+                    ),
+                    use_local(LocalIdx::from_raw(2), LocalIdx::from_raw(1)),
+                    assign_borrow(
+                        LocalIdx::from_raw(3),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Shared,
+                    ),
+                    use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)),
+                ],
+                locals,
+            )
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(
+            result.errors.is_empty(),
+            "Unique borrow expired before shared borrow"
+        );
+    }
+
+    #[test]
+    fn t23_multi_block_borrows_across_blocks_no_conflict() {
+        // Borrow in block0, used in block0; borrow in block1, used in block1.
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let mut_ref_ty = make_ref_ty(ctx_mut, unit, true);
+            let locals = vec![
+                local_decl(unit),
+                local_decl(mut_ref_ty),
+                local_decl(unit),
+                local_decl(mut_ref_ty),
+                local_decl(unit),
+            ];
+            let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+            body.locals = IndexVec::from_raw(locals);
+
+            // Block0: mutable borrow, use, then goto block1
+            let mut bb0 = BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+            bb0.statements = vec![
+                assign_borrow(
+                    LocalIdx::from_raw(1),
+                    Place::new(LocalIdx::from_raw(0)),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: false,
+                    },
+                ),
+                use_local(LocalIdx::from_raw(2), LocalIdx::from_raw(1)),
+            ];
+
+            // Block1: another mutable borrow, use, then return
+            let mut bb1 = BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+            bb1.statements = vec![
+                assign_borrow(
+                    LocalIdx::from_raw(3),
+                    Place::new(LocalIdx::from_raw(0)),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: false,
+                    },
+                ),
+                use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)),
+            ];
+
+            body.basic_blocks = IndexVec::from_raw(vec![bb0, bb1]);
+            body
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        // The first borrow expires before block1, so no conflict.
+        assert!(
+            result.errors.is_empty(),
+            "Multi-block: no overlap, no conflict"
+        );
+    }
+
+    #[test]
+    fn t24_multi_block_overlap_conflict() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let mut_ref_ty = make_ref_ty(ctx_mut, unit, true);
+            let locals = vec![
+                local_decl(unit),
+                local_decl(mut_ref_ty),
+                local_decl(mut_ref_ty),
+                local_decl(unit),
+            ];
+            let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+            body.locals = IndexVec::from_raw(locals);
+
+            // Block0: mutable borrow
+            let mut bb0 = BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+            bb0.statements = vec![assign_borrow(
+                LocalIdx::from_raw(1),
+                Place::new(LocalIdx::from_raw(0)),
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            )];
+
+            // Block1: use of first borrow and another mutable borrow
+            let mut bb1 = BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+            bb1.statements = vec![
+                use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(1)), // extends lifetime of first borrow
+                assign_borrow(
+                    LocalIdx::from_raw(2),
+                    Place::new(LocalIdx::from_raw(0)),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: false,
+                    },
+                ),
+            ];
+
+            body.basic_blocks = IndexVec::from_raw(vec![bb0, bb1]);
+            body
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        // First borrow still alive (used in block1) when second borrow occurs -> conflict
+        assert!(
+            !result.errors.is_empty(),
+            "Multi-block overlapping mutable borrows should conflict"
+        );
+    }
+
+    #[test]
+    fn t25_borrow_of_reference_type_locals() {
+        // Borrow a local that itself is a reference (e.g., &i32).
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let i32_ty = ctx_mut.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32));
+            let ref_ty = make_ref_ty(ctx_mut, i32_ty, false); // &i32
+            let mut_ref_of_ref = make_ref_ty(ctx_mut, ref_ty, true); // &mut (&i32)
+            let locals = vec![
+                local_decl(ref_ty),         // local0: &i32
+                local_decl(mut_ref_of_ref), // local1: &mut (&i32)
+                local_decl(i32_ty),         // local2: i32
+            ];
+            make_body(
+                vec![
+                    assign_borrow(
+                        LocalIdx::from_raw(1),
+                        Place::new(LocalIdx::from_raw(0)),
+                        BorrowKind::Mut {
+                            allow_two_phase_borrow: false,
+                        },
+                    ),
+                    // read through the mutable reference
+                    Statement {
+                        kind: StatementKind::Assign(
+                            Place::new(LocalIdx::from_raw(2)),
+                            Rvalue::Use(Operand::Copy(Place::new(LocalIdx::from_raw(1)))),
+                        ),
+                        source_info: SourceInfo::new(Span::DUMMY),
+                    },
+                ],
+                locals,
+            )
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(
+            result.errors.is_empty(),
+            "Borrow of a reference local should be tracked and expire normally"
+        );
+    }
+
+    #[test]
+    fn t26_many_locals_no_conflict() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let count = 10;
+            let mut locals = vec![local_decl(unit); count * 2 + 1];
+            let mut stmts = Vec::new();
+            for i in 0..count {
+                let dest = LocalIdx::from_raw((i * 2 + 1) as u32);
+                let src = LocalIdx::from_raw((i) as u32);
+                stmts.push(assign_borrow(
+                    dest,
+                    Place::new(src),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: false,
+                    },
+                ));
+                stmts.push(use_local(LocalIdx::from_raw((i * 2 + 2) as u32), dest));
+            }
+            make_body(stmts, locals)
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(
+            result.errors.is_empty(),
+            "Borrows of distinct locals should not conflict"
+        );
+    }
+
+    #[test]
+    fn t27_empty_second_block_no_panic() {
+        let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+            let unit = ctx_mut.unit_ty();
+            let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+            body.locals = IndexVec::from_raw(vec![local_decl(unit)]);
+            let bb0 = BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+            let bb1 = BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+            body.basic_blocks = IndexVec::from_raw(vec![bb0, bb1]);
+            body
+        });
+        let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+        let result = check_borrows(&mock, &mock.body);
+        assert!(result.errors.is_empty());
+    }
     impl BorrowckCtx for CopyMockCtx {
         fn ty_ctx(&self) -> &glyim_type::TyCtx {
             &self.ty_ctx
