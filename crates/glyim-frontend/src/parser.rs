@@ -17,6 +17,7 @@ pub(crate) struct Parser<'a> {
     diagnostics: Vec<GlyimDiagnostic>,
     last_was_path: bool,
     suppress_struct_lit: bool,
+    pending_gt_count: u32,
 }
 
 impl<'a> Parser<'a> {
@@ -28,6 +29,7 @@ impl<'a> Parser<'a> {
             diagnostics: Vec::new(),
             last_was_path: false,
             suppress_struct_lit: false,
+            pending_gt_count: 0,
         }
     }
 
@@ -41,10 +43,19 @@ impl<'a> Parser<'a> {
     }
 
     fn current_kind(&self) -> SyntaxKind {
+        if self.pending_gt_count > 0 {
+            return SyntaxKind::Gt;
+        }
         self.current().map_or(SyntaxKind::Error, |t| t.kind)
     }
 
     fn bump(&mut self) {
+        if self.pending_gt_count > 0 {
+            self.builder
+                .token(GlyimLang::kind_to_raw(SyntaxKind::Gt), ">");
+            self.pending_gt_count -= 1;
+            return;
+        }
         if let Some(token) = self.current() {
             let kind = GlyimLang::kind_to_raw(token.kind);
             let text = token.text.clone();
@@ -82,7 +93,7 @@ impl<'a> Parser<'a> {
                 self.current_kind()
             ));
         }
-        if self.current().is_some() {
+        if self.current().is_some() || self.pending_gt_count > 0 {
             self.bump();
         }
     }
@@ -95,23 +106,6 @@ impl<'a> Parser<'a> {
         if self.current().is_some() {
             self.pos += 1;
         }
-    }
-
-    /// If current token is Shr (>>), split it into two Gt tokens for nested generics.
-    /// Returns true if a split occurred and a Gt was consumed.
-    fn maybe_split_shr(&mut self) -> bool {
-        if self.current_kind() == SyntaxKind::Shr {
-            // Emit a synthetic Gt token
-            self.builder
-                .token(GlyimLang::kind_to_raw(SyntaxKind::Gt), ">");
-            // Advance position but keep the second '>' for the next Gt expect
-            // We need to modify the token stream - we can't. Instead, we'll
-            // change the current token's kind to Gt and reduce its text.
-            // Since tokens are borrowed, we'll emit a synthetic token and skip the real one.
-            self.skip_token();
-            return true;
-        }
-        false
     }
 
     fn start_node(&mut self, kind: SyntaxKind) {
@@ -138,8 +132,6 @@ impl<'a> Parser<'a> {
 
         if self.current_kind() == SyntaxKind::KwUnsafe {
             self.bump(); // unsafe
-            // unsafe applied to following item; just parse it.
-            // If nothing valid follows, it's an error but don't infinite loop.
             if !matches!(
                 self.current_kind(),
                 SyntaxKind::KwFn
@@ -231,7 +223,6 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.error(format!("expected item, found {:?}", self.current_kind()));
-                // Error recovery: skip tokens until a likely item start or EOF
                 while self.current().is_some()
                     && !matches!(
                         self.current_kind(),
@@ -492,34 +483,6 @@ impl<'a> Parser<'a> {
                     }
                     self.expect(SyntaxKind::Semicolon);
                 }
-                SyntaxKind::KwUse => {
-                    tracing::warn!("STUB: use declaration parsing");
-                    self.bump(); // use
-                    // consume path segments and optional braces
-                    loop {
-                        match self.current_kind() {
-                            SyntaxKind::Ident
-                            | SyntaxKind::KwSelf
-                            | SyntaxKind::KwSuper
-                            | SyntaxKind::KwCrate => self.bump(),
-                            SyntaxKind::ColonColon => {
-                                self.bump();
-                                continue;
-                            }
-                            SyntaxKind::LBrace => {
-                                self.bump(); // {
-                                while self.current_kind() != SyntaxKind::RBrace
-                                    && self.current().is_some()
-                                {
-                                    self.bump();
-                                }
-                                self.expect(SyntaxKind::RBrace);
-                            }
-                            _ => break,
-                        }
-                    }
-                    self.expect(SyntaxKind::Semicolon);
-                }
                 _ => {
                     self.error(format!(
                         "expected trait item, found {:?}",
@@ -571,34 +534,6 @@ impl<'a> Parser<'a> {
                     self.parse_type();
                     self.expect(SyntaxKind::Eq);
                     self.parse_expr();
-                    self.expect(SyntaxKind::Semicolon);
-                }
-                SyntaxKind::KwUse => {
-                    tracing::warn!("STUB: use declaration parsing");
-                    self.bump(); // use
-                    // consume path segments and optional braces
-                    loop {
-                        match self.current_kind() {
-                            SyntaxKind::Ident
-                            | SyntaxKind::KwSelf
-                            | SyntaxKind::KwSuper
-                            | SyntaxKind::KwCrate => self.bump(),
-                            SyntaxKind::ColonColon => {
-                                self.bump();
-                                continue;
-                            }
-                            SyntaxKind::LBrace => {
-                                self.bump(); // {
-                                while self.current_kind() != SyntaxKind::RBrace
-                                    && self.current().is_some()
-                                {
-                                    self.bump();
-                                }
-                                self.expect(SyntaxKind::RBrace);
-                            }
-                            _ => break,
-                        }
-                    }
                     self.expect(SyntaxKind::Semicolon);
                 }
                 _ => {
@@ -679,9 +614,21 @@ impl<'a> Parser<'a> {
                 self.bump();
             }
         }
-        // Handle nested generics: >> gets split into > >
-        if !self.maybe_split_shr() {
-            self.expect(SyntaxKind::Gt);
+        // Handle >> as two Gt tokens: emit both, one for this list, one queued
+        if self.current_kind() == SyntaxKind::Shr {
+            self.builder
+                .token(GlyimLang::kind_to_raw(SyntaxKind::Gt), ">");
+            self.builder
+                .token(GlyimLang::kind_to_raw(SyntaxKind::Gt), ">");
+            self.pos += 1; // skip the Shr token
+            self.pending_gt_count += 1;
+            // Do NOT consume from pending here.
+            self.finish_node();
+            return;
+        }
+        // Not Shr - consume a real Gt token
+        if self.current_kind() == SyntaxKind::Gt {
+            self.bump();
         }
         self.finish_node();
     }
@@ -697,7 +644,24 @@ impl<'a> Parser<'a> {
                 self.bump();
             }
         }
-        self.expect(SyntaxKind::Gt);
+        // Handle >> as two Gt tokens:
+        // Emit both now. The first closes this list, the second is queued for the outer list.
+        if self.current_kind() == SyntaxKind::Shr {
+            // Emit Gt for THIS list (closes this type arg list)
+            self.builder
+                .token(GlyimLang::kind_to_raw(SyntaxKind::Gt), ">");
+            // Emit Gt for the OUTER list (queued via pending_gt_count)
+            self.builder
+                .token(GlyimLang::kind_to_raw(SyntaxKind::Gt), ">");
+            self.pos += 1; // skip the Shr token
+            self.pending_gt_count += 1; // outer list will see Gt via current_kind
+            // Do NOT consume from pending here - the Gt for this list was already emitted.
+            return;
+        }
+        // Not Shr - consume a real Gt token
+        if self.current_kind() == SyntaxKind::Gt {
+            self.bump();
+        }
     }
 
     // ---- BLOCKS & STMTS ----
@@ -774,6 +738,7 @@ impl<'a> Parser<'a> {
                         | SyntaxKind::KwCrate
                         | SyntaxKind::LParen
                         | SyntaxKind::LBrace
+                        | SyntaxKind::LBracket
                         | SyntaxKind::Or
                         | SyntaxKind::OrOr
                         | SyntaxKind::KwIf
@@ -899,7 +864,6 @@ impl<'a> Parser<'a> {
             self.current_kind(),
             SyntaxKind::And
                 | SyntaxKind::Or
-                | SyntaxKind::OrOr
                 | SyntaxKind::Caret
                 | SyntaxKind::Shl
                 | SyntaxKind::Shr
@@ -965,7 +929,7 @@ impl<'a> Parser<'a> {
                     if self.current_kind() == SyntaxKind::ColonColon {
                         self.bump(); // ::
                         if self.current_kind() == SyntaxKind::Lt {
-                            self.parse_type_param_list();
+                            self.parse_type_arg_list();
                         }
                     }
                     if self.current_kind() == SyntaxKind::LParen {
@@ -1072,7 +1036,6 @@ impl<'a> Parser<'a> {
                 }
             }
             SyntaxKind::KwMove => {
-                // move closure: move |args| body
                 self.parse_closure_expr();
             }
             SyntaxKind::Or => self.parse_closure_expr(),
@@ -1113,11 +1076,13 @@ impl<'a> Parser<'a> {
             SyntaxKind::LBracket => {
                 self.start_node(SyntaxKind::ArrayExpr);
                 self.bump(); // [
-                if self.current_kind() != SyntaxKind::RBracket {
+                if self.current_kind() == SyntaxKind::RBracket {
+                    // empty array
+                } else {
                     self.parse_expr();
                     if self.current_kind() == SyntaxKind::Semicolon {
-                        self.bump();
-                        self.parse_expr();
+                        self.bump(); // ;
+                        self.parse_expr(); // count
                     } else {
                         while self.current_kind() == SyntaxKind::Comma {
                             self.bump();
@@ -1187,7 +1152,7 @@ impl<'a> Parser<'a> {
                             self.bump();
                         }
                         SyntaxKind::Lt => {
-                            self.parse_type_param_list();
+                            self.parse_type_arg_list();
                         }
                         _ => {
                             self.error("expected identifier after '::'");
@@ -1197,10 +1162,13 @@ impl<'a> Parser<'a> {
                 }
                 SyntaxKind::Dot => {
                     self.bump(); // .
-                    if self.current_kind() == SyntaxKind::Ident {
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit
+                    ) {
                         self.bump();
                     } else {
-                        self.error("expected field name after '.'");
+                        self.error("expected field name or tuple index after '.'");
                     }
                 }
                 _ => break,
@@ -1252,17 +1220,11 @@ impl<'a> Parser<'a> {
 
     #[allow(dead_code)]
     fn parse_labeled_expr(&mut self) {
-        // 'label: loop { } or 'label: while ... { } or 'label: for ... { }
-        // or 'label: { ... } (labeled block)
-        // We've already consumed the lifetime/ident token? No, called from primary if we see KwLifetime.
-        // Actually, labels are lifetimes: 'label
-        // For now, just skip the label and parse the following expression.
         tracing::warn!("STUB: labeled expression parsing");
-        self.bump(); // skip the lifetime token
+        self.bump();
         if self.current_kind() == SyntaxKind::Colon {
-            self.bump(); // :
+            self.bump();
         }
-        // Parse the underlying expression
         self.parse_expr();
     }
 
@@ -1295,11 +1257,9 @@ impl<'a> Parser<'a> {
         }
         if self.current_kind() == SyntaxKind::Or {
             self.bump(); // first |
-            // Check if there is a second | directly (empty capture list)
             if self.current_kind() == SyntaxKind::Or {
                 self.bump(); // second |
             } else {
-                // Capture list with parameters
                 while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
                     self.parse_pat();
                     if self.current_kind() == SyntaxKind::Colon {
@@ -1412,7 +1372,6 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
-                // If the next token is '::' or '(', it's a path pattern; otherwise simple ident.
                 let next = self.peek_kind().unwrap_or(SyntaxKind::Error);
                 if next == SyntaxKind::ColonColon
                     || next == SyntaxKind::LParen
@@ -1422,11 +1381,10 @@ impl<'a> Parser<'a> {
                     self.parse_path_inner();
                     self.finish_node();
                 } else {
-                    // Simple identifier pattern
                     self.start_node(SyntaxKind::PatIdent);
-                    self.bump(); // ident
+                    self.bump();
                     self.finish_node();
-                    return; // no further path segments
+                    return;
                 }
                 if self.current_kind() == SyntaxKind::LParen {
                     self.start_node(SyntaxKind::PatTuple);
@@ -1464,7 +1422,6 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::RBrace);
                     self.finish_node();
                 }
-                // else it's a simple identifier pattern; the UsePath node stands as-is.
             }
             SyntaxKind::IntLit
             | SyntaxKind::FloatLit
@@ -1556,7 +1513,6 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::KwDyn => {
-                // dyn Trait + Bound + ...
                 self.start_node(SyntaxKind::DynType);
                 self.bump(); // dyn
                 loop {

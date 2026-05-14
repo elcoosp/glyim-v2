@@ -1,0 +1,383 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..543
+  KwUse@0..3 "use"
+  Ident@3..6 "std"
+  ColonColon@6..8 "::"
+  Ident@8..11 "fmt"
+  ColonColon@11..13 "::"
+  LBrace@13..14 "{"
+  Ident@14..21 "Display"
+  Comma@21..22 ","
+  Ident@22..27 "Debug"
+  RBrace@27..28 "}"
+  Semicolon@28..29 ";"
+  KwPub@29..32 "pub"
+  TraitDef@32..88
+    KwTrait@32..37 "trait"
+    Ident@37..43 "Animal"
+    LBrace@43..44 "{"
+    FnDef@44..64
+      KwFn@44..46 "fn"
+      Ident@46..50 "name"
+      LParen@50..51 "("
+      ParamList@51..56
+        Param@51..56
+          And@51..52 "&"
+          KwSelf@52..56 "self"
+      RParen@56..57 ")"
+      Arrow@57..59 "->"
+      RefType@59..63
+        And@59..60 "&"
+        PathType@60..63
+          UsePath@60..63
+            Ident@60..63 "str"
+      Semicolon@63..64 ";"
+    FnDef@64..87
+      KwFn@64..66 "fn"
+      Ident@66..71 "speak"
+      LParen@71..72 "("
+      ParamList@72..77
+        Param@72..77
+          And@72..73 "&"
+          KwSelf@73..77 "self"
+      RParen@77..78 ")"
+      Arrow@78..80 "->"
+      PathType@80..86
+        UsePath@80..86
+          Ident@80..86 "String"
+      Semicolon@86..87 ";"
+    RBrace@87..88 "}"
+  KwPub@88..91 "pub"
+  StructDef@91..122
+    KwStruct@91..97 "struct"
+    Ident@97..100 "Dog"
+    LBrace@100..101 "{"
+    Ident@101..105 "name"
+    Colon@105..106 ":"
+    PathType@106..112
+      UsePath@106..112
+        Ident@106..112 "String"
+    Comma@112..113 ","
+    Ident@113..116 "age"
+    Colon@116..117 ":"
+    PathType@117..120
+      UsePath@117..120
+        Ident@117..120 "u32"
+    Comma@120..121 ","
+    RBrace@121..122 "}"
+  ImplDef@122..181
+    KwImpl@122..126 "impl"
+    PathType@126..129
+      UsePath@126..129
+        Ident@126..129 "Dog"
+    LBrace@129..130 "{"
+    KwPub@130..133 "pub"
+    FnDef@133..180
+      KwFn@133..135 "fn"
+      Ident@135..138 "new"
+      LParen@138..139 "("
+      ParamList@139..158
+        Param@139..150
+          Ident@139..143 "name"
+          Colon@143..144 ":"
+          PathType@144..150
+            UsePath@144..150
+              Ident@144..150 "String"
+        Comma@150..151 ","
+        Param@151..158
+          Ident@151..154 "age"
+          Colon@154..155 ":"
+          PathType@155..158
+            UsePath@155..158
+              Ident@155..158 "u32"
+      RParen@158..159 ")"
+      Arrow@159..161 "->"
+      PathType@161..165
+        UsePath@161..165
+          Ident@161..165 "Self"
+      Block@165..180
+        LBrace@165..166 "{"
+        ExprStmt@166..179
+          PathExpr@166..169
+            UsePath@166..169
+              Ident@166..169 "Dog"
+          StructExpr@169..179
+            LBrace@169..170 "{"
+            Ident@170..174 "name"
+            Comma@174..175 ","
+            Ident@175..178 "age"
+            RBrace@178..179 "}"
+        RBrace@179..180 "}"
+    RBrace@180..181 "}"
+  ImplDef@181..272
+    KwImpl@181..185 "impl"
+    PathType@185..191
+      UsePath@185..191
+        Ident@185..191 "Animal"
+    KwFor@191..194 "for"
+    PathType@194..197
+      UsePath@194..197
+        Ident@194..197 "Dog"
+    LBrace@197..198 "{"
+    FnDef@198..229
+      KwFn@198..200 "fn"
+      Ident@200..204 "name"
+      LParen@204..205 "("
+      ParamList@205..210
+        Param@205..210
+          And@205..206 "&"
+          KwSelf@206..210 "self"
+      RParen@210..211 ")"
+      Arrow@211..213 "->"
+      RefType@213..217
+        And@213..214 "&"
+        PathType@214..217
+          UsePath@214..217
+            Ident@214..217 "str"
+      Block@217..229
+        LBrace@217..218 "{"
+        ExprStmt@218..228
+          UnaryExpr@218..228
+            And@218..219 "&"
+            PathExpr@219..228
+              UsePath@219..228
+                KwSelf@219..223 "self"
+                Dot@223..224 "."
+                Ident@224..228 "name"
+        RBrace@228..229 "}"
+    FnDef@229..271
+      KwFn@229..231 "fn"
+      Ident@231..236 "speak"
+      LParen@236..237 "("
+      ParamList@237..242
+        Param@237..242
+          And@237..238 "&"
+          KwSelf@238..242 "self"
+      RParen@242..243 ")"
+      Arrow@243..245 "->"
+      PathType@245..251
+        UsePath@245..251
+          Ident@245..251 "String"
+      Block@251..271
+        LBrace@251..252 "{"
+        ExprStmt@252..270
+          LitExpr@252..258
+            StringLit@252..258 "\"woof\""
+          Dot@258..259 "."
+          Ident@259..268 "to_string"
+          LParen@268..269 "("
+          RParen@269..270 ")"
+        RBrace@270..271 "}"
+    RBrace@271..272 "}"
+  EnumDef@272..300
+    KwEnum@272..276 "enum"
+    Ident@276..282 "Option"
+    TypeParamList@282..285
+      Lt@282..283 "<"
+      TypeParam@283..284
+        Ident@283..284 "T"
+      Gt@284..285 ">"
+    LBrace@285..286 "{"
+    VariantList@286..299
+      EnumVariant@286..293
+        Ident@286..290 "Some"
+        LParen@290..291 "("
+        PathType@291..292
+          UsePath@291..292
+            Ident@291..292 "T"
+        RParen@292..293 ")"
+      Comma@293..294 ","
+      EnumVariant@294..298
+        Ident@294..298 "None"
+      Comma@298..299 ","
+    RBrace@299..300 "}"
+  FnDef@300..543
+    KwFn@300..302 "fn"
+    Ident@302..306 "main"
+    LParen@306..307 "("
+    ParamList@307..307
+    RParen@307..308 ")"
+    Block@308..543
+      LBrace@308..309 "{"
+      LetStmt@309..346
+        KwLet@309..312 "let"
+        PatIdent@312..315
+          Ident@312..315 "dog"
+        Eq@315..316 "="
+        PathExpr@316..324
+          UsePath@316..324
+            Ident@316..319 "Dog"
+            ColonColon@319..321 "::"
+            Ident@321..324 "new"
+        LParen@324..325 "("
+        LitExpr@325..330
+          StringLit@325..330 "\"Rex\""
+        Dot@330..331 "."
+        Ident@331..340 "to_string"
+        LParen@340..341 "("
+        RParen@341..342 ")"
+        Comma@342..343 ","
+        LitExpr@343..344
+          IntLit@343..344 "3"
+        RParen@344..345 ")"
+        Semicolon@345..346 ";"
+      ExprStmt@346..432
+        KwMatch@346..351 "match"
+        PathExpr@351..358
+          UsePath@351..358
+            Ident@351..354 "dog"
+            Dot@354..355 "."
+            Ident@355..358 "age"
+        LBrace@358..359 "{"
+        MatchArm@359..363
+          PatLit@359..360
+            IntLit@359..360 "0"
+          DotDotEq@360..363 "..="
+        MatchArm@363..373
+          PatLit@363..364
+            IntLit@363..364 "1"
+          FatArrow@364..366 "=>"
+          PathExpr@366..373
+            UsePath@366..373
+              Ident@366..373 "println"
+        MatchArm@373..384
+          NeverType@373..374
+            Bang@373..374 "!"
+          LParen@374..375 "("
+          LitExpr@375..382
+            StringLit@375..382 "\"puppy\""
+          RParen@382..383 ")"
+          Comma@383..384 ","
+        MatchArm@384..388
+          PatLit@384..385
+            IntLit@384..385 "2"
+          DotDotEq@385..388 "..="
+        MatchArm@388..398
+          PatLit@388..389
+            IntLit@388..389 "7"
+          FatArrow@389..391 "=>"
+          PathExpr@391..398
+            UsePath@391..398
+              Ident@391..398 "println"
+        MatchArm@398..409
+          NeverType@398..399
+            Bang@398..399 "!"
+          LParen@399..400 "("
+          LitExpr@400..407
+            StringLit@400..407 "\"adult\""
+          RParen@407..408 ")"
+          Comma@408..409 ","
+        MatchArm@409..419
+          PatWild@409..410
+            Underscore@409..410 "_"
+          FatArrow@410..412 "=>"
+          PathExpr@412..419
+            UsePath@412..419
+              Ident@412..419 "println"
+        MatchArm@419..431
+          NeverType@419..420
+            Bang@419..420 "!"
+          LParen@420..421 "("
+          LitExpr@421..429
+            StringLit@421..429 "\"senior\""
+          RParen@429..430 ")"
+          Comma@430..431 ","
+        RBrace@431..432 "}"
+      LetStmt@432..466
+        KwLet@432..435 "let"
+        PatIdent@435..436
+          Ident@435..436 "x"
+        Colon@436..437 ":"
+        PathType@437..448
+          UsePath@437..443
+            Ident@437..443 "Option"
+          Lt@443..444 "<"
+          PathType@444..447
+            UsePath@444..447
+              Ident@444..447 "i32"
+          Gt@447..448 ">"
+        Eq@448..449 "="
+        PathExpr@449..461
+          UsePath@449..461
+            Ident@449..455 "Option"
+            ColonColon@455..457 "::"
+            Ident@457..461 "Some"
+        LParen@461..462 "("
+        LitExpr@462..464
+          IntLit@462..464 "42"
+        RParen@464..465 ")"
+        Semicolon@465..466 ";"
+      ExprStmt@466..501
+        IfExpr@466..501
+          KwIf@466..468 "if"
+          KwLet@468..471 "let"
+          UsePath@471..483
+            Ident@471..477 "Option"
+            ColonColon@477..479 "::"
+            Ident@479..483 "Some"
+          PatTuple@483..488
+            LParen@483..484 "("
+            PatIdent@484..487
+              Ident@484..487 "val"
+            RParen@487..488 ")"
+          Eq@488..489 "="
+          PathExpr@489..490
+            UsePath@489..490
+              Ident@489..490 "x"
+          Block@490..501
+            LBrace@490..491 "{"
+            LetStmt@491..500
+              KwLet@491..494 "let"
+              PatWild@494..495
+                Underscore@494..495 "_"
+              Eq@495..496 "="
+              PathExpr@496..499
+                UsePath@496..499
+                  Ident@496..499 "val"
+              Semicolon@499..500 ";"
+            RBrace@500..501 "}"
+      LetStmt@501..516
+        KwLet@501..504 "let"
+        PatIdent@504..507
+          Ident@504..507 "arr"
+        Eq@507..508 "="
+        ArrayExpr@508..515
+          LBracket@508..509 "["
+          LitExpr@509..510
+            IntLit@509..510 "1"
+          Comma@510..511 ","
+          LitExpr@511..512
+            IntLit@511..512 "2"
+          Comma@512..513 ","
+          LitExpr@513..514
+            IntLit@513..514 "3"
+          RBracket@514..515 "]"
+        Semicolon@515..516 ";"
+      ExprStmt@516..542
+        KwFor@516..519 "for"
+        And@519..520 "&"
+        PatIdent@520..524
+          Ident@520..524 "item"
+        KwIn@524..526 "in"
+        UnaryExpr@526..530
+          And@526..527 "&"
+          PathExpr@527..530
+            UsePath@527..530
+              Ident@527..530 "arr"
+        Block@530..542
+          LBrace@530..531 "{"
+          LetStmt@531..541
+            KwLet@531..534 "let"
+            PatWild@534..535
+              Underscore@534..535 "_"
+            Eq@535..536 "="
+            PathExpr@536..540
+              UsePath@536..540
+                Ident@536..540 "item"
+            Semicolon@540..541 ";"
+          RBrace@541..542 "}"
+      RBrace@542..543 "}"
