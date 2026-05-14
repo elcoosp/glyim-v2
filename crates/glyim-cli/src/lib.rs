@@ -28,7 +28,8 @@ pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
 pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
-        .try_init().ok();
+        .try_init()
+        .ok();
 
     let _output = args.output.unwrap_or_else(|| {
         let mut out = args.input.clone();

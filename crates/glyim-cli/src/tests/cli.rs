@@ -1,4 +1,4 @@
-use crate::{run_with_args, CliArgs};
+use crate::{CliArgs, run_with_args};
 use clap::Parser;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -17,7 +17,11 @@ fn test_compile_valid_file() {
         backend: "llvm".to_string(),
     };
     let result = run_with_args(args);
-    assert!(result.is_ok(), "Expected compilation to succeed, got: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Expected compilation to succeed, got: {:?}",
+        result
+    );
 }
 
 /// S20-T02: Compile invalid file → exit 1
@@ -51,7 +55,10 @@ fn test_help_flag() {
 #[test]
 fn test_missing_input() {
     let result = CliArgs::try_parse_from(&["glyim"]);
-    assert!(result.is_err(), "Expected error for missing required argument");
+    assert!(
+        result.is_err(),
+        "Expected error for missing required argument"
+    );
 }
 
 /// S20-T05: --backend bytecode
