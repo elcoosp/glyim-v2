@@ -2,21 +2,28 @@ use glyim_mir::*;
 use glyim_type::TyCtx;
 use std::collections::HashMap;
 
-/// Intra‑block constant propagation.
+/// Intra‑procedural constant propagation (across all basic blocks).
 pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
+    let mut const_map: HashMap<LocalIdx, MirConst> = HashMap::new();
+
+    // Forward propagation: iterate blocks in order, building const_map
     for bb in 0..body.basic_blocks.len() {
         let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb as u32)];
-        let mut const_map: HashMap<LocalIdx, MirConst> = HashMap::new();
         for stmt in &mut block.statements {
+            // Replace operands using the current const_map
             if let StatementKind::Assign(_, rvalue) = &mut stmt.kind {
                 replace_in_rvalue(rvalue, &const_map);
             }
-            if let StatementKind::Assign(place, rvalue) = &stmt.kind
-                && place.projection.is_empty()
-            {
-                if let Rvalue::Use(Operand::Constant(c)) = rvalue {
-                    const_map.insert(place.local, c.clone());
+            // Update const_map from this assignment
+            if let StatementKind::Assign(place, rvalue) = &stmt.kind {
+                if place.projection.is_empty() {
+                    if let Rvalue::Use(Operand::Constant(c)) = rvalue {
+                        const_map.insert(place.local, c.clone());
+                    } else {
+                        const_map.remove(&place.local);
+                    }
                 } else {
+                    // any projection write invalidates the constant for the base local
                     const_map.remove(&place.local);
                 }
             }

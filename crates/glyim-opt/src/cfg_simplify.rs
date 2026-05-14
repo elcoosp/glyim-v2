@@ -1,5 +1,5 @@
-use glyim_mir::*;
 use glyim_core::IndexVec;
+use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::TyCtx;
 
@@ -134,18 +134,14 @@ pub(crate) fn remap_terminator(block: &mut BasicBlockData, old_to_new: &[Option<
         }
     };
 
-    let map_opt = |opt: &Option<BasicBlockIdx>| -> Option<BasicBlockIdx> {
-        opt.as_ref().map(&map)
-    };
+    let map_opt = |opt: &Option<BasicBlockIdx>| -> Option<BasicBlockIdx> { opt.as_ref().map(&map) };
 
     match &mut block.terminator.kind {
         TerminatorKind::Goto { target } => *target = map(target),
         TerminatorKind::SwitchInt { targets, .. } => {
             let otherwise = map(&targets.otherwise());
-            let values: Vec<(u128, BasicBlockIdx)> = targets
-                .iter()
-                .map(|(val, t)| (val, map(&t)))
-                .collect();
+            let values: Vec<(u128, BasicBlockIdx)> =
+                targets.iter().map(|(val, t)| (val, map(&t))).collect();
             *targets = SwitchTargets::new(values.into_boxed_slice(), otherwise);
         }
         TerminatorKind::Call {

@@ -4,11 +4,10 @@ use glyim_mir::Body;
 use glyim_type::TyCtx;
 use std::sync::Arc;
 
+mod cfg_simplify;
 mod constant_prop;
 mod dce;
-mod cfg_simplify;
 mod unreachable_elim;
-
 
 #[derive(Clone, Debug)]
 pub struct Optimized {

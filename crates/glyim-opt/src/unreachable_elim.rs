@@ -1,5 +1,5 @@
-use glyim_mir::*;
 use glyim_core::IndexVec;
+use glyim_mir::*;
 use glyim_type::TyCtx;
 use std::collections::HashSet;
 
