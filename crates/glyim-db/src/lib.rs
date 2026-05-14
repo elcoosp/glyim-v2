@@ -7,9 +7,7 @@ use parking_lot::RwLock;
 pub struct Database {
     interner: Interner,
     vfs: Vfs,
-    _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,
-    trait_ctx: TraitContext,
-    krate: CrateId,
+    _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,    krate: CrateId,
     _config: CrateConfig, // renamed to _config
 }
 
@@ -31,9 +29,7 @@ impl Database {
         Self {
             interner: Interner::new(),
             vfs: Vfs::new(),
-            _ty_ctx: RwLock::new(None),
-            trait_ctx: TraitContext::new(),
-            krate: CrateId::from_raw(0),
+            _ty_ctx: RwLock::new(None),            krate: CrateId::from_raw(0),
             _config: config,
         }
     }
@@ -45,9 +41,7 @@ impl Database {
     pub fn vfs(&self) -> &Vfs {
         &self.vfs
     }
-    pub fn trait_ctx(&self) -> &TraitContext {
-        &self.trait_ctx
-    }
+    
     pub fn krate(&self) -> CrateId {
         self.krate
     }

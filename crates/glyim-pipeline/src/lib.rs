@@ -4,7 +4,7 @@ mod tests;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_mir::Body;
-use glyim_solve::SimpleTraitSolver;
+use glyim_solve::{SimpleTraitSolver, TraitContext};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -55,7 +55,8 @@ impl Pipeline {
         // Phase 5: Typeck
         let resolver = db.interner().clone();
         let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
-        let mut solver = SimpleTraitSolver::new(db.trait_ctx());
+        let trait_ctx = glyim_solve::TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
         let (ty_ctx, typeck_result) =
             glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
         sink.extend(typeck_result.diagnostics);
