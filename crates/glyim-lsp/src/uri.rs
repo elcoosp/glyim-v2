@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 /// Convert a filesystem path to a file:// URI.
 pub fn path_to_uri(path: &Path) -> Result<String, String> {
-    let s = path.to_str().ok_or_else(|| {
-        format!("path is not valid UTF-8: {}", path.display())
-    })?;
+    let s = path
+        .to_str()
+        .ok_or_else(|| format!("path is not valid UTF-8: {}", path.display()))?;
     file_url::file_path_to_url(s)
         .map(|url| url.to_string())
         .map_err(|e| format!("cannot convert path to URI: {e}"))
@@ -19,7 +19,10 @@ pub fn uri_to_file_path(uri: &str) -> Result<PathBuf, String> {
 /// Convert a byte offset to (line, column), both 0-based.
 pub fn offset_to_position(text: &str, offset: usize) -> Result<(usize, usize), String> {
     if offset > text.len() {
-        return Err(format!("offset {offset} out of bounds (len {})", text.len()));
+        return Err(format!(
+            "offset {offset} out of bounds (len {})",
+            text.len()
+        ));
     }
     let mut line = 0;
     let mut col = 0;

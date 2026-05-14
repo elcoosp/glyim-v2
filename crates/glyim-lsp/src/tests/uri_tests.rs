@@ -14,12 +14,21 @@ fn windows_roundtrip() {
     let path = PathBuf::from("C:\\Users\\user\\foo.g");
     let uri = path_to_uri(&path).expect("should produce a URI");
     // The URI must start with file:/// and contain the drive letter.
-    assert!(uri.starts_with("file:///"), "URI must start with file:///, got: {uri}");
-    assert!(uri.contains("C:"), "URI must contain drive letter, got: {uri}");
+    assert!(
+        uri.starts_with("file:///"),
+        "URI must start with file:///, got: {uri}"
+    );
+    assert!(
+        uri.contains("C:"),
+        "URI must contain drive letter, got: {uri}"
+    );
     // Roundtrip back to a path; must be convertible to a str containing the filename.
     let back = uri_to_file_path(&uri).expect("should convert back to path");
     let back_str = back.to_str().expect("path must be valid UTF-8");
-    assert!(back_str.contains("foo.g"), "result must contain filename, got: {back_str}");
+    assert!(
+        back_str.contains("foo.g"),
+        "result must contain filename, got: {back_str}"
+    );
 }
 
 #[test]
