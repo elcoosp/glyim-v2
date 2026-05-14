@@ -1,7 +1,7 @@
-use crate::typeck_crate;
-use glyim_test::{assert_no_errors, mock::MockSolver};
 use super::test_utils::empty_def_map;
+use crate::typeck_crate;
 use glyim_hir::CrateHir;
+use glyim_test::{assert_no_errors, mock::MockSolver};
 
 #[test]
 fn empty_crate_no_errors() {

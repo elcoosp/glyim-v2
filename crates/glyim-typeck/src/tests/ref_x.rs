@@ -1,23 +1,20 @@
+use super::test_utils::{empty_def_map, make_ty_ctx};
 use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
-use glyim_core::interner::Interner;
-use glyim_core::primitives::*;
 use glyim_core::def_id::LocalDefId;
+use glyim_core::interner::Interner;
 use glyim_core::primitives::Visibility;
-use glyim_hir::{
-    Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Pat, PatId,
-};
+use glyim_core::primitives::*;
+use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Pat, PatId};
 use glyim_span::Span;
 use glyim_test::{assert_no_errors, mock::MockSolver};
-use super::test_utils::{empty_def_map, make_ty_ctx};
 
 #[test]
 fn ref_immutable() {
-    let mut inter = Interner::new();
+    let inter = Interner::new();
     let main_name = inter.intern("main");
     let x_name = inter.intern("x");
 
-    // Parameter x: i32
     let mut pats: IndexVec<PatId, Pat> = IndexVec::new();
     let x_pat = pats.push(Pat::Binding {
         name: x_name,
@@ -27,10 +24,11 @@ fn ref_immutable() {
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     let x_expr = exprs.push(Expr::Path(glyim_hir::Path::from_single(x_name)));
-    let ref_expr = exprs.push(Expr::Ref {
+    exprs.push(Expr::Ref {
         expr: x_expr,
         mutability: Mutability::Not,
     });
+    exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
@@ -44,7 +42,9 @@ fn ref_immutable() {
 
     let param = glyim_hir::Param {
         name: x_name,
-        ty: Some(glyim_hir::TypeRef::Path(glyim_hir::Path::from_single(inter.intern("i32")))),
+        ty: Some(glyim_hir::TypeRef::Path(glyim_hir::Path::from_single(
+            inter.intern("i32"),
+        ))),
         span: Span::DUMMY,
     };
 

@@ -1,24 +1,21 @@
+use super::test_utils::{empty_def_map, make_ty_ctx};
 use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
-use glyim_core::interner::{Interner, Name};
 use glyim_core::def_id::LocalDefId;
+use glyim_core::interner::Interner;
 use glyim_core::primitives::Visibility;
-use glyim_hir::{
-    Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Pat, PatId,
-};
+use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind};
 use glyim_span::Span;
 use glyim_test::{assert_no_errors, mock::MockSolver};
-use super::test_utils::{empty_def_map, make_ty_ctx};
 
 #[test]
 fn fn_returning_unit() {
-    let mut inter = Interner::new();
+    let inter = Interner::new();
     let main_name = inter.intern("main");
 
-    // Build a function with body: return ()
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
-    let unit_expr = exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
-    // Use unit_expr as the body return expression? The body has no explicit return; we'll use a block with tail.
+    exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
+
     let body = Body {
         owner: LocalDefId::from_raw(0),
         exprs,
