@@ -7,7 +7,6 @@ use tempfile::NamedTempFile;
 
 use crate::Pipeline;
 
-/// Helper: create a temporary file with the given source, and a TestDbBuilder with that file.
 fn setup_db_with_tempfile(source: &str) -> (TestDbBuilder, NamedTempFile) {
     let mut tmp = NamedTempFile::new().expect("Failed to create temp file");
     write!(tmp, "{}", source).expect("Failed to write temp file");
@@ -29,21 +28,20 @@ fn compile_with_mock(source: &str) -> (MockCodegen, CompResult<()>) {
     (backend, result)
 }
 
-// S18-T01: Compile empty file -> Ok
+// === Original 6 tests ===
+
 #[test]
 fn compile_empty_file_ok() {
     let (_, result) = compile_with_mock("");
     assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
 }
 
-// S18-T02: Compile fn main() {} -> Ok
 #[test]
 fn compile_simple_main_ok() {
     let (_, result) = compile_with_mock("fn main() {}");
     assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
 }
 
-// S18-T03: Compile type error (binary with mismatched types) -> diagnostic
 #[test]
 fn compile_type_error_produces_diagnostics() {
     let (_, result) = compile_with_mock("fn main() { true + 1 }");
@@ -59,7 +57,6 @@ fn compile_type_error_produces_diagnostics() {
     }
 }
 
-// S18-T04: Compile syntax error -> diagnostic
 #[test]
 fn compile_syntax_error_produces_diagnostics() {
     let (_, result) = compile_with_mock("fn main() {");
@@ -72,7 +69,6 @@ fn compile_syntax_error_produces_diagnostics() {
     }
 }
 
-// S18-T05: Missing file -> I/O error
 #[test]
 fn compile_missing_file_returns_io_error() {
     let backend = MockCodegen::new();
@@ -92,7 +88,6 @@ fn compile_missing_file_returns_io_error() {
     }
 }
 
-// S18-T06: Backend selection (backend.generate is called)
 #[test]
 fn backend_generate_is_called() {
     let (backend, result) = compile_with_mock("fn main() {}");
@@ -101,4 +96,112 @@ fn backend_generate_is_called() {
         !backend.calls().is_empty(),
         "backend.generate was not invoked"
     );
+}
+
+// === New comprehensive tests ===
+
+#[test]
+fn multiple_functions_compile() {
+    let (_, result) = compile_with_mock(
+        "
+fn foo() {}
+fn bar() {}
+fn main() {}
+",
+    );
+    assert!(
+        result.is_ok(),
+        "multiple functions failed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn binary_i32_add() {
+    let (_, result) = compile_with_mock("fn main() { 1 + 2 }");
+    assert!(result.is_ok(), "binary i32 add failed: {:?}", result.err());
+}
+
+#[test]
+fn if_else_expression() {
+    let (_, result) = compile_with_mock("fn main() { if true { 1 } else { 2 } }");
+    assert!(result.is_ok(), "if/else failed: {:?}", result.err());
+}
+
+#[test]
+fn block_expression() {
+    let (_, result) = compile_with_mock("fn main() { { 42 } }");
+    assert!(
+        result.is_ok(),
+        "block expression failed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn reference_expression() {
+    let (_, result) = compile_with_mock("fn main() { &42 }");
+    assert!(
+        result.is_ok(),
+        "reference expression failed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn multiple_params_and_return() {
+    // Function with params and explicit return type that uses params in a binary expression
+    let (_, result) = compile_with_mock("fn add(x: i32, y: i32) -> i32 { x + y } fn main() {}");
+    assert!(result.is_ok(), "multiple params failed: {:?}", result.err());
+}
+
+#[test]
+fn call_expression_unsupported_yet() {
+    // Call expressions are not yet supported in typeck (hits wildcard arm).
+    // This test documents that calling another function produces an error.
+    let (_, result) =
+        compile_with_mock("fn add(x: i32, y: i32) -> i32 { x + y } fn main() { add(1, 2) }");
+    assert!(result.is_err(), "call expression should not compile yet");
+}
+
+#[test]
+fn boolean_comparison() {
+    let (_, result) = compile_with_mock("fn main() { true == false }");
+    assert!(
+        result.is_ok(),
+        "boolean comparison failed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn nested_blocks() {
+    let (_, result) = compile_with_mock("fn main() { { { { 1 } } } }");
+    assert!(result.is_ok(), "nested blocks failed: {:?}", result.err());
+}
+
+#[test]
+fn if_else_mismatched_types_error() {
+    let (_, result) = compile_with_mock("fn main() { if true { 1 } else { false } }");
+    assert!(
+        result.is_err(),
+        "if/else mismatched types should be an error but succeeded"
+    );
+}
+
+#[test]
+fn backend_body_count() {
+    let (backend, result) = compile_with_mock(
+        "
+fn f1() {}
+fn f2() {}
+fn main() {}
+",
+    );
+    assert!(result.is_ok());
+    let calls = backend.calls();
+    assert!(!calls.is_empty(), "no backend calls");
+    // Each call contains a vec of Arc<Body>. We should have three bodies.
+    let total_bodies: usize = calls.iter().map(|c| c.body_count).sum();
+    assert_eq!(total_bodies, 3, "expected 3 bodies, got {}", total_bodies);
 }

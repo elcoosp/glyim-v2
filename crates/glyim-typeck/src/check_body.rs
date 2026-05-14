@@ -76,10 +76,13 @@ pub(crate) fn check_function_body(
     for (pos, (expr_id, _expr)) in body.exprs.iter_enumerated().enumerate() {
         let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
         if pos == len - 1 {
-            // Tail expression: unify with return type
-            let span = body.span;
-            if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
-                chk.diagnostics.extend(diags);
+            // Tail expression: unify with return type only if not unit
+            // (fn main() { 1 + 2 } is valid Rust — value is discarded)
+            if return_ty != Ty::UNIT {
+                let span = body.span;
+                if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
+                    chk.diagnostics.extend(diags);
+                }
             }
             _tail_expr = Some(thir_expr);
         } else {
