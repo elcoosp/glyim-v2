@@ -460,6 +460,7 @@ dependencies = [
  "glyim-db",
  "glyim-diag",
  "glyim-span",
+ "glyim-test",
  "parking_lot",
  "serde",
  "serde_json",
