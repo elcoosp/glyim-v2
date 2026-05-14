@@ -66,34 +66,36 @@ impl Pipeline {
         db.set_ty_ctx(ty_ctx);
 
         // Phase 6: MIR lowering, borrow checking, optimization
-        let ty_ctx_guard = db.ty_ctx();
-        let ty_ctx = ty_ctx_guard.as_ref().expect("ty_ctx not set after typeck");
+        // We need TyCtx data but must not hold the RwLock guard across phases.
+        // Clone the necessary data and drop the guard.
+        let optimized_bodies: Vec<Arc<Body>> = {
+            let ty_ctx_guard = db.ty_ctx();
+            let ty_ctx = ty_ctx_guard.as_ref().expect("ty_ctx not set after typeck");
 
-        let lower_ctx = PipelineLowerCtx::new(ty_ctx, &hir);
-        let mut optimized_bodies: Vec<Arc<Body>> = Vec::new();
+            let lower_ctx = PipelineLowerCtx::new(ty_ctx, &hir);
+            let mut bodies = Vec::new();
 
-        for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
-            // Lower THIR -> MIR
-            let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
-            sink.extend(lower_result.diagnostics);
-            if sink.has_errors() {
-                return Err(sink.into_diagnostics());
+            for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
+                let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
+                sink.extend(lower_result.diagnostics);
+                if sink.has_errors() {
+                    return Err(sink.into_diagnostics());
+                }
+                let mir_body = lower_result.body;
+                let mir_arc = Arc::new(mir_body);
+
+                let borrowck_ctx = PipelineBorrowckCtx::new(ty_ctx, &mir_arc);
+                let borrowck_result = glyim_borrowck::check_borrows(&borrowck_ctx, &mir_arc);
+                sink.extend(borrowck_result.errors);
+                if sink.has_errors() {
+                    return Err(sink.into_diagnostics());
+                }
+
+                let opt_body = glyim_opt::optimize(ty_ctx, &mir_arc);
+                bodies.push(Arc::new(opt_body.body));
             }
-            let mir_body = lower_result.body;
-            let mir_arc = Arc::new(mir_body);
-
-            // Borrow checking
-            let borrowck_ctx = PipelineBorrowckCtx::new(ty_ctx, &mir_arc);
-            let borrowck_result = glyim_borrowck::check_borrows(&borrowck_ctx, &mir_arc);
-            sink.extend(borrowck_result.errors);
-            if sink.has_errors() {
-                return Err(sink.into_diagnostics());
-            }
-
-            // Optimization
-            let opt_body = glyim_opt::optimize(ty_ctx, &mir_arc);
-            optimized_bodies.push(Arc::new(opt_body.body));
-        }
+            bodies
+        }; // ty_ctx_guard dropped here
 
         // Phase 7: Codegen
         backend.generate(&optimized_bodies, Path::new("output.o"))?;

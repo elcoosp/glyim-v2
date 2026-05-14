@@ -5,9 +5,11 @@ use std::collections::HashSet;
 
 /// Eliminates basic blocks that are not reachable from the start block.
 pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
-    let blocks: Vec<BasicBlockData> = body.basic_blocks.clone().into_raw();
+    let blocks: Vec<BasicBlockData> = std::mem::take(&mut body.basic_blocks).into_raw();
     let reachable = reachable_set(&blocks);
     if reachable.len() == blocks.len() {
+        // Put the blocks back
+        body.basic_blocks = IndexVec::from_raw(blocks);
         return;
     }
 

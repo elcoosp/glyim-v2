@@ -21,6 +21,13 @@ pub struct CrateConfig {
 }
 
 impl Database {
+
+    /// Obtain a mutable reference to the interner.
+    /// This should only be called during HIR lowering when no other
+    /// references to the interner are held.
+    pub fn intern_mut(&mut self) -> &mut Interner {
+        &mut self.interner
+    }
     pub fn new(config: CrateConfig) -> Self {
         Self {
             interner: Interner::new(),

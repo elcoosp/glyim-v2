@@ -1,1 +1,0 @@
-s/thir::Stmt::Let { name: _, ty: _, pat: _, init, span } => {/thir::Stmt::Let { name: _, ty: _, pat: _, init, span: _ } => {/

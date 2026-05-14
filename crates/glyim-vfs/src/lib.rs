@@ -47,6 +47,10 @@ impl Vfs {
     pub fn add_file_content(&self, path: &Path, content: Arc<str>) -> FileId {
         let mut inner = self.inner.write();
         if let Some(&id) = inner.path_to_id.get(path) {
+            // Update content for existing file
+            if let Some(file) = inner.files.get_mut(id.index()) {
+                file.content = content;
+            }
             return id;
         }
         let id = FileId::from_raw(inner.next_id);

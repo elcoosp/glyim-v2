@@ -38,7 +38,7 @@ pub struct HygieneCtx {
     syntax_contexts: Vec<SyntaxContextData>,
     next_syntax_context: u32,
     key: HygieneKey,
-    adjust_warned: bool,
+    
 }
 
 impl HygieneCtx {
@@ -56,7 +56,7 @@ impl HygieneCtx {
             syntax_contexts: Vec::new(),
             next_syntax_context: 1,
             key: HygieneKey::new(),
-            adjust_warned: false,
+            
         }
     }
 
@@ -104,10 +104,7 @@ impl HygieneCtx {
     }
 
     pub fn adjust(&mut self, span: Span, _scope_ctx: SyntaxContext) -> Span {
-        if !self.adjust_warned {
-            self.adjust_warned = true;
-            tracing::warn!("hygiene adjust is stubbed; macro spans may be incorrect.");
-        }
+        // STUB: hygiene adjust is not implemented; macro spans may be incorrect.
         span
     }
 }
@@ -119,6 +116,10 @@ impl Default for HygieneCtx {
 }
 
 impl SyntaxContext {
+        /// Create a SyntaxContext from a hygiene key and raw index.
+    /// The key parameter is reserved for future cross-session isolation
+    /// and is currently unused. IDs are globally unique within a single
+    /// compiler invocation.
     fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
         let _ = _key;
         SyntaxContext(raw)
@@ -126,6 +127,10 @@ impl SyntaxContext {
 }
 
 impl ExpnId {
+        /// Create a SyntaxContext from a hygiene key and raw index.
+    /// The key parameter is reserved for future cross-session isolation
+    /// and is currently unused. IDs are globally unique within a single
+    /// compiler invocation.
     fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
         let _ = _key;
         ExpnId(raw)
