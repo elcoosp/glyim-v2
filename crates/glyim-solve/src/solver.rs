@@ -7,7 +7,7 @@ pub trait TraitSolver {
     fn evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SolverResult {
     Proven,
     Ambiguous,
@@ -19,7 +19,7 @@ pub struct TraitContext {
     impl_defs: Vec<ImplDef>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraitDef {
     pub def_id: TraitDefId,
     pub name: Name,
@@ -27,7 +27,7 @@ pub struct TraitDef {
     pub predicates: Vec<Predicate>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImplDef {
     pub def_id: ImplDefId,
     pub trait_ref: TraitRef,
@@ -52,6 +52,15 @@ impl TraitContext {
             .iter()
             .filter(move |i| i.trait_ref.def_id == trait_id)
     }
+
+    #[cfg(test)]
+    pub(crate) fn trait_defs(&self) -> &[TraitDef] {
+        &self.trait_defs
+    }
+    #[cfg(test)]
+    pub(crate) fn impl_defs(&self) -> &[ImplDef] {
+        &self.impl_defs
+    }
 }
 
 impl Default for TraitContext {
@@ -72,6 +81,10 @@ impl<'a> SimpleTraitSolver<'a> {
 
 impl TraitSolver for SimpleTraitSolver<'_> {
     fn can_prove(&mut self, _ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult {
+        // Negative polarity (e.g. `T: !Send`) is not yet supported in the simple solver.
+        if predicate.polarity == ImplPolarity::Negative {
+            return SolverResult::Ambiguous;
+        }
         let has_impl = self
             .trait_ctx
             .impls_of_trait(predicate.trait_ref.def_id)
