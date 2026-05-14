@@ -1,0 +1,81 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..138
+  TraitDef@0..36
+    KwTrait@0..5 "trait"
+    Ident@5..11 "Animal"
+    LBrace@11..12 "{"
+    FnDef@12..35
+      KwFn@12..14 "fn"
+      Ident@14..19 "speak"
+      LParen@19..20 "("
+      ParamList@20..25
+        Param@20..25
+          And@20..21 "&"
+          KwSelf@21..25 "self"
+      RParen@25..26 ")"
+      Arrow@26..28 "->"
+      PathType@28..34
+        UsePath@28..34
+          Ident@28..34 "String"
+      Semicolon@34..35 ";"
+    RBrace@35..36 "}"
+  StructDef@36..46
+    KwStruct@36..42 "struct"
+    Ident@42..45 "Dog"
+    Semicolon@45..46 ";"
+  ImplDef@46..106
+    KwImpl@46..50 "impl"
+    PathType@50..56
+      UsePath@50..56
+        Ident@50..56 "Animal"
+    KwFor@56..59 "for"
+    PathType@59..62
+      UsePath@59..62
+        Ident@59..62 "Dog"
+    LBrace@62..63 "{"
+    FnDef@63..105
+      KwFn@63..65 "fn"
+      Ident@65..70 "speak"
+      LParen@70..71 "("
+      ParamList@71..76
+        Param@71..76
+          And@71..72 "&"
+          KwSelf@72..76 "self"
+      RParen@76..77 ")"
+      Arrow@77..79 "->"
+      PathType@79..85
+        UsePath@79..85
+          Ident@79..85 "String"
+      Block@85..105
+        LBrace@85..86 "{"
+        ExprStmt@86..104
+          LitExpr@86..92
+            StringLit@86..92 "\"woof\""
+          Dot@92..93 "."
+          Ident@93..102 "to_string"
+          LParen@102..103 "("
+          RParen@103..104 ")"
+        RBrace@104..105 "}"
+    RBrace@105..106 "}"
+  FnDef@106..138
+    KwFn@106..108 "fn"
+    Ident@108..119 "make_animal"
+    LParen@119..120 "("
+    ParamList@120..120
+    RParen@120..121 ")"
+    Arrow@121..123 "->"
+    KwImpl@123..127 "impl"
+    PathType@127..133
+      UsePath@127..133
+        Ident@127..133 "Animal"
+    Block@133..138
+      LBrace@133..134 "{"
+      ExprStmt@134..137
+        PathExpr@134..137
+          UsePath@134..137
+            Ident@134..137 "Dog"
+      RBrace@137..138 "}"
