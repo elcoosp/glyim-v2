@@ -1,13 +1,13 @@
 use glyim_core::def_id::CrateId;
 use glyim_core::interner::Interner;
-use glyim_solve::TraitContext;
 use glyim_vfs::Vfs;
 use parking_lot::RwLock;
 
 pub struct Database {
     interner: Interner,
     vfs: Vfs,
-    _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,    krate: CrateId,
+    _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,
+    krate: CrateId,
     _config: CrateConfig, // renamed to _config
 }
 
@@ -29,7 +29,8 @@ impl Database {
         Self {
             interner: Interner::new(),
             vfs: Vfs::new(),
-            _ty_ctx: RwLock::new(None),            krate: CrateId::from_raw(0),
+            _ty_ctx: RwLock::new(None),
+            krate: CrateId::from_raw(0),
             _config: config,
         }
     }
@@ -41,7 +42,7 @@ impl Database {
     pub fn vfs(&self) -> &Vfs {
         &self.vfs
     }
-    
+
     pub fn krate(&self) -> CrateId {
         self.krate
     }

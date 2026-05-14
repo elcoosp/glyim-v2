@@ -4,7 +4,7 @@ mod tests;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_mir::Body;
-use glyim_solve::{SimpleTraitSolver, TraitContext};
+use glyim_solve::SimpleTraitSolver;
 use std::path::Path;
 use std::sync::Arc;
 
