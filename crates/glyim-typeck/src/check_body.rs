@@ -81,7 +81,7 @@ pub(crate) fn check_function_body(
         pending_obligations,
         hir,
         local_var_types,
-    };
+};
 
     // Process all body expressions: non-final become statements, final becomes tail
     let mut thir_stmts = Vec::new();
