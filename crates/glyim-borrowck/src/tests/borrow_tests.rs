@@ -1066,7 +1066,7 @@ fn t27_empty_second_block_no_panic() {
 #[test]
 fn t28_binary_op_with_borrowed_operands_no_conflict() {
     let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
-        let unit = ctx_mut.unit_ty();
+        let _ = ctx_mut.unit_ty();
         let i32_ty = ctx_mut.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32));
         let shared_ref = make_ref_ty(ctx_mut, i32_ty, false);
         let locals = vec![
