@@ -1,10 +1,11 @@
 use clap::Parser;
+use glyim_codegen::BytecodeBackend;
 use glyim_codegen_llvm::LlvmBackend;
 use glyim_db::{CrateConfig, Database};
 use glyim_pipeline::Pipeline;
 use std::path::PathBuf;
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "glyim", version, about = "The Glyim compiler")]
 pub struct CliArgs {
     #[arg(value_name = "INPUT")]
@@ -15,14 +16,19 @@ pub struct CliArgs {
     pub opt_level: u8,
     #[arg(long = "target")]
     pub target: Option<String>,
+    #[arg(long = "backend", default_value = "llvm")]
+    pub backend: String,
 }
 
 pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     let args = CliArgs::parse();
+    run_with_args(args)
+}
 
+pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
-        .init();
+        .try_init().ok();
 
     let _output = args.output.unwrap_or_else(|| {
         let mut out = args.input.clone();
@@ -45,11 +51,19 @@ pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     };
 
     let mut db = Database::new(config);
-    let backend = LlvmBackend::with_target(
-        args.target
-            .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
-    );
 
-    Pipeline::compile_file(&mut db, &args.input, &backend)?;
+    let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
+        Box::new(BytecodeBackend::new())
+    } else {
+        Box::new(LlvmBackend::with_target(
+            args.target
+                .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
+        ))
+    };
+
+    Pipeline::compile_file(&mut db, &args.input, &*backend)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -330,6 +330,8 @@ dependencies = [
  "glyim-db",
  "glyim-diag",
  "glyim-pipeline",
+ "glyim-test",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
