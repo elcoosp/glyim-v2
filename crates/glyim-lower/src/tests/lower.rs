@@ -244,3 +244,64 @@ fn s15_t08_lower_reference() {
     let result = lower_body(&lower_ctx, &thir);
     assert_mir(&ctx, &result.body);
 }
+
+#[test]
+fn s15_t09_lower_assign() {
+    let ctx = test_frozen_ty_ctx();
+    let lower_ctx = LocalMockLowerCtx::new(&ctx);
+    let mut thir = dummy_thir();
+
+    let lhs = thir::Expr {
+        kind: thir::ExprKind::VarRef(LocalVarId::from_raw(1)),
+        ty: Ty::BOOL,
+        span: Span::DUMMY,
+    };
+    let rhs = thir::Expr {
+        kind: thir::ExprKind::Literal(thir::Literal::Bool(true)),
+        ty: Ty::BOOL,
+        span: Span::DUMMY,
+    };
+
+    thir.stmts.push(thir::Stmt::Assign {
+        lhs,
+        rhs,
+        span: Span::DUMMY,
+    });
+
+    let result = lower_body(&lower_ctx, &thir);
+    assert_mir(&ctx, &result.body).block_count(1);
+
+    let block = &result.body.basic_blocks[glyim_mir::BasicBlockIdx::from_raw(0)];
+    assert_eq!(block.statements.len(), 1);
+    assert!(matches!(
+        block.statements[0].kind,
+        glyim_mir::StatementKind::Assign(..)
+    ));
+}
+
+#[test]
+fn s15_t10_lower_unary_op() {
+    let ctx = test_frozen_ty_ctx();
+    let lower_ctx = LocalMockLowerCtx::new(&ctx);
+    let mut thir = dummy_thir();
+
+    let operand = thir::Expr {
+        kind: thir::ExprKind::Literal(thir::Literal::Bool(true)),
+        ty: Ty::BOOL,
+        span: Span::DUMMY,
+    };
+
+    let unary_expr = thir::Expr {
+        kind: thir::ExprKind::Unary {
+            op: UnOp::Not,
+            operand: Box::new(operand),
+        },
+        ty: Ty::BOOL,
+        span: Span::DUMMY,
+    };
+
+    thir.stmts.push(thir::Stmt::Expr { expr: unary_expr });
+
+    let result = lower_body(&lower_ctx, &thir);
+    assert_mir(&ctx, &result.body).block_count(1);
+}

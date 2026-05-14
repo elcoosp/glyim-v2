@@ -212,6 +212,10 @@ impl<'a> MirBuilder<'a> {
                 let rhs_op = self.lower_expr_to_operand(rhs);
                 glyim_mir::Rvalue::BinaryOp(*op, Box::new((lhs_op, rhs_op)))
             }
+            thir::ExprKind::Unary { op, operand } => {
+                let op_val = self.lower_expr_to_operand(operand);
+                glyim_mir::Rvalue::UnaryOp(*op, op_val)
+            }
             thir::ExprKind::Ref {
                 mutability,
                 operand,
