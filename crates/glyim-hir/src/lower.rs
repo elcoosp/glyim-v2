@@ -77,6 +77,7 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
     let mut bodies = IndexVec::new();
     let mut body_owners = IndexVec::new();
     let mut local_def_counter = 0u32;
+    let mut item_id_counter = 0u32;
 
     for child in root.children() {
         match child.kind() {
@@ -85,6 +86,7 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
                     &child,
                     interner,
                     &mut local_def_counter,
+                    &mut item_id_counter,
                     &mut bodies,
                     &mut body_owners,
                 ) {
@@ -92,12 +94,12 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
                 }
             }
             SyntaxKind::StructDef => {
-                if let Some(item) = lower_struct_def(&child, interner, &mut local_def_counter) {
+                if let Some(item) = lower_struct_def(&child, interner, &mut local_def_counter, &mut item_id_counter) {
                     items.push(item);
                 }
             }
             SyntaxKind::EnumDef => {
-                if let Some(item) = lower_enum_def(&child, interner, &mut local_def_counter) {
+                if let Some(item) = lower_enum_def(&child, interner, &mut local_def_counter, &mut item_id_counter) {
                     items.push(item);
                 }
             }
@@ -125,6 +127,7 @@ fn lower_fn_def(
     node: &SyntaxNode,
     interner: &mut Interner,
     local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
     bodies: &mut IndexVec<BodyId, Body>,
     body_owners: &mut IndexVec<BodyId, LocalDefId>,
 ) -> Option<Item> {
@@ -179,8 +182,10 @@ fn lower_fn_def(
     let bid = bodies.push(body);
     body_owners.push(owner);
 
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
     Some(Item {
-        id: ItemId::from_raw(0),
+        id,
         name,
         kind: ItemKind::Fn(FnItem {
             params,
@@ -230,6 +235,7 @@ fn lower_struct_def(
     node: &SyntaxNode,
     interner: &mut Interner,
     _local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
 ) -> Option<Item> {
     let name_str = first_ident_text(node)?;
     let name = interner.intern(&name_str);
@@ -292,8 +298,10 @@ fn lower_struct_def(
         kind = StructKind::Record;
     }
 
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
     Some(Item {
-        id: ItemId::from_raw(0),
+        id,
         name,
         kind: ItemKind::Struct(StructItem {
             fields,
@@ -309,6 +317,7 @@ fn lower_enum_def(
     node: &SyntaxNode,
     interner: &mut Interner,
     _local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
 ) -> Option<Item> {
     let name_str = first_ident_text(node)?;
     let name = interner.intern(&name_str);
@@ -328,8 +337,10 @@ fn lower_enum_def(
         }
     }
 
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
     Some(Item {
-        id: ItemId::from_raw(0),
+        id,
         name,
         kind: ItemKind::Enum(EnumItem {
             variants,

@@ -97,7 +97,9 @@ impl InferenceTable {
             | TyKind::Tuple(substs)
             | TyKind::Opaque(_, substs) => {
                 for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg && self.occurs(ctx, var, *t) {
+                    if let GenericArg::Ty(t) = arg
+                        && self.occurs(ctx, var, *t)
+                    {
                         return true;
                     }
                 }
@@ -105,7 +107,9 @@ impl InferenceTable {
             }
             TyKind::FnPtr(sig) => {
                 for arg in ctx.substitution_args(sig.inputs) {
-                    if let GenericArg::Ty(t) = arg && self.occurs(ctx, var, *t) {
+                    if let GenericArg::Ty(t) = arg
+                        && self.occurs(ctx, var, *t)
+                    {
                         return true;
                     }
                 }

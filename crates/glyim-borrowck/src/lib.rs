@@ -1,12 +1,17 @@
 //! Borrow checker using non-lexical lifetimes (NLL).
 //!
-//! Minimal implementation for v0.1.0: detects conflicts between
-//! overlapping mutable and immutable borrows within a single basic block.
+//! **Current limitation (v0.1.0):** This implementation only tracks borrows
+//! within a single basic block. Borrows that span across basic blocks
+//! (e.g., through Goto edges) are not tracked. This means:
+//! - Borrows that are taken in one block and used in another may be missed.
+//! - Some false negatives are possible in non-trivial control flow.
+//!
+//! A proper dataflow-based analysis is needed for production use.
 
 use glyim_diag::GlyimDiagnostic;
 use glyim_diag::MultiSpan;
+use glyim_diag::Span;
 use glyim_mir::{Body, BorrowKind, Operand, Place, Rvalue, StatementKind};
-use glyim_span::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
@@ -208,14 +213,13 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
                 }
             }
 
-            if errors.is_empty() {
-                // Record this new borrow as active.
-                active_borrows[borrowed_local.to_raw() as usize].push(ActiveBorrow {
-                    kind: *kind,
-                    span: stmt.source_info.span,
-                    last_use: dest_last_use,
-                });
-            }
+            // Always record the borrow as active, even if there are conflicts.
+            // This allows reporting all conflicts, not just the first.
+            active_borrows[borrowed_local.to_raw() as usize].push(ActiveBorrow {
+                kind: *kind,
+                span: stmt.source_info.span,
+                last_use: dest_last_use,
+            });
         }
     }
 
