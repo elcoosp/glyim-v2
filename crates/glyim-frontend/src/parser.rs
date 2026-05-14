@@ -1477,14 +1477,26 @@ impl<'a> Parser<'a> {
                     self.start_node(SyntaxKind::PatStruct);
                     self.bump(); // {
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                        if self.current_kind() == SyntaxKind::Ident {
-                            self.bump();
-                            if self.current_kind() == SyntaxKind::Colon {
+                        if self.current_kind() == SyntaxKind::DotDot {
+                            self.bump(); // ..
+                            // trailing comma allowed after ..
+                            if self.current_kind() == SyntaxKind::Comma {
                                 self.bump();
-                                self.parse_pat();
                             }
-                        } else if self.current_kind() == SyntaxKind::DotDot {
-                            self.bump();
+                        } else if self.current_kind() == SyntaxKind::Ident {
+                            let cp = self.checkpoint();
+                            self.bump(); // field name
+                            if self.current_kind() == SyntaxKind::Colon {
+                                // explicit: field_name: pattern
+                                self.start_node_at(cp, SyntaxKind::PatIdent);
+                                self.finish_node();
+                                self.bump(); // :
+                                self.parse_pat();
+                            } else {
+                                // shorthand: field_name (binding)
+                                self.start_node_at(cp, SyntaxKind::PatIdent);
+                                self.finish_node();
+                            }
                         } else {
                             self.error("expected field pattern");
                             if self.current().is_some() {
