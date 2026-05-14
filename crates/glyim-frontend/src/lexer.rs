@@ -509,11 +509,26 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number_suffix(&mut self) {
+        let suffix_start = self.pos;
         while let Some(ch) = self.peek() {
             if ch.is_alphanumeric() || ch == '_' {
                 self.advance();
             } else {
                 break;
+            }
+        }
+        if self.pos > suffix_start {
+            let suffix = &self.source[suffix_start..self.pos];
+            if !is_valid_number_suffix(suffix) {
+                self.diagnostics.push(GlyimDiagnostic::lex_error(
+                    Span::new(
+                        self.file_id,
+                        ByteIdx::from_raw(suffix_start as u32),
+                        ByteIdx::from_raw(self.pos as u32),
+                        SyntaxContext::ROOT,
+                    ),
+                    format!("invalid number suffix: '{}'", suffix),
+                ));
             }
         }
     }
@@ -726,6 +741,15 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
         "_" => SyntaxKind::Underscore,
         _ => SyntaxKind::Ident,
     }
+}
+
+fn is_valid_number_suffix(suffix: &str) -> bool {
+    matches!(
+        suffix,
+        "i8" | "i16" | "i32" | "i64" | "isize"
+        | "u8" | "u16" | "u32" | "u64" | "usize"
+        | "f32" | "f64"
+    )
 }
 
 pub fn lex(source: &str, file_id: FileId) -> LexResult {
