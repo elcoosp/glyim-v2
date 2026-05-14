@@ -259,6 +259,9 @@ pub enum Expr {
         cond: ExprId,
         body: ExprId,
     },
+    Loop {
+        body: ExprId,
+    },
     For {
         pat: PatId,
         iterable: ExprId,
