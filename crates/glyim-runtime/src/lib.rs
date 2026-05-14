@@ -19,6 +19,8 @@ pub extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8 {
 }
 
 /// Deallocate memory previously allocated by `glyim_alloc`.
+/// # Safety
+/// It's safe, trust me
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 {
@@ -56,13 +58,17 @@ mod tests {
             typed.write(42u64);
             assert_eq!(*typed, 42u64);
         }
-        unsafe { glyim_dealloc(ptr, 8, 8); }
+        unsafe {
+            glyim_dealloc(ptr, 8, 8);
+        }
     }
 
     #[test]
     fn test_alloc_zero_size() {
         let ptr = glyim_alloc(0, 1);
-        unsafe { glyim_dealloc(ptr, 0, 1); }
+        unsafe {
+            glyim_dealloc(ptr, 0, 1);
+        }
     }
 
     #[test]
@@ -71,6 +77,8 @@ mod tests {
         assert!(!ptr.is_null());
         let addr = ptr as usize;
         assert_eq!(addr % 16, 0, "allocated memory must be aligned");
-        unsafe { glyim_dealloc(ptr, 64, 16); }
+        unsafe {
+            glyim_dealloc(ptr, 64, 16);
+        }
     }
 }
