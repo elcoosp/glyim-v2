@@ -1,3 +1,4 @@
+mod common;
 mod while_loop;
 mod match_expr;
 mod struct_field;

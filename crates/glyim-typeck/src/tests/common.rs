@@ -1,9 +1,10 @@
-use glyim_core::def_id::{CrateId, LocalDefId, DefId};
+use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_hir::*;
 use glyim_solve::InferenceTable;
 use glyim_type::*;
+use crate::thir;
 
 /// Helper: create a minimal CrateHir with one function body containing the given expressions.
 /// Returns the CrateHir and the BodyId of that function.
@@ -20,7 +21,7 @@ pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, glyim_hir::BodyId) {
         body_exprs.push(expr);
     }
     let body = Body {
-        owner: LocalDefId::from_raw(0), // fake
+        owner: LocalDefId::from_raw(0),
         exprs: body_exprs,
         pats: glyim_core::arena::IndexVec::new(),
         params: Vec::new(),
@@ -32,7 +33,7 @@ pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, glyim_hir::BodyId) {
     // Create a function item that owns this body
     let fn_item = Item {
         id: ItemId::from_raw(0),
-        name: Name::new("test_fn"),
+        name: name("test_fn"),
         kind: ItemKind::Fn(FnItem {
             params: Vec::new(),
             return_ty: None,
@@ -65,15 +66,13 @@ pub fn typeck_single_body(hir: &CrateHir, body_id: BodyId) -> thir::Body {
         body_id,
         hir,
         LocalDefId::from_raw(0),
-        Ty::UNIT, // return type
-        &[],      // params
+        Ty::UNIT,
+        &[],
     )
 }
 
-/// Create a simple Name from a static string (uses interner from context?).
-/// This function creates a new Interner to intern the string, returning Name.
-/// In tests we can use this to create parameter names or field names.
+/// Create a simple Name from a static string.
 pub fn name(s: &str) -> Name {
-    let mut interner = glyim_core::interner::Interner::new();
+    let interner = glyim_core::interner::Interner::new();
     interner.intern(s)
 }
