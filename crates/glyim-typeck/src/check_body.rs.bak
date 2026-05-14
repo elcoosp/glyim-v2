@@ -13,12 +13,12 @@ use crate::thir::{self, LocalVarId};
 
 /// Context struct to bundle the many mutable references needed during expression checking.
 #[allow(dead_code)]
-struct CheckCtx<'a, 'b, 'c, 'd, 'e> {
-    ctx: &'a mut TyCtxMut,
-    infer: &'b mut InferenceTable,
-    diagnostics: &'c mut Vec<GlyimDiagnostic>,
-    pending_obligations: &'d mut Vec<Obligation>,
-    hir: &'e CrateHir,
+struct CheckCtx<\'a, \'b, \'c, \'d, \'e> {
+    ctx: &\'a mut TyCtxMut,
+    infer: &\'b mut InferenceTable,
+    diagnostics: &\'c mut Vec<GlyimDiagnostic>,
+    pending_obligations: &\'d mut Vec<Obligation>,
+    hir: &\'e CrateHir,
     local_var_types: std::collections::HashMap<Name, Ty>,
 }
 
@@ -68,18 +68,7 @@ pub(crate) fn check_function_body(
         local_var_types.insert(param.name, ty);
     }
 
-    let mut local_var_types = std::collections::HashMap::new();
-    for (i, param) in params.iter().enumerate() {
-        let ty = thir_params[i].ty;
-        local_var_types.insert(param.name, ty);
-    }
-
-    let mut chk = CheckCtx {
-        ctx,
-        infer,
-        diagnostics,
-        pending_obligations,
-        hir,
+        let mut chk = CheckCtx {
         local_var_types,
     };
 
