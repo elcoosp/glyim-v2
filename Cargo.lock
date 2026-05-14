@@ -527,6 +527,7 @@ dependencies = [
  "glyim-opt",
  "glyim-solve",
  "glyim-span",
+ "glyim-test",
  "glyim-type",
  "glyim-typeck",
  "glyim-vfs",

@@ -22,3 +22,5 @@ glyim-solve = { workspace = true }
 glyim-db = { workspace = true }
 glyim-mir = { workspace = true }
 tracing = { workspace = true }
+[dev-dependencies]
+glyim-test = { workspace = true }

@@ -1,4 +1,6 @@
 use glyim_codegen::CodegenBackend;
+#[cfg(test)]
+mod tests;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_mir::Body;
@@ -41,12 +43,11 @@ impl Pipeline {
             return Err(sink.into_diagnostics());
         }
 
-        // Phase 4: HIR (stub)
-        let hir = glyim_hir::CrateHir {
-            items: glyim_core::arena::IndexVec::new(),
-            bodies: glyim_core::arena::IndexVec::new(),
-            body_owners: glyim_core::arena::IndexVec::new(),
-        };
+        // Phase 4: HIR
+        let hir = glyim_hir::pipeline_api::lower_crate_for_pipeline(
+            &parse_result.root,
+            glyim_db::db_helpers::intern_mut(db),
+        );
 
         // Phase 5: Typeck
         let resolver = db.interner().clone();
