@@ -233,13 +233,12 @@ SourceFile@0..543
             Dot@354..355 "."
             Ident@355..358 "age"
         LBrace@358..359 "{"
-        MatchArm@359..363
-          PatLit@359..360
+        MatchArm@359..373
+          PatLit@359..364
             IntLit@359..360 "0"
-          DotDotEq@360..363 "..="
-        MatchArm@363..373
-          PatLit@363..364
-            IntLit@363..364 "1"
+            DotDotEq@360..363 "..="
+            PatLit@363..364
+              IntLit@363..364 "1"
           FatArrow@364..366 "=>"
           PathExpr@366..373
             UsePath@366..373
@@ -252,13 +251,12 @@ SourceFile@0..543
             StringLit@375..382 "\"puppy\""
           RParen@382..383 ")"
           Comma@383..384 ","
-        MatchArm@384..388
-          PatLit@384..385
+        MatchArm@384..398
+          PatLit@384..389
             IntLit@384..385 "2"
-          DotDotEq@385..388 "..="
-        MatchArm@388..398
-          PatLit@388..389
-            IntLit@388..389 "7"
+            DotDotEq@385..388 "..="
+            PatLit@388..389
+              IntLit@388..389 "7"
           FatArrow@389..391 "=>"
           PathExpr@391..398
             UsePath@391..398

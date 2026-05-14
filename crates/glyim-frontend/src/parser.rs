@@ -720,7 +720,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwStruct | SyntaxKind::KwEnum => self.parse_item(),
             SyntaxKind::LBrace => {
                 self.start_node(SyntaxKind::ExprStmt);
-                self.parse_block();
+                self.parse_expr();
                 self.finish_node();
             }
             _ => {
@@ -1261,7 +1261,7 @@ impl<'a> Parser<'a> {
                 self.bump(); // second |
             } else {
                 while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
-                    self.parse_pat();
+                    self.parse_pat_single();
                     if self.current_kind() == SyntaxKind::Colon {
                         self.bump();
                         self.parse_type();
@@ -1431,6 +1431,19 @@ impl<'a> Parser<'a> {
             | SyntaxKind::KwFalse => {
                 self.start_node(SyntaxKind::PatLit);
                 self.bump();
+                // Check for range pattern: 0..10
+                if matches!(
+                    self.current_kind(),
+                    SyntaxKind::DotDot | SyntaxKind::DotDotEq
+                ) {
+                    self.bump(); // .. or ..=
+                    if !matches!(
+                        self.current_kind(),
+                        SyntaxKind::FatArrow | SyntaxKind::Comma | SyntaxKind::RBrace
+                    ) {
+                        self.parse_pat();
+                    }
+                }
                 self.finish_node();
             }
             _ => {

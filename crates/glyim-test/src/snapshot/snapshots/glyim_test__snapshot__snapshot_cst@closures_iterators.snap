@@ -4,7 +4,7 @@ assertion_line: 16
 expression: tree
 ---
 SourceFile@0..163
-  FnDef@0..163
+  FnDef@0..70
     KwFn@0..2 "fn"
     Ident@2..16 "sum_of_squares"
     LParen@16..17 "("
@@ -25,9 +25,9 @@ SourceFile@0..163
     PathType@33..36
       UsePath@33..36
         Ident@33..36 "i32"
-    Block@36..163
+    Block@36..70
       LBrace@36..37 "{"
-      ExprStmt@37..163
+      ExprStmt@37..69
         PathExpr@37..48
           UsePath@37..48
             Ident@37..43 "values"
@@ -38,76 +38,81 @@ SourceFile@0..163
         Dot@50..51 "."
         Ident@51..54 "map"
         LParen@54..55 "("
-        ClosureExpr@55..163
+        ClosureExpr@55..62
           Or@55..56 "|"
           And@56..57 "&"
           PatIdent@57..58
             Ident@57..58 "x"
           Or@58..59 "|"
-          PatIdent@59..60
-            Ident@59..60 "x"
-          Star@60..61 "*"
-          PatIdent@61..62
-            Ident@61..62 "x"
-          RParen@62..63 ")"
-          Dot@63..64 "."
-          UsePath@64..67
-            Ident@64..67 "sum"
-          PatTuple@67..69
-            LParen@67..68 "("
-            RParen@68..69 ")"
-          RBrace@69..70 "}"
-          KwFn@70..72 "fn"
-          UsePath@72..90
-            Ident@72..90 "filter_and_collect"
-          PatTuple@90..107
-            LParen@90..91 "("
-            PatIdent@91..97
-              Ident@91..97 "values"
-            Colon@97..98 ":"
-            PatIdent@98..101
-              Ident@98..101 "Vec"
-            Lt@101..102 "<"
-            PatIdent@102..105
+          PathExpr@59..60
+            UsePath@59..60
+              Ident@59..60 "x"
+          BinaryExpr@60..62
+            Star@60..61 "*"
+            PathExpr@61..62
+              UsePath@61..62
+                Ident@61..62 "x"
+        RParen@62..63 ")"
+        Dot@63..64 "."
+        Ident@64..67 "sum"
+        LParen@67..68 "("
+        RParen@68..69 ")"
+      RBrace@69..70 "}"
+  FnDef@70..163
+    KwFn@70..72 "fn"
+    Ident@72..90 "filter_and_collect"
+    LParen@90..91 "("
+    ParamList@91..106
+      Param@91..106
+        Ident@91..97 "values"
+        Colon@97..98 ":"
+        PathType@98..106
+          UsePath@98..101
+            Ident@98..101 "Vec"
+          Lt@101..102 "<"
+          PathType@102..105
+            UsePath@102..105
               Ident@102..105 "i32"
-            Gt@105..106 ">"
-            RParen@106..107 ")"
-          Arrow@107..109 "->"
-          PatIdent@109..112
-            Ident@109..112 "Vec"
-          Lt@112..113 "<"
-          PatIdent@113..116
-            Ident@113..116 "i32"
-          Gt@116..117 ">"
-          LBrace@117..118 "{"
-          PatIdent@118..124
+          Gt@105..106 ">"
+    RParen@106..107 ")"
+    Arrow@107..109 "->"
+    PathType@109..117
+      UsePath@109..112
+        Ident@109..112 "Vec"
+      Lt@112..113 "<"
+      PathType@113..116
+        UsePath@113..116
+          Ident@113..116 "i32"
+      Gt@116..117 ">"
+    Block@117..163
+      LBrace@117..118 "{"
+      ExprStmt@118..162
+        PathExpr@118..134
+          UsePath@118..134
             Ident@118..124 "values"
-          Dot@124..125 "."
-          UsePath@125..134
+            Dot@124..125 "."
             Ident@125..134 "into_iter"
-          PatTuple@134..136
-            LParen@134..135 "("
-            RParen@135..136 ")"
-          Dot@136..137 "."
-          UsePath@137..143
-            Ident@137..143 "filter"
-          PatTuple@143..152
-            LParen@143..144 "("
-            Or@144..145 "|"
-            And@145..146 "&"
-            PatIdent@146..147
-              Ident@146..147 "x"
-            Or@147..148 "|"
-            PatIdent@148..149
+        LParen@134..135 "("
+        RParen@135..136 ")"
+        Dot@136..137 "."
+        Ident@137..143 "filter"
+        LParen@143..144 "("
+        ClosureExpr@144..151
+          Or@144..145 "|"
+          And@145..146 "&"
+          PatIdent@146..147
+            Ident@146..147 "x"
+          Or@147..148 "|"
+          PathExpr@148..149
+            UsePath@148..149
               Ident@148..149 "x"
+          BinaryExpr@149..151
             Gt@149..150 ">"
-            PatLit@150..151
+            LitExpr@150..151
               IntLit@150..151 "0"
-            RParen@151..152 ")"
-          Dot@152..153 "."
-          UsePath@153..160
-            Ident@153..160 "collect"
-          PatTuple@160..162
-            LParen@160..161 "("
-            RParen@161..162 ")"
-          RBrace@162..163 "}"
+        RParen@151..152 ")"
+        Dot@152..153 "."
+        Ident@153..160 "collect"
+        LParen@160..161 "("
+        RParen@161..162 ")"
+      RBrace@162..163 "}"
