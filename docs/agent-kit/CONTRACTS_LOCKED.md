@@ -149,7 +149,7 @@ Any change to items listed here requires a formal Change Request.
 
 ## glyim-codegen
 
-- `pub trait CodegenBackend` — `name(&self) -> &'static str`, `generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<Vec<u8>>`, `generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>>`
+- `pub trait CodegenBackend` — `name(&self) -> &'static str`, `generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()>`, `generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>>`
 - `pub struct BytecodeBackend` — `new()`, `default`
 
 ---
@@ -162,9 +162,10 @@ Any change to items listed here requires a formal Change Request.
 
 ## glyim-db
 
-- `pub struct Database` — `new(config: CrateConfig)`, `interner(&self) -> &Interner`, `vfs(&self) -> &Vfs`, `trait_ctx(&self) -> &TraitContext`, `krate(&self) -> CrateId`, `set_ty_ctx(&self, ctx: TyCtx)`, `ty_ctx(&self) -> parking_lot::RwLockReadGuard<'_, Option<TyCtx>>`
+- `pub struct Database` — `new(config: CrateConfig)`, `interner(&self) -> &Interner`, `vfs(&self) -> &Vfs`, `krate(&self) -> CrateId`, `set_ty_ctx(&self, ctx: TyCtx)`, `ty_ctx(&self) -> parking_lot::RwLockReadGuard<'_, Option<TyCtx>>`, `intern_mut(&mut self) -> &mut Interner`
 - `pub struct CrateConfig` — `name: String`, `target_triple: String`, `opt_level: u8`
-- `pub mod db_helpers` — `pub fn intern_mut(db: &mut Database) -> &mut Interner`
+
+> **Change from previous contract:** Removed `trait_ctx()` (no longer present) and `db_helpers` module (functionality moved to `Database::intern_mut`).
 
 ---
 
@@ -347,13 +348,21 @@ Any change to items listed here requires a formal Change Request.
 
 ## glyim-lsp
 
-- No public items (empty crate stub)
+- `pub struct LspState` — `new(db: Database)`, `did_open(&mut self, path: PathBuf, content: String, version: i32)`, `did_change(&mut self, path: PathBuf, content: String, version: i32)`, `did_close(&mut self, path: &PathBuf)`, `file_content(&self, path: &PathBuf) -> Option<String>`, `diagnostics_for_file(&self, path: &PathBuf) -> Vec<GlyimDiagnostic>`, `file_id(&self, path: &PathBuf) -> Option<FileId>`
+- `pub mod uri` — `pub fn path_to_uri(path: &Path) -> Result<String, String>`, `pub fn uri_to_file_path(uri: &str) -> Result<PathBuf, String>`, `pub fn offset_to_position(text: &str, offset: usize) -> Result<(usize, usize), String>`
+
+> **Change from previous contract:** Previously declared as an empty crate stub. Now provides full LSP state and URI helpers.
 
 ---
 
 ## glyim-mir-interp
 
-- No public items (empty crate stub)
+- `pub struct Interpreter<'tcx>` — `new(tcx: &'tcx TyCtx)`, `with_step_limit(self, limit: usize) -> Self`, `with_recursion_limit(self, limit: usize) -> Self`, `add_function(&mut self, def_id: DefId, body: Body)`, `step_limit(&self) -> usize`, `recursion_limit(&self) -> usize`, `run_body(&mut self, body: &Body) -> InterpResult<()>`, `get_local_value(&self, local: LocalIdx) -> Option<&InterpValue>`
+- `pub enum InterpError` — `TimedOut`, `StackOverflow`, `Panic(String)`
+- `pub enum InterpValue` — `Int(i128)`, `Bool(bool)`, `Unit`
+- `pub type InterpResult<T> = Result<T, InterpError>`
+
+> **Change from previous contract:** Previously declared as an empty crate stub. Now provides a full MIR interpreter.
 
 ---
 
