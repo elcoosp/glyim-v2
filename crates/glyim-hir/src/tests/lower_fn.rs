@@ -7,7 +7,20 @@ use glyim_span::FileId;
 fn last_expr_id(body: &crate::Body) -> ExprId {
     ExprId::from_raw(body.exprs.len() as u32 - 1)
 }
+#[test]
+fn test_hir_item_ids_are_unique() {
+    let source = "fn foo() {} fn bar() {}";
+    let parse_result = parse_to_syntax(source, FileId::from_raw(0));
+    let mut interner = Interner::new();
+    let hir = crate::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
 
+    let ids: std::collections::HashSet<_> = hir.items.iter().map(|item| item.id).collect();
+    assert_eq!(
+        ids.len(),
+        hir.items.len(),
+        "All ItemIds should be unique, but found duplicates"
+    );
+}
 #[test]
 fn test_fn_item_with_params() {
     let source = "fn add(a: i32, b: i32) -> i32 { a + b }";

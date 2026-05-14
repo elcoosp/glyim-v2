@@ -377,25 +377,6 @@ pub enum Literal {
 
 mod lower;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use glyim_core::interner::Interner;
-    use glyim_frontend::parse_to_syntax;
-    use glyim_span::FileId;
-
-    #[test]
-    fn test_hir_item_ids_are_unique() {
-        let source = "fn foo() {} fn bar() {}";
-        let parse_result = parse_to_syntax(source, FileId::from_raw(0));
-        let mut interner = Interner::new();
-        let hir = crate::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
-
-        let ids: std::collections::HashSet<_> = hir.items.iter().map(|item| item.id).collect();
-        assert_eq!(ids.len(), hir.items.len(), "All ItemIds should be unique, but found duplicates");
-    }
-}
-
+pub mod pipeline_api;
 #[cfg(test)]
 mod tests;
-pub mod pipeline_api;
