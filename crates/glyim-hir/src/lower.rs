@@ -77,7 +77,9 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
     let mut bodies = IndexVec::new();
     let mut body_owners = IndexVec::new();
     let mut local_def_counter = 0u32;
-    let mut item_id_counter = 0u32;
+        
+
+
     let mut item_id_counter = 0u32;
 
     for child in root.children() {
