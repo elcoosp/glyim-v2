@@ -92,23 +92,35 @@ impl<'tcx> Interpreter<'tcx> {
                 return Err(InterpError::TimedOut);
             }
 
-            let bb_data = body.basic_blocks[self.current_bb].clone();
-
-            for stmt in &bb_data.statements {
+            // Process statements by borrowing (avoids cloning the whole BasicBlockData)
+            for stmt in &body.basic_blocks[self.current_bb].statements {
                 self.execute_statement(stmt)?;
             }
 
-            match bb_data.terminator.kind {
+            // Clone only the terminator kind (cheap) so we can move `body` in Call/Return arms
+            let term_kind = body.basic_blocks[self.current_bb].terminator.kind.clone();
+
+            match term_kind {
                 TerminatorKind::Goto { target } => {
                     self.current_bb = target;
                 }
                 TerminatorKind::SwitchInt {
                     discr,
-                    switch_ty: _,
+                    switch_ty,
                     targets,
                 } => {
                     let val = self.eval_operand(&discr)?;
-                    let discr_u128 = self.interp_value_to_u128(&val);
+                    // For bool switches, use boolean comparison to avoid
+                    // sign-extension issues with negative i128 values
+                    let discr_u128 = if switch_ty == glyim_type::Ty::BOOL {
+                        if let Ok(b) = self.interp_value_to_bool(&val) {
+                            if b { 1u128 } else { 0u128 }
+                        } else {
+                            self.interp_value_to_u128(&val)
+                        }
+                    } else {
+                        self.interp_value_to_u128(&val)
+                    };
                     let mut next_bb = targets.otherwise();
                     for (v, bb) in targets.iter() {
                         if v == discr_u128 {
@@ -460,6 +472,14 @@ impl<'tcx> Interpreter<'tcx> {
             InterpValue::Int(i) => *i as u128,
             InterpValue::Bool(b) => *b as u128,
             InterpValue::Unit => 0,
+        }
+    }
+
+    fn interp_value_to_bool(&self, val: &InterpValue) -> InterpResult<bool> {
+        match val {
+            InterpValue::Bool(b) => Ok(*b),
+            InterpValue::Int(i) => Ok(*i != 0),
+            _ => Err(InterpError::Panic("expected bool or int for switch".into())),
         }
     }
 

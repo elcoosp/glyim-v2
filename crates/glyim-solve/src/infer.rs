@@ -74,6 +74,47 @@ impl InferenceTable {
         })
     }
 
+    /// Check if `var` occurs in `ty` (after resolving variables).
+    /// Prevents constructing infinite types like ?T = Vec<?T>.
+    fn occurs(&self, ctx: &dyn TypeLookup, var: TyVar, ty: Ty) -> bool {
+        let ty = self.resolve_ty_shallow(ctx, ty);
+        match ctx.ty_kind(ty) {
+            TyKind::Infer(InferVar::Ty(v)) if *v == var => true,
+            TyKind::Infer(InferVar::Ty(v)) => {
+                if let Some(value) = self.ty_vars.get(*v).and_then(|tv| tv.value) {
+                    self.occurs(ctx, var, value)
+                } else {
+                    false
+                }
+            }
+            TyKind::Ref(_, inner, _) => self.occurs(ctx, var, *inner),
+            TyKind::RawPtr(inner, _) => self.occurs(ctx, var, *inner),
+            TyKind::Slice(inner) => self.occurs(ctx, var, *inner),
+            TyKind::Array(inner, _) => self.occurs(ctx, var, *inner),
+            TyKind::Adt(_, substs)
+            | TyKind::FnDef(_, substs)
+            | TyKind::Closure(_, substs)
+            | TyKind::Tuple(substs)
+            | TyKind::Opaque(_, substs) => {
+                for arg in ctx.substitution_args(*substs) {
+                    if let GenericArg::Ty(t) = arg && self.occurs(ctx, var, *t) {
+                        return true;
+                    }
+                }
+                false
+            }
+            TyKind::FnPtr(sig) => {
+                for arg in ctx.substitution_args(sig.inputs) {
+                    if let GenericArg::Ty(t) = arg && self.occurs(ctx, var, *t) {
+                        return true;
+                    }
+                }
+                self.occurs(ctx, var, sig.output)
+            }
+            _ => false,
+        }
+    }
+
     pub fn universe(&self) -> UniverseIndex {
         self.universe
     }
@@ -171,15 +212,45 @@ impl InferenceTable {
                 let tv = &self.ty_vars[var];
                 match tv.kind {
                     VariableKind::General => {
+                        if self.occurs(ctx, var, b) {
+                            return Err(vec![GlyimDiagnostic::type_error(
+                                span,
+                                format!(
+                                    "cannot construct infinite type: {} = {}",
+                                    PrintTy::new(a, ctx),
+                                    PrintTy::new(b, ctx)
+                                ),
+                            )]);
+                        }
                         self.ty_vars[var].value = Some(b);
                         Ok(Vec::new())
                     }
                     VariableKind::Integer => match &other {
                         TyKind::Int(_) | TyKind::Error => {
+                            if self.occurs(ctx, var, b) {
+                                return Err(vec![GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "cannot construct infinite type: {} = {}",
+                                        PrintTy::new(a, ctx),
+                                        PrintTy::new(b, ctx)
+                                    ),
+                                )]);
+                            }
                             self.ty_vars[var].value = Some(b);
                             Ok(Vec::new())
                         }
                         TyKind::Infer(InferVar::Int(_)) | TyKind::Infer(InferVar::Ty(_)) => {
+                            if self.occurs(ctx, var, b) {
+                                return Err(vec![GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "cannot construct infinite type: {} = {}",
+                                        PrintTy::new(a, ctx),
+                                        PrintTy::new(b, ctx)
+                                    ),
+                                )]);
+                            }
                             self.ty_vars[var].value = Some(b);
                             Ok(Vec::new())
                         }
@@ -193,10 +264,30 @@ impl InferenceTable {
                     },
                     VariableKind::Float => match &other {
                         TyKind::Float(_) | TyKind::Error => {
+                            if self.occurs(ctx, var, b) {
+                                return Err(vec![GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "cannot construct infinite type: {} = {}",
+                                        PrintTy::new(a, ctx),
+                                        PrintTy::new(b, ctx)
+                                    ),
+                                )]);
+                            }
                             self.ty_vars[var].value = Some(b);
                             Ok(Vec::new())
                         }
                         TyKind::Infer(InferVar::Float(_)) | TyKind::Infer(InferVar::Ty(_)) => {
+                            if self.occurs(ctx, var, b) {
+                                return Err(vec![GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "cannot construct infinite type: {} = {}",
+                                        PrintTy::new(a, ctx),
+                                        PrintTy::new(b, ctx)
+                                    ),
+                                )]);
+                            }
                             self.ty_vars[var].value = Some(b);
                             Ok(Vec::new())
                         }
