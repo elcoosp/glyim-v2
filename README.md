@@ -1,153 +1,161 @@
-# Glyim
+# Glyim Compiler
 
-> The "Tier 1" systems programming language unifying Pythonic ergonomics, Haskell's type theory, and Rust's memory safety.
+**Glyim** is a modular, from‑scratch compiler for a Rust‑like systems programming language, written in Rust.  
+It implements a complete compilation pipeline: lexing, parsing, name resolution, HIR, MIR, type inference & trait solving, borrow checking, optimizations, and multiple code generation backends (LLVM and a custom bytecode VM).
 
----
+The project is organised as a Cargo workspace with more than 20 crates, designed for clarity, testability, and incremental development.
 
-**[Status:** 🏗️ Early Development **|** **Version:** 0.1.0 **|** **Rust:** 2024 Edition]
+## ✨ Features
 
-## 🚀 Vision
-
-Glyim is designed to solve the "Systems Trilemma":
-1.  **Invisible Safety:** Memory safety via an affine type system that doesn't hinder the "scripting feel."
-2.  **State-of-the-Art Tooling:** IDE support (LSP) that feels instantaneous, powered by a tiered incremental compilation model.
-3.  **First-Class Metaprogramming:** Compile-time execution is not a preprocessor; it is an integral part of the language.
-
-**The Elevator Pitch:**
-For high-performance developers dissatisfied with Rust's borrow checker friction or C++'s lack of safety, Glyim provides a "Tier 1" platform. It offers Python-like syntax with Haskell-level type inference and Rust-level performance, featuring a query-based compiler that keeps your tooling responsive even at massive scale.
+- **Lexer & Parser** – Recursive‑descent parser with error recovery, producing a concrete syntax tree (CST).
+- **Name Resolution** – Module graph, item scopes, and path resolution (`self::`, `super::`, `crate::`).
+- **HIR (High‑Level IR)** – Untyped, name‑resolved AST, used as input for type checking.
+- **Type System** – Full type interning, substitutions, regions, and predicates. Supports ADTs, generics, closures, opaque types, etc.
+- **Type Inference & Trait Solving** – Bidirectional type checking with inference variables, unification, and a simple trait solver (fulfillment‑based).
+- **THIR (Typed HIR)** – Fully typed intermediate representation, still generic.
+- **MIR (Mid‑Level IR)** – Control‑flow graph (CFG) form with statements, terminators, places, and rich rvalue expressions.
+- **Borrow Checking** – Non‑lexical lifetime (NLL) borrow checking for detecting conflicting borrows within a single basic block (extensible to full region constraints).
+- **Optimisations** – Constant propagation, dead code elimination, CFG simplification, and unreachable block elimination.
+- **Code Generation**  
+  - **Bytecode Backend** – Simple stack‑based bytecode for testing and embedded use.  
+  - **LLVM Backend** – Generates native object files using the `inkwell` crate (LLVM 22).
+- **Language Server** – Basic LSP implementation supporting `didOpen`, `didChange`, and diagnostics reporting.
+- **Command‑Line Interface** – `glyim` driver with subcommands for compilation, backend selection, and optimisation levels.
+- **Comprehensive Testing Infrastructure** – Built‑in test runner that supports:
+  - Compile‑pass / compile‑fail / UI / run‑pass / run‑fail modes
+  - Inline annotations (`//~ ERROR`, `//~ WARNING`, fuzzy matching, optional diagnostics)
+  - Snapshot testing for CST, def‑map, and MIR
+  - Mocking utilities for all major compiler phases
+  - Property‑based type generation
 
 ## 🏗️ Architecture
 
-Glyim is built as a highly modular, multi-crate workspace using **Salsa** for incremental compilation.
+The compiler is split into many small crates, each with a single responsibility:
 
-### The Stack
-*   **Parser:** `chumsky` + `rowan` (Lossless Syntax Trees)
-*   **Query Engine:** `salsa` (Incremental recomputation)
-*   **Type System:** `chalk` (Trait solving) + Custom Inference
-*   **Optimization:** `egg` (Equality Saturation E-Graphs)
-*   **Backend:** `inkwell` (LLVM Wrapper)
+| Crate | Description |
+|-------|-------------|
+| `glyim-core` | Foundation types: index vectors, definition IDs, interner, paths, ABI constants. |
+| `glyim-span` | Source locations (file, byte index, span), hygiene contexts, multispan diagnostics. |
+| `glyim-diag` | Diagnostic types, error codes, `DiagSink`, miette integration. |
+| `glyim-vfs` | Virtual file system with in‑memory file content tracking. |
+| `glyim-syntax` | CST definition (Rowan based), `SyntaxKind` enum, AST node helpers. |
+| `glyim-frontend` | Lexer + parser (merged), produces `SyntaxNode`. |
+| `glyim-def-map` | Module graph, item scopes, name resolution. |
+| `glyim-hir` | High‑level IR (untyped), lowering from CST. |
+| `glyim-type` | Type interning (TyCtx), type kinds, substitutions, regions, predicates, printing. |
+| `glyim-solve` | Type inference table (`InferenceTable`), unification, trait solver, fulfillment context. |
+| `glyim-typeck` | Type checker: HIR → THIR with inference and trait resolution. |
+| `glyim-mir` | Mid‑level IR (CFG), place types, statement/terminator kinds. |
+| `glyim-lower` | THIR → MIR lowering + monomorphization. |
+| `glyim-borrowck` | Borrow checker (NLL, initial implementation). |
+| `glyim-opt` | MIR optimisation passes. |
+| `glyim-mir-interp` | Interpreter for MIR (used in tests). |
+| `glyim-layout` | Type layout computation (size, alignment, ABI). |
+| `glyim-codegen` | Abstract code generation backend trait. |
+| `glyim-codegen-llvm` | LLVM backend (via `inkwell`). |
+| `glyim-db` | Compilation database (holds interners, VFS, type context, trait context). |
+| `glyim-pipeline` | End‑to‑end compilation driver (lex → parse → def‑map → HIR → typeck → lower → borrowck → opt → codegen). |
+| `glyim-cli` | Command‑line interface (clap). |
+| `glyim-lsp` | Language Server Protocol implementation. |
+| `glyim-runtime` | Runtime stubs (alloc, panic). |
+| `glyim-test` | Testing framework: test discovery, execution, snapshots, mocks, property testing. |
 
-### High-Level Layers
-1.  **Foundation:** Interning, Spans, VFS, Database.
-2.  **Frontend:** Lexing, Parsing, Definition Mapping.
-3.  **Analysis:** Type Checking, Trait Solving, THIR generation.
-4.  **Lowering:** MIR, Borrow Checking, E-Graph Optimization.
-5.  **Backend:** LLVM Codegen, Bytecode, Runtime.
+## 🚀 Getting Started
 
-> 📚 **Deep Dive:** See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for detailed diagrams and ADRs.
+### Prerequisites
 
-## 🛠️ Development Strategy
+- **Rust** (latest stable, 2024 edition)
+- **LLVM 22** (optional – for the LLVM backend)
+- **`watchexec`** (optional – for using the `justfile` recipes)
 
-Since we are starting from a blank page, the codebase is decomposed into **Parallel Tracks** that can be developed simultaneously. We ensure smooth integration by strictly adhering to the **Contracts** defined in [`docs/CONTRACTS.md`](docs/CONTRACTS.md) (using `miette` for errors and `tracing` for spans) and using the `glyim-db` (Salsa) as the central merging point.
-
-### The Parallel Plan
-
-We define 5 Epics. Teams can work on these in parallel as long as "Interface-First" contracts are honored.
-
-#### 📍 Epic 1: The Foundation (Infrastructure)
-*Focus: establishing the query engine and core data structures.*
-
-*   **Crates:** `glyim-interner`, `glyim-span`, `glyim-db`, `glyim-vfs`.
-*   **Parallel Dependency:** None (Must start first).
-*   **Deliverables:**
-    *   A functional `salsa` database in `glyim-db`.
-    *   `Span` and `Symbol` types defined in `glyim-span` and `glyim-interner`.
-    *   A virtual file system abstraction in `glyim-vfs`.
-*   **Integration Point:** All other crates depend on these. Define the API surface before implementation.
-
-#### 📍 Epic 2: The Frontend (Syntax & IDE)
-*Focus: Fast, error-tolerant parsing for the LSP.*
-
-*   **Crates:** `glyim-lex`, `glyim-parse`, `glyim-def-map`, `glyim-diag`.
-*   **Parallel Dependency:** Depends on **Epic 1**.
-*   **Deliverables:**
-    *   `chumsky` lexer implementation.
-    *   `rowan` Green Tree parser.
-    *   `glyim-def-map`: A fast "Tier 1" query that builds the module tree without type checking bodies.
-    *   `glyim-diag`: Unified error reporting setup.
-*   **Integration Point:** `glyim-db` will expose queries `parse()` and `def_map()`.
-
-#### 📍 Epic 3: Type System & Logic
-*Focus: Hindley-Milner inference + Trait Solving.*
-
-*   **Crates:** `glyim-infer`, `glyim-solve`, `glyim-typeck`, `glyim-thir`.
-*   **Parallel Dependency:** Depends on **Epic 1**. Can mock AST inputs from Epic 2.
-*   **Deliverables:**
-    *   Integration with `chalk` for trait resolution in `glyim-solve`.
-    *   Type inference engine in `glyim-infer`.
-    *   Construction of Typed High-level IR (THIR) in `glyim-thir`.
-*   **Integration Point:** `glyim-typeck` consumes the AST from Epic 2 and outputs THIR to the Database.
-
-#### 📍 Epic 4: Lowering & Optimization
-*Focus: MIR, Control Flow, and E-Graphs.*
-
-*   **Crates:** `glyim-mir`, `glyim-lower`, `glyim-lifetime`, `glyim-borrowck`, `glyim-egraph`.
-*   **Parallel Dependency:** Depends on **Epic 3** (THIR input).
-*   **Deliverables:**
-    *   THIR $\to$ MIR lowering.
-    *   Polonius-style borrow checker (`glyim-borrowck`).
-    *   `egg` based optimizer using equality saturation.
-*   **Integration Point:** `glyim-mono` (monomorphization) sits here, bridging generic THIR to concrete MIR.
-
-#### 📍 Epic 5: Backend & Tooling
-*Focus: Codegen, CLI, and LSP Server.*
-
-*   **Crates:** `glyim-codegen-llvm`, `glyim-codegen`, `glyim-cli`, `glyim-lsp`, `glyim-runtime`.
-*   **Parallel Dependency:** Depends on **Epic 4** (for optimized MIR) AND **Epic 1** (for DB access).
-*   **Deliverables:**
-    *   LLVM IR emission via `inkwell`.
-    *   Standard library runtime (`glyim-runtime`).
-    *   CLI driver (`glyim-cli`).
-    *   Async LSP server (`glyim-lsp`).
-
-### Integration Strategy: "Skeletons First"
-
-To ensure smooth merging of these parallel tracks:
-
-1.  **Step 1 (Skeletons):** All teams define the `pub struct` and `pub fn` signatures for their crates immediately.
-2.  **Step 2 (Stubs):** Implement functions returning `unimplemented!()` but ensuring they compile.
-3.  **Step 3 (Wiring):** `glyim-db` is updated to call these functions as Salsa queries. This forces the crate interfaces to settle early.
-4.  **Step 4 (Implementation):** Teams fill in the logic. The workspace compiles at every commit.
-
-## 📦 Building
-
-We use `just` as a command runner.
+### Building
 
 ```bash
-# Install Just if you don't have it
-cargo install just
-
-# Run the watcher (builds on file change)
-just wr
+git clone <repository-url>
+cd glyim
+cargo build --release
 ```
 
-Or standard cargo:
+The compiler driver will be available at `target/release/glyim`.
+
+### Running Tests
+
+The test suite uses a custom harness that discovers `.g` files in the `tests/` directory.
 
 ```bash
-# Build the whole workspace
-cargo build
-
-# Run tests
+# Run all tests
 cargo test
 
-# Check formatting
-cargo fmt --check
+# Run only the test harness (glyim-test)
+cargo test -p glyim-test
+
+# Run with verbose output
+GLYIM_TEST_SHOW_OUTPUT=1 cargo test -p glyim-test
+
+# Bless (update) snapshot and UI test expectations
+GLYIM_BLESS=1 cargo test -p glyim-test
 ```
 
-## 📚 Documentation
+## 💻 Usage
 
-*   **[Architecture Specification](docs/ARCHITECTURE.md):** Deep dive into components, IRs, and design decisions.
-*   **[Internal Contracts](docs/CONTRACTS.md):** Rules for error handling, tracing, and crate interaction.
-*   **[Tech Stack](docs/TECHSTACK.md):** Detailed rationale for external dependencies.
-*   **[Vision & Spec v0.1.0](docs/specs/v0.1.0.md):** Strategic goals and success metrics.
+```bash
+# Compile a source file using the LLVM backend (default)
+glyim input.g -o output.o
 
-## 🤝 Contributing
+# Use the bytecode backend (produces a `.bc` file)
+glyim input.g --backend bytecode
 
-We are looking for contributors who want to build a next-gen compiler.
-1.  Check the **Parallel Plan** above to see where you can jump in.
-2.  Read [`docs/CONTRACTS.md`](docs/CONTRACTS.md) before writing code.
-3.  Ensure all `tracing` spans are present and `miette` diagnostics are used.
+# Optimise (level 1)
+glyim input.g -O1
 
-## 📄 License
+# Specify a target triple
+glyim input.g --target aarch64-unknown-linux-gnu
 
-[License TBD]
+# Get help
+glyim --help
+```
+
+## 🧩 Development
+
+### Workspace Structure
+
+All crates live under `crates/`. The workspace root `Cargo.toml` defines dependencies and members.
+
+### Adding a New Crate
+
+1. Create a new directory under `crates/`.
+2. Add a `Cargo.toml` with appropriate `[package]` and `[dependencies]`.
+3. List the crate in the workspace `members` table.
+4. If the crate provides a public API used elsewhere, add its path to `workspace.dependencies`.
+
+### Code Organisation
+
+- **Traits for context** – Many phases define a context trait (e.g., `LowerCtx`, `BorrowckCtx`) that the pipeline implements. This keeps core logic decoupled from the actual database.
+- **Testing mocks** – The `glyim-test` crate provides mock implementations of these contexts (`MockLowerCtx`, `MockBorrowckCtx`, etc.) for unit testing.
+- **Snapshots** – Use `insta` for snapshot testing; run `cargo insta review` to approve changes.
+
+### Running a Subset of Tests
+
+The test harness accepts a filter:
+
+```bash
+cargo test -p glyim-test -- --filter parser
+```
+
+This runs only tests whose file path contains `parser`.
+
+## 📝 License
+
+This project is licensed under the **MIT License** – see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgements
+
+- [Rowan](https://github.com/rust-analyzer/rowan) – for lossless syntax trees.
+- [Inkwell](https://github.com/TheDan64/inkwell) – for LLVM bindings.
+- [Miette](https://github.com/zkat/miette) – for fancy diagnostics.
+- [Insta](https://insta.rs/) – for snapshot testing.
+- The Rust compiler team for design inspiration.
+
+---
+
+*Glyim is a work in progress. Contributions are welcome!*
