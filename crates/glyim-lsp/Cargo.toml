@@ -4,12 +4,15 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+async-lsp = { version = "0.1", features = ["tokio"] }
+tokio = { version = "1", features = ["full"] }
+url = "2"
+file_url = "0.3"
 glyim-core = { workspace = true }
 glyim-db = { workspace = true }
 glyim-diag = { workspace = true }
 glyim-span = { workspace = true }
 tracing = { workspace = true }
-tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
