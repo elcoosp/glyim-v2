@@ -1,4 +1,4 @@
-You are implementing Stream S{ID}: {NAME} for the Glyim compiler.
+You are implementing Stream {ID}: {NAME} for the Glyim compiler.
 
 ## Instructions
 
@@ -17,8 +17,8 @@ You are implementing Stream S{ID}: {NAME} for the Glyim compiler.
    ```
 5. **IMPORTANT – Worktree Usage (CORRECTED):**
    - Your first script MUST create a git worktree using `git worktree add --detach` (NOT `git worktree add ... main` directly, as this fails because main is already checked out).
-   - Worktree location: `../glyim-worktrees/stream-S{ID}/`
-   - After creating the worktree, cd into it and create your branch `stream-S{ID}/v0.1.0`
+   - Worktree location: `../glyim-worktrees/stream-{ID}/`
+   - After creating the worktree, cd into it and create your branch `stream-{ID}/v0.1.0`
    - All subsequent scripts MUST cd into that worktree before executing any git or cargo commands.
    - See the `plan-to-cat-scripts` skill for the exact corrected structure.
 6. Output: Provide complete modified files using the bash script format. Never truncate, never use placeholders, never omit lines.
@@ -29,7 +29,7 @@ You MUST follow the plan-to-cat-scripts skill exactly. This is non-negotiable.
 
 ### Skill Summary
 - Every message is exactly one fenced bash code block -- no other text, no explanations.
-- First script: Set STREAM_ID, create worktree `../glyim-worktrees/stream-SXX/`, cd into it, create branch stream-SXX/v0.1.0 from main.
+- First script: Set STREAM_ID, create worktree `../glyim-worktrees/stream-${STREAM_ID}/`, cd into it, create branch stream-${STREAM_ID}/v0.1.0 from main.
 - Subsequent scripts: Set STREAM_ID, cd into worktree, assume branch already checked out.
 - Fix scripts: Set STREAM_ID, cd into worktree, assume branch already checked out.
 - File writes: Use heredoc with unique delimiters that do not appear in content.
@@ -37,7 +37,7 @@ You MUST follow the plan-to-cat-scripts skill exactly. This is non-negotiable.
 - No hash-comment lines: Every action logged with echo.
 - No truncation: Set INCOMPLETE=true and continue in next message.
 - Compile check: Runs at end, failure blocks commit but never halts script.
-- Commits: Prefixed with stream-SXX:.
+- Commits: Prefixed with `stream-${STREAM_ID}:`.
 - Error logs: User pastes terminal output then you emit one surgical fix script.
 
 ### Critical Rules
@@ -52,4 +52,4 @@ You MUST follow the plan-to-cat-scripts skill exactly. This is non-negotiable.
 - ALWAYS use echo for logging -- no hash-comment lines.
 - ALWAYS write complete file content -- never truncate, never use placeholders.
 - ALWAYS create the stream worktree and branch in the first script.
-- ALWAYS prefix commit messages with stream-SXX:.
+- ALWAYS prefix commit messages with `stream-{ID}:`.

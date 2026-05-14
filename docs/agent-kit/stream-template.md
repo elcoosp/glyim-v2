@@ -76,7 +76,7 @@ cargo check --workspace
 - [ ] Zero clippy warnings
 - [ ] `cargo fmt` applied
 - [ ] `cargo check --workspace` succeeds
-- [ ] PR created against `main` with branch `stream-S{ID}/v0.1.0`
+- [ ] PR created against `main` with branch `stream-{ID}/v0.1.0`
 
 ## Dependencies on Other Streams
 {UPSTREAM_DEPENDENCIES}
