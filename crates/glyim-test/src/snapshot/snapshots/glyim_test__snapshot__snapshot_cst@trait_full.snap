@@ -1,0 +1,104 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..163
+  KwPub@0..3 "pub"
+  TraitDef@3..101
+    KwTrait@3..8 "trait"
+    Ident@8..16 "Iterator"
+    LBrace@16..17 "{"
+    KwType@17..21 "type"
+    Ident@21..25 "Item"
+    Semicolon@25..26 ";"
+    FnDef@26..63
+      KwFn@26..28 "fn"
+      Ident@28..32 "next"
+      LParen@32..33 "("
+      ParamList@33..41
+        Param@33..41
+          And@33..34 "&"
+          KwMut@34..37 "mut"
+          KwSelf@37..41 "self"
+      RParen@41..42 ")"
+      Arrow@42..44 "->"
+      PathType@44..62
+        UsePath@44..50
+          Ident@44..50 "Option"
+        Lt@50..51 "<"
+        PathType@51..61
+          UsePath@51..61
+            Ident@51..55 "Self"
+            ColonColon@55..57 "::"
+            Ident@57..61 "Item"
+        Gt@61..62 ">"
+      Semicolon@62..63 ";"
+    FnDef@63..83
+      KwFn@63..65 "fn"
+      Ident@65..70 "count"
+      LParen@70..71 "("
+      ParamList@71..75
+        Param@71..75
+          KwSelf@71..75 "self"
+      RParen@75..76 ")"
+      Arrow@76..78 "->"
+      PathType@78..83
+        UsePath@78..83
+          Ident@78..83 "usize"
+    KwWhere@83..88 "where"
+    Ident@88..92 "Self"
+    Colon@92..93 ":"
+    Ident@93..98 "Sized"
+    LBrace@98..99 "{"
+    IntLit@99..100 "0"
+    RBrace@100..101 "}"
+  FnDef@101..134
+    KwFn@101..103 "fn"
+    Ident@103..106 "map"
+    TypeParamList@106..111
+      Lt@106..107 "<"
+      TypeParam@107..108
+        Ident@107..108 "B"
+      Comma@108..109 ","
+      TypeParam@109..110
+        Ident@109..110 "F"
+      Gt@110..111 ">"
+    LParen@111..112 "("
+    ParamList@112..120
+      Param@112..116
+        KwSelf@112..116 "self"
+      Comma@116..117 ","
+      Param@117..120
+        Ident@117..118 "f"
+        Colon@118..119 ":"
+        PathType@119..120
+          UsePath@119..120
+            Ident@119..120 "F"
+    RParen@120..121 ")"
+    Arrow@121..123 "->"
+    PathType@123..134
+      UsePath@123..126
+        Ident@123..126 "Map"
+      Lt@126..127 "<"
+      PathType@127..131
+        UsePath@127..131
+          Ident@127..131 "Self"
+      Comma@131..132 ","
+      PathType@132..133
+        UsePath@132..133
+          Ident@132..133 "F"
+      Gt@133..134 ">"
+  KwWhere@134..139 "where"
+  Ident@139..140 "F"
+  Colon@140..141 ":"
+  Ident@141..146 "FnMut"
+  LParen@146..147 "("
+  Ident@147..151 "Self"
+  ColonColon@151..153 "::"
+  Ident@153..157 "Item"
+  RParen@157..158 ")"
+  Arrow@158..160 "->"
+  Ident@160..161 "B"
+  Semicolon@161..162 ";"
+  RBrace@162..163 "}"
