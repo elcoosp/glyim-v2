@@ -6,6 +6,9 @@
 
 pub mod thir;
 
+#[cfg(test)]
+mod tests;
+
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::primitives::Mutability;
