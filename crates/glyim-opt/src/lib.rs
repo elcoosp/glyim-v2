@@ -4,15 +4,22 @@ use glyim_mir::Body;
 use glyim_type::TyCtx;
 use std::sync::Arc;
 
+mod constant_prop;
+mod dce;
+mod cfg_simplify;
+mod unreachable_elim;
+
+
 #[derive(Clone, Debug)]
 pub struct Optimized {
     pub body: Body,
 }
 
 pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
-    // STUB: for v0.1.0, just clone the body unchanged
-    let _ = ctx;
-    Optimized {
-        body: (**body).clone(),
-    }
+    let mut body = (**body).clone();
+    constant_prop::run(ctx, &mut body);
+    dce::run(ctx, &mut body);
+    cfg_simplify::run(ctx, &mut body);
+    unreachable_elim::run(ctx, &mut body);
+    Optimized { body }
 }

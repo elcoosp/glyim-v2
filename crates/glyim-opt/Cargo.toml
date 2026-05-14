@@ -4,5 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+glyim-span = { workspace = true }
 glyim-type = { workspace = true }
 glyim-mir = { workspace = true }
+glyim-core = { workspace = true }
