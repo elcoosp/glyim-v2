@@ -1,29 +1,14 @@
 //! Borrow checker using non-lexical lifetimes (NLL).
 //!
-//! **Current limitation (v0.1.0):** This implementation only tracks borrows
-//! within a single basic block. Borrows that span across basic blocks
-//! (e.g., through Goto edges) are not tracked. This means:
-//! - Borrows that are taken in one block and used in another may be missed.
-//! - Some false negatives are possible in non-trivial control flow.
+//! **Limitation:** This implementation only tracks borrows within a single basic block.
+//! Borrows that span across basic blocks are not tracked.
 //!
-//! A proper dataflow-based analysis is needed for production use.
+//! A proper dataflow‑based analysis is needed for production use.
 
-use glyim_diag::GlyimDiagnostic;
-use glyim_diag::MultiSpan;
-use glyim_diag::Span;
+use glyim_diag::{GlyimDiagnostic, MultiSpan};
 use glyim_mir::{Body, BorrowKind, Operand, Place, Rvalue, StatementKind};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
-pub(crate) struct RegionVar(pub(crate) u32);
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub(crate) struct RegionConstraint {
-    pub from: RegionVar,
-    pub to: RegionVar,
-    pub span: Span,
-}
+use glyim_span::Span;
+use glyim_type::TyCtx;
 
 #[derive(Clone, Debug)]
 pub struct BorrowckResult {
@@ -31,7 +16,7 @@ pub struct BorrowckResult {
 }
 
 pub trait BorrowckCtx {
-    fn ty_ctx(&self) -> &glyim_type::TyCtx;
+    fn ty_ctx(&self) -> &TyCtx;
     fn local_decl(&self, local: glyim_mir::LocalIdx) -> &glyim_mir::LocalDecl;
     fn is_copy(&self, ty: glyim_type::Ty) -> bool;
 }
@@ -104,12 +89,8 @@ struct ActiveBorrow {
 pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     let reads = collect_local_reads(body);
 
-    // Compute last-use index for each local.
-    // If a local is never read, its last use is the point where it is defined
-    // (we'll assume it's immediately dead after definition).
+    // Compute last‑use index for each local.
     let mut last_use_by_local: Vec<Option<usize>> = vec![None; body.locals.len()];
-
-    // Also need to know for each borrow dest local the statement index of its definition.
     let mut borrow_def_stmt: Vec<Option<usize>> = vec![None; body.locals.len()];
 
     // First pass: record definition points for borrow destinations.
@@ -137,9 +118,7 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     }
 
     let mut errors = Vec::new();
-    // Map from borrowed place local to list of active borrows.
-    let mut active_borrows: Vec<Vec<ActiveBorrow>> =
-        (0..body.locals.len()).map(|_| Vec::new()).collect();
+    let mut active_borrows: Vec<Vec<ActiveBorrow>> = (0..body.locals.len()).map(|_| Vec::new()).collect();
 
     for (stmt_idx, stmt) in body
         .basic_blocks
@@ -147,7 +126,7 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
         .flat_map(|bb| bb.statements.iter())
         .enumerate()
     {
-        // First, expire any borrows whose last use is before this statement.
+        // Expire any borrows whose last use is before this statement.
         for borrows in active_borrows.iter_mut() {
             borrows.retain(|b| b.last_use >= stmt_idx);
         }
@@ -186,12 +165,10 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
                         span: Some(MultiSpan::from_span(existing_borrow.span)),
                     });
                     errors.push(diag);
-                    break; // report only first conflict
+                    break;
                 }
             }
 
-            // Always record the borrow as active, even if there are conflicts.
-            // This allows reporting all conflicts, not just the first.
             active_borrows[borrowed_local.to_raw() as usize].push(ActiveBorrow {
                 kind: *kind,
                 span: stmt.source_info.span,
