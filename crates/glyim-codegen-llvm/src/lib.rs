@@ -2,7 +2,7 @@ use glyim_codegen::CodegenBackend;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_mir::Body;
 use inkwell::context::Context;
-use inkwell::targets::{InitializationConfig, Target, TargetTriple};
+use inkwell::targets::{Target, InitializationConfig, TargetTriple};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -43,6 +43,9 @@ impl CodegenBackend for LlvmBackend {
         "llvm"
     }
 
+    /// Generate code for multiple bodies, writing the result to \ on disk.
+    /// Returns \ - the bytes are written to the file, not returned in memory.
+    /// Use \ for in-memory results.
     fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<Vec<u8>> {
         let module = self.context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
@@ -57,7 +60,14 @@ impl CodegenBackend for LlvmBackend {
             let builder = self.context.create_builder();
             builder.position_at_end(basic_block);
             let return_val = i32_type.const_int(42, false);
-            let _ = builder.build_return(Some(&return_val));
+            builder
+                .build_return(Some(&return_val))
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "LLVM build_return failed: {:?}",
+                        e
+                    ))]
+                })?;
         }
 
         let target = Target::from_triple(&triple).map_err(|e| {
@@ -111,7 +121,14 @@ impl CodegenBackend for LlvmBackend {
         let builder = self.context.create_builder();
         builder.position_at_end(basic_block);
         let return_val = i32_type.const_int(42, false);
-        let _ = builder.build_return(Some(&return_val));
+        builder
+            .build_return(Some(&return_val))
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "LLVM build_return failed: {:?}",
+                    e
+                ))]
+            })?;
 
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
