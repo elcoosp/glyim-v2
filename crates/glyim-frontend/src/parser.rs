@@ -181,7 +181,6 @@ impl<'a> Parser<'a> {
                 self.finish_node(); // Module
             }
             SyntaxKind::KwConst => {
-                tracing::warn!("STUB: const parsing not yet implemented");
                 self.bump(); // const
                 self.bump_expected(SyntaxKind::Ident);
                 self.expect(SyntaxKind::Colon);
@@ -193,7 +192,6 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::Semicolon);
             }
             SyntaxKind::KwStatic => {
-                tracing::warn!("STUB: static parsing not yet implemented");
                 self.bump(); // static
                 if self.current_kind() == SyntaxKind::KwRef {
                     self.bump();
@@ -211,7 +209,6 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::Semicolon);
             }
             SyntaxKind::KwType => {
-                tracing::warn!("STUB: type alias parsing not yet implemented");
                 self.bump(); // type
                 self.bump_expected(SyntaxKind::Ident);
                 if self.current_kind() == SyntaxKind::Lt {
@@ -224,7 +221,6 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::Semicolon);
             }
             SyntaxKind::KwExtern => {
-                tracing::warn!("STUB: extern block parsing not yet implemented");
                 self.bump(); // extern
                 if self.current_kind() == SyntaxKind::StringLit {
                     self.bump(); // ABI string
@@ -475,7 +471,6 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
-                    tracing::warn!("STUB: associated type in trait");
                     self.bump(); // type
                     self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Colon {
@@ -492,7 +487,6 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Semicolon);
                 }
                 SyntaxKind::KwConst => {
-                    tracing::warn!("STUB: associated const in trait");
                     self.bump(); // const
                     self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
@@ -537,7 +531,6 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
-                    tracing::warn!("STUB: associated type in impl");
                     self.bump(); // type
                     self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Eq {
@@ -547,7 +540,6 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Semicolon);
                 }
                 SyntaxKind::KwConst => {
-                    tracing::warn!("STUB: associated const in impl");
                     self.bump(); // const
                     self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
@@ -1290,7 +1282,6 @@ impl<'a> Parser<'a> {
 
     #[allow(dead_code)]
     fn parse_labeled_expr(&mut self) {
-        tracing::warn!("STUB: labeled expression parsing");
         self.bump();
         if self.current_kind() == SyntaxKind::Colon {
             self.bump();
@@ -1571,7 +1562,6 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::Star => {
-                tracing::warn!("STUB: raw pointer type not supported");
                 self.bump(); // *
                 if self.current_kind() == SyntaxKind::KwConst
                     || self.current_kind() == SyntaxKind::KwMut
@@ -1627,7 +1617,6 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::KwImpl => {
-                tracing::warn!("STUB: impl trait type not supported");
                 self.bump(); // impl
                 loop {
                     self.parse_type();
@@ -1639,7 +1628,6 @@ impl<'a> Parser<'a> {
                 }
             }
             SyntaxKind::KwFn => {
-                tracing::warn!("STUB: function pointer type not supported");
                 self.bump(); // fn
                 self.expect(SyntaxKind::LParen);
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
