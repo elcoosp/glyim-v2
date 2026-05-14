@@ -12,6 +12,7 @@ use glyim_type::*;
 use crate::thir::{self, LocalVarId};
 
 /// Context struct to bundle the many mutable references needed during expression checking.
+#[allow(dead_code)]
 struct CheckCtx<'a, 'b, 'c, 'd, 'e> {
     ctx: &'a mut TyCtxMut,
     infer: &'b mut InferenceTable,
@@ -70,10 +71,9 @@ pub(crate) fn check_function_body(
 
     // Process all body expressions: non-final become statements, final becomes tail
     let mut thir_stmts = Vec::new();
-    let mut tail_expr: Option<thir::Expr> = None;
+    let mut _tail_expr: Option<thir::Expr> = None;
     let len = body.exprs.len();
-    let mut pos = 0usize;
-    for (expr_id, _expr) in body.exprs.iter_enumerated() {
+    for (pos, (expr_id, _expr)) in body.exprs.iter_enumerated().enumerate() {
         let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
         if pos == len - 1 {
             // Tail expression: unify with return type
@@ -81,12 +81,11 @@ pub(crate) fn check_function_body(
             if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
                 chk.diagnostics.extend(diags);
             }
-            tail_expr = Some(thir_expr);
+            _tail_expr = Some(thir_expr);
         } else {
             // Non-tail: push as statement expression
             thir_stmts.push(crate::thir::Stmt::Expr { expr: thir_expr });
         }
-        pos += 1;
     }
 
     thir::Body {
@@ -258,7 +257,7 @@ fn check_expr(
         _ => {
             chk.diagnostics.push(GlyimDiagnostic::type_error(
                 Span::DUMMY,
-                format!("unsupported expression"),
+                "unsupported expression".to_string(),
             ));
             (
                 thir::Expr {
