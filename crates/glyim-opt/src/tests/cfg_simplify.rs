@@ -223,3 +223,144 @@ fn self_loop_not_merged() {
         "loop should not be merged"
     );
 }
+
+#[test]
+fn call_terminator_not_merged() {
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| {
+        let ut = unit_ty(ctx_mut);
+        let block0 = BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Call {
+                    func: make_copy(0),
+                    args: vec![],
+                    destination: make_place(0),
+                    target: Some(BasicBlockIdx::from_raw(1)),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        };
+        let block1 = BasicBlockData {
+            statements: vec![],
+            terminator: return_term(),
+            is_cleanup: false,
+        };
+        let mut body = Body::dummy(glyim_core::DefId::new(
+            glyim_core::CrateId::from_raw(0),
+            glyim_core::LocalDefId::from_raw(0),
+        ));
+        body.basic_blocks = glyim_core::IndexVec::from_raw(vec![block0, block1]);
+        body.locals = glyim_core::IndexVec::from_raw(vec![LocalDecl {
+            ty: ut,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        }]);
+        body
+    });
+    let original_len = body.basic_blocks.len();
+    crate::cfg_simplify::run(&ctx, &mut body);
+    assert_eq!(
+        body.basic_blocks.len(),
+        original_len,
+        "Call terminator should not trigger merge"
+    );
+}
+
+#[test]
+fn switchint_single_target_not_merged() {
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| {
+        let ut = unit_ty(ctx_mut);
+        let block0 = BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::SwitchInt {
+                    discr: make_copy(0),
+                    switch_ty: ut,
+                    targets: SwitchTargets::new(
+                        vec![(0, BasicBlockIdx::from_raw(1))].into_boxed_slice(),
+                        BasicBlockIdx::from_raw(1),
+                    ),
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        };
+        let block1 = nop_block();
+        let mut body = Body::dummy(glyim_core::DefId::new(
+            glyim_core::CrateId::from_raw(0),
+            glyim_core::LocalDefId::from_raw(0),
+        ));
+        body.basic_blocks = glyim_core::IndexVec::from_raw(vec![block0, block1]);
+        body.locals = glyim_core::IndexVec::from_raw(vec![LocalDecl {
+            ty: ut,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        }]);
+        body
+    });
+    let original_len = body.basic_blocks.len();
+    crate::cfg_simplify::run(&ctx, &mut body);
+    assert_eq!(
+        body.basic_blocks.len(),
+        original_len,
+        "SwitchInt with single target should not merge"
+    );
+}
+
+#[test]
+fn merge_remaps_indices_correctly() {
+    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| {
+        let ut = unit_ty(ctx_mut);
+        // block0: goto block1
+        // block1: goto block2
+        // block2: goto block3
+        // block3: return
+        let blocks = (0..4)
+            .map(|i| {
+                let term = if i < 3 {
+                    Terminator {
+                        kind: TerminatorKind::Goto {
+                            target: BasicBlockIdx::from_raw(i + 1),
+                        },
+                        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+                    }
+                } else {
+                    return_term()
+                };
+                BasicBlockData {
+                    statements: vec![],
+                    terminator: term,
+                    is_cleanup: false,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut body = Body::dummy(glyim_core::DefId::new(
+            glyim_core::CrateId::from_raw(0),
+            glyim_core::LocalDefId::from_raw(0),
+        ));
+        body.basic_blocks = glyim_core::IndexVec::from_raw(blocks);
+        body.locals = glyim_core::IndexVec::from_raw(vec![LocalDecl {
+            ty: ut,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        }]);
+        body
+    });
+    crate::cfg_simplify::run(&ctx, &mut body);
+    assert_eq!(
+        body.basic_blocks.len(),
+        1,
+        "all goto chains should merge into one block"
+    );
+    assert!(
+        matches!(
+            body.basic_blocks[BasicBlockIdx::from_raw(0)]
+                .terminator
+                .kind,
+            TerminatorKind::Return
+        ),
+        "final terminator should be Return"
+    );
+}
