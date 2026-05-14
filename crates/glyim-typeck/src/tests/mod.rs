@@ -2,6 +2,7 @@ mod test_utils;
 
 mod binary_error;
 mod binary_i32;
+mod edge_cases;
 mod empty_crate;
 mod fn_unit;
 mod inference;

@@ -11,6 +11,16 @@ use glyim_type::*;
 
 use crate::thir::{self, LocalVarId};
 
+/// Context struct to bundle the many mutable references needed during expression checking.
+struct CheckCtx<'a, 'b, 'c, 'd, 'e> {
+    ctx: &'a mut TyCtxMut,
+    infer: &'b mut InferenceTable,
+    diagnostics: &'c mut Vec<GlyimDiagnostic>,
+    pending_obligations: &'d mut Vec<Obligation>,
+    hir: &'e CrateHir,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn check_function_body(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -28,15 +38,9 @@ pub(crate) fn check_function_body(
 
     // Process parameters
     for (i, param) in params.iter().enumerate() {
-        let ty = match &param.ty {
-            Some(_) => {
-                let var = infer.new_ty_var(ctx);
-                ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-            }
-            None => {
-                let var = infer.new_ty_var(ctx);
-                ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-            }
+        let ty = {
+            let var = infer.new_ty_var(ctx);
+            ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
         };
         let local_id = LocalVarId::from_raw(i as u32);
         local_var_map.insert(param.name, local_id);
@@ -56,34 +60,34 @@ pub(crate) fn check_function_body(
         });
     }
 
+    let mut chk = CheckCtx {
+        ctx,
+        infer,
+        diagnostics,
+        pending_obligations,
+        hir,
+    };
+
     // Process all body expressions: non-final become statements, final becomes tail
     let mut thir_stmts = Vec::new();
     let mut tail_expr: Option<thir::Expr> = None;
     let len = body.exprs.len();
-    for (idx, (expr_id, _expr)) in body.exprs.iter_enumerated().enumerate() {
-        let (thir_expr, expr_ty) = check_expr(
-            ctx,
-            infer,
-            diagnostics,
-            pending_obligations,
-            hir,
-            body,
-            &local_var_map,
-            expr_id,
-        );
-        if idx == len - 1 {
+    let mut pos = 0usize;
+    for (expr_id, _expr) in body.exprs.iter_enumerated() {
+        let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
+        if pos == len - 1 {
             // Tail expression: unify with return type
             let span = body.span;
-            if let Err(diags) = infer.unify(ctx, expr_ty, return_ty, span) {
-                diagnostics.extend(diags);
+            if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
+                chk.diagnostics.extend(diags);
             }
             tail_expr = Some(thir_expr);
         } else {
             // Non-tail: push as statement expression
             thir_stmts.push(crate::thir::Stmt::Expr { expr: thir_expr });
         }
+        pos += 1;
     }
-    let _return_expr = tail_expr;
 
     thir::Body {
         owner: glyim_core::def_id::DefId::new(CrateId::from_raw(0), local_def_id),
@@ -95,7 +99,6 @@ pub(crate) fn check_function_body(
 }
 
 /// Check for obvious type mismatches before unification.
-/// Returns true if the types can possibly be unified (any type is infer/error or they match).
 fn types_compatible(ctx: &TyCtxMut, a: Ty, b: Ty) -> bool {
     if a == Ty::ERROR || b == Ty::ERROR || a == Ty::NEVER || b == Ty::NEVER {
         return true;
@@ -104,17 +107,12 @@ fn types_compatible(ctx: &TyCtxMut, a: Ty, b: Ty) -> bool {
     let kind_b = ctx.ty_kind(b);
     match (kind_a, kind_b) {
         (TyKind::Infer(_), _) | (_, TyKind::Infer(_)) => true,
-        // Compare simple variants
         _ => std::mem::discriminant(kind_a) == std::mem::discriminant(kind_b),
     }
 }
 
 fn check_expr(
-    ctx: &mut TyCtxMut,
-    infer: &mut InferenceTable,
-    diagnostics: &mut Vec<GlyimDiagnostic>,
-    pending_obligations: &mut Vec<Obligation>,
-    hir: &CrateHir,
+    chk: &mut CheckCtx,
     body: &Body,
     local_var_map: &std::collections::HashMap<Name, LocalVarId>,
     expr_id: ExprId,
@@ -122,8 +120,8 @@ fn check_expr(
     let expr = &body.exprs[expr_id];
     match expr {
         Expr::Literal(lit) => {
-            let ty = literal_ty(ctx, lit);
-            let span = Span::DUMMY; // TODO: proper span from body
+            let ty = literal_ty(chk.ctx, lit);
+            let span = Span::DUMMY;
             let thir_expr = thir::Expr {
                 kind: thir::ExprKind::Literal(thir_literal(lit)),
                 ty,
@@ -132,29 +130,25 @@ fn check_expr(
             (thir_expr, ty)
         }
         Expr::Path(path) => {
-            // Look up local variable
-            if let Some(name) = path.as_name() {
-                if let Some(&local_id) = local_var_map.get(&name) {
-                    // For now, return the parameter's type (which is an inference var)
-                    let idx = local_id.to_raw() as usize;
-                    let param_ty = if idx < body.params.len() {
-                        // We need the THIR param type; we don't have it yet. Temporary hack: create a new var.
-                        {
-                            let var = infer.new_ty_var(ctx);
-                            ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-                        }
-                    } else {
-                        ctx.mk_ty(TyKind::Error)
-                    };
-                    let thir_expr = thir::Expr {
-                        kind: thir::ExprKind::VarRef(local_id),
-                        ty: param_ty,
-                        span: Span::DUMMY,
-                    };
-                    return (thir_expr, param_ty);
-                }
+            if let Some(name) = path.as_name()
+                && let Some(&local_id) = local_var_map.get(&name)
+            {
+                let idx = local_id.to_raw() as usize;
+                let param_ty = if idx < body.params.len() {
+                    let var = chk.infer.new_ty_var(chk.ctx);
+                    chk.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+                } else {
+                    chk.ctx.mk_ty(TyKind::Error)
+                };
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::VarRef(local_id),
+                    ty: param_ty,
+                    span: Span::DUMMY,
+                };
+                return (thir_expr, param_ty);
             }
-            diagnostics.push(GlyimDiagnostic::type_error(Span::DUMMY, "unresolved name"));
+            chk.diagnostics
+                .push(GlyimDiagnostic::type_error(Span::DUMMY, "unresolved name"));
             (
                 thir::Expr {
                     kind: thir::ExprKind::Err,
@@ -165,29 +159,11 @@ fn check_expr(
             )
         }
         Expr::Binary { op, lhs, rhs } => {
-            let (lhs_expr, lhs_ty) = check_expr(
-                ctx,
-                infer,
-                diagnostics,
-                pending_obligations,
-                hir,
-                body,
-                local_var_map,
-                *lhs,
-            );
-            let (rhs_expr, rhs_ty) = check_expr(
-                ctx,
-                infer,
-                diagnostics,
-                pending_obligations,
-                hir,
-                body,
-                local_var_map,
-                *rhs,
-            );
-            // Quick mismatch check
-            if !types_compatible(ctx, lhs_ty, rhs_ty) {
-                diagnostics.push(GlyimDiagnostic::type_error(Span::DUMMY, "mismatched types"));
+            let (lhs_expr, lhs_ty) = check_expr(chk, body, local_var_map, *lhs);
+            let (rhs_expr, rhs_ty) = check_expr(chk, body, local_var_map, *rhs);
+            if !types_compatible(chk.ctx, lhs_ty, rhs_ty) {
+                chk.diagnostics
+                    .push(GlyimDiagnostic::type_error(Span::DUMMY, "mismatched types"));
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Err,
@@ -196,8 +172,8 @@ fn check_expr(
                     },
                     Ty::ERROR,
                 )
-            } else if let Err(diags) = infer.unify(ctx, lhs_ty, rhs_ty, Span::DUMMY) {
-                diagnostics.extend(diags);
+            } else if let Err(diags) = chk.infer.unify(chk.ctx, lhs_ty, rhs_ty, Span::DUMMY) {
+                chk.diagnostics.extend(diags);
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Err,
@@ -223,17 +199,8 @@ fn check_expr(
             }
         }
         Expr::Ref { expr, mutability } => {
-            let (inner_expr, inner_ty) = check_expr(
-                ctx,
-                infer,
-                diagnostics,
-                pending_obligations,
-                hir,
-                body,
-                local_var_map,
-                *expr,
-            );
-            let ref_ty = ctx.mk_ref(Region::Erased, inner_ty, *mutability);
+            let (inner_expr, inner_ty) = check_expr(chk, body, local_var_map, *expr);
+            let ref_ty = chk.ctx.mk_ref(Region::Erased, inner_ty, *mutability);
             (
                 thir::Expr {
                     kind: thir::ExprKind::Ref {
@@ -246,10 +213,52 @@ fn check_expr(
                 ref_ty,
             )
         }
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
+            // Condition must be bool
+            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, Span::DUMMY) {
+                chk.diagnostics.extend(diags);
+            }
+            let (then_expr, then_ty) = check_expr(chk, body, local_var_map, *then_branch);
+            if let Some(else_id) = else_branch {
+                let (_else_expr, else_ty) = check_expr(chk, body, local_var_map, *else_id);
+                // Unify then and else branches
+                if let Err(diags) = chk.infer.unify(chk.ctx, then_ty, else_ty, Span::DUMMY) {
+                    chk.diagnostics.extend(diags);
+                }
+            }
+            let result_ty = if then_ty != Ty::ERROR {
+                then_ty
+            } else {
+                Ty::UNIT
+            };
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::If {
+                        cond: Box::new(cond_expr),
+                        then_branch: Box::new(then_expr),
+                        else_branch: else_branch.map(|_| {
+                            Box::new(thir::Expr {
+                                kind: thir::ExprKind::Literal(thir::Literal::Unit),
+                                ty: Ty::UNIT,
+                                span: Span::DUMMY,
+                            })
+                        }),
+                    },
+                    ty: result_ty,
+                    span: Span::DUMMY,
+                },
+                result_ty,
+            )
+        }
         _ => {
-            diagnostics.push(GlyimDiagnostic::type_error(
+            chk.diagnostics.push(GlyimDiagnostic::type_error(
                 Span::DUMMY,
-                format!("unsupported expression: {:?}", expr),
+                format!("unsupported expression"),
             ));
             (
                 thir::Expr {
