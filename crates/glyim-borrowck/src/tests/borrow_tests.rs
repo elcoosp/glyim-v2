@@ -1,4 +1,4 @@
-use crate::{BorrowckCtx, check_borrows, extract_constraints};
+use crate::{BorrowckCtx, check_borrows};
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::Mutability;
 use glyim_core::{CrateId, DefId, LocalDefId};
@@ -237,30 +237,7 @@ fn t05_borrow_expires_after_last_use_no_error() {
     );
 }
 
-#[test]
-fn t06_region_constraints_extracted() {
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
-        let unit = ctx_mut.unit_ty();
-        let shared_ref = make_ref_ty(ctx_mut, unit, false);
-        let locals = vec![local_decl(unit), local_decl(shared_ref), local_decl(unit)];
-        make_body(
-            vec![
-                assign_borrow(
-                    LocalIdx::from_raw(1),
-                    Place::new(LocalIdx::from_raw(0)),
-                    BorrowKind::Shared,
-                ),
-                use_local(LocalIdx::from_raw(2), LocalIdx::from_raw(1)),
-            ],
-            locals,
-        )
-    });
-    let constraints = extract_constraints(&ctx, &body);
-    assert!(
-        !constraints.is_empty(),
-        "Expected at least one region constraint"
-    );
-}
+
 
 #[test]
 fn t07_error_diagnostics_include_span() {
@@ -564,40 +541,7 @@ fn t13_error_message_contains_borrow_kind_info() {
     );
 }
 
-#[test]
-fn t14_extract_constraints_includes_spans() {
-    let span1 = Span::new(
-        glyim_span::FileId::BOGUS,
-        glyim_span::ByteIdx::from_raw(42),
-        glyim_span::ByteIdx::from_raw(47),
-        glyim_span::SyntaxContext::ROOT,
-    );
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
-        let unit = ctx_mut.unit_ty();
-        let shared_ref = make_ref_ty(ctx_mut, unit, false);
-        let locals = vec![local_decl(unit), local_decl(shared_ref), local_decl(unit)];
-        make_body(
-            vec![
-                Statement {
-                    kind: StatementKind::Assign(
-                        Place::new(LocalIdx::from_raw(1)),
-                        Rvalue::Ref(Place::new(LocalIdx::from_raw(0)), BorrowKind::Shared),
-                    ),
-                    source_info: SourceInfo::new(span1),
-                },
-                use_local(LocalIdx::from_raw(2), LocalIdx::from_raw(1)),
-            ],
-            locals,
-        )
-    });
-    let constraints = extract_constraints(&ctx, &body);
-    assert!(!constraints.is_empty());
-    let has_span = constraints.iter().any(|c| c.span == span1);
-    assert!(
-        has_span,
-        "Constraint should carry the span from the borrow statement"
-    );
-}
+
 
 #[test]
 fn t15_no_borrow_check_for_copy_types_ignored() {

@@ -69,7 +69,7 @@ fn test_break_continue_lowering() {
         _ => panic!("Expected Block with tail"),
     };
     let while_body_id = match &body.exprs[while_id] {
-        Expr::While { body: b, .. } => *b,
+        Expr::Loop { body: b, .. } => *b,
         _ => panic!("Expected While"),
     };
     let (stmts, tail) = match &body.exprs[while_body_id] {
@@ -378,7 +378,7 @@ fn test_loop_expr_lowering() {
             ..
         } => {
             assert!(
-                matches!(&body.exprs[*loop_id], Expr::While { .. }),
+                matches!(&body.exprs[*loop_id], Expr::Loop { .. }),
                 "Loop should be lowered as While(true)"
             );
         }

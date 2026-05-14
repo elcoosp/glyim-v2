@@ -190,6 +190,7 @@ pub enum MirConstKind {
     Char(char),
     String(Name),
     Unit,
+    FnRef(DefId),
     Error,
 }
 

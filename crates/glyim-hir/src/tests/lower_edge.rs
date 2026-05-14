@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use crate::lower::lower_crate;
 use crate::{BodyId, Expr, ExprId, ItemId, ItemKind, Literal};
 use glyim_core::interner::Interner;

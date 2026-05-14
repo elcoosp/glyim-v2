@@ -36,29 +36,6 @@ pub trait BorrowckCtx {
     fn is_copy(&self, ty: glyim_type::Ty) -> bool;
 }
 
-/// Extract region constraints from borrows.
-#[allow(dead_code)]
-pub(crate) fn extract_constraints(_ctx: &glyim_type::TyCtx, body: &Body) -> Vec<RegionConstraint> {
-    let mut constraints = Vec::new();
-    for (stmt_idx, stmt) in body
-        .basic_blocks
-        .iter()
-        .flat_map(|bb| bb.statements.iter())
-        .enumerate()
-    {
-        if let StatementKind::Assign(_, Rvalue::Ref(..)) = &stmt.kind {
-            let from = RegionVar(stmt_idx as u32 * 2);
-            let to = RegionVar(stmt_idx as u32 * 2 + 1);
-            constraints.push(RegionConstraint {
-                from,
-                to,
-                span: stmt.source_info.span,
-            });
-        }
-    }
-    constraints
-}
-
 /// Determine the statement indices where a given local is read.
 fn collect_local_reads(body: &Body) -> Vec<Vec<usize>> {
     let local_count = body.locals.len();

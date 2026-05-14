@@ -68,12 +68,6 @@ pub(crate) fn check_function_body(
         local_var_types.insert(param.name, ty);
     }
 
-    let mut local_var_types = std::collections::HashMap::new();
-    for (i, param) in params.iter().enumerate() {
-        let ty = thir_params[i].ty;
-        local_var_types.insert(param.name, ty);
-    }
-
     let mut chk = CheckCtx {
         ctx,
         infer,
@@ -111,19 +105,6 @@ pub(crate) fn check_function_body(
         return_ty,
         stmts: thir_stmts,
         span: body.span,
-    }
-}
-
-/// Check for obvious type mismatches before unification.
-fn types_compatible(ctx: &TyCtxMut, a: Ty, b: Ty) -> bool {
-    if a == Ty::ERROR || b == Ty::ERROR || a == Ty::NEVER || b == Ty::NEVER {
-        return true;
-    }
-    let kind_a = ctx.ty_kind(a);
-    let kind_b = ctx.ty_kind(b);
-    match (kind_a, kind_b) {
-        (TyKind::Infer(_), _) | (_, TyKind::Infer(_)) => true,
-        _ => std::mem::discriminant(kind_a) == std::mem::discriminant(kind_b),
     }
 }
 

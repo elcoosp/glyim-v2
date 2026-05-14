@@ -242,7 +242,6 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
 mod tests {
     use super::*;
     use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-    use glyim_mir::*;
     use std::sync::Arc;
 
     #[test]

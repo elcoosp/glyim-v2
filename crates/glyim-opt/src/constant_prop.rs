@@ -2,13 +2,16 @@ use glyim_mir::*;
 use glyim_type::TyCtx;
 use std::collections::HashMap;
 
-/// Intra‑procedural constant propagation (across all basic blocks) with fixpoint iteration.
+/// Intra‑procedural constant propagation with bounded fixpoint iteration.
 pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
     let mut const_map: HashMap<LocalIdx, MirConst> = HashMap::new();
     let mut changed = true;
+    let mut iteration = 0;
+    const MAX_ITERATIONS: usize = 100;
 
-    while changed {
+    while changed && iteration < MAX_ITERATIONS {
         changed = false;
+        iteration += 1;
         for bb in 0..body.basic_blocks.len() {
             let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb as u32)];
             for stmt in &mut block.statements {
@@ -22,6 +25,8 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
                     if place.projection.is_empty() {
                         if let Rvalue::Use(Operand::Constant(c)) = rvalue {
                             const_map.insert(place.local, c.clone());
+                            // New constant may enable further propagation
+                            changed = true;
                         } else {
                             if const_map.remove(&place.local).is_some() {
                                 changed = true;
@@ -35,6 +40,11 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
                 }
             }
         }
+    }
+    if iteration >= MAX_ITERATIONS {
+        // Warn without tracing (tracing not in dependencies)
+        #[cfg(debug_assertions)]
+        eprintln!("Constant propagation reached iteration limit; possible non-termination");
     }
 }
 
@@ -62,7 +72,8 @@ fn replace_in_rvalue(rv: &mut Rvalue, map: &HashMap<LocalIdx, MirConst>) -> bool
         }
         Rvalue::Ref(place, _) => {
             if place.projection.is_empty() && map.contains_key(&place.local) {
-                // Not replacing a reference; just return false
+                // Not replacing a reference; but we still need to consider that
+                // the referenced place might be a constant? We don't replace.
                 false
             } else {
                 false
@@ -77,7 +88,8 @@ fn replace_in_rvalue(rv: &mut Rvalue, map: &HashMap<LocalIdx, MirConst>) -> bool
         }
         Rvalue::Discriminant(place) | Rvalue::Len(place) => {
             if place.projection.is_empty() && map.contains_key(&place.local) {
-                false // cannot replace discriminant/len with constant
+                // Cannot replace discriminant or len with constant
+                false
             } else {
                 false
             }

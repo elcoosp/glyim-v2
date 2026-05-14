@@ -37,6 +37,7 @@ pub enum AdtKind {
     Union,
 }
 
+#[allow(dead_code)]
 struct MirBuilder<'a> {
     _ctx: &'a dyn LowerCtx,
     locals: IndexVec<LocalIdx, glyim_mir::LocalDecl>,

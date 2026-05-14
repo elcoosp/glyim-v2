@@ -10,7 +10,6 @@ pub use interp_error::InterpError;
 pub use interp_value::InterpValue;
 
 pub struct Interpreter<'tcx> {
-    #[allow(dead_code)]
     tcx: &'tcx TyCtx,
     step_limit: usize,
     recursion_limit: usize,
@@ -26,7 +25,6 @@ pub struct Interpreter<'tcx> {
 
 struct CallFrame {
     body: Body,
-    #[allow(dead_code)]
     bb: BasicBlockIdx,
     locals: Vec<Option<InterpValue>>,
     return_place: Place,
@@ -83,26 +81,27 @@ impl<'tcx> Interpreter<'tcx> {
         self.run_current_function()
     }
 
-    fn run_current_function(&mut self) -> InterpResult<()> {
+        fn run_current_function(&mut self) -> InterpResult<()> {
         let mut body = self.current_body.take().unwrap();
+        let mut bb_idx = self.current_bb;
+
         loop {
             self.step_count += 1;
             if self.step_count > self.step_limit {
                 self.current_body = Some(body);
+                self.current_bb = bb_idx;
                 return Err(InterpError::TimedOut);
             }
 
-            // Process statements by borrowing (avoids cloning the whole BasicBlockData)
-            for stmt in &body.basic_blocks[self.current_bb].statements {
+            let terminator_kind = body.basic_blocks[bb_idx].terminator.kind.clone();
+
+            for stmt in &body.basic_blocks[bb_idx].statements {
                 self.execute_statement(stmt)?;
             }
 
-            // Clone only the terminator kind (cheap) so we can move `body` in Call/Return arms
-            let term_kind = body.basic_blocks[self.current_bb].terminator.kind.clone();
-
-            match term_kind {
+            match terminator_kind {
                 TerminatorKind::Goto { target } => {
-                    self.current_bb = target;
+                    bb_idx = target;
                 }
                 TerminatorKind::SwitchInt {
                     discr,
@@ -110,8 +109,6 @@ impl<'tcx> Interpreter<'tcx> {
                     targets,
                 } => {
                     let val = self.eval_operand(&discr)?;
-                    // For bool switches, use boolean comparison to avoid
-                    // sign-extension issues with negative i128 values
                     let discr_u128 = if switch_ty == glyim_type::Ty::BOOL {
                         if let Ok(b) = self.interp_value_to_bool(&val) {
                             if b { 1u128 } else { 0u128 }
@@ -128,42 +125,34 @@ impl<'tcx> Interpreter<'tcx> {
                             break;
                         }
                     }
-                    self.current_bb = next_bb;
+                    bb_idx = next_bb;
                 }
                 TerminatorKind::Return => {
                     if let Some(frame) = self.call_stack.pop() {
                         let ret_val = self.read_place(&Place::new(LocalIdx::from_raw(0)))?;
-                        body = frame.body;
-                        self.current_bb = frame.target_bb;
+                        let mut caller_body = frame.body;
+                        bb_idx = frame.target_bb;
                         self.locals = frame.locals;
+                        self.local_decls = caller_body.locals.iter().cloned().collect();
                         self.write_place(&frame.return_place, ret_val)?;
                         self.recursion_depth -= 1;
+                        body = caller_body;
+                        continue;
                     } else {
                         self.current_body = Some(body);
+                        self.current_bb = bb_idx;
                         return Ok(());
                     }
                 }
                 TerminatorKind::Unreachable => {
                     self.current_body = Some(body);
-                    return Err(InterpError::Panic(
-                        "reached unreachable terminator".to_string(),
-                    ));
+                    self.current_bb = bb_idx;
+                    return Err(InterpError::Panic("reached unreachable terminator".to_string()));
                 }
-                TerminatorKind::Call {
-                    func,
-                    args,
-                    destination,
-                    target,
-                    cleanup: _,
-                } => {
+                TerminatorKind::Call { func, args, destination, target, cleanup: _ } => {
                     let callee_id = self.resolve_callee(&func)?;
-                    let callee_body =
-                        self.function_table
-                            .get(&callee_id)
-                            .cloned()
-                            .ok_or_else(|| {
-                                InterpError::Panic(format!("function not found: {:?}", callee_id))
-                            })?;
+                    let callee_body = self.function_table.get(&callee_id).cloned()
+                        .ok_or_else(|| InterpError::Panic(format!("function not found: {:?}", callee_id)))?;
 
                     let mut arg_values = Vec::new();
                     for arg_op in &args {
@@ -173,6 +162,7 @@ impl<'tcx> Interpreter<'tcx> {
                     self.recursion_depth += 1;
                     if self.recursion_depth > self.recursion_limit {
                         self.current_body = Some(body);
+                        self.current_bb = bb_idx;
                         return Err(InterpError::StackOverflow);
                     }
 
@@ -181,9 +171,7 @@ impl<'tcx> Interpreter<'tcx> {
                         callee_locals[i + 1] = Some(val);
                     }
 
-                    let next_bb = target.unwrap_or_else(|| {
-                        BasicBlockIdx::from_raw((self.current_bb.index() + 1) as u32)
-                    });
+                    let next_bb = target.unwrap_or_else(|| BasicBlockIdx::from_raw((bb_idx.index() + 1) as u32));
 
                     let caller_frame = CallFrame {
                         body,
@@ -194,42 +182,31 @@ impl<'tcx> Interpreter<'tcx> {
                     };
 
                     self.call_stack.push(caller_frame);
-                    let new_decls: Vec<LocalDecl> = callee_body.locals.iter().cloned().collect();
-                    body = callee_body;
-                    self.current_bb = BasicBlockIdx::from_raw(0);
+                    self.local_decls = callee_body.locals.iter().cloned().collect();
                     self.locals = callee_locals;
-                    self.local_decls = new_decls;
+                    body = callee_body;
+                    bb_idx = BasicBlockIdx::from_raw(0);
                 }
-                TerminatorKind::Assert {
-                    cond,
-                    expected,
-                    target,
-                    cleanup: _,
-                    msg,
-                } => {
+                TerminatorKind::Assert { cond, expected, target, cleanup: _, msg } => {
                     let val = self.eval_operand(&cond)?;
                     let is_true = match val {
                         InterpValue::Bool(b) => b,
                         _ => {
                             self.current_body = Some(body);
-                            return Err(InterpError::Panic(
-                                "assert condition must be bool".to_string(),
-                            ));
+                            self.current_bb = bb_idx;
+                            return Err(InterpError::Panic("assert condition must be bool".to_string()));
                         }
                     };
                     if is_true == expected {
-                        self.current_bb = target;
+                        bb_idx = target;
                     } else {
                         self.current_body = Some(body);
+                        self.current_bb = bb_idx;
                         return Err(InterpError::Panic(format!("assert failed: {:?}", msg)));
                     }
                 }
-                TerminatorKind::Drop {
-                    place: _,
-                    target,
-                    cleanup: _,
-                } => {
-                    self.current_bb = target;
+                TerminatorKind::Drop { place: _, target, cleanup: _ } => {
+                    bb_idx = target;
                 }
             }
         }
@@ -256,7 +233,7 @@ impl<'tcx> Interpreter<'tcx> {
         match rvalue {
             Rvalue::Use(operand) => self.eval_operand(operand),
             Rvalue::BinaryOp(op, operands) => {
-                let (ref left, ref right) = **operands;
+                let (left, right) = operands.as_ref();
                 let l = self.eval_operand(left)?;
                 let r = self.eval_operand(right)?;
                 self.eval_binary_op(*op, &l, &r)
@@ -270,7 +247,6 @@ impl<'tcx> Interpreter<'tcx> {
                 Err(InterpError::Panic("Ref rvalue not implemented".into()))
             }
             Rvalue::Aggregate(kind, operands) => {
-                // Simple implementation: for tuple aggregates, return the first element or unit
                 match kind {
                     AggregateKind::Tuple => {
                         if operands.is_empty() {
@@ -290,23 +266,17 @@ impl<'tcx> Interpreter<'tcx> {
             }
             Rvalue::Discriminant(_) => {
                 tracing::warn!("STUB: Discriminant rvalue not implemented");
-                Err(InterpError::Panic(
-                    "Discriminant rvalue not implemented".into(),
-                ))
+                Err(InterpError::Panic("Discriminant rvalue not implemented".into()))
             }
             Rvalue::Len(place) => {
                 let local_decl = &self.local_decls[place.local.index()];
                 let len = self.array_length_from_ty(&local_decl.ty)?;
                 Ok(InterpValue::Int(len as i128))
             }
-
             Rvalue::Cast(kind, operand, _target_ty) => {
                 let val = self.eval_operand(operand)?;
                 match kind {
-                    CastKind::IntToInt => {
-                        // All ints are stored as i128, just pass through
-                        Ok(val)
-                    }
+                    CastKind::IntToInt => Ok(val),
                     _ => {
                         tracing::warn!("STUB: Cast kind {:?} not implemented", kind);
                         Err(InterpError::Panic(format!(
@@ -317,8 +287,6 @@ impl<'tcx> Interpreter<'tcx> {
                 }
             }
             Rvalue::Repeat(operand, _count) => {
-                // Repeat: evaluate the operand and return it as a single element
-                // (simplified - doesn't actually build the array)
                 tracing::warn!("STUB: Repeat rvalue - returning first element only");
                 self.eval_operand(operand)
             }
@@ -347,16 +315,15 @@ impl<'tcx> Interpreter<'tcx> {
                 tracing::warn!("STUB: String const not implemented");
                 Err(InterpError::Panic("String const not implemented".into()))
             }
+            MirConstKind::FnRef(_) => {
+                tracing::warn!("STUB: FnRef constant used as value? Not supported");
+                Err(InterpError::Panic("FnRef constant not supported as value".into()))
+            }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
         }
     }
 
-    fn eval_binary_op(
-        &self,
-        op: BinOp,
-        left: &InterpValue,
-        right: &InterpValue,
-    ) -> InterpResult<InterpValue> {
+    fn eval_binary_op(&self, op: BinOp, left: &InterpValue, right: &InterpValue) -> InterpResult<InterpValue> {
         match (left, right) {
             (InterpValue::Int(l), InterpValue::Int(r)) => {
                 let result = match op {
@@ -400,15 +367,9 @@ impl<'tcx> Interpreter<'tcx> {
                 BinOp::Ne => Ok(InterpValue::Bool(l != r)),
                 BinOp::And => Ok(InterpValue::Bool(*l && *r)),
                 BinOp::Or => Ok(InterpValue::Bool(*l || *r)),
-                _ => Err(InterpError::Panic(format!(
-                    "unsupported bool binop: {:?}",
-                    op
-                ))),
+                _ => Err(InterpError::Panic(format!("unsupported bool binop: {:?}", op))),
             },
-            _ => Err(InterpError::Panic(format!(
-                "unsupported binop types: {:?}",
-                op
-            ))),
+            _ => Err(InterpError::Panic(format!("unsupported binop types: {:?}", op))),
         }
     }
 
@@ -416,10 +377,7 @@ impl<'tcx> Interpreter<'tcx> {
         match (op, val) {
             (UnOp::Not, InterpValue::Bool(b)) => Ok(InterpValue::Bool(!b)),
             (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-i)),
-            _ => Err(InterpError::Panic(format!(
-                "unsupported unary op: {:?}",
-                op
-            ))),
+            _ => Err(InterpError::Panic(format!("unsupported unary op: {:?}", op))),
         }
     }
 
@@ -441,10 +399,7 @@ impl<'tcx> Interpreter<'tcx> {
         }
         let idx = place.local.index();
         if idx >= self.locals.len() {
-            return Err(InterpError::Panic(format!(
-                "local index out of bounds: {}",
-                idx
-            )));
+            return Err(InterpError::Panic(format!("local index out of bounds: {}", idx)));
         }
         self.locals[idx] = Some(val);
         Ok(())
@@ -453,17 +408,13 @@ impl<'tcx> Interpreter<'tcx> {
     fn resolve_callee(&self, func: &Operand) -> InterpResult<DefId> {
         match func {
             Operand::Constant(c) => match &c.kind {
-                MirConstKind::Int(id) => Ok(DefId::new(
-                    CrateId::from_raw(0),
-                    LocalDefId::from_raw(*id as u32),
-                )),
-                _ => Err(InterpError::Panic(
-                    "callee must be constant int encoding DefId".into(),
-                )),
+                MirConstKind::FnRef(def_id) => Ok(*def_id),
+                MirConstKind::Int(id) => {
+                    Ok(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(*id as u32)))
+                }
+                _ => Err(InterpError::Panic("callee must be a function reference".into())),
             },
-            _ => Err(InterpError::Panic(
-                "indirect function calls not implemented".into(),
-            )),
+            _ => Err(InterpError::Panic("indirect function calls not implemented".into())),
         }
     }
 
@@ -491,9 +442,7 @@ impl<'tcx> Interpreter<'tcx> {
                 glyim_type::ConstKind::Uint(n) => Ok(*n as usize),
                 _ => {
                     tracing::warn!("STUB: Len for non-constant array length");
-                    Err(InterpError::Panic(
-                        "Len: unsupported array length kind".into(),
-                    ))
+                    Err(InterpError::Panic("Len: unsupported array length kind".into()))
                 }
             },
             _ => Err(InterpError::Panic("Len: expected array type".into())),

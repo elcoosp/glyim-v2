@@ -151,7 +151,7 @@ fn test_loop_expr() {
             tail: Some(loop_id),
             ..
         } => {
-            assert!(matches!(&body.exprs[*loop_id], Expr::While { .. }));
+            assert!(matches!(&body.exprs[*loop_id], Expr::Loop { .. }));
         }
         _ => panic!(),
     }
@@ -198,7 +198,7 @@ fn test_break_continue() {
         _ => panic!(),
     };
     let while_body_id = match &body.exprs[while_id] {
-        Expr::While { body: b, .. } => *b,
+        Expr::Loop { body: b, .. } => *b,
         _ => panic!(),
     };
     let (stmts, tail) = match &body.exprs[while_body_id] {
