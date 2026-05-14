@@ -7,6 +7,9 @@ fn file_id() -> FileId {
 }
 
 
+fn has_child(node: &SyntaxNode, kind: SyntaxKind) -> bool {
+    node.children().any(|c| c.kind() == kind)
+}
 
 // ─── Closures ───
 #[test]

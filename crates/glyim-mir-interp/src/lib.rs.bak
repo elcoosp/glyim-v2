@@ -24,7 +24,9 @@ pub struct Interpreter<'tcx> {
 }
 
 struct CallFrame {
-    body: Body,    locals: Vec<Option<InterpValue>>,
+    body: Body,
+    bb: BasicBlockIdx,
+    locals: Vec<Option<InterpValue>>,
     return_place: Place,
     target_bb: BasicBlockIdx,
 }

@@ -34,7 +34,6 @@ fn make_minimal_body(ctx: &mut glyim_type::TyCtxMut) -> Body {
     body
 }
 
-#[allow(dead_code)]
 fn make_live_multi_block(ctx: &mut glyim_type::TyCtxMut) -> Body {
     let int_ty = ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
     // block0: local1 = 1; goto block1
