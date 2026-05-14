@@ -4,6 +4,7 @@
 //! collected into a `Vec<Obligation>` during type-checking, then
 //! processed by `FulfillmentCtx` after each body is checked.
 
+mod check_body;
 pub mod thir;
 
 use glyim_core::arena::IndexVec;
@@ -77,23 +78,44 @@ pub fn typeck_crate(
     let mut infer = InferenceTable::new();
     let mut all_obligations: Vec<Obligation> = Vec::new();
 
-    for (_id, item) in hir.items.iter_enumerated() {
-        let body_id = match &item.kind {
-            glyim_hir::ItemKind::Fn(f) => f.body,
-            glyim_hir::ItemKind::Const(c) => c.body,
-            glyim_hir::ItemKind::Static(s) => s.body,
-            _ => None,
-        };
+    let expr_types: IndexVec<glyim_hir::ExprId, Option<Ty>> = IndexVec::new();
+    let pat_types: IndexVec<glyim_hir::PatId, Option<Ty>> = IndexVec::new();
+    let adjustments: IndexVec<glyim_hir::ExprId, Option<Vec<Adjustment>>> = IndexVec::new();
+    let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
 
-        if let Some(_body_id) = body_id {
-            let mut typeck_ctx = TypeckCtx {
-                ctx: &mut ctx,
-                infer: &mut infer,
-                diagnostics: &mut diagnostics,
-                pending_obligations: Vec::new(),
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        let body_info: Option<(glyim_hir::BodyId, u32, Vec<glyim_hir::Param>, Ty)> =
+            match &item.kind {
+                glyim_hir::ItemKind::Fn(f) => {
+                    let ret_ty = match &f.return_ty {
+                        Some(_) => {
+                            let var = infer.new_ty_var(&mut ctx);
+                            ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+                        }
+                        None => Ty::UNIT,
+                    };
+                    f.body
+                        .map(|b| (b, item.id.to_raw(), f.params.clone(), ret_ty))
+                }
+                _ => None,
             };
-            let _ = (def_map, &typeck_ctx);
-            all_obligations.extend(std::mem::take(&mut typeck_ctx.pending_obligations));
+
+        if let Some((body_id, local_def_raw, params, return_ty)) = body_info {
+            let local_def_id = LocalDefId::from_raw(local_def_raw);
+            let mut pending = Vec::new();
+            let thir_body = check_body::check_function_body(
+                &mut ctx,
+                &mut infer,
+                &mut diagnostics,
+                &mut pending,
+                body_id,
+                hir,
+                local_def_id,
+                return_ty,
+                &params,
+            );
+            all_obligations.extend(pending);
+            thir_bodies.push((local_def_id, thir_body));
         }
     }
 
@@ -110,12 +132,15 @@ pub fn typeck_crate(
     diagnostics.extend(fulfill.into_diagnostics());
 
     let result = TypeckResult {
-        expr_types: IndexVec::new(),
-        pat_types: IndexVec::new(),
-        adjustments: IndexVec::new(),
-        thir_bodies: Vec::new(),
+        expr_types,
+        pat_types,
+        adjustments,
+        thir_bodies,
         diagnostics,
     };
 
     (frozen_ctx, result)
 }
+
+#[cfg(test)]
+mod tests;

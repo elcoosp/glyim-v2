@@ -308,10 +308,10 @@ fn collect_items(
 fn extract_module_name(module_node: &SyntaxNode) -> String {
     // The structure: Module node has children: KwMod, Ident, then items.
     for child in module_node.children_with_tokens() {
-        if let Some(token) = child.as_token() {
-            if token.kind() == SyntaxKind::Ident {
-                return token.text().to_string();
-            }
+        if let Some(token) = child.as_token()
+            && token.kind() == SyntaxKind::Ident
+        {
+            return token.text().to_string();
         }
     }
     // Fallback (should not happen for valid syntax)
@@ -326,10 +326,10 @@ fn extract_ident(node: &SyntaxNode) -> String {
         return format!("__impl_{}", offset);
     }
     for child in node.children_with_tokens() {
-        if let Some(token) = child.as_token() {
-            if token.kind() == SyntaxKind::Ident {
-                return token.text().to_string();
-            }
+        if let Some(token) = child.as_token()
+            && token.kind() == SyntaxKind::Ident
+        {
+            return token.text().to_string();
         }
     }
     // Fallback: use the kind (Debug) and offset
