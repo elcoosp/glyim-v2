@@ -1,10 +1,15 @@
 use glyim_codegen::CodegenBackend;
+#[cfg(test)]
+mod tests;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_mir::Body;
 use glyim_solve::SimpleTraitSolver;
 use std::path::Path;
 use std::sync::Arc;
+
+mod pipeline_context;
+use pipeline_context::{PipelineBorrowckCtx, PipelineLowerCtx};
 
 pub struct Pipeline;
 
@@ -41,12 +46,11 @@ impl Pipeline {
             return Err(sink.into_diagnostics());
         }
 
-        // Phase 4: HIR (stub)
-        let hir = glyim_hir::CrateHir {
-            items: glyim_core::arena::IndexVec::new(),
-            bodies: glyim_core::arena::IndexVec::new(),
-            body_owners: glyim_core::arena::IndexVec::new(),
-        };
+        // Phase 4: HIR
+        let hir = glyim_hir::pipeline_api::lower_crate_for_pipeline(
+            &parse_result.root,
+            glyim_db::db_helpers::intern_mut(db),
+        );
 
         // Phase 5: Typeck
         let resolver = db.interner().clone();
@@ -61,15 +65,37 @@ impl Pipeline {
 
         db.set_ty_ctx(ty_ctx);
 
-        // Phase 6-7: MIR and optimizations (stub: create a dummy MIR body)
-        let dummy_owner = glyim_core::def_id::DefId::new(
-            glyim_core::def_id::CrateId::from_raw(0),
-            glyim_core::def_id::LocalDefId::from_raw(0),
-        );
-        let dummy_body = Arc::new(Body::dummy(dummy_owner));
-        let optimized_bodies = vec![dummy_body];
+        // Phase 6: MIR lowering, borrow checking, optimization
+        let ty_ctx_guard = db.ty_ctx();
+        let ty_ctx = ty_ctx_guard.as_ref().expect("ty_ctx not set after typeck");
 
-        // Phase 8: Codegen
+        let lower_ctx = PipelineLowerCtx::new(ty_ctx, &hir);
+        let mut optimized_bodies: Vec<Arc<Body>> = Vec::new();
+
+        for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
+            // Lower THIR -> MIR
+            let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
+            sink.extend(lower_result.diagnostics);
+            if sink.has_errors() {
+                return Err(sink.into_diagnostics());
+            }
+            let mir_body = lower_result.body;
+            let mir_arc = Arc::new(mir_body);
+
+            // Borrow checking
+            let borrowck_ctx = PipelineBorrowckCtx::new(ty_ctx, &mir_arc);
+            let borrowck_result = glyim_borrowck::check_borrows(&borrowck_ctx, &mir_arc);
+            sink.extend(borrowck_result.errors);
+            if sink.has_errors() {
+                return Err(sink.into_diagnostics());
+            }
+
+            // Optimization
+            let opt_body = glyim_opt::optimize(ty_ctx, &mir_arc);
+            optimized_bodies.push(Arc::new(opt_body.body));
+        }
+
+        // Phase 7: Codegen
         backend.generate(&optimized_bodies, Path::new("output.o"))?;
 
         Ok(())

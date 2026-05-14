@@ -379,3 +379,4 @@ mod lower;
 
 #[cfg(test)]
 mod tests;
+pub mod pipeline_api;

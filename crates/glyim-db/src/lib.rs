@@ -35,6 +35,7 @@ impl Database {
     pub fn interner(&self) -> &Interner {
         &self.interner
     }
+
     pub fn vfs(&self) -> &Vfs {
         &self.vfs
     }
@@ -62,3 +63,4 @@ impl Default for Database {
         })
     }
 }
+pub mod db_helpers;

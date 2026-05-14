@@ -76,10 +76,13 @@ pub(crate) fn check_function_body(
     for (pos, (expr_id, _expr)) in body.exprs.iter_enumerated().enumerate() {
         let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
         if pos == len - 1 {
-            // Tail expression: unify with return type
-            let span = body.span;
-            if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
-                chk.diagnostics.extend(diags);
+            // Tail expression: unify with return type only if not unit
+            // (fn main() { 1 + 2 } is valid Rust — value is discarded)
+            if return_ty != Ty::UNIT {
+                let span = body.span;
+                if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
+                    chk.diagnostics.extend(diags);
+                }
             }
             _tail_expr = Some(thir_expr);
         } else {
@@ -254,6 +257,44 @@ fn check_expr(
                 result_ty,
             )
         }
+        Expr::Block { stmts, tail } => {
+            let mut block_stmts = Vec::new();
+            for &stmt_id in stmts {
+                let (stmt_expr, _) = check_expr(chk, body, local_var_map, stmt_id);
+                block_stmts.push(thir::Stmt::Expr { expr: stmt_expr });
+            }
+            if let Some(tail_id) = tail {
+                let (tail_expr, tail_ty) = check_expr(chk, body, local_var_map, *tail_id);
+                let block_expr = thir::Expr {
+                    kind: thir::ExprKind::Block {
+                        stmts: block_stmts,
+                        tail: Some(Box::new(tail_expr)),
+                    },
+                    ty: tail_ty,
+                    span: Span::DUMMY,
+                };
+                (block_expr, tail_ty)
+            } else {
+                let unit_expr = thir::Expr {
+                    kind: thir::ExprKind::Block {
+                        stmts: block_stmts,
+                        tail: None,
+                    },
+                    ty: Ty::UNIT,
+                    span: Span::DUMMY,
+                };
+                (unit_expr, Ty::UNIT)
+            }
+        }
+        Expr::Missing => {
+            tracing::warn!("STUB: encountered Missing expression (unimplemented feature)");
+            let unit_expr = thir::Expr {
+                kind: thir::ExprKind::Literal(thir::Literal::Unit),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            };
+            (unit_expr, Ty::UNIT)
+        }
         _ => {
             chk.diagnostics.push(GlyimDiagnostic::type_error(
                 Span::DUMMY,
@@ -273,12 +314,25 @@ fn check_expr(
 
 fn literal_ty(ctx: &mut TyCtxMut, lit: &Literal) -> Ty {
     match lit {
-        Literal::Int(_, Some(IntTy::I32)) | Literal::Int(_, None) => {
-            ctx.mk_ty(TyKind::Int(IntTy::I32))
-        }
+        Literal::Int(_, Some(IntTy::I8)) => ctx.mk_ty(TyKind::Int(IntTy::I8)),
+        Literal::Int(_, Some(IntTy::I16)) => ctx.mk_ty(TyKind::Int(IntTy::I16)),
+        Literal::Int(_, Some(IntTy::I32)) => ctx.mk_ty(TyKind::Int(IntTy::I32)),
+        Literal::Int(_, Some(IntTy::I64)) => ctx.mk_ty(TyKind::Int(IntTy::I64)),
+        Literal::Int(_, Some(IntTy::Isize)) => ctx.mk_ty(TyKind::Int(IntTy::Isize)),
+        Literal::Int(_, None) => ctx.mk_ty(TyKind::Int(IntTy::I32)),
+        Literal::Uint(_, Some(UintTy::U8)) => ctx.mk_ty(TyKind::Uint(UintTy::U8)),
+        Literal::Uint(_, Some(UintTy::U16)) => ctx.mk_ty(TyKind::Uint(UintTy::U16)),
+        Literal::Uint(_, Some(UintTy::U32)) => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
+        Literal::Uint(_, Some(UintTy::U64)) => ctx.mk_ty(TyKind::Uint(UintTy::U64)),
+        Literal::Uint(_, Some(UintTy::Usize)) => ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
+        Literal::Uint(_, None) => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
+        Literal::Float(_, FloatTy::F32) => ctx.mk_ty(TyKind::Float(FloatTy::F32)),
+        Literal::Float(_, FloatTy::F64) => ctx.mk_ty(TyKind::Float(FloatTy::F64)),
+
         Literal::Bool(_) => Ty::BOOL,
+        Literal::Char(_) => ctx.mk_ty(TyKind::Char),
+        Literal::String(_) => ctx.mk_ty(TyKind::String),
         Literal::Unit => Ty::UNIT,
-        _ => Ty::ERROR,
     }
 }
 
