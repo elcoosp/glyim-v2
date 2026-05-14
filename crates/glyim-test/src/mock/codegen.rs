@@ -42,12 +42,12 @@ impl CodegenBackend for MockCodegen {
     fn name(&self) -> &'static str {
         "mock"
     }
-    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<Vec<u8>> {
+    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()> {
         self.calls.lock().push(CodegenCall {
             body_count: bodies.len(),
             output_path: output.to_path_buf(),
         });
-        Ok(Vec::new())
+        Ok(())
     }
     fn generate_function(&self, _body: &Arc<Body>) -> CompResult<Vec<u8>> {
         self.function_calls.fetch_add(1, Ordering::Relaxed);

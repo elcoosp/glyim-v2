@@ -49,7 +49,7 @@ impl Pipeline {
         // Phase 4: HIR
         let hir = glyim_hir::pipeline_api::lower_crate_for_pipeline(
             &parse_result.root,
-            glyim_db::db_helpers::intern_mut(db),
+            db.intern_mut(),
         );
 
         // Phase 5: Typeck

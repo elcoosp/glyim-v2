@@ -7,7 +7,7 @@ impl CodegenTester {
         backend: &dyn glyim_codegen::CodegenBackend,
         bodies: &[Arc<glyim_mir::Body>],
         output: &std::path::Path,
-    ) -> glyim_diag::CompResult<Vec<u8>> {
+    ) -> glyim_diag::CompResult<()> {
         backend.generate(bodies, output)
     }
     pub fn generate_function(

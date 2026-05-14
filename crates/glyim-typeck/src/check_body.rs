@@ -85,7 +85,6 @@ pub(crate) fn check_function_body(
         let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
         if pos == len - 1 {
             // Tail expression: unify with return type only if not unit
-            // (fn main() { 1 + 2 } is valid Rust — value is discarded)
             if return_ty != Ty::UNIT {
                 let span = body.span;
                 if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
@@ -94,7 +93,6 @@ pub(crate) fn check_function_body(
             }
             _tail_expr = Some(thir_expr);
         } else {
-            // Non-tail: push as statement expression
             thir_stmts.push(crate::thir::Stmt::Expr { expr: thir_expr });
         }
     }

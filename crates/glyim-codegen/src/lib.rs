@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 pub trait CodegenBackend {
     fn name(&self) -> &'static str;
-    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<Vec<u8>>;
+    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()>;
     fn generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>>;
 }
 
@@ -41,13 +41,11 @@ impl CodegenBackend for BytecodeBackend {
         "bytecode"
     }
 
-    fn generate(&self, bodies: &[Arc<Body>], _output: &Path) -> CompResult<Vec<u8>> {
-        let mut combined = Vec::new();
+    fn generate(&self, bodies: &[Arc<Body>], _output: &Path) -> CompResult<()> {
         for body in bodies {
-            let func_bc = self.generate_function(body)?;
-            combined.extend(func_bc);
+            let _func_bc = self.generate_function(body)?;
         }
-        Ok(combined)
+        Ok(())
     }
 
     fn generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>> {

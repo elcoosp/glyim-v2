@@ -41,9 +41,9 @@ impl CodegenBackend for LlvmBackend {
     }
 
     /// Generate code for multiple bodies, writing the result to `output` on disk.
-    /// Returns `Ok(Vec::new())` — the bytes are written to the file, not returned in memory.
+    /// Returns `Ok(())` — the bytes are written to the file, not returned in memory.
     /// Use `generate_function()` for in-memory results.
-    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<Vec<u8>> {
+    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()> {
         let module = self.context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
@@ -95,7 +95,7 @@ impl CodegenBackend for LlvmBackend {
                 ))]
             })?;
 
-        Ok(Vec::new())
+        Ok(())
     }
 
     fn generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>> {

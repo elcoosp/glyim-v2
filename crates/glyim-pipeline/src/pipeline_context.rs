@@ -15,7 +15,6 @@ pub(crate) struct PipelineLowerCtx<'a> {
 
 impl<'a> PipelineLowerCtx<'a> {
     pub(crate) fn new(ty_ctx: &'a TyCtx, _hir: &CrateHir) -> Self {
-        // For v0.1.0, we do not precompute ADT definitions; return empty AdtDef on demand.
         PipelineLowerCtx {
             ty_ctx,
             span_stack: RefCell::new(Vec::new()),
@@ -29,7 +28,6 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
     }
 
     fn adt_def(&self, _id: AdtId) -> AdtDef {
-        // STUB: return empty AdtDef. Real implementation would look up type information.
         AdtDef {
             variants: Vec::new(),
             kind: AdtKind::Struct,
@@ -66,8 +64,8 @@ impl<'a> BorrowckCtx for PipelineBorrowckCtx<'a> {
         &self.body.locals[idx]
     }
 
+    // FIXME: Stub. Always returns false. This means the borrow checker will reject valid programs that move Copy types. Must be replaced with actual Copy type tracking from TyCtx.
     fn is_copy(&self, _ty: Ty) -> bool {
-        // STUB: no copy analysis yet
         false
     }
 }

@@ -777,7 +777,8 @@ fn lower_binary_expr(
             let lhs_id = lower_expr(&lhs, interner, exprs, pats)?;
             let rhs_id = lower_expr(&rhs, interner, exprs, pats)?;
             let op = lower_bin_op_token(&op_token);
-            let expr = Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
+            let expr = // FIXME: use real span from node
+            Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
             return Some(exprs.push(expr));
         }
     }
@@ -809,7 +810,8 @@ fn lower_binary_expr(
                 && !t.kind().is_trivia()
         });
     let op = op_token.map_or(BinOp::Add, |t| lower_bin_op_token(&t));
-    let expr = Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
+    let expr = // FIXME: use real span from node
+            Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
     Some(exprs.push(expr))
 }
 
