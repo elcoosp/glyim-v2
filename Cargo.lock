@@ -508,6 +508,7 @@ dependencies = [
  "glyim-core",
  "glyim-mir",
  "glyim-span",
+ "glyim-test",
  "glyim-type",
 ]
 

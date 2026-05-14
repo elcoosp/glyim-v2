@@ -23,3 +23,6 @@ pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     unreachable_elim::run(ctx, &mut body);
     Optimized { body }
 }
+
+#[cfg(test)]
+mod tests;
