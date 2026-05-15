@@ -3,8 +3,10 @@ use glyim_core::def_id::TraitDefId;
 use glyim_core::primitives::IntTy;
 
 use crate::{
-    GenericArg, InferVar, PrintTy, ProjectionTy, TraitRef, TyCtxMut, TyKind, TyVar, TypeFlags,
+    FnSig, GenericArg, InferVar, ParamTy, PrintTy, ProjectionTy, Region, TraitRef, Ty, TyCtxMut,
+    TyKind, TyVar, TypeFlags,
 };
+use glyim_core::primitives::{Abi, IntTy, Mutability, Safety};
 
 use super::test_helpers::with_fresh_ty_ctx;
 
@@ -277,10 +279,8 @@ fn projection_in_tuple() {
     let (ctx, tuple_ty) = with_fresh_ty_ctx(|ctx| {
         let trait_id = TraitDefId::from_raw(0);
         let proj = make_projection(ctx, trait_id, ctx.bool_ty(), "Item");
-        let substs = ctx.intern_substitution(vec![
-            GenericArg::Ty(proj),
-            GenericArg::Ty(ctx.mk_ty(TyKind::Int(IntTy::I32))),
-        ]);
+        let int32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+        let substs = ctx.intern_substitution(vec![GenericArg::Ty(proj), GenericArg::Ty(int32_ty)]);
         ctx.mk_tuple(substs)
     });
     let kind = ctx.ty_kind(tuple_ty);
