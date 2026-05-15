@@ -31,7 +31,10 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
     }
 
     fn adt_def(&self, id: AdtId) -> AdtDef {
-        let def_id = DefId::new(glyim_core::def_id::CrateId::from_raw(0), glyim_core::def_id::LocalDefId::from_raw(id.to_raw()));
+        let def_id = DefId::new(
+            glyim_core::def_id::CrateId::from_raw(0),
+            glyim_core::def_id::LocalDefId::from_raw(id.to_raw()),
+        );
         let item_id = glyim_hir::ItemId::from_raw(def_id.local_id.to_raw());
 
         match self.hir.items.get(item_id) {

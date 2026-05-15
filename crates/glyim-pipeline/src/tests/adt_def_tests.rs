@@ -1,11 +1,11 @@
-use glyim_core::def_id::AdtId;
-use glyim_core::primitives::StructKind;
-use glyim_core::path::PathKind;
+use crate::pipeline_context::PipelineLowerCtx;
 use glyim_core::IndexVec;
-use glyim_hir::{CrateHir, Item, ItemKind, StructItem, Field as HirField, Variant, EnumItem};
+use glyim_core::def_id::AdtId;
+use glyim_core::path::PathKind;
+use glyim_core::primitives::StructKind;
+use glyim_hir::{CrateHir, EnumItem, Field as HirField, Item, ItemKind, StructItem, Variant};
 use glyim_lower::{AdtDef, AdtKind, LowerCtx};
 use glyim_test::with_fresh_ty_ctx;
-use crate::pipeline_context::PipelineLowerCtx;
 
 /// Helper: create a minimal HIR with a single struct item.
 /// Returns (CrateHir, AdtId) where AdtId uses the item's raw index.
@@ -14,7 +14,7 @@ fn make_hir_with_struct(
     field_names: Vec<&str>,
     ctx: &mut glyim_type::TyCtxMut,
 ) -> (CrateHir, AdtId) {
-    use glyim_hir::{TypeRef, Path, PathSegment};
+    use glyim_hir::{Path, PathSegment, TypeRef};
 
     let interner = ctx.resolver();
     let fields: Vec<HirField> = field_names
@@ -62,7 +62,7 @@ fn make_hir_with_enum(
     variant_specs: Vec<(&str, Vec<&str>)>,
     ctx: &mut glyim_type::TyCtxMut,
 ) -> (CrateHir, AdtId) {
-    use glyim_hir::{TypeRef, Path, PathSegment};
+    use glyim_hir::{Path, PathSegment, TypeRef};
 
     let interner = ctx.resolver();
     let variants: Vec<Variant> = variant_specs
@@ -117,9 +117,8 @@ fn make_hir_with_enum(
 // U05-T01: PipelineLowerCtx returns correct field counts for struct
 #[test]
 fn test_adt_def_struct_fields() {
-    let (frozen_ctx, (hir, adt_id)) = with_fresh_ty_ctx(|ctx| {
-        make_hir_with_struct("MyStruct", vec!["x", "y", "z"], ctx)
-    });
+    let (frozen_ctx, (hir, adt_id)) =
+        with_fresh_ty_ctx(|ctx| make_hir_with_struct("MyStruct", vec!["x", "y", "z"], ctx));
 
     let lower_ctx = PipelineLowerCtx::new(&frozen_ctx, &hir);
     let def: AdtDef = lower_ctx.adt_def(adt_id);
@@ -136,11 +135,7 @@ fn test_adt_def_enum_variants() {
     let (frozen_ctx, (hir, adt_id)) = with_fresh_ty_ctx(|ctx| {
         make_hir_with_enum(
             "MyEnum",
-            vec![
-                ("A", vec!["0"]),
-                ("B", vec!["0", "1"]),
-                ("C", vec![]),
-            ],
+            vec![("A", vec!["0"]), ("B", vec!["0", "1"]), ("C", vec![])],
             ctx,
         )
     });
@@ -158,9 +153,8 @@ fn test_adt_def_enum_variants() {
 // U05-T03: Lowering uses ADT def with correct field counts (stub types)
 #[test]
 fn test_lowering_uses_adt_def_for_field_access() {
-    let (frozen_ctx, (hir, adt_id)) = with_fresh_ty_ctx(|ctx| {
-        make_hir_with_struct("Point", vec!["x", "y"], ctx)
-    });
+    let (frozen_ctx, (hir, adt_id)) =
+        with_fresh_ty_ctx(|ctx| make_hir_with_struct("Point", vec!["x", "y"], ctx));
 
     let lower_ctx = PipelineLowerCtx::new(&frozen_ctx, &hir);
     let def: AdtDef = lower_ctx.adt_def(adt_id);
