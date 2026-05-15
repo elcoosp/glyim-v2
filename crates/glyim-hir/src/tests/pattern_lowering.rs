@@ -45,6 +45,7 @@ fn lower_first_pattern(source: &str) -> (Interner, IndexVec<PatId, Pat>, PatId) 
     let pat_id = lower_pat(&pat_node, &mut interner, &mut pats).expect("lower_pat returned None");
     (interner, pats, pat_id)
 }
+#[test]
 fn u07_t01_lower_or_pattern() {
     let (interner, pats, pat_id) =
         lower_first_pattern("fn f() { match () { Some(x) | None => () } }");
