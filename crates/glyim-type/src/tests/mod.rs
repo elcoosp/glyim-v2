@@ -1,3 +1,4 @@
+mod auto_traits;
 mod binder;
 mod compile_fail;
 mod const_val;
@@ -15,6 +16,8 @@ mod generic_arg;
 mod helpers;
 mod interning;
 mod more_interning;
+mod placeholder_flags;
+mod placeholder_region;
 mod predicate;
 mod projections;
 mod properties;
