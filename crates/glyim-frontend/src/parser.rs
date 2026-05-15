@@ -181,7 +181,7 @@ impl<'a> Parser<'a> {
                 self.finish_node(); // Module
             }
             SyntaxKind::KwConst => {
-                tracing::warn!("STUB: const parsing not yet implemented");
+                self.start_node(SyntaxKind::ConstDef);
                 self.bump(); // const
                 self.bump_expected(SyntaxKind::Ident);
                 self.expect(SyntaxKind::Colon);
@@ -191,9 +191,10 @@ impl<'a> Parser<'a> {
                     self.parse_expr();
                 }
                 self.expect(SyntaxKind::Semicolon);
+                self.finish_node();
             }
             SyntaxKind::KwStatic => {
-                tracing::warn!("STUB: static parsing not yet implemented");
+                self.start_node(SyntaxKind::StaticDef);
                 self.bump(); // static
                 if self.current_kind() == SyntaxKind::KwRef {
                     self.bump();
@@ -209,9 +210,10 @@ impl<'a> Parser<'a> {
                     self.parse_expr();
                 }
                 self.expect(SyntaxKind::Semicolon);
+                self.finish_node();
             }
             SyntaxKind::KwType => {
-                tracing::warn!("STUB: type alias parsing not yet implemented");
+                self.start_node(SyntaxKind::TypeAlias);
                 self.bump(); // type
                 self.bump_expected(SyntaxKind::Ident);
                 if self.current_kind() == SyntaxKind::Lt {
@@ -222,9 +224,10 @@ impl<'a> Parser<'a> {
                     self.parse_type();
                 }
                 self.expect(SyntaxKind::Semicolon);
+                self.finish_node();
             }
             SyntaxKind::KwExtern => {
-                tracing::warn!("STUB: extern block parsing not yet implemented");
+                self.start_node(SyntaxKind::ExternBlock);
                 self.bump(); // extern
                 if self.current_kind() == SyntaxKind::StringLit {
                     self.bump(); // ABI string
@@ -234,6 +237,7 @@ impl<'a> Parser<'a> {
                 } else {
                     self.expect(SyntaxKind::Semicolon);
                 }
+                self.finish_node();
             }
             _ => {
                 self.error(format!("expected item, found {:?}", self.current_kind()));
@@ -475,7 +479,7 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
-                    tracing::warn!("STUB: associated type in trait");
+                    self.start_node(SyntaxKind::TypeAlias);
                     self.bump(); // type
                     self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Colon {
@@ -490,9 +494,10 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 SyntaxKind::KwConst => {
-                    tracing::warn!("STUB: associated const in trait");
+                    self.start_node(SyntaxKind::ConstDef);
                     self.bump(); // const
                     self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
@@ -502,6 +507,7 @@ impl<'a> Parser<'a> {
                         self.parse_expr();
                     }
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 _ => {
                     self.error(format!(
@@ -537,7 +543,7 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::KwFn => self.parse_fn_def(),
                 SyntaxKind::KwType => {
-                    tracing::warn!("STUB: associated type in impl");
+                    self.start_node(SyntaxKind::TypeAlias);
                     self.bump(); // type
                     self.bump_expected(SyntaxKind::Ident);
                     if self.current_kind() == SyntaxKind::Eq {
@@ -545,9 +551,10 @@ impl<'a> Parser<'a> {
                         self.parse_type();
                     }
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 SyntaxKind::KwConst => {
-                    tracing::warn!("STUB: associated const in impl");
+                    self.start_node(SyntaxKind::ConstDef);
                     self.bump(); // const
                     self.bump_expected(SyntaxKind::Ident);
                     self.expect(SyntaxKind::Colon);
@@ -555,6 +562,7 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Eq);
                     self.parse_expr();
                     self.expect(SyntaxKind::Semicolon);
+                    self.finish_node();
                 }
                 _ => {
                     self.error(format!(
@@ -1290,7 +1298,6 @@ impl<'a> Parser<'a> {
 
     #[allow(dead_code)]
     fn parse_labeled_expr(&mut self) {
-        tracing::warn!("STUB: labeled expression parsing");
         self.bump();
         if self.current_kind() == SyntaxKind::Colon {
             self.bump();
@@ -1477,14 +1484,26 @@ impl<'a> Parser<'a> {
                     self.start_node(SyntaxKind::PatStruct);
                     self.bump(); // {
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                        if self.current_kind() == SyntaxKind::Ident {
-                            self.bump();
-                            if self.current_kind() == SyntaxKind::Colon {
+                        if self.current_kind() == SyntaxKind::DotDot {
+                            self.bump(); // ..
+                            // trailing comma allowed after ..
+                            if self.current_kind() == SyntaxKind::Comma {
                                 self.bump();
-                                self.parse_pat();
                             }
-                        } else if self.current_kind() == SyntaxKind::DotDot {
-                            self.bump();
+                        } else if self.current_kind() == SyntaxKind::Ident {
+                            let cp = self.checkpoint();
+                            self.bump(); // field name
+                            if self.current_kind() == SyntaxKind::Colon {
+                                // explicit: field_name: pattern
+                                self.start_node_at(cp, SyntaxKind::PatIdent);
+                                self.finish_node();
+                                self.bump(); // :
+                                self.parse_pat();
+                            } else {
+                                // shorthand: field_name (binding)
+                                self.start_node_at(cp, SyntaxKind::PatIdent);
+                                self.finish_node();
+                            }
                         } else {
                             self.error("expected field pattern");
                             if self.current().is_some() {
@@ -1559,7 +1578,6 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::Star => {
-                tracing::warn!("STUB: raw pointer type not supported");
                 self.bump(); // *
                 if self.current_kind() == SyntaxKind::KwConst
                     || self.current_kind() == SyntaxKind::KwMut
@@ -1615,7 +1633,6 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::KwImpl => {
-                tracing::warn!("STUB: impl trait type not supported");
                 self.bump(); // impl
                 loop {
                     self.parse_type();
@@ -1627,7 +1644,6 @@ impl<'a> Parser<'a> {
                 }
             }
             SyntaxKind::KwFn => {
-                tracing::warn!("STUB: function pointer type not supported");
                 self.bump(); // fn
                 self.expect(SyntaxKind::LParen);
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
