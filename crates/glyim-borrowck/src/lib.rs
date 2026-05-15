@@ -118,7 +118,8 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     }
 
     let mut errors = Vec::new();
-    let mut active_borrows: Vec<Vec<ActiveBorrow>> = (0..body.locals.len()).map(|_| Vec::new()).collect();
+    let mut active_borrows: Vec<Vec<ActiveBorrow>> =
+        (0..body.locals.len()).map(|_| Vec::new()).collect();
 
     for (stmt_idx, stmt) in body
         .basic_blocks
