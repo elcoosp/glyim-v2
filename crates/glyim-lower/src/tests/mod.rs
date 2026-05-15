@@ -1,5 +1,5 @@
-mod partition;
 mod mono_cache;
 mod mono_cache_cross_kind;
 mod mono_cache_edge_cases;
 mod mono_cache_stress;
+mod partition;
