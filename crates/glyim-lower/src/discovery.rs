@@ -76,22 +76,19 @@ fn has_attr_in_span(root: &SyntaxNode, target_span: Span, attr_name: &str) -> bo
     let mut i = 0;
     while i + 3 < tokens.len() {
         let t0 = &tokens[i];
-        if t0.kind() == SyntaxKind::Hash {
-            if let (Some(t1), Some(t2), Some(t3)) =
+        if t0.kind() == SyntaxKind::Hash
+            && let (Some(t1), Some(t2), Some(t3)) =
                 (tokens.get(i + 1), tokens.get(i + 2), tokens.get(i + 3))
-            {
-                if t1.kind() == SyntaxKind::LBracket
-                    && t2.kind() == SyntaxKind::Ident
-                    && t3.kind() == SyntaxKind::RBracket
-                {
-                    let ident_text = t2.text();
-                    if ident_text == attr_name {
-                        // Check that this attribute is within the item span
-                        let attr_span = token_span(t0);
-                        if span_intersects(target_span, attr_span) {
-                            return true;
-                        }
-                    }
+            && t1.kind() == SyntaxKind::LBracket
+            && t2.kind() == SyntaxKind::Ident
+            && t3.kind() == SyntaxKind::RBracket
+        {
+            let ident_text = t2.text();
+            if ident_text == attr_name {
+                // Check that this attribute is within the item span
+                let attr_span = token_span(t0);
+                if span_intersects(target_span, attr_span) {
+                    return true;
                 }
             }
         }

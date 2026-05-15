@@ -5,6 +5,7 @@ pub mod mono;
 
 pub use lower::*;
 pub use mono::*;
+pub mod partition;
 
 #[cfg(test)]
 mod tests;
