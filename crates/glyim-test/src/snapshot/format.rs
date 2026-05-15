@@ -288,7 +288,8 @@ fn format_const(c: &glyim_mir::MirConst) -> String {
         glyim_mir::MirConstKind::Char(v) => format!("char('{}')", v.escape_default()),
         glyim_mir::MirConstKind::String(name) => format!("string({:?})", name),
         glyim_mir::MirConstKind::Unit => "()".to_string(),
-        glyim_mir::MirConstKind::FnRef(def_id) => format!("fn_ref({:?})", def_id),
+        glyim_mir::MirConstKind::Fn(def_id, substs) => format!("fn({:?}, {:?})", def_id, substs),
+        glyim_mir::MirConstKind::ConstRef(def_id, substs) => format!("const_ref({:?}, {:?})", def_id, substs),
         glyim_mir::MirConstKind::Error => "<error>".to_string(),
     }
 }

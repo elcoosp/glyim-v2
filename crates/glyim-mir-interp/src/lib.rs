@@ -698,7 +698,12 @@ impl<'tcx> Interpreter<'tcx> {
     fn resolve_callee(&self, func: &Operand) -> InterpResult<DefId> {
         match func {
             Operand::Constant(c) => match &c.kind {
-                MirConstKind::FnRef(def_id) => Ok(*def_id),
+                MirConstKind::Fn(def_id, _) => {
+                    Ok(DefId::new(glyim_core::def_id::CrateId::from_raw(0), glyim_core::def_id::LocalDefId::from_raw(def_id.to_raw())))
+                }
+                MirConstKind::ConstRef(_, _) => {
+                    Err(InterpError::Panic("ConstRef constant not interpretable".into()))
+                }
                 MirConstKind::Int(id) => Ok(DefId::new(
                     CrateId::from_raw(0),
                     LocalDefId::from_raw(*id as u32),
