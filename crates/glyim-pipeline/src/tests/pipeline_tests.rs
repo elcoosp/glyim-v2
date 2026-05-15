@@ -24,7 +24,8 @@ fn compile_with_mock(source: &str) -> (MockCodegen, CompResult<()>) {
     let backend = MockCodegen::new();
     let mut db = builder.build();
     let path = tmp.path().to_path_buf();
-    let result = Pipeline::compile_file(&mut db, &path, &backend);
+    let output_path = std::path::Path::new("test_output.o");
+    let result = Pipeline::compile_file(&mut db, &path, &backend, output_path);
     (backend, result)
 }
 
@@ -74,7 +75,8 @@ fn compile_missing_file_returns_io_error() {
     let backend = MockCodegen::new();
     let mut db = TestDbBuilder::new().name("test_missing").build();
     let path = PathBuf::from("nonexistent_xyz123.g");
-    let result = Pipeline::compile_file(&mut db, &path, &backend);
+    let output_path = std::path::Path::new("test_output.o");
+    let result = Pipeline::compile_file(&mut db, &path, &backend, output_path);
     match result {
         Err(diags) => {
             assert!(!diags.is_empty());
