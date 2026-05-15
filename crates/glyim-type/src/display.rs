@@ -58,16 +58,8 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
             TyKind::Infer(InferVar::Ty(v)) => write!(f, "?ty{}", v.to_raw()),
             TyKind::Infer(InferVar::Int(v)) => write!(f, "?int{}", v.to_raw()),
             TyKind::Infer(InferVar::Float(v)) => write!(f, "?float{}", v.to_raw()),
-            TyKind::Ref(region, ty, Mutability::Mut) => {
-                write!(f, "&mut ")?;
-                write_region(f, region, self.lookup)?;
-                write!(f, " {}", self.nested(*ty))
-            }
-            TyKind::Ref(region, ty, Mutability::Not) => {
-                write!(f, "&")?;
-                write_region(f, region, self.lookup)?;
-                write!(f, " {}", self.nested(*ty))
-            }
+            TyKind::Ref(_, ty, Mutability::Mut) => write!(f, "&mut {}", self.nested(*ty)),
+            TyKind::Ref(_, ty, Mutability::Not) => write!(f, "&{}", self.nested(*ty)),
             TyKind::RawPtr(ty, Mutability::Mut) => write!(f, "*mut {}", self.nested(*ty)),
             TyKind::RawPtr(ty, Mutability::Not) => write!(f, "*const {}", self.nested(*ty)),
             TyKind::Slice(ty) => write!(f, "[{}]", self.nested(*ty)),
