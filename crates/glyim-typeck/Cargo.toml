@@ -16,5 +16,3 @@ tracing = { workspace = true }
 [dev-dependencies]
 glyim-test = { workspace = true }
 
-[lints.clippy]
-warnings = "deny"
