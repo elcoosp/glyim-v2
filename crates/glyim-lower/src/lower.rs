@@ -6,7 +6,6 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_mir::{self, BasicBlockIdx, LocalIdx};
 use glyim_mir::{CastKind, ProjectionElem};
 use glyim_span::Span;
-use glyim_type::FieldIdx;
 use glyim_type::*;
 use glyim_typeck::thir;
 
@@ -461,15 +460,18 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::Field {
                 receiver,
-                field: _field,
+                field,
                 ty: field_ty,
             } => {
-                let base_place = self.lower_expr_to_place(receiver);
-                // Look up AdtDef to find field index
+                let _base_place = self.lower_expr_to_place(receiver);
                 let adt_id = match self._ctx.ty_ctx().ty_kind(receiver.ty) {
                     TyKind::Adt(adt_id, _) => *adt_id,
                     _ => {
-                        tracing::warn!("STUB: field access on non-ADT type");
+                        let err_diag = GlyimDiagnostic::type_error(
+                            expr.span,
+                            format!("field access on non-ADT type: {:?}", receiver.ty),
+                        );
+                        self.diagnostics.push(err_diag);
                         return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
                             glyim_mir::MirConst {
                                 kind: glyim_mir::MirConstKind::Error,
@@ -479,28 +481,18 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
-                let adt_def = self._ctx.adt_def(adt_id);
-                let variant = &adt_def.variants[0]; // assume single variant for struct
-                let field_idx = variant
-                    .fields
-                    .iter()
-                    .position(|_f| {
-                        // match by name? we need field name; adt_variant fields are Ty, not named.
-                        // Cannot resolve name, stub with index 0
-                        tracing::warn!("STUB: field name lookup not implemented");
-                        false
-                    })
-                    .unwrap_or(0);
-                let projection = {
-                    let mut proj = base_place.projection.to_vec();
-                    proj.push(ProjectionElem::Field(FieldIdx::from_raw(field_idx as u32)));
-                    proj.into_boxed_slice()
-                };
-                let place = glyim_mir::Place {
-                    local: base_place.local,
-                    projection,
-                };
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+                let _adt_def = self._ctx.adt_def(adt_id);
+                let _variant = &_adt_def.variants[0];
+                // For now, emit diagnostic and return error
+                let err_msg = format!("field `{:?}` resolution not implemented (need HIR access)", field);
+                self.diagnostics.push(GlyimDiagnostic::type_error(expr.span, err_msg));
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
+                    glyim_mir::MirConst {
+                        kind: glyim_mir::MirConstKind::Error,
+                        ty: *field_ty,
+                        span: expr.span,
+                    },
+                ))
             }
             thir::ExprKind::Index { base, index } => {
                 let base_place = self.lower_expr_to_place(base);

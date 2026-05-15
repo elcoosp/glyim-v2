@@ -1,14 +1,23 @@
 use crate::pipeline_context::PipelineLowerCtx;
-use glyim_core::IndexVec;
+use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
 use glyim_core::path::PathKind;
 use glyim_core::primitives::StructKind;
-use glyim_hir::{CrateHir, EnumItem, Field as HirField, Item, ItemKind, StructItem, Variant};
+use glyim_core::Visibility;
+use glyim_hir::{CrateHir, EnumItem, Field as HirField, Item, ItemId, ItemKind, StructItem, Variant};
 use glyim_lower::{AdtDef, AdtKind, LowerCtx};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_test::with_fresh_ty_ctx;
 
-/// Helper: create a minimal HIR with a single struct item.
-/// Returns (CrateHir, AdtId) where AdtId uses the item's raw index.
+fn dummy_span() -> Span {
+    Span::new(
+        FileId::BOGUS,
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(1),
+        SyntaxContext::ROOT,
+    )
+}
+
 fn make_hir_with_struct(
     name: &str,
     field_names: Vec<&str>,
@@ -28,23 +37,24 @@ fn make_hir_with_struct(
                 }],
                 kind: PathKind::Plain,
             }),
-            span: glyim_span::Span::DUMMY,
+            span: dummy_span(),
         })
         .collect();
 
     let item = Item {
-        id: glyim_hir::ItemId::from_raw(0),
+        id: ItemId::from_raw(0),
         name: interner.intern(name),
         kind: ItemKind::Struct(StructItem {
             fields,
             kind: StructKind::Record,
             generic_params: vec![],
+            where_clauses: vec![],
         }),
-        visibility: glyim_core::Visibility::Public,
-        span: glyim_span::Span::DUMMY,
+        visibility: Visibility::Public,
+        span: dummy_span(),
     };
 
-    let mut items: IndexVec<glyim_hir::ItemId, Item> = IndexVec::new();
+    let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
 
     let hir = CrateHir {
@@ -56,7 +66,6 @@ fn make_hir_with_struct(
     (hir, AdtId::from_raw(0))
 }
 
-/// Helper: create a minimal HIR with a single enum item containing the given variants.
 fn make_hir_with_enum(
     name: &str,
     variant_specs: Vec<(&str, Vec<&str>)>,
@@ -79,30 +88,31 @@ fn make_hir_with_enum(
                         }],
                         kind: PathKind::Plain,
                     }),
-                    span: glyim_span::Span::DUMMY,
+                    span: dummy_span(),
                 })
                 .collect();
             Variant {
                 name: interner.intern(vname),
                 fields,
                 kind: StructKind::Tuple,
-                span: glyim_span::Span::DUMMY,
+                span: dummy_span(),
             }
         })
         .collect();
 
     let item = Item {
-        id: glyim_hir::ItemId::from_raw(0),
+        id: ItemId::from_raw(0),
         name: interner.intern(name),
         kind: ItemKind::Enum(EnumItem {
             variants,
             generic_params: vec![],
+            where_clauses: vec![],
         }),
-        visibility: glyim_core::Visibility::Public,
-        span: glyim_span::Span::DUMMY,
+        visibility: Visibility::Public,
+        span: dummy_span(),
     };
 
-    let mut items: IndexVec<glyim_hir::ItemId, Item> = IndexVec::new();
+    let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
 
     let hir = CrateHir {
@@ -114,7 +124,6 @@ fn make_hir_with_enum(
     (hir, AdtId::from_raw(0))
 }
 
-// U05-T01: PipelineLowerCtx returns correct field counts for struct
 #[test]
 fn test_adt_def_struct_fields() {
     let (frozen_ctx, (hir, adt_id)) =
@@ -129,7 +138,6 @@ fn test_adt_def_struct_fields() {
     assert!(matches!(def.kind, AdtKind::Struct), "kind should be Struct");
 }
 
-// U05-T02: PipelineLowerCtx returns variant counts for enum
 #[test]
 fn test_adt_def_enum_variants() {
     let (frozen_ctx, (hir, adt_id)) = with_fresh_ty_ctx(|ctx| {
@@ -150,7 +158,6 @@ fn test_adt_def_enum_variants() {
     assert!(matches!(def.kind, AdtKind::Enum), "kind should be Enum");
 }
 
-// U05-T03: Lowering uses ADT def with correct field counts (stub types)
 #[test]
 fn test_lowering_uses_adt_def_for_field_access() {
     let (frozen_ctx, (hir, adt_id)) =
