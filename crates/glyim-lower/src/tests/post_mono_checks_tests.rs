@@ -307,3 +307,76 @@ fn generic_param_used_in_rvalue_constant_no_warn() {
     assert_no_errors(&diags);
 }
 
+
+// ==================== Edge case: unsized return type ====================
+
+#[test]
+fn unsized_return_errors() {
+    let mut ctx_mut = glyim_test::test_ty_ctx();
+    let slice_ret = ctx_mut.mk_ty(TyKind::Slice(Ty::UNIT));
+    let frozen = ctx_mut.freeze();
+
+    // return_ty = slice_ret, placed in local _0
+    let body = make_body(make_def_id(5), slice_ret, vec![]);
+    let item = make_mono_fn_with_subst(5, Substitution::empty(), body);
+    let items = vec![item];
+
+    let diags = check_unsized_locals(&items, &frozen);
+    assert_has_errors(&diags);
+    assert_error_count(&diags, 1);
+    assert_diag_contains(&diags, "unsized local");
+}
+
+// ==================== Edge case: large set with very high threshold ====================
+
+#[test]
+fn large_set_below_high_threshold_no_warn() {
+    let body = make_body(make_def_id(0), Ty::UNIT, vec![]);
+    let items: Vec<MonoItemData> = (0..500)
+        .map(|i| make_mono_fn_with_subst(i, Substitution::empty(), body.clone()))
+        .collect();
+    let diags = check_large_mono_set(&items, 1000);
+    assert_no_errors(&diags);
+}
+
+// ==================== Edge case: Const items (not Fn) ignored ====================
+
+#[test]
+fn const_item_ignored_for_unused_params() {
+    use crate::mono::MonoItem;
+    use glyim_core::def_id::ConstDefId;
+    let mut ctx_mut = glyim_test::test_ty_ctx();
+    let param_ty = ctx_mut.mk_ty(TyKind::Param(glyim_type::ParamTy {
+        index: 0,
+        name: ctx_mut.resolver().intern("T"),
+    }));
+    let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(param_ty)]);
+    let frozen = ctx_mut.freeze();
+
+    let body = make_body(make_def_id(15), Ty::UNIT, vec![]);
+    let item = MonoItemData {
+        item: MonoItem::Const {
+            def_id: ConstDefId::from_raw(15),
+            substs: subst,
+        },
+        body: Arc::new(body),
+        symbol: "const_15".to_string(),
+        source_module: 0,
+    };
+    let items = vec![item];
+
+    // Const items should not be checked for unused generic params
+    let diags = check_unused_generic_params(&items, &frozen);
+    assert_no_errors(&diags);
+}
+
+// ==================== Edge case: unaligned threshold values ====================
+
+#[test]
+fn threshold_zero_warns_for_any_items() {
+    let body = make_body(make_def_id(0), Ty::UNIT, vec![]);
+    let items = vec![make_mono_fn_with_subst(0, Substitution::empty(), body)];
+    let diags = check_large_mono_set(&items, 0);
+    assert_has_severity(&diags, DiagSeverity::Warning);
+}
+
