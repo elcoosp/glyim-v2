@@ -1694,37 +1694,74 @@ impl<'a> Parser<'a> {
 
     // Added by Stream U08
     fn parse_use_decl(&mut self) {
-        let _guard = self.start_node(SyntaxKind::UseDecl);
-        self.expect(SyntaxKind::KwUse);
+        self.start_node(SyntaxKind::UseDecl);
+        self.bump_expected(SyntaxKind::KwUse);
         self.parse_use_tree();
         self.expect(SyntaxKind::Semicolon);
-        self.finish_node()
+        self.finish_node();
     }
 
     fn parse_use_tree(&mut self) {
-        let _guard = self.start_node(SyntaxKind::UseTree);
-        // Parse path prefix
-        self.parse_path_expr();
+        self.start_node(SyntaxKind::UseTree);
+
+        // Parse the path (could be simple or qualified)
+        self.parse_use_path();
 
         // Handle glob import `*`
         if self.current_kind() == SyntaxKind::Star {
             self.bump(); // *
         }
 
-        // Handle nested imports `{a, b}`
+        // Handle nested imports `{a, b, c}`
         if self.current_kind() == SyntaxKind::LBrace {
             self.bump(); // {
             while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                // Handle nested items separated by commas
                 self.parse_use_tree();
                 if self.current_kind() == SyntaxKind::Comma {
                     self.bump();
                 }
             }
-            self.expect(SyntaxKind::RBrace); // }
+            self.expect(SyntaxKind::RBrace);
         }
 
-        self.finish_node(); // Close UseTree node
+        self.finish_node();
+    }
+
+    fn parse_use_path(&mut self) {
+        // For use declarations, we need to parse the full path including :: segments
+        self.start_node(SyntaxKind::UsePath);
+
+        // First segment
+        match self.current_kind() {
+            SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                self.bump();
+            }
+            _ => {
+                self.error("expected identifier in use path");
+                return;
+            }
+        }
+
+        // Continue with :: segments
+        while self.current_kind() == SyntaxKind::ColonColon {
+            self.bump(); // ::
+            // After :: we can have an identifier, * (glob), or { for nested imports
+            if self.current_kind() == SyntaxKind::Star
+                || self.current_kind() == SyntaxKind::LBrace {
+                break;
+            }
+            match self.current_kind() {
+                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                    self.bump();
+                }
+                _ => {
+                    self.error("expected identifier, '*', or '{{' after '::'");
+                    break;
+                }
+            }
+        }
+
+        self.finish_node();
     }
 }
 
