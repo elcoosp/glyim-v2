@@ -5,6 +5,7 @@ mod edge_cases;
 mod loans;
 mod loops;
 mod mir_builder;
+mod move_tests;
 mod same_block;
 mod two_phase_borrows;
 mod write_conflicts;

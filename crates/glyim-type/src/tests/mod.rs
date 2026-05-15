@@ -1,3 +1,4 @@
+mod auto_traits;
 mod binder;
 mod compile_fail;
 mod const_val;
