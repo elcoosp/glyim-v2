@@ -179,6 +179,7 @@ impl<'a> Resolver<'a> {
 
 /// Helper to resolve a path that ends at a module, returning the ModuleId.
 fn resolve_module_path(def_map: &CrateDefMap, start_module: ModuleId, path: &Path) -> Option<ModuleId> {
+    eprintln!("[DEBUG] resolve_module_path called");
     let mut current_module = start_module;
     let start_idx = match path.kind {
         PathKind::Plain => 0,
@@ -221,6 +222,7 @@ fn resolve_module_path(def_map: &CrateDefMap, start_module: ModuleId, path: &Pat
 /// Recursively collects segments to handle nested structures.
 /// Stops at `UseTreeList` (braces) to avoid mixing prefix with list items.
 fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Path> {
+    eprintln!("[DEBUG] extract_path_from_syntax called");
     eprintln!("[DEBUG] extract_path_from_syntax: node kind = {:?}", node.kind());
 
     let has_braces = node.children().any(|n| n.kind() == SyntaxKind::LBrace);
@@ -331,6 +333,7 @@ fn process_use_decl(
     def_map: &mut CrateDefMap,
     diagnostics: &mut Vec<GlyimDiagnostic>,
 ) {
+    eprintln!("[DEBUG] process_use_decl called");
     // UseDecl contains a UseTree
     let use_tree = match node.children().find(|n| n.kind() == SyntaxKind::UseTree) {
         Some(t) => t,
@@ -347,9 +350,11 @@ fn process_use_tree(
     def_map: &mut CrateDefMap,
     _diagnostics: &mut Vec<GlyimDiagnostic>,
 ) {
+    eprintln!("[DEBUG] process_use_tree called");
     // Check for nested use trees (braces)
     if node.children().any(|n| n.kind() == SyntaxKind::LBrace) {
         // Find the path prefix in this UseTree (e.g. `a` in `a::{b, c}`)
+        eprintln!("[DEBUG] Calling extract_path_from_syntax");
         let path = extract_path_from_syntax(node, &def_map.interner);
         let base_module = if let Some(p) = path {
             resolve_module_path(def_map, parent_module, &p)
@@ -389,6 +394,7 @@ fn process_use_tree(
 
     // Check for glob import
     if node.children().any(|n| n.kind() == SyntaxKind::Star) {
+        eprintln!("[DEBUG] Calling extract_path_from_syntax");
         let path = extract_path_from_syntax(node, &def_map.interner);
         if let Some(p) = path {
             if let Some(mod_id) = resolve_module_path(def_map, parent_module, &p) {
@@ -399,7 +405,8 @@ fn process_use_tree(
     }
 
     // Simple path import: `use a::b::c`
-    let path = extract_path_from_syntax(node, &def_map.interner);
+    eprintln!("[DEBUG] Calling extract_path_from_syntax");
+        let path = extract_path_from_syntax(node, &def_map.interner);
     if let Some(path) = path {
         let resolver = Resolver::new(def_map, parent_module);
         let per_ns = resolver.resolve_path(&path);
@@ -422,6 +429,7 @@ fn process_use_tree(
 
 /// Import all public items from source module to target module.
 fn import_all_public(source: ModuleId, target: ModuleId, def_map: &mut CrateDefMap) {
+    eprintln!("[DEBUG] import_all_public called");
     let source_scope = def_map.modules[source].scope.clone();
 
     for (name, id, vis, span) in source_scope.types {
@@ -458,6 +466,7 @@ fn collect_items(
     diagnostics: &mut Vec<GlyimDiagnostic>,
     def_counter: &mut u32,
 ) {
+    eprintln!("[DEBUG] collect_items called");
     for child in node.children() {
         match child.kind() {
             // Inline module: `mod name { ... }`
