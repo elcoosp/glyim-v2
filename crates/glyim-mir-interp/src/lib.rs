@@ -354,11 +354,14 @@ impl<'tcx> Interpreter<'tcx> {
                 tracing::warn!("STUB: String const not implemented");
                 Err(InterpError::Panic("String const not implemented".into()))
             }
-            MirConstKind::FnRef(_) => {
-                tracing::warn!("STUB: FnRef constant used as value? Not supported");
+            MirConstKind::Fn(_, _) => {
+                tracing::warn!("STUB: Fn constant used as value? Not supported");
                 Err(InterpError::Panic(
-                    "FnRef constant not supported as value".into(),
+                    "Fn constant not supported as value".into(),
                 ))
+            }
+            MirConstKind::ConstRef(_, _) => {
+                Err(InterpError::Panic("ConstRef constant not interpretable as value".into()))
             }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
         }
@@ -698,7 +701,12 @@ impl<'tcx> Interpreter<'tcx> {
     fn resolve_callee(&self, func: &Operand) -> InterpResult<DefId> {
         match func {
             Operand::Constant(c) => match &c.kind {
-                MirConstKind::FnRef(def_id) => Ok(*def_id),
+                MirConstKind::Fn(def_id, _) => {
+                    Ok(DefId::new(glyim_core::def_id::CrateId::from_raw(0), glyim_core::def_id::LocalDefId::from_raw(def_id.to_raw())))
+                }
+                MirConstKind::ConstRef(_, _) => {
+                    Err(InterpError::Panic("ConstRef constant not interpretable".into()))
+                }
                 MirConstKind::Int(id) => Ok(DefId::new(
                     CrateId::from_raw(0),
                     LocalDefId::from_raw(*id as u32),

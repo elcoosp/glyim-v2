@@ -10,6 +10,7 @@ use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_span::Span;
 use glyim_type::*;
+use glyim_core::def_id::{FnDefId, ConstDefId};
 
 glyim_core::define_idx!(BasicBlockIdx);
 glyim_core::define_idx!(LocalIdx);
@@ -190,7 +191,8 @@ pub enum MirConstKind {
     Char(char),
     String(Name),
     Unit,
-    FnRef(DefId),
+    Fn(FnDefId, Substitution),
+    ConstRef(ConstDefId, Substitution),
     Error,
 }
 

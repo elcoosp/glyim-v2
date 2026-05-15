@@ -13,6 +13,11 @@ impl Substitution {
     pub(crate) fn from_raw(index: u32, len: u16) -> Self {
         Self { index, len }
     }
+
+    /// Create an empty substitution with no generic arguments.
+    pub fn empty() -> Self {
+        Self { index: 0, len: 0 }
+    }
     pub fn index(self) -> u32 {
         self.index
     }
