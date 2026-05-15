@@ -11,6 +11,7 @@ pub fn test_ty_ctx() -> TyCtxMut {
 }
 
 /// Create a frozen type context for testing.
+#[allow(dead_code)]
 pub fn test_frozen_ty_ctx() -> TyCtx {
     test_ty_ctx().freeze()
 }

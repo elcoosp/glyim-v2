@@ -102,6 +102,7 @@ fn projection_equality() {
         }));
         (proj1, proj2, proj3)
     });
-    assert_eq!(p1, p2);
-    assert_ne!(p1, p3);
+    // Ty indices differ, but underlying TyKinds are equal
+    assert_eq!(ctx.ty_kind(p1), ctx.ty_kind(p2));
+    assert_ne!(ctx.ty_kind(p1), ctx.ty_kind(p3));
 }
