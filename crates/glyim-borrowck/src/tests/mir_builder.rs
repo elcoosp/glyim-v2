@@ -123,13 +123,19 @@ pub fn assign_borrow(dest: LocalIdx, borrowed: LocalIdx, kind: BorrowKind) -> St
 
 /// Helper: create an Assign statement that copies a value.
 pub fn assign_copy(dest: LocalIdx, src: LocalIdx) -> StatementKind {
-    StatementKind::Assign(Place::new(dest), Rvalue::Use(Operand::Copy(Place::new(src))))
+    StatementKind::Assign(
+        Place::new(dest),
+        Rvalue::Use(Operand::Copy(Place::new(src))),
+    )
 }
 
 /// Helper: create an Assign statement that moves a value.
 #[allow(dead_code)]
 pub fn assign_move(dest: LocalIdx, src: LocalIdx) -> StatementKind {
-    StatementKind::Assign(Place::new(dest), Rvalue::Use(Operand::Move(Place::new(src))))
+    StatementKind::Assign(
+        Place::new(dest),
+        Rvalue::Use(Operand::Move(Place::new(src))),
+    )
 }
 
 /// A local mock implementing `BorrowckCtx` for tests.

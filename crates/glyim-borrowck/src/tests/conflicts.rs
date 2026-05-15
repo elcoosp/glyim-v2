@@ -6,7 +6,9 @@ use glyim_mir::BorrowKind;
 use glyim_test::{assert_has_errors, assert_no_errors, with_fresh_ty_ctx};
 use glyim_type::Region;
 
-use super::mir_builder::{MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, goto, if_switch, ret};
+use super::mir_builder::{
+    MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, goto, if_switch, ret,
+};
 
 /// V08-T05: Conflicting loans across blocks → error.
 ///
@@ -28,7 +30,16 @@ fn conflicting_loans_across_blocks_error() {
         let _4 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Mut { allow_two_phase_borrow: false }));
+        b.push_stmt(
+            bb0,
+            assign_borrow(
+                _2,
+                _1,
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
+        );
 
         let bb1 = b.push_block(goto(2));
         b.push_stmt(bb1, assign_borrow(_3, _1, BorrowKind::Shared));
@@ -62,7 +73,16 @@ fn direct_access_while_mutably_borrowed_across_blocks_error() {
         let _4 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Mut { allow_two_phase_borrow: false }));
+        b.push_stmt(
+            bb0,
+            assign_borrow(
+                _2,
+                _1,
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
+        );
 
         let bb1 = b.push_block(ret());
         b.push_stmt(bb1, assign_copy(_3, _1));
@@ -101,7 +121,16 @@ fn path_sensitive_borrows_on_different_branches_no_error() {
         let _bb0 = b.push_block(if_switch(_3, bool_ty, 1, 2));
 
         let bb1 = b.push_block(goto(3));
-        b.push_stmt(bb1, assign_borrow(_2, _1, BorrowKind::Mut { allow_two_phase_borrow: false }));
+        b.push_stmt(
+            bb1,
+            assign_borrow(
+                _2,
+                _1,
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
+        );
         b.push_stmt(bb1, assign_copy(_4, _2));
 
         let bb2 = b.push_block(goto(3));

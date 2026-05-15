@@ -1,4 +1,4 @@
-mod mir_builder;
+mod conflicts;
 mod cross_block;
 mod loans;
-mod conflicts;
+mod mir_builder;

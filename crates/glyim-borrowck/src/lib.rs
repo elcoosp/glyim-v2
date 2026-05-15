@@ -401,10 +401,7 @@ fn check_stmt_conflicts(
                     for read_local in read_locals {
                         for loan in active_loans {
                             if loan.borrowed_local == read_local
-                                && matches!(
-                                    loan.kind,
-                                    BorrowKind::Mut { .. } | BorrowKind::Unique
-                                )
+                                && matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
                             {
                                 let msg = format!(
                                     "cannot use `{}` because it is {} borrowed",
