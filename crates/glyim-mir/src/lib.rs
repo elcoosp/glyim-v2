@@ -191,7 +191,8 @@ pub enum MirConstKind {
     Char(char),
     String(Name),
     Unit,
-    FnRef(DefId),
+    Fn(FnDefId, Substitution),
+    ConstRef(ConstDefId, Substitution),
     Error,
 }
 
