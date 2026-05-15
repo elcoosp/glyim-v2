@@ -144,7 +144,7 @@ impl<'a> Parser<'a> {
             if !matches!(
                 self.current_kind(),
                 SyntaxKind::KwFn
-                    | SyntaxKind::KwStruct
+                    | SyntaxKind::KwStruct | SyntaxKind::KwUse
                     | SyntaxKind::KwEnum
                     | SyntaxKind::KwTrait
                     | SyntaxKind::KwImpl
@@ -162,6 +162,7 @@ impl<'a> Parser<'a> {
         match self.current_kind() {
             SyntaxKind::KwFn => self.parse_fn_def(),
             SyntaxKind::KwStruct => self.parse_struct_def(),
+            SyntaxKind::KwUse => self.parse_use_decl(),
             SyntaxKind::KwEnum => self.parse_enum_def(),
             SyntaxKind::KwTrait => self.parse_trait_def(),
             SyntaxKind::KwImpl => self.parse_impl_def(),
@@ -245,7 +246,7 @@ impl<'a> Parser<'a> {
                     && !matches!(
                         self.current_kind(),
                         SyntaxKind::KwFn
-                            | SyntaxKind::KwStruct
+                            | SyntaxKind::KwStruct | SyntaxKind::KwUse
                             | SyntaxKind::KwEnum
                             | SyntaxKind::KwTrait
                             | SyntaxKind::KwImpl
@@ -1239,6 +1240,16 @@ impl<'a> Parser<'a> {
         }
         while self.current_kind() == SyntaxKind::ColonColon {
             self.bump(); // ::
+            // Check for Star (*) or LBrace ({) which terminates the path prefix in use statements
+            if matches!(self.current_kind(), SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate | SyntaxKind::Lt) {
+                break;
+            }
+            self.bump(); // ::
+            // Check for Star (*) or LBrace ({) which terminates the path prefix in use statements
+            if matches!(self.current_kind(), SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate | SyntaxKind::Lt) {
+                break;
+            }
+            self.bump(); // ::
             match self.current_kind() {
                 SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper => {
                     self.bump();
@@ -1679,6 +1690,78 @@ impl<'a> Parser<'a> {
 
     fn finish(self) -> (GreenNode, Vec<GlyimDiagnostic>) {
         (self.builder.finish(), self.diagnostics)
+    }
+
+    // Added by Stream U08
+    fn parse_use_decl(&mut self) {
+        self.start_node(SyntaxKind::UseDecl);
+        self.bump_expected(SyntaxKind::KwUse);
+        self.parse_use_tree();
+        self.expect(SyntaxKind::Semicolon);
+        self.finish_node();
+    }
+
+    fn parse_use_tree(&mut self) {
+        self.start_node(SyntaxKind::UseTree);
+
+        // Parse the path (could be simple or qualified)
+        self.parse_use_path();
+
+        // Handle glob import `*`
+        if self.current_kind() == SyntaxKind::Star {
+            self.bump(); // *
+        }
+
+        // Handle nested imports `{a, b, c}`
+        if self.current_kind() == SyntaxKind::LBrace {
+            self.bump(); // {
+            while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                self.parse_use_tree();
+                if self.current_kind() == SyntaxKind::Comma {
+                    self.bump();
+                }
+            }
+            self.expect(SyntaxKind::RBrace);
+        }
+
+        self.finish_node();
+    }
+
+    fn parse_use_path(&mut self) {
+        // For use declarations, we need to parse the full path including :: segments
+        self.start_node(SyntaxKind::UsePath);
+
+        // First segment
+        match self.current_kind() {
+            SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                self.bump();
+            }
+            _ => {
+                self.error("expected identifier in use path");
+                return;
+            }
+        }
+
+        // Continue with :: segments
+        while self.current_kind() == SyntaxKind::ColonColon {
+            self.bump(); // ::
+            // After :: we can have an identifier, * (glob), or { for nested imports
+            if self.current_kind() == SyntaxKind::Star
+                || self.current_kind() == SyntaxKind::LBrace {
+                break;
+            }
+            match self.current_kind() {
+                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                    self.bump();
+                }
+                _ => {
+                    self.error("expected identifier, '*', or '{{' after '::'");
+                    break;
+                }
+            }
+        }
+
+        self.finish_node();
     }
 }
 
