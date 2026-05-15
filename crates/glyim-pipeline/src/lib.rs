@@ -98,7 +98,8 @@ impl Pipeline {
         }; // ty_ctx_guard dropped here
 
         // Phase 7: Codegen
-        backend.generate(&optimized_bodies, output_path)?;
+        let out_path = if output_path.as_os_str().is_empty() { Path::new("output.o") } else { output_path };
+        backend.generate(&optimized_bodies, out_path)?;
 
         Ok(())
     }
