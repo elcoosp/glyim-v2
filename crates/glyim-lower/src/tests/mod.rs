@@ -1,1 +1,11 @@
-mod lower;
+mod aggregate;
+mod array_index;
+mod cast;
+mod field_access;
+mod r#loop;
+mod r#match;
+mod mock_lower_ctx;
+mod thir_builder;
+mod tuple_index;
+mod tuple_pattern;
+mod r#while;
