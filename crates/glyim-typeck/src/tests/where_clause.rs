@@ -1,21 +1,23 @@
+use glyim_core::Visibility;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::Interner;
 use glyim_core::primitives::IntTy;
-use glyim_core::Visibility;
-use glyim_hir::*;
-use glyim_hir::where_clause::*;
-use glyim_solve::{TraitSolver, SolverResult};
-use glyim_span::Span;
-use glyim_type::*;
 use glyim_def_map::*;
-use glyim_test::{assert_has_errors, assert_no_errors, assert_diag_contains};
+use glyim_hir::where_clause::*;
+use glyim_hir::*;
+use glyim_solve::{SolverResult, TraitSolver};
+use glyim_span::Span;
+use glyim_test::{assert_diag_contains, assert_has_errors, assert_no_errors};
+use glyim_type::*;
 
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 
-fn dummy_span() -> Span { Span::DUMMY }
+fn dummy_span() -> Span {
+    Span::DUMMY
+}
 
 /// Build a minimal empty CrateDefMap for tests that don't need name resolution
 fn empty_def_map() -> CrateDefMap {
@@ -48,7 +50,9 @@ fn build_simple_hir(
         owner: LocalDefId::from_raw(0),
         exprs: {
             let mut exprs = IndexVec::new();
-            for e in body_exprs { exprs.push(e); }
+            for e in body_exprs {
+                exprs.push(e);
+            }
             exprs
         },
         pats: IndexVec::new(),
@@ -123,10 +127,12 @@ fn t01_fn_where_clone_satisfied() {
 
     let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
-    let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
-    let body_exprs = vec![
-        Expr::Path(Path::from_single(name_t)),
-    ];
+    let param = Param {
+        name: name_t,
+        ty: Some(t_ty.clone()),
+        span: dummy_span(),
+    };
+    let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
 
     let wc = WhereClause {
         ty: t_ty.clone(),
@@ -165,14 +171,24 @@ fn t02_supertrait_impl_satisfies_both() {
 
     let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
-    let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
+    let param = Param {
+        name: name_t,
+        ty: Some(t_ty.clone()),
+        span: dummy_span(),
+    };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
 
     let wc = WhereClause {
         ty: t_ty.clone(),
         bounds: vec![
-            TraitBound { trait_path: Path::from_single(name_copy), span: dummy_span() },
-            TraitBound { trait_path: Path::from_single(name_clone), span: dummy_span() },
+            TraitBound {
+                trait_path: Path::from_single(name_copy),
+                span: dummy_span(),
+            },
+            TraitBound {
+                trait_path: Path::from_single(name_clone),
+                span: dummy_span(),
+            },
         ],
         span: dummy_span(),
     };
@@ -205,14 +221,24 @@ fn t04_multiple_where_bounds() {
 
     let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
-    let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
+    let param = Param {
+        name: name_t,
+        ty: Some(t_ty.clone()),
+        span: dummy_span(),
+    };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
 
     let wc = WhereClause {
         ty: t_ty.clone(),
         bounds: vec![
-            TraitBound { trait_path: Path::from_single(name_clone), span: dummy_span() },
-            TraitBound { trait_path: Path::from_single(name_debug), span: dummy_span() },
+            TraitBound {
+                trait_path: Path::from_single(name_clone),
+                span: dummy_span(),
+            },
+            TraitBound {
+                trait_path: Path::from_single(name_debug),
+                span: dummy_span(),
+            },
         ],
         span: dummy_span(),
     };
@@ -244,12 +270,19 @@ fn t06_missing_supertrait_error() {
 
     let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
-    let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
+    let param = Param {
+        name: name_t,
+        ty: Some(t_ty.clone()),
+        span: dummy_span(),
+    };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
 
     let wc = WhereClause {
         ty: t_ty.clone(),
-        bounds: vec![TraitBound { trait_path: Path::from_single(name_clone), span: dummy_span() }],
+        bounds: vec![TraitBound {
+            trait_path: Path::from_single(name_clone),
+            span: dummy_span(),
+        }],
         span: dummy_span(),
     };
 
@@ -280,12 +313,19 @@ fn t07_where_bound_not_satisfied_error() {
 
     let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
-    let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
+    let param = Param {
+        name: name_t,
+        ty: Some(t_ty.clone()),
+        span: dummy_span(),
+    };
     let body_exprs = vec![Expr::Literal(Literal::Int(1, Some(IntTy::I32)))];
 
     let wc = WhereClause {
         ty: t_ty.clone(),
-        bounds: vec![TraitBound { trait_path: Path::from_single(name_copy), span: dummy_span() }],
+        bounds: vec![TraitBound {
+            trait_path: Path::from_single(name_copy),
+            span: dummy_span(),
+        }],
         span: dummy_span(),
     };
 

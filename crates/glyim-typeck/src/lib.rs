@@ -9,13 +9,13 @@ pub mod thir;
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
+use glyim_core::def_id::TraitDefId;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
 use glyim_span::Span;
 use glyim_type::*;
-use glyim_core::def_id::TraitDefId;
-use glyim_type::{GenericArg, ParamTy, ImplPolarity};
+use glyim_type::{GenericArg, ImplPolarity, ParamTy};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -175,7 +175,6 @@ pub fn typeck_crate(
     (frozen_ctx, result)
 }
 
-
 // ---- Where clause helpers (pub(crate) for testing) ----
 pub(crate) fn get_generic_params(kind: &glyim_hir::ItemKind) -> Option<&[glyim_hir::GenericParam]> {
     use glyim_hir::ItemKind;
@@ -190,7 +189,9 @@ pub(crate) fn get_generic_params(kind: &glyim_hir::ItemKind) -> Option<&[glyim_h
     }
 }
 
-pub(crate) fn get_where_clauses(kind: &glyim_hir::ItemKind) -> &[glyim_hir::where_clause::WhereClause] {
+pub(crate) fn get_where_clauses(
+    kind: &glyim_hir::ItemKind,
+) -> &[glyim_hir::where_clause::WhereClause] {
     use glyim_hir::ItemKind;
     match kind {
         ItemKind::Fn(f) => &f.where_clauses,
@@ -200,10 +201,16 @@ pub(crate) fn get_where_clauses(kind: &glyim_hir::ItemKind) -> &[glyim_hir::wher
     }
 }
 
-pub(crate) fn build_param_tys(ctx: &mut TyCtxMut, params: &[glyim_hir::GenericParam]) -> HashMap<glyim_core::interner::Name, Ty> {
+pub(crate) fn build_param_tys(
+    ctx: &mut TyCtxMut,
+    params: &[glyim_hir::GenericParam],
+) -> HashMap<glyim_core::interner::Name, Ty> {
     let mut map = HashMap::new();
     for (i, param) in params.iter().enumerate() {
-        let pt = ParamTy { index: i as u32, name: param.name };
+        let pt = ParamTy {
+            index: i as u32,
+            name: param.name,
+        };
         let ty = ctx.mk_ty(TyKind::Param(pt));
         map.insert(param.name, ty);
     }
