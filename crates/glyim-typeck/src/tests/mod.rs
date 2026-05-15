@@ -20,3 +20,17 @@ mod test_utils;
 mod thir_body;
 mod tuple_index;
 mod while_loop;
+Working in /Users/adm/Documents/Repos/glyim-worktrees/stream-V02
+=== STEP 1: Ensure glyim-test dev-dependency ===
+glyim-test already present
+=== STEP 2: Create test data directories ===
+=== STEP 3: Create src/tests/mod.rs if missing ===
+src/tests/mod.rs exists, appending mod declaration
+mod where_clause;
+Working in /Users/adm/Documents/Repos/glyim-worktrees/stream-V02
+=== STEP 1: Ensure glyim-test dev-dependency ===
+glyim-test already present
+=== STEP 2: Create test data directories ===
+=== STEP 3: Create src/tests/mod.rs if missing ===
+src/tests/mod.rs exists, appending mod declaration
+mod where_clause;
