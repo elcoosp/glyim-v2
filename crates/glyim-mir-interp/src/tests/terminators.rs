@@ -371,7 +371,10 @@ fn test_call_with_cleanup_on_panic() {
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
 
     let callee_def = FnDefId::from_raw(10);
-    let callee_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(callee_def.to_raw()));
+    let callee_id = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(callee_def.to_raw()),
+    );
     let mut callee_body = empty_body(Ty::UNIT);
     let bb0 = BasicBlockIdx::from_raw(0);
     set_terminator(&mut callee_body, bb0, TerminatorKind::Unreachable);
