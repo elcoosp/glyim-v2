@@ -15,10 +15,10 @@
 //! V23-T13: Multiple start items
 //! V23-T14: Transitive constant collection
 
+use crate::{MonoCtx, MonoItem};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::*;
 use glyim_core::primitives::*;
-use crate::{MonoCtx, MonoItem};
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::*;
@@ -30,11 +30,26 @@ fn make_call_body(
     callee_def_id: FnDefId,
     callee_substs: Substitution,
 ) -> Body {
-    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(caller_def_id.to_raw()));
+    let owner = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(caller_def_id.to_raw()),
+    );
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let func_const = MirConst {
         kind: MirConstKind::Fn(callee_def_id, callee_substs),
@@ -59,35 +74,84 @@ fn make_call_body(
     };
 
     let mut basic_blocks = IndexVec::new();
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: call_terminator, is_cleanup: false });
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: return_terminator, is_cleanup: false });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: call_terminator,
+        is_cleanup: false,
+    });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: return_terminator,
+        is_cleanup: false,
+    });
 
-    Body { owner, basic_blocks, locals, arg_count: 1, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] }
+    Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 1,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    }
 }
 
 /// Helper: create a trivial MIR body (just return).
 fn make_simple_body(fn_def_id: FnDefId) -> Body {
-    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def_id.to_raw()));
+    let owner = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(fn_def_id.to_raw()),
+    );
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let mut basic_blocks = IndexVec::new();
     basic_blocks.push(BasicBlockData {
         statements: vec![],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     });
 
-    Body { owner, basic_blocks, locals, arg_count: 0, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] }
+    Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    }
 }
 
 /// Helper: create a MIR body with a recursive call (calls itself).
 fn make_recursive_body(fn_def_id: FnDefId, substs: Substitution) -> Body {
-    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def_id.to_raw()));
+    let owner = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(fn_def_id.to_raw()),
+    );
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let func_const = MirConst {
         kind: MirConstKind::Fn(fn_def_id, substs),
@@ -112,18 +176,45 @@ fn make_recursive_body(fn_def_id: FnDefId, substs: Substitution) -> Body {
     };
 
     let mut basic_blocks = IndexVec::new();
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: call_terminator, is_cleanup: false });
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: return_terminator, is_cleanup: false });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: call_terminator,
+        is_cleanup: false,
+    });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: return_terminator,
+        is_cleanup: false,
+    });
 
-    Body { owner, basic_blocks, locals, arg_count: 1, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] }
+    Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 1,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    }
 }
 
 /// Helper: create a body with a Drop terminator.
 fn make_drop_body(fn_def_id: FnDefId, _dropped_adt_id: AdtId) -> Body {
-    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def_id.to_raw()));
+    let owner = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(fn_def_id.to_raw()),
+    );
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let drop_terminator = Terminator {
         kind: TerminatorKind::Drop {
@@ -140,18 +231,45 @@ fn make_drop_body(fn_def_id: FnDefId, _dropped_adt_id: AdtId) -> Body {
     };
 
     let mut basic_blocks = IndexVec::new();
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: drop_terminator, is_cleanup: false });
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: return_terminator, is_cleanup: false });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: drop_terminator,
+        is_cleanup: false,
+    });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: return_terminator,
+        is_cleanup: false,
+    });
 
-    Body { owner, basic_blocks, locals, arg_count: 0, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] }
+    Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    }
 }
 
 /// Helper: create a body referencing a constant via ConstRef in an Assign statement.
 fn make_const_ref_body(fn_def_id: FnDefId, const_id: ConstDefId, substs: Substitution) -> Body {
-    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def_id.to_raw()));
+    let owner = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(fn_def_id.to_raw()),
+    );
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let const_val = MirConst {
         kind: MirConstKind::ConstRef(const_id, substs),
@@ -170,11 +288,22 @@ fn make_const_ref_body(fn_def_id: FnDefId, const_id: ConstDefId, substs: Substit
     let mut basic_blocks = IndexVec::new();
     basic_blocks.push(BasicBlockData {
         statements: vec![assign_stmt],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     });
 
-    Body { owner, basic_blocks, locals, arg_count: 0, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] }
+    Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    }
 }
 
 /// Helper: generic body lookup closure that matches by raw def_id.
@@ -219,14 +348,27 @@ fn call_graph_adds_callee() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: main_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: main_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
     assert_eq!(ctx.item_count(), 2, "should have both main and foo items");
     let items = ctx.items();
-    assert!(items.iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 1)), "main should be collected");
-    assert!(items.iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 2)), "foo should be collected");
+    assert!(
+        items
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 1)),
+        "main should be collected"
+    );
+    assert!(
+        items
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 2)),
+        "foo should be collected"
+    );
 }
 
 /// V23-T02: Recursive function -> no duplicate items
@@ -240,12 +382,23 @@ fn recursive_function_no_duplicates() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: rec_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: rec_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert_eq!(ctx.item_count(), 1, "recursive function should appear exactly once");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 10)));
+    assert_eq!(
+        ctx.item_count(),
+        1,
+        "recursive function should appear exactly once"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 10))
+    );
 }
 
 /// V23-T03: Drop glue for structs -> collected
@@ -260,12 +413,22 @@ fn drop_glue_collected() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: fn_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: fn_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert!(ctx.item_count() >= 1, "function with drop should be collected");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 20)));
+    assert!(
+        ctx.item_count() >= 1,
+        "function with drop should be collected"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 20))
+    );
 }
 
 /// V23-T04: Constant used in generic -> instantiated
@@ -280,14 +443,25 @@ fn constant_in_generic_instantiated() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: main_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: main_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
     assert!(ctx.item_count() >= 1, "main function should be collected");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 30)));
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 5)),
-        "referenced constant should be collected");
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 30))
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 5)),
+        "referenced constant should be collected"
+    );
 }
 
 /// V23-T05: Diamond dependency - A calls B and C, both call D -> D collected once
@@ -302,14 +476,34 @@ fn diamond_dependency_dedup() {
     // Build A's body: calls B then C (two basic blocks, each with a Call)
     let owner_a = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(a_id.to_raw()));
     let mut locals_a = IndexVec::new();
-    locals_a.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals_a.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(Span::DUMMY) });
-    locals_a.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals_a.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals_a.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals_a.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals_a.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals_a.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let call_b = Terminator {
         kind: TerminatorKind::Call {
-            func: Operand::Constant(MirConst { kind: MirConstKind::Fn(b_id, empty_substs), ty: Ty::UNIT, span: Span::DUMMY }),
+            func: Operand::Constant(MirConst {
+                kind: MirConstKind::Fn(b_id, empty_substs),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            }),
             args: vec![Operand::Copy(Place::new(LocalIdx::from_raw(1)))],
             destination: Place::new(LocalIdx::from_raw(2)),
             target: Some(BasicBlockIdx::from_raw(1)),
@@ -319,7 +513,11 @@ fn diamond_dependency_dedup() {
     };
     let call_c = Terminator {
         kind: TerminatorKind::Call {
-            func: Operand::Constant(MirConst { kind: MirConstKind::Fn(c_id, empty_substs), ty: Ty::UNIT, span: Span::DUMMY }),
+            func: Operand::Constant(MirConst {
+                kind: MirConstKind::Fn(c_id, empty_substs),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            }),
             args: vec![Operand::Copy(Place::new(LocalIdx::from_raw(1)))],
             destination: Place::new(LocalIdx::from_raw(3)),
             target: Some(BasicBlockIdx::from_raw(2)),
@@ -327,13 +525,36 @@ fn diamond_dependency_dedup() {
         },
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let ret = Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) };
+    let ret = Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
 
     let mut bb = IndexVec::new();
-    bb.push(BasicBlockData { statements: vec![], terminator: call_b, is_cleanup: false });
-    bb.push(BasicBlockData { statements: vec![], terminator: call_c, is_cleanup: false });
-    bb.push(BasicBlockData { statements: vec![], terminator: ret, is_cleanup: false });
-    let a_body = Body { owner: owner_a, basic_blocks: bb, locals: locals_a, arg_count: 1, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] };
+    bb.push(BasicBlockData {
+        statements: vec![],
+        terminator: call_b,
+        is_cleanup: false,
+    });
+    bb.push(BasicBlockData {
+        statements: vec![],
+        terminator: call_c,
+        is_cleanup: false,
+    });
+    bb.push(BasicBlockData {
+        statements: vec![],
+        terminator: ret,
+        is_cleanup: false,
+    });
+    let a_body = Body {
+        owner: owner_a,
+        basic_blocks: bb,
+        locals: locals_a,
+        arg_count: 1,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    };
 
     let b_body = make_call_body(b_id, d_id, empty_substs);
     let c_body = make_call_body(c_id, d_id, empty_substs);
@@ -348,12 +569,23 @@ fn diamond_dependency_dedup() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: a_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: a_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert_eq!(ctx.item_count(), 4, "diamond: should have A, B, C, D (D deduped)");
-    let d_count = ctx.items().iter().filter(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 4)).count();
+    assert_eq!(
+        ctx.item_count(),
+        4,
+        "diamond: should have A, B, C, D (D deduped)"
+    );
+    let d_count = ctx
+        .items()
+        .iter()
+        .filter(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 4))
+        .count();
     assert_eq!(d_count, 1, "D should appear exactly once");
 }
 
@@ -367,22 +599,46 @@ fn transitive_call_chain() {
     let empty_substs = Substitution::empty();
 
     let fn_bodies = vec![
-        (a_id, empty_substs, Arc::new(make_call_body(a_id, b_id, empty_substs))),
-        (b_id, empty_substs, Arc::new(make_call_body(b_id, c_id, empty_substs))),
-        (c_id, empty_substs, Arc::new(make_call_body(c_id, d_id, empty_substs))),
+        (
+            a_id,
+            empty_substs,
+            Arc::new(make_call_body(a_id, b_id, empty_substs)),
+        ),
+        (
+            b_id,
+            empty_substs,
+            Arc::new(make_call_body(b_id, c_id, empty_substs)),
+        ),
+        (
+            c_id,
+            empty_substs,
+            Arc::new(make_call_body(c_id, d_id, empty_substs)),
+        ),
         (d_id, empty_substs, Arc::new(make_simple_body(d_id))),
     ];
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: a_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: a_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert_eq!(ctx.item_count(), 4, "chain: A->B->C->D should collect all 4");
+    assert_eq!(
+        ctx.item_count(),
+        4,
+        "chain: A->B->C->D should collect all 4"
+    );
     for raw_id in [1u32, 2, 3, 4] {
-        assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == raw_id)),
-            "function with raw id {} should be collected", raw_id);
+        assert!(
+            ctx.items().iter().any(
+                |d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == raw_id)
+            ),
+            "function with raw id {} should be collected",
+            raw_id
+        );
     }
 }
 
@@ -403,11 +659,17 @@ fn different_substitutions_both_collected() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: main_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: main_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert!(ctx.item_count() >= 2, "should collect at least main and foo");
+    assert!(
+        ctx.item_count() >= 2,
+        "should collect at least main and foo"
+    );
 }
 
 /// V23-T08: Empty start set -> nothing collected
@@ -415,7 +677,11 @@ fn different_substitutions_both_collected() {
 fn empty_start_nothing_collected() {
     let mut ctx = MonoCtx::new();
     ctx.collect(&[], &|def_id, _substs| Arc::new(Body::dummy(def_id)));
-    assert_eq!(ctx.item_count(), 0, "empty start set should collect nothing");
+    assert_eq!(
+        ctx.item_count(),
+        0,
+        "empty start set should collect nothing"
+    );
 }
 
 /// V23-T09: Static item -> collected but no body scanning needed
@@ -429,7 +695,11 @@ fn static_item_collected() {
     );
 
     assert_eq!(ctx.item_count(), 1, "static should be collected");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Static { def_id } if def_id.to_raw() == 42)));
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Static { def_id } if def_id.to_raw() == 42))
+    );
 }
 
 /// V23-T10: Multiple constants in same body
@@ -442,21 +712,41 @@ fn multiple_constants_in_body() {
 
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(main_id.to_raw()));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let stmt_a = Statement {
         kind: StatementKind::Assign(
             Place::new(LocalIdx::from_raw(1)),
-            Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::ConstRef(const_a, empty_substs), ty: Ty::UNIT, span: Span::DUMMY })),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::ConstRef(const_a, empty_substs),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            })),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
     let stmt_b = Statement {
         kind: StatementKind::Assign(
             Place::new(LocalIdx::from_raw(2)),
-            Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::ConstRef(const_b, empty_substs), ty: Ty::UNIT, span: Span::DUMMY })),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::ConstRef(const_b, empty_substs),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            })),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
@@ -464,21 +754,45 @@ fn multiple_constants_in_body() {
     let mut basic_blocks = IndexVec::new();
     basic_blocks.push(BasicBlockData {
         statements: vec![stmt_a, stmt_b],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     });
 
-    let main_body = Body { owner, basic_blocks, locals, arg_count: 0, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] };
+    let main_body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    };
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: main_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: main_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(vec![(main_id, empty_substs, Arc::new(main_body))], vec![]),
     );
 
     assert_eq!(ctx.item_count(), 3, "should collect main + 2 constants");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 10)), "const A should be collected");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 11)), "const B should be collected");
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 10)),
+        "const A should be collected"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 11)),
+        "const B should be collected"
+    );
 }
 
 /// V23-T11: Mixed calls and constants
@@ -492,22 +806,46 @@ fn mixed_calls_and_constants() {
     // Body with both a Call and a ConstRef
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(main_id.to_raw()));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
 
     let stmt_const = Statement {
         kind: StatementKind::Assign(
             Place::new(LocalIdx::from_raw(3)),
-            Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::ConstRef(const_id, empty_substs), ty: Ty::UNIT, span: Span::DUMMY })),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::ConstRef(const_id, empty_substs),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            })),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
 
     let call_term = Terminator {
         kind: TerminatorKind::Call {
-            func: Operand::Constant(MirConst { kind: MirConstKind::Fn(helper_id, empty_substs), ty: Ty::UNIT, span: Span::DUMMY }),
+            func: Operand::Constant(MirConst {
+                kind: MirConstKind::Fn(helper_id, empty_substs),
+                ty: Ty::UNIT,
+                span: Span::DUMMY,
+            }),
             args: vec![Operand::Copy(Place::new(LocalIdx::from_raw(1)))],
             destination: Place::new(LocalIdx::from_raw(2)),
             target: Some(BasicBlockIdx::from_raw(1)),
@@ -516,13 +854,32 @@ fn mixed_calls_and_constants() {
         source_info: SourceInfo::new(Span::DUMMY),
     };
 
-    let ret = Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) };
+    let ret = Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
 
     let mut basic_blocks = IndexVec::new();
-    basic_blocks.push(BasicBlockData { statements: vec![stmt_const], terminator: call_term, is_cleanup: false });
-    basic_blocks.push(BasicBlockData { statements: vec![], terminator: ret, is_cleanup: false });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![stmt_const],
+        terminator: call_term,
+        is_cleanup: false,
+    });
+    basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: ret,
+        is_cleanup: false,
+    });
 
-    let main_body = Body { owner, basic_blocks, locals, arg_count: 1, return_ty: Ty::UNIT, span: Span::DUMMY, var_debug_info: vec![] };
+    let main_body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 1,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    };
     let helper_body = make_simple_body(helper_id);
 
     let fn_bodies = vec![
@@ -532,14 +889,33 @@ fn mixed_calls_and_constants() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: main_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: main_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert_eq!(ctx.item_count(), 3, "should collect main, helper, and const");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 1)));
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 2)));
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 20)));
+    assert_eq!(
+        ctx.item_count(),
+        3,
+        "should collect main, helper, and const"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 1))
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 2))
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 20))
+    );
 }
 
 /// V23-T12: Item with no references (leaf function) -> only itself collected
@@ -553,12 +929,23 @@ fn leaf_function_only_self() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: leaf_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: leaf_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert_eq!(ctx.item_count(), 1, "leaf function should collect only itself");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 99)));
+    assert_eq!(
+        ctx.item_count(),
+        1,
+        "leaf function should collect only itself"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 99))
+    );
 }
 
 /// V23-T13: Multiple start items
@@ -576,13 +963,23 @@ fn multiple_start_items() {
     let mut ctx = MonoCtx::new();
     ctx.collect(
         &[
-            MonoItem::Fn { def_id: a_id, substs: empty_substs },
-            MonoItem::Fn { def_id: b_id, substs: empty_substs },
+            MonoItem::Fn {
+                def_id: a_id,
+                substs: empty_substs,
+            },
+            MonoItem::Fn {
+                def_id: b_id,
+                substs: empty_substs,
+            },
         ],
         &make_body_lookup(fn_bodies, vec![]),
     );
 
-    assert_eq!(ctx.item_count(), 2, "two start items should both be collected");
+    assert_eq!(
+        ctx.item_count(),
+        2,
+        "two start items should both be collected"
+    );
 }
 
 /// V23-T14: Transitive constant collection (const references another const)
@@ -606,14 +1003,28 @@ fn transitive_constant_collection() {
 
     let mut ctx = MonoCtx::new();
     ctx.collect(
-        &[MonoItem::Fn { def_id: fn_id, substs: empty_substs }],
+        &[MonoItem::Fn {
+            def_id: fn_id,
+            substs: empty_substs,
+        }],
         &make_body_lookup(fn_bodies, const_bodies),
     );
 
     // Should collect: fn, const_a, const_b (transitive)
-    assert!(ctx.item_count() >= 2, "should collect at least fn and const_a");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 10)),
-        "const_a should be collected");
-    assert!(ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 11)),
-        "const_b should be collected transitively");
+    assert!(
+        ctx.item_count() >= 2,
+        "should collect at least fn and const_a"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 10)),
+        "const_a should be collected"
+    );
+    assert!(
+        ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 11)),
+        "const_b should be collected transitively"
+    );
 }

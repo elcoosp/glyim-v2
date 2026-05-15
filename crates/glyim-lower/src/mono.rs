@@ -184,9 +184,7 @@ impl MonoCtx {
             TerminatorKind::Assert { cond, .. } => {
                 self.scan_operand(cond);
             }
-            TerminatorKind::Goto { .. }
-            | TerminatorKind::Return
-            | TerminatorKind::Unreachable => {}
+            TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {}
         }
     }
 
