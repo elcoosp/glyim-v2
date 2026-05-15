@@ -204,7 +204,11 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
 }
 
 /// Display a region in type position, given a TypeLookup for resolving names.
-pub fn write_region<L: TypeLookup>(f: &mut fmt::Formatter<'_>, region: &Region, lookup: &L) -> fmt::Result {
+pub fn write_region<L: TypeLookup>(
+    f: &mut fmt::Formatter<'_>,
+    region: &Region,
+    lookup: &L,
+) -> fmt::Result {
     match region {
         Region::Static => write!(f, "'static"),
         Region::EarlyBound(e) => write!(f, "'{}", e.index),

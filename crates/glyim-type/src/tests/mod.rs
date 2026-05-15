@@ -15,6 +15,8 @@ mod generic_arg;
 mod helpers;
 mod interning;
 mod more_interning;
+mod placeholder_flags;
+mod placeholder_region;
 mod predicate;
 mod projections;
 mod properties;

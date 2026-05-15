@@ -8,23 +8,18 @@
 use glyim_type::*;
 
 /// Result of instantiating a binder with placeholder regions.
-/// Contains the instantiated value and the placeholders that were created.
 #[derive(Debug)]
 pub struct PlaceholderInstantiation<T> {
     /// The value with bound regions replaced by placeholders.
     pub value: T,
-    /// The placeholder regions that were created (one per bound variable).
+    /// The placeholder regions that were created.
     pub placeholders: Vec<PlaceholderRegion>,
     /// The universe the placeholders live in.
     pub universe: UniverseIndex,
 }
 
 /// Instantiate a `Binder<T>` by replacing each bound region with a placeholder
-/// in a new universe. This is the core operation for checking HRTB: to prove
-/// `for<'a> P<'a>`, we create a placeholder `'!a` and prove `P<'!a>`.
-///
-/// Type variables that appear inside the binder get their universe bumped
-/// so they cannot be unified with the placeholder regions.
+/// in a new universe.
 pub fn instantiate_binder_with_placeholders<T>(
     binder: &Binder<T>,
     infer: &mut crate::InferenceTable,
@@ -59,8 +54,6 @@ where
     }
 }
 
-/// Build a substitution map from bound variable indices to their placeholder
-/// or bound type replacements.
 fn build_region_substitution(
     bound_vars: &[BoundVariableKind],
     placeholders: &[PlaceholderRegion],
@@ -77,12 +70,9 @@ fn build_region_substitution(
                 }
             }
             BoundVariableKind::Ty(kind) => {
-                // Bound types within HRTB are rare but possible.
                 let _ = (idx, kind);
             }
-            BoundVariableKind::Const => {
-                // Const bound variables in HRTB are not currently supported.
-            }
+            BoundVariableKind::Const => {}
         }
     }
 
@@ -112,7 +102,6 @@ impl BoundVarSubstitution {
 }
 
 /// Trait for types that can have their bound variables substituted.
-/// This is implemented for the key types in the type system.
 pub trait SubstituteBoundVars: Sized {
     /// Substitute bound variables according to the given mapping.
     fn substitute(self, sub: &BoundVarSubstitution, ctx: &mut TyCtxMut) -> Self;
@@ -154,17 +143,7 @@ impl SubstituteBoundVars for Ty {
                 ctx.mk_ty(TyKind::Array(inner, cnst))
             }
             TyKind::Tuple(substs) => {
-                let args = ctx.substitution_args(substs).to_vec();
-                let new_args: Vec<GenericArg> = args
-                    .into_iter()
-                    .map(|arg| match arg {
-                        GenericArg::Ty(t) => GenericArg::Ty(t.substitute(sub, ctx)),
-                        GenericArg::Lifetime(r) => GenericArg::Lifetime(r.substitute(sub, ctx)),
-                        GenericArg::Const(c) => GenericArg::Const(c),
-                    })
-                    .collect();
-                let new_substs = ctx.intern_substitution(new_args);
-                ctx.mk_ty(TyKind::Tuple(new_substs))
+                substitute_through_generic_args(sub, ctx, substs, TyKind::Tuple)
             }
             TyKind::Adt(id, substs) => {
                 let new_substs = substitute_substitution(substs, sub, ctx);
@@ -195,7 +174,6 @@ impl SubstituteBoundVars for Ty {
             }
             TyKind::Dynamic(preds, region) => {
                 let region = region.substitute(sub, ctx);
-                // For now, don't substitute inside predicates in dyn types
                 ctx.mk_ty(TyKind::Dynamic(preds, region))
             }
             TyKind::Projection(proj) => {
@@ -208,14 +186,21 @@ impl SubstituteBoundVars for Ty {
                     item_name: proj.item_name,
                 }))
             }
-            TyKind::Bound(_idx, _bound) => {
-                // Bound types within HRTB are kept as-is for now
-                self
-            }
-            // Primitives, parameters, inference vars, error — no substitution needed
+            TyKind::Bound(_idx, _bound) => self,
             _ => self,
         }
     }
+}
+
+/// Helper to substitute through a Tuple, avoiding double &mut borrow on ctx.
+fn substitute_through_generic_args(
+    sub: &BoundVarSubstitution,
+    ctx: &mut TyCtxMut,
+    substs: Substitution,
+    kind_ctor: impl Fn(Substitution) -> TyKind,
+) -> Ty {
+    let new_substs = substitute_substitution(substs, sub, ctx);
+    ctx.mk_ty(kind_ctor(new_substs))
 }
 
 impl SubstituteBoundVars for Predicate {
@@ -254,7 +239,6 @@ impl SubstituteBoundVars for Predicate {
     }
 }
 
-/// Substitute bound variables within a Substitution.
 fn substitute_substitution(
     substs: Substitution,
     sub: &BoundVarSubstitution,
@@ -274,45 +258,43 @@ fn substitute_substitution(
 
 /// Check whether a higher-ranked trait bound is satisfied.
 ///
-/// Given a predicate like `for<'a> T: Trait<'a>`, this function:
-/// 1. Creates a new universe with placeholder regions for each bound variable
-/// 2. Substitutes the placeholders into the predicate
-/// 3. Checks if the resulting predicate can be proven
+/// This function:
+/// 1. Instantiates the binder with placeholders in `ctx_mut`
+/// 2. Freezes `ctx_mut` into a `TyCtx`
+/// 3. Checks the instantiated predicate against the solver
 ///
-/// Returns the solver result indicating whether the HRTB is satisfied.
+/// **Important:** This consumes `ctx_mut` (via freeze) because the solver
+/// requires a frozen `TyCtx`. Returns `(SolverResult, TyCtx)` so the
+/// caller can reuse the frozen context.
 pub fn check_hrtb(
     binder: &Binder<Predicate>,
     solver: &mut dyn crate::solver::TraitSolver,
     infer: &mut crate::InferenceTable,
-    ctx: &TyCtx,
-    ctx_mut: &mut TyCtxMut,
-) -> crate::solver::SolverResult {
-    let instantiation = instantiate_binder_with_placeholders(binder, infer, ctx_mut);
+    mut ctx_mut: TyCtxMut,
+) -> (crate::solver::SolverResult, TyCtx) {
+    // Instantiate the binder with placeholders in the caller's context
+    let instantiation = instantiate_binder_with_placeholders(binder, infer, &mut ctx_mut);
 
-    match &instantiation.value {
-        Predicate::Trait(tp) => solver.can_prove(ctx, tp),
-        Predicate::RegionOutlives(rp) => {
-            // A region outlives predicate under HRTB: 'a: 'b for all 'a, 'b
-            // This is trivially true if the regions are the same or both placeholders
-            if rp.a == rp.b {
-                crate::solver::SolverResult::Proven
-            } else {
-                // For placeholder regions, we assume they outlive each other
-                // (the HRTB contract is that the bound must hold for ALL regions)
-                crate::solver::SolverResult::Proven
-            }
-        }
-        Predicate::TypeOutlives(_) => {
-            // Type outlives under HRTB — conservatively prove
-            crate::solver::SolverResult::Proven
-        }
-        Predicate::WellFormed(_) => {
-            crate::solver::SolverResult::Proven
-        }
-        Predicate::Coerce(_, _) => {
-            crate::solver::SolverResult::Ambiguous
-        }
-    }
+    // Freeze the context so the solver can read the types
+    let ctx = ctx_mut.freeze();
+
+    let result = match &instantiation.value {
+        Predicate::Trait(tp) => solver.can_prove(&ctx, tp),
+        Predicate::RegionOutlives(_) => crate::solver::SolverResult::Proven,
+        Predicate::TypeOutlives(_) => crate::solver::SolverResult::Proven,
+        Predicate::WellFormed(_) => crate::solver::SolverResult::Proven,
+        Predicate::Coerce(_, _) => crate::solver::SolverResult::Ambiguous,
+    };
+
+    (result, ctx)
+}
+
+pub fn instantiate_hrtb_predicate(
+    binder: &Binder<Predicate>,
+    infer: &mut crate::InferenceTable,
+    ctx: &mut TyCtxMut,
+) -> PlaceholderInstantiation<Predicate> {
+    instantiate_binder_with_placeholders(binder, infer, ctx)
 }
 
 #[cfg(test)]
@@ -336,13 +318,8 @@ mod tests {
         );
 
         let inst = instantiate_binder_with_placeholders(&binder, &mut infer, &mut ctx);
-
-        assert_eq!(
-            inst.placeholders.len(),
-            2,
-            "Should create 2 placeholder regions"
-        );
-        assert_eq!(inst.universe, UniverseIndex(1), "Should create universe 1");
+        assert_eq!(inst.placeholders.len(), 2);
+        assert_eq!(inst.universe, UniverseIndex(1));
     }
 
     #[test]
@@ -353,7 +330,6 @@ mod tests {
         let bound_vars: Box<[BoundVariableKind]> =
             Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
 
-        // for<'a> -> &'a i32
         let bound_region =
             Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
         let i32_ty = ctx.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
@@ -362,7 +338,6 @@ mod tests {
         let binder = Binder::bind(ref_ty, bound_vars);
         let inst = instantiate_binder_with_placeholders(&binder, &mut infer, &mut ctx);
 
-        // The result should be a reference with a placeholder region
         match ctx.ty_kind(inst.value) {
             TyKind::Ref(region, _, _) => {
                 assert!(
@@ -383,14 +358,12 @@ mod tests {
         let bound_vars: Box<[BoundVariableKind]> =
             Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
 
-        // for<'a> -> &'static i32 (static region is NOT bound)
         let i32_ty = ctx.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
         let ref_ty = ctx.mk_ref(Region::Static, i32_ty, Mutability::Not);
 
         let binder = Binder::bind(ref_ty, bound_vars);
         let inst = instantiate_binder_with_placeholders(&binder, &mut infer, &mut ctx);
 
-        // Static region should be preserved
         match ctx.ty_kind(inst.value) {
             TyKind::Ref(region, _, _) => {
                 assert!(
