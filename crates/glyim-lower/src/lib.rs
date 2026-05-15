@@ -1,4 +1,5 @@
 //! THIR → MIR lowering + monomorphization.
+pub mod discovery;
 pub mod lower;
 pub mod mono;
 

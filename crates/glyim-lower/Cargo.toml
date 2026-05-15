@@ -4,6 +4,9 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+glyim-hir = { workspace = true }
+glyim-syntax = { workspace = true }
+
 glyim-core = { workspace = true }
 glyim-type = { workspace = true }
 glyim-mir = { workspace = true }
@@ -13,4 +16,5 @@ glyim-diag = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+rowan = "0.16"
 glyim-test = { workspace = true }

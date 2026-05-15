@@ -582,11 +582,14 @@ version = "0.1.0"
 dependencies = [
  "glyim-core",
  "glyim-diag",
+ "glyim-hir",
  "glyim-mir",
  "glyim-span",
+ "glyim-syntax",
  "glyim-test",
  "glyim-type",
  "glyim-typeck",
+ "rowan",
  "tracing",
 ]
 
