@@ -13,7 +13,7 @@ use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
 // ---------- helpers ----------
 
-fn first_ident_text(node: &SyntaxNode) -> Option<String> {
+pub(crate) fn first_ident_text(node: &SyntaxNode) -> Option<String> {
     for el in node.children_with_tokens() {
         if let glyim_syntax::SyntaxElement::Token(t) = el
             && t.kind() == SyntaxKind::Ident
@@ -622,7 +622,14 @@ fn lower_block_to_expr(
         }
     }
 
-    let tail = if last_has_semi { if let Some(last) = pending.take() { stmts.push(last); } None } else { pending.take() };
+    let tail = if last_has_semi {
+        if let Some(last) = pending.take() {
+            stmts.push(last);
+        }
+        None
+    } else {
+        pending.take()
+    };
 
     let expr = Expr::Block { stmts, tail };
     exprs.push(expr)
@@ -732,7 +739,6 @@ fn lower_expr(
 
 // ---------- sub-expressions ----------
 
-
 fn lower_binary_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
@@ -806,7 +812,8 @@ fn lower_binary_expr(
         .filter_map(|el| el.into_token())
         .find(|t| {
             let range = t.text_range();
-            range.start() >= lhs_range.end() && range.end() <= rhs_range.start()
+            range.start() >= lhs_range.end()
+                && range.end() <= rhs_range.start()
                 && !t.kind().is_trivia()
         });
     let op = op_token.map_or(BinOp::Add, |t| lower_bin_op_token(&t));
@@ -814,7 +821,6 @@ fn lower_binary_expr(
             Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
     Some(exprs.push(expr))
 }
-
 
 fn lower_bin_op_token(token: &SyntaxToken) -> BinOp {
     match token.text() {
@@ -965,7 +971,7 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
         SyntaxKind::KwTrue | SyntaxKind::BoolLit if text == "true" => Literal::Bool(true),
         SyntaxKind::KwFalse | SyntaxKind::BoolLit if text == "false" => Literal::Bool(false),
         SyntaxKind::CharLit => {
-            let inner = &text[1..text.len()-1];
+            let inner = &text[1..text.len() - 1];
             if let Some(c) = parse_char_literal(inner) {
                 Literal::Char(c)
             } else {
@@ -977,7 +983,7 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
             // String literals not fully supported in HIR lowering yet; return unit.
             Literal::Unit
         }
-        _ => Literal::Unit
+        _ => Literal::Unit,
     }
 }
 
@@ -985,13 +991,27 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
 fn split_int_literal(s: &str) -> (String, Option<String>) {
     let mut digits_end = s.len();
     for (i, ch) in s.char_indices() {
-        if !(ch.is_ascii_digit() || ch == '_' || ch == '-' || ch == '+' || ch == 'x' || ch == 'X' || ch == 'o' || ch == 'O' || ch == 'b' || ch == 'B') {
+        if !(ch.is_ascii_digit()
+            || ch == '_'
+            || ch == '-'
+            || ch == '+'
+            || ch == 'x'
+            || ch == 'X'
+            || ch == 'o'
+            || ch == 'O'
+            || ch == 'b'
+            || ch == 'B')
+        {
             digits_end = i;
             break;
         }
     }
     let num_part = &s[..digits_end];
-    let suffix = if digits_end < s.len() { Some(&s[digits_end..]) } else { None };
+    let suffix = if digits_end < s.len() {
+        Some(&s[digits_end..])
+    } else {
+        None
+    };
     (num_part.replace('_', ""), suffix.map(|s| s.to_string()))
 }
 
@@ -1025,7 +1045,11 @@ fn split_float_literal(s: &str) -> (String, Option<String>) {
         }
     }
     let num_part = &s[..digits_end];
-    let suffix = if digits_end < s.len() { Some(&s[digits_end..]) } else { None };
+    let suffix = if digits_end < s.len() {
+        Some(&s[digits_end..])
+    } else {
+        None
+    };
     (num_part.to_string(), suffix.map(|s| s.to_string()))
 }
 
@@ -1240,7 +1264,8 @@ fn lower_match_expr(
     Some(exprs.push(expr))
 }
 
-fn lower_pat(
+#[allow(unused_assignments)]
+pub(crate) fn lower_pat(
     node: &SyntaxNode,
     interner: &mut Interner,
     pats: &mut IndexVec<PatId, Pat>,
@@ -1249,47 +1274,409 @@ fn lower_pat(
         SyntaxKind::PatIdent => {
             let name_text = first_ident_text(node).unwrap_or_else(|| "_".to_string());
             let name = interner.intern(&name_text);
-            let pat = Pat::Binding {
-                name,
-                mutability: Mutability::Not,
-                subpattern: None,
-            };
-            Some(pats.push(pat))
+            // Heuristic: if the name starts with an uppercase letter, treat as a path pattern;
+            // otherwise, treat as a binding. This compensates for lack of name resolution in early lowering.
+            if name_text.starts_with(|c: char| c.is_uppercase()) {
+                let path = HirPath {
+                    segments: vec![PathSegment {
+                        name,
+                        generic_args: None,
+                    }],
+                    kind: glyim_core::path::PathKind::Plain,
+                };
+                Some(pats.push(Pat::Path(path)))
+            } else {
+                // Look for subpattern (e.g., x @ 0..=5)
+                let subpat = node
+                    .children()
+                    .find(|c| {
+                        matches!(
+                            c.kind(),
+                            SyntaxKind::PatIdent
+                                | SyntaxKind::PatWild
+                                | SyntaxKind::PatLit
+                                | SyntaxKind::PatTuple
+                                | SyntaxKind::PatStruct
+                                | SyntaxKind::PatOr
+                        )
+                    })
+                    .and_then(|n| lower_pat(&n, interner, pats));
+                Some(pats.push(Pat::Binding {
+                    name,
+                    mutability: Mutability::Not,
+                    subpattern: subpat,
+                }))
+            }
         }
         SyntaxKind::PatWild => Some(pats.push(Pat::Wild)),
         SyntaxKind::PatLit => {
-            let lit_token = node
-                .children_with_tokens()
-                .filter_map(|c| c.into_token())
-                .find(|t| {
-                    t.kind().is_literal()
-                        || t.kind() == SyntaxKind::KwTrue
-                        || t.kind() == SyntaxKind::KwFalse
-                })?;
-            let lit = lower_literal(&lit_token);
-            Some(pats.push(Pat::Literal(lit)))
+            // The parser emits a PatLit node containing either:
+            //   - A single literal token (plain literal pattern)
+            //   - Literal token, DotDot/DotDotEq, nested PatLit (range pattern)
+            let children: Vec<glyim_syntax::SyntaxElement> = node.children_with_tokens().collect();
+            // Check if this is a range pattern (has DotDot or DotDotEq)
+            let is_range = children.iter().any(|c| {
+                matches!(c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDot || t.kind() == SyntaxKind::DotDotEq)
+            });
+            if is_range {
+                let inclusive = children.iter().any(|c| {
+                    matches!(c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDotEq)
+                });
+                let mut start = None;
+                let mut end = None;
+                let mut before_dot = true;
+                for child in &children {
+                    match child {
+                        glyim_syntax::SyntaxElement::Token(t)
+                            if t.kind().is_literal()
+                                || t.kind() == SyntaxKind::KwTrue
+                                || t.kind() == SyntaxKind::KwFalse =>
+                        {
+                            let lit = lower_literal(t);
+                            if before_dot {
+                                start = Some(lit);
+                            } else {
+                                end = Some(lit);
+                            }
+                        }
+                        glyim_syntax::SyntaxElement::Token(t)
+                            if t.kind() == SyntaxKind::DotDot
+                                || t.kind() == SyntaxKind::DotDotEq =>
+                        {
+                            before_dot = false;
+                        }
+                        glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatLit => {
+                            // Nested PatLit contains the end literal
+                            if let Some(inner_lit) = lower_pat(n, interner, pats) {
+                                // Extract literal from the inner pat
+                                if let Pat::Literal(lit) = &pats[inner_lit] {
+                                    end = Some(lit.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Some(pats.push(Pat::Range {
+                    start,
+                    end,
+                    inclusive,
+                }))
+            } else {
+                // Plain literal
+                let lit_token = node
+                    .children_with_tokens()
+                    .filter_map(|c| c.into_token())
+                    .find(|t| {
+                        t.kind().is_literal()
+                            || t.kind() == SyntaxKind::KwTrue
+                            || t.kind() == SyntaxKind::KwFalse
+                    })?;
+                let lit = lower_literal(&lit_token);
+                Some(pats.push(Pat::Literal(lit)))
+            }
         }
         SyntaxKind::PatTuple => {
             let mut elems = Vec::new();
-            for child in node.children() {
-                if let Some(pat_id) = lower_pat(&child, interner, pats) {
-                    elems.push(pat_id);
+            // The parser may produce UsePath nodes inside PatTuple (e.g., Some(b)).
+            // We need to combine UsePath + following PatTuple into a PatStruct.
+            let children: Vec<glyim_syntax::SyntaxNode> = node.children().collect();
+            let mut i = 0;
+            while i < children.len() {
+                let child = &children[i];
+                if child.kind() == SyntaxKind::UsePath {
+                    // This is a path prefix for a struct pattern like Some(b)
+                    // Extract the path
+                    let mut segments = Vec::new();
+                    for el in child.children_with_tokens() {
+                        if let glyim_syntax::SyntaxElement::Token(t) = el
+                            && t.kind() == SyntaxKind::Ident
+                        {
+                            segments.push(PathSegment {
+                                name: interner.intern(t.text()),
+                                generic_args: None,
+                            });
+                        }
+                    }
+                    let path = HirPath {
+                        segments,
+                        kind: glyim_core::path::PathKind::Plain,
+                    };
+                    // The next sibling should be a PatTuple containing the arguments
+                    let mut fields = Vec::new();
+                    if i + 1 < children.len() && children[i + 1].kind() == SyntaxKind::PatTuple {
+                        let args_node = &children[i + 1];
+                        for el in args_node.children_with_tokens() {
+                            match el {
+                                glyim_syntax::SyntaxElement::Node(n)
+                                    if matches!(
+                                        n.kind(),
+                                        SyntaxKind::PatIdent
+                                            | SyntaxKind::PatWild
+                                            | SyntaxKind::PatLit
+                                            | SyntaxKind::PatTuple
+                                            | SyntaxKind::PatStruct
+                                            | SyntaxKind::PatOr
+                                            | SyntaxKind::UsePath
+                                    ) =>
+                                {
+                                    let arg_pat_id = lower_pat(&n, interner, pats);
+                                    // For tuple struct fields, we don't have names
+                                    if let Some(pid) = arg_pat_id {
+                                        let field_name = {
+                                            let s = n.text().to_string();
+                                            interner.intern(s.trim())
+                                        };
+                                        fields.push((field_name, pid));
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        i += 2; // skip the UsePath and PatTuple
+                    } else {
+                        i += 1;
+                    }
+                    let struct_pat = Pat::Struct {
+                        path,
+                        fields,
+                        rest: false,
+                    };
+                    elems.push(pats.push(struct_pat));
+                } else {
+                    // Regular pattern node
+                    if let Some(pat_id) = lower_pat(child, interner, pats) {
+                        elems.push(pat_id);
+                    }
+                    i += 1;
                 }
             }
             Some(pats.push(Pat::Tuple(elems)))
         }
         SyntaxKind::PatOr => {
             let mut pat_ids = Vec::new();
-            for child in node.children() {
-                if let Some(pat_id) = lower_pat(&child, interner, pats) {
-                    pat_ids.push(pat_id);
+            // Similar handling: UsePath + PatTuple inside PatOr creates PatStruct arms.
+            let children: Vec<glyim_syntax::SyntaxNode> = node.children().collect();
+            let mut i = 0;
+            while i < children.len() {
+                let child = &children[i];
+                if child.kind() == SyntaxKind::UsePath {
+                    // Struct-like pattern in or: Some(x)
+                    let mut segments = Vec::new();
+                    for el in child.children_with_tokens() {
+                        if let glyim_syntax::SyntaxElement::Token(t) = el
+                            && t.kind() == SyntaxKind::Ident
+                        {
+                            segments.push(PathSegment {
+                                name: interner.intern(t.text()),
+                                generic_args: None,
+                            });
+                        }
+                    }
+                    let path = HirPath {
+                        segments,
+                        kind: glyim_core::path::PathKind::Plain,
+                    };
+                    let mut fields = Vec::new();
+                    if i + 1 < children.len() && children[i + 1].kind() == SyntaxKind::PatTuple {
+                        let args_node = &children[i + 1];
+                        for el in args_node.children_with_tokens() {
+                            match el {
+                                glyim_syntax::SyntaxElement::Node(n)
+                                    if matches!(
+                                        n.kind(),
+                                        SyntaxKind::PatIdent
+                                            | SyntaxKind::PatWild
+                                            | SyntaxKind::PatLit
+                                            | SyntaxKind::PatTuple
+                                            | SyntaxKind::PatStruct
+                                            | SyntaxKind::PatOr
+                                            | SyntaxKind::UsePath
+                                    ) =>
+                                {
+                                    if let Some(pid) = lower_pat(&n, interner, pats) {
+                                        let field_name = {
+                                            let s = n.text().to_string();
+                                            interner.intern(s.trim())
+                                        };
+                                        fields.push((field_name, pid));
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                    let struct_pat = Pat::Struct {
+                        path,
+                        fields,
+                        rest: false,
+                    };
+                    pat_ids.push(pats.push(struct_pat));
+                } else {
+                    if let Some(pat_id) = lower_pat(child, interner, pats) {
+                        pat_ids.push(pat_id);
+                    }
+                    i += 1;
                 }
             }
             Some(pats.push(Pat::Or(pat_ids)))
         }
         SyntaxKind::PatStruct => {
-            // For now, just produce Wild
-            Some(pats.push(Pat::Wild))
+            // Extract path from the parent context (UsePath before PatStruct)
+            // Actually, the parser gives us UsePath as a sibling, then PatStruct with LBrace...RBrace.
+            // But in some cases (let Point { x, y: 0 } = ...), the parser gives PatStruct directly.
+            // We need to look at the parent node for a UsePath sibling.
+            // For now, try to extract the path from a preceding sibling in the parent.
+            let parent = node.parent()?;
+            let siblings: Vec<glyim_syntax::SyntaxElement> =
+                parent.children_with_tokens().collect();
+            // Find the preceding sibling that is a UsePath or PathExpr
+            let path = 'path_lookup: {
+                let mut found = None;
+                for el in &siblings {
+                    if let glyim_syntax::SyntaxElement::Node(n) = el {
+                        if n.kind() == SyntaxKind::UsePath || n.kind() == SyntaxKind::PathExpr {
+                            found = Some(n.clone());
+                        }
+                        if *n == *node {
+                            break 'path_lookup found;
+                        }
+                    }
+                }
+                None
+            };
+            let path = match path {
+                Some(use_path) => {
+                    let text = use_path.text().to_string().trim().to_string();
+                    let name = interner.intern(&text);
+                    HirPath {
+                        segments: vec![PathSegment {
+                            name,
+                            generic_args: None,
+                        }],
+                        kind: glyim_core::path::PathKind::Plain,
+                    }
+                }
+                None => return None,
+            };
+            let mut fields = Vec::new();
+            let mut rest = false;
+            let children: Vec<glyim_syntax::SyntaxElement> = node.children_with_tokens().collect();
+            let mut i = 0;
+            while i < children.len() {
+                match &children[i] {
+                    glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatIdent => {
+                        // Field: either shorthand (no colon) or with subpattern after colon
+                        let field_name_text = first_ident_text(n).unwrap_or_default();
+                        let name = interner.intern(&field_name_text);
+                        // Check next non-trivia token for colon
+                        let mut j = i + 1;
+                        let mut has_colon = false;
+                        while j < children.len() {
+                            if let glyim_syntax::SyntaxElement::Token(t) = &children[j] {
+                                if t.kind() == SyntaxKind::Colon {
+                                    has_colon = true;
+                                    break;
+                                } else if !t.kind().is_trivia() {
+                                    break;
+                                }
+                            }
+                            j += 1;
+                        }
+                        if has_colon {
+                            // Find the pattern node after the colon
+                            let mut k = j + 1;
+                            while k < children.len() {
+                                if let glyim_syntax::SyntaxElement::Node(sub_n) = &children[k]
+                                    && matches!(
+                                        sub_n.kind(),
+                                        SyntaxKind::PatIdent
+                                            | SyntaxKind::PatWild
+                                            | SyntaxKind::PatLit
+                                            | SyntaxKind::PatTuple
+                                            | SyntaxKind::PatStruct
+                                            | SyntaxKind::PatOr
+                                    )
+                                {
+                                    if let Some(pat_id) = lower_pat(sub_n, interner, pats) {
+                                        fields.push((name, pat_id));
+                                    }
+                                    break;
+                                }
+                                k += 1;
+                            }
+                            i = j + 1; // continue after the colon (the subpattern is consumed by lower_pat)
+                        } else {
+                            // Shorthand binding
+                            let binding_id = pats.push(Pat::Binding {
+                                name,
+                                mutability: Mutability::Not,
+                                subpattern: None,
+                            });
+                            fields.push((name, binding_id));
+                            i += 1;
+                        }
+                    }
+                    glyim_syntax::SyntaxElement::Token(t) => {
+                        if t.kind() == SyntaxKind::DotDot {
+                            rest = true;
+                        }
+                        i += 1;
+                    }
+                    _ => {
+                        i += 1;
+                    }
+                }
+            }
+            Some(pats.push(Pat::Struct { path, fields, rest }))
+        }
+        SyntaxKind::UsePath => {
+            // Standalone UsePath (e.g., `None` in match arm).
+            // Extract path and create Pat::Path.
+            let mut segments = Vec::new();
+            for el in node.children_with_tokens() {
+                if let glyim_syntax::SyntaxElement::Token(t) = el
+                    && t.kind() == SyntaxKind::Ident
+                {
+                    segments.push(PathSegment {
+                        name: interner.intern(t.text()),
+                        generic_args: None,
+                    });
+                }
+            }
+            if segments.is_empty() {
+                return None;
+            }
+            let path = HirPath {
+                segments,
+                kind: glyim_core::path::PathKind::Plain,
+            };
+            Some(pats.push(Pat::Path(path)))
+        }
+        SyntaxKind::PathExpr => {
+            // Standalone PathExpr (rare in pattern context, but handle)
+            let mut segments = Vec::new();
+            for el in node.children_with_tokens() {
+                if let glyim_syntax::SyntaxElement::Token(t) = el
+                    && t.kind() == SyntaxKind::Ident
+                {
+                    segments.push(PathSegment {
+                        name: interner.intern(t.text()),
+                        generic_args: None,
+                    });
+                }
+            }
+            if segments.is_empty() {
+                return None;
+            }
+            let path = HirPath {
+                segments,
+                kind: glyim_core::path::PathKind::Plain,
+            };
+            Some(pats.push(Pat::Path(path)))
         }
         _ => {
             tracing::warn!("STUB: unknown pattern kind {:?}", node.kind());
