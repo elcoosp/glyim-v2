@@ -6,9 +6,7 @@ use glyim_mir::{BorrowKind, StatementKind};
 use glyim_test::{assert_has_errors, assert_no_errors, with_fresh_ty_ctx};
 use glyim_type::Region;
 
-use super::mir_builder::{
-    MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, goto, ret,
-};
+use super::mir_builder::{MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, goto, ret};
 
 /// Body with no borrows at all → no error.
 #[test]

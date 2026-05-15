@@ -6,9 +6,7 @@ use glyim_mir::{BorrowKind, StatementKind};
 use glyim_test::{assert_has_errors, assert_no_errors, with_fresh_ty_ctx};
 use glyim_type::Region;
 
-use super::mir_builder::{
-    MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, goto, ret,
-};
+use super::mir_builder::{MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, goto, ret};
 
 /// Write to shared-borrowed place across blocks → error.
 ///
@@ -32,10 +30,13 @@ fn write_to_shared_borrowed_place_across_blocks_error() {
         b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
 
         let bb1 = b.push_block(ret());
-        b.push_stmt(bb1, StatementKind::Assign(
-            glyim_mir::Place::new(_1),
-            glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_3))),
-        ));
+        b.push_stmt(
+            bb1,
+            StatementKind::Assign(
+                glyim_mir::Place::new(_1),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_3))),
+            ),
+        );
         b.push_stmt(bb1, assign_copy(_4, _2));
 
         b.build()
@@ -66,13 +67,16 @@ fn write_after_shared_borrow_expires_no_error() {
 
         let bb0 = b.push_block(goto(1));
         b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
-        b.push_stmt(bb0, assign_copy(_3, _2));  // last use of _2
+        b.push_stmt(bb0, assign_copy(_3, _2)); // last use of _2
 
         let bb1 = b.push_block(ret());
-        b.push_stmt(bb1, StatementKind::Assign(
-            glyim_mir::Place::new(_1),
-            glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_4))),
-        ));
+        b.push_stmt(
+            bb1,
+            StatementKind::Assign(
+                glyim_mir::Place::new(_1),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_4))),
+            ),
+        );
 
         b.build()
     });
@@ -111,10 +115,13 @@ fn write_to_mut_borrowed_place_across_blocks_error() {
         );
 
         let bb1 = b.push_block(ret());
-        b.push_stmt(bb1, StatementKind::Assign(
-            glyim_mir::Place::new(_1),
-            glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_3))),
-        ));
+        b.push_stmt(
+            bb1,
+            StatementKind::Assign(
+                glyim_mir::Place::new(_1),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_3))),
+            ),
+        );
         b.push_stmt(bb1, assign_copy(_4, _2));
 
         b.build()
@@ -146,10 +153,13 @@ fn write_to_different_place_while_borrowed_no_error() {
         b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
 
         let bb1 = b.push_block(ret());
-        b.push_stmt(bb1, StatementKind::Assign(
-            glyim_mir::Place::new(_3),
-            glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_4))),
-        ));
+        b.push_stmt(
+            bb1,
+            StatementKind::Assign(
+                glyim_mir::Place::new(_3),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_4))),
+            ),
+        );
         b.push_stmt(bb1, assign_copy(_5, _2));
 
         b.build()

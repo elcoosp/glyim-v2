@@ -7,9 +7,7 @@ use glyim_mir::BorrowKind;
 use glyim_test::{assert_has_errors, assert_no_errors, with_fresh_ty_ctx};
 use glyim_type::Region;
 
-use super::mir_builder::{
-    MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, ret,
-};
+use super::mir_builder::{MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_copy, ret};
 
 /// Shared borrow followed by shared borrow in same block → no error.
 #[test]
@@ -94,7 +92,7 @@ fn same_block_borrow_expires_before_conflict_no_error() {
 
         let bb0 = b.push_block(ret());
         b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
-        b.push_stmt(bb0, assign_copy(_3, _2));     // last use of _2
+        b.push_stmt(bb0, assign_copy(_3, _2)); // last use of _2
         b.push_stmt(
             bb0,
             assign_borrow(
