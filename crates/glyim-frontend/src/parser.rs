@@ -1081,6 +1081,23 @@ impl<'a> Parser<'a> {
 
     fn parse_primary_expr(&mut self) {
         self.last_was_path = false;
+        // Check for label before block or loop
+        if (self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Lifetime) && self.peek_kind() == Some(SyntaxKind::Colon) {
+            // This is a label - consume it, then parse the labeled item (loop, while, for, block)
+            self.bump(); // label name
+            self.bump(); // colon
+            // Now parse the labeled expression
+            match self.current_kind() {
+                SyntaxKind::KwLoop => self.parse_loop_expr(),
+                SyntaxKind::KwWhile => self.parse_while_expr(),
+                SyntaxKind::KwFor => self.parse_for_expr(),
+                SyntaxKind::LBrace => self.parse_block(),
+                _ => {
+                    self.error("expected loop, while, for, or block after label");
+                }
+            }
+            return;
+        }
         match self.current_kind() {
             SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                 self.parse_path_expr();
@@ -1240,25 +1257,20 @@ impl<'a> Parser<'a> {
         }
         while self.current_kind() == SyntaxKind::ColonColon {
             self.bump(); // ::
-            // Check for Star (*) or LBrace ({) which terminates the path prefix in use statements
-            if matches!(self.current_kind(), SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate | SyntaxKind::Lt) {
-                break;
-            }
-            self.bump(); // ::
-            // Check for Star (*) or LBrace ({) which terminates the path prefix in use statements
-            if matches!(self.current_kind(), SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate | SyntaxKind::Lt) {
-                break;
-            }
-            self.bump(); // ::
+            // After :: we can have an identifier, generic args, or (for use statements) * or {
             match self.current_kind() {
-                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper => {
+                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                     self.bump();
                 }
                 SyntaxKind::Lt => {
                     self.parse_type_arg_list();
                 }
+                // For use statements, we stop before * or { (handled by caller)
+                SyntaxKind::Star | SyntaxKind::LBrace => {
+                    break;
+                }
                 _ => {
-                    self.error("expected identifier after '::'");
+                    self.error("expected identifier, '<', '*', or '{' after '::'");
                     break;
                 }
             }
@@ -1290,8 +1302,19 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
+    fn parse_label(&mut self) -> bool {
+        if (self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Lifetime) && self.peek_kind() == Some(SyntaxKind::Colon) {
+            self.bump(); // label name
+            self.bump(); // colon
+            true
+        } else {
+            false
+        }
+    }
+
     fn parse_while_expr(&mut self) {
         self.start_node(SyntaxKind::WhileExpr);
+        self.parse_label();
         self.bump(); // while
         self.suppress_struct_lit = true;
         if self.current_kind() == SyntaxKind::KwLet {
@@ -1307,17 +1330,9 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    #[allow(dead_code)]
-    fn parse_labeled_expr(&mut self) {
-        self.bump();
-        if self.current_kind() == SyntaxKind::Colon {
-            self.bump();
-        }
-        self.parse_expr();
-    }
-
     fn parse_loop_expr(&mut self) {
         self.start_node(SyntaxKind::LoopExpr);
+        self.parse_label();
         self.bump(); // loop
         if self.current_kind() == SyntaxKind::LBrace {
             self.parse_block();
@@ -1329,6 +1344,7 @@ impl<'a> Parser<'a> {
 
     fn parse_for_expr(&mut self) {
         self.start_node(SyntaxKind::ForExpr);
+        self.parse_label();
         self.bump(); // for
         self.suppress_struct_lit = true;
         self.parse_pat();
@@ -1378,8 +1394,8 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::MatchArm);
         self.parse_pat();
         if self.current_kind() == SyntaxKind::KwIf {
-            self.bump();
-            self.parse_expr();
+            self.bump(); // if
+            self.parse_expr(); // guard expression
         }
         self.expect(SyntaxKind::FatArrow);
         if self.current_kind() == SyntaxKind::LBrace {
@@ -1537,12 +1553,13 @@ impl<'a> Parser<'a> {
             | SyntaxKind::KwFalse => {
                 self.start_node(SyntaxKind::PatLit);
                 self.bump();
-                // Check for range pattern: 0..10
+                // Check for range pattern: 0..10 or 0..=10
                 if matches!(
                     self.current_kind(),
                     SyntaxKind::DotDot | SyntaxKind::DotDotEq
                 ) {
                     self.bump(); // .. or ..=
+                    // Parse the end pattern (could be literal, path, or wildcard)
                     if !matches!(
                         self.current_kind(),
                         SyntaxKind::FatArrow | SyntaxKind::Comma | SyntaxKind::RBrace

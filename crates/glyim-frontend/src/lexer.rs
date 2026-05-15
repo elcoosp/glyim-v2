@@ -103,77 +103,90 @@ impl<'a> Lexer<'a> {
                     ));
                 }
                 '\'' => {
-                    self.lex_char();
-                    let text = &self.source[start..self.pos];
-                    tokens.push(Token::new(
-                        SyntaxKind::CharLit,
-                        self.span(start, self.pos),
-                        text,
-                    ));
+                    // Check for lifetime: 'identifier: (no closing quote before colon)
+                    let saved_pos = self.pos;
+                    // Peek ahead to see if it looks like a lifetime
+                    self.pos += 1; // temporarily consume the quote
+                    let mut is_lifetime = false;
+                    let ident_start = self.pos;
+                    // Read identifier
+                    while let Some(ch) = self.peek() {
+                        if ch.is_alphanumeric() || ch == '_' {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    let has_ident = self.pos > ident_start;
+                    if has_ident {
+                        // Skip whitespace
+                        while let Some(ch) = self.peek() {
+                            if ch.is_whitespace() { self.advance(); } else { break; }
+                        }
+                        // Check for colon
+                        if self.peek() == Some(':') {
+                            is_lifetime = true;
+                        }
+                    }
+                    // Restore position
+                    self.pos = saved_pos;
+                    if is_lifetime {
+                        // Consume the quote and identifier
+                        self.advance(); // skip '
+                        while let Some(ch) = self.peek() {
+                            if ch.is_alphanumeric() || ch == '_' {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        let text = &self.source[start..self.pos];
+                        tokens.push(Token::new(
+                            SyntaxKind::Lifetime,
+                            self.span(start, self.pos),
+                            text,
+                        ));
+                    } else {
+                        self.lex_char();
+                        let text = &self.source[start..self.pos];
+                        tokens.push(Token::new(
+                            SyntaxKind::CharLit,
+                            self.span(start, self.pos),
+                            text,
+                        ));
+                    }
                 }
                 '(' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::LParen,
-                        self.span(start, self.pos),
-                        "(",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::LParen, self.span(start, self.pos), "("));
                 }
                 ')' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::RParen,
-                        self.span(start, self.pos),
-                        ")",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::RParen, self.span(start, self.pos), ")"));
                 }
                 '{' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::LBrace,
-                        self.span(start, self.pos),
-                        "{",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::LBrace, self.span(start, self.pos), "{"));
                 }
                 '}' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::RBrace,
-                        self.span(start, self.pos),
-                        "}",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::RBrace, self.span(start, self.pos), "}"));
                 }
                 '[' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::LBracket,
-                        self.span(start, self.pos),
-                        "[",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::LBracket, self.span(start, self.pos), "["));
                 }
                 ']' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::RBracket,
-                        self.span(start, self.pos),
-                        "]",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::RBracket, self.span(start, self.pos), "]"));
                 }
                 ',' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Comma,
-                        self.span(start, self.pos),
-                        ",",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Comma, self.span(start, self.pos), ","));
                 }
                 ';' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Semicolon,
-                        self.span(start, self.pos),
-                        ";",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Semicolon, self.span(start, self.pos), ";"));
                 }
                 '.' => {
                     let kind = self.lex_dot();
@@ -187,99 +200,51 @@ impl<'a> Lexer<'a> {
                 }
                 '+' => {
                     let k = self.lex_plus();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '-' => {
                     let k = self.lex_minus();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '*' => {
                     let k = self.lex_star();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '/' => {
                     let k = self.lex_slash();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '%' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Percent,
-                        self.span(start, self.pos),
-                        "%",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Percent, self.span(start, self.pos), "%"));
                 }
                 '=' => {
                     let k = self.lex_eq();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '!' => {
                     let k = self.lex_bang();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '<' => {
                     let k = self.lex_lt();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '>' => {
                     let k = self.lex_gt();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '&' => {
                     let k = self.lex_and();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '|' => {
                     let k = self.lex_or();
-                    tokens.push(Token::new(
-                        k,
-                        self.span(start, self.pos),
-                        &self.source[start..self.pos],
-                    ));
+                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
                 }
                 '^' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Caret,
-                        self.span(start, self.pos),
-                        "^",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Caret, self.span(start, self.pos), "^"));
                 }
                 '@' => {
                     self.advance();
@@ -287,35 +252,19 @@ impl<'a> Lexer<'a> {
                 }
                 '#' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Hash,
-                        self.span(start, self.pos),
-                        "#",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Hash, self.span(start, self.pos), "#"));
                 }
                 '$' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Dollar,
-                        self.span(start, self.pos),
-                        "$",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Dollar, self.span(start, self.pos), "$"));
                 }
                 '~' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Tilde,
-                        self.span(start, self.pos),
-                        "~",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Tilde, self.span(start, self.pos), "~"));
                 }
                 '?' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Question,
-                        self.span(start, self.pos),
-                        "?",
-                    ));
+                    tokens.push(Token::new(SyntaxKind::Question, self.span(start, self.pos), "?"));
                 }
                 _ => {
                     self.advance();
@@ -461,14 +410,13 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Exponent part with validation (F7)
+        // Exponent part with validation
         if self.peek() == Some('e') || self.peek() == Some('E') {
             let exp_start = self.pos;
             self.advance();
             if self.peek() == Some('+') || self.peek() == Some('-') {
                 self.advance();
             }
-            let _digits_start = self.pos;
             let mut has_exponent_digits = false;
             while let Some(ch) = self.peek() {
                 if ch.is_ascii_digit() || ch == '_' {
@@ -485,15 +433,8 @@ impl<'a> Lexer<'a> {
                     self.span(exp_start, exp_end),
                     format!("incomplete float exponent: '{}'", exp_text),
                 ));
-                // Backtrack: the 'e' (and optional sign) are not part of the number token.
-                // They will be lexed as separate tokens in the next iteration.
-                // Return early to avoid lex_number_suffix consuming the backtracked chars.
                 self.pos = exp_start;
-                return if is_float {
-                    SyntaxKind::FloatLit
-                } else {
-                    SyntaxKind::IntLit
-                };
+                return if is_float { SyntaxKind::FloatLit } else { SyntaxKind::IntLit };
             } else {
                 is_float = true;
             }
@@ -595,6 +536,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Colon
         }
     }
+
     fn lex_plus(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -604,6 +546,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Plus
         }
     }
+
     fn lex_minus(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('>') {
@@ -616,6 +559,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Minus
         }
     }
+
     fn lex_star(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -625,6 +569,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Star
         }
     }
+
     fn lex_slash(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -634,6 +579,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Slash
         }
     }
+
     fn lex_eq(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -646,6 +592,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Eq
         }
     }
+
     fn lex_bang(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -655,6 +602,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Bang
         }
     }
+
     fn lex_lt(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -667,6 +615,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Lt
         }
     }
+
     fn lex_gt(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('=') {
@@ -679,6 +628,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Gt
         }
     }
+
     fn lex_and(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('&') {
@@ -688,6 +638,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::And
         }
     }
+
     fn lex_or(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('|') {

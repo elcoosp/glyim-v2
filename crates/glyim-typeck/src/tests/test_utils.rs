@@ -1,6 +1,7 @@
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::CrateId;
+use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::Interner;
+use glyim_core::primitives::Visibility;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_span::Span;
 use glyim_type::TyCtxMut;
@@ -17,6 +18,8 @@ pub fn empty_def_map() -> CrateDefMap {
         },
         origin: ModuleOrigin::CrateRoot,
         span: Span::DUMMY,
+        def_id: LocalDefId::from_raw(0),
+        visibility: Visibility::Public,
     });
     CrateDefMap {
         root,

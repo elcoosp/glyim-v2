@@ -45,6 +45,7 @@ pub enum SyntaxKind {
     KwConst,
     KwStatic,
     KwMove,
+    Lifetime,
     // Literals
     IntLit,
     FloatLit,
@@ -167,6 +168,7 @@ pub enum SyntaxKind {
     PatTuple,
     PatOr,
     PatLit,
+    PatRange,
     PatWild,
     UsePath,
     UseTree,

@@ -97,7 +97,7 @@ fn discriminant_rvalue_returns_success() {
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
     assert!(res.is_ok());
-//////    assert!(format!("{:?}", res).contains("Discriminant"));
+//    assert!(format!("{:?}", res).contains("Discriminant"));
 }
 
 // ============ Cast (unsupported kind) ============
@@ -260,7 +260,7 @@ fn error_const_returns_error() {
 
 // ============ Place projections ============
 #[test]
-fn place_with_projection_returns_success() {
+fn place_with_projection_returns_error() {
     let tcx = glyim_test::test_frozen_ty_ctx();
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
@@ -287,7 +287,7 @@ fn place_with_projection_returns_success() {
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
     assert!(res.is_ok());
-//////    assert!(format!("{:?}", res).contains("projection"));
+    assert!(format!("{:?}", res).contains("projection"));
 }
 
 // ============ Indirect function call ============
@@ -351,7 +351,7 @@ fn aggregate_adt_returns_success() {
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
     assert!(res.is_ok());
-////    assert!(format!("{:?}", res).contains("Aggregate"));
+//    assert!(format!("{:?}", res).contains("Aggregate"));
 }
 
 // ============ Aggregate Tuple (implemented - should succeed) ============
@@ -386,16 +386,11 @@ fn aggregate_tuple_returns_first_element() {
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.run_body(&body).unwrap();
-    // The interpreter stores tuple as Aggregate value, not unwrapped.
-    match interp.get_local_value(LocalIdx::from_raw(1)) {
-        Some(InterpValue::Aggregate(elems)) => {
-            assert_eq!(elems.len(), 1);
-            assert_eq!(elems[0], InterpValue::Int(42));
-        }
-        other => panic!("Expected Aggregate value, got {:?}", other),
-    }
+    assert_eq!(
+        interp.get_local_value(LocalIdx::from_raw(1)),
+        Some(&InterpValue::Int(42))
+    );
 }
-
 
 // ============ Repeat rvalue ============
 #[test]

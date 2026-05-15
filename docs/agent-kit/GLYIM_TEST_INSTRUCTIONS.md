@@ -14,7 +14,7 @@ crates/glyim-type/
 │   ├── lib.rs          ← add: mod tests;
 │   ├── context.rs
 │   └── tests/          ← YOUR TESTS GO HERE
-│       ├── mod.rs      ← add: mod interning; mod freeze; mod substitution;
+│       ├── mod.rs      ← cumulative: append mod declarations, DO NOT overwrite
 │       ├── interning.rs
 │       ├── freeze.rs
 │       └── substitution.rs
@@ -30,12 +30,17 @@ In `crates/glyim-type/src/lib.rs`, add:
 mod tests;
 ```
 
-In `crates/glyim-type/src/tests/mod.rs`, declare submodules:
+In `crates/glyim-type/src/tests/mod.rs`, you declare each test module as a Rust submodule.  
+**This file is cumulative — it is shared across multiple work sessions. Before writing to it, always read the existing file first.** Then **append** any new `mod` declarations you need. **Never overwrite or replace** the whole file.
+
+For example, a `mod.rs` that already contains tests might look like this after you add a new `solving` module:
 
 ```rust
 mod interning;
 mod freeze;
 mod substitution;
+// ---- existing modules above, append new modules below ----
+mod solving;    // your new test module
 ```
 
 Each test file is a normal Rust file with `#[test]` functions. They have full access to `pub(crate)` items.
@@ -420,11 +425,12 @@ tests/
 
 ## TDD Workflow for Agents
 
-1. **Create test module structure** in `src/tests/`
-2. **Write ALL test cases** from your stream brief BEFORE implementing
-3. **Verify tests compile** with `cargo check -p <crate>` (they will fail at runtime)
-4. **Implement** until all tests pass
-5. **Run full verification:**
+1. **Check existing `mod.rs`** – Read `src/tests/mod.rs` first. Note which modules are already declared.
+2. **Create test module structure** in `src/tests/` — only add your new test file(s) and append the corresponding `mod` declaration to `mod.rs`. Never delete or rewrite the existing lines.
+3. **Write ALL test cases** from your stream brief BEFORE implementing.
+4. **Verify tests compile** with `cargo check -p <crate>` (they will fail at runtime).
+5. **Implement** until all tests pass.
+6. **Run full verification:**
    ```bash
    cargo test -p <crate>
    cargo clippy -p <crate> -- -D warnings
@@ -444,3 +450,4 @@ tests/
 | Stringly-typed errors | `GlyimDiagnostic` constructors |
 | Writing tests after implementation | Write ALL tests first (TDD) |
 | `InferenceTable::new_ty_var()` without `&mut TyCtxMut` | Always pass `&mut TyCtxMut` |
+| Overwriting `tests/mod.rs` or assuming it’s empty | Read the file first, then only append your new `mod` line |

@@ -1,20 +1,26 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
 expression: tree
 ---
 SourceFile@0..543
-  KwUse@0..3 "use"
-  Ident@3..6 "std"
-  ColonColon@6..8 "::"
-  Ident@8..11 "fmt"
-  ColonColon@11..13 "::"
-  LBrace@13..14 "{"
-  Ident@14..21 "Display"
-  Comma@21..22 ","
-  Ident@22..27 "Debug"
-  RBrace@27..28 "}"
-  Semicolon@28..29 ";"
+  UseDecl@0..29
+    KwUse@0..3 "use"
+    UseTree@3..28
+      UsePath@3..13
+        Ident@3..6 "std"
+        ColonColon@6..8 "::"
+        Ident@8..11 "fmt"
+        ColonColon@11..13 "::"
+      LBrace@13..14 "{"
+      UseTree@14..21
+        UsePath@14..21
+          Ident@14..21 "Display"
+      Comma@21..22 ","
+      UseTree@22..27
+        UsePath@22..27
+          Ident@22..27 "Debug"
+      RBrace@27..28 "}"
+    Semicolon@28..29 ";"
   KwPub@29..32 "pub"
   TraitDef@32..88
     KwTrait@32..37 "trait"
