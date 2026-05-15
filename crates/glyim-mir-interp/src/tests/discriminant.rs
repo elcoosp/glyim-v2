@@ -101,5 +101,5 @@ fn test_t04_match_on_enum_discriminant() {
             .unwrap()
             .clone(),
     );
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }

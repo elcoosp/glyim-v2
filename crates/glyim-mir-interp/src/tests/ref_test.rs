@@ -43,5 +43,5 @@ fn test_t07_ref_take_address_of_local() {
             .unwrap()
             .clone(),
     );
-    assert!(result.is_err()); // Ref not yet implemented
+    assert!(result.is_ok());
 }

@@ -44,5 +44,5 @@ fn test_t05_cast_int_to_float() {
             .clone(),
     );
     // Cast not implemented yet, expect error
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }

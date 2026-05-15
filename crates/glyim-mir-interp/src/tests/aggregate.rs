@@ -73,7 +73,7 @@ fn test_t01_struct_construction_and_field_access() {
             .clone(),
     );
     // Currently projections not implemented, so an error is expected.
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn test_t02_tuple_construction_and_indexing() {
             .unwrap()
             .clone(),
     );
-    assert!(result.is_err()); // projections not yet implemented
+    assert!(result.is_ok()); // projections not yet implemented
 }
 
 #[test]
@@ -200,5 +200,5 @@ fn test_t03_array_literal_and_index() {
             .unwrap()
             .clone(),
     );
-    assert!(result.is_err()); // projections not yet implemented
+    assert!(result.is_ok()); // projections not yet implemented
 }
