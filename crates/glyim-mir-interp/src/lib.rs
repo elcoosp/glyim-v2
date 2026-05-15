@@ -11,8 +11,8 @@ pub use interp_value::InterpValue;
 
 pub struct Interpreter<'tcx> {
     tcx: &'tcx TyCtx,
-    step_limit: usize,
-    recursion_limit: usize,
+    pub step_limit: usize,
+    pub recursion_limit: usize,
     step_count: usize,
     recursion_depth: usize,
     function_table: HashMap<DefId, Body>,

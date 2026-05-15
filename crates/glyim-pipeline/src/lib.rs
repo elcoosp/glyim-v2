@@ -18,6 +18,7 @@ impl Pipeline {
         db: &mut Database,
         path: &Path,
         backend: &dyn CodegenBackend,
+        output_path: &Path,
     ) -> CompResult<()> {
         let mut sink = DiagSink::new();
 
@@ -97,7 +98,7 @@ impl Pipeline {
         }; // ty_ctx_guard dropped here
 
         // Phase 7: Codegen
-        backend.generate(&optimized_bodies, Path::new("output.o"))?;
+        backend.generate(&optimized_bodies, output_path)?;
 
         Ok(())
     }

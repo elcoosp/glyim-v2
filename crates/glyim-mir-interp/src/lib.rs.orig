@@ -1,0 +1,248 @@
+use glyim_core::{BinOp, DefId};
+use glyim_mir::*;
+use glyim_type::TyCtx;
+use std::collections::HashMap;
+
+mod interp_error;
+mod interp_value;
+
+pub use interp_error::InterpError;
+pub use interp_value::InterpValue;
+
+pub type InterpResult<T> = Result<T, InterpError>;
+
+pub struct Interpreter<'tcx> {
+    tcx: &'tcx TyCtx,
+    step_limit: usize,
+    recursion_limit: usize,
+    step_count: usize,
+    recursion_depth: usize,
+    function_table: HashMap<DefId, Body>,
+    current_body: Option<Body>,
+    current_bb: BasicBlockIdx,
+    locals: Vec<Option<InterpValue>>,
+    local_decls: Vec<LocalDecl>,
+    call_stack: Vec<CallFrame>,
+}
+
+struct CallFrame {
+    body: Body,
+    bb: BasicBlockIdx,
+    locals: Vec<Option<InterpValue>>,
+    return_place: Place,
+    target_bb: BasicBlockIdx,
+}
+
+impl<'tcx> Interpreter<'tcx> {
+    pub fn new(tcx: &'tcx TyCtx) -> Self {
+        Interpreter {
+            tcx,
+            step_limit: 1_000_000,
+            recursion_limit: 256,
+            step_count: 0,
+            recursion_depth: 0,
+            function_table: HashMap::new(),
+            current_body: None,
+            current_bb: BasicBlockIdx::from_raw(0),
+            locals: Vec::new(),
+            local_decls: Vec::new(),
+            call_stack: Vec::new(),
+        }
+    }
+
+    pub fn add_function(&mut self, def_id: DefId, body: Body) {
+        self.function_table.insert(def_id, body);
+    }
+
+    pub fn step_limit(&self) -> usize {
+        self.step_limit
+    }
+
+    pub fn recursion_limit(&self) -> usize {
+        self.recursion_limit
+    }
+
+    pub fn run_body(&mut self, body: &Body) -> InterpResult<()> {
+        self.current_body = Some(body.clone());
+        self.current_bb = BasicBlockIdx::from_raw(0);
+        self.locals = vec![None; body.locals.len()];
+        self.local_decls = body.locals.iter().cloned().collect();
+        self.call_stack.clear();
+        self.step_count = 0;
+        self.recursion_depth = 1;
+        self.run_current_function()
+    }
+
+    fn run_current_function(&mut self) -> InterpResult<()> {
+        let mut body = self.current_body.take().unwrap();
+        let mut bb_idx = self.current_bb;
+
+        loop {
+            self.step_count += 1;
+            if self.step_count > self.step_limit {
+                self.current_body = Some(body);
+                self.current_bb = bb_idx;
+                return Err(InterpError::TimedOut);
+            }
+
+            let terminator_kind = body.basic_blocks[bb_idx].terminator.kind.clone();
+
+            for stmt in &body.basic_blocks[bb_idx].statements {
+                self.execute_statement(stmt)?;
+            }
+
+            match terminator_kind {
+                TerminatorKind::Goto { target } => {
+                    bb_idx = target;
+                }
+                TerminatorKind::Return => {
+                    if let Some(frame) = self.call_stack.pop() {
+                        let ret_val = self.read_place(&Place::new(LocalIdx::from_raw(0)))?;
+                        let caller_body = frame.body;
+                        bb_idx = frame.target_bb;
+                        self.locals = frame.locals;
+                        self.local_decls = caller_body.locals.iter().cloned().collect();
+                        self.write_place(&frame.return_place, ret_val)?;
+                        self.recursion_depth -= 1;
+                        body = caller_body;
+                        continue;
+                    } else {
+                        self.current_body = Some(body);
+                        self.current_bb = bb_idx;
+                        return Ok(());
+                    }
+                }
+                TerminatorKind::Unreachable => {
+                    return Err(InterpError::Panic("reached unreachable".to_string()));
+                }
+                TerminatorKind::Call { func, args, destination, target, cleanup: _ } => {
+                    let callee_id = match func {
+                        Operand::Constant(c) => match &c.kind {
+                            MirConstKind::Fn(def_id, _) => DefId::new(
+                                glyim_core::def_id::CrateId::from_raw(0),
+                                glyim_core::def_id::LocalDefId::from_raw(def_id.to_raw())
+                            ),
+                            _ => return Err(InterpError::Panic("callee must be function".to_string())),
+                        },
+                        _ => return Err(InterpError::Panic("indirect calls not implemented".to_string())),
+                    };
+                    let callee_body = self.function_table.get(&callee_id).cloned()
+                        .ok_or_else(|| InterpError::Panic(format!("function not found: {:?}", callee_id)))?;
+
+                    let mut arg_values = Vec::new();
+                    for arg_op in &args {
+                        arg_values.push(self.eval_operand(arg_op)?);
+                    }
+
+                    self.recursion_depth += 1;
+                    if self.recursion_depth > self.recursion_limit {
+                        return Err(InterpError::StackOverflow);
+                    }
+
+                    let mut callee_locals = vec![None; callee_body.locals.len()];
+                    for (i, val) in arg_values.into_iter().enumerate() {
+                        callee_locals[i + 1] = Some(val);
+                    }
+
+                    let next_bb = target.unwrap_or_else(|| BasicBlockIdx::from_raw((bb_idx.index() + 1) as u32));
+
+                    let caller_frame = CallFrame {
+                        body,
+                        bb: next_bb,
+                        locals: std::mem::take(&mut self.locals),
+                        return_place: destination,
+                        target_bb: next_bb,
+                    };
+
+                    self.call_stack.push(caller_frame);
+                    self.local_decls = callee_body.locals.iter().cloned().collect();
+                    self.locals = callee_locals;
+                    body = callee_body;
+                    bb_idx = BasicBlockIdx::from_raw(0);
+                }
+                _ => {
+                    bb_idx = BasicBlockIdx::from_raw(0);
+                }
+            }
+        }
+    }
+
+    fn execute_statement(&mut self, stmt: &Statement) -> InterpResult<()> {
+        match &stmt.kind {
+            StatementKind::Assign(place, rvalue) => {
+                let val = self.eval_rvalue(rvalue)?;
+                self.write_place(place, val)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn eval_rvalue(&self, rvalue: &Rvalue) -> InterpResult<InterpValue> {
+        match rvalue {
+            Rvalue::Use(operand) => self.eval_operand(operand),
+            Rvalue::BinaryOp(op, operands) => {
+                let (left, right) = operands.as_ref();
+                let l = self.eval_operand(left)?;
+                let r = self.eval_operand(right)?;
+                match (l, r) {
+                    (InterpValue::Int(lv), InterpValue::Int(rv)) => {
+                        let result = match op {
+                            BinOp::Add => lv.wrapping_add(rv),
+                            BinOp::Sub => lv.wrapping_sub(rv),
+                            BinOp::Mul => lv.wrapping_mul(rv),
+                            _ => lv,
+                        };
+                        Ok(InterpValue::Int(result))
+                    }
+                    _ => Ok(InterpValue::Int(0)),
+                }
+            }
+            _ => Ok(InterpValue::Int(0)),
+        }
+    }
+
+    fn eval_operand(&self, operand: &Operand) -> InterpResult<InterpValue> {
+        match operand {
+            Operand::Constant(c) => match &c.kind {
+                MirConstKind::Int(v) => Ok(InterpValue::Int(*v)),
+                MirConstKind::Bool(b) => Ok(InterpValue::Bool(*b)),
+                MirConstKind::Unit => Ok(InterpValue::Unit),
+                _ => Ok(InterpValue::Int(0)),
+            },
+            Operand::Copy(place) | Operand::Move(place) => self.read_place(place),
+        }
+    }
+
+    fn read_place(&self, place: &Place) -> InterpResult<InterpValue> {
+        let idx = place.local.index();
+        self.locals.get(idx).and_then(|opt| opt.as_ref()).cloned()
+            .ok_or_else(|| InterpError::Panic(format!("uninitialized local {}", idx)))
+    }
+
+    fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
+        let idx = place.local.index();
+        if idx < self.locals.len() {
+            self.locals[idx] = Some(val);
+            Ok(())
+        } else {
+            Err(InterpError::Panic(format!("invalid local {}", idx)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_type::TyCtxMut;
+    use glyim_core::interner::Interner;
+
+    #[test]
+    fn test_interpreter_creation() {
+        let interner = Interner::new();
+        let ctx_mut = TyCtxMut::new(interner);
+        let ctx = ctx_mut.freeze();
+        let interp = Interpreter::new(&ctx);
+        assert_eq!(interp.step_limit(), 1_000_000);
+    }
+}

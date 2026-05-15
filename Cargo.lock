@@ -496,6 +496,7 @@ dependencies = [
  "glyim-test",
  "glyim-type",
  "inkwell",
+ "tracing",
 ]
 
 [[package]]

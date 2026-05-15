@@ -31,7 +31,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         .try_init()
         .ok();
 
-    let _output = args.output.unwrap_or_else(|| {
+    let output_path = args.output.unwrap_or_else(|| {
         let mut out = args.input.clone();
         out.set_extension("o");
         out
@@ -62,7 +62,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         ))
     };
 
-    Pipeline::compile_file(&mut db, &args.input, &*backend)?;
+    Pipeline::compile_file(&mut db, &args.input, &*backend, &output_path)?;
     Ok(())
 }
 

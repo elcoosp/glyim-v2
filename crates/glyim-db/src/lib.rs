@@ -22,6 +22,13 @@ impl Database {
     /// Obtain a mutable reference to the interner.
     /// This should only be called during HIR lowering when no other
     /// references to the interner are held.
+    /// # Safety
+    /// This method returns a mutable reference to the interner.
+    /// Callers MUST ensure that no other references to any Name
+    /// (from this interner) exist when calling this method,
+    /// as mutation will invalidate all existing Name values.
+    /// This should only be called during HIR lowering before
+    /// any Name values are stored elsewhere.
     pub fn intern_mut(&mut self) -> &mut Interner {
         &mut self.interner
     }

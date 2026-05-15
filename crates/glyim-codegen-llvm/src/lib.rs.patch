@@ -1,0 +1,96 @@
+--- a/crates/glyim-codegen-llvm/src/lib.rs
++++ b/crates/glyim-codegen-llvm/src/lib.rs
+@@ -1,6 +1,7 @@
+ use glyim_codegen::CodegenBackend;
+ use glyim_diag::{CompResult, GlyimDiagnostic};
+ use glyim_mir::{BasicBlockIdx, Body, Terminator, TerminatorKind};
++use glyim_type::TyKind;
+ use inkwell::builder::Builder;
+ use inkwell::context::Context;
+ use inkwell::module::Module;
+@@ -86,12 +87,24 @@ impl LlvmBackend {
+     ) -> CompResult<()> {
+         let fn_name = format!(
+             "func_{}_{}",
+-            body.owner.krate.to_raw(),
+-            body.owner.local_id.to_raw()
++            body.owner.krate().to_raw(),
++            body.owner.local_id().to_raw()
+         );
+
+-        let void_type = context.void_type();
+-        let fn_type = void_type.fn_type(&[], false);
++        // Get return type from body
++        let ret_ty = body.return_ty;
++        let llvm_ret_ty = match self.lower_type(context, ret_ty, body) {
++            Some(ty) => ty,
++            None => context.void_type(),
++        };
++
++        // Build parameter types from locals (skip return place at index 0)
++        let param_tys: Vec<_> = body.args().iter().filter_map(|arg| {
++            self.lower_type(context, arg.ty, body)
++        }).collect();
++
++        let fn_type = llvm_ret_ty.fn_type(&param_tys, false);
++
+         let function = module.add_function(&fn_name, fn_type, None);
+         let entry_block = context.append_basic_block(function, "entry");
+         let builder = context.create_builder();
+@@ -124,6 +137,13 @@ impl LlvmBackend {
+             }
+         }
+         Ok(())
++    }
++
++    fn lower_type(&self, context: &Context, ty: glyim_type::Ty, body: &Body) -> Option<inkwell::types::BasicTypeEnum> {
++        match ty {
++            _ => Some(context.i32_type().as_basic_type_enum()),
++            // This is a stub; proper type lowering would be implemented here
++        }
+     }
+
+     fn lower_terminator<'ctx>(
+@@ -145,19 +165,26 @@ impl LlvmBackend {
+                 builder.build_unreachable().map_err(|e| {
+                     vec![GlyimDiagnostic::internal_error(format!(
+                         "Failed to build unreachable: {:?}",
+                         e
+                     ))]
+                 })?;
+             }
+-            TerminatorKind::SwitchInt {
+-                discr: _,
+-                switch_ty: _,
+-                targets,
+-            } => {
++            TerminatorKind::SwitchInt { discr, switch_ty: _, targets } => {
++                // Get the actual discriminator value
++                let discr_val = match &discr {
++                    Operand::Constant(c) => c.kind.clone(),
++                    Operand::Copy(place) | Operand::Move(place) => {
++                        // Would need to evaluate place; for now use 0 and emit warning
++                        tracing::warn!("SwitchInt with non-constant discriminator");
++                        MirConstKind::Int(0)
++                    }
++                };
++                let discr_const = match discr_val {
++                    MirConstKind::Int(v) => context.i32_type().const_int(v as u64, false),
++                    _ => context.i32_type().const_int(0, false),
++                };
+                 let otherwise_bb = bb_map.get(&targets.otherwise()).unwrap();
+-                let i32_type = context.i32_type();
+-                let default_case = i32_type.const_int(0, false);
+
+                 let mut cases = Vec::new();
+                 for (value, target_bb) in targets.iter() {
+@@ -165,7 +192,7 @@ impl LlvmBackend {
+                     cases.push((i32_type.const_int(value as u64, false), *target_block));
+                 }
+
+                 builder
+-                    .build_switch(default_case, *otherwise_bb, &cases)
++                    .build_switch(discr_const, *otherwise_bb, &cases)
+                     .map_err(|e| {
+                         vec![GlyimDiagnostic::internal_error(format!(
+                             "Failed to build switch: {:?}",
