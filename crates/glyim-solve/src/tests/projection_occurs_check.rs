@@ -11,7 +11,6 @@ fn occurs_check_cycle() {
     let _infer = InferenceTable::new();
 
     let a_name = ctx.resolver().intern("A");
-    let _b_name = ctx.resolver().intern("B");
     let trait_id = TraitDefId::from_raw(0);
 
     // Create a projection that references itself (cycle)

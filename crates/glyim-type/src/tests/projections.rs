@@ -1,15 +1,11 @@
 //! Tests for associated type projections.
 use glyim_core::def_id::TraitDefId;
 use glyim_core::primitives::{Abi, IntTy, Mutability, Safety};
+
 use crate::{
     FnSig, GenericArg, InferVar, ParamTy, PrintTy, ProjectionTy, Region, TraitRef, Ty, TyCtxMut,
     TyKind, TyVar, TypeFlags,
 };
-
-    FnSig, GenericArg, InferVar, ParamTy, PrintTy, ProjectionTy, Region, TraitRef, Ty, TyCtxMut,
-    TyKind, TyVar, TypeFlags,
-};
-use glyim_core::primitives::{Abi, IntTy, Mutability, Safety};
 
 use super::test_helpers::with_fresh_ty_ctx;
 
@@ -167,7 +163,7 @@ fn projection_different_trait_ids_unequal() {
         let substs = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
         let tr1 = TraitRef {
             def_id: TraitDefId::from_raw(0),
-            substs: substs,
+            substs,
         };
         let substs2 = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
         let tr2 = TraitRef {
