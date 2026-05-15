@@ -22,7 +22,7 @@ struct CheckCtx<'a, 'b, 'c, 'd, 'e> {
     local_var_types: std::collections::HashMap<Name, Ty>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
 pub(crate) fn check_function_body(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -77,25 +77,68 @@ pub(crate) fn check_function_body(
         local_var_types,
     };
 
-    // Process all body expressions: non-final become statements, final becomes tail
     let mut thir_stmts = Vec::new();
-    let mut _tail_expr: Option<thir::Expr> = None;
+    let mut _tail_expr_ty: Option<Ty> = None;
     let len = body.exprs.len();
-    for (pos, (expr_id, _expr)) in body.exprs.iter_enumerated().enumerate() {
-        let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
-        if pos == len - 1 {
-            // Tail expression: unify with return type only if not unit
-            if return_ty != Ty::UNIT {
-                let span = body.span;
-                if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
-                    chk.diagnostics.extend(diags);
+    for (pos, (expr_id, expr)) in body.exprs.iter_enumerated().enumerate() {
+        let is_tail = pos == len - 1;
+
+        match expr {
+            Expr::Assign { lhs, rhs } => {
+                let (lhs_expr, _lhs_ty) = check_expr(&mut chk, body, &local_var_map, *lhs);
+                let (rhs_expr, _rhs_ty) = check_expr(&mut chk, body, &local_var_map, *rhs);
+                thir_stmts.push(thir::Stmt::Assign {
+                    lhs: lhs_expr,
+                    rhs: rhs_expr,
+                    span: Span::DUMMY,
+                });
+                if is_tail {
+                    _tail_expr_ty = Some(Ty::UNIT);
                 }
             }
-            _tail_expr = Some(thir_expr);
-        } else {
-            thir_stmts.push(crate::thir::Stmt::Expr { expr: thir_expr });
+            Expr::Return { value } => {
+                let value_opt = if let Some(val_id) = value {
+                    let (val_expr, _val_ty) = check_expr(&mut chk, body, &local_var_map, *val_id);
+                    Some(val_expr)
+                } else {
+                    None
+                };
+                thir_stmts.push(thir::Stmt::Return {
+                    value: value_opt,
+                    span: Span::DUMMY,
+                });
+            }
+            Expr::Break { .. } => {
+                let (thir_br, _ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
+                thir_stmts.push(thir::Stmt::Expr { expr: thir_br });
+                if is_tail {
+                    _tail_expr_ty = Some(Ty::NEVER);
+                }
+            }
+            Expr::Continue => {
+                let (thir_cont, _ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
+                thir_stmts.push(thir::Stmt::Expr { expr: thir_cont });
+                if is_tail {
+                    _tail_expr_ty = Some(Ty::NEVER);
+                }
+            }
+            _ => {
+                let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
+                if is_tail {
+                    if return_ty != Ty::UNIT {
+                        let span = body.span;
+                        if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
+                            chk.diagnostics.extend(diags);
+                        }
+                    }
+                    _tail_expr_ty = Some(expr_ty);
+                } else {
+                    thir_stmts.push(crate::thir::Stmt::Expr { expr: thir_expr });
+                }
+            }
         }
     }
+    let _ = _tail_expr_ty;
 
     thir::Body {
         owner: glyim_core::def_id::DefId::new(CrateId::from_raw(0), local_def_id),
@@ -104,6 +147,11 @@ pub(crate) fn check_function_body(
         stmts: thir_stmts,
         span: body.span,
     }
+}
+
+fn fresh_infer_ty(chk: &mut CheckCtx) -> Ty {
+    let var = chk.infer.new_ty_var(chk.ctx);
+    chk.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
 }
 
 fn check_expr(
@@ -126,7 +174,6 @@ fn check_expr(
         }
         Expr::Path(path) => {
             if let Some(name) = path.as_name() {
-                // First check local_var_types (for let bindings)
                 if let Some(&ty) = chk.local_var_types.get(&name) {
                     let local_id = local_var_map
                         .get(&name)
@@ -139,12 +186,10 @@ fn check_expr(
                     };
                     return (thir_expr, ty);
                 }
-                // Then check parameters
                 if let Some(&local_id) = local_var_map.get(&name) {
                     let idx = local_id.to_raw() as usize;
                     let param_ty = if idx < body.params.len() {
-                        let var = chk.infer.new_ty_var(chk.ctx);
-                        chk.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+                        fresh_infer_ty(chk)
                     } else {
                         chk.ctx.mk_ty(TyKind::Error)
                     };
@@ -217,14 +262,12 @@ fn check_expr(
             else_branch,
         } => {
             let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
-            // Condition must be bool
             if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, Span::DUMMY) {
                 chk.diagnostics.extend(diags);
             }
             let (then_expr, then_ty) = check_expr(chk, body, local_var_map, *then_branch);
             if let Some(else_id) = else_branch {
                 let (_else_expr, else_ty) = check_expr(chk, body, local_var_map, *else_id);
-                // Unify then and else branches
                 if let Err(diags) = chk.infer.unify(chk.ctx, then_ty, else_ty, Span::DUMMY) {
                     chk.diagnostics.extend(diags);
                 }
@@ -282,6 +325,271 @@ fn check_expr(
                 (unit_expr, Ty::UNIT)
             }
         }
+        Expr::While {
+            cond,
+            body: body_id,
+        } => {
+            let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
+            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, Span::DUMMY) {
+                chk.diagnostics.extend(diags);
+            }
+            let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::While {
+                        cond: Box::new(cond_expr),
+                        body: Box::new(body_expr),
+                    },
+                    ty: Ty::UNIT,
+                    span: Span::DUMMY,
+                },
+                Ty::UNIT,
+            )
+        }
+        Expr::Loop { body: body_id } => {
+            let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Loop {
+                        body: Box::new(body_expr),
+                    },
+                    ty: Ty::NEVER,
+                    span: Span::DUMMY,
+                },
+                Ty::NEVER,
+            )
+        }
+        Expr::For {
+            pat: _,
+            iterable,
+            body: body_id,
+        } => {
+            // Ignore pattern for now, infer fresh type
+            let pat_ty = fresh_infer_ty(chk);
+            let (_iter_expr, _) = check_expr(chk, body, local_var_map, *iterable);
+            let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::For {
+                        pat: Box::new(thir::Pattern {
+                            kind: thir::PatternKind::Binding {
+                                name: glyim_core::interner::Interner::new().intern("for_pat"),
+                                mutability: Mutability::Not,
+                                subpattern: None,
+                            },
+                            ty: pat_ty,
+                            span: Span::DUMMY,
+                        }),
+                        iterable: Box::new(_iter_expr),
+                        body: Box::new(body_expr),
+                    },
+                    ty: Ty::UNIT,
+                    span: Span::DUMMY,
+                },
+                Ty::UNIT,
+            )
+        }
+        Expr::Match { scrutinee, arms } => {
+            let (scrut_expr, _) = check_expr(chk, body, local_var_map, *scrutinee);
+            let result_ty = fresh_infer_ty(chk);
+            let mut thir_arms = Vec::new();
+            for arm in arms {
+                let (arm_body_expr, arm_body_ty) = check_expr(chk, body, local_var_map, arm.body);
+                if let Err(diags) = chk
+                    .infer
+                    .unify(chk.ctx, arm_body_ty, result_ty, Span::DUMMY)
+                {
+                    chk.diagnostics.extend(diags);
+                }
+                thir_arms.push(thir::MatchArm {
+                    pat: thir::Pattern {
+                        kind: thir::PatternKind::Wild,
+                        ty: Ty::UNIT,
+                        span: Span::DUMMY,
+                    },
+                    guard: None,
+                    body: arm_body_expr,
+                });
+            }
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Match {
+                        scrutinee: Box::new(scrut_expr),
+                        arms: thir_arms,
+                    },
+                    ty: result_ty,
+                    span: Span::DUMMY,
+                },
+                result_ty,
+            )
+        }
+        Expr::Call { func, args } => {
+            let (func_expr, _) = check_expr(chk, body, local_var_map, *func);
+            let mut thir_args = Vec::new();
+            for &arg_id in args {
+                let (arg_expr, _) = check_expr(chk, body, local_var_map, arg_id);
+                thir_args.push(arg_expr);
+            }
+            let ret_ty = fresh_infer_ty(chk);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Call {
+                        func: Box::new(func_expr),
+                        args: thir_args,
+                    },
+                    ty: ret_ty,
+                    span: Span::DUMMY,
+                },
+                ret_ty,
+            )
+        }
+        Expr::MethodCall {
+            receiver,
+            method: _,
+            args,
+        } => {
+            tracing::warn!("STUB: method calls not implemented");
+            let (_recv_expr, _) = check_expr(chk, body, local_var_map, *receiver);
+            for &arg_id in args {
+                let _ = check_expr(chk, body, local_var_map, arg_id);
+            }
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Err,
+                    ty: Ty::ERROR,
+                    span: Span::DUMMY,
+                },
+                Ty::ERROR,
+            )
+        }
+        Expr::Field { receiver, field } => {
+            let (recv_expr, _) = check_expr(chk, body, local_var_map, *receiver);
+            let field_ty = fresh_infer_ty(chk);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Field {
+                        receiver: Box::new(recv_expr),
+                        field: *field,
+                        ty: field_ty,
+                    },
+                    ty: field_ty,
+                    span: Span::DUMMY,
+                },
+                field_ty,
+            )
+        }
+        Expr::Index { base, index } => {
+            let (base_expr, _) = check_expr(chk, body, local_var_map, *base);
+            let (idx_expr, _) = check_expr(chk, body, local_var_map, *index);
+            let elem_ty = fresh_infer_ty(chk);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Index {
+                        base: Box::new(base_expr),
+                        index: Box::new(idx_expr),
+                    },
+                    ty: elem_ty,
+                    span: Span::DUMMY,
+                },
+                elem_ty,
+            )
+        }
+        Expr::Cast {
+            expr,
+            ty: _type_ref,
+        } => {
+            let (inner_expr, _) = check_expr(chk, body, local_var_map, *expr);
+            let target_ty = fresh_infer_ty(chk);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Cast {
+                        expr: Box::new(inner_expr),
+                    },
+                    ty: target_ty,
+                    span: Span::DUMMY,
+                },
+                target_ty,
+            )
+        }
+        Expr::Array(elements) => {
+            let mut elem_exprs = Vec::new();
+            let elem_ty = fresh_infer_ty(chk);
+            for &elem_id in elements {
+                let (e_expr, e_ty) = check_expr(chk, body, local_var_map, elem_id);
+                if let Err(diags) = chk.infer.unify(chk.ctx, e_ty, elem_ty, Span::DUMMY) {
+                    chk.diagnostics.extend(diags);
+                }
+                elem_exprs.push(e_expr);
+            }
+            let arr_ty = chk.ctx.mk_ty(TyKind::Slice(elem_ty));
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Array(elem_exprs),
+                    ty: arr_ty,
+                    span: Span::DUMMY,
+                },
+                arr_ty,
+            )
+        }
+        Expr::Tuple(elements) => {
+            let mut tuple_exprs = Vec::new();
+            for &elem_id in elements {
+                let (e_expr, _) = check_expr(chk, body, local_var_map, elem_id);
+                tuple_exprs.push(e_expr);
+            }
+            let tup_ty = fresh_infer_ty(chk);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Tuple(tuple_exprs),
+                    ty: tup_ty,
+                    span: Span::DUMMY,
+                },
+                tup_ty,
+            )
+        }
+        Expr::Struct {
+            path: _,
+            fields,
+            spread: _,
+        } => {
+            tracing::warn!("STUB: struct literals not implemented");
+            for (_name, field_id) in fields {
+                let _ = check_expr(chk, body, local_var_map, *field_id);
+            }
+            let struct_ty = fresh_infer_ty(chk);
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Err,
+                    ty: struct_ty,
+                    span: Span::DUMMY,
+                },
+                struct_ty,
+            )
+        }
+        Expr::Break { value } => {
+            let value_expr = if let Some(val_id) = value {
+                let (val_expr, _) = check_expr(chk, body, local_var_map, *val_id);
+                Some(Box::new(val_expr))
+            } else {
+                None
+            };
+            (
+                thir::Expr {
+                    kind: thir::ExprKind::Break { value: value_expr },
+                    ty: Ty::NEVER,
+                    span: Span::DUMMY,
+                },
+                Ty::NEVER,
+            )
+        }
+        Expr::Continue => (
+            thir::Expr {
+                kind: thir::ExprKind::Continue,
+                ty: Ty::NEVER,
+                span: Span::DUMMY,
+            },
+            Ty::NEVER,
+        ),
         Expr::Missing => {
             tracing::warn!("STUB: encountered Missing expression (unimplemented feature)");
             let unit_expr = thir::Expr {
@@ -324,7 +632,6 @@ fn literal_ty(ctx: &mut TyCtxMut, lit: &Literal) -> Ty {
         Literal::Uint(_, None) => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
         Literal::Float(_, FloatTy::F32) => ctx.mk_ty(TyKind::Float(FloatTy::F32)),
         Literal::Float(_, FloatTy::F64) => ctx.mk_ty(TyKind::Float(FloatTy::F64)),
-
         Literal::Bool(_) => Ty::BOOL,
         Literal::Char(_) => ctx.mk_ty(TyKind::Char),
         Literal::String(_) => ctx.mk_ty(TyKind::String),

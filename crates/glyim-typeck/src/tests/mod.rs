@@ -1,12 +1,11 @@
-mod test_utils;
-
-mod binary_error;
-mod binary_i32;
-mod edge_cases;
-mod empty_crate;
-mod fn_unit;
-mod inference;
-mod obligation;
-mod ref_mut;
-mod ref_x;
-mod thir_body;
+mod array;
+mod assign;
+mod break_continue;
+mod cast;
+mod common;
+mod function_call;
+mod match_expr;
+mod return_stmt;
+mod struct_field;
+mod tuple_index;
+mod while_loop;

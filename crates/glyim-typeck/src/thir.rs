@@ -102,6 +102,30 @@ pub enum ExprKind {
     Cast {
         expr: Box<Expr>,
     },
+    While {
+        cond: Box<Expr>,
+        body: Box<Expr>,
+    },
+    Loop {
+        body: Box<Expr>,
+    },
+    For {
+        pat: Box<Pattern>,
+        iterable: Box<Expr>,
+        body: Box<Expr>,
+    },
+    Array(Vec<Expr>),
+    Tuple(Vec<Expr>),
+    Struct {
+        adt_id: AdtId,
+        variant_idx: u32,
+        fields: Vec<(Name, Expr)>,
+        spread: Option<Box<Expr>>,
+    },
+    Break {
+        value: Option<Box<Expr>>,
+    },
+    Continue,
     Closure {
         body: Box<Body>,
         captures: Vec<Capture>,

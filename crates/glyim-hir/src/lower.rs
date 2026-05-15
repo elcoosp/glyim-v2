@@ -1034,8 +1034,8 @@ fn parse_char_literal(s: &str) -> Option<char> {
         return s.chars().next();
     }
     // Basic escape handling
-    if s.starts_with('\\') {
-        match &s[1..] {
+    if let Some(stripped) = s.strip_prefix('\\') {
+        match stripped {
             "n" => Some('\n'),
             "r" => Some('\r'),
             "t" => Some('\t'),
