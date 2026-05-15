@@ -21,6 +21,7 @@ fn make_single_field_adt(field_ty: Ty) -> (TyCtx, Ty) {
 }
 
 /// Helper: create an ADT with multiple field types
+#[allow(dead_code)]
 fn make_multi_field_adt(field_tys: Vec<Ty>) -> (TyCtx, Ty) {
     with_fresh_ty_ctx(|ctx: &mut TyCtxMut| {
         let adt_id = AdtId::from_raw(101);
@@ -203,9 +204,18 @@ fn manual_impl_overrides_auto() {
 fn primitives_have_all_auto_traits() {
     let ctx = test_frozen_ty_ctx();
 
-    assert!(ctx.auto_trait_flags(Ty::BOOL).contains(AutoTraitFlags::all()));
-    assert!(ctx.auto_trait_flags(Ty::NEVER).contains(AutoTraitFlags::all()));
-    assert!(ctx.auto_trait_flags(Ty::UNIT).contains(AutoTraitFlags::all()));
+    assert!(
+        ctx.auto_trait_flags(Ty::BOOL)
+            .contains(AutoTraitFlags::all())
+    );
+    assert!(
+        ctx.auto_trait_flags(Ty::NEVER)
+            .contains(AutoTraitFlags::all())
+    );
+    assert!(
+        ctx.auto_trait_flags(Ty::UNIT)
+            .contains(AutoTraitFlags::all())
+    );
 }
 
 #[test]
@@ -214,7 +224,10 @@ fn int_types_have_all_auto_traits() {
     assert!(ctx.auto_trait_flags(i32_ty).contains(AutoTraitFlags::all()));
 
     let (ctx2, u64_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::Uint(UintTy::U64)));
-    assert!(ctx2.auto_trait_flags(u64_ty).contains(AutoTraitFlags::all()));
+    assert!(
+        ctx2.auto_trait_flags(u64_ty)
+            .contains(AutoTraitFlags::all())
+    );
 }
 
 /// Raw pointers: not Send, not Sync, but Unpin
@@ -226,8 +239,14 @@ fn raw_ptr_is_unpin_only() {
     });
 
     let flags = ctx.auto_trait_flags(raw_ptr_ty);
-    assert!(!flags.contains(AutoTraitFlags::SEND), "*const T is not Send");
-    assert!(!flags.contains(AutoTraitFlags::SYNC), "*const T is not Sync");
+    assert!(
+        !flags.contains(AutoTraitFlags::SEND),
+        "*const T is not Send"
+    );
+    assert!(
+        !flags.contains(AutoTraitFlags::SYNC),
+        "*const T is not Sync"
+    );
     assert!(flags.contains(AutoTraitFlags::UNPIN), "*const T is Unpin");
 
     let (ctx2, raw_mut_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -248,10 +267,8 @@ fn tuple_auto_traits_are_intersection() {
         let bool_ty = ctx_mut.bool_ty();
         let inner = bool_ty;
         let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(inner, Mutability::Not));
-        let substs = ctx_mut.intern_substitution(vec![
-            GenericArg::Ty(bool_ty),
-            GenericArg::Ty(raw_ptr_ty),
-        ]);
+        let substs =
+            ctx_mut.intern_substitution(vec![GenericArg::Ty(bool_ty), GenericArg::Ty(raw_ptr_ty)]);
         ctx_mut.mk_tuple(substs)
     });
 
@@ -279,7 +296,10 @@ fn slice_inherits_element_auto_traits() {
     });
 
     let flags = ctx.auto_trait_flags(slice_ty);
-    assert!(flags.contains(AutoTraitFlags::all()), "[bool] should have all auto traits");
+    assert!(
+        flags.contains(AutoTraitFlags::all()),
+        "[bool] should have all auto traits"
+    );
 }
 
 /// Array: inherits auto traits from element type
@@ -295,7 +315,10 @@ fn array_inherits_element_auto_traits() {
     });
 
     let flags = ctx.auto_trait_flags(array_ty);
-    assert!(flags.contains(AutoTraitFlags::all()), "[bool; 3] should have all auto traits");
+    assert!(
+        flags.contains(AutoTraitFlags::all()),
+        "[bool; 3] should have all auto traits"
+    );
 }
 
 /// Multi-field ADT: all fields must implement the auto trait
@@ -393,12 +416,15 @@ fn fn_ptr_has_all_auto_traits() {
     });
 
     let flags = ctx.auto_trait_flags(fn_ptr_ty);
-    assert!(flags.contains(AutoTraitFlags::all()), "fn ptr should have all auto traits");
+    assert!(
+        flags.contains(AutoTraitFlags::all()),
+        "fn ptr should have all auto traits"
+    );
 }
 
 /// Helper to get a bool Ty from a fresh context
 fn ctx_bool_ty() -> Ty {
-    let mut ctx = super::helpers::test_ty_ctx();
+    let ctx = super::helpers::test_ty_ctx();
     ctx.bool_ty()
 }
 

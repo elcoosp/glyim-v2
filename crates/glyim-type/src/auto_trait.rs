@@ -131,8 +131,9 @@ fn compute_auto_traits_for_kind(
         | TyKind::String => AutoTraitFlags::all(),
 
         TyKind::Ref(_, inner, Mutability::Not) => {
-            let inner_flags =
-                compute_auto_traits_recursive(*inner, lookup, registry, adt_reprs, cache, evaluating);
+            let inner_flags = compute_auto_traits_recursive(
+                *inner, lookup, registry, adt_reprs, cache, evaluating,
+            );
             let mut flags = AutoTraitFlags::UNPIN;
             if inner_flags.contains(AutoTraitFlags::SYNC) {
                 flags |= AutoTraitFlags::SEND | AutoTraitFlags::SYNC;
@@ -141,8 +142,9 @@ fn compute_auto_traits_for_kind(
         }
 
         TyKind::Ref(_, inner, Mutability::Mut) => {
-            let inner_flags =
-                compute_auto_traits_recursive(*inner, lookup, registry, adt_reprs, cache, evaluating);
+            let inner_flags = compute_auto_traits_recursive(
+                *inner, lookup, registry, adt_reprs, cache, evaluating,
+            );
             let mut flags = AutoTraitFlags::UNPIN;
             if inner_flags.contains(AutoTraitFlags::SEND) {
                 flags |= AutoTraitFlags::SEND;
@@ -156,24 +158,20 @@ fn compute_auto_traits_for_kind(
         TyKind::RawPtr(_, _) => AutoTraitFlags::UNPIN,
 
         TyKind::Slice(inner) => {
-            let inner_flags =
-                compute_auto_traits_recursive(*inner, lookup, registry, adt_reprs, cache, evaluating);
-            inner_flags
+            compute_auto_traits_recursive(*inner, lookup, registry, adt_reprs, cache, evaluating)
         }
 
         TyKind::Array(inner, _) => {
-            let inner_flags =
-                compute_auto_traits_recursive(*inner, lookup, registry, adt_reprs, cache, evaluating);
-            inner_flags
+            compute_auto_traits_recursive(*inner, lookup, registry, adt_reprs, cache, evaluating)
         }
 
         TyKind::Tuple(substs) => {
             let mut flags = AutoTraitFlags::all();
             for arg in lookup.substitution_args(*substs) {
                 if let GenericArg::Ty(t) = arg {
-                    let inner =
-                        compute_auto_traits_recursive(*t, lookup, registry, adt_reprs, cache, evaluating);
-                    flags &= inner;
+                    flags &= compute_auto_traits_recursive(
+                        *t, lookup, registry, adt_reprs, cache, evaluating,
+                    );
                 }
             }
             flags
@@ -197,12 +195,7 @@ fn compute_auto_traits_for_kind(
                 if let Some(repr) = adt_reprs.get(adt_id) {
                     for &field_ty in &repr.field_tys {
                         let field_flags = compute_auto_traits_recursive(
-                            field_ty,
-                            lookup,
-                            registry,
-                            adt_reprs,
-                            cache,
-                            evaluating,
+                            field_ty, lookup, registry, adt_reprs, cache, evaluating,
                         );
                         if !field_flags.contains(trait_flag) {
                             flags -= trait_flag;
@@ -228,8 +221,9 @@ fn compute_auto_traits_for_kind(
             let mut flags = AutoTraitFlags::all();
             for arg in lookup.substitution_args(*substs) {
                 if let GenericArg::Ty(t) = arg {
-                    let inner =
-                        compute_auto_traits_recursive(*t, lookup, registry, adt_reprs, cache, evaluating);
+                    let inner = compute_auto_traits_recursive(
+                        *t, lookup, registry, adt_reprs, cache, evaluating,
+                    );
                     flags &= inner;
                 }
             }

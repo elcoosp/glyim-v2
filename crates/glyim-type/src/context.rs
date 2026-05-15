@@ -277,7 +277,8 @@ impl TyCtx {
 
     /// Check if a specific ADT has a negative impl for an auto trait.
     pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
-        self.auto_trait_registry.has_negative_impl(adt_id, auto_trait)
+        self.auto_trait_registry
+            .has_negative_impl(adt_id, auto_trait)
     }
 
     /// Check if a specific ADT has a manual impl for an auto trait.
