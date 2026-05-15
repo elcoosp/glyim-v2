@@ -402,7 +402,7 @@ pub enum Literal {
 
 mod lower;
 
-pub mod where_clause;
 pub mod pipeline_api;
 #[cfg(test)]
 mod tests;
+pub mod where_clause;

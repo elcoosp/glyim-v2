@@ -102,7 +102,8 @@ pub fn typeck_crate(
     let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
 
     for (_item_id, item) in hir.items.iter_enumerated() {
-        let mut impl_body_infos: Vec<(glyim_hir::BodyId, u32, Vec<glyim_hir::Param>, Ty)> = Vec::new();
+        let mut impl_body_infos: Vec<(glyim_hir::BodyId, u32, Vec<glyim_hir::Param>, Ty)> =
+            Vec::new();
 
         match &item.kind {
             glyim_hir::ItemKind::Fn(f) => {
@@ -170,7 +171,10 @@ pub fn typeck_crate(
                     } else {
                         diagnostics.push(GlyimDiagnostic::type_error(
                             Span::DUMMY,
-                            format!("method `{}` has no implementation and no default", ctx.name_str(method.name)),
+                            format!(
+                                "method `{}` has no implementation and no default",
+                                ctx.name_str(method.name)
+                            ),
                         ));
                     }
                 }
@@ -197,7 +201,6 @@ pub fn typeck_crate(
             all_obligations.extend(pending);
             thir_bodies.push((local_def_id, thir_body));
         }
-
     }
 
     let frozen_ctx = ctx.freeze();
@@ -317,4 +320,3 @@ pub(crate) fn find_trait_default_body(
     }
     None
 }
-

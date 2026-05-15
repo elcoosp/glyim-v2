@@ -484,15 +484,17 @@ impl<'a> MirBuilder<'a> {
                 let _adt_def = self._ctx.adt_def(adt_id);
                 let _variant = &_adt_def.variants[0];
                 // For now, emit diagnostic and return error
-                let err_msg = format!("field `{:?}` resolution not implemented (need HIR access)", field);
-                self.diagnostics.push(GlyimDiagnostic::type_error(expr.span, err_msg));
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
-                    glyim_mir::MirConst {
-                        kind: glyim_mir::MirConstKind::Error,
-                        ty: *field_ty,
-                        span: expr.span,
-                    },
-                ))
+                let err_msg = format!(
+                    "field `{:?}` resolution not implemented (need HIR access)",
+                    field
+                );
+                self.diagnostics
+                    .push(GlyimDiagnostic::type_error(expr.span, err_msg));
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Error,
+                    ty: *field_ty,
+                    span: expr.span,
+                }))
             }
             thir::ExprKind::Index { base, index } => {
                 let base_place = self.lower_expr_to_place(base);

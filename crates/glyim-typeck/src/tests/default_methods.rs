@@ -1,17 +1,17 @@
 //! Tests for V03: Default Methods
 
+use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::*;
-use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleOrigin, ModuleId};
+use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
+use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_solve::SolverResult;
 use glyim_span::Span;
 use glyim_test::mock::MockSolver;
 use glyim_type::*;
-use crate::typeck_crate;
-use glyim_diag::GlyimDiagnostic;
 
 fn make_interner() -> Interner {
     Interner::new()
@@ -25,7 +25,9 @@ fn make_return_42_body(owner: LocalDefId) -> Body {
     let mut exprs = IndexVec::new();
     let lit_expr = Expr::Literal(Literal::Int(42, None));
     let lit_id = exprs.push(lit_expr);
-    let ret_expr = Expr::Return { value: Some(lit_id) };
+    let ret_expr = Expr::Return {
+        value: Some(lit_id),
+    };
     let _ret_id = exprs.push(ret_expr);
     Body {
         owner,
@@ -40,7 +42,9 @@ fn make_return_99_body(owner: LocalDefId) -> Body {
     let mut exprs = IndexVec::new();
     let lit_expr = Expr::Literal(Literal::Int(99, None));
     let lit_id = exprs.push(lit_expr);
-    let ret_expr = Expr::Return { value: Some(lit_id) };
+    let ret_expr = Expr::Return {
+        value: Some(lit_id),
+    };
     let _ret_id = exprs.push(ret_expr);
     Body {
         owner,
@@ -59,7 +63,9 @@ fn make_body_with_call(owner: LocalDefId, callee_name: Name) -> Body {
         func: callee_path_id,
         args: vec![],
     });
-    let ret_id = exprs.push(Expr::Return { value: Some(call_id) });
+    let ret_id = exprs.push(Expr::Return {
+        value: Some(call_id),
+    });
     Body {
         owner,
         exprs,
@@ -191,10 +197,16 @@ fn v03_t01_trait_default_method_impl_no_override() {
     let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);
     let (_frozen_ctx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
 
-    assert!(!result.thir_bodies.is_empty(), "Expected at least one THIR body");
+    assert!(
+        !result.thir_bodies.is_empty(),
+        "Expected at least one THIR body"
+    );
     let (_owner, thir_body) = &result.thir_bodies[0];
     assert_eq!(thir_body.stmts.len(), 2);
-    assert!(matches!(thir_body.stmts[1], crate::thir::Stmt::Return { .. }));
+    assert!(matches!(
+        thir_body.stmts[1],
+        crate::thir::Stmt::Return { .. }
+    ));
 }
 
 #[test]
@@ -207,7 +219,10 @@ fn v03_t02_overridden_default_method() {
     assert!(!result.thir_bodies.is_empty());
     let (_owner, thir_body) = &result.thir_bodies[0];
     assert_eq!(thir_body.stmts.len(), 2);
-    assert!(matches!(thir_body.stmts[1], crate::thir::Stmt::Return { .. }));
+    assert!(matches!(
+        thir_body.stmts[1],
+        crate::thir::Stmt::Return { .. }
+    ));
 }
 
 #[test]
@@ -342,13 +357,11 @@ fn v03_t04_default_method_with_generic_params() {
     let owner_trait = LocalDefId::from_raw(0);
     let default_body = make_return_42_body(owner_trait);
 
-    let generic_params = vec![
-        GenericParam {
-            name: t_name,
-            kind: GenericParamKind::Type { default: None },
-            span: Span::DUMMY,
-        }
-    ];
+    let generic_params = vec![GenericParam {
+        name: t_name,
+        kind: GenericParamKind::Type { default: None },
+        span: Span::DUMMY,
+    }];
 
     let trait_method = TraitMethod {
         name: method_name,
@@ -375,7 +388,10 @@ fn v03_t04_default_method_with_generic_params() {
         trait_ref: Some(Path {
             segments: vec![PathSegment {
                 name: trait_name,
-                generic_args: Some(vec![TypeRef::Path(Path::from_single(make_name(&mut interner, "i32")))]),
+                generic_args: Some(vec![TypeRef::Path(Path::from_single(make_name(
+                    &mut interner,
+                    "i32",
+                )))]),
             }],
             kind: glyim_core::path::PathKind::Plain,
         }),
@@ -495,9 +511,17 @@ fn v03_t05_default_method_calls_missing_method_error() {
     let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);
     let (_frozen_ctx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
 
-    assert!(!result.diagnostics.is_empty(), "Expected an error diagnostic");
-    let error_msg = result.diagnostics.iter().any(|d| {
-        d.message.contains("has no implementation and no default")
-    });
-    assert!(error_msg, "Expected missing method diagnostic, got: {:?}", result.diagnostics);
+    assert!(
+        !result.diagnostics.is_empty(),
+        "Expected an error diagnostic"
+    );
+    let error_msg = result
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("has no implementation and no default"));
+    assert!(
+        error_msg,
+        "Expected missing method diagnostic, got: {:?}",
+        result.diagnostics
+    );
 }
