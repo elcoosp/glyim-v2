@@ -10,6 +10,10 @@ use glyim_type::ImplPolarity;
 
 use crate::coherence::CoherenceChecker;
 
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
 fn build_def_map(
     interner: &mut Interner,
     krate: CrateId,
@@ -79,6 +83,9 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
     }
 }
 
+// ============================================================================
+// V04-T01: Duplicate impl for same type -> error
+// ============================================================================
 #[test]
 fn t01_duplicate_impl_should_error() {
     let local_krate = CrateId::from_raw(0);
@@ -104,6 +111,9 @@ fn t01_duplicate_impl_should_error() {
     );
 }
 
+// ============================================================================
+// V04-T02: Orphan rule: foreign trait on foreign type -> error
+// ============================================================================
 #[test]
 fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     let local_krate = CrateId::from_raw(0);
@@ -121,6 +131,9 @@ fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     assert!(errors[0].message.contains("orphan rule"));
 }
 
+// ============================================================================
+// V04-T03: Blanket impl conflicts with concrete impl -> error
+// ============================================================================
 #[test]
 fn t03_blanket_impl_conflicts_with_concrete() {
     let local_krate = CrateId::from_raw(0);
@@ -142,6 +155,9 @@ fn t03_blanket_impl_conflicts_with_concrete() {
     );
 }
 
+// ============================================================================
+// V04-T04: Valid orphan: impl ForeignTrait for LocalType -> ok
+// ============================================================================
 #[test]
 fn t04_valid_orphan_foreign_trait_local_type() {
     let local_krate = CrateId::from_raw(0);
@@ -157,6 +173,9 @@ fn t04_valid_orphan_foreign_trait_local_type() {
     );
 }
 
+// ============================================================================
+// V04-T05: Negative impl `impl !Send for MyType` -> overrides auto trait
+// ============================================================================
 #[test]
 fn t05_negative_impl_overrides_auto_trait() {
     let local_krate = CrateId::from_raw(0);
@@ -172,4 +191,105 @@ fn t05_negative_impl_overrides_auto_trait() {
         checker.has_negative_impl("Send", "MyType"),
         "should have recorded negative impl"
     );
+}
+
+// ============================================================================
+// Additional edge-case tests
+// ============================================================================
+
+// T06: Mixed polarity (positive then negative) for same type -> conflict
+#[test]
+fn t06_duplicate_with_different_polarity_error() {
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = Interner::new();
+    let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
+    let mut checker = CoherenceChecker::new(&def_map, local_krate);
+
+    let pos_impl = make_impl_item(&mut interner, "Send", "MyType");
+    let neg_impl = make_impl_item(&mut interner, "Send", "MyType");
+
+    checker
+        .check_and_register_impl(&pos_impl, ImplPolarity::Positive)
+        .unwrap();
+
+    let result = checker.check_and_register_impl(&neg_impl, ImplPolarity::Negative);
+    assert!(
+        result.is_err(),
+        "impl with opposite polarity should conflict"
+    );
+}
+
+// T07: Orphan rule: local trait on foreign type -> allowed
+#[test]
+fn t07_orphan_local_trait_foreign_type_allowed() {
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = Interner::new();
+    // Register "MyTrait" as a local type (or value) so that it's considered local.
+    // The def_map scope currently only holds types; we'll add the trait name as a type entry.
+    let def_map = build_def_map(&mut interner, local_krate, &["MyTrait"]);
+    let checker = CoherenceChecker::new(&def_map, local_krate);
+
+    // "ForeignType" is not in local types
+    let impl_item = make_impl_item(&mut interner, "MyTrait", "ForeignType");
+    let result = checker.check_orphan_rule(&impl_item, ImplPolarity::Positive);
+    assert!(
+        result.is_ok(),
+        "orphan rule should allow local trait on foreign type"
+    );
+}
+
+// T08: Two blanket impls with different type parameters do not conflict
+#[test]
+fn t08_two_non_overlapping_blanket_impls_allowed() {
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = Interner::new();
+    // Seed both param names so that orphan rule passes for both blanket impls
+    let def_map = build_def_map(&mut interner, local_krate, &["A", "B"]);
+    let mut checker = CoherenceChecker::new(&def_map, local_krate);
+
+    let blanket_a = make_blanket_impl_item(&mut interner, "From", "A");
+    let blanket_b = make_blanket_impl_item(&mut interner, "From", "B");
+
+    let r1 = checker.check_and_register_impl(&blanket_a, ImplPolarity::Positive);
+    assert!(r1.is_ok(), "first blanket impl should be accepted");
+
+    let r2 = checker.check_and_register_impl(&blanket_b, ImplPolarity::Positive);
+    assert!(
+        r2.is_ok(),
+        "second blanket impl with different param should be accepted"
+    );
+}
+
+// T09: Negative impl for foreign trait + foreign type -> orphan rule violation
+#[test]
+fn t09_negative_impl_orphan_error() {
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = Interner::new();
+    let def_map = build_def_map(&mut interner, local_krate, &[]);
+    let checker = CoherenceChecker::new(&def_map, local_krate);
+
+    let neg_impl = make_impl_item(&mut interner, "ForeignTrait", "ForeignType");
+    let result = checker.check_orphan_rule(&neg_impl, ImplPolarity::Negative);
+    assert!(
+        result.is_err(),
+        "negative impl for foreign trait + foreign type should violate orphan rule"
+    );
+}
+
+// T10: Impls for different traits do not conflict
+#[test]
+fn t10_different_traits_no_conflict() {
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = Interner::new();
+    let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
+    let mut checker = CoherenceChecker::new(&def_map, local_krate);
+
+    let impl_trait_a = make_impl_item(&mut interner, "TraitA", "MyType");
+    let impl_trait_b = make_impl_item(&mut interner, "TraitB", "MyType");
+
+    let r1 = checker.check_and_register_impl(&impl_trait_a, ImplPolarity::Positive);
+    let r2 = checker.check_and_register_impl(&impl_trait_b, ImplPolarity::Positive);
+
+    assert!(r1.is_ok(), "impl for TraitA should be accepted");
+    assert!(r2.is_ok(), "impl for TraitB should be accepted");
 }
