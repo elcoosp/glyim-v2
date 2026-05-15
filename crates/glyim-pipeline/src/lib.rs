@@ -47,16 +47,14 @@ impl Pipeline {
         }
 
         // Phase 4: HIR
-        let hir = glyim_hir::pipeline_api::lower_crate_for_pipeline(
-            &parse_result.root,
-            db.intern_mut(),
-        );
+        let hir =
+            glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
 
         // Phase 5: Typeck
         let resolver = db.interner().clone();
         let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
         let trait_ctx = glyim_solve::TraitContext::new();
-    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+        let mut solver = SimpleTraitSolver::new(&trait_ctx);
         let (ty_ctx, typeck_result) =
             glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
         sink.extend(typeck_result.diagnostics);

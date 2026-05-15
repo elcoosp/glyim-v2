@@ -206,12 +206,12 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
             "bytecode backend: Call terminator not yet implemented",
         )]),
         TerminatorKind::Unreachable => Ok(()),
-        TerminatorKind::Assert { .. } | TerminatorKind::Drop { .. } => Err(vec![
-            glyim_diag::GlyimDiagnostic::internal_error(format!(
+        TerminatorKind::Assert { .. } | TerminatorKind::Drop { .. } => {
+            Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                 "bytecode backend: terminator {:?} not yet implemented",
                 kind
-            )),
-        ]),
+            ))])
+        }
     }
 }
 
