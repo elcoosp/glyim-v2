@@ -10,7 +10,7 @@ use crate::InferenceTable;
 fn occurs_check_cycle() {
     let interner = Interner::default();
     let mut ctx = TyCtxMut::new(interner);
-    let mut infer = InferenceTable::new();
+    let _infer = InferenceTable::new();
 
     let a_name = ctx.resolver().intern("A");
     let _b_name = ctx.resolver().intern("B");
@@ -21,7 +21,7 @@ fn occurs_check_cycle() {
     let self_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(TyVar::from_raw(0))));
     let substs = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
     let trait_ref = TraitRef { def_id: trait_id, substs };
-    let proj_ty = ctx.mk_ty(TyKind::Projection(ProjectionTy { trait_ref, item_name: a_name }));
+    let _proj_ty = ctx.mk_ty(TyKind::Projection(ProjectionTy { trait_ref, item_name: a_name }));
 
     // Attempt to unify with itself? Not meaningful; we'll implement an explicit occurs check.
     // For now, just ensure the test compiles.
