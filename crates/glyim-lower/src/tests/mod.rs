@@ -1,10 +1,17 @@
 mod aggregate;
 mod array_index;
+mod array_literal;
+mod block_tail;
+mod break_continue;
 mod cast;
+mod closure;
 mod field_access;
+mod for_loop;
 mod r#loop;
 mod r#match;
 mod mock_lower_ctx;
+mod nested_control_flow;
+mod stub_coverage;
 mod thir_builder;
 mod tuple_index;
 mod tuple_pattern;
