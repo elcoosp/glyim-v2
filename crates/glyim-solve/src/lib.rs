@@ -8,6 +8,7 @@
 //! `InferVar::Int(TyVar(0))` because `Int` takes an `IntVar`.
 
 pub mod fulfill;
+pub mod hrtb;
 pub mod infer;
 pub mod solver;
 
