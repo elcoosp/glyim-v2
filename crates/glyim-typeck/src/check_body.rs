@@ -325,7 +325,10 @@ fn check_expr(
                 (unit_expr, Ty::UNIT)
             }
         }
-        Expr::While { cond, body: body_id } => {
+        Expr::While {
+            cond,
+            body: body_id,
+        } => {
             let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
             if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, Span::DUMMY) {
                 chk.diagnostics.extend(diags);
@@ -386,18 +389,15 @@ fn check_expr(
                 Ty::UNIT,
             )
         }
-        Expr::Match {
-            scrutinee,
-            arms,
-        } => {
+        Expr::Match { scrutinee, arms } => {
             let (scrut_expr, _) = check_expr(chk, body, local_var_map, *scrutinee);
             let result_ty = fresh_infer_ty(chk);
             let mut thir_arms = Vec::new();
             for arm in arms {
-                let (arm_body_expr, arm_body_ty) =
-                    check_expr(chk, body, local_var_map, arm.body);
-                if let Err(diags) =
-                    chk.infer.unify(chk.ctx, arm_body_ty, result_ty, Span::DUMMY)
+                let (arm_body_expr, arm_body_ty) = check_expr(chk, body, local_var_map, arm.body);
+                if let Err(diags) = chk
+                    .infer
+                    .unify(chk.ctx, arm_body_ty, result_ty, Span::DUMMY)
                 {
                     chk.diagnostics.extend(diags);
                 }
@@ -494,7 +494,10 @@ fn check_expr(
                 elem_ty,
             )
         }
-        Expr::Cast { expr, ty: _type_ref } => {
+        Expr::Cast {
+            expr,
+            ty: _type_ref,
+        } => {
             let (inner_expr, _) = check_expr(chk, body, local_var_map, *expr);
             let target_ty = fresh_infer_ty(chk);
             (
@@ -579,16 +582,14 @@ fn check_expr(
                 Ty::NEVER,
             )
         }
-        Expr::Continue => {
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Continue,
-                    ty: Ty::NEVER,
-                    span: Span::DUMMY,
-                },
-                Ty::NEVER,
-            )
-        }
+        Expr::Continue => (
+            thir::Expr {
+                kind: thir::ExprKind::Continue,
+                ty: Ty::NEVER,
+                span: Span::DUMMY,
+            },
+            Ty::NEVER,
+        ),
         Expr::Missing => {
             tracing::warn!("STUB: encountered Missing expression (unimplemented feature)");
             let unit_expr = thir::Expr {

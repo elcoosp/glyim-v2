@@ -1,10 +1,10 @@
+use crate::thir;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_hir::*;
 use glyim_solve::InferenceTable;
 use glyim_type::*;
-use crate::thir;
 
 /// Helper: create a minimal CrateHir with one function body containing the given expressions.
 /// Returns the CrateHir and the BodyId of that function.

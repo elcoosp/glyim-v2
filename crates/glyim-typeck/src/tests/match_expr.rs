@@ -8,14 +8,23 @@ fn match_integer_with_wildcard() {
     exprs.push(Expr::Literal(Literal::Int(42, None)));
     exprs.push(Expr::Literal(Literal::Int(0, None)));
     pats.push(Pat::Wild);
-    let arm = MatchArm { pat: PatId::from_raw(0), guard: None, body: ExprId::from_raw(1) };
-    exprs.push(Expr::Match { scrutinee: ExprId::from_raw(0), arms: vec![arm] });
+    let arm = MatchArm {
+        pat: PatId::from_raw(0),
+        guard: None,
+        body: ExprId::from_raw(1),
+    };
+    exprs.push(Expr::Match {
+        scrutinee: ExprId::from_raw(0),
+        arms: vec![arm],
+    });
 
     let (mut hir, body_id) = make_single_body_hir(exprs);
     let body = &mut hir.bodies[body_id];
     body.pats = {
         let mut p = glyim_core::arena::IndexVec::new();
-        for pat in pats { p.push(pat); }
+        for pat in pats {
+            p.push(pat);
+        }
         p
     };
 
