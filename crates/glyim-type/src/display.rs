@@ -165,6 +165,25 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
                 }
                 Ok(())
             }
+            TyKind::Projection(proj) => {
+                write!(f, "<")?;
+                let args = self.lookup.substitution_args(proj.trait_ref.substs);
+                if args.len() == 1 {
+                    if let GenericArg::Ty(t) = args[0] {
+                        write!(f, "{}", self.nested(t))?;
+                    } else {
+                        write!(f, "?")?;
+                    }
+                } else {
+                    write!(f, "?")?;
+                }
+                write!(
+                    f,
+                    " as Trait{}>::{}",
+                    proj.trait_ref.def_id.to_raw(),
+                    self.lookup.name_str(proj.item_name)
+                )
+            }
             TyKind::Param(param) => write!(f, "{}", self.lookup.name_str(param.name)),
             TyKind::Bound(var, bound) => match bound.kind {
                 BoundTyKind::Param(n) => write!(f, "{}", self.lookup.name_str(n)),

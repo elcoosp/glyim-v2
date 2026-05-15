@@ -77,6 +77,21 @@ pub fn typeck_crate(
     hir: &glyim_hir::CrateHir,
     solver: &mut dyn glyim_solve::TraitSolver,
 ) -> (TyCtx, TypeckResult) {
+    /// Emit a diagnostic for an unresolved projection.
+    #[allow(dead_code)]
+    fn emit_unresolved_projection(
+        ctx: &TyCtxMut,
+        diags: &mut Vec<GlyimDiagnostic>,
+        proj: &ProjectionTy,
+        span: Span,
+    ) {
+        let msg = format!(
+            "cannot resolve projection <_ as Trait{}>::{}",
+            proj.trait_ref.def_id.to_raw(),
+            ctx.name_str(proj.item_name)
+        );
+        diags.push(GlyimDiagnostic::type_error(span, msg));
+    }
     let mut diagnostics = Vec::new();
     let mut infer = InferenceTable::new();
     let mut all_obligations: Vec<Obligation> = Vec::new();

@@ -1,3 +1,6 @@
+
+mod harness_tests;
+mod projection_typeck;
 mod array;
 mod assign;
 mod binary_error;
