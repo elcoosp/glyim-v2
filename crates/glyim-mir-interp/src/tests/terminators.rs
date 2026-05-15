@@ -283,7 +283,6 @@ fn test_switch_int_multiple_targets() {
 }
 
 #[test]
-#[test]
 fn test_step_limit_enforced() {
     let mut ctx = glyim_test::test_ty_ctx();
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
