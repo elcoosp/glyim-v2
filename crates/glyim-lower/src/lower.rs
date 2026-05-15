@@ -4,7 +4,9 @@ use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_mir::{self, BasicBlockIdx, LocalIdx};
+use glyim_mir::{CastKind, ProjectionElem};
 use glyim_span::Span;
+use glyim_type::FieldIdx;
 use glyim_type::*;
 use glyim_typeck::thir;
 
@@ -48,6 +50,7 @@ struct MirBuilder<'a> {
     span: Span,
     diagnostics: Vec<GlyimDiagnostic>,
     var_map: std::collections::HashMap<Name, LocalIdx>,
+
     current_block: Option<BasicBlockIdx>,
 }
 
@@ -140,8 +143,13 @@ impl<'a> MirBuilder<'a> {
                 ty,
                 init,
                 span,
+                pat,
                 ..
             } => {
+                // If there is a pattern, stub destructuring (no access to pattern storage)
+                // pat is a thir::Pattern, not Option; we ignore it for now
+                let _ = pat;
+                tracing::warn!("STUB: pattern destructuring not implemented (pattern ignored)");
                 let local = self.alloc_local(*ty, Mutability::Mut, *span);
                 self.var_map.insert(*name, local);
                 self.push_stmt(glyim_mir::StatementKind::StorageLive(local), *span);
@@ -313,6 +321,218 @@ impl<'a> MirBuilder<'a> {
                     ty: expr.ty,
                     span: expr.span,
                 }))
+            }
+            thir::ExprKind::Match { scrutinee, arms } => {
+                let discr_op = self.lower_expr_to_operand(scrutinee);
+                let mut targets = Vec::new();
+                let merge_bb = self.new_block();
+                let dest_local = self.alloc_local(expr.ty, Mutability::Mut, expr.span);
+                let dest_place = glyim_mir::Place::new(dest_local);
+
+                let mut arm_blocks: Vec<(BasicBlockIdx, &thir::MatchArm)> = Vec::new();
+                for (i, arm) in arms.iter().enumerate() {
+                    let arm_bb = self.new_block();
+                    if i < arms.len() - 1 {
+                        let val = match &arm.pat.kind {
+                            thir::PatternKind::Literal(lit) => match lit {
+                                thir::Literal::Int(v, _) => *v as u128,
+                                thir::Literal::Uint(v, _) => *v,
+                                thir::Literal::Bool(b) => *b as u128,
+                                _ => u128::MAX,
+                            },
+                            _ => u128::MAX,
+                        };
+                        targets.push((val, arm_bb));
+                    }
+                    arm_blocks.push((arm_bb, arm));
+                }
+                let otherwise_bb = arm_blocks.last().map(|(bb, _)| *bb).unwrap_or(merge_bb);
+                let switch_targets =
+                    glyim_mir::SwitchTargets::new(targets.into_boxed_slice(), otherwise_bb);
+
+                self.terminate(
+                    glyim_mir::TerminatorKind::SwitchInt {
+                        discr: discr_op,
+                        switch_ty: scrutinee.ty,
+                        targets: switch_targets,
+                    },
+                    expr.span,
+                );
+
+                for (arm_bb, arm) in arm_blocks.iter() {
+                    self.current_block = Some(*arm_bb);
+                    if let Some(_guard) = &arm.guard {
+                        tracing::warn!("STUB: match guards");
+                    }
+                    let arm_val = self.lower_expr_to_rvalue(&arm.body);
+                    self.push_stmt(
+                        glyim_mir::StatementKind::Assign(dest_place.clone(), arm_val),
+                        arm.body.span,
+                    );
+                    self.terminate(
+                        glyim_mir::TerminatorKind::Goto { target: merge_bb },
+                        arm.body.span,
+                    );
+                }
+
+                self.current_block = Some(merge_bb);
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
+            }
+            thir::ExprKind::While { cond, body } => {
+                let header_bb = self.new_block();
+                let body_bb = self.new_block();
+                let exit_bb = self.new_block();
+
+                // Jump to header
+                self.terminate(
+                    glyim_mir::TerminatorKind::Goto { target: header_bb },
+                    expr.span,
+                );
+
+                // Header: evaluate condition and branch
+                self.current_block = Some(header_bb);
+                let cond_op = self.lower_expr_to_operand(cond);
+                let targets = glyim_mir::SwitchTargets::new(
+                    Box::new([(1, body_bb)]), // true -> body
+                    exit_bb,                  // false -> exit
+                );
+                self.terminate(
+                    glyim_mir::TerminatorKind::SwitchInt {
+                        discr: cond_op,
+                        switch_ty: cond.ty,
+                        targets,
+                    },
+                    cond.span,
+                );
+
+                // Body block
+                self.current_block = Some(body_bb);
+                let _body_rval = self.lower_expr_to_rvalue(body);
+                // after body, jump back to header
+                self.terminate(
+                    glyim_mir::TerminatorKind::Goto { target: header_bb },
+                    body.span,
+                );
+
+                self.current_block = Some(exit_bb);
+                // while produces unit value
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Unit,
+                    ty: Ty::UNIT,
+                    span: expr.span,
+                }))
+            }
+            thir::ExprKind::Loop { body } => {
+                let loop_bb = self.new_block();
+                self.terminate(
+                    glyim_mir::TerminatorKind::Goto { target: loop_bb },
+                    expr.span,
+                );
+
+                self.current_block = Some(loop_bb);
+                let _ = self.lower_expr_to_rvalue(body);
+                // Infinite loop: jump back to itself (unless break inserted, not handled)
+                self.terminate(
+                    glyim_mir::TerminatorKind::Goto { target: loop_bb },
+                    body.span,
+                );
+
+                // Loop never exits; unreachable after.
+                // Return value is never, but we'll use a dummy
+                self.current_block = Some(self.new_block());
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Error,
+                    ty: Ty::NEVER,
+                    span: expr.span,
+                }))
+            }
+            thir::ExprKind::Field {
+                receiver,
+                field: _field,
+                ty: field_ty,
+            } => {
+                let base_place = self.lower_expr_to_place(receiver);
+                // Look up AdtDef to find field index
+                let adt_id = match self._ctx.ty_ctx().ty_kind(receiver.ty) {
+                    TyKind::Adt(adt_id, _) => *adt_id,
+                    _ => {
+                        tracing::warn!("STUB: field access on non-ADT type");
+                        return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
+                            glyim_mir::MirConst {
+                                kind: glyim_mir::MirConstKind::Error,
+                                ty: *field_ty,
+                                span: expr.span,
+                            },
+                        ));
+                    }
+                };
+                let adt_def = self._ctx.adt_def(adt_id);
+                let variant = &adt_def.variants[0]; // assume single variant for struct
+                let field_idx = variant
+                    .fields
+                    .iter()
+                    .position(|_f| {
+                        // match by name? we need field name; adt_variant fields are Ty, not named.
+                        // Cannot resolve name, stub with index 0
+                        tracing::warn!("STUB: field name lookup not implemented");
+                        false
+                    })
+                    .unwrap_or(0);
+                let projection = {
+                    let mut proj = base_place.projection.to_vec();
+                    proj.push(ProjectionElem::Field(FieldIdx::from_raw(field_idx as u32)));
+                    proj.into_boxed_slice()
+                };
+                let place = glyim_mir::Place {
+                    local: base_place.local,
+                    projection,
+                };
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+            }
+            thir::ExprKind::Index { base, index } => {
+                let base_place = self.lower_expr_to_place(base);
+                let index_local = self.alloc_local(index.ty, Mutability::Not, index.span);
+                let index_rval = self.lower_expr_to_rvalue(index);
+                self.push_stmt(
+                    glyim_mir::StatementKind::Assign(
+                        glyim_mir::Place::new(index_local),
+                        index_rval,
+                    ),
+                    index.span,
+                );
+                let projection = {
+                    let mut proj = base_place.projection.to_vec();
+                    proj.push(ProjectionElem::Index(index_local));
+                    proj.into_boxed_slice()
+                };
+                let place = glyim_mir::Place {
+                    local: base_place.local,
+                    projection,
+                };
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+            }
+            thir::ExprKind::Cast { expr: inner } => {
+                let operand = self.lower_expr_to_operand(inner);
+                // Determine CastKind simplistically
+                let inner_ty = inner.ty;
+                let target_ty = expr.ty; // overall cast expression type
+                let cast_kind = match (
+                    self._ctx.ty_ctx().ty_kind(inner_ty),
+                    self._ctx.ty_ctx().ty_kind(target_ty),
+                ) {
+                    (TyKind::Int(_), TyKind::Int(_)) => CastKind::IntToInt,
+                    (TyKind::Float(_), TyKind::Int(_)) => CastKind::FloatToInt,
+                    (TyKind::Int(_), TyKind::Float(_)) => CastKind::IntToFloat,
+                    _ => CastKind::PtrToPtr, // dummy
+                };
+                glyim_mir::Rvalue::Cast(cast_kind, operand, target_ty)
+            }
+            thir::ExprKind::Tuple(elements) => {
+                let mut mir_operands = Vec::new();
+                for op_expr in elements {
+                    mir_operands.push(self.lower_expr_to_operand(op_expr));
+                }
+                glyim_mir::Rvalue::Aggregate(glyim_mir::AggregateKind::Tuple, mir_operands)
             }
             _ => {
                 tracing::warn!("STUB: unhandled expr kind");

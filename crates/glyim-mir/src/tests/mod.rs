@@ -1,6 +1,30 @@
 //! Test suite for glyim-mir
 
+mod aggregate_kind;
+mod assert_message;
+mod basic_block;
+mod body;
+mod body_edge_cases;
 mod body_stress;
+mod borrow_kind;
+mod cast_kind;
+mod integration;
+mod local_decl;
 mod local_decl_property;
+mod mir_const;
+mod mir_const_edge_cases;
+mod operand;
+mod place_equality;
+mod place_ty;
+mod place_ty_advanced;
 mod place_ty_chains;
+mod place_ty_edge_cases;
 mod place_ty_property;
+mod rvalue;
+mod rvalue_edge_cases;
+mod source_info;
+mod statement;
+mod switch_targets;
+mod terminator;
+mod terminator_edge_cases;
+mod var_debug;

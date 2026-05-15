@@ -185,5 +185,4 @@ pub struct AssertionFailure {
     pub ty_description: String,
 }
 
-
 impl std::error::Error for FailureReason {}
