@@ -24,3 +24,4 @@ mod thir_body;
 mod tuple_index;
 mod where_clause;
 mod while_loop;
+mod coherence;

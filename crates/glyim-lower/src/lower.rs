@@ -316,7 +316,7 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::FnRef(_) => {
                 let (def_id, substs) = match self._ctx.ty_ctx().ty_kind(expr.ty) {
-                    TyKind::FnDef(def_id, substs) => (*def_id, substs.clone()),
+                    TyKind::FnDef(def_id, substs) => (*def_id, *substs),
                     _ => {
                         tracing::warn!("STUB: FnRef with non-FnDef type, emitting Error constant");
                         return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(

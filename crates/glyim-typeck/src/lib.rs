@@ -5,6 +5,7 @@
 //! processed by `FulfillmentCtx` after each body is checked.
 
 mod check_body;
+mod coherence;
 pub mod thir;
 
 use glyim_core::arena::IndexVec;
