@@ -3,7 +3,7 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
-use glyim_core::path::{Path, PathKind};
+use glyim_core::path::{Path, PathKind, PathSegment};
 use glyim_core::primitives::Visibility;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
@@ -177,6 +177,89 @@ impl<'a> Resolver<'a> {
     }
 }
 
+/// Helper to resolve a path that ends at a module, returning the ModuleId.
+/// Replicates logic from Resolver but returns the module instead of items in scope.
+fn resolve_module_path(def_map: &CrateDefMap, start_module: ModuleId, path: &Path) -> Option<ModuleId> {
+    let mut current_module = start_module;
+    let start_idx = match path.kind {
+        PathKind::Plain => 0,
+        PathKind::SelfPath => 0,
+        PathKind::Super(n) => {
+            let mut module = current_module;
+            for _ in 0..n {
+                if let Some(parent) = def_map.modules[module].parent {
+                    module = parent;
+                } else {
+                    return None;
+                }
+            }
+            current_module = module;
+            0
+        }
+        PathKind::Crate => {
+            current_module = def_map.root;
+            0
+        }
+    };
+
+    for segment in path.segments.iter().skip(start_idx) {
+        let module_data = &def_map.modules[current_module];
+        // Check children for the next module segment
+        if let Some((_, child_id)) = module_data
+            .children
+            .iter()
+            .find(|(n, _)| *n == segment.name)
+        {
+            current_module = *child_id;
+        } else {
+            return None;
+        }
+    }
+    Some(current_module)
+}
+
+/// Extract a `Path` from a `Path` syntax node.
+fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Path> {
+    // Assumes node.kind() == SyntaxKind::PathExpr
+    let mut segments = Vec::new();
+    let mut kind = PathKind::Plain;
+    let mut super_count = 0u32;
+
+    for elem in node.children_with_tokens() {
+        if let Some(token) = elem.as_token() {
+            match token.kind() {
+                SyntaxKind::KwCrate => kind = PathKind::Crate,
+                SyntaxKind::KwSelf => kind = PathKind::SelfPath,
+                SyntaxKind::KwSuper => {
+                    super_count += 1;
+                    kind = PathKind::Super(super_count);
+                }
+                SyntaxKind::Ident => {
+                    segments.push(PathSegment {
+                        name: interner.intern(token.text()),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Handle cases where `super` is implicit in count but segments are empty
+    if segments.is_empty() && super_count > 0 {
+        return Some(Path { segments, kind: PathKind::Super(super_count) });
+    }
+
+    if segments.is_empty() && kind == PathKind::Crate {
+         return Some(Path { segments, kind: PathKind::Crate });
+    }
+
+    if !segments.is_empty() {
+        Some(Path { segments, kind })
+    } else {
+        None
+    }
+}
+
 #[tracing::instrument(skip(root))]
 pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
     let mut diagnostics = Vec::new();
@@ -192,32 +275,166 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         span: Span::DUMMY,
     });
 
-    collect_items(
-        root,
-        root_module,
-        &mut modules,
-        &mut diagnostics,
-        &interner,
-        &mut def_counter,
-    );
-
-    let def_map = CrateDefMap {
+    // We create the CrateDefMap early so we can pass it to helpers
+    let mut def_map = CrateDefMap {
         root: root_module,
         modules,
         krate,
         interner,
     };
+
+    collect_items(
+        root,
+        root_module,
+        &mut def_map,
+        &mut diagnostics,
+        &mut def_counter,
+    );
+
     (def_map, diagnostics)
 }
 
+/// Process a `UseDecl` node.
+fn process_use_decl(
+    node: &SyntaxNode,
+    parent_module: ModuleId,
+    def_map: &mut CrateDefMap,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+) {
+    // UseDecl contains a UseTree
+    let use_tree = match node.children().find(|n| n.kind() == SyntaxKind::UseTree) {
+        Some(t) => t,
+        None => return,
+    };
+
+    process_use_tree(&use_tree, parent_module, def_map, diagnostics);
+}
+
+/// Recursively process a `UseTree`.
+fn process_use_tree(
+    node: &SyntaxNode,
+    parent_module: ModuleId,
+    def_map: &mut CrateDefMap,
+    _diagnostics: &mut Vec<GlyimDiagnostic>,
+) {
+    // Check for nested use trees (braces)
+    if node.children().any(|n| n.kind() == SyntaxKind::LBrace) {
+        let path = extract_path_from_syntax(node, &def_map.interner);
+        let base_module = if let Some(p) = path {
+            resolve_module_path(def_map, parent_module, &p)
+        } else {
+            None
+        };
+
+        // Process each inner UseTree
+        for child in node.children() {
+            if child.kind() == SyntaxKind::UseTree {
+                // If we have a base module, we need to handle resolution relative to it.
+                // However, process_use_tree is generic.
+                // Special case: If base_module exists, the inner tree is just a name.
+                // We handle this by checking if the inner tree is a simple identifier.
+
+                let is_glob = child.children().any(|n| n.kind() == SyntaxKind::Star);
+                let inner_path = extract_path_from_syntax(&child, &def_map.interner);
+
+                if let (Some(base_mod), Some(inner_p)) = (base_module, inner_path) {
+                    if inner_p.segments.len() == 1 {
+                        let name = inner_p.segments[0].name;
+                        // Clone scope to avoid holding immutable borrow while mutating parent
+                        let base_scope = def_map.modules[base_mod].scope.clone();
+                        if let Some((id, vis)) = base_scope.resolve(name) {
+                            let ns = determine_namespace(id, &base_scope);
+                            def_map.modules[parent_module].scope.declare(
+                                name, id, vis, node_span(&child),
+                                ns
+                            );
+                        }
+                    }
+                } else if is_glob {
+                     // Handle `a::*` inside braces if base_module exists
+                     if let Some(base_mod) = base_module {
+                         import_all_public(base_mod, parent_module, def_map);
+                     }
+                }
+            }
+        }
+        return;
+    }
+
+    // Check for glob import
+    if node.children().any(|n| n.kind() == SyntaxKind::Star) {
+        let path = extract_path_from_syntax(node, &def_map.interner);
+        if let Some(p) = path {
+            if let Some(mod_id) = resolve_module_path(def_map, parent_module, &p) {
+                import_all_public(mod_id, parent_module, def_map);
+            }
+        }
+        return;
+    }
+
+    // Simple path import: `use a::b::c`
+    let path = extract_path_from_syntax(node, &def_map.interner);
+
+    if let Some(path) = path {
+        let resolver = Resolver::new(def_map, parent_module);
+        let per_ns = resolver.resolve_path(&path);
+
+        let name = path.segments.last().map(|s| s.name);
+
+        if let Some(name) = name {
+            if let Some((id, vis)) = per_ns.types {
+                def_map.modules[parent_module].scope.declare(name, id, vis, node_span(node), Namespace::Types);
+            }
+            if let Some((id, vis)) = per_ns.values {
+                def_map.modules[parent_module].scope.declare(name, id, vis, node_span(node), Namespace::Values);
+            }
+            if let Some((id, vis)) = per_ns.macros {
+                def_map.modules[parent_module].scope.declare(name, id, vis, node_span(node), Namespace::Macros);
+            }
+        }
+    }
+}
+
+/// Import all public items from source module to target module.
+fn import_all_public(source: ModuleId, target: ModuleId, def_map: &mut CrateDefMap) {
+    let source_scope = def_map.modules[source].scope.clone();
+
+    for (name, id, vis, span) in source_scope.types {
+        if vis == Visibility::Public {
+            def_map.modules[target].scope.declare(name, id, vis, span, Namespace::Types);
+        }
+    }
+    for (name, id, vis, span) in source_scope.values {
+        if vis == Visibility::Public {
+            def_map.modules[target].scope.declare(name, id, vis, span, Namespace::Values);
+        }
+    }
+    // Macros usually not imported via glob in this simple model, but could be
+}
+
+/// Helper to guess namespace from an ID in a specific scope.
+/// This is a bit of a hack because we only have LocalDefId.
+/// We check where the ID exists.
+fn determine_namespace(id: LocalDefId, scope: &ItemScope) -> Namespace {
+    if scope.types.iter().any(|(_, i, _, _)| *i == id) {
+        return Namespace::Types;
+    }
+    if scope.values.iter().any(|(_, i, _, _)| *i == id) {
+        return Namespace::Values;
+    }
+    if scope.macros.iter().any(|(_, i, _, _)| *i == id) {
+        return Namespace::Macros;
+    }
+    // Default to Types if unknown (structs/enums are common)
+    Namespace::Types
+}
+
 /// Collect items from a syntax node (SourceFile or Module node) into the given module.
-/// For a Module node, the node itself is the container; its children (nodes only) are the items.
 fn collect_items(
     node: &SyntaxNode,
     parent_module: ModuleId,
-    modules: &mut IndexVec<ModuleId, ModuleData>,
+    def_map: &mut CrateDefMap,
     diagnostics: &mut Vec<GlyimDiagnostic>,
-    interner: &Interner,
     def_counter: &mut u32,
 ) {
     for child in node.children() {
@@ -225,34 +442,35 @@ fn collect_items(
             // Inline module: `mod name { ... }`
             SyntaxKind::Module => {
                 let name_str = extract_module_name(&child);
-                let name = interner.intern(&name_str);
+                let name = def_map.interner.intern(&name_str);
                 let span = node_span(&child);
-                let is_dup = modules[parent_module]
+
+                let is_dup = def_map.modules[parent_module]
                     .children
                     .iter()
                     .any(|(n, _)| *n == name);
+
                 if is_dup {
                     diagnostics.push(GlyimDiagnostic::parse_error(
                         span,
-                        format!("duplicate module `{}`", interner.resolve(name)),
+                        format!("duplicate module `{}`", def_map.interner.resolve(name)),
                     ));
                 } else {
-                    let child_module = modules.push(ModuleData {
+                    let child_module = def_map.modules.push(ModuleData {
                         parent: Some(parent_module),
                         children: Vec::new(),
                         scope: ItemScope::default(),
                         origin: ModuleOrigin::Inline { span },
                         span,
                     });
-                    modules[parent_module].children.push((name, child_module));
+                    def_map.modules[parent_module].children.push((name, child_module));
 
-                    // Recurse into the module node itself. Its children (nodes) are the items inside.
+                    // Recurse into the module node itself
                     collect_items(
                         &child,
                         child_module,
-                        modules,
+                        def_map,
                         diagnostics,
-                        interner,
                         def_counter,
                     );
                 }
@@ -270,13 +488,13 @@ fn collect_items(
             | SyntaxKind::ExternBlock => {
                 if let Some(ns) = namespace_for_kind(child.kind()) {
                     let name_str = extract_ident(&child);
-                    let name = interner.intern(&name_str);
+                    let name = def_map.interner.intern(&name_str);
                     let vis = visibility_of_node(&child);
                     let id = LocalDefId::from_raw(*def_counter);
                     *def_counter += 1;
                     let span = node_span(&child);
 
-                    let scope = &mut modules[parent_module].scope;
+                    let scope = &mut def_map.modules[parent_module].scope;
                     let existing = match ns {
                         Namespace::Types => scope.types.iter().any(|(n, _, _, _)| *n == name),
                         Namespace::Values => scope.values.iter().any(|(n, _, _, _)| *n == name),
@@ -285,7 +503,7 @@ fn collect_items(
                     if existing {
                         diagnostics.push(GlyimDiagnostic::parse_error(
                             span,
-                            format!("duplicate definition of `{}`", interner.resolve(name)),
+                            format!("duplicate definition of `{}`", def_map.interner.resolve(name)),
                         ));
                     } else {
                         scope.declare(name, id, vis, span, ns);
@@ -293,12 +511,11 @@ fn collect_items(
                 }
             }
 
-            // Use declarations are ignored for now (test t24 expects no items)
+            // Use declarations
             SyntaxKind::UseDecl => {
-                // intentionally ignored
+                process_use_decl(&child, parent_module, def_map, diagnostics);
             }
 
-            // Any other node (e.g., inner items inside a block are not expected)
             _ => {}
         }
     }
@@ -306,7 +523,6 @@ fn collect_items(
 
 /// Extract the name of an inline module from its `Module` node as a String.
 fn extract_module_name(module_node: &SyntaxNode) -> String {
-    // The structure: Module node has children: KwMod, Ident, then items.
     for child in module_node.children_with_tokens() {
         if let Some(token) = child.as_token()
             && token.kind() == SyntaxKind::Ident
@@ -314,12 +530,10 @@ fn extract_module_name(module_node: &SyntaxNode) -> String {
             return token.text().to_string();
         }
     }
-    // Fallback (should not happen for valid syntax)
     "__unnamed_module".to_string()
 }
 
 /// Extract the name of an item (e.g., function, struct) from its syntax node.
-/// For `ImplDef`, we generate a synthetic unique name because impls have no inherent name.
 fn extract_ident(node: &SyntaxNode) -> String {
     if node.kind() == SyntaxKind::ImplDef {
         let offset = u32::from(node.text_range().start());
@@ -332,7 +546,6 @@ fn extract_ident(node: &SyntaxNode) -> String {
             return token.text().to_string();
         }
     }
-    // Fallback: use the kind (Debug) and offset
     let offset = u32::from(node.text_range().start());
     format!("__{:?}_anonymous_{}", node.kind(), offset)
 }
@@ -375,8 +588,6 @@ fn visibility_of_node(node: &SyntaxNode) -> Visibility {
 }
 
 /// Create a `Span` from a syntax node's text range.
-/// Note: In a real compiler, you would have access to the actual `FileId`.
-/// Here we use a dummy `FileId::BOGUS`; tests do not rely on the file id.
 fn node_span(node: &SyntaxNode) -> Span {
     let range = node.text_range();
     let lo = ByteIdx::from_raw(u32::from(range.start()));
