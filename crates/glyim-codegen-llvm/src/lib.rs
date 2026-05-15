@@ -1,8 +1,11 @@
 use glyim_codegen::CodegenBackend;
 use glyim_diag::{CompResult, GlyimDiagnostic};
-use glyim_mir::Body;
+use glyim_mir::{BasicBlockIdx, Body, Terminator, TerminatorKind};
+use inkwell::builder::Builder;
 use inkwell::context::Context;
+use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -40,30 +43,11 @@ impl CodegenBackend for LlvmBackend {
         "llvm"
     }
 
-    /// Generate code for multiple bodies, writing the result to `output` on disk.
-    /// Returns `Ok(())` — the bytes are written to the file, not returned in memory.
-    /// Use `generate_function()` for in-memory results.
     fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()> {
-        let module = self.context.create_module("glyim_module");
+        let context = &self.context;
+        let module = context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-
-        for (idx, _body) in bodies.iter().enumerate() {
-            let fn_name = format!("func_{}", idx);
-            let i32_type = self.context.i32_type();
-            let fn_type = i32_type.fn_type(&[], false);
-            let function = module.add_function(&fn_name, fn_type, None);
-            let basic_block = self.context.append_basic_block(function, "entry");
-            let builder = self.context.create_builder();
-            builder.position_at_end(basic_block);
-            let return_val = i32_type.const_int(42, false);
-            builder.build_return(Some(&return_val)).map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "LLVM build_return failed: {:?}",
-                    e
-                ))]
-            })?;
-        }
 
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
@@ -71,6 +55,7 @@ impl CodegenBackend for LlvmBackend {
                 e
             ))]
         })?;
+
         let target_machine = target
             .create_target_machine(
                 &triple,
@@ -86,6 +71,10 @@ impl CodegenBackend for LlvmBackend {
                 )]
             })?;
 
+        for body in bodies.iter() {
+            self.lower_body(context, &module, body)?;
+        }
+
         target_machine
             .write_to_file(&module, inkwell::targets::FileType::Object, output)
             .map_err(|e| {
@@ -99,28 +88,12 @@ impl CodegenBackend for LlvmBackend {
     }
 
     fn generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>> {
-        let module = self.context.create_module("glyim_func");
+        let context = &self.context;
+        let module = context.create_module("glyim_func");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
 
-        let fn_name = format!(
-            "func_{}_{}",
-            body.owner.krate.to_raw(),
-            body.owner.local_id.to_raw()
-        );
-        let i32_type = self.context.i32_type();
-        let fn_type = i32_type.fn_type(&[], false);
-        let function = module.add_function(&fn_name, fn_type, None);
-        let basic_block = self.context.append_basic_block(function, "entry");
-        let builder = self.context.create_builder();
-        builder.position_at_end(basic_block);
-        let return_val = i32_type.const_int(42, false);
-        builder.build_return(Some(&return_val)).map_err(|e| {
-            vec![GlyimDiagnostic::internal_error(format!(
-                "LLVM build_return failed: {:?}",
-                e
-            ))]
-        })?;
+        self.lower_body(context, &module, body)?;
 
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
@@ -128,6 +101,7 @@ impl CodegenBackend for LlvmBackend {
                 e
             ))]
         })?;
+
         let target_machine = target
             .create_target_machine(
                 &triple,
@@ -155,21 +129,113 @@ impl CodegenBackend for LlvmBackend {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_generate_empty_body_returns_ok() {
-        let backend = LlvmBackend::new();
-        let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::def_id::DefId::new(
-            glyim_core::def_id::CrateId::from_raw(0),
-            glyim_core::def_id::LocalDefId::from_raw(0),
-        )));
-        let result = backend.generate_function(&body);
-        assert!(
-            result.is_ok(),
-            "generate_function for dummy body should succeed"
+impl LlvmBackend {
+    fn lower_body<'ctx>(
+        &'ctx self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        body: &Body,
+    ) -> CompResult<()> {
+        let fn_name = format!(
+            "func_{}_{}",
+            body.owner.krate.to_raw(),
+            body.owner.local_id.to_raw()
         );
+
+        let void_type = context.void_type();
+        let fn_type = void_type.fn_type(&[], false);
+        let function = module.add_function(&fn_name, fn_type, None);
+        let entry_block = context.append_basic_block(function, "entry");
+        let builder = context.create_builder();
+        builder.position_at_end(entry_block);
+
+        let mut bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>> =
+            HashMap::new();
+        bb_map.insert(BasicBlockIdx::from_raw(0), entry_block);
+
+        for (bb_idx, _bb_data) in body.basic_blocks.iter_enumerated() {
+            if bb_idx != BasicBlockIdx::from_raw(0) {
+                let bb_name = format!("bb_{}", bb_idx.index());
+                let llvm_bb = context.append_basic_block(function, &bb_name);
+                bb_map.insert(bb_idx, llvm_bb);
+            }
+        }
+
+        for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
+            let llvm_bb = bb_map.get(&bb_idx).unwrap();
+            builder.position_at_end(*llvm_bb);
+            self.lower_terminator(context, &builder, &bb_data.terminator, &bb_map)?;
+        }
+
+        Ok(())
+    }
+
+    fn lower_terminator<'ctx>(
+        &self,
+        context: &Context,
+        builder: &Builder<'ctx>,
+        terminator: &Terminator,
+        bb_map: &HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
+    ) -> CompResult<()> {
+        match &terminator.kind {
+            TerminatorKind::Goto { target } => {
+                let target_bb = bb_map.get(target).unwrap();
+                builder
+                    .build_unconditional_branch(*target_bb)
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "Failed to build unconditional branch: {:?}",
+                            e
+                        ))]
+                    })?;
+            }
+            TerminatorKind::Return => {
+                builder.build_return(None).map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build return: {:?}",
+                        e
+                    ))]
+                })?;
+            }
+            TerminatorKind::Unreachable => {
+                builder.build_unreachable().map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build unreachable: {:?}",
+                        e
+                    ))]
+                })?;
+            }
+            TerminatorKind::SwitchInt {
+                discr: _,
+                switch_ty: _,
+                targets,
+            } => {
+                let otherwise_bb = bb_map.get(&targets.otherwise()).unwrap();
+                let i32_type = context.i32_type();
+                let default_case = i32_type.const_int(0, false);
+
+                let mut cases = Vec::new();
+                for (value, target_bb) in targets.iter() {
+                    let target_block = bb_map.get(&target_bb).unwrap();
+                    cases.push((i32_type.const_int(value as u64, false), *target_block));
+                }
+
+                builder
+                    .build_switch(default_case, *otherwise_bb, &cases)
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "Failed to build switch: {:?}",
+                            e
+                        ))]
+                    })?;
+            }
+            _ => {
+                eprintln!("STUB: Terminator kind not yet implemented in LLVM lowering");
+            }
+        }
+        Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

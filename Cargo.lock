@@ -492,9 +492,10 @@ dependencies = [
  "glyim-core",
  "glyim-diag",
  "glyim-mir",
+ "glyim-span",
  "glyim-test",
+ "glyim-type",
  "inkwell",
- "tempfile",
 ]
 
 [[package]]
