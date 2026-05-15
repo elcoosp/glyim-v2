@@ -491,6 +491,7 @@ dependencies = [
  "glyim-codegen",
  "glyim-core",
  "glyim-diag",
+ "glyim-layout",
  "glyim-mir",
  "glyim-span",
  "glyim-test",
