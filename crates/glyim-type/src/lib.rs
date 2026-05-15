@@ -1,4 +1,5 @@
 //! Core type system & Type Context.
+pub mod auto_trait;
 pub mod binder;
 pub mod const_val;
 pub mod context;
@@ -10,6 +11,7 @@ pub mod region;
 pub mod substitution;
 pub mod ty;
 
+pub use auto_trait::*;
 pub use binder::*;
 pub use const_val::*;
 pub use context::*;
