@@ -102,54 +102,86 @@ pub fn typeck_crate(
     let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
 
     for (_item_id, item) in hir.items.iter_enumerated() {
-        let body_info: Option<(glyim_hir::BodyId, u32, Vec<glyim_hir::Param>, Ty)> =
-            match &item.kind {
-                glyim_hir::ItemKind::Fn(f) => {
-                    let ret_ty = match &f.return_ty {
+        let mut impl_body_infos: Vec<(glyim_hir::BodyId, u32, Vec<glyim_hir::Param>, Ty)> = Vec::new();
+
+        match &item.kind {
+            glyim_hir::ItemKind::Fn(f) => {
+                let ret_ty = match &f.return_ty {
+                    Some(_) => {
+                        let var = infer.new_ty_var(&mut ctx);
+                        ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+                    }
+                    None => Ty::UNIT,
+                };
+                if let Some(b) = f.body {
+                    impl_body_infos.push((b, item.id.to_raw(), f.params.clone(), ret_ty));
+
+                    // Process where clauses for this function
+                    let generic_params = &f.generic_params;
+                    let where_clauses = &f.where_clauses;
+                    let param_tys = build_param_tys(&mut ctx, generic_params);
+                    for wc in where_clauses {
+                        if let Some(ty) = resolve_type_ref_to_ty(&mut ctx, &wc.ty, &param_tys) {
+                            for bound in &wc.bounds {
+                                let trait_def_id = TraitDefId::from_raw(0); // mock
+                                let trait_ref = TraitRef {
+                                    def_id: trait_def_id,
+                                    substs: ctx.intern_substitution(vec![GenericArg::Ty(ty)]),
+                                };
+                                let trait_pred = TraitPredicate {
+                                    trait_ref,
+                                    polarity: ImplPolarity::Positive,
+                                };
+                                all_obligations.push(Obligation {
+                                    predicate: Predicate::Trait(trait_pred),
+                                    cause: ObligationCause {
+                                        span: bound.span,
+                                        code: glyim_solve::ObligationCauseCode::WellFormed,
+                                    },
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            glyim_hir::ItemKind::Impl(impl_item) => {
+                let mut method_local_def_counter = item.id.to_raw() * 1000 + 1;
+                for method in &impl_item.methods {
+                    let ret_ty = match &method.return_ty {
                         Some(_) => {
                             let var = infer.new_ty_var(&mut ctx);
                             ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
                         }
                         None => Ty::UNIT,
                     };
-                    f.body
-                        .map(|b| (b, item.id.to_raw(), f.params.clone(), ret_ty))
-                }
-                _ => None,
-            };
+                    let local_def_raw = method_local_def_counter;
+                    method_local_def_counter += 1;
 
-        if let Some((body_id, local_def_raw, params, return_ty)) = body_info {
-            let local_def_id = LocalDefId::from_raw(local_def_raw);
-            let mut pending = Vec::new();
+                    let body_id = if let Some(impl_body) = method.body {
+                        Some(impl_body)
+                    } else if let Some(trait_ref_path) = &impl_item.trait_ref {
+                        find_trait_default_body(hir, trait_ref_path, method.name)
+                    } else {
+                        None
+                    };
 
-            // Process where clauses for this function
-            if let Some(generic_params) = get_generic_params(&item.kind) {
-                let where_clauses = get_where_clauses(&item.kind);
-                let param_tys = build_param_tys(&mut ctx, generic_params);
-                for wc in where_clauses {
-                    if let Some(ty) = resolve_type_ref_to_ty(&mut ctx, &wc.ty, &param_tys) {
-                        for bound in &wc.bounds {
-                            // Dummy trait id; solver will decide
-                            let trait_def_id = TraitDefId::from_raw(0); // mock
-                            let trait_ref = TraitRef {
-                                def_id: trait_def_id,
-                                substs: ctx.intern_substitution(vec![GenericArg::Ty(ty)]),
-                            };
-                            let trait_pred = TraitPredicate {
-                                trait_ref,
-                                polarity: ImplPolarity::Positive,
-                            };
-                            pending.push(Obligation {
-                                predicate: Predicate::Trait(trait_pred),
-                                cause: ObligationCause {
-                                    span: bound.span,
-                                    code: glyim_solve::ObligationCauseCode::WellFormed,
-                                },
-                            });
-                        }
+                    if let Some(b) = body_id {
+                        impl_body_infos.push((b, local_def_raw, method.params.clone(), ret_ty));
+                    } else {
+                        diagnostics.push(GlyimDiagnostic::type_error(
+                            Span::DUMMY,
+                            format!("method `{}` has no implementation and no default", ctx.name_str(method.name)),
+                        ));
                     }
                 }
             }
+            _ => {}
+        }
+
+        // Process all collected body infos (both Fn and Impl)
+        for (body_id, local_def_raw, params, return_ty) in impl_body_infos {
+            let local_def_id = LocalDefId::from_raw(local_def_raw);
+            let mut pending = Vec::new();
 
             let thir_body = check_body::check_function_body(
                 &mut ctx,
@@ -165,6 +197,7 @@ pub fn typeck_crate(
             all_obligations.extend(pending);
             thir_bodies.push((local_def_id, thir_body));
         }
+
     }
 
     let frozen_ctx = ctx.freeze();
@@ -262,3 +295,24 @@ pub(crate) fn resolve_type_ref_to_ty(
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn find_trait_default_body(
+    hir: &glyim_hir::CrateHir,
+    trait_ref_path: &glyim_hir::Path,
+    method_name: glyim_core::interner::Name,
+) -> Option<glyim_hir::BodyId> {
+    let trait_name = trait_ref_path.as_name()?;
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
+            if item.name == trait_name {
+                for method in &trait_item.methods {
+                    if method.name == method_name {
+                        return method.default_body;
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+

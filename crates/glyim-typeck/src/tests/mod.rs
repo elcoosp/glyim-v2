@@ -1,4 +1,3 @@
-
 mod harness_tests;
 mod projection_typeck;
 mod array;
@@ -24,3 +23,4 @@ mod thir_body;
 mod tuple_index;
 mod where_clause;
 mod while_loop;
+mod default_methods;
