@@ -12,7 +12,10 @@ fn test_t10_nested_function_calls() {
 
     // Callee body: function add(x: i32, y: i32) -> i32 { x + y }
     let callee_fn_def = FnDefId::from_raw(10);
-    let callee_def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(callee_fn_def.to_raw()));
+    let callee_def_id = DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(callee_fn_def.to_raw()),
+    );
     let mut callee_body = empty_body(i32_ty);
     // local 0 is return place (already), local 1 and 2 for params
     let param0 = add_local(&mut callee_body, i32_ty, Mutability::Not);

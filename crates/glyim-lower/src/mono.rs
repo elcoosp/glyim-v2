@@ -1,6 +1,8 @@
 //! Monomorphization: instantiate generic MIR bodies with concrete types.
 //!
 //! V23: Implements worklist-based mono item graph traversal.
+//! V24: Adds mono item cache with hash-consed substitution deduplication.
+//!
 //! Recursively follows function calls (via MirConstKind::Fn),
 //! constant references (via MirConstKind::ConstRef), and
 //! drop glue (via TerminatorKind::Drop).
@@ -40,6 +42,10 @@ pub struct MonoCtx {
     items: IndexVec<MonoItemId, MonoItemData>,
     queue: std::collections::VecDeque<MonoItem>,
     seen: std::collections::HashSet<MonoItem>,
+    /// Cache mapping MonoItem → MonoItemId for deduplication and lookup.
+    /// Persists across `collect()` calls, ensuring each unique (DefId, Substitution)
+    /// pair is processed exactly once and can be looked up by MonoItemId.
+    cache: std::collections::HashMap<MonoItem, MonoItemId>,
 }
 
 impl MonoCtx {
@@ -48,31 +54,44 @@ impl MonoCtx {
             items: IndexVec::new(),
             queue: std::collections::VecDeque::new(),
             seen: std::collections::HashSet::new(),
+            cache: std::collections::HashMap::new(),
         }
     }
 
-    /// Enqueue a mono item for collection if it hasn't been seen yet.
+    /// Enqueue a mono item for collection if it hasn't been seen or cached yet.
     fn enqueue(&mut self, item: MonoItem) {
-        if !self.seen.contains(&item) {
+        if !self.seen.contains(&item) && !self.cache.contains_key(&item) {
             self.queue.push_back(item);
         }
     }
 
-    /// Scan a MIR body for references to other mono items (calls, constants, drops).
+    /// Look up the `MonoItemId` for a previously collected item.
     ///
-    /// This is the core of the graph traversal: every terminator and statement
-    /// is inspected for `MirConstKind::Fn`, `MirConstKind::ConstRef`, and
-    /// `TerminatorKind::Drop` which produce new mono items to collect.
+    /// Returns `None` if the item has not been collected yet.
+    /// This is the primary cache query interface: given a `(DefId, Substitution)` pair
+    /// (wrapped in a `MonoItem`), find the canonical `MonoItemId` assigned during
+    /// collection. The cache ensures that each unique instantiation is processed
+    /// exactly once, so the same `MonoItem` always maps to the same `MonoItemId`.
+    #[allow(dead_code)]
+    pub(crate) fn lookup(&self, item: &MonoItem) -> Option<MonoItemId> {
+        self.cache.get(item).copied()
+    }
+
+    /// Returns the number of entries in the cache.
+    /// Should always equal `item_count()` after a `collect()` call.
+    #[allow(dead_code)]
+    pub(crate) fn cache_len(&self) -> usize {
+        self.cache.len()
+    }
+
+    /// Scan a MIR body for references to other mono items (calls, constants, drops).
     fn scan_body_for_refs(&mut self, body: &glyim_mir::Body) {
         for block in body.basic_blocks.iter() {
-            // Scan statements for constant references
             for stmt in &block.statements {
                 if let StatementKind::Assign(_, ref rvalue) = stmt.kind {
                     self.scan_rvalue(rvalue);
                 }
             }
-
-            // Scan terminator for calls and drops
             self.scan_terminator(&block.terminator.kind);
         }
     }
@@ -91,9 +110,7 @@ impl MonoCtx {
             Rvalue::UnaryOp(_, operand) => {
                 self.scan_operand(operand);
             }
-            Rvalue::Ref(_, _) => {
-                // References don't create new mono items
-            }
+            Rvalue::Ref(_, _) => {}
             Rvalue::Aggregate(_, operands) => {
                 for operand in operands {
                     self.scan_operand(operand);
@@ -115,9 +132,7 @@ impl MonoCtx {
             Operand::Constant(mir_const) => {
                 self.scan_const(mir_const);
             }
-            Operand::Copy(_) | Operand::Move(_) => {
-                // Copy/Move refer to locals, not new mono items
-            }
+            Operand::Copy(_) | Operand::Move(_) => {}
         }
     }
 
@@ -136,9 +151,7 @@ impl MonoCtx {
                     substs: *substs,
                 });
             }
-            _ => {
-                // Other constant kinds (Int, Bool, etc.) don't create mono items
-            }
+            _ => {}
         }
     }
 
@@ -152,9 +165,7 @@ impl MonoCtx {
                 target: _,
                 cleanup: _,
             } => {
-                // The function operand may be a MirConstKind::Fn constant
                 self.scan_operand(func);
-                // Arguments may also contain constant references
                 for arg in args {
                     self.scan_operand(arg);
                 }
@@ -164,18 +175,6 @@ impl MonoCtx {
                 target: _,
                 cleanup: _,
             } => {
-                // Drop glue: we need to find the drop implementation for the
-                // type of the place being dropped. For now, we look up the
-                // type from the local declaration and, if it's an ADT, we
-                // enqueue a synthetic drop function.
-                //
-                // The drop function ID is conventionally derived from the ADT
-                // type. In a full compiler this would be resolved through the
-                // trait solver; here we use a convention: FnDefId is derived
-                // from the type's raw index offset into a "drop" namespace.
-                //
-                // For V23, we just emit a tracing warning and will implement
-                // proper drop glue resolution in a future stream.
                 let _ = place;
                 tracing::debug!("STUB: drop glue collection not fully implemented");
             }
@@ -195,12 +194,19 @@ impl MonoCtx {
         start: &[MonoItem],
         mir_bodies: &dyn Fn(DefId, &Substitution) -> Arc<glyim_mir::Body>,
     ) {
-        self.queue.extend(start.iter().cloned());
+        for item in start {
+            if self.cache.contains_key(item) || self.seen.contains(item) {
+                continue;
+            }
+            self.queue.push_back(item.clone());
+        }
+
         while let Some(item) = self.queue.pop_front() {
-            if self.seen.contains(&item) {
+            if self.seen.contains(&item) || self.cache.contains_key(&item) {
                 continue;
             }
             self.seen.insert(item.clone());
+
             let body = match &item {
                 MonoItem::Fn { def_id, substs } => mir_bodies(
                     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(def_id.to_raw())),
@@ -216,16 +222,17 @@ impl MonoCtx {
                 ))),
             };
 
-            // Scan the body for references to other mono items
             self.scan_body_for_refs(&body);
 
             let symbol = format!("{:?}", item);
-            self.items.push(MonoItemData {
+            let id = self.items.push(MonoItemData {
                 item: item.clone(),
                 body,
                 symbol,
                 source_module: 0,
             });
+
+            self.cache.insert(item, id);
         }
     }
 
@@ -238,7 +245,7 @@ impl MonoCtx {
             return body.clone();
         }
         let _ = (ctx, substs);
-        body.clone() // STUB
+        body.clone()
     }
 
     pub fn items(&self) -> &[MonoItemData] {

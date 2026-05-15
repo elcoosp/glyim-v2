@@ -1,6 +1,3 @@
-
-mod harness_tests;
-mod projection_typeck;
 mod array;
 mod assign;
 mod binary_error;
@@ -8,13 +5,16 @@ mod binary_i32;
 mod break_continue;
 mod cast;
 mod common;
+mod default_methods;
 mod edge_cases;
 mod empty_crate;
 mod fn_unit;
 mod function_call;
+mod harness_tests;
 mod inference;
 mod match_expr;
 mod obligation;
+mod projection_typeck;
 mod ref_mut;
 mod ref_x;
 mod return_stmt;
@@ -24,3 +24,4 @@ mod thir_body;
 mod tuple_index;
 mod where_clause;
 mod while_loop;
+mod coherence;

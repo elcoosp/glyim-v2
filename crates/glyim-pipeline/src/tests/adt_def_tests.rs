@@ -1,10 +1,12 @@
 use crate::pipeline_context::PipelineLowerCtx;
+use glyim_core::Visibility;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
 use glyim_core::path::PathKind;
 use glyim_core::primitives::StructKind;
-use glyim_core::Visibility;
-use glyim_hir::{CrateHir, EnumItem, Field as HirField, Item, ItemId, ItemKind, StructItem, Variant};
+use glyim_hir::{
+    CrateHir, EnumItem, Field as HirField, Item, ItemId, ItemKind, StructItem, Variant,
+};
 use glyim_lower::{AdtDef, AdtKind, LowerCtx};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_test::with_fresh_ty_ctx;

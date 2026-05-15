@@ -92,9 +92,25 @@ pub struct Variant {
 }
 
 #[derive(Clone, Debug)]
+pub struct TraitMethod {
+    pub name: Name,
+    pub params: Vec<Param>,
+    pub return_ty: Option<TypeRef>,
+    pub default_body: Option<BodyId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImplMethod {
+    pub name: Name,
+    pub body: Option<BodyId>,
+    pub params: Vec<Param>,
+    pub return_ty: Option<TypeRef>,
+}
+
+#[derive(Clone, Debug)]
 pub struct TraitItem {
     pub associated_types: Vec<Name>,
-    pub methods: Vec<Name>,
+    pub methods: Vec<TraitMethod>,
     pub generic_params: Vec<GenericParam>,
     pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
@@ -103,7 +119,7 @@ pub struct TraitItem {
 pub struct ImplItem {
     pub trait_ref: Option<Path>,
     pub self_ty: TypeRef,
-    pub methods: Vec<Name>,
+    pub methods: Vec<ImplMethod>,
     pub generic_params: Vec<GenericParam>,
     pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
@@ -386,7 +402,7 @@ pub enum Literal {
 
 mod lower;
 
-pub mod where_clause;
 pub mod pipeline_api;
 #[cfg(test)]
 mod tests;
+pub mod where_clause;
