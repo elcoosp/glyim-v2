@@ -1,5 +1,5 @@
-use glyim_core::def_id::AdtId;
-use glyim_core::primitives::{Abi, IntTy, Mutability, Safety, UintTy};
+use glyim_core::def_id::{AdtId, ClosureId, FnDefId, OpaqueTyId, TraitDefId};
+use glyim_core::primitives::{Abi, FloatTy, IntTy, Mutability, Safety, UintTy};
 
 use super::helpers::{test_frozen_ty_ctx, with_fresh_ty_ctx};
 use crate::auto_trait::{AutoTrait, AutoTraitFlags};
@@ -30,6 +30,8 @@ fn make_multi_field_adt(field_tys: Vec<Ty>) -> (TyCtx, Ty) {
         ctx.mk_adt(adt_id, substs)
     })
 }
+
+// ===================== V06 Core Test Plan =====================
 
 /// V06-T01: Struct with all Send fields → auto impl Send (run-pass)
 #[test]
@@ -71,7 +73,6 @@ fn struct_with_non_send_field_no_auto_send() {
         ctx_mut.register_adt_repr(adt_id, vec![raw_ptr_ty]);
         ctx_mut.mk_adt(adt_id, substs)
     });
-
     let flags = ctx.auto_trait_flags(adt_ty);
     assert!(
         !flags.contains(AutoTraitFlags::SEND),
@@ -98,7 +99,6 @@ fn negative_impl_overrides_auto_send() {
         ctx_mut.register_negative_impl(adt_id, AutoTrait::Send);
         ctx_mut.mk_adt(adt_id, substs)
     });
-
     let flags = ctx.auto_trait_flags(adt_ty);
     assert!(
         !flags.contains(AutoTraitFlags::SEND),
@@ -121,7 +121,6 @@ fn ref_send_requires_inner_sync() {
         let inner = ctx_mut.bool_ty();
         ctx_mut.mk_ref(Region::Erased, inner, Mutability::Not)
     });
-
     let flags = ctx.auto_trait_flags(ref_ty);
     assert!(
         flags.contains(AutoTraitFlags::SEND),
@@ -139,7 +138,6 @@ fn ref_mut_send_requires_inner_send() {
         let inner = ctx_mut.bool_ty();
         ctx_mut.mk_ref(Region::Erased, inner, Mutability::Mut)
     });
-
     let flags = ctx.auto_trait_flags(ref_mut_ty);
     assert!(
         flags.contains(AutoTraitFlags::SEND),
@@ -160,10 +158,8 @@ fn ref_to_non_sync_is_not_send() {
         let substs = ctx_mut.intern_substitution(vec![]);
         ctx_mut.register_adt_repr(adt_id, vec![raw_ptr_ty]);
         let non_sync_ty = ctx_mut.mk_adt(adt_id, substs);
-
         ctx_mut.mk_ref(Region::Erased, non_sync_ty, Mutability::Not)
     });
-
     let flags = ctx.auto_trait_flags(ref_ty);
     assert!(
         !flags.contains(AutoTraitFlags::SEND),
@@ -187,11 +183,10 @@ fn manual_impl_overrides_auto() {
         ctx_mut.register_manual_impl(adt_id, AutoTrait::Send);
         ctx_mut.mk_adt(adt_id, substs)
     });
-
     let flags = ctx.auto_trait_flags(adt_ty);
     assert!(
         flags.contains(AutoTraitFlags::SEND),
-        "manual impl Send should override auto deduction (even with raw ptr)"
+        "manual impl Send should override auto deduction"
     );
     assert!(
         !flags.contains(AutoTraitFlags::SYNC),
@@ -199,11 +194,11 @@ fn manual_impl_overrides_auto() {
     );
 }
 
-/// Primitives: bool, never, unit all have all auto traits
+// ===================== Primitives =====================
+
 #[test]
 fn primitives_have_all_auto_traits() {
     let ctx = test_frozen_ty_ctx();
-
     assert!(
         ctx.auto_trait_flags(Ty::BOOL)
             .contains(AutoTraitFlags::all())
@@ -222,7 +217,6 @@ fn primitives_have_all_auto_traits() {
 fn int_types_have_all_auto_traits() {
     let (ctx, i32_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::Int(IntTy::I32)));
     assert!(ctx.auto_trait_flags(i32_ty).contains(AutoTraitFlags::all()));
-
     let (ctx2, u64_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::Uint(UintTy::U64)));
     assert!(
         ctx2.auto_trait_flags(u64_ty)
@@ -230,79 +224,171 @@ fn int_types_have_all_auto_traits() {
     );
 }
 
-/// Raw pointers: not Send, not Sync, but Unpin
+#[test]
+fn char_type_has_all_auto_traits() {
+    let (ctx, char_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::Char));
+    assert!(
+        ctx.auto_trait_flags(char_ty)
+            .contains(AutoTraitFlags::all())
+    );
+}
+
+#[test]
+fn string_type_has_all_auto_traits() {
+    let (ctx, str_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::String));
+    assert!(ctx.auto_trait_flags(str_ty).contains(AutoTraitFlags::all()));
+}
+
+#[test]
+fn float_types_have_all_auto_traits() {
+    let (ctx, f32_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::Float(FloatTy::F32)));
+    assert!(ctx.auto_trait_flags(f32_ty).contains(AutoTraitFlags::all()));
+    let (ctx2, f64_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| c.mk_ty(TyKind::Float(FloatTy::F64)));
+    assert!(
+        ctx2.auto_trait_flags(f64_ty)
+            .contains(AutoTraitFlags::all())
+    );
+}
+
+#[test]
+fn never_type_has_all_auto_traits() {
+    let ctx = test_frozen_ty_ctx();
+    assert!(
+        ctx.auto_trait_flags(Ty::NEVER)
+            .contains(AutoTraitFlags::all())
+    );
+}
+
+// ===================== Error / Infer / Param / Bound =====================
+
+#[test]
+fn error_type_has_no_auto_traits() {
+    let ctx = test_frozen_ty_ctx();
+    let flags = ctx.auto_trait_flags(Ty::ERROR);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(!flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn infer_type_has_no_auto_traits() {
+    let (ctx, infer_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let var = TyVar::from_raw(0);
+        c.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+    });
+    let flags = ctx.auto_trait_flags(infer_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(!flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn param_type_has_no_auto_traits() {
+    let (ctx, param_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let name = c.resolver().intern("T");
+        c.mk_ty(TyKind::Param(ParamTy { index: 0, name }))
+    });
+    let flags = ctx.auto_trait_flags(param_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(!flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn bound_type_has_no_auto_traits() {
+    let (ctx, bound_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        c.mk_ty(TyKind::Bound(
+            0,
+            BoundTy {
+                var: 0,
+                kind: BoundTyKind::Anon,
+            },
+        ))
+    });
+    let flags = ctx.auto_trait_flags(bound_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(!flags.contains(AutoTraitFlags::UNPIN));
+}
+
+// ===================== Raw pointers =====================
+
 #[test]
 fn raw_ptr_is_unpin_only() {
     let (ctx, raw_ptr_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
         let inner = ctx_mut.bool_ty();
         ctx_mut.mk_ty(TyKind::RawPtr(inner, Mutability::Not))
     });
-
     let flags = ctx.auto_trait_flags(raw_ptr_ty);
-    assert!(
-        !flags.contains(AutoTraitFlags::SEND),
-        "*const T is not Send"
-    );
-    assert!(
-        !flags.contains(AutoTraitFlags::SYNC),
-        "*const T is not Sync"
-    );
-    assert!(flags.contains(AutoTraitFlags::UNPIN), "*const T is Unpin");
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
 
     let (ctx2, raw_mut_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
         let inner = ctx_mut.bool_ty();
         ctx_mut.mk_ty(TyKind::RawPtr(inner, Mutability::Mut))
     });
-
     let flags2 = ctx2.auto_trait_flags(raw_mut_ty);
-    assert!(!flags2.contains(AutoTraitFlags::SEND), "*mut T is not Send");
-    assert!(!flags2.contains(AutoTraitFlags::SYNC), "*mut T is not Sync");
-    assert!(flags2.contains(AutoTraitFlags::UNPIN), "*mut T is Unpin");
+    assert!(!flags2.contains(AutoTraitFlags::SEND));
+    assert!(!flags2.contains(AutoTraitFlags::SYNC));
+    assert!(flags2.contains(AutoTraitFlags::UNPIN));
 }
 
-/// Tuples: auto traits are intersection of element auto traits
+// ===================== Tuples =====================
+
 #[test]
 fn tuple_auto_traits_are_intersection() {
     let (ctx, tuple_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
         let bool_ty = ctx_mut.bool_ty();
-        let inner = bool_ty;
-        let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(inner, Mutability::Not));
+        let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
         let substs =
             ctx_mut.intern_substitution(vec![GenericArg::Ty(bool_ty), GenericArg::Ty(raw_ptr_ty)]);
         ctx_mut.mk_tuple(substs)
     });
-
     let flags = ctx.auto_trait_flags(tuple_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn empty_tuple_has_all_auto_traits() {
+    let (ctx, unit_tuple) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let substs = c.intern_substitution(vec![]);
+        c.mk_tuple(substs)
+    });
     assert!(
-        !flags.contains(AutoTraitFlags::SEND),
-        "(bool, *const T) should NOT be Send"
-    );
-    assert!(
-        !flags.contains(AutoTraitFlags::SYNC),
-        "(bool, *const T) should NOT be Sync"
-    );
-    assert!(
-        flags.contains(AutoTraitFlags::UNPIN),
-        "(bool, *const T) should be Unpin"
+        ctx.auto_trait_flags(unit_tuple)
+            .contains(AutoTraitFlags::all())
     );
 }
 
-/// Slice: inherits auto traits from element type
+// ===================== Slice / Array =====================
+
 #[test]
 fn slice_inherits_element_auto_traits() {
     let (ctx, slice_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
         let bool_ty = ctx_mut.bool_ty();
         ctx_mut.mk_ty(TyKind::Slice(bool_ty))
     });
-
-    let flags = ctx.auto_trait_flags(slice_ty);
     assert!(
-        flags.contains(AutoTraitFlags::all()),
-        "[bool] should have all auto traits"
+        ctx.auto_trait_flags(slice_ty)
+            .contains(AutoTraitFlags::all())
     );
 }
 
-/// Array: inherits auto traits from element type
+#[test]
+fn slice_of_raw_ptr_is_not_send() {
+    let (ctx, slice_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let raw_ptr_ty = c.mk_ty(TyKind::RawPtr(c.bool_ty(), Mutability::Not));
+        c.mk_ty(TyKind::Slice(raw_ptr_ty))
+    });
+    let flags = ctx.auto_trait_flags(slice_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
 #[test]
 fn array_inherits_element_auto_traits() {
     let (ctx, array_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -313,15 +399,31 @@ fn array_inherits_element_auto_traits() {
         };
         ctx_mut.mk_ty(TyKind::Array(bool_ty, const_val))
     });
-
-    let flags = ctx.auto_trait_flags(array_ty);
     assert!(
-        flags.contains(AutoTraitFlags::all()),
-        "[bool; 3] should have all auto traits"
+        ctx.auto_trait_flags(array_ty)
+            .contains(AutoTraitFlags::all())
     );
 }
 
-/// Multi-field ADT: all fields must implement the auto trait
+#[test]
+fn array_of_raw_ptr_is_not_send() {
+    let (ctx, array_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let bool_ty = c.bool_ty();
+        let raw_ptr_ty = c.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
+        let const_val = Const {
+            kind: ConstKind::Uint(3),
+            ty: bool_ty,
+        };
+        c.mk_ty(TyKind::Array(raw_ptr_ty, const_val))
+    });
+    let flags = ctx.auto_trait_flags(array_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+// ===================== ADT =====================
+
 #[test]
 fn multi_field_adt_all_must_implement() {
     let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -332,12 +434,9 @@ fn multi_field_adt_all_must_implement() {
         ctx_mut.register_adt_repr(adt_id, vec![bool_ty, i32_ty]);
         ctx_mut.mk_adt(adt_id, substs)
     });
-
-    let flags = ctx.auto_trait_flags(adt_ty);
-    assert!(flags.contains(AutoTraitFlags::all()));
+    assert!(ctx.auto_trait_flags(adt_ty).contains(AutoTraitFlags::all()));
 }
 
-/// Multi-field ADT: one bad field spoils the auto trait
 #[test]
 fn multi_field_adt_one_bad_field_removes_send() {
     let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -348,14 +447,38 @@ fn multi_field_adt_one_bad_field_removes_send() {
         ctx_mut.register_adt_repr(adt_id, vec![bool_ty, raw_ptr_ty]);
         ctx_mut.mk_adt(adt_id, substs)
     });
-
     let flags = ctx.auto_trait_flags(adt_ty);
     assert!(!flags.contains(AutoTraitFlags::SEND));
     assert!(!flags.contains(AutoTraitFlags::SYNC));
     assert!(flags.contains(AutoTraitFlags::UNPIN));
 }
 
-/// Negative impl on one trait doesn't affect others
+#[test]
+fn adt_with_no_repr_gets_no_auto_traits() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(500);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    let flags = ctx.auto_trait_flags(adt_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(!flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn adt_with_empty_fields_has_all_auto_traits() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(501);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.register_adt_repr(adt_id, vec![]);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    assert!(ctx.auto_trait_flags(adt_ty).contains(AutoTraitFlags::all()));
+}
+
+// ===================== Negative impls =====================
+
 #[test]
 fn negative_impl_send_doesnt_affect_sync_or_unpin() {
     let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -366,14 +489,140 @@ fn negative_impl_send_doesnt_affect_sync_or_unpin() {
         ctx_mut.register_negative_impl(adt_id, AutoTrait::Send);
         ctx_mut.mk_adt(adt_id, substs)
     });
-
     let flags = ctx.auto_trait_flags(adt_ty);
     assert!(!flags.contains(AutoTraitFlags::SEND));
     assert!(flags.contains(AutoTraitFlags::SYNC));
     assert!(flags.contains(AutoTraitFlags::UNPIN));
 }
 
-/// Coinductive: recursive ADT type should still compute auto traits
+#[test]
+fn negative_impl_sync_doesnt_affect_send() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(300);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        let field_ty = ctx_mut.bool_ty();
+        ctx_mut.register_adt_repr(adt_id, vec![field_ty]);
+        ctx_mut.register_negative_impl(adt_id, AutoTrait::Sync);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    let flags = ctx.auto_trait_flags(adt_ty);
+    assert!(flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn negative_impl_unpin_doesnt_affect_send_or_sync() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(301);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        let field_ty = ctx_mut.bool_ty();
+        ctx_mut.register_adt_repr(adt_id, vec![field_ty]);
+        ctx_mut.register_negative_impl(adt_id, AutoTrait::Unpin);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    let flags = ctx.auto_trait_flags(adt_ty);
+    assert!(flags.contains(AutoTraitFlags::SEND));
+    assert!(flags.contains(AutoTraitFlags::SYNC));
+    assert!(!flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn multiple_negative_impls() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(302);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        let field_ty = ctx_mut.bool_ty();
+        ctx_mut.register_adt_repr(adt_id, vec![field_ty]);
+        ctx_mut.register_negative_impl(adt_id, AutoTrait::Send);
+        ctx_mut.register_negative_impl(adt_id, AutoTrait::Sync);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    let flags = ctx.auto_trait_flags(adt_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+// ===================== Manual impls =====================
+
+#[test]
+fn manual_impl_sync_on_raw_ptr_struct() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(303);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        let bool_ty = ctx_mut.bool_ty();
+        let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
+        ctx_mut.register_adt_repr(adt_id, vec![raw_ptr_ty]);
+        ctx_mut.register_manual_impl(adt_id, AutoTrait::Sync);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    let flags = ctx.auto_trait_flags(adt_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(flags.contains(AutoTraitFlags::SYNC));
+}
+
+#[test]
+fn manual_impl_overrides_negative_impl() {
+    let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(304);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        let field_ty = ctx_mut.bool_ty();
+        ctx_mut.register_adt_repr(adt_id, vec![field_ty]);
+        ctx_mut.register_negative_impl(adt_id, AutoTrait::Send);
+        ctx_mut.register_manual_impl(adt_id, AutoTrait::Send);
+        ctx_mut.mk_adt(adt_id, substs)
+    });
+    let flags = ctx.auto_trait_flags(adt_ty);
+    assert!(
+        flags.contains(AutoTraitFlags::SEND),
+        "manual impl should override negative impl"
+    );
+}
+
+// ===================== Nested ADTs =====================
+
+#[test]
+fn nested_adt_auto_traits() {
+    let (ctx, outer_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let inner_adt_id = AdtId::from_raw(400);
+        let inner_substs = ctx_mut.intern_substitution(vec![]);
+        let bool_ty = ctx_mut.bool_ty();
+        ctx_mut.register_adt_repr(inner_adt_id, vec![bool_ty]);
+        let inner_ty = ctx_mut.mk_adt(inner_adt_id, inner_substs);
+        let outer_adt_id = AdtId::from_raw(401);
+        let outer_substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.register_adt_repr(outer_adt_id, vec![inner_ty]);
+        ctx_mut.mk_adt(outer_adt_id, outer_substs)
+    });
+    assert!(
+        ctx.auto_trait_flags(outer_ty)
+            .contains(AutoTraitFlags::all())
+    );
+}
+
+#[test]
+fn nested_adt_inner_not_send_outer_not_send() {
+    let (ctx, outer_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let bool_ty = ctx_mut.bool_ty();
+        let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
+        let inner_adt_id = AdtId::from_raw(402);
+        let inner_substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.register_adt_repr(inner_adt_id, vec![raw_ptr_ty]);
+        let inner_ty = ctx_mut.mk_adt(inner_adt_id, inner_substs);
+        let outer_adt_id = AdtId::from_raw(403);
+        let outer_substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.register_adt_repr(outer_adt_id, vec![inner_ty]);
+        ctx_mut.mk_adt(outer_adt_id, outer_substs)
+    });
+    let flags = ctx.auto_trait_flags(outer_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+// ===================== Coinductive =====================
+
 #[test]
 fn coinductive_recursive_adt() {
     let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -383,7 +632,6 @@ fn coinductive_recursive_adt() {
         ctx_mut.register_adt_repr(adt_id, vec![adt_ty]);
         adt_ty
     });
-
     let flags = ctx.auto_trait_flags(adt_ty);
     assert!(
         flags.contains(AutoTraitFlags::SEND),
@@ -399,7 +647,8 @@ fn coinductive_recursive_adt() {
     );
 }
 
-/// FnPtr has all auto traits
+// ===================== FnPtr / FnDef / Closure =====================
+
 #[test]
 fn fn_ptr_has_all_auto_traits() {
     let (ctx, fn_ptr_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
@@ -414,21 +663,200 @@ fn fn_ptr_has_all_auto_traits() {
         };
         ctx_mut.mk_fn_ptr(sig)
     });
-
-    let flags = ctx.auto_trait_flags(fn_ptr_ty);
     assert!(
-        flags.contains(AutoTraitFlags::all()),
-        "fn ptr should have all auto traits"
+        ctx.auto_trait_flags(fn_ptr_ty)
+            .contains(AutoTraitFlags::all())
     );
 }
 
-/// Helper to get a bool Ty from a fresh context
+#[test]
+fn fn_def_has_all_auto_traits() {
+    let (ctx, fn_def_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let substs = c.intern_substitution(vec![]);
+        c.mk_ty(TyKind::FnDef(FnDefId::from_raw(0), substs))
+    });
+    assert!(
+        ctx.auto_trait_flags(fn_def_ty)
+            .contains(AutoTraitFlags::all())
+    );
+}
+
+#[test]
+fn closure_with_all_send_fields_is_send() {
+    let (ctx, closure_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let bool_ty = c.bool_ty();
+        let substs = c.intern_substitution(vec![GenericArg::Ty(bool_ty)]);
+        c.mk_ty(TyKind::Closure(ClosureId::from_raw(0), substs))
+    });
+    assert!(
+        ctx.auto_trait_flags(closure_ty)
+            .contains(AutoTraitFlags::all())
+    );
+}
+
+#[test]
+fn closure_with_raw_ptr_is_not_send() {
+    let (ctx, closure_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let bool_ty = c.bool_ty();
+        let raw_ptr_ty = c.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
+        let substs = c.intern_substitution(vec![GenericArg::Ty(raw_ptr_ty)]);
+        c.mk_ty(TyKind::Closure(ClosureId::from_raw(1), substs))
+    });
+    let flags = ctx.auto_trait_flags(closure_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+// ===================== Dynamic / Opaque / Projection =====================
+
+#[test]
+fn dynamic_type_has_no_auto_traits() {
+    let (ctx, dyn_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let preds: Box<[Predicate]> = Box::new([]);
+        let bound_vars = Box::new([]);
+        let binder = Binder::bind(preds, bound_vars);
+        c.mk_ty(TyKind::Dynamic(binder, Region::Static))
+    });
+    let flags = ctx.auto_trait_flags(dyn_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+}
+
+#[test]
+fn opaque_type_has_no_auto_traits() {
+    let (ctx, opaque_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let substs = c.intern_substitution(vec![]);
+        c.mk_ty(TyKind::Opaque(OpaqueTyId::from_raw(0), substs))
+    });
+    let flags = ctx.auto_trait_flags(opaque_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+}
+
+#[test]
+fn projection_type_has_no_auto_traits() {
+    let (ctx, proj_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let substs = c.intern_substitution(vec![GenericArg::Ty(c.bool_ty())]);
+        let trait_ref = TraitRef {
+            def_id: TraitDefId::from_raw(0),
+            substs,
+        };
+        let name = c.resolver().intern("Item");
+        c.mk_ty(TyKind::Projection(ProjectionTy {
+            trait_ref,
+            item_name: name,
+        }))
+    });
+    let flags = ctx.auto_trait_flags(proj_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+}
+
+// ===================== Ref edge cases =====================
+
+#[test]
+fn ref_mut_to_non_sync_is_not_send() {
+    let (ctx, ref_mut_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let bool_ty = ctx_mut.bool_ty();
+        let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
+        let adt_id = AdtId::from_raw(404);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.register_adt_repr(adt_id, vec![raw_ptr_ty]);
+        let non_sync_ty = ctx_mut.mk_adt(adt_id, substs);
+        ctx_mut.mk_ref(Region::Erased, non_sync_ty, Mutability::Mut)
+    });
+    let flags = ctx.auto_trait_flags(ref_mut_ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+#[test]
+fn ref_to_send_but_not_sync_is_not_send() {
+    let (ctx, ref_ty) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let bool_ty = ctx_mut.bool_ty();
+        let raw_ptr_ty = ctx_mut.mk_ty(TyKind::RawPtr(bool_ty, Mutability::Not));
+        let adt_id = AdtId::from_raw(405);
+        let substs = ctx_mut.intern_substitution(vec![]);
+        ctx_mut.register_adt_repr(adt_id, vec![raw_ptr_ty]);
+        ctx_mut.register_manual_impl(adt_id, AutoTrait::Send);
+        let send_but_not_sync = ctx_mut.mk_adt(adt_id, substs);
+        ctx_mut.mk_ref(Region::Erased, send_but_not_sync, Mutability::Not)
+    });
+    let flags = ctx.auto_trait_flags(ref_ty);
+    assert!(
+        !flags.contains(AutoTraitFlags::SEND),
+        "&T where T: !Sync should not be Send"
+    );
+    assert!(
+        !flags.contains(AutoTraitFlags::SYNC),
+        "&T where T: !Sync should not be Sync"
+    );
+}
+
+// ===================== Convenience methods =====================
+
+#[test]
+fn implements_auto_trait_convenience_method() {
+    let ctx = test_frozen_ty_ctx();
+    assert!(ctx.implements_auto_trait(Ty::BOOL, AutoTrait::Send));
+    assert!(ctx.implements_auto_trait(Ty::BOOL, AutoTrait::Sync));
+    assert!(ctx.implements_auto_trait(Ty::BOOL, AutoTrait::Unpin));
+    assert!(!ctx.implements_auto_trait(Ty::ERROR, AutoTrait::Send));
+    assert!(!ctx.implements_auto_trait(Ty::ERROR, AutoTrait::Sync));
+}
+
+#[test]
+fn frozen_context_negative_and_manual_impl_queries() {
+    let (ctx, _) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(600);
+        ctx_mut.register_negative_impl(adt_id, AutoTrait::Send);
+        ctx_mut.register_manual_impl(adt_id, AutoTrait::Sync);
+    });
+    let adt_id = AdtId::from_raw(600);
+    assert!(ctx.has_negative_impl(adt_id, AutoTrait::Send));
+    assert!(!ctx.has_negative_impl(adt_id, AutoTrait::Sync));
+    assert!(ctx.has_manual_impl(adt_id, AutoTrait::Sync));
+    assert!(!ctx.has_manual_impl(adt_id, AutoTrait::Send));
+}
+
+#[test]
+fn frozen_context_adt_repr_accessor() {
+    let (ctx, _) = with_fresh_ty_ctx(|ctx_mut: &mut TyCtxMut| {
+        let adt_id = AdtId::from_raw(700);
+        let bool_ty = ctx_mut.bool_ty();
+        ctx_mut.register_adt_repr(adt_id, vec![bool_ty]);
+    });
+    let adt_id = AdtId::from_raw(700);
+    let repr = ctx.adt_repr(adt_id);
+    assert!(repr.is_some());
+    assert_eq!(repr.unwrap().field_tys.len(), 1);
+    assert!(ctx.adt_repr(AdtId::from_raw(999)).is_none());
+}
+
+#[test]
+fn auto_trait_flag_mapping() {
+    assert_eq!(AutoTrait::Send.flag(), AutoTraitFlags::SEND);
+    assert_eq!(AutoTrait::Sync.flag(), AutoTraitFlags::SYNC);
+    assert_eq!(AutoTrait::Unpin.flag(), AutoTraitFlags::UNPIN);
+}
+
+#[test]
+fn auto_trait_all_constant() {
+    assert_eq!(AutoTrait::ALL.len(), 3);
+    assert!(AutoTrait::ALL.contains(&AutoTrait::Send));
+    assert!(AutoTrait::ALL.contains(&AutoTrait::Sync));
+    assert!(AutoTrait::ALL.contains(&AutoTrait::Unpin));
+}
+
+// ===================== Helpers =====================
+
 fn ctx_bool_ty() -> Ty {
     let ctx = super::helpers::test_ty_ctx();
     ctx.bool_ty()
 }
 
-/// Helper to get an i32 Ty from a fresh context
 fn ctx_i32_ty() -> Ty {
     let mut ctx = super::helpers::test_ty_ctx();
     ctx.mk_ty(TyKind::Int(IntTy::I32))

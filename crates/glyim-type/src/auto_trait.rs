@@ -183,12 +183,12 @@ fn compute_auto_traits_for_kind(
             for auto_trait in AutoTrait::ALL {
                 let trait_flag = auto_trait.flag();
 
-                if registry.has_negative_impl(*adt_id, auto_trait) {
-                    flags -= trait_flag;
+                if registry.has_manual_impl(*adt_id, auto_trait) {
                     continue;
                 }
 
-                if registry.has_manual_impl(*adt_id, auto_trait) {
+                if registry.has_negative_impl(*adt_id, auto_trait) {
+                    flags -= trait_flag;
                     continue;
                 }
 
