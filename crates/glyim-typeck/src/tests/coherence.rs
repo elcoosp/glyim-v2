@@ -1,17 +1,20 @@
 //! Tests for coherence and orphan rules (Stream V04).
 
 use glyim_core::def_id::{CrateId, LocalDefId};
-use glyim_core::interner::{Interner, Name};
+use glyim_core::interner::Interner;
 use glyim_core::primitives::Visibility;
-use glyim_def_map::{CrateDefMap, ModuleData, ModuleId, ModuleOrigin, ItemScope};
+use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::{ImplItem, TypeRef};
 use glyim_span::Span;
 use glyim_type::ImplPolarity;
 
 use crate::coherence::CoherenceChecker;
 
-/// Build a CrateDefMap using the given interner and seed the root scope with local type names.
-fn build_def_map(interner: &mut Interner, krate: CrateId, local_type_names: &[&str]) -> CrateDefMap {
+fn build_def_map(
+    interner: &mut Interner,
+    krate: CrateId,
+    local_type_names: &[&str],
+) -> CrateDefMap {
     let mut scope = ItemScope {
         types: vec![],
         values: vec![],
@@ -19,7 +22,12 @@ fn build_def_map(interner: &mut Interner, krate: CrateId, local_type_names: &[&s
     };
     for &name_str in local_type_names {
         let name = interner.intern(name_str);
-        scope.types.push((name, LocalDefId::from_raw(0), Visibility::Public, Span::DUMMY));
+        scope.types.push((
+            name,
+            LocalDefId::from_raw(0),
+            Visibility::Public,
+            Span::DUMMY,
+        ));
     }
 
     let root_id = ModuleId::from_raw(0);
@@ -42,7 +50,6 @@ fn build_def_map(interner: &mut Interner, krate: CrateId, local_type_names: &[&s
     }
 }
 
-/// Create a simple ImplItem using the given interner.
 fn make_impl_item(interner: &mut Interner, trait_name: &str, self_ty_name: &str) -> ImplItem {
     let trait_path = glyim_hir::Path::from_single(interner.intern(trait_name));
     let self_ty_path = glyim_hir::Path::from_single(interner.intern(self_ty_name));
@@ -55,7 +62,6 @@ fn make_impl_item(interner: &mut Interner, trait_name: &str, self_ty_name: &str)
     }
 }
 
-/// Create a blanket ImplItem (with a single generic type parameter) using the given interner.
 fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name: &str) -> ImplItem {
     let trait_path = glyim_hir::Path::from_single(interner.intern(trait_name));
     let param_name = interner.intern(param_name);
@@ -64,20 +70,15 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
         trait_ref: Some(trait_path),
         self_ty: TypeRef::Path(self_ty_path),
         methods: vec![],
-        generic_params: vec![
-            glyim_hir::GenericParam {
-                name: param_name,
-                kind: glyim_hir::GenericParamKind::Type { default: None },
-                span: Span::DUMMY,
-            }
-        ],
+        generic_params: vec![glyim_hir::GenericParam {
+            name: param_name,
+            kind: glyim_hir::GenericParamKind::Type { default: None },
+            span: Span::DUMMY,
+        }],
         where_clauses: vec![],
     }
 }
 
-// ============================================================================
-// V04-T01: Duplicate impl for same type -> error
-// ============================================================================
 #[test]
 fn t01_duplicate_impl_should_error() {
     let local_krate = CrateId::from_raw(0);
@@ -103,47 +104,44 @@ fn t01_duplicate_impl_should_error() {
     );
 }
 
-// ============================================================================
-// V04-T02: Orphan rule: foreign trait on foreign type -> error
-// ============================================================================
 #[test]
 fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = Interner::new();
-    // Do not seed "ForeignType" → it's foreign
     let def_map = build_def_map(&mut interner, local_krate, &[]);
     let checker = CoherenceChecker::new(&def_map, local_krate);
 
     let impl_item = make_impl_item(&mut interner, "ForeignTrait", "ForeignType");
     let result = checker.check_orphan_rule(&impl_item, ImplPolarity::Positive);
-    assert!(result.is_err(), "orphan rule should reject foreign trait + foreign type");
+    assert!(
+        result.is_err(),
+        "orphan rule should reject foreign trait + foreign type"
+    );
     let errors = result.unwrap_err();
     assert!(errors[0].message.contains("orphan rule"));
 }
 
-// ============================================================================
-// V04-T03: Blanket impl conflicts with concrete impl -> error
-// ============================================================================
 #[test]
 fn t03_blanket_impl_conflicts_with_concrete() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = Interner::new();
-    // Seed both "i32" and "T" as local so orphan rule passes for both concrete and blanket
     let def_map = build_def_map(&mut interner, local_krate, &["i32", "T"]);
     let mut checker = CoherenceChecker::new(&def_map, local_krate);
 
     let concrete = make_impl_item(&mut interner, "MyTrait", "i32");
     let blanket = make_blanket_impl_item(&mut interner, "MyTrait", "T");
 
-    checker.check_and_register_impl(&concrete, ImplPolarity::Positive).unwrap();
+    checker
+        .check_and_register_impl(&concrete, ImplPolarity::Positive)
+        .unwrap();
 
     let result = checker.check_and_register_impl(&blanket, ImplPolarity::Positive);
-    assert!(result.is_err(), "blanket impl should conflict with concrete");
+    assert!(
+        result.is_err(),
+        "blanket impl should conflict with concrete"
+    );
 }
 
-// ============================================================================
-// V04-T04: Valid orphan: impl ForeignTrait for LocalType -> ok
-// ============================================================================
 #[test]
 fn t04_valid_orphan_foreign_trait_local_type() {
     let local_krate = CrateId::from_raw(0);
@@ -153,12 +151,12 @@ fn t04_valid_orphan_foreign_trait_local_type() {
 
     let impl_item = make_impl_item(&mut interner, "ForeignTrait", "LocalType");
     let result = checker.check_orphan_rule(&impl_item, ImplPolarity::Positive);
-    assert!(result.is_ok(), "orphan rule should accept foreign trait + local type");
+    assert!(
+        result.is_ok(),
+        "orphan rule should accept foreign trait + local type"
+    );
 }
 
-// ============================================================================
-// V04-T05: Negative impl `impl !Send for MyType` -> overrides auto trait
-// ============================================================================
 #[test]
 fn t05_negative_impl_overrides_auto_trait() {
     let local_krate = CrateId::from_raw(0);

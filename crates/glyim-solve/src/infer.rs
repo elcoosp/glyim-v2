@@ -331,7 +331,7 @@ impl InferenceTable {
                 if self.occurs(ctx, var, param_ty) {
                     return Err(vec![GlyimDiagnostic::type_error(
                         span,
-                        format!("cannot construct infinite type"),
+                        "cannot construct infinite type".to_string(),
                     )]);
                 }
                 self.ty_vars[var].value = Some(param_ty);

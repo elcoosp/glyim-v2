@@ -61,8 +61,12 @@ impl<'a> CoherenceChecker<'a> {
             let span = Span::DUMMY;
             let msg = format!(
                 "orphan rule violation: impl of foreign trait `{}` for foreign type `{}` is not allowed",
-                Self::trait_name(impl_item).map(|n| self.resolve_name_str(n)).unwrap_or_default(),
-                Self::self_type_name(impl_item).map(|n| self.resolve_name_str(n)).unwrap_or_default()
+                Self::trait_name(impl_item)
+                    .map(|n| self.resolve_name_str(n))
+                    .unwrap_or_default(),
+                Self::self_type_name(impl_item)
+                    .map(|n| self.resolve_name_str(n))
+                    .unwrap_or_default()
             );
             return Err(vec![GlyimDiagnostic::type_error(span, msg)]);
         }
@@ -92,22 +96,17 @@ impl<'a> CoherenceChecker<'a> {
 
     /// Check whether we have registered a negative impl for the given trait + type.
     pub fn has_negative_impl(&self, trait_name: &str, type_name: &str) -> bool {
-        self.negative_impls
-            .iter()
-            .any(|(t, s)| {
-                let t_str = self.resolve_name_str(*t);
-                let s_str = self.resolve_name_str(*s);
-                t_str == trait_name && s_str == type_name
-            })
+        self.negative_impls.iter().any(|(t, s)| {
+            let t_str = self.resolve_name_str(*t);
+            let s_str = self.resolve_name_str(*s);
+            t_str == trait_name && s_str == type_name
+        })
     }
 
     // ---------- private helpers ----------
 
     fn trait_name(impl_item: &ImplItem) -> Option<Name> {
-        impl_item
-            .trait_ref
-            .as_ref()
-            .and_then(|p| p.as_name())
+        impl_item.trait_ref.as_ref().and_then(|p| p.as_name())
     }
 
     fn self_type_name(impl_item: &ImplItem) -> Option<Name> {
@@ -123,19 +122,13 @@ impl<'a> CoherenceChecker<'a> {
 
     /// Extract the names of generic type parameters from an ImplItem.
     fn generic_param_names(impl_item: &ImplItem) -> Vec<Name> {
-        impl_item
-            .generic_params
-            .iter()
-            .map(|p| p.name)
-            .collect()
+        impl_item.generic_params.iter().map(|p| p.name).collect()
     }
 
     /// Determine if the trait referenced by the impl is local.
     fn trait_is_local(&self, impl_item: &ImplItem) -> bool {
         if let Some(name) = Self::trait_name(impl_item) {
-            let resolved = self.def_map.modules[self.def_map.root]
-                .scope
-                .resolve(name);
+            let resolved = self.def_map.modules[self.def_map.root].scope.resolve(name);
             if resolved.is_some() {
                 return true;
             }
@@ -147,9 +140,7 @@ impl<'a> CoherenceChecker<'a> {
     /// Determine if the self type is local.
     fn self_type_is_local(&self, impl_item: &ImplItem) -> bool {
         if let Some(name) = Self::self_type_name(impl_item) {
-            let resolved = self.def_map.modules[self.def_map.root]
-                .scope
-                .resolve(name);
+            let resolved = self.def_map.modules[self.def_map.root].scope.resolve(name);
             if resolved.is_some() {
                 return true;
             }
@@ -176,13 +167,11 @@ impl<'a> CoherenceChecker<'a> {
                         self.resolve_name_str(self_name)
                     );
                     let mut diag = GlyimDiagnostic::type_error(Span::DUMMY, msg);
-                    diag = diag.with_sub(
-                        glyim_diag::SubDiagnostic {
-                            severity: glyim_diag::DiagSeverity::Note,
-                            message: "previous impl here".to_string(),
-                            span: Some(entry.span.into()),
-                        },
-                    );
+                    diag = diag.with_sub(glyim_diag::SubDiagnostic {
+                        severity: glyim_diag::DiagSeverity::Note,
+                        message: "previous impl here".to_string(),
+                        span: Some(entry.span.into()),
+                    });
                     return Some(vec![diag]);
                 }
 
@@ -195,13 +184,11 @@ impl<'a> CoherenceChecker<'a> {
                         self.resolve_name_str(trait_name)
                     );
                     let mut diag = GlyimDiagnostic::type_error(Span::DUMMY, msg);
-                    diag = diag.with_sub(
-                        glyim_diag::SubDiagnostic {
-                            severity: glyim_diag::DiagSeverity::Note,
-                            message: "blanket impl conflicts with concrete impl".to_string(),
-                            span: None,
-                        },
-                    );
+                    diag = diag.with_sub(glyim_diag::SubDiagnostic {
+                        severity: glyim_diag::DiagSeverity::Note,
+                        message: "blanket impl conflicts with concrete impl".to_string(),
+                        span: None,
+                    });
                     return Some(vec![diag]);
                 }
             }
@@ -227,10 +214,7 @@ impl<'a> CoherenceChecker<'a> {
             span: Span::DUMMY,
         };
 
-        self.registered
-            .entry(trait_name)
-            .or_default()
-            .push(entry);
+        self.registered.entry(trait_name).or_default().push(entry);
 
         if polarity == ImplPolarity::Negative {
             self.negative_impls.push((trait_name, self_name));
