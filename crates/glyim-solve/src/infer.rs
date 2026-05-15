@@ -151,6 +151,7 @@ impl InferenceTable {
         self.unify_tys(ctx, a, b, span)
     }
 
+    #[allow(unreachable_patterns, unused_variables)]
     fn unify_tys(
         &mut self,
         ctx: &mut TyCtxMut,
@@ -304,6 +305,53 @@ impl InferenceTable {
                         )]),
                     },
                 }
+            }
+            (TyKind::Param(param_a), TyKind::Param(param_b)) => {
+                // Parameters unify if they have the same index (name doesn't matter)
+                if param_a.index == param_b.index {
+                    Ok(Vec::new())
+                } else {
+                    Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "parameter index mismatch: {} vs {}",
+                            param_a.index, param_b.index
+                        ),
+                    )])
+                }
+            }
+            (TyKind::Param(param), TyKind::Infer(InferVar::Ty(var)))
+            | (TyKind::Infer(InferVar::Ty(var)), TyKind::Param(param)) => {
+                // A type variable can be bound to a parameter type
+                let param_ty = if let TyKind::Param(_) = ctx.ty_kind(a) {
+                    a
+                } else {
+                    b
+                };
+                if self.occurs(ctx, var, param_ty) {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!("cannot construct infinite type"),
+                    )]);
+                }
+                self.ty_vars[var].value = Some(param_ty);
+                Ok(Vec::new())
+            }
+            (TyKind::Param(_), TyKind::Infer(InferVar::Int(_var)))
+            | (TyKind::Infer(InferVar::Int(_var)), TyKind::Param(_)) => {
+                // Int variable cannot unify with parameter
+                Err(vec![GlyimDiagnostic::type_error(
+                    span,
+                    "cannot unify integer variable with type parameter".to_string(),
+                )])
+            }
+            (TyKind::Param(_), TyKind::Infer(InferVar::Float(_var)))
+            | (TyKind::Infer(InferVar::Float(_var)), TyKind::Param(_)) => {
+                // Float variable cannot unify with parameter
+                Err(vec![GlyimDiagnostic::type_error(
+                    span,
+                    "cannot unify float variable with type parameter".to_string(),
+                )])
             }
             (TyKind::Ref(r_a, ty_a, mut_a), TyKind::Ref(r_b, ty_b, mut_b)) => {
                 if mut_a != mut_b {
