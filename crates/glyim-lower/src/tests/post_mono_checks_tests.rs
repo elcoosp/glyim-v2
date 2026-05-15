@@ -128,17 +128,15 @@ fn small_mono_set_no_warn() {
 
 #[test]
 fn unused_generic_param_warns() {
-    // Create a substitution with one generic arg (e.g., i32) that is not used in the body
     let mut ctx_mut = glyim_test::test_ty_ctx();
     let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(Ty::UNIT)]);
-    let _frozen = ctx_mut.freeze(); // not needed for this check, but we might need a ctx
+    let frozen = ctx_mut.freeze();
 
-    let body = make_body(make_def_id(10), Ty::UNIT, vec![]); // no locals use any generic
+    let body = make_body(make_def_id(10), Ty::UNIT, vec![]);
     let item = make_mono_fn_with_subst(10, subst, body);
     let items = vec![item];
 
-    let diags = check_unused_generic_params(&items);
-    // Should warn about unused generic parameter(s)
+    let diags = check_unused_generic_params(&items, &frozen);
     assert_has_errors(&diags);
     assert_diag_contains(&diags, "unused generic parameter");
 }
@@ -152,13 +150,12 @@ fn no_unused_when_body_uses_generic() {
         name,
     }));
     let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(used_ty)]);
-    let _frozen = ctx_mut.freeze();
+    let frozen = ctx_mut.freeze();
 
-    // Body local type uses the generic param (index 0)
     let body = make_body(make_def_id(11), Ty::UNIT, vec![used_ty]);
     let item = make_mono_fn_with_subst(11, subst, body);
     let items = vec![item];
 
-    let diags = check_unused_generic_params(&items);
+    let diags = check_unused_generic_params(&items, &frozen);
     assert_no_errors(&diags);
 }
