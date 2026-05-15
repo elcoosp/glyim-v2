@@ -8,10 +8,7 @@ use crate::mono::MonoItemData;
 
 /// Check for unsized locals in instantiated MIR bodies.
 #[allow(dead_code)]
-pub(crate) fn check_unsized_locals(
-    items: &[MonoItemData],
-    ctx: &TyCtx,
-) -> Vec<GlyimDiagnostic> {
+pub(crate) fn check_unsized_locals(items: &[MonoItemData], ctx: &TyCtx) -> Vec<GlyimDiagnostic> {
     let mut diags = Vec::new();
     for item in items {
         for local_decl in item.body.locals.iter() {
@@ -74,10 +71,7 @@ pub(crate) fn check_unused_generic_params(
                 continue;
             }
             if !body_uses_any_param(&item.body, ctx) {
-                let msg = format!(
-                    "unused generic parameter(s) in function `{}`",
-                    item.symbol
-                );
+                let msg = format!("unused generic parameter(s) in function `{}`", item.symbol);
                 diags.push(GlyimDiagnostic::new(
                     glyim_diag::ErrorCode {
                         category: glyim_diag::ErrorCategory::Type,
@@ -180,20 +174,20 @@ fn rvalue_contains_param(rv: &Rvalue, ctx: &TyCtx) -> bool {
         Rvalue::UnaryOp(_, op) => operand_contains_param(op, ctx),
         Rvalue::Ref(_, _) => false,
         Rvalue::Aggregate(kind, ops) => {
-            if let glyim_mir::AggregateKind::Array(ty) = kind {
-                if ty_contains_param(*ty, ctx) {
-                    return true;
-                }
+            if let glyim_mir::AggregateKind::Array(ty) = kind
+                && ty_contains_param(*ty, ctx)
+            {
+                return true;
             }
-            if let glyim_mir::AggregateKind::Adt(_, _, substs) = kind {
-                if subst_args_contain_param(*substs, ctx) {
-                    return true;
-                }
+            if let glyim_mir::AggregateKind::Adt(_, _, substs) = kind
+                && subst_args_contain_param(*substs, ctx)
+            {
+                return true;
             }
-            if let glyim_mir::AggregateKind::Closure(_, substs) = kind {
-                if subst_args_contain_param(*substs, ctx) {
-                    return true;
-                }
+            if let glyim_mir::AggregateKind::Closure(_, substs) = kind
+                && subst_args_contain_param(*substs, ctx)
+            {
+                return true;
             }
             for op in ops {
                 if operand_contains_param(op, ctx) {
@@ -203,9 +197,7 @@ fn rvalue_contains_param(rv: &Rvalue, ctx: &TyCtx) -> bool {
             false
         }
         Rvalue::Discriminant(_) | Rvalue::Len(_) => false,
-        Rvalue::Cast(_, op, ty) => {
-            operand_contains_param(op, ctx) || ty_contains_param(*ty, ctx)
-        }
+        Rvalue::Cast(_, op, ty) => operand_contains_param(op, ctx) || ty_contains_param(*ty, ctx),
         Rvalue::Repeat(op, _) => operand_contains_param(op, ctx),
     }
 }
@@ -218,16 +210,17 @@ fn ty_contains_param(ty: glyim_type::Ty, ctx: &TyCtx) -> bool {
         TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => ty_contains_param(*inner, ctx),
         TyKind::Slice(inner) => ty_contains_param(*inner, ctx),
         TyKind::Array(inner, _) => ty_contains_param(*inner, ctx),
-        TyKind::Tuple(substs) | TyKind::Adt(_, substs) | TyKind::Closure(_, substs) | TyKind::Opaque(_, substs) => {
-            subst_args_contain_param(*substs, ctx)
-        }
+        TyKind::Tuple(substs)
+        | TyKind::Adt(_, substs)
+        | TyKind::Closure(_, substs)
+        | TyKind::Opaque(_, substs) => subst_args_contain_param(*substs, ctx),
         TyKind::FnDef(_, substs) => subst_args_contain_param(*substs, ctx),
         TyKind::FnPtr(sig) => {
             for input_ty in ctx.substitution_args(sig.inputs) {
-                if let glyim_type::GenericArg::Ty(ty) = input_ty {
-                    if ty_contains_param(*ty, ctx) {
-                        return true;
-                    }
+                if let glyim_type::GenericArg::Ty(ty) = input_ty
+                    && ty_contains_param(*ty, ctx)
+                {
+                    return true;
                 }
             }
             ty_contains_param(sig.output, ctx)
@@ -244,10 +237,10 @@ fn ty_contains_param(ty: glyim_type::Ty, ctx: &TyCtx) -> bool {
 #[allow(dead_code)]
 fn subst_args_contain_param(substs: glyim_type::Substitution, ctx: &TyCtx) -> bool {
     for arg in ctx.substitution_args(substs) {
-        if let glyim_type::GenericArg::Ty(ty) = arg {
-            if ty_contains_param(*ty, ctx) {
-                return true;
-            }
+        if let glyim_type::GenericArg::Ty(ty) = arg
+            && ty_contains_param(*ty, ctx)
+        {
+            return true;
         }
     }
     false

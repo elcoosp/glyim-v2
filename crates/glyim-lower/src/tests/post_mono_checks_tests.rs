@@ -1,12 +1,13 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::primitives::Mutability;
-use glyim_mir::{
-    Body, LocalDecl, SourceInfo, Terminator, TerminatorKind,
-};
-use glyim_span::Span;
 use glyim_diag::DiagSeverity;
-use glyim_test::{assert_diag_contains, assert_error_count, assert_has_errors, assert_has_severity, assert_no_errors};
+use glyim_mir::{Body, LocalDecl, SourceInfo, Terminator, TerminatorKind};
+use glyim_span::Span;
+use glyim_test::{
+    assert_diag_contains, assert_error_count, assert_has_errors, assert_has_severity,
+    assert_no_errors,
+};
 use glyim_type::{GenericArg, Region, Substitution, Ty, TyKind};
 use std::sync::Arc;
 
@@ -107,7 +108,11 @@ fn large_mono_set_warns() {
     let body = make_body(make_def_id(0), Ty::UNIT, vec![]);
     let mut items = Vec::new();
     for i in 0..50 {
-        items.push(make_mono_fn_with_subst(i, Substitution::empty(), body.clone()));
+        items.push(make_mono_fn_with_subst(
+            i,
+            Substitution::empty(),
+            body.clone(),
+        ));
     }
     let threshold = 30;
     let diags = check_large_mono_set(&items, threshold);
@@ -146,10 +151,7 @@ fn unused_generic_param_warns() {
 fn no_unused_when_body_uses_generic() {
     let mut ctx_mut = glyim_test::test_ty_ctx();
     let name = ctx_mut.resolver().intern("T");
-    let used_ty = ctx_mut.mk_ty(TyKind::Param(glyim_type::ParamTy {
-        index: 0,
-        name,
-    }));
+    let used_ty = ctx_mut.mk_ty(TyKind::Param(glyim_type::ParamTy { index: 0, name }));
     let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(used_ty)]);
     let frozen = ctx_mut.freeze();
 
@@ -161,24 +163,15 @@ fn no_unused_when_body_uses_generic() {
     assert_no_errors(&diags);
 }
 
-
 // ==================== Extended V26-T02: Unsized locals ====================
 
 #[test]
 fn unsized_dynamic_errors() {
     let mut ctx_mut = glyim_test::test_ty_ctx();
     // Create a Dynamic (trait object) type
-    let predicates: Vec<glyim_type::Predicate> = vec![
-        glyim_type::Predicate::WellFormed(Ty::UNIT),
-    ];
-    let binder = glyim_type::Binder::bind(
-        predicates.into_boxed_slice(),
-        vec![].into_boxed_slice(),
-    );
-    let dyn_ty = ctx_mut.mk_ty(TyKind::Dynamic(
-        binder,
-        Region::Erased,
-    ));
+    let predicates: Vec<glyim_type::Predicate> = vec![glyim_type::Predicate::WellFormed(Ty::UNIT)];
+    let binder = glyim_type::Binder::bind(predicates.into_boxed_slice(), vec![].into_boxed_slice());
+    let dyn_ty = ctx_mut.mk_ty(TyKind::Dynamic(binder, Region::Erased));
     let frozen = ctx_mut.freeze();
 
     let body = make_body(make_def_id(2), Ty::UNIT, vec![dyn_ty]);
@@ -259,10 +252,8 @@ fn empty_mono_set_no_warn() {
 #[test]
 fn unused_generic_param_multiple_substs_warns() {
     let mut ctx_mut = glyim_test::test_ty_ctx();
-    let subst = ctx_mut.intern_substitution(vec![
-        GenericArg::Ty(Ty::UNIT),
-        GenericArg::Ty(Ty::BOOL),
-    ]);
+    let subst =
+        ctx_mut.intern_substitution(vec![GenericArg::Ty(Ty::UNIT), GenericArg::Ty(Ty::BOOL)]);
     let frozen = ctx_mut.freeze();
 
     let body = make_body(make_def_id(12), Ty::UNIT, vec![]);
@@ -306,7 +297,6 @@ fn generic_param_used_in_rvalue_constant_no_warn() {
     let diags = check_unused_generic_params(&items, &frozen);
     assert_no_errors(&diags);
 }
-
 
 // ==================== Edge case: unsized return type ====================
 
@@ -380,7 +370,6 @@ fn threshold_zero_warns_for_any_items() {
     assert_has_severity(&diags, DiagSeverity::Warning);
 }
 
-
 // ==================== Unused generic param in Ref local ====================
 
 #[test]
@@ -388,7 +377,11 @@ fn generic_param_used_in_ref_local_no_warn() {
     let mut ctx_mut = glyim_test::test_ty_ctx();
     let name = ctx_mut.resolver().intern("T");
     let param_ty = ctx_mut.mk_ty(TyKind::Param(glyim_type::ParamTy { index: 0, name }));
-    let ref_ty = ctx_mut.mk_ref(Region::Erased, param_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = ctx_mut.mk_ref(
+        Region::Erased,
+        param_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(param_ty)]);
     let frozen = ctx_mut.freeze();
 
@@ -474,14 +467,20 @@ fn multiple_functions_mixed_unsized() {
 
 #[test]
 fn combined_post_mono_checks() {
-    use crate::post_mono_checks::{check_unsized_locals, check_large_mono_set, check_unused_generic_params};
+    use crate::post_mono_checks::{
+        check_large_mono_set, check_unsized_locals, check_unused_generic_params,
+    };
     let mut ctx_mut = glyim_test::test_ty_ctx();
     let slice_ty = ctx_mut.mk_ty(TyKind::Slice(Ty::UNIT));
     let param_ty = ctx_mut.mk_ty(TyKind::Param(glyim_type::ParamTy {
         index: 0,
         name: ctx_mut.resolver().intern("T"),
     }));
-    let ref_ty = ctx_mut.mk_ref(Region::Erased, param_ty, glyim_core::primitives::Mutability::Not);
+    let ref_ty = ctx_mut.mk_ref(
+        Region::Erased,
+        param_ty,
+        glyim_core::primitives::Mutability::Not,
+    );
     let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(param_ty)]);
     let frozen = ctx_mut.freeze();
 
@@ -505,4 +504,3 @@ fn combined_post_mono_checks() {
     let diags_unused = check_unused_generic_params(&items, &frozen);
     assert_no_errors(&diags_unused);
 }
-
