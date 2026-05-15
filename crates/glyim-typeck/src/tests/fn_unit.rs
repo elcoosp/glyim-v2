@@ -37,6 +37,7 @@ fn fn_returning_unit() {
             is_unsafe: false,
             is_async: false,
             generic_params: vec![],
+            where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
         span: Span::DUMMY,

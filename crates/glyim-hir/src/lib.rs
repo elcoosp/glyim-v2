@@ -65,6 +65,7 @@ pub struct FnItem {
     pub is_unsafe: bool,
     pub is_async: bool,
     pub generic_params: Vec<GenericParam>,
+    pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,12 +73,14 @@ pub struct StructItem {
     pub fields: Vec<Field>,
     pub kind: StructKind,
     pub generic_params: Vec<GenericParam>,
+    pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
 
 #[derive(Clone, Debug)]
 pub struct EnumItem {
     pub variants: Vec<Variant>,
     pub generic_params: Vec<GenericParam>,
+    pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +96,7 @@ pub struct TraitItem {
     pub associated_types: Vec<Name>,
     pub methods: Vec<Name>,
     pub generic_params: Vec<GenericParam>,
+    pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
 
 #[derive(Clone, Debug)]
@@ -101,12 +105,14 @@ pub struct ImplItem {
     pub self_ty: TypeRef,
     pub methods: Vec<Name>,
     pub generic_params: Vec<GenericParam>,
+    pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TypeAliasItem {
     pub ty: Option<TypeRef>,
     pub generic_params: Vec<GenericParam>,
+    pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }
 
 #[derive(Clone, Debug)]
@@ -380,6 +386,7 @@ pub enum Literal {
 
 mod lower;
 
+pub mod where_clause;
 pub mod pipeline_api;
 #[cfg(test)]
 mod tests;

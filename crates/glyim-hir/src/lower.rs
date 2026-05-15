@@ -205,6 +205,7 @@ fn lower_fn_def(
             is_unsafe: false,
             is_async: false,
             generic_params: Vec::new(),
+                where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
         span: Span::DUMMY,
@@ -318,6 +319,7 @@ fn lower_struct_def(
             fields,
             kind,
             generic_params: Vec::new(),
+                where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
         span: Span::DUMMY,
@@ -356,6 +358,7 @@ fn lower_enum_def(
         kind: ItemKind::Enum(EnumItem {
             variants,
             generic_params: Vec::new(),
+                where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
         span: Span::DUMMY,
