@@ -3,6 +3,7 @@ use glyim_core::def_id::AdtId;
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
 
+use crate::auto_trait::*;
 use crate::display::TypeLookup;
 use crate::flags::*;
 use crate::fn_sig::FnSig;
@@ -12,6 +13,7 @@ use crate::ty::*;
 
 use indexmap::IndexSet;
 use smallvec::SmallVec;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 pub struct TyCtxMut {
@@ -20,6 +22,8 @@ pub struct TyCtxMut {
     substitution_data: IndexSet<SmallVec<[GenericArg; 4]>>,
     regions: IndexVec<RegionVid, Region>,
     resolver: Interner,
+    auto_trait_registry: AutoTraitRegistry,
+    adt_reprs: HashMap<AdtId, AdtRepr>,
     _not_send_sync: PhantomData<*const ()>,
 }
 
@@ -31,6 +35,8 @@ impl TyCtxMut {
             substitution_data: IndexSet::new(),
             regions: IndexVec::new(),
             resolver,
+            auto_trait_registry: AutoTraitRegistry::new(),
+            adt_reprs: HashMap::new(),
             _not_send_sync: PhantomData,
         };
         // Pre-intern sentinels — must be in this order:
@@ -152,6 +158,23 @@ impl TyCtxMut {
         self.regions.len()
     }
 
+    /// Register the field types for an ADT, used for auto trait computation.
+    pub fn register_adt_repr(&mut self, adt_id: AdtId, field_tys: Vec<Ty>) {
+        self.adt_reprs.insert(adt_id, AdtRepr::new(field_tys));
+    }
+
+    /// Register a negative auto trait impl: `impl !Trait for Adt`.
+    pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
+        self.auto_trait_registry
+            .register_negative_impl(adt_id, auto_trait);
+    }
+
+    /// Register a manual auto trait impl: `impl Trait for Adt`.
+    pub fn register_manual_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
+        self.auto_trait_registry
+            .register_manual_impl(adt_id, auto_trait);
+    }
+
     pub fn freeze(self) -> TyCtx {
         TyCtx {
             types: self.types,
@@ -159,6 +182,8 @@ impl TyCtxMut {
             substitution_data: self.substitution_data.into_iter().collect(),
             regions: self.regions,
             resolver: self.resolver,
+            auto_trait_registry: self.auto_trait_registry,
+            adt_reprs: self.adt_reprs,
         }
     }
 }
@@ -187,6 +212,8 @@ pub struct TyCtx {
     substitution_data: Vec<SmallVec<[GenericArg; 4]>>,
     regions: IndexVec<RegionVid, Region>,
     resolver: Interner,
+    auto_trait_registry: AutoTraitRegistry,
+    adt_reprs: HashMap<AdtId, AdtRepr>,
 }
 
 impl TyCtx {
@@ -236,6 +263,32 @@ impl TyCtx {
 
     pub fn ty_has_depth_overflow(&self, ty: Ty) -> bool {
         self.ty_flags(ty).contains(TypeFlags::HAS_DEPTH_OVERFLOW)
+    }
+
+    /// Compute auto trait flags for a type using this frozen context.
+    pub fn auto_trait_flags(&self, ty: Ty) -> AutoTraitFlags {
+        compute_auto_traits(ty, self, &self.auto_trait_registry, &self.adt_reprs)
+    }
+
+    /// Check whether a type implements a specific auto trait.
+    pub fn implements_auto_trait(&self, ty: Ty, auto_trait: AutoTrait) -> bool {
+        self.auto_trait_flags(ty).contains(auto_trait.flag())
+    }
+
+    /// Check if a specific ADT has a negative impl for an auto trait.
+    pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
+        self.auto_trait_registry
+            .has_negative_impl(adt_id, auto_trait)
+    }
+
+    /// Check if a specific ADT has a manual impl for an auto trait.
+    pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
+        self.auto_trait_registry.has_manual_impl(adt_id, auto_trait)
+    }
+
+    /// Access the ADT representation (field types).
+    pub fn adt_repr(&self, adt_id: AdtId) -> Option<&AdtRepr> {
+        self.adt_reprs.get(&adt_id)
     }
 }
 
