@@ -54,7 +54,7 @@ fn test_t10_nested_function_calls() {
         bb0_caller,
         TerminatorKind::Call {
             func: Operand::Constant(MirConst {
-                kind: MirConstKind::FnRef(callee_def_id),
+                kind: MirConstKind::Fn(callee_def_id, glyim_type::Substitution { index: 0, len: 0 }),
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             }),

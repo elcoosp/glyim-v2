@@ -345,7 +345,7 @@ fn test_recursion_limit_enforced() {
         bb0,
         TerminatorKind::Call {
             func: Operand::Constant(MirConst {
-                kind: MirConstKind::FnRef(fn_id),
+                kind: MirConstKind::Fn(fn_id, glyim_type::Substitution { index: 0, len: 0 }),
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             }),
@@ -398,7 +398,7 @@ fn test_call_with_cleanup_on_panic() {
         bb0_caller,
         TerminatorKind::Call {
             func: Operand::Constant(MirConst {
-                kind: MirConstKind::FnRef(callee_id),
+                kind: MirConstKind::Fn(callee_id, glyim_type::Substitution { index: 0, len: 0 }),
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             }),

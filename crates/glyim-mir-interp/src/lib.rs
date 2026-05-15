@@ -354,11 +354,14 @@ impl<'tcx> Interpreter<'tcx> {
                 tracing::warn!("STUB: String const not implemented");
                 Err(InterpError::Panic("String const not implemented".into()))
             }
-            MirConstKind::FnRef(_) => {
-                tracing::warn!("STUB: FnRef constant used as value? Not supported");
+            MirConstKind::Fn(_, _) => {
+                tracing::warn!("STUB: Fn constant used as value? Not supported");
                 Err(InterpError::Panic(
-                    "FnRef constant not supported as value".into(),
+                    "Fn constant not supported as value".into(),
                 ))
+            }
+            MirConstKind::ConstRef(_, _) => {
+                Err(InterpError::Panic("ConstRef constant not interpretable as value".into()))
             }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
         }
