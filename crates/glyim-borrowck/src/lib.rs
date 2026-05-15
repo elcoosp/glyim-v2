@@ -47,8 +47,8 @@ pub trait BorrowckCtx {
 struct Loan {
     /// The local that holds the reference (destination of the `Rvalue::Ref`).
     dest_local: LocalIdx,
-    /// The root local of the borrowed place.
-    borrowed_local: LocalIdx,
+    /// The full place that was borrowed (including projections like field access).
+    borrowed_place: Place,
     /// The kind of borrow.
     kind: BorrowKind,
     /// The span for error reporting.
@@ -63,7 +63,7 @@ fn collect_loans(body: &Body) -> Vec<Loan> {
             if let StatementKind::Assign(dest, Rvalue::Ref(borrowed, kind)) = &stmt.kind {
                 loans.push(Loan {
                     dest_local: dest.local,
-                    borrowed_local: borrowed.local,
+                    borrowed_place: borrowed.clone(),
                     kind: *kind,
                     span: stmt.source_info.span,
                 });
@@ -367,7 +367,7 @@ fn check_stmt_conflicts(
                     // any *already active* loan on the same place.
                     let borrowed_local = borrowed.local;
                     for loan in active_loans {
-                        if loan.borrowed_local == borrowed_local {
+                        if loan.borrowed_place.local == borrowed_local {
                             let conflict = conflicts_with_active(&loan.kind, kind);
                             if conflict {
                                 let msg = format!(
@@ -400,7 +400,7 @@ fn check_stmt_conflicts(
                     let read_locals = collect_rvalue_read_locals(rvalue);
                     for read_local in read_locals {
                         for loan in active_loans {
-                            if loan.borrowed_local == read_local
+                            if loan.borrowed_place.local == read_local
                                 && matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
                             {
                                 let msg = format!(
@@ -426,7 +426,7 @@ fn check_stmt_conflicts(
                     // (b) Write conflicts — assigning to a borrowed place
                     let dest_local = dest.local;
                     for loan in active_loans {
-                        if loan.borrowed_local == dest_local {
+                        if loan.borrowed_place.local == dest_local {
                             let msg = format!(
                                 "cannot assign to `{}` because it is borrowed",
                                 dest_local.to_raw()
