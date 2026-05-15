@@ -224,6 +224,7 @@ pub fn typeck_crate(
 }
 
 // ---- Where clause helpers (pub(crate) for testing) ----
+#[allow(dead_code)]
 pub(crate) fn get_generic_params(kind: &glyim_hir::ItemKind) -> Option<&[glyim_hir::GenericParam]> {
     use glyim_hir::ItemKind;
     match kind {
@@ -237,6 +238,7 @@ pub(crate) fn get_generic_params(kind: &glyim_hir::ItemKind) -> Option<&[glyim_h
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn get_where_clauses(
     kind: &glyim_hir::ItemKind,
 ) -> &[glyim_hir::where_clause::WhereClause] {
@@ -303,12 +305,12 @@ pub(crate) fn find_trait_default_body(
 ) -> Option<glyim_hir::BodyId> {
     let trait_name = trait_ref_path.as_name()?;
     for (_item_id, item) in hir.items.iter_enumerated() {
-        if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
-            if item.name == trait_name {
-                for method in &trait_item.methods {
-                    if method.name == method_name {
-                        return method.default_body;
-                    }
+        if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind
+            && item.name == trait_name
+        {
+            for method in &trait_item.methods {
+                if method.name == method_name {
+                    return method.default_body;
                 }
             }
         }
