@@ -72,7 +72,6 @@ fn has_attr_in_span(root: &SyntaxNode, target_span: Span, attr_name: &str) -> bo
     let mut tokens = Vec::new();
     collect_tokens(root, &mut tokens);
 
-    // Simple scan: look for sequence `#` `[` ident `]`
     let mut i = 0;
     while i + 3 < tokens.len() {
         let t0 = &tokens[i];
