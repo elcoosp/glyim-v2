@@ -1,18 +1,11 @@
 use glyim_syntax::SyntaxNode;
 use glyim_core::def_id::CrateId;
-use glyim_core::interner::Name;
-use glyim_core::path::PathKind;
 use glyim_core::primitives::Visibility;
 use glyim_test::FrontendTester;
 
 
 // Helper to debug CST
-fn dump_cst(node: &SyntaxNode, indent: usize) {
-    println!("{}{:?} '{}'", "  ".repeat(indent), node.kind(), node.text().to_string().chars().take(30).collect::<String>());
-    for child in node.children() {
-        dump_cst(&child, indent + 1);
-    }
-}
+
 
 fn get_def_map(source: &str) -> (crate::CrateDefMap, Vec<glyim_diag::GlyimDiagnostic>) {
     let trace = FrontendTester::new(source).run();
@@ -32,7 +25,6 @@ fn get_def_map(source: &str) -> (crate::CrateDefMap, Vec<glyim_diag::GlyimDiagno
 
 #[test]
 fn u08_t01_std_io_read_imports_read() {
-    println!("=== CST DUMP FOR u08_t01 ===");
     let source = r#"
         mod std {
             pub mod io {
@@ -41,11 +33,6 @@ fn u08_t01_std_io_read_imports_read() {
         }
         use std::io::Read;
     "#;
-    let trace = FrontendTester::new(source).run();
-    let root = trace.parse_tree.expect("Parse tree should exist");
-    dump_cst(&root, 0);
-    println!("=== END CST DUMP ===
-");
 
     // Setup: Define a fake std hierarchy
     let source = r#"
@@ -65,7 +52,7 @@ fn u08_t01_std_io_read_imports_read() {
     let resolved = def_map.modules[root_mod].resolve(read_name);
     assert!(resolved.is_some(), "Read should be in root scope");
 
-    let (id, vis) = resolved.unwrap();
+    let (_id, vis) = resolved.unwrap();
     assert_eq!(vis, Visibility::Public, "Read should be public");
     // We don't check the exact LocalDefId because it depends on order of collection
 }

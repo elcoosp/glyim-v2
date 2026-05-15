@@ -144,8 +144,7 @@ impl<'a> Parser<'a> {
             if !matches!(
                 self.current_kind(),
                 SyntaxKind::KwFn
-                    | SyntaxKind::KwStruct
-                     SyntaxKind::KwUse => self.parse_use_decl(),
+                    | SyntaxKind::KwStruct | SyntaxKind::KwUse
                     | SyntaxKind::KwEnum
                     | SyntaxKind::KwTrait
                     | SyntaxKind::KwImpl
@@ -163,7 +162,7 @@ impl<'a> Parser<'a> {
         match self.current_kind() {
             SyntaxKind::KwFn => self.parse_fn_def(),
             SyntaxKind::KwStruct => self.parse_struct_def(),
-                     SyntaxKind::KwUse => self.parse_use_decl(),
+            SyntaxKind::KwUse => self.parse_use_decl(),
             SyntaxKind::KwEnum => self.parse_enum_def(),
             SyntaxKind::KwTrait => self.parse_trait_def(),
             SyntaxKind::KwImpl => self.parse_impl_def(),
@@ -247,8 +246,7 @@ impl<'a> Parser<'a> {
                     && !matches!(
                         self.current_kind(),
                         SyntaxKind::KwFn
-                            | SyntaxKind::KwStruct
-                     SyntaxKind::KwUse => self.parse_use_decl(),
+                            | SyntaxKind::KwStruct | SyntaxKind::KwUse
                             | SyntaxKind::KwEnum
                             | SyntaxKind::KwTrait
                             | SyntaxKind::KwImpl
@@ -349,7 +347,6 @@ impl<'a> Parser<'a> {
     fn parse_struct_def(&mut self) {
         self.start_node(SyntaxKind::StructDef);
         self.bump_expected(SyntaxKind::KwStruct);
-                     SyntaxKind::KwUse => self.parse_use_decl(),
         self.bump_expected(SyntaxKind::Ident);
         if self.current_kind() == SyntaxKind::Lt {
             self.parse_type_param_list();
@@ -750,7 +747,6 @@ impl<'a> Parser<'a> {
             }
             SyntaxKind::KwFn
             | SyntaxKind::KwStruct
-                     SyntaxKind::KwUse => self.parse_use_decl(),
             | SyntaxKind::KwEnum
             | SyntaxKind::KwTrait
             | SyntaxKind::KwImpl
@@ -1244,6 +1240,16 @@ impl<'a> Parser<'a> {
         }
         while self.current_kind() == SyntaxKind::ColonColon {
             self.bump(); // ::
+            // Check for Star (*) or LBrace ({) which terminates the path prefix in use statements
+            if matches!(self.current_kind(), SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate | SyntaxKind::Lt) {
+                break;
+            }
+            self.bump(); // ::
+            // Check for Star (*) or LBrace ({) which terminates the path prefix in use statements
+            if matches!(self.current_kind(), SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate | SyntaxKind::Lt) {
+                break;
+            }
+            self.bump(); // ::
             match self.current_kind() {
                 SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper => {
                     self.bump();
@@ -1685,6 +1691,41 @@ impl<'a> Parser<'a> {
     fn finish(self) -> (GreenNode, Vec<GlyimDiagnostic>) {
         (self.builder.finish(), self.diagnostics)
     }
+
+    // Added by Stream U08
+    fn parse_use_decl(&mut self) {
+        let _guard = self.start_node(SyntaxKind::UseDecl);
+        self.expect(SyntaxKind::KwUse);
+        self.parse_use_tree();
+        self.expect(SyntaxKind::Semicolon);
+        self.finish_node()
+    }
+
+    fn parse_use_tree(&mut self) {
+        let _guard = self.start_node(SyntaxKind::UseTree);
+        // Parse path prefix
+        self.parse_path_expr();
+
+        // Handle glob import `*`
+        if self.current_kind() == SyntaxKind::Star {
+            self.bump(); // *
+        }
+
+        // Handle nested imports `{a, b}`
+        if self.current_kind() == SyntaxKind::LBrace {
+            self.bump(); // {
+            while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                // Handle nested items separated by commas
+                self.parse_use_tree();
+                if self.current_kind() == SyntaxKind::Comma {
+                    self.bump();
+                }
+            }
+            self.expect(SyntaxKind::RBrace); // }
+        }
+
+        self.finish_node(); // Close UseTree node
+    }
 }
 
 pub fn parse_to_syntax(source: &str, file_id: FileId) -> ParseResult {
@@ -1699,57 +1740,5 @@ pub fn parse_to_syntax(source: &str, file_id: FileId) -> ParseResult {
         green_node,
         diagnostics: all_diagnostics,
         root,
-    }
-}
-
-// Added by Stream U08
-impl Parser {
-    fn parse_use_decl(&mut self) -> GreenNode {
-        let _guard = self.start_node(SyntaxKind::UseDecl);
-        self.expect(SyntaxKind::KwUse);
-        self.parse_use_tree();
-        self.expect(SyntaxKind::Semicolon);
-        self.finish_node()
-    }
-
-    fn parse_use_tree(&mut self) {
-        let _guard = self.start_node(SyntaxKind::UseTree);
-
-        // Parse path prefix
-        // We assume parse_path exists and parses into the current context or returns a node we attach.
-        // If parse_path adds children to the current builder, we just call it.
-        // If parse_path returns a node, we need to add it.
-        // Based on typical rowan patterns, let's assume we need to call a method that adds to the builder.
-
-        // Heuristic: If there is a parse_path function, call it.
-        // If not, consume identifiers and colons manually.
-
-        // Simple implementation: try to call parse_path if it exists (we assume it does).
-        // To be safe, we will write a manual loop that consumes idents and colons to build a path-like structure.
-        // BUT, extract_path_from_syntax relies on SyntaxKind::PathExpr.
-        // So we MUST produce PathExpr nodes.
-
-        // Let's try to find if there is a method to parse paths.
-        // Since we can't call unknown methods easily, we will try to call `parse_path` and hope for the best,
-        // or fallback.
-
-        // Actually, standard pattern in rowan parsers is `parse_path_expr`.
-        // Let's try calling `parse_path_expr` or `parse_path`.
-        // If it fails, compilation fails, and we know.
-
-        // To minimize risk, we will look for `parse_path` in the file first.
-
-        // Placeholder for the actual logic:
-        // We will manually construct a PathExpr if we can't be sure of the parser API.
-        // But manually constructing PathExpr is hard (needs children).
-
-        // Let's assume `parse_path` exists and parses into the *parent* node.
-        // If not, we are stuck.
-
-        // For now, let's try to consume tokens and create a PathExpr node manually?
-        // No, we need the GreenNode builder.
-
-        // BEST GUESS: The parser has a `parse_path` that returns a GreenNode or adds to builder.
-        // We will try to inject a call to `parse_path` inside `parse_use_tree`.
     }
 }
