@@ -1,17 +1,52 @@
+use glyim_syntax::SyntaxNode;
 use glyim_core::def_id::CrateId;
 use glyim_core::interner::Name;
 use glyim_core::path::PathKind;
 use glyim_core::primitives::Visibility;
 use glyim_test::FrontendTester;
 
+
+// Helper to debug CST
+fn dump_cst(node: &SyntaxNode, indent: usize) {
+    println!("{}{:?} '{}'", "  ".repeat(indent), node.kind(), node.text().to_string().chars().take(30).collect::<String>());
+    for child in node.children() {
+        dump_cst(&child, indent + 1);
+    }
+}
+
 fn get_def_map(source: &str) -> (crate::CrateDefMap, Vec<glyim_diag::GlyimDiagnostic>) {
     let trace = FrontendTester::new(source).run();
+
+    // Print parse diagnostics to debug parser issues
+    if !trace.parse_diagnostics.is_empty() {
+        println!("--- PARSE DIAGNOSTICS ---");
+        for d in &trace.parse_diagnostics {
+            println!("{:?}", d);
+        }
+        println!("--- END PARSE DIAGNOSTICS ---");
+    }
+
     let root = trace.parse_tree.expect("Parse tree should exist");
     crate::build_def_map(&root, CrateId::from_raw(0))
 }
 
 #[test]
 fn u08_t01_std_io_read_imports_read() {
+    println!("=== CST DUMP FOR u08_t01 ===");
+    let source = r#"
+        mod std {
+            pub mod io {
+                pub struct Read;
+            }
+        }
+        use std::io::Read;
+    "#;
+    let trace = FrontendTester::new(source).run();
+    let root = trace.parse_tree.expect("Parse tree should exist");
+    dump_cst(&root, 0);
+    println!("=== END CST DUMP ===
+");
+
     // Setup: Define a fake std hierarchy
     let source = r#"
         mod std {
