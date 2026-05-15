@@ -316,8 +316,21 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
             thir::ExprKind::FnRef(_) => {
+                let (def_id, substs) = match self._ctx.ty_ctx().ty_kind(expr.ty) {
+                    TyKind::FnDef(def_id, substs) => (*def_id, substs.clone()),
+                    _ => {
+                        tracing::warn!("STUB: FnRef with non-FnDef type, emitting Error constant");
+                        return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
+                            glyim_mir::MirConst {
+                                kind: glyim_mir::MirConstKind::Error,
+                                ty: expr.ty,
+                                span: expr.span,
+                            },
+                        ));
+                    }
+                };
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
-                    kind: glyim_mir::MirConstKind::Error,
+                    kind: glyim_mir::MirConstKind::Fn(def_id, substs),
                     ty: expr.ty,
                     span: expr.span,
                 }))
