@@ -3,8 +3,8 @@
 use crate::context::TyCtxMut;
 use crate::display::TypeLookup;
 use crate::{
-    BoundRegionKind, BoundTy, BoundTyKind, InferVar, PlaceholderRegion, Region, RegionVid, TyKind,
-    TypeFlags, UniverseIndex, compute_flags,
+    BoundRegionKind, BoundTy, BoundTyKind, PlaceholderRegion, Region, TyKind, TypeFlags,
+    UniverseIndex, compute_flags,
 };
 use glyim_core::interner::Interner;
 use glyim_core::primitives::{IntTy, Mutability};

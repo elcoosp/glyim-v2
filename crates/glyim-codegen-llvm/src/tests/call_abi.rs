@@ -213,7 +213,7 @@ fn v27_t03_variadic_function_call() {
 
 #[test]
 fn v27_t04_arm_hva_struct_four_floats_simd() {
-    let (ctx, (sig, fn_ptr_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
+    let (ctx, (_sig, _fn_ptr_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
         let f32_ty = ctx_mut.mk_ty(TyKind::Float(FloatTy::F32));
         let subst = ctx_mut.intern_substitution(vec![
             glyim_type::GenericArg::Ty(f32_ty),
