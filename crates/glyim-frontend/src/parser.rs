@@ -144,7 +144,8 @@ impl<'a> Parser<'a> {
             if !matches!(
                 self.current_kind(),
                 SyntaxKind::KwFn
-                    | SyntaxKind::KwStruct | SyntaxKind::KwUse
+                    | SyntaxKind::KwStruct
+                    | SyntaxKind::KwUse
                     | SyntaxKind::KwEnum
                     | SyntaxKind::KwTrait
                     | SyntaxKind::KwImpl
@@ -246,7 +247,8 @@ impl<'a> Parser<'a> {
                     && !matches!(
                         self.current_kind(),
                         SyntaxKind::KwFn
-                            | SyntaxKind::KwStruct | SyntaxKind::KwUse
+                            | SyntaxKind::KwStruct
+                            | SyntaxKind::KwUse
                             | SyntaxKind::KwEnum
                             | SyntaxKind::KwTrait
                             | SyntaxKind::KwImpl
@@ -1082,7 +1084,9 @@ impl<'a> Parser<'a> {
     fn parse_primary_expr(&mut self) {
         self.last_was_path = false;
         // Check for label before block or loop
-        if (self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Lifetime) && self.peek_kind() == Some(SyntaxKind::Colon) {
+        if (self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Lifetime)
+            && self.peek_kind() == Some(SyntaxKind::Colon)
+        {
             // This is a label - consume it, then parse the labeled item (loop, while, for, block)
             self.bump(); // label name
             self.bump(); // colon
@@ -1259,7 +1263,10 @@ impl<'a> Parser<'a> {
             self.bump(); // ::
             // After :: we can have an identifier, generic args, or (for use statements) * or {
             match self.current_kind() {
-                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                SyntaxKind::Ident
+                | SyntaxKind::KwSelf
+                | SyntaxKind::KwSuper
+                | SyntaxKind::KwCrate => {
                     self.bump();
                 }
                 SyntaxKind::Lt => {
@@ -1303,7 +1310,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_label(&mut self) -> bool {
-        if (self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Lifetime) && self.peek_kind() == Some(SyntaxKind::Colon) {
+        if (self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Lifetime)
+            && self.peek_kind() == Some(SyntaxKind::Colon)
+        {
             self.bump(); // label name
             self.bump(); // colon
             true
@@ -1763,12 +1772,15 @@ impl<'a> Parser<'a> {
         while self.current_kind() == SyntaxKind::ColonColon {
             self.bump(); // ::
             // After :: we can have an identifier, * (glob), or { for nested imports
-            if self.current_kind() == SyntaxKind::Star
-                || self.current_kind() == SyntaxKind::LBrace {
+            if self.current_kind() == SyntaxKind::Star || self.current_kind() == SyntaxKind::LBrace
+            {
                 break;
             }
             match self.current_kind() {
-                SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
+                SyntaxKind::Ident
+                | SyntaxKind::KwSelf
+                | SyntaxKind::KwSuper
+                | SyntaxKind::KwCrate => {
                     self.bump();
                 }
                 _ => {

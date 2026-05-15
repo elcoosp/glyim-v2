@@ -1,2 +1,2 @@
-mod projection_typeck;
 mod harness_tests;
+mod projection_typeck;

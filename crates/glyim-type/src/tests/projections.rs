@@ -3,11 +3,10 @@ use glyim_core::def_id::TraitDefId;
 use glyim_core::primitives::IntTy;
 
 use crate::{
-    GenericArg, ProjectionTy, TraitRef, TyCtxMut,
-    TyKind, TypeFlags, InferVar, TyVar, PrintTy,
+    GenericArg, InferVar, PrintTy, ProjectionTy, TraitRef, TyCtxMut, TyKind, TyVar, TypeFlags,
 };
 
-use super::test_helpers::{with_fresh_ty_ctx};
+use super::test_helpers::with_fresh_ty_ctx;
 
 /// Helper: build a projection type `<self_ty as trait_def_id>::item_name`
 fn make_projection(

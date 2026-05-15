@@ -1,11 +1,8 @@
+use crate::InferenceTable;
 use glyim_core::def_id::TraitDefId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::{IntTy, UintTy};
-use glyim_type::{
-    GenericArg, ProjectionTy, TraitRef, TyCtxMut,
-    TyKind,
-};
-use crate::InferenceTable;
+use glyim_type::{GenericArg, ProjectionTy, TraitRef, TyCtxMut, TyKind};
 
 #[test]
 fn unify_projection_with_concrete() {
@@ -17,8 +14,14 @@ fn unify_projection_with_concrete() {
     let trait_id = TraitDefId::from_raw(0);
     let self_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
     let substs = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
-    let trait_ref = TraitRef { def_id: trait_id, substs };
-    let proj_ty = ctx.mk_ty(TyKind::Projection(ProjectionTy { trait_ref, item_name }));
+    let trait_ref = TraitRef {
+        def_id: trait_id,
+        substs,
+    };
+    let proj_ty = ctx.mk_ty(TyKind::Projection(ProjectionTy {
+        trait_ref,
+        item_name,
+    }));
 
     let concrete = ctx.mk_ty(TyKind::Uint(UintTy::U32));
     let span = glyim_span::Span::DUMMY;
@@ -39,9 +42,18 @@ fn unify_projection_with_projection() {
     let name = ctx.resolver().intern("Item");
     let tid = TraitDefId::from_raw(0);
     let s = ctx.intern_substitution(vec![GenericArg::Ty(ctx.bool_ty())]);
-    let tr = TraitRef { def_id: tid, substs: s };
-    let p1 = ctx.mk_ty(TyKind::Projection(ProjectionTy { trait_ref: tr.clone(), item_name: name }));
-    let p2 = ctx.mk_ty(TyKind::Projection(ProjectionTy { trait_ref: tr, item_name: name }));
+    let tr = TraitRef {
+        def_id: tid,
+        substs: s,
+    };
+    let p1 = ctx.mk_ty(TyKind::Projection(ProjectionTy {
+        trait_ref: tr.clone(),
+        item_name: name,
+    }));
+    let p2 = ctx.mk_ty(TyKind::Projection(ProjectionTy {
+        trait_ref: tr,
+        item_name: name,
+    }));
 
     let span = glyim_span::Span::DUMMY;
     let result = infer.unify(&mut ctx, p1, p2, span);

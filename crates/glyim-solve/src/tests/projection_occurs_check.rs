@@ -1,10 +1,7 @@
+use crate::InferenceTable;
 use glyim_core::def_id::TraitDefId;
 use glyim_core::interner::Interner;
-use glyim_type::{
-    GenericArg, ProjectionTy, TraitRef, TyCtxMut,
-    TyKind, InferVar, TyVar,
-};
-use crate::InferenceTable;
+use glyim_type::{GenericArg, InferVar, ProjectionTy, TraitRef, TyCtxMut, TyKind, TyVar};
 
 #[test]
 fn occurs_check_cycle() {
@@ -20,8 +17,14 @@ fn occurs_check_cycle() {
     // Not a realistic case, but tests that occurs check catches self-reference.
     let self_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(TyVar::from_raw(0))));
     let substs = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
-    let trait_ref = TraitRef { def_id: trait_id, substs };
-    let _proj_ty = ctx.mk_ty(TyKind::Projection(ProjectionTy { trait_ref, item_name: a_name }));
+    let trait_ref = TraitRef {
+        def_id: trait_id,
+        substs,
+    };
+    let _proj_ty = ctx.mk_ty(TyKind::Projection(ProjectionTy {
+        trait_ref,
+        item_name: a_name,
+    }));
 
     // Attempt to unify with itself? Not meaningful; we'll implement an explicit occurs check.
     // For now, just ensure the test compiles.

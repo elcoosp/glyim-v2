@@ -121,7 +121,11 @@ impl<'a> Lexer<'a> {
                     if has_ident {
                         // Skip whitespace
                         while let Some(ch) = self.peek() {
-                            if ch.is_whitespace() { self.advance(); } else { break; }
+                            if ch.is_whitespace() {
+                                self.advance();
+                            } else {
+                                break;
+                            }
                         }
                         // Check for colon
                         if self.peek() == Some(':') {
@@ -158,35 +162,67 @@ impl<'a> Lexer<'a> {
                 }
                 '(' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::LParen, self.span(start, self.pos), "("));
+                    tokens.push(Token::new(
+                        SyntaxKind::LParen,
+                        self.span(start, self.pos),
+                        "(",
+                    ));
                 }
                 ')' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::RParen, self.span(start, self.pos), ")"));
+                    tokens.push(Token::new(
+                        SyntaxKind::RParen,
+                        self.span(start, self.pos),
+                        ")",
+                    ));
                 }
                 '{' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::LBrace, self.span(start, self.pos), "{"));
+                    tokens.push(Token::new(
+                        SyntaxKind::LBrace,
+                        self.span(start, self.pos),
+                        "{",
+                    ));
                 }
                 '}' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::RBrace, self.span(start, self.pos), "}"));
+                    tokens.push(Token::new(
+                        SyntaxKind::RBrace,
+                        self.span(start, self.pos),
+                        "}",
+                    ));
                 }
                 '[' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::LBracket, self.span(start, self.pos), "["));
+                    tokens.push(Token::new(
+                        SyntaxKind::LBracket,
+                        self.span(start, self.pos),
+                        "[",
+                    ));
                 }
                 ']' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::RBracket, self.span(start, self.pos), "]"));
+                    tokens.push(Token::new(
+                        SyntaxKind::RBracket,
+                        self.span(start, self.pos),
+                        "]",
+                    ));
                 }
                 ',' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Comma, self.span(start, self.pos), ","));
+                    tokens.push(Token::new(
+                        SyntaxKind::Comma,
+                        self.span(start, self.pos),
+                        ",",
+                    ));
                 }
                 ';' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Semicolon, self.span(start, self.pos), ";"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Semicolon,
+                        self.span(start, self.pos),
+                        ";",
+                    ));
                 }
                 '.' => {
                     let kind = self.lex_dot();
@@ -200,51 +236,99 @@ impl<'a> Lexer<'a> {
                 }
                 '+' => {
                     let k = self.lex_plus();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '-' => {
                     let k = self.lex_minus();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '*' => {
                     let k = self.lex_star();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '/' => {
                     let k = self.lex_slash();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '%' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Percent, self.span(start, self.pos), "%"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Percent,
+                        self.span(start, self.pos),
+                        "%",
+                    ));
                 }
                 '=' => {
                     let k = self.lex_eq();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '!' => {
                     let k = self.lex_bang();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '<' => {
                     let k = self.lex_lt();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '>' => {
                     let k = self.lex_gt();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '&' => {
                     let k = self.lex_and();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '|' => {
                     let k = self.lex_or();
-                    tokens.push(Token::new(k, self.span(start, self.pos), &self.source[start..self.pos]));
+                    tokens.push(Token::new(
+                        k,
+                        self.span(start, self.pos),
+                        &self.source[start..self.pos],
+                    ));
                 }
                 '^' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Caret, self.span(start, self.pos), "^"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Caret,
+                        self.span(start, self.pos),
+                        "^",
+                    ));
                 }
                 '@' => {
                     self.advance();
@@ -252,19 +336,35 @@ impl<'a> Lexer<'a> {
                 }
                 '#' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Hash, self.span(start, self.pos), "#"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Hash,
+                        self.span(start, self.pos),
+                        "#",
+                    ));
                 }
                 '$' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Dollar, self.span(start, self.pos), "$"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Dollar,
+                        self.span(start, self.pos),
+                        "$",
+                    ));
                 }
                 '~' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Tilde, self.span(start, self.pos), "~"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Tilde,
+                        self.span(start, self.pos),
+                        "~",
+                    ));
                 }
                 '?' => {
                     self.advance();
-                    tokens.push(Token::new(SyntaxKind::Question, self.span(start, self.pos), "?"));
+                    tokens.push(Token::new(
+                        SyntaxKind::Question,
+                        self.span(start, self.pos),
+                        "?",
+                    ));
                 }
                 _ => {
                     self.advance();
@@ -434,7 +534,11 @@ impl<'a> Lexer<'a> {
                     format!("incomplete float exponent: '{}'", exp_text),
                 ));
                 self.pos = exp_start;
-                return if is_float { SyntaxKind::FloatLit } else { SyntaxKind::IntLit };
+                return if is_float {
+                    SyntaxKind::FloatLit
+                } else {
+                    SyntaxKind::IntLit
+                };
             } else {
                 is_float = true;
             }

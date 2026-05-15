@@ -177,7 +177,12 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
                 } else {
                     write!(f, "?")?;
                 }
-                write!(f, " as Trait{}>::{}", proj.trait_ref.def_id.to_raw(), self.lookup.name_str(proj.item_name))
+                write!(
+                    f,
+                    " as Trait{}>::{}",
+                    proj.trait_ref.def_id.to_raw(),
+                    self.lookup.name_str(proj.item_name)
+                )
             }
             TyKind::Param(param) => write!(f, "{}", self.lookup.name_str(param.name)),
             TyKind::Bound(var, bound) => match bound.kind {

@@ -204,10 +204,7 @@ fn resolve_module_path_for_modules(
             0
         }
         PathKind::Crate => {
-            current_module = modules[start_module]
-                .parent
-                .map(|p| p)
-                .unwrap_or(start_module);
+            current_module = modules[start_module].parent.unwrap_or(start_module);
             while let Some(parent) = modules[current_module].parent {
                 current_module = parent;
             }
@@ -383,10 +380,10 @@ fn process_use_tree(
     if has_glob {
         if let Some(path_node) = use_path_node {
             let path = extract_path_from_syntax(&path_node, interner);
-            if let Some(p) = path {
-                if let Some(mod_id) = resolve_module_path_for_modules(modules, parent_module, &p) {
-                    import_all_public_for_modules(mod_id, parent_module, modules);
-                }
+            if let Some(p) = path
+                && let Some(mod_id) = resolve_module_path_for_modules(modules, parent_module, &p)
+            {
+                import_all_public_for_modules(mod_id, parent_module, modules);
             }
         }
         return;
