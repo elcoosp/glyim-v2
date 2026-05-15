@@ -1377,16 +1377,60 @@ pub(crate) fn lower_pat(
             }
         }
         SyntaxKind::PatTuple => {
+            // Check if this PatTuple is preceded by a UsePath sibling (e.g., Color(r,g,b) in let Color(r,g,b) = ...)
+            if let Some(parent) = node.parent() {
+                let siblings: Vec<glyim_syntax::SyntaxElement> =
+                    parent.children_with_tokens().collect();
+                let preceding_use_path = siblings
+                    .iter()
+                    .take_while(
+                        |el| !matches!(el, glyim_syntax::SyntaxElement::Node(n) if *n == *node),
+                    )
+                    .filter_map(|el| {
+                        if let glyim_syntax::SyntaxElement::Node(n) = el {
+                            if n.kind() == SyntaxKind::UsePath {
+                                Some(n.clone())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .last();
+                if let Some(use_path) = preceding_use_path {
+                    let path_text = use_path.text().to_string().trim().to_string();
+                    let path = HirPath {
+                        segments: vec![PathSegment {
+                            name: interner.intern(&path_text),
+                            generic_args: None,
+                        }],
+                        kind: glyim_core::path::PathKind::Plain,
+                    };
+                    let mut fields = Vec::new();
+                    for child in node.children() {
+                        if let Some(pat_id) = lower_pat(&child, interner, pats) {
+                            let field_name = {
+                                let s = child.text().to_string();
+                                interner.intern(s.trim())
+                            };
+                            fields.push((field_name, pat_id));
+                        }
+                    }
+                    return Some(pats.push(Pat::Struct {
+                        path,
+                        fields,
+                        rest: false,
+                    }));
+                }
+            }
+            // Otherwise, process as a regular tuple or mixed UsePath+PatTuple inside
             let mut elems = Vec::new();
-            // The parser may produce UsePath nodes inside PatTuple (e.g., Some(b)).
-            // We need to combine UsePath + following PatTuple into a PatStruct.
             let children: Vec<glyim_syntax::SyntaxNode> = node.children().collect();
             let mut i = 0;
             while i < children.len() {
                 let child = &children[i];
                 if child.kind() == SyntaxKind::UsePath {
-                    // This is a path prefix for a struct pattern like Some(b)
-                    // Extract the path
                     let mut segments = Vec::new();
                     for el in child.children_with_tokens() {
                         if let glyim_syntax::SyntaxElement::Token(t) = el
@@ -1402,7 +1446,6 @@ pub(crate) fn lower_pat(
                         segments,
                         kind: glyim_core::path::PathKind::Plain,
                     };
-                    // The next sibling should be a PatTuple containing the arguments
                     let mut fields = Vec::new();
                     if i + 1 < children.len() && children[i + 1].kind() == SyntaxKind::PatTuple {
                         let args_node = &children[i + 1];
@@ -1421,7 +1464,6 @@ pub(crate) fn lower_pat(
                                     ) =>
                                 {
                                     let arg_pat_id = lower_pat(&n, interner, pats);
-                                    // For tuple struct fields, we don't have names
                                     if let Some(pid) = arg_pat_id {
                                         let field_name = {
                                             let s = n.text().to_string();
@@ -1433,7 +1475,7 @@ pub(crate) fn lower_pat(
                                 _ => {}
                             }
                         }
-                        i += 2; // skip the UsePath and PatTuple
+                        i += 2;
                     } else {
                         i += 1;
                     }
@@ -1444,7 +1486,6 @@ pub(crate) fn lower_pat(
                     };
                     elems.push(pats.push(struct_pat));
                 } else {
-                    // Regular pattern node
                     if let Some(pat_id) = lower_pat(child, interner, pats) {
                         elems.push(pat_id);
                     }
