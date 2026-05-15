@@ -1,8 +1,11 @@
 //! Tests for associated type projections.
 use glyim_core::def_id::TraitDefId;
-use glyim_core::primitives::IntTy;
-
+use glyim_core::primitives::{Abi, IntTy, Mutability, Safety};
 use crate::{
+    FnSig, GenericArg, InferVar, ParamTy, PrintTy, ProjectionTy, Region, TraitRef, Ty, TyCtxMut,
+    TyKind, TyVar, TypeFlags,
+};
+
     FnSig, GenericArg, InferVar, ParamTy, PrintTy, ProjectionTy, Region, TraitRef, Ty, TyCtxMut,
     TyKind, TyVar, TypeFlags,
 };
