@@ -14,6 +14,7 @@ mod mock_lower_ctx;
 mod nested_blocks;
 mod nested_control_flow;
 mod return_expr;
+mod root_discovery;
 mod struct_literal;
 mod stub_coverage;
 mod thir_builder;
