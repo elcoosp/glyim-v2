@@ -6,4 +6,5 @@ mod loans;
 mod loops;
 mod mir_builder;
 mod same_block;
+mod two_phase_borrows;
 mod write_conflicts;

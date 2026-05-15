@@ -5,6 +5,12 @@
 //! a CFG-aware liveness analysis. Loans are tracked as sets, and conflicts
 //! are detected between active borrows and place accesses.
 //!
+//! Two-phase borrow support: a `BorrowKind::Mut { allow_two_phase_borrow: true }`
+//! starts in a "reservation" phase (acting as a shared borrow) and transitions
+//! to "activated" when the reference is first used. During reservation, shared
+//! reads and borrows of the same place are allowed; after activation, normal
+//! mutable borrow rules apply.
+//!
 //! The analysis proceeds in three phases:
 //! 1. **Loan collection**: Scan the MIR body for `Rvalue::Ref` assignments
 //!    and record each as a `Loan` with the borrowed place, borrow kind,
@@ -13,13 +19,14 @@
 //!    point using a standard backward dataflow analysis on the CFG.
 //! 3. **Conflict detection**: For each statement, determine which loans are
 //!    active (their dest local is live) and check for conflicts with
-//!    place accesses in the statement.
+//!    place accesses in the statement. Two-phase borrows in reservation
+//!    phase are treated as shared borrows for conflict purposes.
 
 use fixedbitset::FixedBitSet as BitSet;
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, MultiSpan, SubDiagnostic};
 use glyim_mir::{
-    BasicBlockIdx, Body, BorrowKind, LocalIdx, Operand, Place, Rvalue, StatementKind,
-    TerminatorKind,
+    BasicBlockData, BasicBlockIdx, Body, BorrowKind, LocalIdx, Operand, Place, Rvalue,
+    StatementKind, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_type::TyCtx;
@@ -54,24 +61,114 @@ struct Loan {
     kind: BorrowKind,
     /// The span for error reporting.
     span: Span,
+    /// The (block, statement index) where this loan was created.
+    creation_point: (BasicBlockIdx, usize),
 }
 
 /// Scan the MIR body for all `Rvalue::Ref` assignments and record loans.
 fn collect_loans(body: &Body) -> Vec<Loan> {
     let mut loans = Vec::new();
-    for (_block_idx, block_data) in body.basic_blocks.iter_enumerated() {
-        for stmt in block_data.statements.iter() {
+    for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
+        for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
             if let StatementKind::Assign(dest, Rvalue::Ref(borrowed, kind)) = &stmt.kind {
                 loans.push(Loan {
                     dest_local: dest.local,
                     borrowed_place: borrowed.clone(),
                     kind: *kind,
                     span: stmt.source_info.span,
+                    creation_point: (block_idx, stmt_idx),
                 });
             }
         }
     }
     loans
+}
+
+// ---------------------------------------------------------------------------
+// Two-phase borrow helpers
+// ---------------------------------------------------------------------------
+
+/// Returns `true` if this borrow kind is a two-phase mutable borrow.
+fn is_two_phase(kind: &BorrowKind) -> bool {
+    matches!(
+        kind,
+        BorrowKind::Mut {
+            allow_two_phase_borrow: true
+        }
+    )
+}
+
+/// Determine whether a two-phase loan is still in its reservation phase
+/// at the given statement.
+///
+/// A two-phase mutable borrow is in reservation from its creation point
+/// up to (but not including) the first statement that *reads* its
+/// `dest_local`. Once `dest_local` is read, the borrow is "activated"
+/// and behaves as a full mutable borrow.
+///
+/// For loans created in a different basic block, we conservatively
+/// consider them already activated (cross-block two-phase analysis is
+/// not supported in this implementation).
+fn loan_is_in_reservation(
+    loan: &Loan,
+    current_block: BasicBlockIdx,
+    current_stmt_idx: usize,
+    block_data: &BasicBlockData,
+) -> bool {
+    if !is_two_phase(&loan.kind) {
+        return false;
+    }
+
+    let (loan_block, loan_stmt) = loan.creation_point;
+
+    // Cross-block: conservatively consider activated
+    if loan_block != current_block {
+        return false;
+    }
+
+    // Scan from the statement after creation up to (but NOT including)
+    // the current statement. If any intermediate statement reads
+    // dest_local, the loan is already activated.
+    for i in loan_stmt + 1..current_stmt_idx {
+        if stmt_reads_local(&block_data.statements[i], loan.dest_local) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Does this statement read the given local?
+fn stmt_reads_local(stmt: &glyim_mir::Statement, local: LocalIdx) -> bool {
+    match &stmt.kind {
+        StatementKind::Assign(_, rvalue) => rvalue_reads_local(rvalue, local),
+        StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => false,
+    }
+}
+
+/// Does this rvalue read the given local?
+fn rvalue_reads_local(rvalue: &Rvalue, local: LocalIdx) -> bool {
+    match rvalue {
+        Rvalue::Use(operand) => operand_reads_local(operand, local),
+        Rvalue::Ref(place, _) => place.local == local,
+        Rvalue::BinaryOp(_, pair) => {
+            let (left, right) = pair.as_ref();
+            operand_reads_local(left, local) || operand_reads_local(right, local)
+        }
+        Rvalue::UnaryOp(_, operand) => operand_reads_local(operand, local),
+        Rvalue::Aggregate(_, operands) => operands.iter().any(|op| operand_reads_local(op, local)),
+        Rvalue::Discriminant(place) | Rvalue::Len(place) => place.local == local,
+        Rvalue::Cast(_, operand, _) => operand_reads_local(operand, local),
+        Rvalue::Repeat(operand, _) => operand_reads_local(operand, local),
+    }
+}
+
+/// Does this operand read the given local?
+fn operand_reads_local(operand: &Operand, local: LocalIdx) -> bool {
+    match operand {
+        Operand::Copy(place) | Operand::Move(place) => place.local == local,
+        Operand::Constant(_) => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -355,9 +452,17 @@ fn gen_operand_uses(operand: &Operand, live: &mut BitSet) {
 /// `active_loans` contains all loans whose `dest_local` is live at this
 /// program point, meaning the reference is still in use and the borrow
 /// is still active.
+///
+/// For two-phase mutable borrows that are still in their reservation
+/// phase, shared reads and shared borrows of the borrowed place are
+/// allowed. After activation (when `dest_local` is first read), normal
+/// mutable borrow conflict rules apply.
 fn check_stmt_conflicts(
     stmt: &glyim_mir::Statement,
     active_loans: &[&Loan],
+    current_block: BasicBlockIdx,
+    current_stmt_idx: usize,
+    block_data: &BasicBlockData,
     errors: &mut Vec<GlyimDiagnostic>,
 ) {
     match &stmt.kind {
@@ -369,7 +474,13 @@ fn check_stmt_conflicts(
                     let borrowed_local = borrowed.local;
                     for loan in active_loans {
                         if loan.borrowed_place.local == borrowed_local {
-                            let conflict = conflicts_with_active(&loan.kind, kind);
+                            let in_reservation = loan_is_in_reservation(
+                                loan,
+                                current_block,
+                                current_stmt_idx,
+                                block_data,
+                            );
+                            let conflict = conflicts_with_active(&loan.kind, kind, in_reservation);
                             if conflict {
                                 let msg = format!(
                                     "cannot borrow `{}` as {} because it is also borrowed as {}",
@@ -397,34 +508,47 @@ fn check_stmt_conflicts(
                     // (a) reads of a place that is mutably/unique-borrowed
                     // (b) writes to a place that is borrowed at all
 
-                    // (a) Read conflicts
+                    // (a) Read conflicts — skip loans that are in reservation
+                    //     (two-phase mut borrows that haven't been activated yet
+                    //     act as shared, so reads are allowed)
                     let read_locals = collect_rvalue_read_locals(rvalue);
                     for read_local in read_locals {
                         for loan in active_loans {
-                            if loan.borrowed_place.local == read_local
-                                && matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
-                            {
-                                let msg = format!(
-                                    "cannot use `{}` because it is {} borrowed",
-                                    read_local.to_raw(),
-                                    borrow_kind_str(&loan.kind)
+                            if loan.borrowed_place.local == read_local {
+                                let in_reservation = loan_is_in_reservation(
+                                    loan,
+                                    current_block,
+                                    current_stmt_idx,
+                                    block_data,
                                 );
-                                let mut diag =
-                                    GlyimDiagnostic::borrow_error(stmt.source_info.span, msg);
-                                diag = diag.with_sub(SubDiagnostic {
-                                    severity: DiagSeverity::Note,
-                                    message: format!(
-                                        "{} borrow occurs here",
+                                if matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
+                                    && !in_reservation
+                                {
+                                    let msg = format!(
+                                        "cannot use `{}` because it is {} borrowed",
+                                        read_local.to_raw(),
                                         borrow_kind_str(&loan.kind)
-                                    ),
-                                    span: Some(MultiSpan::from_span(loan.span)),
-                                });
-                                errors.push(diag);
+                                    );
+                                    let mut diag =
+                                        GlyimDiagnostic::borrow_error(stmt.source_info.span, msg);
+                                    diag = diag.with_sub(SubDiagnostic {
+                                        severity: DiagSeverity::Note,
+                                        message: format!(
+                                            "{} borrow occurs here",
+                                            borrow_kind_str(&loan.kind)
+                                        ),
+                                        span: Some(MultiSpan::from_span(loan.span)),
+                                    });
+                                    errors.push(diag);
+                                }
                             }
                         }
                     }
 
-                    // (b) Write conflicts — assigning to a borrowed place
+                    // (b) Write conflicts — assigning to a borrowed place.
+                    // During reservation, writes are still not allowed
+                    // (reservation acts as shared, and you can't write to
+                    // a shared-borrowed place).
                     let dest_local = dest.local;
                     for loan in active_loans {
                         if loan.borrowed_place.local == dest_local {
@@ -454,9 +578,19 @@ fn check_stmt_conflicts(
 
 /// Does creating a borrow of `new_kind` conflict with an already active
 /// borrow of `active_kind` on the same place?
-fn conflicts_with_active(active_kind: &BorrowKind, new_kind: &BorrowKind) -> bool {
+///
+/// When `active_in_reservation` is true, the active loan is a two-phase
+/// mutable borrow still in its reservation phase. In this state it acts
+/// like a shared borrow, so a new shared borrow does NOT conflict.
+fn conflicts_with_active(
+    active_kind: &BorrowKind,
+    new_kind: &BorrowKind,
+    active_in_reservation: bool,
+) -> bool {
     match (active_kind, new_kind) {
         (BorrowKind::Shared, BorrowKind::Shared) => false,
+        // Two-phase mut in reservation acts like shared — shared borrows are OK
+        (BorrowKind::Mut { .. }, BorrowKind::Shared) if active_in_reservation => false,
         (BorrowKind::Mut { .. }, _) | (_, BorrowKind::Mut { .. }) => true,
         (BorrowKind::Unique, _) | (_, BorrowKind::Unique) => true,
     }
@@ -517,6 +651,11 @@ fn borrow_kind_str(kind: &BorrowKind) -> &'static str {
 /// 2. Computes local liveness across the CFG.
 /// 3. Walks each basic block, determining active loans at each statement,
 ///    and flags conflicts between active loans and place accesses.
+///
+/// Two-phase mutable borrows (`BorrowKind::Mut { allow_two_phase_borrow: true }`)
+/// start in a reservation phase where shared access to the borrowed place
+/// is still allowed. They transition to activated (full mutable semantics)
+/// when the reference (`dest_local`) is first read.
 pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     let loans = collect_loans(body);
     let liveness = compute_liveness(body);
@@ -537,7 +676,14 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
                 .filter(|loan| live_locals.contains(loan.dest_local.to_raw() as usize))
                 .collect();
 
-            check_stmt_conflicts(stmt, &active_loans, &mut errors);
+            check_stmt_conflicts(
+                stmt,
+                &active_loans,
+                block_idx,
+                stmt_idx,
+                block_data,
+                &mut errors,
+            );
         }
     }
 
