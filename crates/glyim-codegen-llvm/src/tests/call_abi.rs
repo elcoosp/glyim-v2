@@ -1,9 +1,9 @@
-use glyim_test::with_fresh_ty_ctx;
-use glyim_core::{TargetInfo, IntTy, FloatTy, Mutability};
+use crate::LlvmBackend;
+use glyim_core::{FloatTy, IntTy, Mutability, TargetInfo};
 use glyim_layout::{LayoutComputer, PassMode};
 use glyim_mir::*;
+use glyim_test::with_fresh_ty_ctx;
 use glyim_type::{TyCtxMut, TyKind};
-use crate::LlvmBackend;
 
 fn make_fn_sig(
     ctx_mut: &mut TyCtxMut,
@@ -12,7 +12,10 @@ fn make_fn_sig(
     variadic: bool,
 ) -> glyim_type::FnSig {
     let input_subst = ctx_mut.intern_substitution(
-        inputs.iter().map(|&ty| glyim_type::GenericArg::Ty(ty)).collect(),
+        inputs
+            .iter()
+            .map(|&ty| glyim_type::GenericArg::Ty(ty))
+            .collect(),
     );
     glyim_type::FnSig {
         inputs: input_subst,
@@ -24,7 +27,10 @@ fn make_fn_sig(
 }
 
 fn dummy_def_id(idx: u32) -> glyim_core::DefId {
-    glyim_core::DefId::new(glyim_core::CrateId::from_raw(0), glyim_core::LocalDefId::from_raw(idx))
+    glyim_core::DefId::new(
+        glyim_core::CrateId::from_raw(0),
+        glyim_core::LocalDefId::from_raw(idx),
+    )
 }
 
 #[test]
@@ -77,9 +83,15 @@ fn v27_t01_sret_large_struct_return() {
 
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("sret"), "IR should contain sret attribute, got:\n{}", ir);
+    assert!(
+        ir.contains("sret"),
+        "IR should contain sret attribute, got:\n{}",
+        ir
+    );
     assert!(ir.contains("call"), "IR should contain a call instruction");
 }
 
@@ -133,9 +145,15 @@ fn v27_t02_argument_byval_with_abi_alignment() {
 
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("call"), "IR should contain a call instruction, got:\n{}", ir);
+    assert!(
+        ir.contains("call"),
+        "IR should contain a call instruction, got:\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -182,9 +200,15 @@ fn v27_t03_variadic_function_call() {
 
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("..."), "Variadic function should have '...' in declaration, got:\n{}", ir);
+    assert!(
+        ir.contains("..."),
+        "Variadic function should have '...' in declaration, got:\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -238,7 +262,13 @@ fn v27_t04_arm_hva_struct_four_floats_simd() {
 
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("call"), "IR should contain a call instruction, got:\n{}", ir);
+    assert!(
+        ir.contains("call"),
+        "IR should contain a call instruction, got:\n{}",
+        ir
+    );
 }

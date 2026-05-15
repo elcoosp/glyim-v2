@@ -1,9 +1,9 @@
 use glyim_core::TargetInfo;
 use glyim_layout::{
-    Align, ArgAbi, CallConvention, FnAbi, Layout, LayoutComputer, LayoutError, PassMode, Size,
-    SimpleLayoutComputer, FieldsShape, VariantsShape,
+    Align, ArgAbi, CallConvention, FieldsShape, FnAbi, Layout, LayoutComputer, LayoutError,
+    PassMode, SimpleLayoutComputer, Size, VariantsShape,
 };
-use glyim_type::{Ty, TyCtx, TyKind, ConstKind, FieldIdx};
+use glyim_type::{ConstKind, FieldIdx, Ty, TyCtx, TyKind};
 
 pub(crate) struct FullLayoutComputer<'a> {
     simple: SimpleLayoutComputer<'a>,
@@ -20,10 +20,6 @@ impl<'a> FullLayoutComputer<'a> {
 
     fn ptr_size(&self) -> Size {
         self.simple.ptr_size()
-    }
-
-    fn ptr_align(&self) -> Align {
-        self.simple.ptr_align()
     }
 }
 
@@ -45,7 +41,8 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                 }
                 let mut size = Size::ZERO;
                 let mut align = Align::ONE;
-                let mut offsets: glyim_core::arena::IndexVec<FieldIdx, Size> = glyim_core::arena::IndexVec::new();
+                let mut offsets: glyim_core::arena::IndexVec<FieldIdx, Size> =
+                    glyim_core::arena::IndexVec::new();
                 for layout in &field_layouts {
                     let offset = size.align_to(layout.align);
                     offsets.push(offset);
@@ -91,7 +88,11 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                 if let glyim_type::GenericArg::Ty(t) = arg {
                     let layout = self.layout_of(*t).ok()?;
                     let mode = classify_pass_mode(&layout, self.ptr_size());
-                    Some(ArgAbi { ty: *t, layout, mode })
+                    Some(ArgAbi {
+                        ty: *t,
+                        layout,
+                        mode,
+                    })
                 } else {
                     None
                 }
