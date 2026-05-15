@@ -31,6 +31,8 @@ use glyim_mir::{
 use glyim_span::Span;
 use glyim_type::TyCtx;
 
+mod move_analysis;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -656,7 +658,7 @@ fn borrow_kind_str(kind: &BorrowKind) -> &'static str {
 /// start in a reservation phase where shared access to the borrowed place
 /// is still allowed. They transition to activated (full mutable semantics)
 /// when the reference (`dest_local`) is first read.
-pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
+pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     let loans = collect_loans(body);
     let liveness = compute_liveness(body);
     let mut errors = Vec::new();
@@ -686,6 +688,10 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
             );
         }
     }
+
+    // Move analysis: check for use-after-move errors
+    let move_errors = move_analysis::check_moves(ctx, body);
+    errors.extend(move_errors);
 
     BorrowckResult { errors }
 }
