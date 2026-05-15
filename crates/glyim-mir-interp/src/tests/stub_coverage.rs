@@ -24,7 +24,7 @@ fn local_decl(ty: Ty, mutability: Mutability) -> LocalDecl {
 
 // ============ Ref rvalue ============
 #[test]
-fn ref_rvalue_returns_error() {
+fn ref_rvalue_succeeds() {
     let mut tcx_mut = test_ty_ctx();
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let mut body = Body::dummy(dummy_def_id());
@@ -32,13 +32,11 @@ fn ref_rvalue_returns_error() {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(i32_ty.clone(), Mutability::Mut),
     ]);
-    // Assign 42 to local 1 first
     let c42 = MirConst {
         kind: MirConstKind::Int(42),
         ty: i32_ty.clone(),
         span: Span::DUMMY,
     };
-    // Then try to take a reference
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![
             Statement {
@@ -64,29 +62,61 @@ fn ref_rvalue_returns_error() {
     }]);
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
-    let res = interp.run_body(&body);
-    assert!(res.is_ok());
-    assert!(format!("{:?}", res).contains("Ref"));
+    interp.run_body(&body).unwrap();
+    let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).unwrap();
+    assert_eq!(ret_val, &InterpValue::Ref(1));
 }
-
 // ============ Discriminant rvalue ============
 #[test]
 fn discriminant_rvalue_returns_success() {
     let mut tcx_mut = test_ty_ctx();
     let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    let tuple_substs = tcx_mut.intern_substitution(vec![
+        glyim_type::GenericArg::Ty(i32_ty),
+        glyim_type::GenericArg::Ty(i32_ty),
+    ]);
+    let tuple_ty = tcx_mut.mk_ty(TyKind::Tuple(tuple_substs));
+
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(tuple_ty, Mutability::Mut),
     ]);
+
+    // Build tuple (1, 2) and store in local1
+    let tuple_rvalue = Rvalue::Aggregate(
+        AggregateKind::Tuple,
+        vec![
+            Operand::Constant(MirConst {
+                kind: MirConstKind::Int(1),
+                ty: i32_ty,
+                span: Span::DUMMY,
+            }),
+            Operand::Constant(MirConst {
+                kind: MirConstKind::Int(2),
+                ty: i32_ty,
+                span: Span::DUMMY,
+            }),
+        ],
+    );
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(0)),
-                Rvalue::Discriminant(Place::new(LocalIdx::from_raw(1))),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        }],
+        statements: vec![
+            Statement {
+                kind: StatementKind::StorageLive(LocalIdx::from_raw(1)),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            Statement {
+                kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(1)), tuple_rvalue),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            Statement {
+                kind: StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(0)),
+                    Rvalue::Discriminant(Place::new(LocalIdx::from_raw(1))),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+        ],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
@@ -97,9 +127,7 @@ fn discriminant_rvalue_returns_success() {
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
     assert!(res.is_ok());
-//////    assert!(format!("{:?}", res).contains("Discriminant"));
 }
-
 // ============ Cast (unsupported kind) ============
 #[test]
 fn unsupported_cast_returns_error() {
@@ -147,10 +175,9 @@ fn unsupported_cast_returns_error() {
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(res.is_ok());
+    assert!(res.is_err());
     assert!(format!("{:?}", res).contains("Cast"));
 }
-
 // ============ FloatBits const ============
 #[test]
 fn float_const_returns_error() {
@@ -183,16 +210,14 @@ fn float_const_returns_error() {
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(res.is_ok());
+    assert!(res.is_err());
     assert!(format!("{:?}", res).contains("FloatBits"));
 }
-
 // ============ String const ============
 #[test]
 fn string_const_returns_error() {
     let mut body = Body::dummy(dummy_def_id());
-    let str_ty = Ty::BOOL; // placeholder; String is not a real Ty we can construct easily
-    // Use a string constant from glyim_core
+    let str_ty = Ty::BOOL; // placeholder
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(str_ty, Mutability::Mut),
@@ -221,10 +246,9 @@ fn string_const_returns_error() {
     let tcx = glyim_test::test_frozen_ty_ctx();
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(res.is_ok());
+    assert!(res.is_err());
     assert!(format!("{:?}", res).contains("String"));
 }
-
 // ============ Error const ============
 #[test]
 fn error_const_returns_error() {
@@ -255,9 +279,9 @@ fn error_const_returns_error() {
     let tcx = glyim_test::test_frozen_ty_ctx();
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(res.is_ok());
+    assert!(res.is_err());
+    assert!(format!("{:?}", res).contains("Error const"));
 }
-
 // ============ Place projections ============
 #[test]
 fn place_with_projection_returns_success() {
@@ -267,17 +291,49 @@ fn place_with_projection_returns_success() {
         local_decl(Ty::UNIT, Mutability::Mut),
         local_decl(Ty::BOOL, Mutability::Mut),
     ]);
-    // Create a place with a projection
-    let mut place = Place::new(LocalIdx::from_raw(1));
-    place.projection = vec![ProjectionElem::Deref].into_boxed_slice();
+
+    // local1 = &local0 (but local0 is uninitialized, so better to create a dummy integer)
+    // We'll add a local2 to hold an integer and take its address.
+    body.locals.push(LocalDecl {
+        ty: Ty::ERROR, // placeholder, but we'll use a real type
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    let src_local = LocalIdx::from_raw(2);
+    // Assign a constant to src_local
+    let const_stmt = Statement {
+        kind: StatementKind::Assign(
+            Place::new(src_local),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(42),
+                ty: Ty::ERROR,
+                span: Span::DUMMY,
+            })),
+        ),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+    // Take reference to src_local and store in local1
+    let ref_stmt = Statement {
+        kind: StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(1)),
+            Rvalue::Ref(Place::new(src_local), BorrowKind::Shared),
+        ),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+    // Copy the place with Deref projection (should read through reference)
+    let proj_place = Place {
+        local: LocalIdx::from_raw(1),
+        projection: vec![ProjectionElem::Deref].into_boxed_slice(),
+    };
+    let copy_stmt = Statement {
+        kind: StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(0)),
+            Rvalue::Use(Operand::Copy(proj_place)),
+        ),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(0)),
-                Rvalue::Use(Operand::Copy(place)),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        }],
+        statements: vec![const_stmt, ref_stmt, copy_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
@@ -287,9 +343,7 @@ fn place_with_projection_returns_success() {
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
     assert!(res.is_ok());
-//////    assert!(format!("{:?}", res).contains("projection"));
 }
-
 // ============ Indirect function call ============
 #[test]
 fn indirect_call_returns_error() {
@@ -312,10 +366,9 @@ fn indirect_call_returns_error() {
     }]);
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(res.is_ok());
+    assert!(res.is_err());
     assert!(format!("{:?}", res).contains("indirect"));
 }
-
 // ============ Aggregate ADT (unsupported) ============
 #[test]
 fn aggregate_adt_returns_success() {
@@ -351,7 +404,7 @@ fn aggregate_adt_returns_success() {
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
     assert!(res.is_ok());
-////    assert!(format!("{:?}", res).contains("Aggregate"));
+    ////    assert!(format!("{:?}", res).contains("Aggregate"));
 }
 
 // ============ Aggregate Tuple (implemented - should succeed) ============
@@ -395,7 +448,6 @@ fn aggregate_tuple_returns_first_element() {
         other => panic!("Expected Aggregate value, got {:?}", other),
     }
 }
-
 
 // ============ Repeat rvalue ============
 #[test]
