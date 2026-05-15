@@ -11,6 +11,7 @@ mod for_loop;
 mod r#loop;
 mod r#match;
 mod mock_lower_ctx;
+mod mono_collect;
 mod nested_blocks;
 mod nested_control_flow;
 mod return_expr;
