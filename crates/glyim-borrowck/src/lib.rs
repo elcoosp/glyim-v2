@@ -90,7 +90,12 @@ fn collect_loans(body: &Body) -> Vec<Loan> {
 
 /// Returns `true` if this borrow kind is a two-phase mutable borrow.
 fn is_two_phase(kind: &BorrowKind) -> bool {
-    matches!(kind, BorrowKind::Mut { allow_two_phase_borrow: true })
+    matches!(
+        kind,
+        BorrowKind::Mut {
+            allow_two_phase_borrow: true
+        }
+    )
 }
 
 /// Determine whether a two-phase loan is still in its reservation phase
@@ -469,8 +474,12 @@ fn check_stmt_conflicts(
                     let borrowed_local = borrowed.local;
                     for loan in active_loans {
                         if loan.borrowed_place.local == borrowed_local {
-                            let in_reservation =
-                                loan_is_in_reservation(loan, current_block, current_stmt_idx, block_data);
+                            let in_reservation = loan_is_in_reservation(
+                                loan,
+                                current_block,
+                                current_stmt_idx,
+                                block_data,
+                            );
                             let conflict = conflicts_with_active(&loan.kind, kind, in_reservation);
                             if conflict {
                                 let msg = format!(
@@ -506,8 +515,12 @@ fn check_stmt_conflicts(
                     for read_local in read_locals {
                         for loan in active_loans {
                             if loan.borrowed_place.local == read_local {
-                                let in_reservation =
-                                    loan_is_in_reservation(loan, current_block, current_stmt_idx, block_data);
+                                let in_reservation = loan_is_in_reservation(
+                                    loan,
+                                    current_block,
+                                    current_stmt_idx,
+                                    block_data,
+                                );
                                 if matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
                                     && !in_reservation
                                 {

@@ -6,11 +6,11 @@
 //! mutable borrow of `vec` for `push` does not conflict with the shared
 //! read of `vec.len()` that occurs in the arguments.
 
-use crate::{check_borrows, BorrowckCtx};
+use crate::{BorrowckCtx, check_borrows};
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId, Mutability};
 use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, BorrowKind, LocalDecl, LocalIdx, Operand, Place,
-    Rvalue, SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
+    BasicBlockData, BasicBlockIdx, Body, BorrowKind, LocalDecl, LocalIdx, Operand, Place, Rvalue,
+    SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_test::{assert_has_errors, assert_no_errors, with_fresh_ty_ctx};
@@ -124,18 +124,26 @@ fn t01_two_phase_borrow_with_intervening_shared_read() {
 
         // locals: 0=return, 1=data, 2=mut_ref, 3=shared_ref, 4=result
         let locals = vec![
-            local_decl(unit),       // _0 return
-            local_decl(i32_ty),     // _1 data
-            local_decl(mut_ref_ty), // _2 mut ref (two-phase)
+            local_decl(unit),          // _0 return
+            local_decl(i32_ty),        // _1 data
+            local_decl(mut_ref_ty),    // _2 mut ref (two-phase)
             local_decl(shared_ref_ty), // _3 shared ref
-            local_decl(i32_ty),     // _4 result
+            local_decl(i32_ty),        // _4 result
         ];
 
         let stmts = vec![
             // _2 = &mut _1 (two-phase mutable borrow — reservation)
-            assign_borrow(LocalIdx::from_raw(2), Place::new(LocalIdx::from_raw(1)), make_two_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(2),
+                Place::new(LocalIdx::from_raw(1)),
+                make_two_phase_mut(),
+            ),
             // _3 = &_1 (shared borrow of same place — allowed during reservation)
-            assign_borrow(LocalIdx::from_raw(3), Place::new(LocalIdx::from_raw(1)), BorrowKind::Shared),
+            assign_borrow(
+                LocalIdx::from_raw(3),
+                Place::new(LocalIdx::from_raw(1)),
+                BorrowKind::Shared,
+            ),
             // _4 = *_3 (use the shared ref)
             use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)),
             // use _2 (activation: the mut ref is now live)
@@ -167,18 +175,26 @@ fn t02_two_phase_reservation_allows_shared_borrow() {
         let shared_ref_ty = make_ref_ty(ctx_mut, i32_ty, false);
 
         let locals = vec![
-            local_decl(unit),       // _0 return
-            local_decl(i32_ty),     // _1 data
-            local_decl(mut_ref_ty), // _2 mut ref (two-phase)
+            local_decl(unit),          // _0 return
+            local_decl(i32_ty),        // _1 data
+            local_decl(mut_ref_ty),    // _2 mut ref (two-phase)
             local_decl(shared_ref_ty), // _3 shared ref
-            local_decl(i32_ty),     // _4 result
+            local_decl(i32_ty),        // _4 result
         ];
 
         let stmts = vec![
             // _2 = &mut _1 (two-phase — reservation only)
-            assign_borrow(LocalIdx::from_raw(2), Place::new(LocalIdx::from_raw(1)), make_two_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(2),
+                Place::new(LocalIdx::from_raw(1)),
+                make_two_phase_mut(),
+            ),
             // _3 = &_1 (shared borrow during reservation — OK)
-            assign_borrow(LocalIdx::from_raw(3), Place::new(LocalIdx::from_raw(1)), BorrowKind::Shared),
+            assign_borrow(
+                LocalIdx::from_raw(3),
+                Place::new(LocalIdx::from_raw(1)),
+                BorrowKind::Shared,
+            ),
             // use _3 (shared ref used and dies)
             use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)),
             // use _2 (activation of two-phase borrow)
@@ -210,21 +226,29 @@ fn t03_activation_conflict_with_shared_read() {
         let shared_ref_ty = make_ref_ty(ctx_mut, i32_ty, false);
 
         let locals = vec![
-            local_decl(unit),       // _0 return
-            local_decl(i32_ty),     // _1 data
-            local_decl(mut_ref_ty), // _2 mut ref (two-phase)
+            local_decl(unit),          // _0 return
+            local_decl(i32_ty),        // _1 data
+            local_decl(mut_ref_ty),    // _2 mut ref (two-phase)
             local_decl(shared_ref_ty), // _3 shared ref
-            local_decl(i32_ty),     // _4 result
-            local_decl(i32_ty),     // _5 result2
+            local_decl(i32_ty),        // _4 result
+            local_decl(i32_ty),        // _5 result2
         ];
 
         let stmts = vec![
             // _2 = &mut _1 (two-phase — reservation)
-            assign_borrow(LocalIdx::from_raw(2), Place::new(LocalIdx::from_raw(1)), make_two_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(2),
+                Place::new(LocalIdx::from_raw(1)),
+                make_two_phase_mut(),
+            ),
             // use _2 (activation — mutable borrow is now fully active)
             use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(2)),
             // _3 = &_1 (shared borrow AFTER activation — conflict!)
-            assign_borrow(LocalIdx::from_raw(3), Place::new(LocalIdx::from_raw(1)), BorrowKind::Shared),
+            assign_borrow(
+                LocalIdx::from_raw(3),
+                Place::new(LocalIdx::from_raw(1)),
+                BorrowKind::Shared,
+            ),
             // use _3 and _2
             use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(3)),
             use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(2)),
@@ -263,9 +287,17 @@ fn t04_reservation_conflict_with_other_mutable() {
 
         let stmts = vec![
             // _2 = &mut _1 (two-phase — reservation)
-            assign_borrow(LocalIdx::from_raw(2), Place::new(LocalIdx::from_raw(1)), make_two_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(2),
+                Place::new(LocalIdx::from_raw(1)),
+                make_two_phase_mut(),
+            ),
             // _3 = &mut _1 (another mutable borrow — conflicts even during reservation!)
-            assign_borrow(LocalIdx::from_raw(3), Place::new(LocalIdx::from_raw(1)), make_two_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(3),
+                Place::new(LocalIdx::from_raw(1)),
+                make_two_phase_mut(),
+            ),
             // use both mut refs so they are live
             use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(2)),
             use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(3)),
@@ -295,19 +327,27 @@ fn t05_one_phase_mut_conflicts_with_shared() {
         let shared_ref_ty = make_ref_ty(ctx_mut, i32_ty, false);
 
         let locals = vec![
-            local_decl(unit),       // _0 return
-            local_decl(i32_ty),     // _1 data
-            local_decl(mut_ref_ty), // _2 mut ref (one-phase)
+            local_decl(unit),          // _0 return
+            local_decl(i32_ty),        // _1 data
+            local_decl(mut_ref_ty),    // _2 mut ref (one-phase)
             local_decl(shared_ref_ty), // _3 shared ref
-            local_decl(i32_ty),     // _4 result
-            local_decl(i32_ty),     // _5 result2
+            local_decl(i32_ty),        // _4 result
+            local_decl(i32_ty),        // _5 result2
         ];
 
         let stmts = vec![
             // _2 = &mut _1 (one-phase — fully active immediately)
-            assign_borrow(LocalIdx::from_raw(2), Place::new(LocalIdx::from_raw(1)), make_one_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(2),
+                Place::new(LocalIdx::from_raw(1)),
+                make_one_phase_mut(),
+            ),
             // _3 = &_1 (shared borrow — conflicts with active mutable!)
-            assign_borrow(LocalIdx::from_raw(3), Place::new(LocalIdx::from_raw(1)), BorrowKind::Shared),
+            assign_borrow(
+                LocalIdx::from_raw(3),
+                Place::new(LocalIdx::from_raw(1)),
+                BorrowKind::Shared,
+            ),
             // use both
             use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(2)),
             use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(3)),
@@ -338,18 +378,26 @@ fn t06_two_phase_borrow_never_activated_no_conflict() {
         let shared_ref_ty = make_ref_ty(ctx_mut, i32_ty, false);
 
         let locals = vec![
-            local_decl(unit),       // _0 return
-            local_decl(i32_ty),     // _1 data
-            local_decl(mut_ref_ty), // _2 mut ref (two-phase, never used)
+            local_decl(unit),          // _0 return
+            local_decl(i32_ty),        // _1 data
+            local_decl(mut_ref_ty),    // _2 mut ref (two-phase, never used)
             local_decl(shared_ref_ty), // _3 shared ref
-            local_decl(i32_ty),     // _4 result
+            local_decl(i32_ty),        // _4 result
         ];
 
         let stmts = vec![
             // _2 = &mut _1 (two-phase — reservation, but never used)
-            assign_borrow(LocalIdx::from_raw(2), Place::new(LocalIdx::from_raw(1)), make_two_phase_mut()),
+            assign_borrow(
+                LocalIdx::from_raw(2),
+                Place::new(LocalIdx::from_raw(1)),
+                make_two_phase_mut(),
+            ),
             // _3 = &_1 (shared borrow — OK because _2 is dead)
-            assign_borrow(LocalIdx::from_raw(3), Place::new(LocalIdx::from_raw(1)), BorrowKind::Shared),
+            assign_borrow(
+                LocalIdx::from_raw(3),
+                Place::new(LocalIdx::from_raw(1)),
+                BorrowKind::Shared,
+            ),
             // use _3 only
             use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)),
         ];
