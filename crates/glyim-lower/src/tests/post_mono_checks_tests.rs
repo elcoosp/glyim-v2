@@ -5,7 +5,8 @@ use glyim_mir::{
     Body, LocalDecl, SourceInfo, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
-use glyim_test::{assert_diag_contains, assert_error_count, assert_has_errors, assert_no_errors};
+use glyim_diag::DiagSeverity;
+use glyim_test::{assert_diag_contains, assert_error_count, assert_has_errors, assert_has_severity, assert_no_errors};
 use glyim_type::{GenericArg, Substitution, Ty, TyKind};
 use std::sync::Arc;
 
@@ -110,7 +111,7 @@ fn large_mono_set_warns() {
     }
     let threshold = 30;
     let diags = check_large_mono_set(&items, threshold);
-    assert_has_errors(&diags);
+    assert_has_severity(&diags, DiagSeverity::Warning);
     assert_diag_contains(&diags, "large number of mono items");
 }
 
@@ -137,7 +138,7 @@ fn unused_generic_param_warns() {
     let items = vec![item];
 
     let diags = check_unused_generic_params(&items, &frozen);
-    assert_has_errors(&diags);
+    assert_has_severity(&diags, DiagSeverity::Warning);
     assert_diag_contains(&diags, "unused generic parameter");
 }
 
