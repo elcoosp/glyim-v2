@@ -3,7 +3,7 @@
 use crate::check_borrows;
 use glyim_core::Mutability;
 use glyim_mir::{BorrowKind, StatementKind};
-use glyim_test::{assert_no_errors, with_fresh_ty_ctx};
+use glyim_test::{assert_has_errors, assert_no_errors, with_fresh_ty_ctx};
 use glyim_type::Region;
 
 use super::mir_builder::{
@@ -220,12 +220,12 @@ fn storage_live_dead_ignored_no_error() {
     assert_no_errors(&result.errors);
 }
 
-/// Unique borrow conflicts with shared borrow on same place.
+/// Unique borrow conflicts with shared borrow on same place → error.
 ///
 ///   BB0: _2 = &unique _1; goto BB1
 ///   BB1: _3 = &shared _1; _4 = copy _2; return
 #[test]
-fn unique_and_shared_conflict() {
+fn unique_and_shared_conflict_error() {
     let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
         let bool_ty = ctx_mut.bool_ty();
         let ref_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
@@ -249,5 +249,39 @@ fn unique_and_shared_conflict() {
 
     let mock_ctx = TestBorrowckCtx::new(&ty_ctx, &body);
     let result = check_borrows(&mock_ctx, &body);
-    assert_no_errors(&result.errors)
+    assert_has_errors(&result.errors);
+}
+
+/// Unique borrow expires, then shared borrow of same place → no error.
+///
+///   BB0: _2 = &unique _1; _3 = copy _2; goto BB1   (last use of _2)
+///   BB1: _4 = &shared _1; _5 = copy _4; return
+#[test]
+fn unique_expires_then_shared_no_error() {
+    let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let bool_ty = ctx_mut.bool_ty();
+        let ref_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
+        let ref_unique_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
+
+        let mut b = MirBodyBuilder::new(bool_ty);
+        let _1 = b.add_local(bool_ty, Mutability::Not);
+        let _2 = b.add_local(ref_unique_bool, Mutability::Not);
+        let _3 = b.add_local(bool_ty, Mutability::Not);
+        let _4 = b.add_local(ref_bool, Mutability::Not);
+        let _5 = b.add_local(bool_ty, Mutability::Not);
+
+        let bb0 = b.push_block(goto(1));
+        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Unique));
+        b.push_stmt(bb0, assign_copy(_3, _2));
+
+        let bb1 = b.push_block(ret());
+        b.push_stmt(bb1, assign_borrow(_4, _1, BorrowKind::Shared));
+        b.push_stmt(bb1, assign_copy(_5, _4));
+
+        b.build()
+    });
+
+    let mock_ctx = TestBorrowckCtx::new(&ty_ctx, &body);
+    let result = check_borrows(&mock_ctx, &body);
+    assert_no_errors(&result.errors);
 }
