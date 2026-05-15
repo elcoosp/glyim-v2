@@ -6,7 +6,6 @@ use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::*;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
-use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_solve::SolverResult;
 use glyim_span::Span;
@@ -62,9 +61,6 @@ fn make_body_with_call(owner: LocalDefId, callee_name: Name) -> Body {
     let call_id = exprs.push(Expr::Call {
         func: callee_path_id,
         args: vec![],
-    });
-    let ret_id = exprs.push(Expr::Return {
-        value: Some(call_id),
     });
     Body {
         owner,
