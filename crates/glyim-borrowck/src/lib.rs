@@ -58,8 +58,8 @@ struct Loan {
 /// Scan the MIR body for all `Rvalue::Ref` assignments and record loans.
 fn collect_loans(body: &Body) -> Vec<Loan> {
     let mut loans = Vec::new();
-    for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
-        for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
+    for (_block_idx, block_data) in body.basic_blocks.iter_enumerated() {
+        for (_stmt_idx, stmt) in block_data.statements.iter().enumerate() {
             if let StatementKind::Assign(dest, Rvalue::Ref(borrowed, kind)) = &stmt.kind {
                 loans.push(Loan {
                     dest_local: dest.local,
@@ -80,6 +80,8 @@ fn collect_loans(body: &Body) -> Vec<Loan> {
 /// Result of the backward dataflow liveness analysis.
 struct LivenessResult {
     /// For each basic block, the set of locals live on entry.
+    /// Kept for debugging and future use (e.g., region inference).
+    #[allow(dead_code)]
     live_in: Vec<BitSet>,
     /// For each basic block, the set of locals live on exit.
     live_out: Vec<BitSet>,
@@ -398,26 +400,28 @@ fn check_stmt_conflicts(
                     let read_locals = collect_rvalue_read_locals(rvalue);
                     for read_local in read_locals {
                         for loan in active_loans {
-                            if loan.borrowed_local == read_local {
-                                if matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
-                                {
-                                    let msg = format!(
-                                        "cannot use `{}` because it is {} borrowed",
-                                        read_local.to_raw(),
+                            if loan.borrowed_local == read_local
+                                && matches!(
+                                    loan.kind,
+                                    BorrowKind::Mut { .. } | BorrowKind::Unique
+                                )
+                            {
+                                let msg = format!(
+                                    "cannot use `{}` because it is {} borrowed",
+                                    read_local.to_raw(),
+                                    borrow_kind_str(&loan.kind)
+                                );
+                                let mut diag =
+                                    GlyimDiagnostic::borrow_error(stmt.source_info.span, msg);
+                                diag = diag.with_sub(SubDiagnostic {
+                                    severity: DiagSeverity::Note,
+                                    message: format!(
+                                        "{} borrow occurs here",
                                         borrow_kind_str(&loan.kind)
-                                    );
-                                    let mut diag =
-                                        GlyimDiagnostic::borrow_error(stmt.source_info.span, msg);
-                                    diag = diag.with_sub(SubDiagnostic {
-                                        severity: DiagSeverity::Note,
-                                        message: format!(
-                                            "{} borrow occurs here",
-                                            borrow_kind_str(&loan.kind)
-                                        ),
-                                        span: Some(MultiSpan::from_span(loan.span)),
-                                    });
-                                    errors.push(diag);
-                                }
+                                    ),
+                                    span: Some(MultiSpan::from_span(loan.span)),
+                                });
+                                errors.push(diag);
                             }
                         }
                     }
