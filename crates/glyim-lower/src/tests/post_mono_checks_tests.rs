@@ -2,11 +2,11 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::primitives::Mutability;
 use glyim_mir::{
-    BasicBlockIdx, Body, LocalIdx, LocalDecl, SourceInfo, Terminator, TerminatorKind,
+    Body, LocalDecl, SourceInfo, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_test::{assert_diag_contains, assert_error_count, assert_has_errors, assert_no_errors};
-use glyim_type::{GenericArg, Substitution, Ty, TyCtx, TyKind};
+use glyim_type::{GenericArg, Substitution, Ty, TyKind};
 use std::sync::Arc;
 
 use crate::mono::{MonoItem, MonoItemData};
@@ -146,9 +146,10 @@ fn unused_generic_param_warns() {
 #[test]
 fn no_unused_when_body_uses_generic() {
     let mut ctx_mut = glyim_test::test_ty_ctx();
+    let name = ctx_mut.resolver().intern("T");
     let used_ty = ctx_mut.mk_ty(TyKind::Param(glyim_type::ParamTy {
         index: 0,
-        name: glyim_core::interner::Name::from_raw(0),
+        name,
     }));
     let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(used_ty)]);
     let _frozen = ctx_mut.freeze();
