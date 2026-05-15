@@ -15,7 +15,11 @@ fn test_t04_match_on_enum_discriminant() {
 
     let mut body = empty_body(Ty::UNIT);
     let local_enum = add_local(&mut body, enum_ty, Mutability::Mut);
-    let local_discr = add_local(&mut body, ctx.mk_ty(TyKind::Int(IntTy::I32)), Mutability::Mut);
+    let local_discr = add_local(
+        &mut body,
+        ctx.mk_ty(TyKind::Int(IntTy::I32)),
+        Mutability::Mut,
+    );
     let local_result = add_local(&mut body, i32_ty, Mutability::Not);
 
     // We'll have three basic blocks: bb0 (construct variant and discriminant), bb1 (if discrim ==0), bb2 (if discrim==1), bb3 (return)
@@ -65,10 +69,7 @@ fn test_t04_match_on_enum_discriminant() {
         TerminatorKind::SwitchInt {
             discr: Operand::Copy(Place::new(local_discr)),
             switch_ty: ctx.mk_ty(TyKind::Int(IntTy::I32)),
-            targets: SwitchTargets::new(
-                vec![(0u128, bb1), (1u128, bb2)].into_boxed_slice(),
-                bb3,
-            ),
+            targets: SwitchTargets::new(vec![(0u128, bb1), (1u128, bb2)].into_boxed_slice(), bb3),
         },
     );
 
@@ -93,13 +94,6 @@ fn test_t04_match_on_enum_discriminant() {
         body,
     );
     // This test currently fails because Discriminant rvalue is not implemented.
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     assert!(result.is_ok());
 }

@@ -12,17 +12,18 @@ fn test_t06_len_on_array() {
 
     let mut body = empty_body(Ty::UNIT);
     let local_arr = add_local(&mut body, array_ty, Mutability::Not);
-    let local_len = add_local(&mut body, ctx.mk_ty(TyKind::Int(IntTy::I64)), Mutability::Mut);
+    let local_len = add_local(
+        &mut body,
+        ctx.mk_ty(TyKind::Int(IntTy::I64)),
+        Mutability::Mut,
+    );
 
     let bb0 = BasicBlockIdx::from_raw(0);
     // local_arr doesn't need initialization; its type is known.
     add_statement(
         &mut body,
         bb0,
-        StatementKind::Assign(
-            Place::new(local_len),
-            Rvalue::Len(Place::new(local_arr)),
-        ),
+        StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_arr))),
     );
 
     let tcx = ctx.freeze();
@@ -31,14 +32,7 @@ fn test_t06_len_on_array() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     assert!(result.is_ok());
     let val = interp.get_local_value(local_len).unwrap();
     assert_eq!(*val, InterpValue::Int(5));

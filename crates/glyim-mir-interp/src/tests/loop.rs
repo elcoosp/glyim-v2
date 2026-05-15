@@ -40,11 +40,7 @@ fn test_t08_while_loop() {
         bb0,
         StatementKind::Assign(Place::new(local_i), Rvalue::Use(const_int(0))),
     );
-    set_terminator(
-        &mut body,
-        bb0,
-        TerminatorKind::Goto { target: bb1 },
-    );
+    set_terminator(&mut body, bb0, TerminatorKind::Goto { target: bb1 });
 
     // bb1: cond = i < 3; switch cond -> bb2 if true, bb3 if false
     body.basic_blocks[bb1].statements.clear();
@@ -82,11 +78,7 @@ fn test_t08_while_loop() {
             ),
         ),
     );
-    set_terminator(
-        &mut body,
-        bb2,
-        TerminatorKind::Goto { target: bb1 },
-    );
+    set_terminator(&mut body, bb2, TerminatorKind::Goto { target: bb1 });
 
     let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
@@ -94,14 +86,7 @@ fn test_t08_while_loop() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     assert!(result.is_ok());
     let final_i = interp.get_local_value(local_i).unwrap();
     assert_eq!(*final_i, InterpValue::Int(3));
@@ -143,11 +128,7 @@ fn test_t09_break_and_continue() {
         bb0,
         StatementKind::Assign(Place::new(local_i), Rvalue::Use(const_int(0))),
     );
-    set_terminator(
-        &mut body,
-        bb0,
-        TerminatorKind::Goto { target: bb1 },
-    );
+    set_terminator(&mut body, bb0, TerminatorKind::Goto { target: bb1 });
 
     // bb1: cond = i>=5; switch cond true->exit, false->body
     body.basic_blocks[bb1].statements.clear();
@@ -185,11 +166,7 @@ fn test_t09_break_and_continue() {
             ),
         ),
     );
-    set_terminator(
-        &mut body,
-        bb2,
-        TerminatorKind::Goto { target: bb1 },
-    );
+    set_terminator(&mut body, bb2, TerminatorKind::Goto { target: bb1 });
 
     let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
@@ -197,14 +174,7 @@ fn test_t09_break_and_continue() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     assert!(result.is_ok());
     let final_i = interp.get_local_value(local_i).unwrap();
     assert_eq!(*final_i, InterpValue::Int(5));

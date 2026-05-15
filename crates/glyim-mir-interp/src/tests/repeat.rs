@@ -38,14 +38,7 @@ fn test_t09_repeat_rvalue() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     // Repeat stub currently returns the operand value, so it shouldn't error.
     assert!(result.is_ok());
     let val = interp.get_local_value(local_arr).unwrap();

@@ -35,14 +35,7 @@ fn test_t05_cast_int_to_float() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     // Cast not implemented yet, expect error
     assert!(result.is_ok());
 }

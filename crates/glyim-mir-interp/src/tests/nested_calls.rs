@@ -66,23 +66,19 @@ fn test_t10_nested_function_calls() {
     );
     // Add a block for after call to just return
     let _bb1_caller = BasicBlockIdx::from_raw(1);
-    caller_body.basic_blocks.push(BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    }));
+    caller_body
+        .basic_blocks
+        .push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
 
     let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
     interp.add_function(callee_def_id, callee_body);
     interp.add_function(caller_def_id, caller_body);
 
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .get(&caller_def_id)
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.get(&caller_def_id).unwrap().clone());
     assert!(result.is_ok());
     let val = interp.get_local_value(local_result).unwrap();
     assert_eq!(*val, InterpValue::Int(7));

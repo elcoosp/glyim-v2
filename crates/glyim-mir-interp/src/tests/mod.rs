@@ -1,9 +1,12 @@
-mod helpers;
 mod aggregate;
-mod discriminant;
 mod cast;
-mod repeat;
+mod discriminant;
+mod helpers;
 mod len_test;
-mod ref_test;
 mod r#loop;
 mod nested_calls;
+mod nested_projections;
+mod ref_test;
+mod repeat;
+mod stress;
+mod terminators;

@@ -52,11 +52,7 @@ fn test_t01_struct_construction_and_field_access() {
             ))),
         ),
     );
-    add_statement(
-        &mut body,
-        bb0,
-        StatementKind::StorageDead(local_struct),
-    );
+    add_statement(&mut body, bb0, StatementKind::StorageDead(local_struct));
 
     let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
@@ -64,14 +60,7 @@ fn test_t01_struct_construction_and_field_access() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     // Currently projections not implemented, so an error is expected.
     assert!(result.is_ok());
 }
@@ -131,14 +120,7 @@ fn test_t02_tuple_construction_and_indexing() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     assert!(result.is_ok()); // projections not yet implemented
 }
 
@@ -150,7 +132,11 @@ fn test_t03_array_literal_and_index() {
 
     let mut body = empty_body(Ty::UNIT);
     let local_arr = add_local(&mut body, array_ty, Mutability::Mut);
-    let local_idx = add_local(&mut body, ctx.mk_ty(TyKind::Int(IntTy::I32)), Mutability::Mut);
+    let local_idx = add_local(
+        &mut body,
+        ctx.mk_ty(TyKind::Int(IntTy::I32)),
+        Mutability::Mut,
+    );
     let local_elem = add_local(&mut body, i32_ty, Mutability::Not);
 
     let bb0 = BasicBlockIdx::from_raw(0);
@@ -192,13 +178,6 @@ fn test_t03_array_literal_and_index() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(
-        &interp
-            .function_table
-            .values()
-            .next()
-            .unwrap()
-            .clone(),
-    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
     assert!(result.is_ok()); // projections not yet implemented
 }

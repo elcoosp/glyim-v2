@@ -1,353 +1,422 @@
-use crate::*;
-use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
-use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    Statement, StatementKind, Terminator, TerminatorKind,
-};
-use glyim_span::Span;
-use glyim_test::test_ty_ctx;
-use glyim_type::{Ty, TyKind};
+use super::helpers::*;
+use crate::{InterpValue, Interpreter};
+use glyim_core::*;
+use glyim_mir::*;
+use glyim_type::{FieldIdx, Ty, TyKind};
 
-fn dummy_def_id() -> DefId {
-    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
-}
-
-fn local_decl(ty: Ty, mutability: Mutability) -> LocalDecl {
-    LocalDecl {
-        ty,
-        mutability,
-        source_info: SourceInfo::new(Span::DUMMY),
-    }
-}
-
-// ----- Helper: build body that computes op on lhs and rhs -----
-fn build_binop_body_i32(lhs: i128, rhs: i128, op: BinOp) -> Body {
-    let mut tcx_mut = test_ty_ctx();
-    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
-    let mut body = Body::dummy(dummy_def_id());
-    let res_local = LocalIdx::from_raw(1);
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-    ]);
-    let c1 = MirConst {
-        kind: MirConstKind::Int(lhs),
-        ty: i32_ty.clone(),
-        span: Span::DUMMY,
-    };
-    let c2 = MirConst {
-        kind: MirConstKind::Int(rhs),
-        ty: i32_ty.clone(),
-        span: Span::DUMMY,
-    };
-    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(res_local),
-                Rvalue::BinaryOp(op, Box::new((Operand::Constant(c1), Operand::Constant(c2)))),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        }],
-        terminator: Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        is_cleanup: false,
-    }]);
-    body
-}
-
-// ============ 100 random additions ============
 #[test]
-fn random_additions_100() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
+fn test_many_statements_in_block() {
+    let mut ctx = glyim_test::test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    let mut body = empty_body(Ty::UNIT);
+    let local_sum = add_local(&mut body, i32_ty, Mutability::Mut);
+
+    let bb0 = BasicBlockIdx::from_raw(0);
+    // sum = 0; sum += 1; sum += 2; ... sum += 9; (10 operations)
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(Place::new(local_sum), Rvalue::Use(const_int(0))),
+    );
+    for i in 1..=9 {
+        add_statement(
+            &mut body,
+            bb0,
+            StatementKind::Assign(
+                Place::new(local_sum),
+                Rvalue::BinaryOp(
+                    BinOp::Add,
+                    Box::new((Operand::Copy(Place::new(local_sum)), const_int(i))),
+                ),
+            ),
+        );
+    }
+
+    let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
-    let test_cases = [
-        (0, 0),
-        (1, 1),
-        (-1, 1),
-        (i128::MAX, 1),
-        (i128::MIN, -1),
-        (42, 58),
-        (-100, 200),
-        (1_000_000, -1),
-        (12345, 67890),
-        (i128::MAX, i128::MIN),
+    interp.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    assert!(result.is_ok());
+    // sum of 1..9 = 45
+    assert_eq!(
+        *interp.get_local_value(local_sum).unwrap(),
+        InterpValue::Int(45)
+    );
+}
+
+#[test]
+fn test_nested_aggregate_5_levels() {
+    // Build: (((((42,),),),),) and read deepest value
+    let mut ctx = glyim_test::test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    let mut body = empty_body(Ty::UNIT);
+
+    // We'll build 5 nested tuples, each with one element
+    let locals: Vec<_> = (0..6)
+        .map(|_| add_local(&mut body, i32_ty, Mutability::Mut))
+        .collect();
+    let result_local = add_local(&mut body, i32_ty, Mutability::Not);
+
+    let bb0 = BasicBlockIdx::from_raw(0);
+
+    // locals[0] = (42,)
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(
+            Place::new(locals[0]),
+            Rvalue::Aggregate(AggregateKind::Tuple, vec![const_int(42)]),
+        ),
+    );
+    // Wrap each level
+    for i in 1..5 {
+        add_statement(
+            &mut body,
+            bb0,
+            StatementKind::Assign(
+                Place::new(locals[i]),
+                Rvalue::Aggregate(
+                    AggregateKind::Tuple,
+                    vec![Operand::Copy(Place::new(locals[i - 1]))],
+                ),
+            ),
+        );
+    }
+
+    // Read through 5 field-0 projections
+    let proj: Vec<ProjectionElem> = (0..5)
+        .map(|_| ProjectionElem::Field(FieldIdx::from_raw(0)))
+        .collect();
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(
+            Place::new(result_local),
+            Rvalue::Use(Operand::Copy(Place {
+                local: locals[4],
+                projection: proj.into_boxed_slice(),
+            })),
+        ),
+    );
+
+    let tcx = ctx.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    assert!(result.is_ok());
+    assert_eq!(
+        *interp.get_local_value(result_local).unwrap(),
+        InterpValue::Int(42)
+    );
+}
+
+#[test]
+fn test_all_binary_ops_on_ints() {
+    let ops = [
+        (BinOp::Add, (10, 3), 13),
+        (BinOp::Sub, (10, 3), 7),
+        (BinOp::Mul, (10, 3), 30),
+        (BinOp::Div, (10, 3), 3),
+        (BinOp::Rem, (10, 3), 1),
+        (BinOp::BitAnd, (6, 3), 2),
+        (BinOp::BitOr, (6, 3), 7),
+        (BinOp::BitXor, (6, 3), 5),
+        (BinOp::Shl, (1, 4), 16),
+        (BinOp::Shr, (16, 2), 4),
     ];
-    for &(lhs, rhs) in &test_cases {
-        let body = build_binop_body_i32(lhs, rhs, BinOp::Add);
-        interp.run_body(&body).unwrap();
-        let expected = InterpValue::Int(lhs.wrapping_add(rhs));
+
+    for (op, (a, b), expected) in &ops {
+        let mut ctx = glyim_test::test_ty_ctx();
+        let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+        let mut body = empty_body(Ty::UNIT);
+        let local_r = add_local(&mut body, i32_ty, Mutability::Mut);
+        let bb0 = BasicBlockIdx::from_raw(0);
+        add_statement(
+            &mut body,
+            bb0,
+            StatementKind::Assign(
+                Place::new(local_r),
+                Rvalue::BinaryOp(*op, Box::new((const_int(*a), const_int(*b)))),
+            ),
+        );
+        let tcx = ctx.freeze();
+        let mut interp = Interpreter::new(&tcx);
+        interp.add_function(
+            DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            body,
+        );
+        interp
+            .run_body(&interp.function_table.values().next().unwrap().clone())
+            .unwrap();
         assert_eq!(
-            interp.get_local_value(LocalIdx::from_raw(1)),
-            Some(&expected)
+            *interp.get_local_value(local_r).unwrap(),
+            InterpValue::Int(*expected),
+            "failed for op {:?}",
+            op
         );
     }
 }
 
-// ============ 100 random subtractions ============
 #[test]
-fn random_subtractions_100() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let mut interp = Interpreter::new(&tcx);
-    let test_cases = [
-        (0, 0),
-        (10, 5),
-        (5, 10),
-        (-1, -1),
-        (i128::MAX, 1),
-        (i128::MIN, 1),
-        (1000, 999),
-        (42, 0),
-        (0, 42),
-        (i128::MAX, i128::MAX),
+fn test_comparison_ops() {
+    let tests = [
+        (BinOp::Eq, (5, 5), true),
+        (BinOp::Eq, (5, 3), false),
+        (BinOp::Ne, (5, 3), true),
+        (BinOp::Lt, (3, 5), true),
+        (BinOp::Lt, (5, 3), false),
+        (BinOp::Gt, (5, 3), true),
+        (BinOp::LtEq, (5, 5), true),
+        (BinOp::LtEq, (6, 5), false),
+        (BinOp::GtEq, (5, 5), true),
     ];
-    for &(lhs, rhs) in &test_cases {
-        let body = build_binop_body_i32(lhs, rhs, BinOp::Sub);
-        interp.run_body(&body).unwrap();
-        let expected = InterpValue::Int(lhs.wrapping_sub(rhs));
+
+    for (op, (a, b), expected) in &tests {
+        let ctx = glyim_test::test_ty_ctx();
+
+        let mut body = empty_body(Ty::UNIT);
+        let local_r = add_local(&mut body, Ty::BOOL, Mutability::Mut);
+        let bb0 = BasicBlockIdx::from_raw(0);
+        add_statement(
+            &mut body,
+            bb0,
+            StatementKind::Assign(
+                Place::new(local_r),
+                Rvalue::BinaryOp(*op, Box::new((const_int(*a), const_int(*b)))),
+            ),
+        );
+        let tcx = ctx.freeze();
+        let mut interp = Interpreter::new(&tcx);
+        interp.add_function(
+            DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            body,
+        );
+        interp
+            .run_body(&interp.function_table.values().next().unwrap().clone())
+            .unwrap();
         assert_eq!(
-            interp.get_local_value(LocalIdx::from_raw(1)),
-            Some(&expected)
+            *interp.get_local_value(local_r).unwrap(),
+            InterpValue::Bool(*expected),
+            "failed for op {:?}",
+            op
         );
     }
 }
 
-// ============ 100 random multiplications ============
 #[test]
-fn random_multiplications_100() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
+fn test_division_by_zero_panics() {
+    let mut ctx = glyim_test::test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    let mut body = empty_body(Ty::UNIT);
+    let local_r = add_local(&mut body, i32_ty, Mutability::Mut);
+    let bb0 = BasicBlockIdx::from_raw(0);
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(
+            Place::new(local_r),
+            Rvalue::BinaryOp(BinOp::Div, Box::new((const_int(42), const_int(0)))),
+        ),
+    );
+
+    let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
-    let test_cases = [
-        (0, 0),
-        (1, 1),
-        (-1, 1),
-        (2, 3),
-        (-2, 3),
-        (100, 100),
-        (i128::MAX, 1),
-        (i128::MAX, 2),
-        (i128::MIN, 2),
-        (1_000, -1_000),
-    ];
-    for &(lhs, rhs) in &test_cases {
-        let body = build_binop_body_i32(lhs, rhs, BinOp::Mul);
-        interp.run_body(&body).unwrap();
-        let expected = InterpValue::Int(lhs.wrapping_mul(rhs));
+    interp.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_unary_not_and_neg() {
+    let mut ctx = glyim_test::test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    // Test Neg
+    let mut body = empty_body(Ty::UNIT);
+    let local_r = add_local(&mut body, i32_ty, Mutability::Mut);
+    let bb0 = BasicBlockIdx::from_raw(0);
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(
+            Place::new(local_r),
+            Rvalue::UnaryOp(UnOp::Neg, const_int(5)),
+        ),
+    );
+    let tcx = ctx.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    interp
+        .run_body(&interp.function_table.values().next().unwrap().clone())
+        .unwrap();
+    assert_eq!(
+        *interp.get_local_value(local_r).unwrap(),
+        InterpValue::Int(-5)
+    );
+
+    // Test Not
+    let ctx2 = glyim_test::test_ty_ctx();
+    let mut body = empty_body(Ty::UNIT);
+    let local_r = add_local(&mut body, Ty::BOOL, Mutability::Mut);
+    let bb0_not = BasicBlockIdx::from_raw(0);
+    add_statement(
+        &mut body,
+        bb0_not,
+        StatementKind::Assign(
+            Place::new(local_r),
+            Rvalue::UnaryOp(UnOp::Not, const_bool(true)),
+        ),
+    );
+    let tcx2 = ctx2.freeze();
+    let mut interp2 = Interpreter::new(&tcx2);
+    interp2.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    interp2
+        .run_body(&interp2.function_table.values().next().unwrap().clone())
+        .unwrap();
+    assert_eq!(
+        *interp2.get_local_value(local_r).unwrap(),
+        InterpValue::Bool(false)
+    );
+}
+
+#[test]
+fn test_storage_live_dead() {
+    // StorageLive/StorageDead are no-ops; verify they don't crash and values persist across them
+    let mut ctx = glyim_test::test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    let mut body = empty_body(Ty::UNIT);
+    let local_x = add_local(&mut body, i32_ty, Mutability::Mut);
+    let local_y = add_local(&mut body, i32_ty, Mutability::Not);
+
+    let bb0 = BasicBlockIdx::from_raw(0);
+    add_statement(&mut body, bb0, StatementKind::StorageLive(local_x));
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(Place::new(local_x), Rvalue::Use(const_int(88))),
+    );
+    add_statement(&mut body, bb0, StatementKind::StorageDead(local_x));
+    // Read after StorageDead should still work (interpreter is lenient)
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(
+            Place::new(local_y),
+            Rvalue::Use(Operand::Copy(Place::new(local_x))),
+        ),
+    );
+
+    let tcx = ctx.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    interp
+        .run_body(&interp.function_table.values().next().unwrap().clone())
+        .unwrap();
+    assert_eq!(
+        *interp.get_local_value(local_y).unwrap(),
+        InterpValue::Int(88)
+    );
+}
+
+#[test]
+fn test_nop_statement_ignored() {
+    let mut ctx = glyim_test::test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    let mut body = empty_body(Ty::UNIT);
+    let local_x = add_local(&mut body, i32_ty, Mutability::Mut);
+
+    let bb0 = BasicBlockIdx::from_raw(0);
+    add_statement(&mut body, bb0, StatementKind::Nop);
+    add_statement(&mut body, bb0, StatementKind::Nop);
+    add_statement(
+        &mut body,
+        bb0,
+        StatementKind::Assign(Place::new(local_x), Rvalue::Use(const_int(1))),
+    );
+    add_statement(&mut body, bb0, StatementKind::Nop);
+
+    let tcx = ctx.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.add_function(
+        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        body,
+    );
+    interp
+        .run_body(&interp.function_table.values().next().unwrap().clone())
+        .unwrap();
+    assert_eq!(
+        *interp.get_local_value(local_x).unwrap(),
+        InterpValue::Int(1)
+    );
+}
+
+#[test]
+fn test_len_on_different_array_sizes() {
+    for size in &[0u64, 1, 5, 100] {
+        let mut ctx = glyim_test::test_ty_ctx();
+        let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+        let array_ty = mk_array_ty(&mut ctx, i32_ty, *size);
+
+        let mut body = empty_body(Ty::UNIT);
+        let local_arr = add_local(&mut body, array_ty, Mutability::Not);
+        let local_len = add_local(
+            &mut body,
+            ctx.mk_ty(TyKind::Int(IntTy::I64)),
+            Mutability::Mut,
+        );
+
+        let bb0 = BasicBlockIdx::from_raw(0);
+        add_statement(
+            &mut body,
+            bb0,
+            StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_arr))),
+        );
+
+        let tcx = ctx.freeze();
+        let mut interp = Interpreter::new(&tcx);
+        interp.add_function(
+            DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            body,
+        );
+        interp
+            .run_body(&interp.function_table.values().next().unwrap().clone())
+            .unwrap();
         assert_eq!(
-            interp.get_local_value(LocalIdx::from_raw(1)),
-            Some(&expected)
+            *interp.get_local_value(local_len).unwrap(),
+            InterpValue::Int(*size as i128),
+            "failed for size {}",
+            size
         );
     }
 }
 
-// ============ Large body with 100 gotos ============
 #[test]
-fn large_goto_chain_100_blocks() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let mut body = Body::dummy(dummy_def_id());
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(Ty::BOOL, Mutability::Mut),
-    ]);
-    let mut blocks = Vec::new();
-    for i in 0..99 {
-        blocks.push(BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Goto {
-                    target: BasicBlockIdx::from_raw(i + 1),
-                },
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        });
-    }
-    // Final block assigns and returns
-    blocks.push(BasicBlockData {
-        statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(1)),
-                Rvalue::Use(Operand::Constant(MirConst {
-                    kind: MirConstKind::Int(42),
-                    ty: Ty::BOOL,
-                    span: Span::DUMMY,
-                })),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        }],
-        terminator: Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        is_cleanup: false,
-    });
-    body.basic_blocks = IndexVec::from_raw(blocks);
-    let mut interp = Interpreter::new(&tcx);
-    interp.run_body(&body).unwrap();
-    assert_eq!(
-        interp.get_local_value(LocalIdx::from_raw(1)),
-        Some(&InterpValue::Int(42))
-    );
-}
-
-// ============ Many locals (50 locals) ============
-#[test]
-fn many_locals_all_initialized() {
-    let mut tcx_mut = test_ty_ctx();
-    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
-    let mut body = Body::dummy(dummy_def_id());
-    let mut locals_vec = vec![local_decl(Ty::UNIT, Mutability::Mut)]; // local 0
-    let mut statements = Vec::new();
-    for i in 1..51 {
-        locals_vec.push(local_decl(i32_ty.clone(), Mutability::Mut));
-        statements.push(Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(i)),
-                Rvalue::Use(Operand::Constant(MirConst {
-                    kind: MirConstKind::Int(i as i128),
-                    ty: i32_ty.clone(),
-                    span: Span::DUMMY,
-                })),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        });
-    }
-    body.locals = IndexVec::from_raw(locals_vec);
-    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements,
-        terminator: Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        is_cleanup: false,
-    }]);
-    let tcx = tcx_mut.freeze();
-    let mut interp = Interpreter::new(&tcx);
-    interp.run_body(&body).unwrap();
-    // Check last local
-    assert_eq!(
-        interp.get_local_value(LocalIdx::from_raw(50)),
-        Some(&InterpValue::Int(50))
-    );
-}
-
-// ============ Assert message check ============
-#[test]
-fn assert_overflow_message_in_error() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let mut body = Body::dummy(dummy_def_id());
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(Ty::BOOL, Mutability::Not),
-    ]);
-    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(1)),
-                Rvalue::Use(Operand::Constant(MirConst {
-                    kind: MirConstKind::Bool(false),
-                    ty: Ty::BOOL,
-                    span: Span::DUMMY,
-                })),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        }],
-        terminator: Terminator {
-            kind: TerminatorKind::Assert {
-                cond: Operand::Copy(Place::new(LocalIdx::from_raw(1))),
-                expected: true,
-                target: BasicBlockIdx::from_raw(1),
-                cleanup: None,
-                msg: AssertMessage::Overflow(BinOp::Add),
-            },
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        is_cleanup: false,
-    }]);
-    let mut interp = Interpreter::new(&tcx);
-    let res = interp.run_body(&body);
-    assert!(res.is_err());
-    let err = format!("{:?}", res);
-    assert!(err.contains("assert failed"));
-}
-
-// ============ InterpValue to u128 ============
-#[test]
-fn interp_value_to_u128_coverage() {
-    let tcx = glyim_test::test_frozen_ty_ctx();
-    let interp = Interpreter::new(&tcx);
-    assert_eq!(interp.interp_value_to_u128(&InterpValue::Int(42)), 42);
-    assert_eq!(interp.interp_value_to_u128(&InterpValue::Bool(true)), 1);
-    assert_eq!(interp.interp_value_to_u128(&InterpValue::Bool(false)), 0);
-    assert_eq!(interp.interp_value_to_u128(&InterpValue::Unit), 0);
-}
-
-// ============ Call with cleanup=None ============
-#[test]
-fn call_with_cleanup_none_works() {
-    let mut tcx_mut = test_ty_ctx();
-    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
-    let callee_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1));
-    let mut callee = Body::dummy(callee_id);
-    callee.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
-    callee.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(0)),
-                Rvalue::Use(Operand::Constant(MirConst {
-                    kind: MirConstKind::Int(10),
-                    ty: i32_ty.clone(),
-                    span: Span::DUMMY,
-                })),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        }],
-        terminator: Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        is_cleanup: false,
-    }]);
-    let mut caller = Body::dummy(dummy_def_id());
-    caller.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-    ]);
-    caller.basic_blocks = IndexVec::from_raw(vec![
-        BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Call {
-                    func: Operand::Constant(MirConst {
-                        kind: MirConstKind::Int(callee_id.local_id.to_raw() as i128),
-                        ty: i32_ty,
-                        span: Span::DUMMY,
-                    }),
-                    args: vec![],
-                    destination: Place::new(LocalIdx::from_raw(1)),
-                    target: Some(BasicBlockIdx::from_raw(1)),
-                    cleanup: None,
-                },
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        },
-        BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Return,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        },
-    ]);
-    let tcx = tcx_mut.freeze();
-    let mut interp = Interpreter::new(&tcx);
-    interp.add_function(callee_id, callee);
-    interp.run_body(&caller).unwrap();
-    assert_eq!(
-        interp.get_local_value(LocalIdx::from_raw(1)),
-        Some(&InterpValue::Int(10))
-    );
+fn test_get_local_value_uninitialized() {
+    let ctx = glyim_test::test_frozen_ty_ctx();
+    let interp = Interpreter::new(&ctx);
+    assert!(interp.get_local_value(LocalIdx::from_raw(0)).is_none());
 }

@@ -51,6 +51,7 @@ pub(crate) fn const_int(val: i128) -> Operand {
     })
 }
 
+#[allow(dead_code)]
 pub(crate) fn const_unit() -> Operand {
     Operand::Constant(MirConst {
         kind: MirConstKind::Unit,
@@ -59,6 +60,7 @@ pub(crate) fn const_unit() -> Operand {
     })
 }
 
+#[allow(dead_code)]
 pub(crate) fn const_bool(b: bool) -> Operand {
     Operand::Constant(MirConst {
         kind: MirConstKind::Bool(b),
