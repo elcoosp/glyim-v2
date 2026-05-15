@@ -1,7 +1,10 @@
 use glyim_core::def_id::TraitDefId;
 use glyim_core::interner::Interner;
-use glyim_core::primitives::IntTy;
-use glyim_type::*;
+use glyim_core::primitives::{IntTy, UintTy};
+use glyim_type::{
+    GenericArg, ProjectionTy, TraitRef, TyCtxMut,
+    TyKind,
+};
 use crate::InferenceTable;
 
 #[test]

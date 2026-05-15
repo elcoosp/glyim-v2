@@ -1,6 +1,9 @@
 use glyim_core::def_id::TraitDefId;
 use glyim_core::interner::Interner;
-use glyim_type::*;
+use glyim_type::{
+    GenericArg, ProjectionTy, TraitRef, TyCtxMut,
+    TyKind, InferVar, TyVar,
+};
 use crate::InferenceTable;
 
 #[test]
@@ -10,7 +13,7 @@ fn occurs_check_cycle() {
     let mut infer = InferenceTable::new();
 
     let a_name = ctx.resolver().intern("A");
-    let b_name = ctx.resolver().intern("B");
+    let _b_name = ctx.resolver().intern("B");
     let trait_id = TraitDefId::from_raw(0);
 
     // Create a projection that references itself (cycle)
