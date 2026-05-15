@@ -548,7 +548,9 @@ fn collect_items(
                 process_use_decl(&child, parent_module, def_map, diagnostics);
             }
 
-            _ => {}
+            _ => {
+                eprintln!("[DEBUG] collect_items: UNHANDLED child kind = {:?}", child.kind());
+            }
         }
     }
 }
