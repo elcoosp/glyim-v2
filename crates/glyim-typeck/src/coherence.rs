@@ -17,6 +17,7 @@ use glyim_type::ImplPolarity;
 use glyim_def_map::CrateDefMap;
 
 /// An entry in the registered impls set.
+#[allow(dead_code)]
 struct RegisteredEntry {
     self_type_name: Name,
     polarity: ImplPolarity,
@@ -26,6 +27,7 @@ struct RegisteredEntry {
 }
 
 /// Checker for coherence and orphan rules within a single crate.
+#[allow(dead_code)]
 pub struct CoherenceChecker<'a> {
     def_map: &'a CrateDefMap,
     local_krate: CrateId,
@@ -35,6 +37,7 @@ pub struct CoherenceChecker<'a> {
     negative_impls: Vec<(Name, Name)>,
 }
 
+#[allow(dead_code)]
 impl<'a> CoherenceChecker<'a> {
     pub fn new(def_map: &'a CrateDefMap, local_krate: CrateId) -> Self {
         Self {
