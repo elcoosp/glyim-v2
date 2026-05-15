@@ -364,6 +364,7 @@ fn process_use_tree(
 
         // Process each inner UseTree
         for child in node.children() {
+        eprintln!("[DEBUG] collect_items: child kind = {:?}", child.kind());
             if child.kind() == SyntaxKind::UseTree {
                 let is_glob = child.children().any(|n| n.kind() == SyntaxKind::Star);
                 let inner_path = extract_path_from_syntax(&child, &def_map.interner);
@@ -468,6 +469,7 @@ fn collect_items(
 ) {
     eprintln!("[DEBUG] collect_items called");
     for child in node.children() {
+        eprintln!("[DEBUG] collect_items: child kind = {:?}", child.kind());
         match child.kind() {
             // Inline module: `mod name { ... }`
             SyntaxKind::Module => {
