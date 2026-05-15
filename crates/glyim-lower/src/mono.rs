@@ -35,6 +35,7 @@ pub struct MonoItemData {
     pub item: MonoItem,
     pub body: Arc<glyim_mir::Body>,
     pub symbol: String,
+    pub source_module: u32,
 }
 
 pub struct MonoCtx {
@@ -228,6 +229,7 @@ impl MonoCtx {
                 item: item.clone(),
                 body,
                 symbol,
+                source_module: 0,
             });
 
             self.cache.insert(item, id);

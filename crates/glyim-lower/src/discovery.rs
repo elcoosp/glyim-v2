@@ -84,6 +84,7 @@ fn has_attr_in_span(root: &SyntaxNode, target_span: Span, attr_name: &str) -> bo
         {
             let ident_text = t2.text();
             if ident_text == attr_name {
+                // Check that this attribute is within the item span
                 let attr_span = token_span(t0);
                 if span_intersects(target_span, attr_span) {
                     return true;
