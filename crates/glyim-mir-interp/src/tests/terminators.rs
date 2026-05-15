@@ -376,7 +376,7 @@ fn test_call_with_cleanup_on_panic() {
     let bb0 = BasicBlockIdx::from_raw(0);
     set_terminator(&mut callee_body, bb0, TerminatorKind::Unreachable);
 
-    let _caller_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(20));
+    let caller_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(20));
     let mut caller_body = empty_body(Ty::UNIT);
     let local_result = add_local(&mut caller_body, i32_ty, Mutability::Mut);
     let bb0_caller = BasicBlockIdx::from_raw(0);

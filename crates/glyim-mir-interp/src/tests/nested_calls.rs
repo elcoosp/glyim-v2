@@ -11,7 +11,8 @@ fn test_t10_nested_function_calls() {
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
 
     // Callee body: function add(x: i32, y: i32) -> i32 { x + y }
-    let callee_def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(10));
+    let callee_fn_def = FnDefId::from_raw(10);
+    let callee_def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(callee_fn_def.to_raw()));
     let mut callee_body = empty_body(i32_ty);
     // local 0 is return place (already), local 1 and 2 for params
     let param0 = add_local(&mut callee_body, i32_ty, Mutability::Not);
@@ -54,7 +55,7 @@ fn test_t10_nested_function_calls() {
         bb0_caller,
         TerminatorKind::Call {
             func: Operand::Constant(MirConst {
-                kind: MirConstKind::Fn(callee_def_id, glyim_type::Substitution { index: 0, len: 0 }),
+                kind: MirConstKind::Fn(callee_fn_def, glyim_type::Substitution::empty()),
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             }),
