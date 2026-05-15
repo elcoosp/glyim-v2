@@ -330,7 +330,8 @@ fn test_recursion_limit_enforced() {
     let mut ctx = glyim_test::test_ty_ctx();
     let _i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
 
-    let fn_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let fn_def = FnDefId::from_raw(0);
+    let fn_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def.to_raw()));
 
     let mut body = empty_body(Ty::UNIT);
     let bb0 = BasicBlockIdx::from_raw(0);
@@ -345,7 +346,7 @@ fn test_recursion_limit_enforced() {
         bb0,
         TerminatorKind::Call {
             func: Operand::Constant(MirConst {
-                kind: MirConstKind::Fn(fn_id, glyim_type::Substitution { index: 0, len: 0 }),
+                kind: MirConstKind::Fn(fn_def, glyim_type::Substitution::empty()),
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             }),
@@ -369,12 +370,13 @@ fn test_call_with_cleanup_on_panic() {
     let mut ctx = glyim_test::test_ty_ctx();
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
 
-    let callee_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(10));
+    let callee_def = FnDefId::from_raw(10);
+    let callee_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(callee_def.to_raw()));
     let mut callee_body = empty_body(Ty::UNIT);
     let bb0 = BasicBlockIdx::from_raw(0);
     set_terminator(&mut callee_body, bb0, TerminatorKind::Unreachable);
 
-    let caller_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(20));
+    let _caller_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(20));
     let mut caller_body = empty_body(Ty::UNIT);
     let local_result = add_local(&mut caller_body, i32_ty, Mutability::Mut);
     let bb0_caller = BasicBlockIdx::from_raw(0);
@@ -398,7 +400,7 @@ fn test_call_with_cleanup_on_panic() {
         bb0_caller,
         TerminatorKind::Call {
             func: Operand::Constant(MirConst {
-                kind: MirConstKind::Fn(callee_id, glyim_type::Substitution { index: 0, len: 0 }),
+                kind: MirConstKind::Fn(callee_def, glyim_type::Substitution::empty()),
                 ty: Ty::UNIT,
                 span: Span::DUMMY,
             }),

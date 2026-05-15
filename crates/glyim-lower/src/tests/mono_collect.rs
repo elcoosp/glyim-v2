@@ -7,9 +7,8 @@
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::*;
-use glyim_core::interner::Interner;
 use glyim_core::primitives::*;
-use glyim_lower::*;
+use crate::{MonoCtx, MonoItem};
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::*;
@@ -23,19 +22,16 @@ fn make_call_body(
 ) -> Body {
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(caller_def_id.to_raw()));
     let mut locals = IndexVec::new();
-    // _0 = return place
     locals.push(LocalDecl {
         ty: Ty::UNIT,
         mutability: Mutability::Mut,
         source_info: SourceInfo::new(Span::DUMMY),
     });
-    // _1 = unit arg placeholder
     locals.push(LocalDecl {
         ty: Ty::UNIT,
         mutability: Mutability::Not,
         source_info: SourceInfo::new(Span::DUMMY),
     });
-    // _2 = destination for call result
     locals.push(LocalDecl {
         ty: Ty::UNIT,
         mutability: Mutability::Mut,
@@ -44,7 +40,7 @@ fn make_call_body(
 
     let func_const = MirConst {
         kind: MirConstKind::Fn(callee_def_id, callee_substs),
-        ty: Ty::UNIT, // simplified
+        ty: Ty::UNIT,
         span: Span::DUMMY,
     };
 
@@ -183,8 +179,8 @@ fn make_recursive_body(fn_def_id: FnDefId, substs: Substitution) -> Body {
     }
 }
 
-/// Helper: create a body with a Drop terminator referencing an ADT.
-fn make_drop_body(fn_def_id: FnDefId, dropped_adt_id: AdtId) -> Body {
+/// Helper: create a body with a Drop terminator.
+fn make_drop_body(fn_def_id: FnDefId, _dropped_adt_id: AdtId) -> Body {
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def_id.to_raw()));
     let mut locals = IndexVec::new();
     locals.push(LocalDecl {
@@ -192,9 +188,6 @@ fn make_drop_body(fn_def_id: FnDefId, dropped_adt_id: AdtId) -> Body {
         mutability: Mutability::Mut,
         source_info: SourceInfo::new(Span::DUMMY),
     });
-    // local 1 = the value being dropped
-    let dropped_ty = Ty::from_raw(0); // placeholder; we'll rely on the Drop terminator
-    let _ = dropped_adt_id;
     locals.push(LocalDecl {
         ty: Ty::UNIT,
         mutability: Mutability::Mut,
@@ -253,7 +246,6 @@ fn call_graph_adds_callee() {
         substs: empty_substs,
     };
 
-    // Body lookup: returns the appropriate MIR body for each function
     let main_body_arc = Arc::new(main_body);
     let foo_body_arc = Arc::new(foo_body);
     let bodies = vec![
@@ -274,7 +266,6 @@ fn call_graph_adds_callee() {
         },
     );
 
-    // Should have collected main AND foo
     assert_eq!(ctx.item_count(), 2, "should have both main and foo items");
 
     let items = ctx.items();
@@ -313,7 +304,6 @@ fn recursive_function_no_duplicates() {
         },
     );
 
-    // Should have exactly 1 item - the recursive function, not duplicated
     assert_eq!(ctx.item_count(), 1, "recursive function should appear exactly once");
 
     let items = ctx.items();
@@ -324,7 +314,6 @@ fn recursive_function_no_duplicates() {
 #[test]
 fn drop_glue_collected() {
     let fn_id = FnDefId::from_raw(20);
-    let drop_fn_id = FnDefId::from_raw(100); // hypothetical drop fn
     let adt_id = AdtId::from_raw(50);
     let empty_substs = Substitution::empty();
 
@@ -351,23 +340,11 @@ fn drop_glue_collected() {
         },
     );
 
-    // The function with the Drop terminator should be collected
-    // Drop glue collection: when we encounter a Drop terminator,
-    // we should enqueue the drop implementation as a MonoItem
     assert!(ctx.item_count() >= 1, "function with drop should be collected");
 
     let items = ctx.items();
     let has_fn = items.iter().any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 20));
     assert!(has_fn, "function containing drop should be collected");
-
-    // Check that a drop glue item was also collected
-    let has_drop = items.iter().any(|d| {
-        matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == drop_fn_id.to_raw())
-            || d.symbol.contains("drop")
-    });
-    // Note: this will depend on the implementation detail of how drop glue is found.
-    // For now, at minimum the function itself is collected.
-    let _ = (adt_id, has_drop);
 }
 
 /// V23-T04: Constant used in generic -> instantiated
@@ -377,7 +354,6 @@ fn constant_in_generic_instantiated() {
     let const_id = ConstDefId::from_raw(5);
     let empty_substs = Substitution::empty();
 
-    // Build a body that references a constant via MirConstKind::ConstRef
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(main_id.to_raw()));
     let mut locals = IndexVec::new();
     locals.push(LocalDecl {
@@ -385,7 +361,6 @@ fn constant_in_generic_instantiated() {
         mutability: Mutability::Mut,
         source_info: SourceInfo::new(Span::DUMMY),
     });
-    // _1 = storage for the const value
     locals.push(LocalDecl {
         ty: Ty::UNIT,
         mutability: Mutability::Mut,
@@ -449,7 +424,6 @@ fn constant_in_generic_instantiated() {
         },
     );
 
-    // Should have collected main function AND the referenced constant
     assert!(ctx.item_count() >= 1, "main function should be collected");
 
     let items = ctx.items();
