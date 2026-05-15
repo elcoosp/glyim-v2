@@ -178,7 +178,6 @@ impl<'a> Resolver<'a> {
 }
 
 /// Helper to resolve a path that ends at a module, returning the ModuleId.
-/// Replicates logic from Resolver but returns the module instead of items in scope.
 fn resolve_module_path(def_map: &CrateDefMap, start_module: ModuleId, path: &Path) -> Option<ModuleId> {
     let mut current_module = start_module;
     let start_idx = match path.kind {
@@ -218,47 +217,78 @@ fn resolve_module_path(def_map: &CrateDefMap, start_module: ModuleId, path: &Pat
     Some(current_module)
 }
 
-/// Extract a `Path` from a `Path` syntax node.
+/// Extract a `Path` from a syntax node (UseTree or PathExpr).
+/// Recursively collects segments to handle nested structures.
+/// Stops at `UseTreeList` (braces) to avoid mixing prefix with list items.
 fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Path> {
-    // Assumes node.kind() == SyntaxKind::PathExpr
-    let mut segments = Vec::new();
+    eprintln!("[DEBUG] extract_path_from_syntax: node kind = {:?}", node.kind());
+
+    let has_braces = node.children().any(|n| n.kind() == SyntaxKind::LBrace);
+    eprintln!("[DEBUG] has_braces = {}", has_braces);
+
+    let mut segments: Vec<PathSegment> = Vec::new();
     let mut kind = PathKind::Plain;
     let mut super_count = 0u32;
 
-    for elem in node.children_with_tokens() {
-        if let Some(token) = elem.as_token() {
-            match token.kind() {
-                SyntaxKind::KwCrate => kind = PathKind::Crate,
-                SyntaxKind::KwSelf => kind = PathKind::SelfPath,
-                SyntaxKind::KwSuper => {
-                    super_count += 1;
-                    kind = PathKind::Super(super_count);
+    fn visit(
+        n: &SyntaxNode,
+        segments: &mut Vec<PathSegment>,
+        kind: &mut PathKind,
+        super_count: &mut u32,
+        interner: &Interner,
+    ) {
+        for elem in n.children_with_tokens() {
+            if let Some(token) = elem.as_token() {
+                match token.kind() {
+                    SyntaxKind::KwCrate => *kind = PathKind::Crate,
+                    SyntaxKind::KwSelf => *kind = PathKind::SelfPath,
+                    SyntaxKind::KwSuper => {
+                        *super_count += 1;
+                        *kind = PathKind::Super(*super_count);
+                    }
+                    SyntaxKind::Ident => {
+                        let name = interner.intern(token.text());
+                        eprintln!("[DEBUG]   Found Ident: {}", token.text());
+                        segments.push(PathSegment { name });
+                    }
+                    _ => {}
                 }
-                SyntaxKind::Ident => {
-                    segments.push(PathSegment {
-                        name: interner.intern(token.text()),
-                    });
+            } else if let Some(child_node) = elem.as_node() {
+                // Do not recurse into nested UseTrees (e.g. inner items of a brace list)
+                if child_node.kind() == SyntaxKind::UseTree {
+                    continue;
                 }
-                _ => {}
+                visit(child_node, segments, kind, super_count, interner);
             }
         }
     }
 
-    // Handle cases where `super` is implicit in count but segments are empty
+    visit(node, &mut segments, &mut kind, &mut super_count, interner);
+
+    eprintln!("[DEBUG]   Raw segments count: {}", segments.len());
+
+    // Heuristic: if braces present, pop the last segment (likely the first item in the list)
+    if has_braces && !segments.is_empty() {
+        segments.pop();
+        eprintln!("[DEBUG]   Popped segment. New count: {}", segments.len());
+    }
+
     if segments.is_empty() && super_count > 0 {
         return Some(Path { segments, kind: PathKind::Super(super_count) });
     }
-
     if segments.is_empty() && kind == PathKind::Crate {
-         return Some(Path { segments, kind: PathKind::Crate });
+        return Some(Path { segments, kind: PathKind::Crate });
     }
 
     if !segments.is_empty() {
+        eprintln!("[DEBUG]   Returning Path with segments: {:?}", segments.iter().map(|s| interner.resolve(s.name)).collect::<Vec<_>>());
         Some(Path { segments, kind })
     } else {
+        eprintln!("[DEBUG]   Returning None");
         None
     }
 }
+
 
 #[tracing::instrument(skip(root))]
 pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
@@ -319,6 +349,7 @@ fn process_use_tree(
 ) {
     // Check for nested use trees (braces)
     if node.children().any(|n| n.kind() == SyntaxKind::LBrace) {
+        // Find the path prefix in this UseTree (e.g. `a` in `a::{b, c}`)
         let path = extract_path_from_syntax(node, &def_map.interner);
         let base_module = if let Some(p) = path {
             resolve_module_path(def_map, parent_module, &p)
@@ -329,11 +360,6 @@ fn process_use_tree(
         // Process each inner UseTree
         for child in node.children() {
             if child.kind() == SyntaxKind::UseTree {
-                // If we have a base module, we need to handle resolution relative to it.
-                // However, process_use_tree is generic.
-                // Special case: If base_module exists, the inner tree is just a name.
-                // We handle this by checking if the inner tree is a simple identifier.
-
                 let is_glob = child.children().any(|n| n.kind() == SyntaxKind::Star);
                 let inner_path = extract_path_from_syntax(&child, &def_map.interner);
 
@@ -374,7 +400,6 @@ fn process_use_tree(
 
     // Simple path import: `use a::b::c`
     let path = extract_path_from_syntax(node, &def_map.interner);
-
     if let Some(path) = path {
         let resolver = Resolver::new(def_map, parent_module);
         let per_ns = resolver.resolve_path(&path);
@@ -409,12 +434,9 @@ fn import_all_public(source: ModuleId, target: ModuleId, def_map: &mut CrateDefM
             def_map.modules[target].scope.declare(name, id, vis, span, Namespace::Values);
         }
     }
-    // Macros usually not imported via glob in this simple model, but could be
 }
 
 /// Helper to guess namespace from an ID in a specific scope.
-/// This is a bit of a hack because we only have LocalDefId.
-/// We check where the ID exists.
 fn determine_namespace(id: LocalDefId, scope: &ItemScope) -> Namespace {
     if scope.types.iter().any(|(_, i, _, _)| *i == id) {
         return Namespace::Types;
@@ -425,7 +447,6 @@ fn determine_namespace(id: LocalDefId, scope: &ItemScope) -> Namespace {
     if scope.macros.iter().any(|(_, i, _, _)| *i == id) {
         return Namespace::Macros;
     }
-    // Default to Types if unknown (structs/enums are common)
     Namespace::Types
 }
 
