@@ -446,44 +446,61 @@ impl<'tcx> Interpreter<'tcx> {
         for proj in place.projection.iter() {
             match proj {
                 ProjectionElem::Deref => {
-                    tracing::warn!("STUB: Deref projection not implemented");
-                    return Err(InterpError::Panic("Deref projection not implemented".into()));
+                    match val {
+                        InterpValue::Ref(target) => {
+                            val = self
+                                .locals
+                                .get(target)
+                                .and_then(|opt| opt.as_ref())
+                                .cloned()
+                                .ok_or_else(|| {
+                                    InterpError::Panic(format!(
+                                        "deref of uninitialized local {}",
+                                        target
+                                    ))
+                                })?;
+                        }
+                        _ => {
+                            return Err(InterpError::Panic(
+                                "deref projection on non-reference value".into(),
+                            ));
+                        }
+                    }
                 }
                 ProjectionElem::Field(field_idx) => {
-                    match &val {
-                        InterpValue::Aggregate(fields) => {
-                            let idx = field_idx.index();
+                    let fi = field_idx.index();
+                    match val {
+                        InterpValue::Aggregate(ref fields) => {
                             val = fields
-                                .get(idx)
+                                .get(fi)
                                 .cloned()
                                 .ok_or_else(|| {
                                     InterpError::Panic(format!(
                                         "field index {} out of bounds (len {})",
-                                        idx,
+                                        fi,
                                         fields.len()
                                     ))
                                 })?;
                         }
                         _ => {
-                            return Err(InterpError::Panic(format!(
-                                "field projection on non-aggregate value: {:?}",
-                                val
-                            )));
+                            return Err(InterpError::Panic(
+                                "field projection on non-aggregate value".into(),
+                            ));
                         }
                     }
                 }
-                ProjectionElem::Index(local) => {
+                ProjectionElem::Index(index_local) => {
                     let index_val = self
                         .locals
-                        .get(local.index())
+                        .get(index_local.index())
                         .and_then(|opt| opt.as_ref())
                         .ok_or_else(|| {
                             InterpError::Panic(format!(
                                 "index local {} not initialized",
-                                local.index()
+                                index_local.index()
                             ))
                         })?;
-                    let index = match index_val {
+                    let idx_u = match index_val {
                         InterpValue::Int(i) => *i as usize,
                         _ => {
                             return Err(InterpError::Panic(
@@ -491,29 +508,25 @@ impl<'tcx> Interpreter<'tcx> {
                             ));
                         }
                     };
-                    match &val {
-                        InterpValue::Aggregate(elems) => {
-                            val = elems.get(index).cloned().ok_or_else(|| {
+                    match val {
+                        InterpValue::Aggregate(ref elems) => {
+                            val = elems.get(idx_u).cloned().ok_or_else(|| {
                                 InterpError::Panic(format!(
                                     "index {} out of bounds (len {})",
-                                    index,
+                                    idx_u,
                                     elems.len()
                                 ))
                             })?;
                         }
                         _ => {
-                            return Err(InterpError::Panic(format!(
-                                "index projection on non-aggregate value: {:?}",
-                                val
-                            )));
+                            return Err(InterpError::Panic(
+                                "index projection on non-aggregate value".into(),
+                            ));
                         }
                     }
                 }
                 ProjectionElem::Downcast(_) => {
-                    tracing::warn!("STUB: Downcast projection not implemented");
-                    return Err(InterpError::Panic(
-                        "Downcast projection not implemented".into(),
-                    ));
+                    // Downcast is a no-op for the interpreter; we just continue
                 }
             }
         }
@@ -532,154 +545,157 @@ impl<'tcx> Interpreter<'tcx> {
             self.locals[idx] = Some(val);
             return Ok(());
         }
-        // Handle projections: read the base, modify it, write back
-        let base_place = Place {
-            local: place.local,
-            projection: Box::new([]),
-        };
-        let mut base_val = self
+
+        let proj_count = place.projection.len();
+
+        // If the first projection is Deref, we handle separately
+        if let Some(ProjectionElem::Deref) = place.projection.first() {
+            if proj_count > 1 {
+                // Deref followed by further projections: read through deref, then write through rest
+                let inner_place = Place {
+                    local: place.local,
+                    projection: place.projection[1..].to_vec().into_boxed_slice(),
+                };
+                // But we need to resolve deref first to get the target local
+                let base_val = self
+                    .locals
+                    .get(idx)
+                    .and_then(|opt| opt.as_ref())
+                    .cloned()
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!("write to uninitialized local {}", idx))
+                    })?;
+                let target_local = match base_val {
+                    InterpValue::Ref(target) => target,
+                    _ => {
+                        return Err(InterpError::Panic(
+                            "deref projection on non-reference value".into(),
+                        ));
+                    }
+                };
+                // Create a place for target local with the remaining projections
+                let target_place = Place {
+                    local: LocalIdx::from_raw(target_local as u32),
+                    projection: place.projection[1..].to_vec().into_boxed_slice(),
+                };
+                return self.write_place(&target_place, val);
+            } else {
+                // Single Deref projection: write to the referenced local
+                let base_val = self
+                    .locals
+                    .get(idx)
+                    .and_then(|opt| opt.as_ref())
+                    .cloned()
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!("write to uninitialized local {}", idx))
+                    })?;
+                let target_local = match base_val {
+                    InterpValue::Ref(target) => target,
+                    _ => {
+                        return Err(InterpError::Panic(
+                            "deref projection on non-reference value".into(),
+                        ));
+                    }
+                };
+                if target_local >= self.locals.len() {
+                    return Err(InterpError::Panic(format!(
+                        "write through ref to invalid local {}",
+                        target_local
+                    )));
+                }
+                self.locals[target_local] = Some(val);
+                return Ok(());
+            }
+        }
+
+        // For Field/Index/Downcast projections, we read the base, modify, and write back.
+        let base_val = self
             .locals
             .get(idx)
             .and_then(|opt| opt.as_ref())
             .cloned()
             .ok_or_else(|| InterpError::Panic(format!("write to uninitialized local {}", idx)))?;
 
-        let mut current = &mut base_val;
-        let proj_len = place.projection.len();
-        for (i, proj) in place.projection.iter().enumerate() {
-            if i == proj_len - 1 {
-                // Last projection: write the value
-                match proj {
-                    ProjectionElem::Field(field_idx) => match current {
-                        InterpValue::Aggregate(fields) => {
-                            let fi = field_idx.index();
-                            if fi >= fields.len() {
-                                return Err(InterpError::Panic(format!(
-                                    "field index {} out of bounds (len {})",
-                                    fi,
-                                    fields.len()
-                                )));
-                            }
-                            fields[fi] = val;
-                            self.locals[idx] = Some(base_val);
-                            return Ok(());
+        let modified = self.write_through_projections_with_locals(base_val, &place.projection, val)?;
+        self.locals[idx] = Some(modified);
+        Ok(())
+    }
+
+    fn write_through_projections_with_locals(
+        &self,
+        mut base: InterpValue,
+        projections: &[ProjectionElem],
+        val: InterpValue,
+    ) -> InterpResult<InterpValue> {
+        if projections.is_empty() {
+            return Ok(val);
+        }
+        let (first, rest) = (&projections[0], &projections[1..]);
+        match first {
+            ProjectionElem::Field(field_idx) => {
+                let fi = field_idx.index();
+                match base {
+                    InterpValue::Aggregate(ref mut fields) => {
+                        if fi >= fields.len() {
+                            return Err(InterpError::Panic(format!(
+                                "field index {} out of bounds (len {})",
+                                fi,
+                                fields.len()
+                            )));
                         }
-                        _ => {
-                            return Err(InterpError::Panic(
-                                "field projection on non-aggregate".into(),
-                            ));
-                        }
-                    },
-                    ProjectionElem::Index(index_local) => {
-                        let index_val = self
-                            .locals
-                            .get(index_local.index())
-                            .and_then(|opt| opt.as_ref())
-                            .ok_or_else(|| {
-                                InterpError::Panic(format!(
-                                    "index local {} not initialized",
-                                    index_local.index()
-                                ))
-                            })?;
-                        let index = match index_val {
-                            InterpValue::Int(i) => *i as usize,
-                            _ => {
-                                return Err(InterpError::Panic(
-                                    "index must be an integer".into(),
-                                ));
-                            }
-                        };
-                        match current {
-                            InterpValue::Aggregate(elems) => {
-                                if index >= elems.len() {
-                                    return Err(InterpError::Panic(format!(
-                                        "index {} out of bounds (len {})",
-                                        index,
-                                        elems.len()
-                                    )));
-                                }
-                                elems[index] = val;
-                                self.locals[idx] = Some(base_val);
-                                return Ok(());
-                            }
-                            _ => {
-                                return Err(InterpError::Panic(
-                                    "index projection on non-aggregate".into(),
-                                ));
-                            }
-                        }
-                    },
-                    _ => {
-                        return Err(InterpError::Panic(
-                            "write with unsupported projection".into(),
-                        ));
+                        let inner = fields[fi].clone();
+                        fields[fi] = self.write_through_projections_with_locals(inner, rest, val)?;
+                        Ok(base)
                     }
+                    _ => Err(InterpError::Panic(
+                        "field projection on non-aggregate".into(),
+                    )),
                 }
-            } else {
-                // Intermediate projection: traverse down
-                match proj {
-                    ProjectionElem::Field(field_idx) => {
-                        match current {
-                            InterpValue::Aggregate(fields) => {
-                                let fi = field_idx.index();
-                                // We need to get a mutable reference to the inner field.
-                                // Since we own base_val, we'll reconstruct.
-                                let inner = fields.get(fi).cloned().ok_or_else(|| {
-                                    InterpError::Panic(format!(
-                                        "field index {} out of bounds",
-                                        fi
-                                    ))
-                                })?;
-                                fields[fi] = inner;
-                            }
-                            _ => {
-                                return Err(InterpError::Panic(
-                                    "field projection on non-aggregate".into(),
-                                ));
-                            }
+            }
+            ProjectionElem::Index(index_local) => {
+                let index_val = self
+                    .locals
+                    .get(index_local.index())
+                    .and_then(|opt| opt.as_ref())
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!(
+                            "index local {} not initialized",
+                            index_local.index()
+                        ))
+                    })?;
+                let idx_u = match index_val {
+                    InterpValue::Int(i) => *i as usize,
+                    _ => return Err(InterpError::Panic("index must be an integer".into())),
+                };
+                match base {
+                    InterpValue::Aggregate(ref mut elems) => {
+                        if idx_u >= elems.len() {
+                            return Err(InterpError::Panic(format!(
+                                "index {} out of bounds (len {})",
+                                idx_u,
+                                elems.len()
+                            )));
                         }
+                        let inner = elems[idx_u].clone();
+                        elems[idx_u] =
+                            self.write_through_projections_with_locals(inner, rest, val)?;
+                        Ok(base)
                     }
-                    ProjectionElem::Index(index_local) => {
-                        let index_val = self
-                            .locals
-                            .get(index_local.index())
-                            .and_then(|opt| opt.as_ref())
-                            .ok_or_else(|| {
-                                InterpError::Panic(format!(
-                                    "index local {} not initialized",
-                                    index_local.index()
-                                ))
-                            })?;
-                        let index = match index_val {
-                            InterpValue::Int(i) => *i as usize,
-                            _ => return Err(InterpError::Panic("index must be an integer".into())),
-                        };
-                        match current {
-                            InterpValue::Aggregate(elems) => {
-                                let inner = elems.get(index).cloned().ok_or_else(|| {
-                                    InterpError::Panic(format!("index {} out of bounds", index))
-                                })?;
-                                elems[index] = inner;
-                            }
-                            _ => {
-                                return Err(InterpError::Panic(
-                                    "index projection on non-aggregate".into(),
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        return Err(InterpError::Panic(
-                            "intermediate projection not supported".into(),
-                        ));
-                    }
+                    _ => Err(InterpError::Panic(
+                        "index projection on non-aggregate".into(),
+                    )),
                 }
-                return Err(InterpError::Panic(
-                    "nested projections not fully implemented".into(),
-                ));
+            }
+            ProjectionElem::Downcast(_) => {
+                Ok(self.write_through_projections_with_locals(base, rest, val)?)
+            }
+            ProjectionElem::Deref => {
+                // Deref should have been handled before.
+                Err(InterpError::Panic(
+                    "Deref projection unexpected in write_through_projections".into(),
+                ))
             }
         }
-        Ok(())
     }
 
     fn resolve_callee(&self, func: &Operand) -> InterpResult<DefId> {
