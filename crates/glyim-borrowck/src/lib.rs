@@ -18,7 +18,8 @@
 use fixedbitset::FixedBitSet as BitSet;
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, MultiSpan, SubDiagnostic};
 use glyim_mir::{
-    BasicBlockIdx, Body, BorrowKind, LocalIdx, Operand, Place, Rvalue, StatementKind, TerminatorKind,
+    BasicBlockIdx, Body, BorrowKind, LocalIdx, Operand, Place, Rvalue, StatementKind,
+    TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_type::TyCtx;
