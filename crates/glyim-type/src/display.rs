@@ -1,11 +1,11 @@
 use crate::flags::TypeFlags;
 use crate::predicate::Predicate;
-use crate::region::Region;
+use crate::region::{BoundRegionKind, Region};
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
-use std::fmt; // ADDED
+use std::fmt;
 
 pub trait TypeLookup {
     fn ty_kind(&self, ty: Ty) -> &TyKind;
@@ -58,8 +58,16 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
             TyKind::Infer(InferVar::Ty(v)) => write!(f, "?ty{}", v.to_raw()),
             TyKind::Infer(InferVar::Int(v)) => write!(f, "?int{}", v.to_raw()),
             TyKind::Infer(InferVar::Float(v)) => write!(f, "?float{}", v.to_raw()),
-            TyKind::Ref(_, ty, Mutability::Mut) => write!(f, "&mut {}", self.nested(*ty)),
-            TyKind::Ref(_, ty, Mutability::Not) => write!(f, "&{}", self.nested(*ty)),
+            TyKind::Ref(region, ty, Mutability::Mut) => {
+                write!(f, "&mut ")?;
+                write_region(f, region, self.lookup)?;
+                write!(f, " {}", self.nested(*ty))
+            }
+            TyKind::Ref(region, ty, Mutability::Not) => {
+                write!(f, "&")?;
+                write_region(f, region, self.lookup)?;
+                write!(f, " {}", self.nested(*ty))
+            }
             TyKind::RawPtr(ty, Mutability::Mut) => write!(f, "*mut {}", self.nested(*ty)),
             TyKind::RawPtr(ty, Mutability::Not) => write!(f, "*const {}", self.nested(*ty)),
             TyKind::Slice(ty) => write!(f, "[{}]", self.nested(*ty)),
@@ -153,8 +161,10 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
                         _ => write!(f, "?")?,
                     }
                 }
-                if matches!(region, Region::Static) {
-                    write!(f, " + 'static")?;
+                match region {
+                    Region::Static => write!(f, " + 'static")?,
+                    Region::Placeholder(p) => write!(f, " + '!{}", p.index)?,
+                    _ => {}
                 }
                 Ok(())
             }
@@ -190,6 +200,27 @@ impl<L: TypeLookup> fmt::Display for PrintTy<'_, L> {
                 BoundTyKind::Anon => write!(f, "?{}", var),
             },
         }
+    }
+}
+
+/// Display a region in type position, given a TypeLookup for resolving names.
+pub fn write_region<L: TypeLookup>(f: &mut fmt::Formatter<'_>, region: &Region, lookup: &L) -> fmt::Result {
+    match region {
+        Region::Static => write!(f, "'static"),
+        Region::EarlyBound(e) => write!(f, "'{}", e.index),
+        Region::LateBound(_, _idx, kind) => match kind {
+            BoundRegionKind::BrNamed(name) => write!(f, "'{}", lookup.name_str(*name)),
+            BoundRegionKind::BrAnon(n) => write!(f, "'_{}", n),
+            BoundRegionKind::BrEnv => write!(f, "'_env"),
+        },
+        Region::Var(v) => write!(f, "'?{}", v.to_raw()),
+        Region::Placeholder(p) => match &p.bound {
+            BoundRegionKind::BrNamed(name) => write!(f, "'!{}", lookup.name_str(*name)),
+            BoundRegionKind::BrAnon(_) => write!(f, "'!{}", p.index),
+            BoundRegionKind::BrEnv => write!(f, "'!env"),
+        },
+        Region::Erased => Ok(()),
+        Region::Error => write!(f, "'<error>"),
     }
 }
 
