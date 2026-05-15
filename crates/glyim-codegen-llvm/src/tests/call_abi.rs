@@ -35,7 +35,7 @@ fn dummy_def_id(idx: u32) -> glyim_core::DefId {
 
 #[test]
 fn v27_t01_sret_large_struct_return() {
-    let (ctx, (sig, fn_ptr_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
+    let (ctx, (sig, _fn_ptr_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
         let i64_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I64));
         let subst = ctx_mut.intern_substitution(vec![
             glyim_type::GenericArg::Ty(i64_ty),
@@ -97,7 +97,7 @@ fn v27_t01_sret_large_struct_return() {
 
 #[test]
 fn v27_t02_argument_byval_with_abi_alignment() {
-    let (ctx, (sig, fn_ptr_ty, arg_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
+    let (ctx, (_sig, _fn_ptr_ty, _arg_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
         let i64_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I64));
         let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
         let subst = ctx_mut.intern_substitution(vec![
@@ -158,7 +158,7 @@ fn v27_t02_argument_byval_with_abi_alignment() {
 
 #[test]
 fn v27_t03_variadic_function_call() {
-    let (ctx, (sig, fn_ptr_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
+    let (ctx, (_sig, _fn_ptr_ty, body)) = with_fresh_ty_ctx(|ctx_mut| {
         let unit_ty = ctx_mut.unit_ty();
         let sig = glyim_type::FnSig {
             inputs: ctx_mut.intern_substitution(vec![]),
