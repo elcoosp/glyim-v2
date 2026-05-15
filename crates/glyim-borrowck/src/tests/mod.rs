@@ -8,3 +8,4 @@ mod mir_builder;
 mod same_block;
 mod write_conflicts;
 mod two_phase_borrows;
+mod two_phase_borrows;
