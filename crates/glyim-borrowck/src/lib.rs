@@ -59,7 +59,7 @@ struct Loan {
 fn collect_loans(body: &Body) -> Vec<Loan> {
     let mut loans = Vec::new();
     for (_block_idx, block_data) in body.basic_blocks.iter_enumerated() {
-        for (_stmt_idx, stmt) in block_data.statements.iter().enumerate() {
+        for stmt in block_data.statements.iter() {
             if let StatementKind::Assign(dest, Rvalue::Ref(borrowed, kind)) = &stmt.kind {
                 loans.push(Loan {
                     dest_local: dest.local,
