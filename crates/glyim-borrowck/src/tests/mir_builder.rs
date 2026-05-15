@@ -45,6 +45,7 @@ impl MirBodyBuilder {
     }
 
     /// Add a function argument local.
+    #[allow(dead_code)]
     pub fn add_arg(&mut self, ty: Ty, mutability: Mutability) -> LocalIdx {
         let idx = self.add_local(ty, mutability);
         self.arg_count += 1;
@@ -126,6 +127,7 @@ pub fn assign_copy(dest: LocalIdx, src: LocalIdx) -> StatementKind {
 }
 
 /// Helper: create an Assign statement that moves a value.
+#[allow(dead_code)]
 pub fn assign_move(dest: LocalIdx, src: LocalIdx) -> StatementKind {
     StatementKind::Assign(Place::new(dest), Rvalue::Use(Operand::Move(Place::new(src))))
 }

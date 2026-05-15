@@ -51,10 +51,6 @@ struct Loan {
     borrowed_local: LocalIdx,
     /// The kind of borrow.
     kind: BorrowKind,
-    /// The basic block where the loan was created.
-    block: BasicBlockIdx,
-    /// The statement index within the block where the loan was created.
-    stmt_idx: usize,
     /// The span for error reporting.
     span: Span,
 }
@@ -69,8 +65,6 @@ fn collect_loans(body: &Body) -> Vec<Loan> {
                     dest_local: dest.local,
                     borrowed_local: borrowed.local,
                     kind: *kind,
-                    block: block_idx,
-                    stmt_idx,
                     span: stmt.source_info.span,
                 });
             }
@@ -360,8 +354,6 @@ fn gen_operand_uses(operand: &Operand, live: &mut BitSet) {
 /// is still active.
 fn check_stmt_conflicts(
     stmt: &glyim_mir::Statement,
-    _stmt_idx: usize,
-    _block: BasicBlockIdx,
     active_loans: &[&Loan],
     errors: &mut Vec<GlyimDiagnostic>,
 ) {
@@ -543,7 +535,7 @@ pub fn check_borrows(_ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
                 .filter(|loan| live_locals.contains(loan.dest_local.to_raw() as usize))
                 .collect();
 
-            check_stmt_conflicts(stmt, stmt_idx, block_idx, &active_loans, &mut errors);
+            check_stmt_conflicts(stmt, &active_loans, &mut errors);
         }
     }
 
