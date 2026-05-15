@@ -63,7 +63,7 @@ impl MonoCtx {
     /// is inspected for `MirConstKind::Fn`, `MirConstKind::ConstRef`, and
     /// `TerminatorKind::Drop` which produce new mono items to collect.
     fn scan_body_for_refs(&mut self, body: &glyim_mir::Body) {
-        for block in &body.basic_blocks {
+        for block in body.basic_blocks.iter() {
             // Scan statements for constant references
             for stmt in &block.statements {
                 if let StatementKind::Assign(_, ref rvalue) = stmt.kind {
@@ -82,7 +82,8 @@ impl MonoCtx {
             Rvalue::Use(operand) => {
                 self.scan_operand(operand);
             }
-            Rvalue::BinaryOp(_, box (lhs, rhs)) => {
+            Rvalue::BinaryOp(_, operands) => {
+                let (lhs, rhs) = operands.as_ref();
                 self.scan_operand(lhs);
                 self.scan_operand(rhs);
             }
