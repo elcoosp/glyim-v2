@@ -14,6 +14,9 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
 use glyim_span::Span;
 use glyim_type::*;
+use glyim_core::def_id::TraitDefId;
+use glyim_type::{GenericArg, ParamTy, ImplPolarity};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct TypeckResult {
@@ -103,6 +106,36 @@ pub fn typeck_crate(
         if let Some((body_id, local_def_raw, params, return_ty)) = body_info {
             let local_def_id = LocalDefId::from_raw(local_def_raw);
             let mut pending = Vec::new();
+
+            // Process where clauses for this function
+            if let Some(generic_params) = get_generic_params(&item.kind) {
+                let where_clauses = get_where_clauses(&item.kind);
+                let param_tys = build_param_tys(&mut ctx, generic_params);
+                for wc in where_clauses {
+                    if let Some(ty) = resolve_type_ref_to_ty(&mut ctx, &wc.ty, &param_tys) {
+                        for bound in &wc.bounds {
+                            // Dummy trait id; solver will decide
+                            let trait_def_id = TraitDefId::from_raw(0); // mock
+                            let trait_ref = TraitRef {
+                                def_id: trait_def_id,
+                                substs: ctx.intern_substitution(vec![GenericArg::Ty(ty)]),
+                            };
+                            let trait_pred = TraitPredicate {
+                                trait_ref,
+                                polarity: ImplPolarity::Positive,
+                            };
+                            pending.push(Obligation {
+                                predicate: Predicate::Trait(trait_pred),
+                                cause: ObligationCause {
+                                    span: bound.span,
+                                    code: glyim_solve::ObligationCauseCode::WellFormed,
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+
             let thir_body = check_body::check_function_body(
                 &mut ctx,
                 &mut infer,
@@ -140,6 +173,69 @@ pub fn typeck_crate(
     };
 
     (frozen_ctx, result)
+}
+
+
+// ---- Where clause helpers (pub(crate) for testing) ----
+pub(crate) fn get_generic_params(kind: &glyim_hir::ItemKind) -> Option<&[glyim_hir::GenericParam]> {
+    use glyim_hir::ItemKind;
+    match kind {
+        ItemKind::Fn(f) => Some(&f.generic_params),
+        ItemKind::Trait(t) => Some(&t.generic_params),
+        ItemKind::Impl(i) => Some(&i.generic_params),
+        ItemKind::Struct(s) => Some(&s.generic_params),
+        ItemKind::Enum(e) => Some(&e.generic_params),
+        ItemKind::TypeAlias(a) => Some(&a.generic_params),
+        _ => None,
+    }
+}
+
+pub(crate) fn get_where_clauses(kind: &glyim_hir::ItemKind) -> &[glyim_hir::where_clause::WhereClause] {
+    use glyim_hir::ItemKind;
+    match kind {
+        ItemKind::Fn(f) => &f.where_clauses,
+        ItemKind::Trait(t) => &t.where_clauses,
+        ItemKind::Impl(i) => &i.where_clauses,
+        _ => &[],
+    }
+}
+
+pub(crate) fn build_param_tys(ctx: &mut TyCtxMut, params: &[glyim_hir::GenericParam]) -> HashMap<glyim_core::interner::Name, Ty> {
+    let mut map = HashMap::new();
+    for (i, param) in params.iter().enumerate() {
+        let pt = ParamTy { index: i as u32, name: param.name };
+        let ty = ctx.mk_ty(TyKind::Param(pt));
+        map.insert(param.name, ty);
+    }
+    map
+}
+
+pub(crate) fn resolve_type_ref_to_ty(
+    ctx: &mut TyCtxMut,
+    ty_ref: &glyim_hir::TypeRef,
+    param_map: &HashMap<glyim_core::interner::Name, Ty>,
+) -> Option<Ty> {
+    use glyim_hir::TypeRef;
+    match ty_ref {
+        TypeRef::Path(path) => {
+            if let Some(name) = path.as_name() {
+                if let Some(&ty) = param_map.get(&name) {
+                    Some(ty)
+                } else {
+                    // Unknown type – create error
+                    Some(ctx.mk_ty(TyKind::Error))
+                }
+            } else {
+                // Multi-segment path not supported yet
+                tracing::warn!("STUB: multi-segment path in where clause not resolved");
+                Some(ctx.mk_ty(TyKind::Error))
+            }
+        }
+        _ => {
+            tracing::warn!("STUB: non-path type in where clause not resolved");
+            Some(ctx.mk_ty(TyKind::Error))
+        }
+    }
 }
 
 #[cfg(test)]
