@@ -56,6 +56,13 @@ pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFla
                 }
             }
         }
+        TyKind::Projection(proj) => {
+            for arg in ctx.substitution_args(proj.trait_ref.substs) {
+                if let GenericArg::Ty(t) = arg {
+                    flags |= ctx.ty_flags(*t);
+                }
+            }
+        }
         TyKind::FnPtr(sig) => {
             for arg in ctx.substitution_args(sig.inputs) {
                 if let GenericArg::Ty(t) = arg {

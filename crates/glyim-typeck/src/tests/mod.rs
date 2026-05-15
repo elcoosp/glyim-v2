@@ -20,3 +20,8 @@ mod test_utils;
 mod thir_body;
 mod tuple_index;
 mod while_loop;
+mod projection_typeck;
+Setting up glyim-typeck test module
+mod projection_typeck;
+mod harness_tests;
+mod harness_tests;

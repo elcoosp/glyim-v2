@@ -50,6 +50,13 @@ glyim_core::define_idx!(FieldIdx);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UniverseIndex(pub u32);
 
+/// Represents a projection type like `<T as Iterator>::Item`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ProjectionTy {
+    pub trait_ref: crate::predicate::TraitRef,
+    pub item_name: Name,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TyKind {
     Never,
@@ -72,6 +79,7 @@ pub enum TyKind {
     Tuple(Substitution),
     Dynamic(Binder<Box<[Predicate]>>, Region),
     Opaque(OpaqueTyId, Substitution),
+    Projection(ProjectionTy),
     Param(ParamTy),
     Bound(u32, BoundTy),
     Error,
