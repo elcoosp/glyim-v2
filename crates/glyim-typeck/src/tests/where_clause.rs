@@ -1,7 +1,7 @@
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::LocalDefId;
+use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::{BinOp, IntTy, Mutability, Safety, Abi, UintTy};
+use glyim_core::primitives::{IntTy, Mutability};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_hir::where_clause::*;
@@ -11,6 +11,7 @@ use glyim_type::*;
 use glyim_typeck::*;
 use glyim_typeck::thir::Body as ThirBody;
 use glyim_test::{assert_has_errors, assert_no_errors, assert_diag_contains};
+use glyim_def_map::*;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -18,9 +19,22 @@ use glyim_test::{assert_has_errors, assert_no_errors, assert_diag_contains};
 
 fn dummy_span() -> Span { Span::DUMMY }
 
+/// Build a minimal empty CrateDefMap for tests that don't need name resolution
+fn empty_def_map() -> CrateDefMap {
+    let inter = Interner::new();
+    let modules = IndexVec::new();
+    CrateDefMap {
+        root: ModuleId::from_raw(0),
+        modules,
+        krate: CrateId::from_raw(0),
+        interner: inter,
+    }
+}
+
 /// Build a minimal CrateHir with one function item.
 fn build_simple_hir(
     inter: &mut Interner,
+    generic_params: Vec<GenericParam>,
     params: Vec<Param>,
     ret_ty: Option<TypeRef>,
     body_exprs: Vec<Expr>,
@@ -54,7 +68,7 @@ fn build_simple_hir(
             body: Some(body_id),
             is_unsafe: false,
             is_async: false,
-            generic_params: Vec::new(),
+            generic_params,
             where_clauses,
         }),
         visibility: Visibility::Public,
@@ -92,6 +106,15 @@ impl TraitSolver for RejectSolver {
     }
 }
 
+// Helper to create a generic type param `T` at index 0
+fn ty_param(inter: &mut Interner, name: &str) -> GenericParam {
+    GenericParam {
+        name: inter.intern(name),
+        kind: GenericParamKind::Type { default: None },
+        span: dummy_span(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // V02-T01: Function with `where T: Clone` → compiles if T implements Clone
 // ---------------------------------------------------------------------------
@@ -101,6 +124,7 @@ fn t01_fn_where_clone_satisfied() {
     let name_clone = inter.intern("Clone");
     let name_t = inter.intern("T");
 
+    let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
     let body_exprs = vec![
@@ -119,6 +143,7 @@ fn t01_fn_where_clone_satisfied() {
 
     let (hir, _body_id) = build_simple_hir(
         &mut inter,
+        generic_params,
         vec![param],
         Some(t_ty),
         body_exprs,
@@ -127,7 +152,8 @@ fn t01_fn_where_clone_satisfied() {
 
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
-    let (_tcx, result) = typeck_crate(ctx, &glyim_def_map::CrateDefMap::empty_for_test(), &hir, &mut solver);
+    let def_map = empty_def_map();
+    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_no_errors(&result.diagnostics);
 }
 
@@ -136,19 +162,17 @@ fn t01_fn_where_clone_satisfied() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t02_supertrait_impl_satisfies_both() {
-    // This test will rely on where clause processing of supertrait bounds.
-    // For now, we simulate a function with a where clause that requires the supertrait
-    // and a concrete type known to satisfy both. Using ApproveSolver it passes.
     let mut inter = Interner::new();
     let name_clone = inter.intern("Clone");
     let name_copy = inter.intern("Copy");
     let name_t = inter.intern("T");
 
+    let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
 
-    // where T: Copy (super) and T: Clone (implied by Copy)
+    // where T: Copy, Clone
     let wc = WhereClause {
         ty: t_ty.clone(),
         bounds: vec![
@@ -160,6 +184,7 @@ fn t02_supertrait_impl_satisfies_both() {
 
     let (hir, _) = build_simple_hir(
         &mut inter,
+        generic_params,
         vec![param],
         Some(t_ty),
         body_exprs,
@@ -168,7 +193,8 @@ fn t02_supertrait_impl_satisfies_both() {
 
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
-    let (_tcx, result) = typeck_crate(ctx, &glyim_def_map::CrateDefMap::empty_for_test(), &hir, &mut solver);
+    let def_map = empty_def_map();
+    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_no_errors(&result.diagnostics);
 }
 
@@ -182,6 +208,7 @@ fn t04_multiple_where_bounds() {
     let name_debug = inter.intern("Debug");
     let name_t = inter.intern("T");
 
+    let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
@@ -197,6 +224,7 @@ fn t04_multiple_where_bounds() {
 
     let (hir, _) = build_simple_hir(
         &mut inter,
+        generic_params,
         vec![param],
         Some(t_ty),
         body_exprs,
@@ -205,7 +233,8 @@ fn t04_multiple_where_bounds() {
 
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
-    let (_tcx, result) = typeck_crate(ctx, &glyim_def_map::CrateDefMap::empty_for_test(), &hir, &mut solver);
+    let def_map = empty_def_map();
+    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_no_errors(&result.diagnostics);
 }
 
@@ -214,11 +243,11 @@ fn t04_multiple_where_bounds() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t06_missing_supertrait_error() {
-    // We'll create a where clause requiring `T: Clone`, but the solver will reject it.
     let mut inter = Interner::new();
     let name_clone = inter.intern("Clone");
     let name_t = inter.intern("T");
 
+    let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
@@ -231,6 +260,7 @@ fn t06_missing_supertrait_error() {
 
     let (hir, _) = build_simple_hir(
         &mut inter,
+        generic_params,
         vec![param],
         Some(t_ty),
         body_exprs,
@@ -239,7 +269,8 @@ fn t06_missing_supertrait_error() {
 
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = RejectSolver;
-    let (_tcx, result) = typeck_crate(ctx, &glyim_def_map::CrateDefMap::empty_for_test(), &hir, &mut solver);
+    let def_map = empty_def_map();
+    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_has_errors(&result.diagnostics);
 }
 
@@ -252,9 +283,10 @@ fn t07_where_bound_not_satisfied_error() {
     let name_copy = inter.intern("Copy");
     let name_t = inter.intern("T");
 
+    let generic_params = vec![ty_param(&mut inter, "T")];
     let t_ty = TypeRef::Path(Path::from_single(name_t));
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
-    let body_exprs = vec![Expr::Literal(Literal::Int(1, Some(IntTy::I32)))]; // need something
+    let body_exprs = vec![Expr::Literal(Literal::Int(1, Some(IntTy::I32)))];
 
     let wc = WhereClause {
         ty: t_ty.clone(),
@@ -264,6 +296,7 @@ fn t07_where_bound_not_satisfied_error() {
 
     let (hir, _) = build_simple_hir(
         &mut inter,
+        generic_params,
         vec![param],
         Some(t_ty),
         body_exprs,
@@ -272,7 +305,8 @@ fn t07_where_bound_not_satisfied_error() {
 
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = RejectSolver;
-    let (_tcx, result) = typeck_crate(ctx, &glyim_def_map::CrateDefMap::empty_for_test(), &hir, &mut solver);
+    let def_map = empty_def_map();
+    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_has_errors(&result.diagnostics);
     assert_diag_contains(&result.diagnostics, "trait bound");
 }
