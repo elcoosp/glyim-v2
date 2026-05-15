@@ -3,7 +3,6 @@ use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::Interner;
 use glyim_core::primitives::IntTy;
 use glyim_core::Visibility;
-use glyim_core::Visibility;
 use glyim_hir::*;
 use glyim_hir::where_clause::*;
 use glyim_solve::{TraitSolver, SolverResult};
@@ -147,7 +146,7 @@ fn t01_fn_where_clone_satisfied() {
         vec![wc],
     );
 
-    let mut ctx = TyCtxMut::new(inter.clone());
+    let ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
     let def_map = empty_def_map();
     let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
@@ -187,7 +186,7 @@ fn t02_supertrait_impl_satisfies_both() {
         vec![wc],
     );
 
-    let mut ctx = TyCtxMut::new(inter.clone());
+    let ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
     let def_map = empty_def_map();
     let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
@@ -227,7 +226,7 @@ fn t04_multiple_where_bounds() {
         vec![wc],
     );
 
-    let mut ctx = TyCtxMut::new(inter.clone());
+    let ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
     let def_map = empty_def_map();
     let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
@@ -263,7 +262,7 @@ fn t06_missing_supertrait_error() {
         vec![wc],
     );
 
-    let mut ctx = TyCtxMut::new(inter.clone());
+    let ctx = TyCtxMut::new(inter.clone());
     let mut solver = RejectSolver;
     let def_map = empty_def_map();
     let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
@@ -299,7 +298,7 @@ fn t07_where_bound_not_satisfied_error() {
         vec![wc],
     );
 
-    let mut ctx = TyCtxMut::new(inter.clone());
+    let ctx = TyCtxMut::new(inter.clone());
     let mut solver = RejectSolver;
     let def_map = empty_def_map();
     let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
