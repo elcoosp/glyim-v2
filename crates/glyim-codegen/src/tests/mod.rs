@@ -1,9 +1,8 @@
 mod aggregate;
 mod binary_ops;
 mod cast;
+mod comprehensive;
 mod discriminant_len;
+mod existing;
 mod terminators;
 mod unary_ops;
-
-// Re-export existing tests moved from lib.rs
-mod existing;
