@@ -4,7 +4,7 @@ use glyim_core::primitives::IntTy;
 use glyim_test::{with_fresh_ty_ctx};
 
 use crate::{
-    GenericArg, ProjectionTy, TraitRef, TyCtxMut,
+    GenericArg, ProjectionTy, TraitRef, TyCtx, TyCtxMut,
     TyKind, TypeFlags, InferVar, TyVar,
 };
 
@@ -35,6 +35,7 @@ fn projection_type_construction() {
         let self_ty = ctx.bool_ty();
         make_projection(ctx, trait_id, self_ty, "Item")
     });
+    let _: &TyCtx = &ctx; // help inference
     assert!(!ctx.ty_is_error(proj_ty));
     let kind = ctx.ty_kind(proj_ty);
     assert!(matches!(kind, TyKind::Projection(_)));
@@ -47,6 +48,7 @@ fn projection_type_flags() {
         let self_ty = ctx.bool_ty();
         make_projection(ctx, trait_id, self_ty, "Item")
     });
+    let _: &TyCtx = &ctx;
     let flags = ctx.ty_flags(proj_ty);
     assert!(!flags.contains(TypeFlags::HAS_TY_INFER));
     assert!(!flags.contains(TypeFlags::HAS_TY_PARAM));
@@ -59,6 +61,7 @@ fn projection_type_flags_with_infer() {
         let infer_var = ctx.mk_ty(TyKind::Infer(InferVar::Ty(TyVar::from_raw(0))));
         make_projection(ctx, trait_id, infer_var, "Item")
     });
+    let _: &TyCtx = &ctx;
     let flags = ctx.ty_flags(proj_ty);
     assert!(flags.contains(TypeFlags::HAS_TY_INFER));
 }
@@ -71,6 +74,7 @@ fn projection_display() {
         let self_ty = ctx.bool_ty();
         make_projection(ctx, trait_id, self_ty, "Item")
     });
+    let _: &TyCtx = &ctx;
     let display = format!("{}", PrintTy::new(proj_ty, &ctx));
     assert!(display.contains("bool"));
     assert!(display.contains("Trait0"));
