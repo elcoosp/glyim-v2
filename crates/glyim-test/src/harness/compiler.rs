@@ -58,7 +58,8 @@ impl TestCompiler for PipelineCompiler {
         let path = PathBuf::from(format!("test_{}.g", file_id.to_raw()));
         db.vfs().add_file_content(&path, Arc::from(source));
 
-        match glyim_pipeline::Pipeline::compile_file(&mut db, &path, &*self.backend) {
+        let output_path = std::path::Path::new("test_output.o");
+        match glyim_pipeline::Pipeline::compile_file(&mut db, &path, &*self.backend, output_path) {
             Ok(()) => CompileOutput {
                 diagnostics: Vec::new(),
                 syntax_tree: None,
