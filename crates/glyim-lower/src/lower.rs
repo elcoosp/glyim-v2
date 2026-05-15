@@ -316,7 +316,7 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::FnRef(_) => {
                 let (def_id, substs) = match self._ctx.ty_ctx().ty_kind(expr.ty) {
-                    TyKind::FnDef(def_id, substs) => (*def_id, substs.clone()),
+                    TyKind::FnDef(def_id, substs) => (*def_id, *substs),
                     _ => {
                         tracing::warn!("STUB: FnRef with non-FnDef type, emitting Error constant");
                         return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
@@ -484,15 +484,17 @@ impl<'a> MirBuilder<'a> {
                 let _adt_def = self._ctx.adt_def(adt_id);
                 let _variant = &_adt_def.variants[0];
                 // For now, emit diagnostic and return error
-                let err_msg = format!("field `{:?}` resolution not implemented (need HIR access)", field);
-                self.diagnostics.push(GlyimDiagnostic::type_error(expr.span, err_msg));
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
-                    glyim_mir::MirConst {
-                        kind: glyim_mir::MirConstKind::Error,
-                        ty: *field_ty,
-                        span: expr.span,
-                    },
-                ))
+                let err_msg = format!(
+                    "field `{:?}` resolution not implemented (need HIR access)",
+                    field
+                );
+                self.diagnostics
+                    .push(GlyimDiagnostic::type_error(expr.span, err_msg));
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Error,
+                    ty: *field_ty,
+                    span: expr.span,
+                }))
             }
             thir::ExprKind::Index { base, index } => {
                 let base_place = self.lower_expr_to_place(base);
