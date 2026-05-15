@@ -41,6 +41,7 @@ pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, glyim_hir::BodyId) {
             is_unsafe: false,
             is_async: false,
             generic_params: Vec::new(),
+            where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
         span: glyim_span::Span::DUMMY,

@@ -1,17 +1,14 @@
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
-use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::{IntTy, Mutability};
-use glyim_diag::GlyimDiagnostic;
+use glyim_core::def_id::{CrateId, LocalDefId};
+use glyim_core::interner::Interner;
+use glyim_core::primitives::IntTy;
 use glyim_hir::*;
 use glyim_hir::where_clause::*;
-use glyim_solve::{InferenceTable, Obligation, ObligationCauseCode, TraitSolver, SolverResult, TraitPredicate, Predicate, TraitContext};
+use glyim_solve::{TraitSolver, SolverResult};
 use glyim_span::Span;
 use glyim_type::*;
-use glyim_typeck::*;
-use glyim_typeck::thir::Body as ThirBody;
-use glyim_test::{assert_has_errors, assert_no_errors, assert_diag_contains};
 use glyim_def_map::*;
+use glyim_test::{assert_has_errors, assert_no_errors, assert_diag_contains};
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -57,7 +54,7 @@ fn build_simple_hir(
         params: Vec::new(),
         span: dummy_span(),
     };
-    let body_id = BodyId::from_raw(hir.bodies.push(body));
+    let body_id = hir.bodies.push(body);
 
     let item = Item {
         id: ItemId::from_raw(0),
@@ -76,7 +73,6 @@ fn build_simple_hir(
     };
     hir.items.push(item);
 
-    // body owners
     let mut owners = IndexVec::new();
     owners.push(LocalDefId::from_raw(0));
     hir.body_owners = owners;
@@ -128,10 +124,9 @@ fn t01_fn_where_clone_satisfied() {
     let t_ty = TypeRef::Path(Path::from_single(name_t));
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
     let body_exprs = vec![
-        Expr::Path(Path::from_single(name_t)), // just return T
+        Expr::Path(Path::from_single(name_t)),
     ];
 
-    // where T: Clone
     let wc = WhereClause {
         ty: t_ty.clone(),
         bounds: vec![TraitBound {
@@ -153,7 +148,7 @@ fn t01_fn_where_clone_satisfied() {
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
     let def_map = empty_def_map();
-    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_no_errors(&result.diagnostics);
 }
 
@@ -172,7 +167,6 @@ fn t02_supertrait_impl_satisfies_both() {
     let param = Param { name: name_t, ty: Some(t_ty.clone()), span: dummy_span() };
     let body_exprs = vec![Expr::Path(Path::from_single(name_t))];
 
-    // where T: Copy, Clone
     let wc = WhereClause {
         ty: t_ty.clone(),
         bounds: vec![
@@ -194,7 +188,7 @@ fn t02_supertrait_impl_satisfies_both() {
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
     let def_map = empty_def_map();
-    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_no_errors(&result.diagnostics);
 }
 
@@ -234,7 +228,7 @@ fn t04_multiple_where_bounds() {
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = ApproveSolver;
     let def_map = empty_def_map();
-    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_no_errors(&result.diagnostics);
 }
 
@@ -270,7 +264,7 @@ fn t06_missing_supertrait_error() {
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = RejectSolver;
     let def_map = empty_def_map();
-    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_has_errors(&result.diagnostics);
 }
 
@@ -306,7 +300,7 @@ fn t07_where_bound_not_satisfied_error() {
     let mut ctx = TyCtxMut::new(inter.clone());
     let mut solver = RejectSolver;
     let def_map = empty_def_map();
-    let (_tcx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_has_errors(&result.diagnostics);
     assert_diag_contains(&result.diagnostics, "trait bound");
 }
