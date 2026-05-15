@@ -62,6 +62,9 @@ fn make_body_with_call(owner: LocalDefId, callee_name: Name) -> Body {
         func: callee_path_id,
         args: vec![],
     });
+    let _ret_id = exprs.push(Expr::Return {
+        value: Some(call_id),
+    });
     Body {
         owner,
         exprs,
