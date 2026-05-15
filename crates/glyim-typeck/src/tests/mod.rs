@@ -19,4 +19,5 @@ mod struct_field;
 mod test_utils;
 mod thir_body;
 mod tuple_index;
+mod where_clause;
 mod while_loop;
