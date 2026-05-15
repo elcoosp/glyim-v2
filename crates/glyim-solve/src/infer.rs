@@ -579,6 +579,47 @@ impl InferenceTable {
                 }
                 Ok(constraints)
             }
+            (TyKind::Projection(proj_a), TyKind::Projection(proj_b)) => {
+                if proj_a.trait_ref.def_id != proj_b.trait_ref.def_id
+                    || proj_a.item_name != proj_b.item_name
+                {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "mismatched types: {} vs {}",
+                            PrintTy::new(a, ctx),
+                            PrintTy::new(b, ctx)
+                        ),
+                    )]);
+                }
+                let args_a = ctx.substitution_args(proj_a.trait_ref.substs);
+                let args_b = ctx.substitution_args(proj_b.trait_ref.substs);
+                if args_a.len() != args_b.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched type argument counts in projection".to_string(),
+                    )]);
+                }
+                let pairs: Vec<(Ty, Ty)> = args_a
+                    .iter()
+                    .zip(args_b.iter())
+                    .filter_map(|(ga, gb)| match (ga, gb) {
+                        (GenericArg::Ty(ta), GenericArg::Ty(tb)) => Some((*ta, *tb)),
+                        _ => None,
+                    })
+                    .collect();
+                if pairs.len() != args_a.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        "mismatched generic argument kinds in projection".to_string(),
+                    )]);
+                }
+                let mut constraints = Vec::new();
+                for (ta, tb) in pairs {
+                    constraints.extend(self.unify_tys(ctx, ta, tb, span)?);
+                }
+                Ok(constraints)
+            }
             (_a_k, _b_k) => Err(vec![GlyimDiagnostic::type_error(
                 span,
                 format!(
