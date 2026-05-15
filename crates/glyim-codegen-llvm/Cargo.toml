@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+glyim-layout = { workspace = true }
 tracing = { workspace = true }
 glyim-codegen = { workspace = true }
 glyim-diag = { workspace = true }

@@ -1,26 +1,33 @@
 use glyim_codegen::CodegenBackend;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
+use glyim_core::Interner;
 use glyim_diag::{CompResult, GlyimDiagnostic};
+use glyim_layout::{LayoutComputer, PassMode};
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
     Statement, StatementKind, Terminator, TerminatorKind,
 };
-use glyim_type::Ty;
+use glyim_type::TyCtx;
+use glyim_type::{Ty, TyKind};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use inkwell::types::BasicType;
-use inkwell::values::{BasicValue, BasicValueEnum, IntValue, PointerValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
+mod abi;
 
 pub struct LlvmBackend {
     context: Context,
     target_triple: String,
+    ty_ctx: Option<TyCtx>,
+    target_info: TargetInfo,
 }
 
 impl Default for LlvmBackend {
@@ -32,18 +39,46 @@ impl Default for LlvmBackend {
 impl LlvmBackend {
     pub fn new() -> Self {
         Target::initialize_all(&InitializationConfig::default());
+        let default_ctx = glyim_type::TyCtxMut::new(Interner::default()).freeze();
+        let target_info = TargetInfo::default(); // x86_64
         Self {
             context: Context::create(),
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            ty_ctx: Some(default_ctx),
+            target_info,
         }
     }
 
     pub fn with_target(target_triple: impl Into<String>) -> Self {
         Target::initialize_all(&InitializationConfig::default());
+        let default_ctx = glyim_type::TyCtxMut::new(Interner::default()).freeze();
+        let triple = target_triple.into();
+        let target_info = TargetInfo::default();
         Self {
             context: Context::create(),
-            target_triple: target_triple.into(),
+            target_triple: triple,
+            ty_ctx: Some(default_ctx),
+            target_info,
         }
+    }
+
+    pub fn with_ty_ctx(mut self, ctx: TyCtx) -> Self {
+        self.ty_ctx = Some(ctx);
+        self
+    }
+
+    /// For testing: lower a body and return the LLVM module
+    #[allow(dead_code)]
+    pub(crate) fn lower_body_to_module<'ctx>(
+        &'ctx self,
+        context: &'ctx inkwell::context::Context,
+        body: &Body,
+    ) -> CompResult<inkwell::module::Module<'ctx>> {
+        let module = context.create_module("test_module");
+        let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
+        module.set_triple(&triple);
+        self.lower_body(context, &module, body)?;
+        Ok(module)
     }
 }
 
@@ -143,7 +178,8 @@ struct LoweringCtx<'ctx, 'a> {
     builder: Builder<'ctx>,
     _function: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
-    _target_info: TargetInfo,
+    target_info: TargetInfo,
+    ty_ctx: &'a TyCtx,
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
 }
@@ -155,16 +191,48 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn llvm_type_for_ty(&self, ty: Ty) -> inkwell::types::BasicTypeEnum<'ctx> {
-        match ty.to_raw() {
-            0 => {
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::Error => {
                 tracing::warn!("STUB: error Ty maps to i64");
                 self.llvm_int_type(64).into()
             }
-            1 => self.context.struct_type(&[], false).into(),
-            2 => self.context.struct_type(&[], false).into(),
-            3 => self.llvm_int_type(1).into(),
+            TyKind::Never | TyKind::Unit => self.context.struct_type(&[], false).into(),
+            TyKind::Bool => self.llvm_int_type(1).into(),
+            TyKind::Int(it) => {
+                let bw = it.bit_width(&self.target_info);
+                self.llvm_int_type(bw).into()
+            }
+            TyKind::Uint(ut) => {
+                let bw = ut.bit_width(&self.target_info);
+                self.llvm_int_type(bw).into()
+            }
+            TyKind::Float(ft) => {
+                let bw = ft.bit_width();
+                match bw {
+                    32 => self.context.f32_type().into(),
+                    64 => self.context.f64_type().into(),
+                    _ => {
+                        tracing::warn!("STUB: unknown float width {}", bw);
+                        self.llvm_int_type(bw).into()
+                    }
+                }
+            }
+            TyKind::Char => self.llvm_int_type(32).into(),
+            TyKind::Ref(..) | TyKind::RawPtr(..) => {
+                self.context.ptr_type(AddressSpace::default()).into()
+            }
+            TyKind::FnPtr(_) | TyKind::FnDef(..) => {
+                self.context.ptr_type(AddressSpace::default()).into()
+            }
+            TyKind::Tuple(_) | TyKind::Array(..) | TyKind::Slice(_) => {
+                tracing::warn!("STUB: aggregate type lowered as opaque pointer");
+                self.context.ptr_type(AddressSpace::default()).into()
+            }
             _ => {
-                tracing::warn!("STUB: unknown Ty {} maps to i64", ty.to_raw());
+                tracing::warn!(
+                    "STUB: unknown TyKind {:?} maps to i64",
+                    self.ty_ctx.ty_kind(ty)
+                );
                 self.llvm_int_type(64).into()
             }
         }
@@ -633,79 +701,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
         array_val.as_basic_value_enum()
     }
-}
 
-impl LlvmBackend {
-    fn lower_body<'ctx>(
-        &'ctx self,
-        context: &'ctx Context,
-        module: &Module<'ctx>,
-        body: &Body,
-    ) -> CompResult<()> {
-        let fn_name = format!(
-            "func_{}_{}",
-            body.owner.krate.to_raw(),
-            body.owner.local_id.to_raw()
-        );
-
-        let void_type = context.void_type();
-        let fn_type = void_type.fn_type(&[], false);
-        let function = module.add_function(&fn_name, fn_type, None);
-        let entry_block = context.append_basic_block(function, "entry");
-        let builder = context.create_builder();
-        builder.position_at_end(entry_block);
-
-        let mut bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>> =
-            HashMap::new();
-        bb_map.insert(BasicBlockIdx::from_raw(0), entry_block);
-
-        for (bb_idx, _bb_data) in body.basic_blocks.iter_enumerated() {
-            if bb_idx != BasicBlockIdx::from_raw(0) {
-                let bb_name = format!("bb_{}", bb_idx.index());
-                let llvm_bb = context.append_basic_block(function, &bb_name);
-                bb_map.insert(bb_idx, llvm_bb);
-            }
-        }
-
-        let target_info = TargetInfo::default();
-
-        let num_locals = body.locals.len();
-        let mut locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>> =
-            IndexVec::with_capacity(num_locals);
-        for _ in 0..num_locals {
-            locals.push(None);
-        }
-
-        let mut lowering_ctx = LoweringCtx {
-            context,
-            builder,
-            _function: function,
-            body,
-            _target_info: target_info,
-            locals,
-            bb_map,
-        };
-
-        for (local_idx, _local_decl) in body.locals.iter_enumerated() {
-            lowering_ctx.alloc_local(local_idx);
-        }
-
-        for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
-            let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
-            lowering_ctx.builder.position_at_end(*llvm_bb);
-
-            for stmt in &bb_data.statements {
-                lowering_ctx.lower_statement(stmt)?;
-            }
-
-            lowering_ctx.lower_terminator(&bb_data.terminator)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
@@ -782,11 +778,23 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         ))]
                     })?;
             }
-            TerminatorKind::Call { .. } => {
-                tracing::warn!("STUB: Call terminator not yet implemented");
+            TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                target,
+                cleanup,
+            } => {
+                self.lower_call(func, args, destination, target, cleanup)?;
             }
             TerminatorKind::Assert { .. } => {
                 tracing::warn!("STUB: Assert terminator not yet implemented");
+                self.builder.build_unreachable().map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build unreachable for Assert: {:?}",
+                        e
+                    ))]
+                })?;
             }
             TerminatorKind::Drop {
                 place: _,
@@ -805,6 +813,302 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     })?;
             }
         }
+        Ok(())
+    }
+
+    fn get_fn_sig_from_operand(&self, func: &Operand) -> CompResult<glyim_type::FnSig> {
+        let place = match func {
+            Operand::Copy(p) | Operand::Move(p) => p,
+            Operand::Constant(_) => {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "function pointer constant not supported yet",
+                )]);
+            }
+        };
+        let ty = self.body.locals[place.local].ty;
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::FnPtr(sig) => Ok(sig.clone()),
+            _ => Err(vec![GlyimDiagnostic::internal_error(
+                "expected function pointer type for call operand",
+            )]),
+        }
+    }
+
+    fn lower_call(
+        &mut self,
+        func: &Operand,
+        args: &[Operand],
+        destination: &Place,
+        target: &Option<BasicBlockIdx>,
+        cleanup: &Option<BasicBlockIdx>,
+    ) -> CompResult<()> {
+        let fn_sig = self.get_fn_sig_from_operand(func)?;
+        let layout_computer =
+            crate::abi::FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+        let fn_abi = layout_computer.fn_abi_of(&fn_sig).map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "Layout error: {:?}",
+                e
+            ))]
+        })?;
+
+        let mut param_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = Vec::new();
+        let is_sret = matches!(fn_abi.ret.mode, PassMode::Indirect { .. });
+
+        if is_sret {
+            let sret_ptr_ty = self.context.ptr_type(AddressSpace::default()).into();
+            param_types.push(sret_ptr_ty);
+        }
+
+        for arg_abi in &fn_abi.args {
+            let llvm_ty = match arg_abi.mode {
+                PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
+                PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
+                PassMode::Ignore => continue,
+            };
+            param_types.push(llvm_ty);
+        }
+
+        let ret_type: Option<inkwell::types::BasicTypeEnum<'ctx>> = if is_sret {
+            None
+        } else {
+            match fn_abi.ret.mode {
+                PassMode::Ignore => None,
+                _ => Some(self.llvm_type_for_ty(fn_abi.ret.ty)),
+            }
+        };
+
+        let metadata_param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> =
+            param_types.iter().map(|ty| (*ty).into()).collect();
+        let fn_type = if let Some(ret) = ret_type {
+            ret.fn_type(&metadata_param_types, fn_sig.c_variadic)
+        } else {
+            self.context
+                .void_type()
+                .fn_type(&metadata_param_types, fn_sig.c_variadic)
+        };
+
+        let func_val = self.lower_operand(func).into_pointer_value();
+
+        let mut llvm_args: Vec<inkwell::values::BasicValueEnum<'ctx>> = Vec::new();
+        let mut sret_alloca = None;
+
+        if is_sret {
+            let sret_llvm_ty = self.llvm_type_for_ty(fn_abi.ret.ty);
+            let sret_ptr = self
+                .builder
+                .build_alloca(sret_llvm_ty, "sret")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "alloca sret: {:?}",
+                        e
+                    ))]
+                })?;
+            llvm_args.push(sret_ptr.as_basic_value_enum());
+            sret_alloca = Some(sret_ptr);
+        }
+
+        let mut arg_idx = 0;
+        for arg_abi in &fn_abi.args {
+            if matches!(arg_abi.mode, PassMode::Ignore) {
+                continue;
+            }
+            if arg_idx >= args.len() {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "argument count mismatch",
+                )]);
+            }
+            let arg_op = &args[arg_idx];
+            let arg_val = self.lower_operand(arg_op);
+            match arg_abi.mode {
+                PassMode::Direct => {
+                    llvm_args.push(arg_val);
+                }
+                PassMode::Indirect { .. } => {
+                    let ty = arg_val.get_type();
+                    let tmp_ptr = self.builder.build_alloca(ty, "arg").map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "alloca arg: {:?}",
+                            e
+                        ))]
+                    })?;
+                    self.builder.build_store(tmp_ptr, arg_val).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "store arg: {:?}",
+                            e
+                        ))]
+                    })?;
+                    llvm_args.push(tmp_ptr.as_basic_value_enum());
+                }
+                PassMode::Ignore => unreachable!(),
+            }
+            arg_idx += 1;
+        }
+
+        let metadata_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
+            llvm_args.iter().map(|v| (*v).into()).collect();
+
+        let call = self
+            .builder
+            .build_indirect_call(fn_type, func_val, &metadata_args, "call")
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "build_indirect_call: {:?}",
+                    e
+                ))]
+            })?;
+
+        if is_sret {
+            let sret_attr = self.context.create_enum_attribute(
+                inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
+                0,
+            );
+            call.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
+        }
+
+        if is_sret {
+            let sret_ptr = sret_alloca.unwrap();
+            let sret_ty = self.llvm_type_for_ty(fn_abi.ret.ty);
+            let sret_val = self
+                .builder
+                .build_load(sret_ty, sret_ptr, "sret_load")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "load sret: {:?}",
+                        e
+                    ))]
+                })?;
+            let dest_ptr = self.place_ptr(destination);
+            self.builder.build_store(dest_ptr, sret_val).map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "store sret: {:?}",
+                    e
+                ))]
+            })?;
+        } else if !matches!(fn_abi.ret.mode, PassMode::Ignore) {
+            let ret_val = match call.as_any_value_enum() {
+                AnyValueEnum::IntValue(v) => BasicValueEnum::IntValue(v),
+                AnyValueEnum::FloatValue(v) => BasicValueEnum::FloatValue(v),
+                AnyValueEnum::PointerValue(v) => BasicValueEnum::PointerValue(v),
+                AnyValueEnum::StructValue(v) => BasicValueEnum::StructValue(v),
+                AnyValueEnum::ArrayValue(v) => BasicValueEnum::ArrayValue(v),
+                AnyValueEnum::VectorValue(v) => BasicValueEnum::VectorValue(v),
+                AnyValueEnum::ScalableVectorValue(v) => BasicValueEnum::ScalableVectorValue(v),
+                _ => {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "call returned unexpected value kind",
+                    )])
+                }
+            };
+            let dest_ptr = self.place_ptr(destination);
+            self.builder.build_store(dest_ptr, ret_val).map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "store ret: {:?}",
+                    e
+                ))]
+            })?;
+        }
+
+        if let Some(target_bb) = target {
+            let target_block = self
+                .bb_map
+                .get(target_bb)
+                .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?;
+            self.builder
+                .build_unconditional_branch(*target_block)
+                .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))])?;
+        } else if let Some(cleanup_bb) = cleanup {
+            let cleanup_block = self
+                .bb_map
+                .get(cleanup_bb)
+                .ok_or_else(|| vec![GlyimDiagnostic::internal_error("cleanup block not found")])?;
+            self.builder
+                .build_unconditional_branch(*cleanup_block)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "branch cleanup: {:?}",
+                        e
+                    ))]
+                })?;
+        } else {
+            self.builder.build_unreachable().map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "unreachable: {:?}",
+                    e
+                ))]
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+impl LlvmBackend {
+    fn lower_body<'ctx>(
+        &'ctx self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        body: &Body,
+    ) -> CompResult<()> {
+        let fn_name = format!(
+            "func_{}_{}",
+            body.owner.krate.to_raw(),
+            body.owner.local_id.to_raw()
+        );
+
+        let void_type = context.void_type();
+        let fn_type = void_type.fn_type(&[], false);
+        let function = module.add_function(&fn_name, fn_type, None);
+        let entry_block = context.append_basic_block(function, "entry");
+        let builder = context.create_builder();
+        builder.position_at_end(entry_block);
+
+        let mut bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>> =
+            HashMap::new();
+        bb_map.insert(BasicBlockIdx::from_raw(0), entry_block);
+
+        for (bb_idx, _bb_data) in body.basic_blocks.iter_enumerated() {
+            if bb_idx != BasicBlockIdx::from_raw(0) {
+                let bb_name = format!("bb_{}", bb_idx.index());
+                let llvm_bb = context.append_basic_block(function, &bb_name);
+                bb_map.insert(bb_idx, llvm_bb);
+            }
+        }
+
+        let num_locals = body.locals.len();
+        let mut locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>> =
+            IndexVec::with_capacity(num_locals);
+        for _ in 0..num_locals {
+            locals.push(None);
+        }
+
+        let ty_ctx = self.ty_ctx.as_ref().unwrap();
+        let mut lowering_ctx = LoweringCtx {
+            context,
+            builder,
+            _function: function,
+            body,
+            target_info: self.target_info.clone(),
+            ty_ctx,
+            locals,
+            bb_map,
+        };
+
+        for (local_idx, _local_decl) in body.locals.iter_enumerated() {
+            lowering_ctx.alloc_local(local_idx);
+        }
+
+        for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
+            let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
+            lowering_ctx.builder.position_at_end(*llvm_bb);
+
+            for stmt in &bb_data.statements {
+                lowering_ctx.lower_statement(stmt)?;
+            }
+
+            lowering_ctx.lower_terminator(&bb_data.terminator)?;
+        }
+
         Ok(())
     }
 }
