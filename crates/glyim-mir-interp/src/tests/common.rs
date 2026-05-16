@@ -25,12 +25,12 @@ pub fn build_add_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     let stmt = Statement {
@@ -64,12 +64,12 @@ pub fn build_sub_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     let stmt = Statement {
@@ -248,7 +248,7 @@ pub fn build_allocation_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(val),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {

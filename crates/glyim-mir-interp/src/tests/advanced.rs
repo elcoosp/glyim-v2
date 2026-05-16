@@ -27,12 +27,12 @@ fn build_binop_body(tcx: &mut TyCtxMut, op: BinOp, lhs: i128, rhs: i128) -> Body
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -63,7 +63,7 @@ fn build_unary_body(tcx: &mut TyCtxMut, op: UnOp, operand: i128) -> Body {
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(operand),
-        ty: ty,
+        ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {

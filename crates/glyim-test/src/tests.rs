@@ -965,11 +965,7 @@ fn test_program_runner_nonexistent() {
 
 #[test]
 fn test_program_runner_echo() {
-    let echo_path = if cfg!(target_os = "macos") {
-        "/bin/echo"
-    } else {
-        "/bin/echo"
-    };
+    let echo_path = "/bin/echo";
     let runner = harness::runner::ProgramRunner::new(echo_path).arg("hello world");
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);
@@ -979,11 +975,7 @@ fn test_program_runner_echo() {
 
 #[test]
 fn test_program_runner_false() {
-    let false_path = if cfg!(target_os = "macos") {
-        "/usr/bin/false"
-    } else {
-        "/bin/false"
-    };
+    let false_path = if cfg!(target_os = "macos") { "/usr/bin/false" } else { "/bin/false" };
     let runner = harness::runner::ProgramRunner::new(false_path);
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);
@@ -992,11 +984,7 @@ fn test_program_runner_false() {
 
 #[test]
 fn test_program_runner_with_stdin() {
-    let cat_path = if cfg!(target_os = "macos") {
-        "/bin/cat"
-    } else {
-        "/bin/cat"
-    };
+    let cat_path = "/bin/cat";
     let runner = harness::runner::ProgramRunner::new(cat_path).stdin("input data");
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);
