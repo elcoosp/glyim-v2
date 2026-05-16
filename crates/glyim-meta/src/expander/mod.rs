@@ -89,7 +89,6 @@ impl<'a> ExpanderImpl<'a> {
     }
 
     fn parse_macro_def(&mut self, node: &SyntaxNode) -> Option<MacroDef> {
-        let file_id = self.file_id_from_node(node);
         let mut ident_text = None;
         for child in node.children_with_tokens() {
             if child.kind() == SyntaxKind::Ident {
@@ -105,7 +104,6 @@ impl<'a> ExpanderImpl<'a> {
                 arms.push(arm);
             }
         }
-        let range = node.text_range();
         Some(MacroDef { name, arms })
     }
 
@@ -115,8 +113,6 @@ impl<'a> ExpanderImpl<'a> {
         let pattern = self.parse_pattern(&pattern_node)?;
         let expansion_node = children.find(|c| c.kind() == SyntaxKind::TokenTree)?;
         let expansion = self.parse_expansion(&expansion_node);
-        let file_id = self.file_id_from_node(&expansion_node);
-        let range = expansion_node.text_range();
         Some(MacroArm {
             pattern,
             expansion,
@@ -170,24 +166,23 @@ impl<'a> ExpanderImpl<'a> {
                     match child {
                         rowan::NodeOrToken::Node(n) => {
                             // Look for the FnDef's block and process its contents
-                            if n.kind() == SyntaxKind::FnDef {
-                                if let Some(block) =
+                            if n.kind() == SyntaxKind::FnDef
+                                && let Some(block) =
                                     n.children().find(|c| c.kind() == SyntaxKind::Block)
-                                {
-                                    for stmt in block.children_with_tokens() {
-                                        match stmt {
-                                            rowan::NodeOrToken::Node(s) => {
-                                                self.expand_node_recursive(
-                                                    &s,
-                                                    depth + 1,
-                                                    builder,
-                                                    diagnostics,
-                                                );
-                                            }
-                                            rowan::NodeOrToken::Token(t) => {
-                                                let kind = GlyimLang::kind_to_raw(t.kind());
-                                                builder.token(kind, t.text());
-                                            }
+                            {
+                                for stmt in block.children_with_tokens() {
+                                    match stmt {
+                                        rowan::NodeOrToken::Node(s) => {
+                                            self.expand_node_recursive(
+                                                &s,
+                                                depth + 1,
+                                                builder,
+                                                diagnostics,
+                                            );
+                                        }
+                                        rowan::NodeOrToken::Token(t) => {
+                                            let kind = GlyimLang::kind_to_raw(t.kind());
+                                            builder.token(kind, t.text());
                                         }
                                     }
                                 }

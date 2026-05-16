@@ -68,10 +68,8 @@ pub(crate) fn substitute(
                         match rep_kind {
                             RepKind::ZeroOrMore | RepKind::OneOrMore => {
                                 for rep_idx in 0..repetitions {
-                                    if rep_idx > 0 {
-                                        if let Some(ref sep) = separator {
-                                            result.push(sep.clone());
-                                        }
+                                    if rep_idx > 0 && let Some(ref sep) = separator {
+                                        result.push(sep.clone());
                                     }
                                     let rep_bindings =
                                         extract_repetition_bindings(bindings, &var_names, rep_idx);
@@ -121,12 +119,11 @@ fn find_all_metavars(trees: &[TokenTree]) -> Vec<SmolStr> {
     let mut names = Vec::new();
     let mut i = 0;
     while i < trees.len() {
-        if let TokenTree::Token(SyntaxKind::Dollar, _) = &trees[i] {
-            if i + 1 < trees.len() {
-                if let TokenTree::Token(SyntaxKind::Ident, name) = &trees[i + 1] {
-                    names.push(name.clone());
-                }
-            }
+        if let TokenTree::Token(SyntaxKind::Dollar, _) = &trees[i]
+            && i + 1 < trees.len()
+            && let TokenTree::Token(SyntaxKind::Ident, name) = &trees[i + 1]
+        {
+            names.push(name.clone());
         }
         i += 1;
     }
@@ -140,10 +137,10 @@ fn extract_repetition_bindings(
 ) -> HashMap<SmolStr, Vec<TokenTree>> {
     let mut result = HashMap::new();
     for name in var_names {
-        if let Some(tokens) = bindings.get(name) {
-            if index < tokens.len() {
-                result.insert(name.clone(), vec![tokens[index].clone()]);
-            }
+        if let Some(tokens) = bindings.get(name)
+            && index < tokens.len()
+        {
+            result.insert(name.clone(), vec![tokens[index].clone()]);
         }
     }
     result

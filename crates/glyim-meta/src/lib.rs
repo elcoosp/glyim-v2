@@ -72,7 +72,7 @@ impl<'a> Expander<'a> {
             &self.interner,
             0,
         );
-        let expanded = green_opt.map(|g| SyntaxNode::new_root(g));
+        let expanded = green_opt.map(SyntaxNode::new_root);
         ExpansionResult {
             expanded,
             diagnostics: diags,

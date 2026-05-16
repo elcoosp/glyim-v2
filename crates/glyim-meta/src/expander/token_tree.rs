@@ -43,15 +43,14 @@ pub(crate) fn collect_token_trees(node: &glyim_syntax::SyntaxNode) -> Vec<TokenT
                             Some(rowan::NodeOrToken::Token(open)),
                             Some(rowan::NodeOrToken::Token(close)),
                         ) = (first, last)
+                            && is_open_delim(open.kind()) && is_close_delim(close.kind())
                         {
-                            if is_open_delim(open.kind()) && is_close_delim(close.kind()) {
-                                let inner = collect_token_trees(&n);
-                                let inner_len = inner.len().saturating_sub(2);
-                                let inner: Vec<_> =
-                                    inner.into_iter().skip(1).take(inner_len).collect();
-                                trees.push(TokenTree::Group(open.kind(), inner, close.kind()));
-                                continue;
-                            }
+                            let inner = collect_token_trees(&n);
+                            let inner_len = inner.len().saturating_sub(2);
+                            let inner: Vec<_> =
+                                inner.into_iter().skip(1).take(inner_len).collect();
+                            trees.push(TokenTree::Group(open.kind(), inner, close.kind()));
+                            continue;
                         }
                         trees.extend(collect_token_trees(&n));
                     }

@@ -48,6 +48,7 @@ pub(crate) struct Pattern {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum MatchResult {
     FullMatch(HashMap<SmolStr, Vec<TokenTree>>),
     PartialMatch,
