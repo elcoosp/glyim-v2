@@ -249,7 +249,7 @@ fn multi_arg_substitution() {
 
     ctx.collect(&[item_a.clone(), item_b, item_c], &|_def_id, _substs| {
         dummy_body()
-    });
+    }, &|_ty| dummy_body());
 
     // subst_a and subst_c are the same, so only 2 items
     assert_eq!(

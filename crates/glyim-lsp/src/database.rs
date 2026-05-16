@@ -1,13 +1,14 @@
+use crate::reference_graph::ReferenceGraph;
+use crate::symbol_index::SymbolIndex;
 use glyim_span::FileId;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use parking_lot::RwLock;
-use crate::symbol_index::SymbolIndex;
-use crate::reference_graph::ReferenceGraph;
 
 #[derive(Clone)]
 pub struct SourceMap {
+    #[allow(unused)]
     path: PathBuf,
     file_id: FileId,
     content: String,
@@ -19,14 +20,33 @@ impl SourceMap {
         let line_starts = std::iter::once(0)
             .chain(content.match_indices('\n').map(|(i, _)| i + 1))
             .collect();
-        Self { path, file_id, content, line_starts }
+        Self {
+            path,
+            file_id,
+            content,
+            line_starts,
+        }
     }
-    pub fn file_id(&self) -> FileId { self.file_id }
-    pub fn source(&self) -> &str { &self.content }
-    pub fn span_to_position(&self, lo: usize, hi: usize) -> Option<((usize, usize), (usize, usize))> {
-        let start_line = self.line_starts.binary_search(&lo).unwrap_or_else(|i| i - 1);
+    pub fn file_id(&self) -> FileId {
+        self.file_id
+    }
+    pub fn source(&self) -> &str {
+        &self.content
+    }
+    pub fn span_to_position(
+        &self,
+        lo: usize,
+        hi: usize,
+    ) -> Option<((usize, usize), (usize, usize))> {
+        let start_line = self
+            .line_starts
+            .binary_search(&lo)
+            .unwrap_or_else(|i| i - 1);
         let start_col = lo - self.line_starts[start_line];
-        let end_line = self.line_starts.binary_search(&hi).unwrap_or_else(|i| i - 1);
+        let end_line = self
+            .line_starts
+            .binary_search(&hi)
+            .unwrap_or_else(|i| i - 1);
         let end_col = hi - self.line_starts[end_line];
         Some(((start_line, start_col), (end_line, end_col)))
     }
@@ -50,12 +70,18 @@ pub struct FileMap {
 }
 
 impl Default for FileMap {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FileMap {
     pub fn new() -> Self {
-        Self { path_to_id: HashMap::new(), id_to_path: HashMap::new(), next_id: 0 }
+        Self {
+            path_to_id: HashMap::new(),
+            id_to_path: HashMap::new(),
+            next_id: 0,
+        }
     }
     pub fn get_or_create(&mut self, path: &PathBuf) -> FileId {
         if let Some(id) = self.path_to_id.get(path) {
@@ -91,7 +117,9 @@ pub struct AnalysisDatabase {
 }
 
 impl Default for AnalysisDatabase {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AnalysisDatabase {

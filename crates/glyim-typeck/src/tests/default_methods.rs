@@ -30,11 +30,11 @@ fn make_return_42_body(owner: LocalDefId) -> Body {
     let _ret_id = exprs.push(ret_expr);
     Body {
         owner,
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
     }
 }
 
@@ -48,11 +48,11 @@ fn make_return_99_body(owner: LocalDefId) -> Body {
     let _ret_id = exprs.push(ret_expr);
     Body {
         owner,
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     }
 }
 
@@ -69,11 +69,11 @@ fn make_body_with_call(owner: LocalDefId, callee_name: Name) -> Body {
     });
     Body {
         owner,
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     }
 }
 

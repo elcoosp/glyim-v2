@@ -57,11 +57,11 @@ fn obligation_fulfilled() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);

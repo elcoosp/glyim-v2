@@ -21,11 +21,11 @@ fn multiple_functions() {
         exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
         Body {
             owner: LocalDefId::from_raw(0),
-            exprs,
+            exprs: exprs.clone(),
             pats: IndexVec::new(),
             params: vec![],
             span: Span::DUMMY,
-            expr_spans: IndexVec::new(),
+            expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
         }
     };
 
@@ -115,11 +115,11 @@ fn multiple_params() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats,
         params: vec![x_pat, y_pat],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -191,11 +191,11 @@ fn binary_multiply() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -252,11 +252,11 @@ fn binary_comparison() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -314,11 +314,11 @@ fn if_expression() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -375,11 +375,11 @@ fn block_expression() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -432,11 +432,11 @@ fn unresolved_variable() {
 
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs,
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);

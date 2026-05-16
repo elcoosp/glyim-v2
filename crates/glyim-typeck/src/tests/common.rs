@@ -5,6 +5,7 @@ use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_hir::*;
 use glyim_solve::InferenceTable;
+use glyim_span::Span;
 use glyim_type::*;
 
 /// Helper: create a minimal CrateHir with one function body containing the given expressions.
@@ -23,11 +24,11 @@ pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, glyim_hir::BodyId) {
     }
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs: body_exprs,
+        exprs: body_exprs.clone(),
         pats: glyim_core::arena::IndexVec::new(),
         params: Vec::new(),
         span: glyim_span::Span::DUMMY,
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; body_exprs.len()]),
     };
     let body_id = hir.bodies.push(body);
     hir.body_owners.push(LocalDefId::from_raw(0));

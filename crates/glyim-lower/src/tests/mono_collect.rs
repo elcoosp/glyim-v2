@@ -353,6 +353,7 @@ fn call_graph_adds_callee() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 2, "should have both main and foo items");
@@ -387,6 +388,7 @@ fn recursive_function_no_duplicates() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -418,6 +420,7 @@ fn drop_glue_collected() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert!(
@@ -448,6 +451,7 @@ fn constant_in_generic_instantiated() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert!(ctx.item_count() >= 1, "main function should be collected");
@@ -574,6 +578,7 @@ fn diamond_dependency_dedup() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -624,6 +629,7 @@ fn transitive_call_chain() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -664,6 +670,7 @@ fn different_substitutions_both_collected() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert!(
@@ -692,6 +699,7 @@ fn static_item_collected() {
     ctx.collect(
         &[MonoItem::Static { def_id: static_id }],
         &|def_id, _substs| Arc::new(Body::dummy(def_id)),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 1, "static should be collected");
@@ -778,6 +786,7 @@ fn multiple_constants_in_body() {
             substs: empty_substs,
         }],
         &make_body_lookup(vec![(main_id, empty_substs, Arc::new(main_body))], vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 3, "should collect main + 2 constants");
@@ -894,6 +903,7 @@ fn mixed_calls_and_constants() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -934,6 +944,7 @@ fn leaf_function_only_self() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -973,6 +984,7 @@ fn multiple_start_items() {
             },
         ],
         &make_body_lookup(fn_bodies, vec![]),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -1008,6 +1020,7 @@ fn transitive_constant_collection() {
             substs: empty_substs,
         }],
         &make_body_lookup(fn_bodies, const_bodies),
+        &|_ty| dummy_body(),
     );
 
     // Should collect: fn, const_a, const_b (transitive)

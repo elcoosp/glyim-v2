@@ -45,20 +45,17 @@ fn build_simple_hir(
         bodies: IndexVec::new(),
         body_owners: IndexVec::new(),
     };
-
+    let mut exprs = IndexVec::new();
+    for e in body_exprs {
+        exprs.push(e);
+    }
     let body = Body {
         owner: LocalDefId::from_raw(0),
-        exprs: {
-            let mut exprs = IndexVec::new();
-            for e in body_exprs {
-                exprs.push(e);
-            }
-            exprs
-        },
+        exprs: exprs.clone(),
         pats: IndexVec::new(),
         params: Vec::new(),
         span: dummy_span(),
-        expr_spans: IndexVec::new(),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     };
     let body_id = hir.bodies.push(body);
 

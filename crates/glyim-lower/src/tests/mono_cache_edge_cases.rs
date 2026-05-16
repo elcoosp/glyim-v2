@@ -82,6 +82,7 @@ fn same_def_id_different_kinds() {
     ctx.collect(
         &[fn_item.clone(), const_item.clone()],
         &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -138,6 +139,7 @@ fn items_data_has_correct_bodies() {
                 body_b_clone.clone()
             }
         },
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 2);
@@ -213,6 +215,7 @@ fn all_duplicates_in_start() {
             item.clone(),
         ],
         &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 1, "10 duplicates should produce 1 item");
@@ -269,6 +272,7 @@ fn empty_vs_nonempty_substitution() {
     ctx.collect(
         &[item_empty.clone(), item_one.clone()],
         &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(
@@ -296,6 +300,7 @@ fn static_vs_fn_same_raw_id() {
     ctx.collect(
         &[fn_item.clone(), static_item.clone()],
         &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 2);

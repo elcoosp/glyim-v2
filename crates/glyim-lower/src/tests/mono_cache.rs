@@ -49,7 +49,7 @@ fn same_instantiation_deduplicated() {
     let mut ctx = MonoCtx::new();
     ctx.collect(&[item.clone(), item.clone()], &|_def_id, _substs| {
         dummy_body()
-    });
+    }, &|_ty| dummy_body());
 
     assert_eq!(ctx.item_count(), 1, "same mono item should be deduplicated");
 }
@@ -302,6 +302,7 @@ fn multiple_items_unique_ids() {
     ctx.collect(
         &[item_fn1.clone(), item_fn2.clone(), item_static.clone()],
         &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
     );
 
     assert_eq!(ctx.item_count(), 3);
