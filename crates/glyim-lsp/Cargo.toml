@@ -1,21 +1,29 @@
 [package]
 name = "glyim-lsp"
-edition.workspace = true
 version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Language Server Protocol implementation for Glyim"
 
 [dependencies]
-async-lsp = { version = "0.1", features = ["tokio"] }
+glyim-db = { path = "../glyim-db" }
+glyim-hir = { path = "../glyim-hir" }
+glyim-diag = { path = "../glyim-diag" }
+glyim-syntax = { path = "../glyim-syntax" }
+glyim-frontend = { path = "../glyim-frontend" }
+glyim-core = { path = "../glyim-core" }
+glyim-span = { path = "../glyim-span" }
+async-lsp = { version = "0.2", features = ["omni-trait", "stdio", "tokio"] }
+lsp-types = "0.95"
 tokio = { version = "1", features = ["full"] }
-url = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+dashmap = "6.1"
+parking_lot = "0.12"
+url = "2.5"
 file_url = "0.3"
-glyim-core = { workspace = true }
-glyim-db = { workspace = true }
-glyim-diag = { workspace = true }
-glyim-span = { workspace = true }
-tracing = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-parking_lot = { workspace = true }
 
 [dev-dependencies]
 glyim-test = { workspace = true }
+tempfile = "3"
