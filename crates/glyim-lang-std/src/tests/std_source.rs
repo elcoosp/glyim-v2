@@ -1,6 +1,6 @@
 //! Tests for std source access.
 
-use crate::{std_modules, std_source, std_source_all, std_module_count};
+use crate::{std_module_count, std_modules, std_source, std_source_all};
 
 #[test]
 fn std_source_returns_all_modules() {
@@ -16,7 +16,10 @@ fn std_source_returns_all_modules() {
 #[test]
 fn std_source_returns_none_for_unknown() {
     assert!(std_source("nonexistent_module").is_none());
-    assert!(std_source("option").is_none(), "core modules should not be in std");
+    assert!(
+        std_source("option").is_none(),
+        "core modules should not be in std"
+    );
     assert!(std_source("").is_none());
 }
 
