@@ -452,7 +452,7 @@ fn check_expr(
         Expr::Field { receiver, field } => {
             let (recv_expr, recv_ty) = check_expr(chk, body, local_var_map, *receiver);
             let field_ty = match chk.ctx.ty_kind(recv_ty) {
-                TyKind::Adt(adt_id, substs) => {
+                TyKind::Adt(adt_id, _substs) => {
                     if let Some(field_idx) = chk.ctx.field_index(*adt_id, *field) {
                         if let Some(def) = chk.ctx.adt_def(*adt_id) {
                             if let Some(field_def) =

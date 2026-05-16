@@ -93,16 +93,17 @@ impl LlvmBackend {
         self
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_opt_level(mut self, level: u8) -> Self {
         self.opt_level = level;
         self
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_opt_for_size(mut self, size: bool) -> Self {
         self.opt_for_size = size;
         self
     }
-
 
     pub(crate) fn run_passes_on_module<'ctx>(
         &self,
@@ -125,7 +126,7 @@ impl LlvmBackend {
             .run_passes(pass_str, target_machine, opts)
             .map_err(|e| format!("Failed to run LLVM passes: {}", e))
     }
-
+    #[allow(dead_code)]
     pub(crate) fn lower_bodies_to_module<'ctx>(
         &'ctx self,
         context: &'ctx inkwell::context::Context,
@@ -138,7 +139,10 @@ impl LlvmBackend {
             self.lower_body(context, &module, body)?;
         }
         let target = inkwell::targets::Target::from_triple(&triple).map_err(|e| {
-            vec![glyim_diag::GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
+            vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
+                "Target error: {}",
+                e
+            ))]
         })?;
         let target_machine = target
             .create_target_machine(
@@ -149,12 +153,15 @@ impl LlvmBackend {
                 inkwell::targets::RelocMode::Default,
                 inkwell::targets::CodeModel::Default,
             )
-            .ok_or_else(|| vec![glyim_diag::GlyimDiagnostic::internal_error("Failed to create target machine")])?;
+            .ok_or_else(|| {
+                vec![glyim_diag::GlyimDiagnostic::internal_error(
+                    "Failed to create target machine",
+                )]
+            })?;
         self.run_passes_on_module(&module, &target_machine)
             .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(e)])?;
         Ok(module)
     }
-
 
     /// For testing: lower a body and return the LLVM module
     #[allow(dead_code)]

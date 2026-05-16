@@ -182,6 +182,21 @@ impl MonoCtx {
     pub fn items(&self) -> &[MonoItemData] {
         self.items.as_slice()
     }
+
+    /// Returns the number of collected mono items.
+    pub fn item_count(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Returns the number of entries in the cache (should equal item_count).
+    pub fn cache_len(&self) -> usize {
+        self.cache.len()
+    }
+
+    /// Look up a mono item in the cache, returning its MonoItemId if found.
+    pub fn lookup(&self, item: &MonoItem) -> Option<MonoItemId> {
+        self.cache.get(item).copied()
+    }
 }
 
 impl Default for MonoCtx {
