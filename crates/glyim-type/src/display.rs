@@ -1,4 +1,5 @@
 use crate::flags::TypeFlags;
+use glyim_core::AdtId;
 use crate::predicate::Predicate;
 use crate::region::{BoundRegionKind, Region};
 use crate::substitution::*;
@@ -13,6 +14,10 @@ pub trait TypeLookup {
     fn substitution_args(&self, sub: Substitution) -> &[GenericArg];
     fn name_str(&self, name: Name) -> &str;
     fn error_ty(&self) -> Ty;
+    /// Returns `true` if the given ADT has interior mutability (contains `UnsafeCell`).
+    fn is_interior_mutable_adt(&self, _adt_id: AdtId) -> bool {
+        false
+    }
 }
 
 const MAX_DISPLAY_DEPTH: u32 = 10;
