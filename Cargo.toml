@@ -33,6 +33,7 @@ members = [
     "crates/glyim-runtime",
     "crates/glyim-test",
     "crates/glyim-lang-core",
+    "crates/glyim-lang-std",
 ]
 
 [workspace.dependencies]
@@ -63,6 +64,7 @@ glyim-lsp             = { path = "crates/glyim-lsp" }
 glyim-runtime         = { path = "crates/glyim-runtime" }
 glyim-test            = { path = "crates/glyim-test" }
 glyim-lang-core       = { path = "crates/glyim-lang-core" }
+glyim-lang-std        = { path = "crates/glyim-lang-std" }
 
 lasso              = "0.7.3"
 tracing            = "0.1.40"
