@@ -290,6 +290,11 @@ impl<'a> Parser<'a> {
         // Body: { arms }
         self.expect(SyntaxKind::LBrace);
         while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+            // Skip separators between arms
+            if matches!(self.current_kind(), SyntaxKind::Comma | SyntaxKind::Semicolon) {
+                self.bump();
+                continue;
+            }
             self.start_node(SyntaxKind::MacroArm);
             // Pattern: token tree (must be parenthesized token tree)
             self.parse_token_tree();
@@ -297,7 +302,8 @@ impl<'a> Parser<'a> {
             // Expansion: token tree (must be braced token tree)
             self.parse_token_tree();
             self.finish_node(); // MacroArm
-            if self.current_kind() == SyntaxKind::Comma {
+            // Consume optional separator
+            if matches!(self.current_kind(), SyntaxKind::Comma | SyntaxKind::Semicolon) {
                 self.bump();
             }
         }
