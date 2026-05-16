@@ -491,7 +491,9 @@ fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef>
             for child in node.children() {
                 if is_type_node(&child) {
                     inner = lower_type_ref(&child, interner);
-                } else if child.kind() == SyntaxKind::LitExpr {
+                } else if child.kind() == SyntaxKind::LitExpr
+                    false
+                {
                     // We can't extract length easily; stub with Error
                     len = Some(ConstRef::Error);
                 }
@@ -939,7 +941,7 @@ fn lower_path_expr(
 
 fn lower_lit_expr(
     node: &SyntaxNode,
-    _interner: &mut Interner,
+    interner: &mut Interner,
     exprs: &mut IndexVec<ExprId, Expr>,
     expr_spans: &mut IndexVec<ExprId, Span>,
 ) -> Option<ExprId> {

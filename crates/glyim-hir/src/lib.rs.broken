@@ -172,8 +172,7 @@ pub struct Param {
 pub struct Field {
     pub name: Name,
     pub ty: TypeRef,
-    pub span: Span,
-}
+    pub span: Span, span: Span }
 
 #[derive(Clone, Debug)]
 pub struct GenericParam {
@@ -196,15 +195,13 @@ pub enum GenericParamKind {
 
 #[derive(Clone, Debug)]
 pub enum TypeRef {
-    Path(Path),
+    Path(Path, Span),
     Fn {
         params: Vec<TypeRef>,
-        ret: Option<Box<TypeRef>>,
-    },
+        ret: Option<Box<TypeRef>>, span: Span },
     Ref {
         inner: Box<TypeRef>,
-        mutability: Mutability,
-    },
+        mutability: Mutability, span: Span },
     Slice(Box<TypeRef>),
     Array {
         inner: Box<TypeRef>,
@@ -218,10 +215,9 @@ pub enum TypeRef {
 
 #[derive(Clone, Debug)]
 pub enum ConstRef {
-    Literal(Literal),
-    Path(Path),
-    Error,
-}
+    Literal(Literal, Span),
+    Path(Path, Span),
+    Error, span: Span }
 
 #[derive(Clone, Debug)]
 pub struct Path {
@@ -261,101 +257,80 @@ pub struct Body {
     pub pats: IndexVec<PatId, Pat>,
     pub params: Vec<PatId>,
     pub span: Span,
-    pub expr_spans: IndexVec<ExprId, Span>,   // Added field
 }
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Missing,
-    Path(Path),
-    Literal(Literal),
+    Missing { span: Span },
+    Path(Path, Span),
+    Literal(Literal, Span),
     Block {
         stmts: Vec<ExprId>,
-        tail: Option<ExprId>,
-    },
+        tail: Option<ExprId>, span: Span },
     If {
         cond: ExprId,
         then_branch: ExprId,
-        else_branch: Option<ExprId>,
-    },
+        else_branch: Option<ExprId>, span: Span },
     While {
         cond: ExprId,
-        body: ExprId,
-    },
+        body: ExprId, span: Span },
     Loop {
-        body: ExprId,
-    },
+        body: ExprId, span: Span },
     For {
         pat: PatId,
         iterable: ExprId,
-        body: ExprId,
-    },
+        body: ExprId, span: Span },
     Match {
         scrutinee: ExprId,
-        arms: Vec<MatchArm>,
-    },
+        arms: Vec<MatchArm>, span: Span },
     Call {
         func: ExprId,
-        args: Vec<ExprId>,
-    },
+        args: Vec<ExprId>, span: Span },
     MethodCall {
         receiver: ExprId,
         method: Name,
-        args: Vec<ExprId>,
-    },
+        args: Vec<ExprId>, span: Span, span: Span },
     Field {
         receiver: ExprId,
-        field: Name,
-    },
+        field: Name, span: Span },
     Index {
         base: ExprId,
-        index: ExprId,
-    },
+        index: ExprId, span: Span },
     Unary {
         op: UnOp,
-        expr: ExprId,
-    },
+        expr: ExprId, span: Span },
     Binary {
         op: BinOp,
         lhs: ExprId,
-        rhs: ExprId,
-    },
+        rhs: ExprId, span: Span },
     Cast {
         expr: ExprId,
-        ty: TypeRef,
-    },
+        ty: TypeRef, span: Span },
     Ref {
         expr: ExprId,
-        mutability: Mutability,
-    },
+        mutability: Mutability, span: Span },
     Assign {
         lhs: ExprId,
-        rhs: ExprId,
-    },
+        rhs: ExprId, span: Span },
     Return {
-        value: Option<ExprId>,
-    },
+        value: Option<ExprId>, span: Span },
     Break {
-        value: Option<ExprId>,
-    },
-    Continue,
+        value: Option<ExprId>, span: Span },
+    Continue { span: Span },
     Closure {
         params: Vec<PatId>,
-        body: ExprId,
-    },
-    Array(Vec<ExprId>),
-    Tuple(Vec<ExprId>),
+        body: ExprId, span: Span },
+    Array(Vec<ExprId>, Span),
+    Tuple(Vec<ExprId>, Span),
     Struct {
         path: Path,
         fields: Vec<(Name, ExprId)>,
-        spread: Option<ExprId>,
-    },
+        spread: Option<ExprId>, span: Span },
     Range {
         start: Option<ExprId>,
         end: Option<ExprId>,
-        inclusive: bool,
-    },
-    Err,
+        inclusive: bool, span: Span },
+    Err { span: Span },
 }
 
 #[derive(Clone, Debug)]
@@ -376,18 +351,16 @@ pub enum Pat {
     Struct {
         path: Path,
         fields: Vec<(Name, PatId)>,
-        rest: bool,
-    },
+        rest: bool, span: Span },
     Tuple(Vec<PatId>),
     Or(Vec<PatId>),
-    Literal(Literal),
+    Literal(Literal, Span),
     Range {
         start: Option<Literal>,
         end: Option<Literal>,
-        inclusive: bool,
-    },
-    Path(Path),
-    Err,
+        inclusive: bool, span: Span },
+    Path(Path, Span),
+    Err { span: Span },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -196,7 +196,7 @@ pub enum GenericParamKind {
 
 #[derive(Clone, Debug)]
 pub enum TypeRef {
-    Path(Path),
+    Path(Path, Span),
     Fn {
         params: Vec<TypeRef>,
         ret: Option<Box<TypeRef>>,
@@ -218,8 +218,8 @@ pub enum TypeRef {
 
 #[derive(Clone, Debug)]
 pub enum ConstRef {
-    Literal(Literal),
-    Path(Path),
+    Literal(Literal, Span),
+    Path(Path, Span),
     Error,
 }
 
@@ -261,14 +261,13 @@ pub struct Body {
     pub pats: IndexVec<PatId, Pat>,
     pub params: Vec<PatId>,
     pub span: Span,
-    pub expr_spans: IndexVec<ExprId, Span>,   // Added field
 }
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Missing,
-    Path(Path),
-    Literal(Literal),
+    Missing { span: Span },
+    Path(Path, Span),
+    Literal(Literal, Span),
     Block {
         stmts: Vec<ExprId>,
         tail: Option<ExprId>,
@@ -338,13 +337,13 @@ pub enum Expr {
     Break {
         value: Option<ExprId>,
     },
-    Continue,
+    Continue { span: Span },
     Closure {
         params: Vec<PatId>,
         body: ExprId,
     },
-    Array(Vec<ExprId>),
-    Tuple(Vec<ExprId>),
+    Array(Vec<ExprId>, Span),
+    Tuple(Vec<ExprId>, Span),
     Struct {
         path: Path,
         fields: Vec<(Name, ExprId)>,
@@ -355,7 +354,7 @@ pub enum Expr {
         end: Option<ExprId>,
         inclusive: bool,
     },
-    Err,
+    Err { span: Span },
 }
 
 #[derive(Clone, Debug)]
@@ -380,14 +379,14 @@ pub enum Pat {
     },
     Tuple(Vec<PatId>),
     Or(Vec<PatId>),
-    Literal(Literal),
+    Literal(Literal, Span),
     Range {
         start: Option<Literal>,
         end: Option<Literal>,
         inclusive: bool,
     },
-    Path(Path),
-    Err,
+    Path(Path, Span),
+    Err { span: Span },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
