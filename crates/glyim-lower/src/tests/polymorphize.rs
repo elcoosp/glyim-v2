@@ -1,0 +1,578 @@
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+use glyim_core::primitives::{IntTy, Mutability, UintTy};
+use glyim_mir::*;
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use glyim_test::test_ty_ctx;
+use glyim_type::*;
+use std::sync::Arc;
+
+use crate::mono::{MonoItem, MonoItemData};
+use crate::polymorphize::*;
+
+fn dummy_span() -> Span {
+    Span::new(FileId::BOGUS, ByteIdx::ZERO, ByteIdx::ZERO, SyntaxContext::ROOT)
+}
+
+fn dummy_source_info() -> SourceInfo {
+    SourceInfo::new(dummy_span())
+}
+
+fn dummy_def_id() -> DefId {
+    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
+}
+
+/// Build a simple MIR body with the given local types.
+/// Local 0 is the return place. The first `arg_count` locals
+/// after the return place are arguments.
+fn build_body(local_tys: Vec<Ty>, arg_count: usize) -> Body {
+    let owner = dummy_def_id();
+    let return_ty = local_tys.first().copied().unwrap_or(Ty::UNIT);
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    for ty in local_tys {
+        locals.push(LocalDecl {
+            ty,
+            mutability: Mutability::Not,
+            source_info: dummy_source_info(),
+        });
+    }
+
+    let entry = BasicBlockData {
+        statements: Vec::new(),
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: dummy_source_info(),
+        },
+        is_cleanup: false,
+    };
+
+    let mut blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    blocks.push(entry);
+
+    Body {
+        owner,
+        basic_blocks: blocks,
+        locals,
+        arg_count,
+        return_ty,
+        span: dummy_span(),
+        var_debug_info: Vec::new(),
+    }
+}
+
+/// Build a body that uses a parameter type in a call operand.
+fn build_body_with_fn_call(callee_def_id: FnDefId, callee_substs: Substitution, return_ty: Ty) -> Body {
+    let owner = dummy_def_id();
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    locals.push(LocalDecl {
+        ty: return_ty,
+        mutability: Mutability::Mut,
+        source_info: dummy_source_info(),
+    });
+    let dest_local = LocalIdx::from_raw(0);
+
+    let func_const = MirConst {
+        kind: MirConstKind::Fn(callee_def_id, callee_substs),
+        ty: Ty::UNIT,
+        span: dummy_span(),
+    };
+    let func_op = Operand::Constant(func_const);
+
+    let next_bb = BasicBlockIdx::from_raw(1);
+    let term = Terminator {
+        kind: TerminatorKind::Call {
+            func: func_op,
+            args: Vec::new(),
+            destination: Place::new(dest_local),
+            target: Some(next_bb),
+            cleanup: None,
+        },
+        source_info: dummy_source_info(),
+    };
+
+    let mut blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: term,
+        is_cleanup: false,
+    });
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: dummy_source_info(),
+        },
+        is_cleanup: false,
+    });
+
+    Body {
+        owner,
+        basic_blocks: blocks,
+        locals,
+        arg_count: 0,
+        return_ty,
+        span: dummy_span(),
+        var_debug_info: Vec::new(),
+    }
+}
+
+/// Build a body that contains a local of a parameter type.
+fn build_body_with_local_of_type(local_ty: Ty) -> Body {
+    let owner = dummy_def_id();
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    // return place
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: dummy_source_info(),
+    });
+    // local of the given type
+    locals.push(LocalDecl {
+        ty: local_ty,
+        mutability: Mutability::Not,
+        source_info: dummy_source_info(),
+    });
+
+    let mut blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: dummy_source_info(),
+        },
+        is_cleanup: false,
+    });
+
+    Body {
+        owner,
+        basic_blocks: blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: dummy_span(),
+        var_debug_info: Vec::new(),
+    }
+}
+
+// ============================================================
+// V31-T01: fn foo<T>(x: i32) where T unused → not monomorphized over T
+// ============================================================
+
+#[test]
+fn t01_unused_type_param_not_monomorphized() {
+    let mut ctx = test_ty_ctx();
+
+    // Build a body where T (ParamTy index 0) does NOT appear
+    // fn foo<T>(x: i32) -> i32 { x }
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    // Substitution has one type parameter T
+    let param_ty = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+
+    let fn_def_id = FnDefId::from_raw(1);
+    let item = MonoItem::Fn { def_id: fn_def_id, substs };
+
+    // Analyze which params are used
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert_eq!(used.len(), 1, "should have one param slot");
+    assert!(!used[0], "T is unused in the body, should be marked false");
+
+    // Compute polymorphized item
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    match &poly_item {
+        MonoItem::Fn { substs: poly_substs, .. } => {
+            let args = ctx.substitution_args(*poly_substs);
+            assert_eq!(args.len(), 1, "polymorphized substs should still have 1 arg");
+            if let GenericArg::Ty(ty) = args[0] {
+                assert!(
+                    matches!(ctx.ty_kind(ty), TyKind::Unit),
+                    "unused param T should be replaced with unit type, got {:?}",
+                    ctx.ty_kind(ty)
+                );
+            } else {
+                panic!("expected Ty generic arg");
+            }
+        }
+        _ => panic!("expected Fn mono item"),
+    }
+
+    // Now test deduplication: two different instantiations of the same unused T
+    // should deduplicate to one item
+    let bool_ty = ctx.bool_ty();
+    let substs_i32 = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let substs_bool = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty)]);
+
+    let item_i32 = MonoItemData {
+        item: MonoItem::Fn { def_id: fn_def_id, substs: substs_i32 },
+        body: Arc::new(body.clone()),
+        symbol: "foo::<i32>".to_string(),
+        source_module: 0,
+    };
+    let item_bool = MonoItemData {
+        item: MonoItem::Fn { def_id: fn_def_id, substs: substs_bool },
+        body: Arc::new(body.clone()),
+        symbol: "foo::<bool>".to_string(),
+        source_module: 0,
+    };
+
+    let deduped = deduplicate(&mut ctx, &[item_i32, item_bool]);
+    assert_eq!(
+        deduped.len(),
+        1,
+        "foo::<i32> and foo::<bool> with unused T should deduplicate to 1 item, got {}",
+        deduped.len()
+    );
+}
+
+// ============================================================
+// V31-T02: fn bar<T>(x: T) where T used → monomorphized
+// ============================================================
+
+#[test]
+fn t02_used_type_param_is_monomorphized() {
+    let mut ctx = test_ty_ctx();
+
+    // Build a body where T (ParamTy index 0) DOES appear as a local type
+    // fn bar<T>(x: T) -> T { x }
+    let param_ty = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let body = build_body_with_local_of_type(param_t);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(2);
+    let item = MonoItem::Fn { def_id: fn_def_id, substs };
+
+    // Analyze which params are used
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert_eq!(used.len(), 1, "should have one param slot");
+    assert!(used[0], "T is used in the body (as a local type), should be marked true");
+
+    // Compute polymorphized item — T is used so substs should remain unchanged
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    match &poly_item {
+        MonoItem::Fn { substs: poly_substs, .. } => {
+            // Since T is used, the substitution should still contain Param(T)
+            let args = ctx.substitution_args(*poly_substs);
+            assert_eq!(args.len(), 1);
+            if let GenericArg::Ty(ty) = args[0] {
+                assert!(
+                    matches!(ctx.ty_kind(ty), TyKind::Param(_)),
+                    "used param T should remain as Param, got {:?}",
+                    ctx.ty_kind(ty)
+                );
+            }
+        }
+        _ => panic!("expected Fn mono item"),
+    }
+
+    // Two different instantiations should NOT deduplicate when T is used
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let bool_ty = ctx.bool_ty();
+    let substs_i32 = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let substs_bool = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty)]);
+
+    let item_i32 = MonoItemData {
+        item: MonoItem::Fn { def_id: fn_def_id, substs: substs_i32 },
+        body: Arc::new(body.clone()),
+        symbol: "bar::<i32>".to_string(),
+        source_module: 0,
+    };
+    let item_bool = MonoItemData {
+        item: MonoItem::Fn { def_id: fn_def_id, substs: substs_bool },
+        body: Arc::new(body.clone()),
+        symbol: "bar::<bool>".to_string(),
+        source_module: 0,
+    };
+
+    let deduped = deduplicate(&mut ctx, &[item_i32, item_bool]);
+    assert_eq!(
+        deduped.len(),
+        2,
+        "bar::<i32> and bar::<bool> with used T should NOT deduplicate, got {} items",
+        deduped.len()
+    );
+}
+
+// ============================================================
+// V31-T03: Polymorphization across multiple calls keeps consistency
+// ============================================================
+
+#[test]
+fn t03_multiple_calls_consistent_deduplication() {
+    let mut ctx = test_ty_ctx();
+
+    // Scenario: a caller function that calls a callee in three different ways
+    // with unused param T. All three should deduplicate to a single item.
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let bool_ty = ctx.bool_ty();
+    let u32_ty = ctx.mk_ty(TyKind::Uint(UintTy::U32));
+
+    // Body where T (ParamTy index 0) is unused
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    let param_ty = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let fn_def_id = FnDefId::from_raw(3);
+
+    let substs_i32 = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let substs_bool = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty)]);
+    let substs_u32 = ctx.intern_substitution(vec![GenericArg::Ty(u32_ty)]);
+
+    let items = vec![
+        MonoItemData {
+            item: MonoItem::Fn { def_id: fn_def_id, substs: substs_i32 },
+            body: Arc::new(body.clone()),
+            symbol: "baz::<i32>".to_string(),
+            source_module: 0,
+        },
+        MonoItemData {
+            item: MonoItem::Fn { def_id: fn_def_id, substs: substs_bool },
+            body: Arc::new(body.clone()),
+            symbol: "baz::<bool>".to_string(),
+            source_module: 0,
+        },
+        MonoItemData {
+            item: MonoItem::Fn { def_id: fn_def_id, substs: substs_u32 },
+            body: Arc::new(body.clone()),
+            symbol: "baz::<u32>".to_string(),
+            source_module: 0,
+        },
+    ];
+
+    let deduped = deduplicate(&mut ctx, &items);
+    assert_eq!(
+        deduped.len(),
+        1,
+        "three instantiations with unused T should deduplicate to 1, got {}",
+        deduped.len()
+    );
+
+    // The surviving item should have unit type for the unused param
+    match &deduped[0].item {
+        MonoItem::Fn { substs, .. } => {
+            let args = ctx.substitution_args(*substs);
+            if let GenericArg::Ty(ty) = args[0] {
+                assert!(
+                    matches!(ctx.ty_kind(ty), TyKind::Unit),
+                    "deduplicated item should have unit type for unused param"
+                );
+            }
+        }
+        _ => panic!("expected Fn item"),
+    }
+}
+
+// ============================================================
+// V31-T04: Correctness with drop glue (T unused but may need drop)
+// ============================================================
+
+#[test]
+fn t04_drop_glue_unused_param_still_deduplicates() {
+    // In rustc's polymorphization, unused type parameters are replaced even
+    // if the type has drop glue. The rationale is that if T doesn't appear
+    // in the body at all, there's nothing of type T to drop. The MonoItem
+    // for drop glue is separate and follows its own instantiation path.
+    //
+    // Our implementation: if T is not referenced in any local, rvalue, or
+    // terminator type, then there is no value of type T in the body, so
+    // drop is irrelevant and polymorphization is safe.
+
+    let mut ctx = test_ty_ctx();
+
+    // fn qux<T>(x: i32) -> i32 { x }  — T is unused
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    let param_ty = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(4);
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(!used[0], "T is unused even considering potential drop glue");
+
+    // Two instantiations with types that have different drop behavior
+    // should still deduplicate since T is unused
+    let string_ty = ctx.mk_ty(TyKind::String);
+    let substs_string = ctx.intern_substitution(vec![GenericArg::Ty(string_ty)]);
+    let substs_i32 = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+
+    let item_string = MonoItemData {
+        item: MonoItem::Fn { def_id: fn_def_id, substs: substs_string },
+        body: Arc::new(body.clone()),
+        symbol: "qux::<String>".to_string(),
+        source_module: 0,
+    };
+    let item_i32 = MonoItemData {
+        item: MonoItem::Fn { def_id: fn_def_id, substs: substs_i32 },
+        body: Arc::new(body.clone()),
+        symbol: "qux::<i32>".to_string(),
+        source_module: 0,
+    };
+
+    let deduped = deduplicate(&mut ctx, &[item_string, item_i32]);
+    assert_eq!(
+        deduped.len(),
+        1,
+        "String and i32 instantiations with unused T should deduplicate (no drop glue for T in body)"
+    );
+}
+
+// ============================================================
+// Additional edge case tests
+// ============================================================
+
+#[test]
+fn empty_substitution_no_polymorphization() {
+    let mut ctx = test_ty_ctx();
+
+    // Non-generic function: empty substitution → no polymorphization
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    let substs = ctx.intern_substitution(Vec::new());
+    let fn_def_id = FnDefId::from_raw(10);
+    let item = MonoItem::Fn { def_id: fn_def_id, substs };
+
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    assert_eq!(poly_item, item, "non-generic item should be unchanged");
+}
+
+#[test]
+fn multiple_params_some_used_some_not() {
+    let mut ctx = test_ty_ctx();
+
+    // fn f<A, B>(x: A) -> A { x }
+    // A is used, B is not
+    let param_a = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_b = ParamTy { index: 1, name: glyim_core::interner::Name::default() };
+    let ty_a = ctx.mk_ty(TyKind::Param(param_a));
+    let ty_b = ctx.mk_ty(TyKind::Param(param_b));
+
+    // Body uses A as a local type but not B
+    let body = build_body_with_local_of_type(ty_a);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(ty_a), GenericArg::Ty(ty_b)]);
+    let fn_def_id = FnDefId::from_raw(11);
+    let item = MonoItem::Fn { def_id: fn_def_id, substs };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "A is used");
+    assert!(!used[1], "B is not used");
+
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    match &poly_item {
+        MonoItem::Fn { substs: poly_substs, .. } => {
+            let args = ctx.substitution_args(*poly_substs);
+            assert_eq!(args.len(), 2);
+            // A should remain as Param
+            if let GenericArg::Ty(ty) = args[0] {
+                assert!(matches!(ctx.ty_kind(ty), TyKind::Param(_)), "A should remain Param");
+            }
+            // B should be replaced with unit
+            if let GenericArg::Ty(ty) = args[1] {
+                assert!(matches!(ctx.ty_kind(ty), TyKind::Unit), "B should be replaced with unit");
+            }
+        }
+        _ => panic!("expected Fn item"),
+    }
+}
+
+#[test]
+fn param_used_via_fn_call_substitution() {
+    let mut ctx = test_ty_ctx();
+
+    // A function body that calls another generic function with T
+    // This means T is used via the Fn const's substitution
+    let param_ty = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let callee_substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let callee_def_id = FnDefId::from_raw(100);
+
+    let body = build_body_with_fn_call(callee_def_id, callee_substs, Ty::UNIT);
+
+    let caller_substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(12);
+    let item = MonoItem::Fn { def_id: fn_def_id, substs: caller_substs };
+
+    let used = analyze_used_params(&body, &ctx, caller_substs);
+    assert!(used[0], "T is used via the callee's substitution in the Fn const");
+}
+
+#[test]
+fn static_item_unchanged_by_polymorphization() {
+    let mut ctx = test_ty_ctx();
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty], 0);
+
+    let static_def_id = glyim_core::def_id::StaticDefId::from_raw(20);
+    let item = MonoItem::Static { def_id: static_def_id };
+
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    assert_eq!(poly_item, item, "static items should be unchanged");
+}
+
+#[test]
+fn deduplicate_preserves_order() {
+    let mut ctx = test_ty_ctx();
+
+    // First item with used param, second with unused param (different functions)
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    // Function with used T
+    let param_ty = ParamTy { index: 0, name: glyim_core::interner::Name::default() };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let body_used = build_body_with_local_of_type(param_t);
+
+    // Function with unused T
+    let body_unused = build_body(vec![i32_ty, i32_ty], 1);
+
+    let substs_i32 = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let substs_bool = ctx.intern_substitution(vec![GenericArg::Ty(ctx.bool_ty())]);
+
+    let fn_def_used = FnDefId::from_raw(30);
+    let fn_def_unused = FnDefId::from_raw(31);
+
+    let items = vec![
+        MonoItemData {
+            item: MonoItem::Fn { def_id: fn_def_used, substs: substs_i32 },
+            body: Arc::new(body_used.clone()),
+            symbol: "used_fn::<i32>".to_string(),
+            source_module: 0,
+        },
+        MonoItemData {
+            item: MonoItem::Fn { def_id: fn_def_unused, substs: substs_i32 },
+            body: Arc::new(body_unused.clone()),
+            symbol: "unused_fn::<i32>".to_string(),
+            source_module: 0,
+        },
+        MonoItemData {
+            item: MonoItem::Fn { def_id: fn_def_unused, substs: substs_bool },
+            body: Arc::new(body_unused.clone()),
+            symbol: "unused_fn::<bool>".to_string(),
+            source_module: 0,
+        },
+    ];
+
+    let deduped = deduplicate(&mut ctx, &items);
+    // used_fn::<i32> → kept (unique)
+    // unused_fn::<i32> → polymorphized to unused_fn::<()>, kept
+    // unused_fn::<bool> → polymorphized to unused_fn::<()>, deduplicated with previous
+    assert_eq!(
+        deduped.len(),
+        2,
+        "should have 2 items: used_fn::<i32> and unused_fn::<()>, got {}",
+        deduped.len()
+    );
+}
