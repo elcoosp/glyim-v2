@@ -1,7 +1,7 @@
 use super::helpers::*;
 use glyim_core::primitives::*;
 use glyim_mir::Rvalue;
-use glyim_type::Ty;
+use glyim_type::{Ty, TyCtxMut};
 
 #[test]
 fn test_and_bool() {
