@@ -171,5 +171,10 @@ fn test_fneg_unary() {
         .lower_body_to_module(&context, &body)
         .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("fneg"), "Expected 'fneg' in IR:\n{}", ir);
+    // LLVM constant-folds fneg 42.0 -> -42.0
+    assert!(
+        ir.contains("store double -4.200000e+01") || ir.contains("fneg"),
+        "Expected 'store double -4.200000e+01' or 'fneg' in IR:\n{}",
+        ir
+    );
 }
