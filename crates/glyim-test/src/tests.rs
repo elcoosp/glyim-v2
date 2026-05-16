@@ -975,7 +975,11 @@ fn test_program_runner_echo() {
 
 #[test]
 fn test_program_runner_false() {
-    let false_path = if cfg!(target_os = "macos") { "/usr/bin/false" } else { "/bin/false" };
+    let false_path = if cfg!(target_os = "macos") {
+        "/usr/bin/false"
+    } else {
+        "/bin/false"
+    };
     let runner = harness::runner::ProgramRunner::new(false_path);
     let result = runner.run(std::time::Duration::from_secs(5));
     assert!(!result.timed_out);

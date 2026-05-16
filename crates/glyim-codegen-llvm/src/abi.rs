@@ -126,7 +126,9 @@ impl LayoutComputer for FullLayoutComputer<'_> {
 }
 
 fn classify_pass_mode(layout: &Layout, ptr_size: Size) -> PassMode {
-    if layout.size.0 > ptr_size.0 * 2 {
+    if layout.size.0 == 0 {
+        PassMode::Ignore
+    } else if layout.size.0 > ptr_size.0 * 2 {
         PassMode::Indirect { meta_attrs: false }
     } else {
         PassMode::Direct

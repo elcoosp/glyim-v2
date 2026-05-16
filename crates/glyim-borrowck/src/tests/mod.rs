@@ -1,7 +1,9 @@
 mod conflicts;
 mod cross_block;
 mod deep_cfg;
+mod drop_check;
 mod edge_cases;
+mod interior_mutability;
 mod loans;
 mod loops;
 mod mir_builder;

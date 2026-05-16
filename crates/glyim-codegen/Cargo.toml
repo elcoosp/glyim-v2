@@ -10,6 +10,8 @@ glyim-core = { workspace = true }
 glyim-type = { workspace = true }
 glyim-diag = { workspace = true }
 
+
 [dev-dependencies]
 glyim-span = { workspace = true }
 glyim-test = { workspace = true }
+glyim-layout = { workspace = true }
