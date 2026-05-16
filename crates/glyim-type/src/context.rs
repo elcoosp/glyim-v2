@@ -1,9 +1,3 @@
-use glyim_core::arena::IndexVec;
-use glyim_core::def_id::AdtId;
-use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::Mutability;
-use std::collections::HashSet;
-
 use crate::auto_trait::*;
 use crate::display::TypeLookup;
 use crate::flags::*;
@@ -12,9 +6,16 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::AdtId;
+use crate::ty::{FieldIdx, RegionVid};
+use glyim_core::interner::{Interner, Name};
+use glyim_core::primitives::Mutability;
+
 use indexmap::IndexSet;
 use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 /// Definition of an ADT (struct or enum) stored in TyCtx.
@@ -53,8 +54,8 @@ pub struct TyCtxMut {
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
-    _not_send_sync: PhantomData<*const ()>,
     adt_defs: HashMap<AdtId, AdtDef>,
+    _not_send_sync: PhantomData<*const ()>,
 }
 
 impl TyCtxMut {
@@ -68,9 +69,10 @@ impl TyCtxMut {
             auto_trait_registry: AutoTraitRegistry::new(),
             adt_reprs: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
-            _not_send_sync: PhantomData,
             adt_defs: HashMap::new(),
+            _not_send_sync: PhantomData,
         };
+        // sentinels
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Error).to_raw(),
             Ty::ERROR.to_raw(),
@@ -173,12 +175,9 @@ impl TyCtxMut {
         self.resolver.resolve(name)
     }
 
-    /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
-                true
-            }
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -186,9 +185,7 @@ impl TyCtxMut {
             TyKind::Array(inner, _) => self.is_copy(*inner),
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg
-                        && !self.is_copy(*t)
-                    {
+                    if let GenericArg::Ty(t) = arg && !self.is_copy(*t) {
                         return false;
                     }
                 }
@@ -215,13 +212,19 @@ impl TyCtxMut {
     }
 
     pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
-        self.auto_trait_registry
-            .register_negative_impl(adt_id, auto_trait);
+        self.auto_trait_registry.register_negative_impl(adt_id, auto_trait);
     }
 
     pub fn register_manual_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
-        self.auto_trait_registry
-            .register_manual_impl(adt_id, auto_trait);
+        self.auto_trait_registry.register_manual_impl(adt_id, auto_trait);
+    }
+
+    pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
+        self.adt_defs.insert(id, def);
+    }
+
+    pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
+        self.adt_defs.get(&id)
     }
 
     pub fn freeze(self) -> TyCtx {
@@ -238,7 +241,6 @@ impl TyCtxMut {
         }
     }
 
-    /// Mark an ADT as containing `UnsafeCell` (interior mutability).
     pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
         self.interior_mutable_adt_ids.insert(adt_id);
     }
@@ -274,7 +276,7 @@ pub struct TyCtx {
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
-    adt_defs: HashMap<AdtId, AdtDef>,
+    pub adt_defs: HashMap<AdtId, AdtDef>,
 }
 
 impl TyCtx {
@@ -302,12 +304,9 @@ impl TyCtx {
         self.resolver.resolve(name)
     }
 
-    /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
-                true
-            }
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -315,9 +314,7 @@ impl TyCtx {
             TyKind::Array(inner, _) => self.is_copy(*inner),
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg
-                        && !self.is_copy(*t)
-                    {
+                    if let GenericArg::Ty(t) = arg && !self.is_copy(*t) {
                         return false;
                     }
                 }
@@ -360,8 +357,7 @@ impl TyCtx {
     }
 
     pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
-        self.auto_trait_registry
-            .has_negative_impl(adt_id, auto_trait)
+        self.auto_trait_registry.has_negative_impl(adt_id, auto_trait)
     }
 
     pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
@@ -379,8 +375,11 @@ impl TyCtx {
             self.error_ty()
         }
     }
-}
 
+    pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
+        self.adt_defs.get(&id)
+    }
+}
 
 impl TypeLookup for TyCtx {
     fn ty_kind(&self, ty: Ty) -> &TyKind {
@@ -434,7 +433,6 @@ mod copy_tests {
     #[test]
     fn test_is_copy_for_tuple_of_copy() {
         let mut ctx = TyCtxMut::new(Interner::new());
-        // Extract values first to avoid multiple mutable borrows
         let bool_ty = ctx.bool_ty();
         let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
         let substs = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty), GenericArg::Ty(i32_ty)]);
@@ -443,12 +441,3 @@ mod copy_tests {
         assert!(ctx.is_copy(tuple_ty));
     }
 }
-    // Inside TyCtxMut struct (after existing fields)
-    pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
-        self.adt_defs.insert(id, def);
-    }
-
-    pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
-        self.adt_defs.get(&id)
-    }
-
