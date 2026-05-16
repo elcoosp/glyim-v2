@@ -30,7 +30,7 @@ fn many_distinct_fn_items() {
         })
         .collect();
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     assert_eq!(
         ctx.item_count(),
@@ -65,7 +65,7 @@ fn many_substitutions_same_fn() {
         })
         .collect();
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     assert_eq!(
         ctx.item_count(),
@@ -106,7 +106,7 @@ fn mixed_item_types() {
         },
     ];
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     assert_eq!(ctx.item_count(), 6, "all 6 mixed items should be collected");
 
@@ -139,7 +139,7 @@ fn incremental_collect() {
             def_id: StaticDefId::from_raw(3),
         },
     ];
-    ctx.collect(&batch1, &|_def_id, _substs| dummy_body());
+    ctx.collect(&batch1, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 3);
 
     // Second batch: 2 new items + 1 duplicate from batch1
@@ -157,7 +157,7 @@ fn incremental_collect() {
             substs: empty_subst,
         },
     ];
-    ctx.collect(&batch2, &|_def_id, _substs| dummy_body());
+    ctx.collect(&batch2, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(
         ctx.item_count(),
         5,
@@ -169,7 +169,7 @@ fn incremental_collect() {
         def_id: FnDefId::from_raw(6),
         substs: empty_subst,
     }];
-    ctx.collect(&batch3, &|_def_id, _substs| dummy_body());
+    ctx.collect(&batch3, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 6);
 }
 
@@ -187,7 +187,7 @@ fn large_overlapping_collect() {
             substs: empty_subst,
         })
         .collect();
-    ctx.collect(&batch1, &|_def_id, _substs| dummy_body());
+    ctx.collect(&batch1, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 30);
 
     // Collect 30 more where half overlap
@@ -197,7 +197,7 @@ fn large_overlapping_collect() {
             substs: empty_subst,
         })
         .collect();
-    ctx.collect(&batch2, &|_def_id, _substs| dummy_body());
+    ctx.collect(&batch2, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(
         ctx.item_count(),
         45,
@@ -209,7 +209,7 @@ fn large_overlapping_collect() {
 #[test]
 fn empty_start_list() {
     let mut ctx = MonoCtx::new();
-    ctx.collect(&[], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 0);
     assert_eq!(ctx.cache_len(), 0);
 }

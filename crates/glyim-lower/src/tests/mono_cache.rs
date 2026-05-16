@@ -75,7 +75,7 @@ fn different_substitutions_distinct() {
     let item_a = make_fn_item(fn_id, subst_a);
     let item_b = make_fn_item(fn_id, subst_b);
 
-    ctx.collect(&[item_a, item_b], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item_a, item_b], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     assert_eq!(
         ctx.item_count(),
@@ -95,11 +95,11 @@ fn cache_survives_across_collects() {
     let mut ctx = MonoCtx::new();
 
     // First collect
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 1);
 
     // Second collect with same item — should not duplicate
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(
         ctx.item_count(),
         1,
@@ -107,7 +107,7 @@ fn cache_survives_across_collects() {
     );
 
     // Third collect with same item — still one
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(
         ctx.item_count(),
         1,
@@ -129,7 +129,7 @@ fn no_duplicate_arc_body() {
     let mut ctx = MonoCtx::new();
 
     // First collect
-    ctx.collect(&[item.clone()], &|_def_id, _substs| body.clone());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| body.clone(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 1);
 
     // Second collect: provide a different body via closure to prove it's not called
@@ -137,7 +137,7 @@ fn no_duplicate_arc_body() {
         CrateId::from_raw(99),
         LocalDefId::from_raw(99),
     )));
-    ctx.collect(&[item.clone()], &|_def_id, _substs| different_body.clone());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| different_body.clone(), &|_ty| dummy_body());
 
     // Should still have only 1 item with the original body
     assert_eq!(
@@ -168,7 +168,7 @@ fn lookup_returns_correct_id() {
         "lookup should return None before collect"
     );
 
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     // After collect, lookup should return Some
     let id = ctx
@@ -191,11 +191,11 @@ fn lookup_across_collects() {
     let mut ctx = MonoCtx::new();
 
     // First collect: item_a
-    ctx.collect(&[item_a.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item_a.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     let id_a = ctx.lookup(&item_a).expect("should find item_a");
 
     // Second collect: item_b
-    ctx.collect(&[item_b.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item_b.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     let id_b = ctx.lookup(&item_b).expect("should find item_b");
 
     // Both lookups should still work after second collect
@@ -214,7 +214,7 @@ fn static_items_cached() {
     let item = make_static_item(static_id);
 
     let mut ctx = MonoCtx::new();
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 1);
 
     let id = ctx.lookup(&item).expect("should find static item");
@@ -230,7 +230,7 @@ fn const_items_cached() {
     let item = make_const_item(const_id, empty_subst);
 
     let mut ctx = MonoCtx::new();
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(ctx.item_count(), 1);
 
     let id = ctx.lookup(&item).expect("should find const item");
@@ -255,7 +255,7 @@ fn hash_consing_within_same_context() {
         let item2 = make_fn_item(fn_id, substs2);
 
         // Identical substitutions -> same MonoItem -> deduplicated
-        mono_ctx.collect(&[item1, item2], &|_def_id, _substs| dummy_body());
+        mono_ctx.collect(&[item1, item2], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
         assert_eq!(
             mono_ctx.item_count(),
             1,
@@ -277,7 +277,7 @@ fn cache_len_matches_item_count() {
     let fn_id = FnDefId::from_raw(1);
     let item = make_fn_item(fn_id, empty_subst);
 
-    ctx.collect(&[item], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
     assert_eq!(
         ctx.cache_len(),
         ctx.item_count(),
@@ -327,10 +327,10 @@ fn root_and_discovered_dedup() {
     let mut ctx = MonoCtx::new();
 
     // Same item as root
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     // Collect again with same item as root (simulates re-discovery)
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
 
     assert_eq!(
         ctx.item_count(),
