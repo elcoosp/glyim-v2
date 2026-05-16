@@ -13,6 +13,7 @@ mod call_struct_args;
 mod call_void_return;
 mod cast_ops;
 mod comparisons;
+mod debug_info;
 mod drop_dealloc;
 mod edge_cases;
 mod float_arith;
