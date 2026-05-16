@@ -4,8 +4,8 @@
 //! codegen path produces the same bodies as serial codegen.
 
 use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
-use glyim_lower::mono::{MonoCtx, MonoItem, MonoItemData};
-use glyim_lower::partition;
+use glyim_lower::mono::{MonoItem, MonoItemData};
+use glyim_lower::partition::partition;
 use glyim_mir::Body;
 use glyim_type::Substitution;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ fn partition_respects_max_cgus() {
             max,
             result.len()
         );
-        let total: usize = result.iter().map(|g| g.len()).sum();
+        let total: usize = result.iter().map(|g: &Vec<usize>| g.len()).sum();
         assert_eq!(total, 10, "all items must be assigned (max={})", max);
     }
 }
@@ -56,7 +56,10 @@ fn partition_respects_max_cgus() {
 fn partition_preserves_all_item_indices() {
     let items = make_items(8, 3);
     let result = partition(&items, 4);
-    let mut all_indices: Vec<usize> = result.iter().flat_map(|g| g.iter().copied()).collect();
+    let mut all_indices: Vec<usize> = result
+        .iter()
+        .flat_map(|g: &Vec<usize>| g.iter().copied())
+        .collect();
     all_indices.sort();
     let expected: Vec<usize> = (0..8).collect();
     assert_eq!(all_indices, expected, "all original indices must be present exactly once");
@@ -67,14 +70,11 @@ fn parallel_cgu_iteration_matches_serial() {
     let items = make_items(12, 4);
     let cgus = partition(&items, 4);
 
-    let mut serial_bodies: Vec<Arc<Body>> = Vec::new();
-    for item in &items {
-        serial_bodies.push(item.body.clone());
-    }
+    let serial_bodies: Vec<Arc<Body>> = items.iter().map(|item| item.body.clone()).collect();
 
     let parallel_bodies: Vec<Arc<Body>> = cgus
         .iter()
-        .flat_map(|cgu_indices| {
+        .flat_map(|cgu_indices: &Vec<usize>| {
             cgu_indices.iter().map(|&idx| items[idx].body.clone())
         })
         .collect();
@@ -95,10 +95,10 @@ fn rayon_parallel_cgu_iteration_succeeds() {
     let items = make_items(20, 5);
     let cgus = partition(&items, 4);
 
-    let results: Vec<Vec<usize>> = cgus
+    let results: Vec<usize> = cgus
         .par_iter()
-        .map(|cgu_indices| {
-            cgu_indices.iter().map(|&idx| items[idx].body.locals.len()).sum::<usize>().into()
+        .map(|cgu_indices: &Vec<usize>| {
+            cgu_indices.iter().map(|&idx| items[idx].body.locals.len()).sum()
         })
         .collect();
 

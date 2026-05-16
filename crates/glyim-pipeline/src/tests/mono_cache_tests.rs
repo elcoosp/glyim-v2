@@ -8,6 +8,7 @@ use glyim_lower::mono::{MonoCtx, MonoItem};
 use glyim_mir::Body;
 use glyim_type::Substitution;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 fn dummy_provider(_def_id: DefId, _substs: &Substitution) -> Arc<Body> {
     Arc::new(Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))))
@@ -66,20 +67,22 @@ fn mono_ctx_cache_prevents_re_entry() {
     };
     let mut ctx = MonoCtx::new();
 
-    let mut call_count = 0u32;
-    let counting_provider = |def_id: DefId, _substs: &Substitution| -> Arc<Body> {
-        call_count += 1;
+    let call_count = Arc::new(AtomicU32::new(0));
+    let call_count_clone = call_count.clone();
+    let counting_provider = move |def_id: DefId, _substs: &Substitution| -> Arc<Body> {
+        call_count_clone.fetch_add(1, Ordering::SeqCst);
         assert_eq!(def_id.local_id.to_raw(), 42, "provider should only be called for def_id 42");
         Arc::new(Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))))
     };
 
     ctx.collect(&[root.clone()], &counting_provider, &dummy_drop_provider);
-    let first_count = call_count;
+    let first_count = call_count.load(Ordering::SeqCst);
     assert!(first_count >= 1, "provider should have been called at least once");
 
     ctx.collect(&[root], &counting_provider, &dummy_drop_provider);
     assert_eq!(
-        call_count, first_count,
+        call_count.load(Ordering::SeqCst),
+        first_count,
         "provider should not be called again for cached item"
     );
 }

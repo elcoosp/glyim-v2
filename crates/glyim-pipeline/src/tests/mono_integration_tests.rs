@@ -6,9 +6,9 @@
 
 use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
 use glyim_lower::mono::{MonoCtx, MonoItem};
-use glyim_lower::partition;
+use glyim_lower::partition::partition;
 use glyim_mir::Body;
-use glyim_type::{Substitution, TyCtx, TyCtxMut};
+use glyim_type::Substitution;
 use std::sync::Arc;
 
 use crate::Pipeline;
@@ -132,7 +132,7 @@ fn partition_groups_by_source_module() {
     ];
     let result = partition(&items, 4);
     assert_eq!(result.len(), 2, "two modules should produce two CGUs");
-    let total: usize = result.iter().map(|g| g.len()).sum();
+    let total: usize = result.iter().map(|g: &Vec<usize>| g.len()).sum();
     assert_eq!(total, 3, "all items should be assigned to a CGU");
 }
 
@@ -154,13 +154,12 @@ fn partition_merges_when_exceeds_max_cgus() {
         "should merge to at most max_cgus=2, got {}",
         result.len()
     );
-    let total: usize = result.iter().map(|g| g.len()).sum();
+    let total: usize = result.iter().map(|g: &Vec<usize>| g.len()).sum();
     assert_eq!(total, 5, "all items should be assigned to a CGU");
 }
 
 #[test]
 fn full_pipeline_produces_mono_items() {
-    use glyim_diag::CompResult;
     use glyim_test::mock::{MockCodegen, TestDbBuilder};
     use std::io::Write;
 
