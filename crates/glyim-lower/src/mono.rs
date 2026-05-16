@@ -166,7 +166,7 @@ impl MonoCtx {
                     self.scan_operand(arg);
                 }
             }
-            TerminatorKind::Drop { place, .. } => {
+            TerminatorKind::Drop { place: _, .. } => {
                 // Enqueue drop glue for the type of the dropped place
                 // In real implementation, we'd get the type from place.ty()
                 // Here we assume the type is available via a context; simplified.
