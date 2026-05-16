@@ -573,8 +573,8 @@ dependencies = [
 name = "glyim-lang-core"
 version = "0.1.0"
 dependencies = [
- "glyim-core",
  "glyim-frontend",
+ "glyim-span",
  "glyim-test",
 ]
 

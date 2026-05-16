@@ -29,9 +29,8 @@ pub fn core_source(name: &str) -> Option<&'static str> {
 /// Returns the names of all core library modules.
 pub fn core_modules() -> &'static [&'static str] {
     &[
-        "option", "result", "iter", "slice", "str", "cell",
-        "mem", "ptr", "ops", "cmp", "marker", "panic",
-        "hint", "convert", "default",
+        "option", "result", "iter", "slice", "str", "cell", "mem", "ptr", "ops", "cmp", "marker",
+        "panic", "hint", "convert", "default",
     ]
 }
 

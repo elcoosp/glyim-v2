@@ -1,6 +1,6 @@
 //! Tests for core source access.
 
-use glyim_lang_core::{core_source, core_modules, core_source_all};
+use crate::{core_modules, core_source, core_source_all};
 
 #[test]
 fn core_source_returns_all_modules() {

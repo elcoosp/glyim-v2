@@ -8,4 +8,4 @@ version.workspace = true
 [dev-dependencies]
 glyim-test = { workspace = true }
 glyim-frontend = { workspace = true }
-glyim-core = { workspace = true }
+glyim-span = { workspace = true }
