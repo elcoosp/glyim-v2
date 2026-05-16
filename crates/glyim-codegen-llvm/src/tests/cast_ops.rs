@@ -15,7 +15,9 @@ fn test_int_to_int_trunc() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     assert!(
         ir.contains("store i32 305419896"),
@@ -35,7 +37,9 @@ fn test_int_to_int_extend() {
     let body = simple_mir_body(i64_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     assert!(
         ir.contains("store i64 42"),
@@ -55,7 +59,9 @@ fn test_int_to_float() {
     let body = simple_mir_body(f64_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     assert!(
         ir.contains("store double") || ir.contains("sitofp"),
@@ -79,7 +85,9 @@ fn test_float_to_int() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     assert!(
         ir.contains("store i32 42"),

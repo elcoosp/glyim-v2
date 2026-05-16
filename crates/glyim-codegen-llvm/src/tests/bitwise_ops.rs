@@ -14,9 +14,15 @@ fn test_bitand_i32() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i32 8"), "Expected 'store i32 8':\n{}", ir);
+    assert!(
+        ir.contains("store i32 8"),
+        "Expected 'store i32 8':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -30,9 +36,15 @@ fn test_bitor_i32() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i32 14"), "Expected 'store i32 14':\n{}", ir);
+    assert!(
+        ir.contains("store i32 14"),
+        "Expected 'store i32 14':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -46,9 +58,15 @@ fn test_bitxor_i32() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i32 6"), "Expected 'store i32 6':\n{}", ir);
+    assert!(
+        ir.contains("store i32 6"),
+        "Expected 'store i32 6':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -62,9 +80,15 @@ fn test_shl_i32() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i32 8"), "Expected 'store i32 8':\n{}", ir);
+    assert!(
+        ir.contains("store i32 8"),
+        "Expected 'store i32 8':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -78,7 +102,13 @@ fn test_shr_i32() {
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i32 4"), "Expected 'store i32 4':\n{}", ir);
+    assert!(
+        ir.contains("store i32 4"),
+        "Expected 'store i32 4':\n{}",
+        ir
+    );
 }

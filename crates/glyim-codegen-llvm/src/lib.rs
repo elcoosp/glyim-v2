@@ -557,28 +557,32 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_int_mul(lhs, rhs, "mul")
                 .expect("mul failed")
                 .into(),
-            BinOp::Div => if is_unsigned {
-                self.builder
-                    .build_int_unsigned_div(lhs, rhs, "udiv")
-                    .expect("udiv failed")
-                    .into()
-            } else {
-                self.builder
-                    .build_int_signed_div(lhs, rhs, "sdiv")
-                    .expect("sdiv failed")
-                    .into()
-            },
-            BinOp::Rem => if is_unsigned {
-                self.builder
-                    .build_int_unsigned_rem(lhs, rhs, "urem")
-                    .expect("urem failed")
-                    .into()
-            } else {
-                self.builder
-                    .build_int_signed_rem(lhs, rhs, "srem")
-                    .expect("srem failed")
-                    .into()
-            },
+            BinOp::Div => {
+                if is_unsigned {
+                    self.builder
+                        .build_int_unsigned_div(lhs, rhs, "udiv")
+                        .expect("udiv failed")
+                        .into()
+                } else {
+                    self.builder
+                        .build_int_signed_div(lhs, rhs, "sdiv")
+                        .expect("sdiv failed")
+                        .into()
+                }
+            }
+            BinOp::Rem => {
+                if is_unsigned {
+                    self.builder
+                        .build_int_unsigned_rem(lhs, rhs, "urem")
+                        .expect("urem failed")
+                        .into()
+                } else {
+                    self.builder
+                        .build_int_signed_rem(lhs, rhs, "srem")
+                        .expect("srem failed")
+                        .into()
+                }
+            }
             BinOp::Eq => self
                 .builder
                 .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "eq")
@@ -673,7 +677,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
-    fn lower_cast(&self, kind: glyim_mir::CastKind, operand: &Operand, target_ty: Ty) -> BasicValueEnum<'ctx> {
+    fn lower_cast(
+        &self,
+        kind: glyim_mir::CastKind,
+        operand: &Operand,
+        target_ty: Ty,
+    ) -> BasicValueEnum<'ctx> {
         let val = self.lower_operand(operand);
         match kind {
             glyim_mir::CastKind::IntToInt => {

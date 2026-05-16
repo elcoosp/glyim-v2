@@ -14,9 +14,15 @@ fn test_eq_i32_true() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -30,9 +36,15 @@ fn test_eq_i32_false() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 false"), "Expected 'store i1 false':\n{}", ir);
+    assert!(
+        ir.contains("store i1 false"),
+        "Expected 'store i1 false':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -46,9 +58,15 @@ fn test_ne_i32() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -62,9 +80,15 @@ fn test_lt_i32() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -78,9 +102,15 @@ fn test_gt_i32() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -94,9 +124,15 @@ fn test_le_i32() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -110,7 +146,13 @@ fn test_ge_i32() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }

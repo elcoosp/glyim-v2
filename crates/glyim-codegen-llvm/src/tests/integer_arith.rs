@@ -15,7 +15,9 @@ fn test_binop_i32(op: BinOp, lhs_val: i64, rhs_val: i64, expected_store_val: i32
     let body = simple_mir_body(i32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     assert!(
         ir.contains(&format!("store i32 {}", expected_store_val)),
@@ -38,7 +40,9 @@ fn test_binop_u32(op: BinOp, lhs_val: u64, rhs_val: u64, expected_store_val: u32
     let body = simple_mir_body(u32_ty, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     assert!(
         ir.contains(&format!("store i32 {}", expected_store_val)),

@@ -13,10 +13,16 @@ fn test_and_bool() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     // LLVM constant-folds true & false = false
-    assert!(ir.contains("store i1 false"), "Expected 'store i1 false':\n{}", ir);
+    assert!(
+        ir.contains("store i1 false"),
+        "Expected 'store i1 false':\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -29,8 +35,14 @@ fn test_or_bool() {
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);
     let context = inkwell::context::Context::create();
-    let module = backend.lower_body_to_module(&context, &body).expect("lowering");
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering");
     let ir = module.print_to_string().to_string();
     // LLVM constant-folds true | false = true
-    assert!(ir.contains("store i1 true"), "Expected 'store i1 true':\n{}", ir);
+    assert!(
+        ir.contains("store i1 true"),
+        "Expected 'store i1 true':\n{}",
+        ir
+    );
 }
