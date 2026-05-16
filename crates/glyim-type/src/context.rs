@@ -379,6 +379,18 @@ impl TyCtx {
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
     }
+
+    /// Returns the index of a field by name for a given ADT.
+    pub fn field_index(&self, adt_id: AdtId, field_name: Name) -> Option<usize> {
+        if let Some(def) = self.adt_defs.get(&adt_id) {
+            for (i, field) in def.fields.iter_enumerated() {
+                if field.name == field_name {
+                    return Some(i.index());
+                }
+            }
+        }
+        None
+    }
 }
 
 impl TypeLookup for TyCtx {
