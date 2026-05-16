@@ -5,7 +5,7 @@ use glyim_type::{Ty, TyCtxMut};
 
 #[test]
 fn test_and_bool() {
-    let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+    let ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let frozen = ctx_mut.freeze();
     let lhs = const_operand_bool(true);
     let rhs = const_operand_bool(false);
@@ -21,7 +21,7 @@ fn test_and_bool() {
 
 #[test]
 fn test_or_bool() {
-    let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+    let ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let frozen = ctx_mut.freeze();
     let lhs = const_operand_bool(true);
     let rhs = const_operand_bool(false);
