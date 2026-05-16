@@ -340,7 +340,16 @@ impl TyCtx {
     pub fn adt_repr(&self, adt_id: AdtId) -> Option<&AdtRepr> {
         self.adt_reprs.get(&adt_id)
     }
+
+    pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
+        if let Some(repr) = self.adt_reprs.get(&adt_id) {
+            repr.field_tys.get(field_idx).copied().unwrap_or_else(|| self.error_ty())
+        } else {
+            self.error_ty()
+        }
+    }
 }
+
 
 impl TypeLookup for TyCtx {
     fn ty_kind(&self, ty: Ty) -> &TyKind {
