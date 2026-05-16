@@ -152,39 +152,6 @@ pub(crate) fn check_function_body(
 fn fresh_infer_ty(chk: &mut CheckCtx) -> Ty {
     let var = chk.infer.new_ty_var(chk.ctx);
     chk.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-
-
-}
-
-fn type_ref_to_ty(ctx: &mut TyCtxMut, ty_ref: &TypeRef, param_map: &std::collections::HashMap<Name, Ty>) -> Ty {
-    match ty_ref {
-        TypeRef::Path(path) => {
-            if let Some(name) = path.as_name() {
-                if let Some(&ty) = param_map.get(&name) {
-                    ty
-                } else {
-                    // Try to resolve primitive type
-                    let name_str = ctx.name_str(name);
-                    match name_str {
-                        "i32" => ctx.mk_ty(TyKind::Int(IntTy::I32)),
-                        "i64" => ctx.mk_ty(TyKind::Int(IntTy::I64)),
-                        "u32" => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
-                        "bool" => ctx.bool_ty(),
-                        "char" => ctx.mk_ty(TyKind::Char),
-                        "()" | "unit" => ctx.unit_ty(),
-                        _ => ctx.error_ty(),
-                    }
-                }
-            } else {
-                ctx.error_ty()
-            }
-        }
-        TypeRef::Ref { inner, mutability } => {
-            let inner_ty = type_ref_to_ty(ctx, inner, param_map);
-            ctx.mk_ref(Region::Erased, inner_ty, *mutability)
-        }
-        _ => ctx.error_ty()
-    }
 }
 
 fn check_expr(
@@ -484,7 +451,7 @@ fn check_expr(
             // FIXME: method calls not implemented
             unimplemented!("method calls not implemented");
         }
-                                                Expr::Field { receiver, field } => {
+        Expr::Field { receiver, field } => {
             let (recv_expr, _recv_ty) = check_expr(chk, body, local_var_map, *receiver);
             let field_ty = fresh_infer_ty(chk);
             (
@@ -499,7 +466,8 @@ fn check_expr(
                 },
                 field_ty,
             )
-        }Expr::Index { base, index } => {
+        }
+        Expr::Index { base, index } => {
             let (base_expr, _) = check_expr(chk, body, local_var_map, *base);
             let (idx_expr, _) = check_expr(chk, body, local_var_map, *index);
             let elem_ty = fresh_infer_ty(chk);

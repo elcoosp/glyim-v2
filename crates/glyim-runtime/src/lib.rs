@@ -52,13 +52,6 @@ pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) 
 /// - The value will be dropped and its memory potentially deallocated.
 /// - `ptr` must not be used after this call.
 #[unsafe(no_mangle)]
-/// Drops a value in place by calling its destructor.
-/// The pointer `ptr` must point to a valid, aligned value of the expected type.
-/// The caller (compiler) must ensure that the value is properly dropped.
-/// This implementation currently logs the drop but does not actually run
-/// destructors. A full implementation would use the vtable stored in fat
-/// pointers or generate drop glue per type.
-#[unsafe(no_mangle)]
 pub extern "C" fn glyim_drop_in_place(ptr: *mut u8) {
     if !ptr.is_null() {
         // In a full implementation, we would call the type‑specific destructor.
