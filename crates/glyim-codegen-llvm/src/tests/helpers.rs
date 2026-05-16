@@ -40,8 +40,7 @@ pub(crate) fn simple_mir_body(dest_ty: Ty, rvalue: Rvalue) -> Body {
     }
 }
 
-pub(crate) fn const_operand_i32(val: i64, ctx: &TyCtx) -> Operand {
-    let i32_ty = ctx.mk_ty_from_kind(TyKind::Int(IntTy::I32));
+pub(crate) fn const_operand_i32(val: i64, i32_ty: Ty) -> Operand {
     Operand::Constant(MirConst {
         kind: MirConstKind::Int(val as i128),
         ty: i32_ty,
@@ -49,8 +48,7 @@ pub(crate) fn const_operand_i32(val: i64, ctx: &TyCtx) -> Operand {
     })
 }
 
-pub(crate) fn const_operand_u32(val: u64, ctx: &TyCtx) -> Operand {
-    let u32_ty = ctx.mk_ty_from_kind(TyKind::Uint(UintTy::U32));
+pub(crate) fn const_operand_u32(val: u64, u32_ty: Ty) -> Operand {
     Operand::Constant(MirConst {
         kind: MirConstKind::Uint(val as u128),
         ty: u32_ty,
