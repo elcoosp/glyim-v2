@@ -141,6 +141,7 @@ fn test_lto_across_cgus() {
     let context = Context::create();
     let module = backend.lower_bodies_to_module(&context, &bodies).expect("LTO lowering failed");
     assert!(module.get_functions().count() >= 2, "Expected at least 2 functions after LTO");
+}
 
 #[test]
 fn test_o1_runs_pass_pipeline() {
@@ -208,11 +209,11 @@ fn test_multiple_bodies_pass_together() {
 #[test]
 fn test_empty_body_passes_without_error() {
     let (ctx, _) = make_ty_ctx();
-    let owner = glyim_core::DefId::new(
-        glyim_core::CrateId::from_raw(1),
-        glyim_core::LocalDefId::from_raw(100),
+    let owner = DefId::new(
+        CrateId::from_raw(1),
+        LocalDefId::from_raw(100),
     );
-    let empty_body = Arc::new(glyim_mir::Body::dummy(owner));
+    let empty_body = Arc::new(Body::dummy(owner));
     let backend = LlvmBackend::new()
         .with_ty_ctx(ctx)
         .with_opt_level(2);
@@ -230,10 +231,7 @@ fn test_verify_module_after_optimization() {
     let body = Arc::new(simple_body_with_local(int_ty));
     let context = Context::create();
     let module = backend.lower_bodies_to_module(&context, &[body]).expect("lowering failed");
-    // LLVM module verifier
     if let Err(msg) = module.verify() {
         panic!("Module verification failed after passes: {}", msg);
     }
-}
-
 }
