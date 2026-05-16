@@ -313,3 +313,15 @@ impl Extend<GlyimDiagnostic> for DiagSink {
         }
     }
 }
+
+/// Macro to mark unimplemented features with a clear compile error.
+/// Use this instead of `tracing::warn!("STUB: ...")` + silent fallback.
+#[macro_export]
+macro_rules! stub {
+    ($msg:expr) => {
+        compile_error!(concat!("STUB: ", $msg, " - Implementation required before v0.2.0"))
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        compile_error!(&format!(concat!("STUB: ", $fmt), $($arg)*))
+    };
+}
