@@ -6,7 +6,7 @@ use glyim_mir::{
     Place, Rvalue, SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtx, TyKind};
+use glyim_type::Ty;
 
 pub(crate) fn simple_mir_body(dest_ty: Ty, rvalue: Rvalue) -> Body {
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -57,10 +57,9 @@ pub(crate) fn const_operand_u32(val: u64, u32_ty: Ty) -> Operand {
 }
 
 pub(crate) fn const_operand_bool(val: bool) -> Operand {
-    let bool_ty = Ty::BOOL;
     Operand::Constant(MirConst {
         kind: MirConstKind::Bool(val),
-        ty: bool_ty,
+        ty: Ty::BOOL,
         span: Span::DUMMY,
     })
 }
