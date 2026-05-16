@@ -25,13 +25,6 @@ impl TokenTree {
         }
     }
 
-    pub(crate) fn is_ident(&self) -> bool {
-        matches!(self, TokenTree::Token(SyntaxKind::Ident, _))
-    }
-
-    pub(crate) fn is_keyword(&self, kw: SyntaxKind) -> bool {
-        matches!(self, TokenTree::Token(k, _) if *k == kw)
-    }
 }
 
 /// Parse a syntax node subtree into a flat vector of TokenTrees.

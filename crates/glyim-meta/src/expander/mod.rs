@@ -20,14 +20,12 @@ const MAX_RECURSION_DEPTH: u32 = 128;
 pub(crate) struct MacroArm {
     pattern: Pattern,
     expansion: Vec<TokenTree>,
-    expansion_span: Span,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct MacroDef {
     pub(crate) name: Name,
     arms: Vec<MacroArm>,
-    span: Span,
 }
 
 pub(crate) fn expand_crate(
@@ -90,10 +88,6 @@ impl<'a> ExpanderImpl<'a> {
         }
     }
 
-    pub(crate) fn register_external_macro(&mut self, def: MacroDef) {
-        self.macros.insert(def.name, def);
-    }
-
     fn parse_macro_def(&mut self, node: &SyntaxNode) -> Option<MacroDef> {
         let file_id = self.file_id_from_node(node);
         let mut ident_text = None;
@@ -112,13 +106,7 @@ impl<'a> ExpanderImpl<'a> {
             }
         }
         let range = node.text_range();
-        let span = Span::new(
-            file_id,
-            ByteIdx::from_raw(range.start().into()),
-            ByteIdx::from_raw(range.end().into()),
-            SyntaxContext::ROOT,
-        );
-        Some(MacroDef { name, arms, span })
+        Some(MacroDef { name, arms })
     }
 
     fn parse_macro_arm(&self, node: &SyntaxNode) -> Option<MacroArm> {
@@ -129,16 +117,9 @@ impl<'a> ExpanderImpl<'a> {
         let expansion = self.parse_expansion(&expansion_node);
         let file_id = self.file_id_from_node(&expansion_node);
         let range = expansion_node.text_range();
-        let expansion_span = Span::new(
-            file_id,
-            ByteIdx::from_raw(range.start().into()),
-            ByteIdx::from_raw(range.end().into()),
-            SyntaxContext::ROOT,
-        );
         Some(MacroArm {
             pattern,
             expansion,
-            expansion_span,
         })
     }
 

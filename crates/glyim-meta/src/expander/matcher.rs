@@ -13,6 +13,7 @@ pub(crate) enum PatternPiece {
     },
     Metavar {
         name: SmolStr,
+        #[allow(dead_code)]
         fragment: FragmentSpec,
     },
 }
@@ -292,10 +293,6 @@ mod tests {
 
     fn tok(kind: SyntaxKind, text: &str) -> TokenTree {
         TokenTree::Token(kind, SmolStr::from(text))
-    }
-
-    fn ident(name: &str) -> TokenTree {
-        TokenTree::Token(SyntaxKind::Ident, SmolStr::from(name))
     }
 
     #[test]
