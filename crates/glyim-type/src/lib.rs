@@ -25,3 +25,4 @@ pub use ty::*;
 
 #[cfg(test)]
 mod tests;
+pub mod object_safety;
