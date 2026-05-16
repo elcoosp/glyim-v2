@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use crate::{
     Body, BodyId, ConstRef, CrateHir, EnumItem, Expr, ExprId, Field, FnItem, Item, ItemId,
     ItemKind, Literal, MatchArm, Param, Pat, PatId, Path as HirPath, PathSegment, StructItem,
@@ -8,7 +8,6 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::*;
-use glyim_span::Span;
 use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
 // ---------- helpers ----------
@@ -153,7 +152,7 @@ fn lower_fn_def(
         exprs: IndexVec::new(),
         pats: IndexVec::new(),
         params: Vec::new(),
-        span: Span::DUMMY,
+        span: node_span(node),
     };
 
     // ParamList
@@ -208,7 +207,7 @@ fn lower_fn_def(
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
-        span: Span::DUMMY,
+        span: node_span(node),
     })
 }
 
@@ -237,7 +236,7 @@ fn lower_param(
         Param {
             name,
             ty,
-            span: Span::DUMMY,
+            span: node_span(node),
         },
         pat_id,
     )
@@ -273,7 +272,7 @@ fn lower_struct_def(
             fields.push(Field {
                 name: fname,
                 ty: fty,
-                span: Span::DUMMY,
+                span: node_span(node),
             });
             has_fields = true;
             i += 3;
@@ -299,7 +298,7 @@ fn lower_struct_def(
                 fields.push(Field {
                     name: interner.intern(""),
                     ty: fty,
-                    span: Span::DUMMY,
+                    span: node_span(node),
                 });
             }
             kind = StructKind::Tuple;
@@ -322,7 +321,7 @@ fn lower_struct_def(
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
-        span: Span::DUMMY,
+        span: node_span(node),
     })
 }
 
@@ -361,7 +360,7 @@ fn lower_enum_def(
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
-        span: Span::DUMMY,
+        span: node_span(node),
     })
 }
 
@@ -388,7 +387,7 @@ fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Option<Variant> 
                 fields.push(Field {
                     name: interner.intern(""),
                     ty: fty,
-                    span: Span::DUMMY,
+                    span: node_span(node),
                 });
                 has_tuple = true;
             }
@@ -413,7 +412,7 @@ fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Option<Variant> 
                 fields.push(Field {
                     name: fname,
                     ty: fty,
-                    span: Span::DUMMY,
+                    span: node_span(node),
                 });
                 has_record = true;
             }
@@ -432,7 +431,7 @@ fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Option<Variant> 
         name: vname,
         fields,
         kind,
-        span: Span::DUMMY,
+        span: node_span(node),
     })
 }
 
@@ -1984,3 +1983,11 @@ fn lower_range_expr(
     };
     Some(exprs.push(expr))
 }
+
+fn node_span(node: &SyntaxNode) -> Span {
+    let range = node.text_range();
+    let lo = ByteIdx::from_raw(u32::from(range.start()));
+    let hi = ByteIdx::from_raw(u32::from(range.end()));
+    Span::new(FileId::from_raw(0), lo, hi, SyntaxContext::ROOT)
+}
+

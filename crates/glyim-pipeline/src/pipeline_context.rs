@@ -125,7 +125,4 @@ impl<'a> BorrowckCtx for PipelineBorrowckCtx<'a> {
         &self.body.locals[idx]
     }
 
-    fn is_copy(&self, _ty: Ty) -> bool {
-        false
-    }
 }

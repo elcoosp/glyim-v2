@@ -15,6 +15,7 @@ fn test_compile_valid_file() {
         opt_level: 0,
         target: None,
         backend: "llvm".to_string(),
+        emit: "obj".to_string(),
     };
     let result = run_with_args(args);
     assert!(
@@ -36,6 +37,7 @@ fn test_compile_invalid_file() {
         opt_level: 0,
         target: None,
         backend: "llvm".to_string(),
+        emit: "obj".to_string(),
     };
     let result = run_with_args(args);
     assert!(result.is_err(), "Expected compilation to fail");
@@ -66,4 +68,18 @@ fn test_missing_input() {
 fn test_backend_bytecode_flag() {
     let args = CliArgs::try_parse_from(&["glyim", "--backend", "bytecode", "input.g"]).unwrap();
     assert_eq!(args.backend, "bytecode");
+}
+
+/// S20-T06: --emit mir flag
+#[test]
+fn test_emit_mir_flag() {
+    let args = CliArgs::try_parse_from(&["glyim", "--emit", "mir", "input.g"]).unwrap();
+    assert_eq!(args.emit, "mir");
+}
+
+/// S20-T07: --emit llvm-ir flag
+#[test]
+fn test_emit_llvm_ir_flag() {
+    let args = CliArgs::try_parse_from(&["glyim", "--emit", "llvm-ir", "input.g"]).unwrap();
+    assert_eq!(args.emit, "llvm-ir");
 }

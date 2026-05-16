@@ -171,12 +171,12 @@ impl MonoCtx {
                 }
             }
             TerminatorKind::Drop {
-                place,
+                place: _,
                 target: _,
                 cleanup: _,
             } => {
-                let _ = place;
-                tracing::debug!("STUB: drop glue collection not fully implemented");
+                // Drop glue collection not yet implemented
+                tracing::debug!("STUB: drop glue collection not implemented");
             }
             TerminatorKind::SwitchInt { discr, .. } => {
                 self.scan_operand(discr);

@@ -12,6 +12,9 @@ pub struct CliArgs {
     pub input: PathBuf,
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+    #[arg(long, value_name = "EMIT", default_value = "obj")]
+    pub emit: String,
+    #[arg(long, value_name = "EMIT", default_value = "obj")]
     #[arg(short = 'O', long = "opt-level", default_value = "0")]
     pub opt_level: u8,
     #[arg(long = "target")]
