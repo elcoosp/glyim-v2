@@ -10,6 +10,7 @@ use glyim_span::Span;
 use glyim_type::*;
 
 use crate::thir::{self, LocalVarId};
+use crate::ty::FieldIdx;
 
 /// Context struct to bundle the many mutable references needed during expression checking.
 #[allow(dead_code)]
@@ -451,21 +452,59 @@ fn check_expr(
             // FIXME: method calls not implemented
             unimplemented!("method calls not implemented");
         }
-        Expr::Field { receiver, field } => {
-            let (recv_expr, _recv_ty) = check_expr(chk, body, local_var_map, *receiver);
-            let field_ty = fresh_infer_ty(chk);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Field {
-                        receiver: Box::new(recv_expr),
-                        field: *field,
-                        ty: field_ty,
-                    },
+Expr::Field { receiver, field } => {
+            let (recv_expr, recv_ty) = check_expr(chk, body, local_var_map, *receiver);
+            let expr_span = body.expr_spans[expr_id];
+            let field_ty = match chk.ctx.ty_kind(recv_ty) {
+                TyKind::Adt(adt_id, substs) => {
+                    // Look up field index by name
+                    if let Some(field_idx) = chk.ctx.field_index(*adt_id, *field) {
+                        // Get field type from ADT definition
+                        if let Some(def) = chk.ctx.adt_def(*adt_id) {
+                            if let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32)) {
+                                let field_ty = field_def.ty;
+                                // TODO: apply substitution from ADT's substs if generic
+                                field_ty
+                            } else {
+                                chk.diagnostics.push(GlyimDiagnostic::type_error(
+                                    expr_span,
+                                    format!("field `{}` not found in ADT (internal error)", chk.ctx.name_str(*field))
+                                ));
+                                chk.ctx.error_ty()
+                            }
+                        } else {
+                            chk.diagnostics.push(GlyimDiagnostic::type_error(
+                                expr_span,
+                                format!("ADT definition missing for field `{}`", chk.ctx.name_str(*field))
+                            ));
+                            chk.ctx.error_ty()
+                        }
+                    } else {
+                        chk.diagnostics.push(GlyimDiagnostic::type_error(
+                            expr_span,
+                            format!("no field `{}` in ADT", chk.ctx.name_str(*field))
+                        ));
+                        chk.ctx.error_ty()
+                    }
+                }
+                _ => {
+                    chk.diagnostics.push(GlyimDiagnostic::type_error(
+                        expr_span,
+                        format!("field access on non-ADT type: {}", PrintTy::new(recv_ty, chk.ctx))
+                    ));
+                    chk.ctx.error_ty()
+                }
+            };
+            let thir_expr = thir::Expr {
+                kind: thir::ExprKind::Field {
+                    receiver: Box::new(recv_expr),
+                    field: *field,
                     ty: field_ty,
-                    span: Span::DUMMY,
                 },
-                field_ty,
-            )
+                ty: field_ty,
+                span: expr_span,
+            };
+            (thir_expr, field_ty)
         }
         Expr::Index { base, index } => {
             let (base_expr, _) = check_expr(chk, body, local_var_map, *base);
