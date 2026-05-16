@@ -382,8 +382,13 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (_expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     assert!(!diags.is_empty(), "Expected no-matching-arm diagnostic");
-    assert!(diags.iter().any(|d| d.message.contains("no matching macro arm")),
-        "Diagnostic should mention no matching arm, got: {:?}", diags);
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("no matching macro arm")),
+        "Diagnostic should mention no matching arm, got: {:?}",
+        diags
+    );
 }
 
 /// V19-T18: Nested delimited groups in macro arguments – simplified
@@ -429,8 +434,13 @@ fn main() {
     let (_expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     // Should eventually hit the recursion limit
     assert!(!diags.is_empty(), "Expected recursion limit diagnostic");
-    assert!(diags.iter().any(|d| d.message.contains("recursion") || d.message.contains("limit")),
-        "Diagnostics: {:?}", diags);
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("recursion") || d.message.contains("limit")),
+        "Diagnostics: {:?}",
+        diags
+    );
 }
 
 /// V19-T20: Arm precedence – first matching arm wins.
@@ -452,8 +462,16 @@ fn main() {
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     // The expansion should contain "first", not "second".
     let text = expanded.text().to_string();
-    assert!(text.contains("first"), "Expansion should use first arm, got: {}", text);
-    assert!(!text.contains("second"), "Expansion incorrectly used second arm: {}", text);
+    assert!(
+        text.contains("first"),
+        "Expansion should use first arm, got: {}",
+        text
+    );
+    assert!(
+        !text.contains("second"),
+        "Expansion incorrectly used second arm: {}",
+        text
+    );
 }
 
 /// V19-T21: `$crate` substitution produces a `crate` token.
@@ -474,7 +492,11 @@ fn main() {
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     // The expanded code should contain the `crate` keyword.
     let text = expanded.text().to_string();
-    assert!(text.contains("crate"), "Expansion should contain `crate`, got: {}", text);
+    assert!(
+        text.contains("crate"),
+        "Expansion should contain `crate`, got: {}",
+        text
+    );
 }
 
 /// V19-T22: Empty arms and empty expansion – multiple no‑op arms.

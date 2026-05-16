@@ -1,9 +1,9 @@
 use crate::flags::TypeFlags;
-use glyim_core::AdtId;
 use crate::predicate::Predicate;
 use crate::region::{BoundRegionKind, Region};
 use crate::substitution::*;
 use crate::ty::*;
+use glyim_core::AdtId;
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use std::fmt;

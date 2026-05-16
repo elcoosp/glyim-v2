@@ -24,7 +24,6 @@ impl TokenTree {
             TokenTree::DollarCrate => SmolStr::from("$crate"),
         }
     }
-
 }
 
 /// Parse a syntax node subtree into a flat vector of TokenTrees.
@@ -43,12 +42,12 @@ pub(crate) fn collect_token_trees(node: &glyim_syntax::SyntaxNode) -> Vec<TokenT
                             Some(rowan::NodeOrToken::Token(open)),
                             Some(rowan::NodeOrToken::Token(close)),
                         ) = (first, last)
-                            && is_open_delim(open.kind()) && is_close_delim(close.kind())
+                            && is_open_delim(open.kind())
+                            && is_close_delim(close.kind())
                         {
                             let inner = collect_token_trees(&n);
                             let inner_len = inner.len().saturating_sub(2);
-                            let inner: Vec<_> =
-                                inner.into_iter().skip(1).take(inner_len).collect();
+                            let inner: Vec<_> = inner.into_iter().skip(1).take(inner_len).collect();
                             trees.push(TokenTree::Group(open.kind(), inner, close.kind()));
                             continue;
                         }

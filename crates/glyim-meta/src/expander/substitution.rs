@@ -68,7 +68,9 @@ pub(crate) fn substitute(
                         match rep_kind {
                             RepKind::ZeroOrMore | RepKind::OneOrMore => {
                                 for rep_idx in 0..repetitions {
-                                    if rep_idx > 0 && let Some(ref sep) = separator {
+                                    if rep_idx > 0
+                                        && let Some(ref sep) = separator
+                                    {
                                         result.push(sep.clone());
                                     }
                                     let rep_bindings =

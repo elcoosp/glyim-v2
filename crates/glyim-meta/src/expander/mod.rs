@@ -113,10 +113,7 @@ impl<'a> ExpanderImpl<'a> {
         let pattern = self.parse_pattern(&pattern_node)?;
         let expansion_node = children.find(|c| c.kind() == SyntaxKind::TokenTree)?;
         let expansion = self.parse_expansion(&expansion_node);
-        Some(MacroArm {
-            pattern,
-            expansion,
-        })
+        Some(MacroArm { pattern, expansion })
     }
 
     fn parse_pattern(&self, node: &SyntaxNode) -> Option<Pattern> {
