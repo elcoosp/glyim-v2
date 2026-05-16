@@ -75,11 +75,3 @@ pub(crate) fn const_operand_f64(val: f64, f64_ty: Ty) -> Operand {
         span: Span::DUMMY,
     })
 }
-
-pub(crate) fn const_operand_f32(val: f32, f32_ty: Ty) -> Operand {
-    Operand::Constant(MirConst {
-        kind: MirConstKind::FloatBits((val as f64).to_bits()),
-        ty: f32_ty,
-        span: Span::DUMMY,
-    })
-}
