@@ -197,7 +197,24 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
             TyKind::Never => Layout::scalar(Size::ZERO, Align::ONE),
             TyKind::Unit => Layout::unit(),
             TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => Layout::scalar(ptr_size, ptr_align),
-            TyKind::Slice(_) | TyKind::Dynamic(_, _) => return Err(LayoutError::Unsized(ty)),
+            TyKind::Dynamic(_binder, _region) => {
+                let raw_size = self.target.pointer_size();
+                Layout {
+                    size: Size::bytes(raw_size * 2),
+                    align: Align::from_bytes(self.target.pointer_align()),
+                    fields: FieldsShape::Arbitrary {
+                        offsets: {
+                            let mut off = IndexVec::new();
+                            off.push(Size::ZERO);
+                            off.push(Size::bytes(raw_size));
+                            off
+                        },
+                    },
+                    variants: VariantsShape::Single { index: 0 },
+                    is_unsized: false,
+                }
+            }
+            TyKind::Slice(_) => return Err(LayoutError::Unsized(ty)),
             TyKind::Error => return Err(LayoutError::UnknownType(ty)),
             _ => return Err(LayoutError::UnknownType(ty)),
         };
@@ -255,3 +272,24 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
 
 #[cfg(test)]
 mod tests;
+
+pub mod vtable;
+
+impl crate::vtable::VTableComputer for SimpleLayoutComputer<'_> {
+    fn vtable_of(
+        &self,
+        _trait_def_id: glyim_core::TraitDefId,
+        _concrete_ty: glyim_type::Ty,
+    ) -> Option<crate::vtable::VTableLayout> {
+        // STUB: return a minimal vtable layout for testing
+        let layout = crate::vtable::VTableLayout {
+            trait_def_id: _trait_def_id,
+            concrete_ty: _concrete_ty,
+            size: crate::Size::bytes(self.target.pointer_size()),
+            align: crate::Align::from_bytes(self.target.pointer_align()),
+            drop_fn: None,
+            methods: vec![],
+        };
+        Some(layout)
+    }
+}

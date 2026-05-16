@@ -18,6 +18,7 @@ bitflags! {
         const HAS_DEPTH_OVERFLOW = 1 << 8;
         const HAS_RE_PLACEHOLDER = 1 << 9;
         const HAS_TY_PLACEHOLDER = 1 << 10;
+        const HAS_INTERIOR_MUTABILITY = 1 << 11;
     }
 }
 
@@ -49,8 +50,17 @@ pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFla
         TyKind::RawPtr(ty, _) => flags |= ctx.ty_flags(*ty),
         TyKind::Slice(ty) => flags |= ctx.ty_flags(*ty),
         TyKind::Array(ty, _) => flags |= ctx.ty_flags(*ty),
-        TyKind::Adt(_, substs)
-        | TyKind::FnDef(_, substs)
+        TyKind::Adt(adt_id, substs) => {
+            for arg in ctx.substitution_args(*substs) {
+                if let GenericArg::Ty(t) = arg {
+                    flags |= ctx.ty_flags(*t);
+                }
+            }
+            if ctx.is_interior_mutable_adt(*adt_id) {
+                flags |= TypeFlags::HAS_INTERIOR_MUTABILITY;
+            }
+        }
+        TyKind::FnDef(_, substs)
         | TyKind::Closure(_, substs)
         | TyKind::Tuple(substs)
         | TyKind::Opaque(_, substs) => {
