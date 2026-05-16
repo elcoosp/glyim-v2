@@ -33,6 +33,7 @@ members = [
     "crates/glyim-runtime",
     "crates/glyim-test",
     "crates/glyim-lang-core",
+    "crates/glyim-lang-alloc",
 ]
 
 [workspace.dependencies]
