@@ -28,11 +28,13 @@ impl PipelineMonoCache {
     }
 
     /// Get the number of cached items.
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.symbols.len()
     }
 
     /// Check if the cache is empty.
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.symbols.is_empty()
     }

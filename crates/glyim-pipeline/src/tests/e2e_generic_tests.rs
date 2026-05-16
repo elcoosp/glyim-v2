@@ -77,6 +77,8 @@ fn e2e_backend_receives_bodies() {
 
 #[test]
 fn e2e_backend_body_count_matches_functions() {
+    // With monomorphization, only main is an entry point.
+    // f1 and f2 are not reachable from main, so only 1 body is emitted.
     let source = "
 fn f1() {}
 fn f2() {}
@@ -85,7 +87,7 @@ fn main() {}
     let (backend, result) = compile_with_mock(source);
     assert!(result.is_ok());
     let total_bodies: usize = backend.calls().iter().map(|c| c.body_count).sum();
-    assert_eq!(total_bodies, 3, "expected 3 bodies for 3 functions");
+    assert_eq!(total_bodies, 1, "expected 1 body (main only), got {}", total_bodies);
 }
 
 #[test]
