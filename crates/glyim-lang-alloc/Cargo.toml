@@ -1,0 +1,14 @@
+[package]
+name = "glyim-lang-alloc"
+version = "0.1.0"
+edition = "2024"
+description = "Glyim standard library: dynamic allocation and collections"
+
+[dependencies]
+glyim-core = { path = "../glyim-core" }
+glyim-runtime = { path = "../glyim-runtime" }
+
+[dev-dependencies]
+glyim-test = { workspace = true }
+glyim-frontend = { workspace = true }
+glyim-span = { workspace = true }
