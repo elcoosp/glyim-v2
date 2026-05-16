@@ -208,5 +208,9 @@ fn main() {}
     assert!(!calls.is_empty(), "no backend calls");
     let total_bodies: usize = calls.iter().map(|c| c.body_count).sum();
     // Only main is an entry point; f1/f2 are unreachable dead code.
-    assert_eq!(total_bodies, 1, "expected 1 body (main only), got {}", total_bodies);
+    assert_eq!(
+        total_bodies, 1,
+        "expected 1 body (main only), got {}",
+        total_bodies
+    );
 }

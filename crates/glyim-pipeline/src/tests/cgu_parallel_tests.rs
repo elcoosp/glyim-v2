@@ -11,7 +11,10 @@ use glyim_type::Substitution;
 use std::sync::Arc;
 
 fn dummy_body() -> Arc<Body> {
-    Arc::new(Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))))
+    Arc::new(Body::dummy(DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(0),
+    )))
 }
 
 fn make_items(n: usize, modules: usize) -> Vec<MonoItemData> {
@@ -62,7 +65,10 @@ fn partition_preserves_all_item_indices() {
         .collect();
     all_indices.sort();
     let expected: Vec<usize> = (0..8).collect();
-    assert_eq!(all_indices, expected, "all original indices must be present exactly once");
+    assert_eq!(
+        all_indices, expected,
+        "all original indices must be present exactly once"
+    );
 }
 
 #[test]
@@ -74,15 +80,14 @@ fn parallel_cgu_iteration_matches_serial() {
 
     let parallel_bodies: Vec<Arc<Body>> = cgus
         .iter()
-        .flat_map(|cgu_indices: &Vec<usize>| {
-            cgu_indices.iter().map(|&idx| items[idx].body.clone())
-        })
+        .flat_map(|cgu_indices: &Vec<usize>| cgu_indices.iter().map(|&idx| items[idx].body.clone()))
         .collect();
 
     assert_eq!(serial_bodies.len(), parallel_bodies.len());
     for (serial, parallel) in serial_bodies.iter().zip(parallel_bodies.iter()) {
         assert!(
-            Arc::ptr_eq(serial, parallel) || serial.basic_blocks.len() == parallel.basic_blocks.len(),
+            Arc::ptr_eq(serial, parallel)
+                || serial.basic_blocks.len() == parallel.basic_blocks.len(),
             "bodies should match between serial and parallel iteration"
         );
     }
@@ -98,11 +103,17 @@ fn rayon_parallel_cgu_iteration_succeeds() {
     let results: Vec<usize> = cgus
         .par_iter()
         .map(|cgu_indices: &Vec<usize>| {
-            cgu_indices.iter().map(|&idx| items[idx].body.locals.len()).sum()
+            cgu_indices
+                .iter()
+                .map(|&idx| items[idx].body.locals.len())
+                .sum()
         })
         .collect();
 
-    assert!(!results.is_empty(), "parallel iteration should produce results");
+    assert!(
+        !results.is_empty(),
+        "parallel iteration should produce results"
+    );
 }
 
 #[test]

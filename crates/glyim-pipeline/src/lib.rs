@@ -13,7 +13,9 @@ use std::sync::Arc;
 
 mod mono_cache;
 mod pipeline_context;
-use mono_cache::{compute_max_cgus, make_drop_glue_provider, make_mir_body_provider, PipelineMonoCache};
+use mono_cache::{
+    PipelineMonoCache, compute_max_cgus, make_drop_glue_provider, make_mir_body_provider,
+};
 use pipeline_context::{PipelineBorrowckCtx, PipelineLowerCtx};
 
 pub struct Pipeline;
@@ -107,8 +109,7 @@ impl Pipeline {
         let (mono_roots, discovery_diags) = {
             // discover_mono_roots needs TyCtxMut for intern_substitution.
             // Create a fresh one from the interner (which is shared).
-            let mut ty_ctx_mut_for_discovery =
-                glyim_type::TyCtxMut::new(db.interner().clone());
+            let mut ty_ctx_mut_for_discovery = glyim_type::TyCtxMut::new(db.interner().clone());
             glyim_lower::discovery::discover_mono_roots(
                 &parse_result.root,
                 &hir,
@@ -161,11 +162,7 @@ impl Pipeline {
 
             // Flatten CGU bodies in deterministic order
             cgus.iter()
-                .flat_map(|cgu_indices| {
-                    cgu_indices
-                        .iter()
-                        .map(|&idx| mono_items[idx].body.clone())
-                })
+                .flat_map(|cgu_indices| cgu_indices.iter().map(|&idx| mono_items[idx].body.clone()))
                 .collect()
         };
 

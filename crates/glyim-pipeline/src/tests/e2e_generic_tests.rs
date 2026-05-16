@@ -29,7 +29,11 @@ fn compile_with_mock(source: &str) -> (MockCodegen, CompResult<()>) {
 #[test]
 fn e2e_simple_main() {
     let (_, result) = compile_with_mock("fn main() {}");
-    assert!(result.is_ok(), "simple main should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "simple main should compile: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -39,14 +43,22 @@ fn helper() {}
 fn main() {}
 ";
     let (_, result) = compile_with_mock(source);
-    assert!(result.is_ok(), "multiple functions should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "multiple functions should compile: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn e2e_function_with_params() {
     let source = "fn add(x: i32, y: i32) -> i32 { x + y } fn main() {}";
     let (_, result) = compile_with_mock(source);
-    assert!(result.is_ok(), "function with params should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "function with params should compile: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -87,25 +99,41 @@ fn main() {}
     let (backend, result) = compile_with_mock(source);
     assert!(result.is_ok());
     let total_bodies: usize = backend.calls().iter().map(|c| c.body_count).sum();
-    assert_eq!(total_bodies, 1, "expected 1 body (main only), got {}", total_bodies);
+    assert_eq!(
+        total_bodies, 1,
+        "expected 1 body (main only), got {}",
+        total_bodies
+    );
 }
 
 #[test]
 fn e2e_empty_file_compiles() {
     let (_, result) = compile_with_mock("");
-    assert!(result.is_ok(), "empty file should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "empty file should compile: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn e2e_nested_if_compiles() {
     let source = "fn main() { if true { if false { 1 } else { 2 } } else { 3 } }";
     let (_, result) = compile_with_mock(source);
-    assert!(result.is_ok(), "nested if should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "nested if should compile: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn e2e_while_loop_compiles() {
     let source = "fn main() { while true {} }";
     let (_, result) = compile_with_mock(source);
-    assert!(result.is_ok(), "while loop should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "while loop should compile: {:?}",
+        result.err()
+    );
 }

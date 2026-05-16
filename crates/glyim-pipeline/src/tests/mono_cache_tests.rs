@@ -11,11 +11,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 fn dummy_provider(_def_id: DefId, _substs: &Substitution) -> Arc<Body> {
-    Arc::new(Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))))
+    Arc::new(Body::dummy(DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(0),
+    )))
 }
 
 fn dummy_drop_provider(_ty: glyim_type::Ty) -> Arc<Body> {
-    Arc::new(Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))))
+    Arc::new(Body::dummy(DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(0),
+    )))
 }
 
 #[test]
@@ -30,7 +36,11 @@ fn mono_ctx_second_collect_skips_existing() {
     assert_eq!(ctx.items().len(), 1);
 
     ctx.collect(&[root.clone()], &dummy_provider, &dummy_drop_provider);
-    assert_eq!(ctx.items().len(), 1, "second collect should not add duplicates");
+    assert_eq!(
+        ctx.items().len(),
+        1,
+        "second collect should not add duplicates"
+    );
 }
 
 #[test]
@@ -49,7 +59,11 @@ fn mono_ctx_adds_new_items_on_second_collect() {
     assert_eq!(ctx.items().len(), 1);
 
     ctx.collect(&[root_b], &dummy_provider, &dummy_drop_provider);
-    assert_eq!(ctx.items().len(), 2, "new root should be added on second collect");
+    assert_eq!(
+        ctx.items().len(),
+        2,
+        "new root should be added on second collect"
+    );
 }
 
 #[test]
@@ -71,13 +85,23 @@ fn mono_ctx_cache_prevents_re_entry() {
     let call_count_clone = call_count.clone();
     let counting_provider = move |def_id: DefId, _substs: &Substitution| -> Arc<Body> {
         call_count_clone.fetch_add(1, Ordering::SeqCst);
-        assert_eq!(def_id.local_id.to_raw(), 42, "provider should only be called for def_id 42");
-        Arc::new(Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))))
+        assert_eq!(
+            def_id.local_id.to_raw(),
+            42,
+            "provider should only be called for def_id 42"
+        );
+        Arc::new(Body::dummy(DefId::new(
+            CrateId::from_raw(0),
+            LocalDefId::from_raw(0),
+        )))
     };
 
     ctx.collect(&[root.clone()], &counting_provider, &dummy_drop_provider);
     let first_count = call_count.load(Ordering::SeqCst);
-    assert!(first_count >= 1, "provider should have been called at least once");
+    assert!(
+        first_count >= 1,
+        "provider should have been called at least once"
+    );
 
     ctx.collect(&[root], &counting_provider, &dummy_drop_provider);
     assert_eq!(
@@ -99,6 +123,14 @@ fn mono_ctx_handles_mixed_fn_and_static() {
         def_id: StaticDefId::from_raw(1),
     };
     let mut ctx = MonoCtx::new();
-    ctx.collect(&[fn_root, static_root], &dummy_provider, &dummy_drop_provider);
-    assert_eq!(ctx.items().len(), 2, "should collect both fn and static items");
+    ctx.collect(
+        &[fn_root, static_root],
+        &dummy_provider,
+        &dummy_drop_provider,
+    );
+    assert_eq!(
+        ctx.items().len(),
+        2,
+        "should collect both fn and static items"
+    );
 }
