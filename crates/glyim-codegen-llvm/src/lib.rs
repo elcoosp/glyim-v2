@@ -404,8 +404,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 }
             }
             Rvalue::UnaryOp(op, operand) => {
-                let val = self.lower_operand(operand).into_int_value();
-                self.lower_unary_op(*op, val)
+                let val = self.lower_operand(operand);
+                let operand_ty = self.operand_ty(operand);
+                if matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_)) {
+                    let float_val = val.into_float_value();
+                    self.lower_float_unary_op(*op, float_val)
+                } else {
+                    let int_val = val.into_int_value();
+                    self.lower_unary_op(*op, int_val)
+                }
             }
             Rvalue::Aggregate(kind, operands) => self.lower_aggregate(kind, operands),
             Rvalue::Discriminant(place) => self.lower_discriminant(place),
@@ -745,6 +752,28 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             _ => {
                 tracing::warn!("STUB: unsupported float binop {:?}", op);
                 lhs.into()
+            }
+        }
+    }
+
+    fn lower_float_unary_op(
+        &self,
+        op: UnOp,
+        val: inkwell::values::FloatValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match op {
+            UnOp::Neg => self
+                .builder
+                .build_float_neg(val, "fneg")
+                .expect("fneg failed")
+                .into(),
+            UnOp::Not => {
+                tracing::warn!("STUB: float Not not supported");
+                val.into()
+            }
+            UnOp::Deref => {
+                tracing::warn!("STUB: Deref on float");
+                val.into()
             }
         }
     }

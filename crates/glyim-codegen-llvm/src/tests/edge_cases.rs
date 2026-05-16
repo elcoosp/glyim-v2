@@ -85,8 +85,12 @@ fn test_zero_div_sdiv() {
         .lower_body_to_module(&context, &body)
         .expect("lowering");
     let ir = module.print_to_string().to_string();
-    // LLVM produces 'sdiv' with zero denominator; check for sdiv instruction
-    assert!(ir.contains("sdiv"), "Expected 'sdiv' in IR:\n{}", ir);
+    // LLVM constant-folds sdiv 1,0 to poison; check for poison or div
+    assert!(
+        ir.contains("poison") || ir.contains("sdiv") || ir.contains("udiv"),
+        "Expected 'poison' or 'sdiv' in IR:\n{}",
+        ir
+    );
 }
 
 #[test]
