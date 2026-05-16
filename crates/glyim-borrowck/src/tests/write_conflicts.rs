@@ -10,8 +10,8 @@ use super::mir_builder::{MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_
 
 /// Write to shared-borrowed place across blocks → error.
 ///
-///   BB0: _2 = &shared _1; goto BB1
-///   BB1: _1 = copy _3; _4 = copy _2; return
+///   BB0: local_2 = &shared local_1; goto BB1
+///   BB1: local_1 = copy local_3; local_4 = copy local_2; return
 ///
 /// Even a shared borrow prevents writes to the borrowed place.
 #[test]
@@ -21,23 +21,23 @@ fn write_to_shared_borrowed_place_across_blocks_error() {
         let ref_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
 
         let mut b = MirBodyBuilder::new(bool_ty);
-        let _1 = b.add_local(bool_ty, Mutability::Mut);
-        let _2 = b.add_local(ref_bool, Mutability::Not);
-        let _3 = b.add_local(bool_ty, Mutability::Not);
-        let _4 = b.add_local(bool_ty, Mutability::Not);
+        let local_1 = b.add_local(bool_ty, Mutability::Mut);
+        let local_2 = b.add_local(ref_bool, Mutability::Not);
+        let local_3 = b.add_local(bool_ty, Mutability::Not);
+        let local_4 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_borrow(local_2, local_1, BorrowKind::Shared));
 
         let bb1 = b.push_block(ret());
         b.push_stmt(
             bb1,
             StatementKind::Assign(
-                glyim_mir::Place::new(_1),
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_3))),
+                glyim_mir::Place::new(local_1),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local_3))),
             ),
         );
-        b.push_stmt(bb1, assign_copy(_4, _2));
+        b.push_stmt(bb1, assign_copy(local_4, local_2));
 
         b.build()
     });
@@ -49,10 +49,10 @@ fn write_to_shared_borrowed_place_across_blocks_error() {
 
 /// Write to shared-borrowed place after borrow expires → no error.
 ///
-///   BB0: _2 = &shared _1; _3 = copy _2; goto BB1
-///   BB1: _1 = copy _4; return
+///   BB0: local_2 = &shared local_1; local_3 = copy local_2; goto BB1
+///   BB1: local_1 = copy local_4; return
 ///
-/// The borrow of _1 expires after _3 = copy _2 (last use of _2).
+/// The borrow of local_1 expires after local_3 = copy local_2 (last use of local_2).
 #[test]
 fn write_after_shared_borrow_expires_no_error() {
     let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
@@ -60,21 +60,21 @@ fn write_after_shared_borrow_expires_no_error() {
         let ref_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
 
         let mut b = MirBodyBuilder::new(bool_ty);
-        let _1 = b.add_local(bool_ty, Mutability::Mut);
-        let _2 = b.add_local(ref_bool, Mutability::Not);
-        let _3 = b.add_local(bool_ty, Mutability::Not);
-        let _4 = b.add_local(bool_ty, Mutability::Not);
+        let local_1 = b.add_local(bool_ty, Mutability::Mut);
+        let local_2 = b.add_local(ref_bool, Mutability::Not);
+        let local_3 = b.add_local(bool_ty, Mutability::Not);
+        let local_4 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
-        b.push_stmt(bb0, assign_copy(_3, _2)); // last use of _2
+        b.push_stmt(bb0, assign_borrow(local_2, local_1, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_copy(local_3, local_2)); // last use of local_2
 
         let bb1 = b.push_block(ret());
         b.push_stmt(
             bb1,
             StatementKind::Assign(
-                glyim_mir::Place::new(_1),
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_4))),
+                glyim_mir::Place::new(local_1),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local_4))),
             ),
         );
 
@@ -88,8 +88,8 @@ fn write_after_shared_borrow_expires_no_error() {
 
 /// Write to mut-borrowed place across blocks → error.
 ///
-///   BB0: _2 = &mut _1; goto BB1
-///   BB1: _1 = copy _3; _4 = copy _2; return
+///   BB0: local_2 = &mut local_1; goto BB1
+///   BB1: local_1 = copy local_3; local_4 = copy local_2; return
 #[test]
 fn write_to_mut_borrowed_place_across_blocks_error() {
     let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
@@ -97,17 +97,17 @@ fn write_to_mut_borrowed_place_across_blocks_error() {
         let ref_mut_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Mut);
 
         let mut b = MirBodyBuilder::new(bool_ty);
-        let _1 = b.add_local(bool_ty, Mutability::Mut);
-        let _2 = b.add_local(ref_mut_bool, Mutability::Mut);
-        let _3 = b.add_local(bool_ty, Mutability::Not);
-        let _4 = b.add_local(bool_ty, Mutability::Not);
+        let local_1 = b.add_local(bool_ty, Mutability::Mut);
+        let local_2 = b.add_local(ref_mut_bool, Mutability::Mut);
+        let local_3 = b.add_local(bool_ty, Mutability::Not);
+        let local_4 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
         b.push_stmt(
             bb0,
             assign_borrow(
-                _2,
-                _1,
+                local_2,
+                local_1,
                 BorrowKind::Mut {
                     allow_two_phase_borrow: false,
                 },
@@ -118,11 +118,11 @@ fn write_to_mut_borrowed_place_across_blocks_error() {
         b.push_stmt(
             bb1,
             StatementKind::Assign(
-                glyim_mir::Place::new(_1),
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_3))),
+                glyim_mir::Place::new(local_1),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local_3))),
             ),
         );
-        b.push_stmt(bb1, assign_copy(_4, _2));
+        b.push_stmt(bb1, assign_copy(local_4, local_2));
 
         b.build()
     });
@@ -134,8 +134,8 @@ fn write_to_mut_borrowed_place_across_blocks_error() {
 
 /// Write to a different place while another is borrowed → no error.
 ///
-///   BB0: _2 = &shared _1; goto BB1
-///   BB1: _3 = copy _4; _5 = copy _2; return
+///   BB0: local_2 = &shared local_1; goto BB1
+///   BB1: local_3 = copy local_4; local_5 = copy local_2; return
 #[test]
 fn write_to_different_place_while_borrowed_no_error() {
     let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
@@ -143,24 +143,24 @@ fn write_to_different_place_while_borrowed_no_error() {
         let ref_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
 
         let mut b = MirBodyBuilder::new(bool_ty);
-        let _1 = b.add_local(bool_ty, Mutability::Not);
-        let _2 = b.add_local(ref_bool, Mutability::Not);
-        let _3 = b.add_local(bool_ty, Mutability::Mut);
-        let _4 = b.add_local(bool_ty, Mutability::Not);
-        let _5 = b.add_local(bool_ty, Mutability::Not);
+        let local_1 = b.add_local(bool_ty, Mutability::Not);
+        let local_2 = b.add_local(ref_bool, Mutability::Not);
+        let local_3 = b.add_local(bool_ty, Mutability::Mut);
+        let local_4 = b.add_local(bool_ty, Mutability::Not);
+        let local_5 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_borrow(local_2, local_1, BorrowKind::Shared));
 
         let bb1 = b.push_block(ret());
         b.push_stmt(
             bb1,
             StatementKind::Assign(
-                glyim_mir::Place::new(_3),
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(_4))),
+                glyim_mir::Place::new(local_3),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local_4))),
             ),
         );
-        b.push_stmt(bb1, assign_copy(_5, _2));
+        b.push_stmt(bb1, assign_copy(local_5, local_2));
 
         b.build()
     });

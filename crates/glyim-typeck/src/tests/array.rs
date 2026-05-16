@@ -3,10 +3,11 @@ use glyim_hir::*;
 
 #[test]
 fn array_literal_and_index() {
-    let mut exprs = Vec::new();
-    exprs.push(Expr::Literal(Literal::Int(1, None)));
-    exprs.push(Expr::Literal(Literal::Int(2, None)));
-    exprs.push(Expr::Literal(Literal::Int(3, None)));
+    let mut exprs = vec![
+        Expr::Literal(Literal::Int(1, None)),
+        Expr::Literal(Literal::Int(2, None)),
+        Expr::Literal(Literal::Int(3, None)),
+    ];
     exprs.push(Expr::Array(vec![
         ExprId::from_raw(0),
         ExprId::from_raw(1),

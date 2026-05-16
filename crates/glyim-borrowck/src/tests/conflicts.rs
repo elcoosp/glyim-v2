@@ -101,7 +101,7 @@ fn direct_access_while_mutably_borrowed_across_blocks_error() {
 /// MIR:
 ///   BB0: switch local3 -> [true: BB1, false: BB2]
 ///   BB1: local2 = &mut local1; local4 = copy local2; goto BB3
-///   BB2: _5 = &shared local1; _6 = copy _5; goto BB3
+///   BB2: local_5 = &shared local1; local_6 = copy local_5; goto BB3
 ///   BB3: return
 #[test]
 fn path_sensitive_borrows_on_different_branches_no_error() {
@@ -115,8 +115,8 @@ fn path_sensitive_borrows_on_different_branches_no_error() {
         let local2 = b.add_local(ref_mut_bool, Mutability::Mut);
         let local3 = b.add_local(bool_ty, Mutability::Not);
         let local4 = b.add_local(bool_ty, Mutability::Not);
-        let _5 = b.add_local(ref_bool, Mutability::Not);
-        let _6 = b.add_local(bool_ty, Mutability::Not);
+        let local_5 = b.add_local(ref_bool, Mutability::Not);
+        let local_6 = b.add_local(bool_ty, Mutability::Not);
 
         let _bb0 = b.push_block(if_switch(local3, bool_ty, 1, 2));
 
@@ -134,8 +134,8 @@ fn path_sensitive_borrows_on_different_branches_no_error() {
         b.push_stmt(bb1, assign_copy(local4, local2));
 
         let bb2 = b.push_block(goto(3));
-        b.push_stmt(bb2, assign_borrow(_5, local1, BorrowKind::Shared));
-        b.push_stmt(bb2, assign_copy(_6, _5));
+        b.push_stmt(bb2, assign_borrow(local_5, local1, BorrowKind::Shared));
+        b.push_stmt(bb2, assign_copy(local_6, local_5));
 
         b.push_block(ret());
 

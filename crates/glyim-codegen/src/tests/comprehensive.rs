@@ -167,7 +167,7 @@ fn float_constant_emission() {
         mutability: Mutability::Not,
         source_info: SourceInfo::new(Span::DUMMY),
     });
-    let pi_bits = 3.141592653589793f64.to_bits();
+    let pi_bits = std::f64::consts::PI.to_bits();
     body.basic_blocks[BasicBlockIdx::from_raw(0)]
         .statements
         .push(Statement {

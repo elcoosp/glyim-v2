@@ -15,8 +15,8 @@ use super::mir_builder::{MirBodyBuilder, TestBorrowckCtx, assign_borrow, assign_
 /// time should not produce an error.
 ///
 /// MIR:
-///   BB0: _2 = &shared _1; _3 = &shared _1; goto BB1
-///   BB1: _4 = copy _2; _5 = copy _3; return
+///   BB0: local_2 = &shared local_1; local_3 = &shared local_1; goto BB1
+///   BB1: local_4 = copy local_2; local_5 = copy local_3; return
 #[test]
 fn multiple_shared_loans_no_error() {
     let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
@@ -24,19 +24,19 @@ fn multiple_shared_loans_no_error() {
         let ref_bool = ctx_mut.mk_ref(Region::Erased, bool_ty, Mutability::Not);
 
         let mut b = MirBodyBuilder::new(bool_ty);
-        let _1 = b.add_local(bool_ty, Mutability::Not);
-        let _2 = b.add_local(ref_bool, Mutability::Not);
-        let _3 = b.add_local(ref_bool, Mutability::Not);
-        let _4 = b.add_local(bool_ty, Mutability::Not);
-        let _5 = b.add_local(bool_ty, Mutability::Not);
+        let local_1 = b.add_local(bool_ty, Mutability::Not);
+        let local_2 = b.add_local(ref_bool, Mutability::Not);
+        let local_3 = b.add_local(ref_bool, Mutability::Not);
+        let local_4 = b.add_local(bool_ty, Mutability::Not);
+        let local_5 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
-        b.push_stmt(bb0, assign_borrow(_3, _1, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_borrow(local_2, local_1, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_borrow(local_3, local_1, BorrowKind::Shared));
 
         let bb1 = b.push_block(ret());
-        b.push_stmt(bb1, assign_copy(_4, _2));
-        b.push_stmt(bb1, assign_copy(_5, _3));
+        b.push_stmt(bb1, assign_copy(local_4, local_2));
+        b.push_stmt(bb1, assign_copy(local_5, local_3));
 
         b.build()
     });
@@ -49,8 +49,8 @@ fn multiple_shared_loans_no_error() {
 /// V08-T04b: Nested borrows — shared ref to a shared ref → no error.
 ///
 /// MIR:
-///   BB0: _2 = &shared _1; _3 = &shared _2; goto BB1
-///   BB1: _4 = copy _3; return
+///   BB0: local_2 = &shared local_1; local_3 = &shared local_2; goto BB1
+///   BB1: local_4 = copy local_3; return
 #[test]
 fn nested_shared_borrows_no_error() {
     let (ty_ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
@@ -59,17 +59,17 @@ fn nested_shared_borrows_no_error() {
         let ref_ref_bool = ctx_mut.mk_ref(Region::Erased, ref_bool, Mutability::Not);
 
         let mut b = MirBodyBuilder::new(bool_ty);
-        let _1 = b.add_local(bool_ty, Mutability::Not);
-        let _2 = b.add_local(ref_bool, Mutability::Not);
-        let _3 = b.add_local(ref_ref_bool, Mutability::Not);
-        let _4 = b.add_local(bool_ty, Mutability::Not);
+        let local_1 = b.add_local(bool_ty, Mutability::Not);
+        let local_2 = b.add_local(ref_bool, Mutability::Not);
+        let local_3 = b.add_local(ref_ref_bool, Mutability::Not);
+        let local_4 = b.add_local(bool_ty, Mutability::Not);
 
         let bb0 = b.push_block(goto(1));
-        b.push_stmt(bb0, assign_borrow(_2, _1, BorrowKind::Shared));
-        b.push_stmt(bb0, assign_borrow(_3, _2, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_borrow(local_2, local_1, BorrowKind::Shared));
+        b.push_stmt(bb0, assign_borrow(local_3, local_2, BorrowKind::Shared));
 
         let bb1 = b.push_block(ret());
-        b.push_stmt(bb1, assign_copy(_4, _3));
+        b.push_stmt(bb1, assign_copy(local_4, local_3));
 
         b.build()
     });

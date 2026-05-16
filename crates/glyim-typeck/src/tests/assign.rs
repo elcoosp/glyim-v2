@@ -4,13 +4,14 @@ use glyim_hir::*;
 
 #[test]
 fn assign_to_local() {
-    let mut exprs = Vec::new();
-    exprs.push(Expr::Path(glyim_hir::Path::from_single(name("x"))));
-    exprs.push(Expr::Literal(Literal::Int(5, None)));
-    exprs.push(Expr::Assign {
-        lhs: ExprId::from_raw(0),
-        rhs: ExprId::from_raw(1),
-    });
+    let exprs = vec![
+        Expr::Path(glyim_hir::Path::from_single(name("x"))),
+        Expr::Literal(Literal::Int(5, None)),
+        Expr::Assign {
+            lhs: ExprId::from_raw(0),
+            rhs: ExprId::from_raw(1),
+        },
+    ];
 
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);

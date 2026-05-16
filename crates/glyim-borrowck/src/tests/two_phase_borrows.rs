@@ -1078,15 +1078,15 @@ fn t24_two_phase_activation_via_copy_use() {
             local_decl(i32_ty),
         ];
         let stmts = vec![
-            // _2 = &mut _1 (two-phase reservation)
+            // local_2 = &mut local_1 (two-phase reservation)
             assign_borrow(
                 LocalIdx::from_raw(2),
                 Place::new(LocalIdx::from_raw(1)),
                 make_two_phase_mut(),
             ),
-            // _3 = *_2 (Copy use of _2 — activates, _2 stays live)
+            // local_3 = *local_2 (Copy use of local_2 — activates, local_2 stays live)
             use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2)),
-            // _4 = &_1 (shared borrow after activation — conflict!)
+            // local_4 = &local_1 (shared borrow after activation — conflict!)
             assign_borrow(
                 LocalIdx::from_raw(4),
                 Place::new(LocalIdx::from_raw(1)),
