@@ -12,25 +12,41 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      LLVM_SYS_221_PREFIX: /usr/lib/llvm-22
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-        components: rustfmt, clippy
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-    - name: Clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-    - name: Build
-      run: cargo build --release
-    - name: Run tests
-      run: cargo test --release --workspace
-    - name: Check for STUB macros
-      run: |
-        if grep -r "STUB:" crates/ --include="*.rs" | grep -v "compile_error"; then
-          echo "Found STUB warnings that should be compile errors"
-          exit 1
-        fi
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v5
+        with:
+          path: /usr/lib/llvm-22
+          key: llvm-22-${{ runner.os }}
+
+      - name: Install LLVM 22
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
+          sudo apt-get install -y llvm-22-dev libclang-22-dev libpolly-22-dev
+
+      - name: Set LLVM environment
+        run: |
+          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Build
+        run: cargo build --release
+      - name: Run tests
+        run: cargo test --release --workspace
+      - name: Check for STUB macros
+        run: |
+          if grep -r "STUB:" crates/ --include="*.rs" | grep -v "compile_error"; then
+            echo "Found STUB warnings that should be compile errors"
+            exit 1
+          fi
