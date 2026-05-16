@@ -1,6 +1,6 @@
 use glyim_frontend::parse_to_syntax;
 use glyim_span::{FileId, HygieneCtx};
-use glyim_meta::{Expander, ExpansionResult};
+use crate::{Expander, ExpansionResult};
 
 /// Helper to parse a source string and get the root syntax node.
 fn parse_source(source: &str) -> glyim_syntax::SyntaxNode {
@@ -36,7 +36,7 @@ fn main() {
     let root = parse_source(src);
     let mut hygiene = HygieneCtx::new();
     let mut expander = Expander::new(&mut hygiene);
-    let (expanded, diags) = expander.expand_crate(&root);
+    let (expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     let remaining_macros = count_macro_calls(&expanded);
     assert_eq!(remaining_macros, 0, "Expected all macros expanded");
@@ -62,7 +62,7 @@ fn main() {
     let root = parse_source(src);
     let mut hygiene = HygieneCtx::new();
     let mut expander = Expander::new(&mut hygiene);
-    let (expanded, diags) = expander.expand_crate(&root);
+    let (expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     let remaining_macros = count_macro_calls(&expanded);
     assert_eq!(remaining_macros, 0, "Expected all macros expanded");
@@ -84,7 +84,7 @@ fn main() {
     let root = parse_source(src);
     let mut hygiene = HygieneCtx::new();
     let mut expander = Expander::new(&mut hygiene);
-    let (expanded, diags) = expander.expand_crate(&root);
+    let (expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     let remaining_macros = count_macro_calls(&expanded);
     assert_eq!(remaining_macros, 0);
@@ -104,7 +104,7 @@ fn main() {
     let root = parse_source(src);
     let mut hygiene = HygieneCtx::new();
     let mut expander = Expander::new(&mut hygiene);
-    let (expanded, diags) = expander.expand_crate(&root);
+    let (expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     let remaining_macros = count_macro_calls(&expanded);
     assert_eq!(remaining_macros, 0);
@@ -126,7 +126,7 @@ fn main() {
     let root = parse_source(src);
     let mut hygiene = HygieneCtx::new();
     let mut expander = Expander::new(&mut hygiene);
-    let (expanded, diags) = expander.expand_crate(&root);
+    let (expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     let remaining_macros = count_macro_calls(&expanded);
     assert_eq!(remaining_macros, 0);
@@ -146,7 +146,7 @@ fn main() {
     let root = parse_source(src);
     let mut hygiene = HygieneCtx::new();
     let mut expander = Expander::new(&mut hygiene);
-    let (expanded, diags) = expander.expand_crate(&root);
+    let (expanded, diags): (_, Vec<glyim_diag::GlyimDiagnostic>) = expander.expand_crate(&root);
     // Expect diagnostics about recursion limit
     assert!(!diags.is_empty(), "Expected recursion limit diagnostic");
 }
