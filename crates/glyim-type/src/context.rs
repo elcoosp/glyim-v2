@@ -17,6 +17,33 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+/// Definition of an ADT (struct or enum) stored in TyCtx.
+#[derive(Clone, Debug)]
+pub struct AdtDef {
+    pub kind: AdtKind,
+    pub fields: IndexVec<FieldIdx, FieldDef>,
+    pub variants: Vec<VariantDef>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AdtKind {
+    Struct,
+    Enum,
+    Union,
+}
+
+#[derive(Clone, Debug)]
+pub struct VariantDef {
+    pub name: Name,
+    pub fields: IndexVec<FieldIdx, FieldDef>,
+}
+
+#[derive(Clone, Debug)]
+pub struct FieldDef {
+    pub name: Name,
+    pub ty: Ty,
+}
+
 pub struct TyCtxMut {
     types: Vec<TyKind>,
     type_flags: Vec<TypeFlags>,
@@ -27,6 +54,7 @@ pub struct TyCtxMut {
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
     _not_send_sync: PhantomData<*const ()>,
+    adt_defs: HashMap<AdtId, AdtDef>,
 }
 
 impl TyCtxMut {
@@ -41,6 +69,7 @@ impl TyCtxMut {
             adt_reprs: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
             _not_send_sync: PhantomData,
+            adt_defs: HashMap::new(),
         };
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Error).to_raw(),
@@ -205,6 +234,7 @@ impl TyCtxMut {
             auto_trait_registry: self.auto_trait_registry,
             adt_reprs: self.adt_reprs,
             interior_mutable_adt_ids: self.interior_mutable_adt_ids,
+            adt_defs: self.adt_defs,
         }
     }
 
@@ -244,6 +274,7 @@ pub struct TyCtx {
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
+    adt_defs: HashMap<AdtId, AdtDef>,
 }
 
 impl TyCtx {
@@ -412,3 +443,12 @@ mod copy_tests {
         assert!(ctx.is_copy(tuple_ty));
     }
 }
+    // Inside TyCtxMut struct (after existing fields)
+    pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
+        self.adt_defs.insert(id, def);
+    }
+
+    pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
+        self.adt_defs.get(&id)
+    }
+
