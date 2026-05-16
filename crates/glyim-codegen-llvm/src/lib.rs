@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use crate::debug_info::DebugInfoCtx;
 use glyim_codegen::CodegenBackend;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
@@ -8,6 +10,7 @@ use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
     Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
 };
+use glyim_span::FileId;
 use glyim_type::TyCtx;
 use glyim_type::{Ty, TyKind};
 use inkwell::builder::Builder;
@@ -18,9 +21,6 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
-#[allow(unused_imports)]
-use crate::debug_info::DebugInfoCtx;
-use glyim_span::FileId;
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
@@ -1828,15 +1828,10 @@ impl LlvmBackend {
             None
         };
 
-                // Setup debug info context
+        // Setup debug info context
         let debug_ctx = if self.debug_info {
             let source_map = self.source_map.clone();
-            let di = crate::debug_info::DebugInfoCtx::new(
-                context,
-                &module,
-                source_map,
-                true,
-            );
+            let di = crate::debug_info::DebugInfoCtx::new(context, module, source_map, true);
             Some(di)
         } else {
             None

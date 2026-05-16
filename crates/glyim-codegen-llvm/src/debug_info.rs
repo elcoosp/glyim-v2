@@ -81,12 +81,9 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             return;
         }
         let file = self.get_file(file_id);
-        let subroutine_type = self.builder.create_subroutine_type(
-            file,
-            None,
-            &[],
-            DIFlagsConstants::ZERO,
-        );
+        let subroutine_type =
+            self.builder
+                .create_subroutine_type(file, None, &[], DIFlagsConstants::ZERO);
 
         let subprogram = self.builder.create_function(
             self.compile_unit_scope,
@@ -116,7 +113,10 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         }
         let (line, col) = self.span_to_line_col(span)?;
         let scope = self.subprogram.unwrap().as_debug_info_scope();
-        Some(self.builder.create_debug_location(context, line, col, scope, None))
+        Some(
+            self.builder
+                .create_debug_location(context, line, col, scope, None),
+        )
     }
 
     pub(crate) fn declare_local(
@@ -161,13 +161,9 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             0,
         );
 
-        let location = self.builder.create_debug_location(
-            context,
-            line,
-            col,
-            scope,
-            None,
-        );
+        let location = self
+            .builder
+            .create_debug_location(context, line, col, scope, None);
 
         let _ = self.builder.insert_declare_at_end(
             alloca,
