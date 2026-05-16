@@ -1,3 +1,6 @@
+mod call_abi;
+mod drop_dealloc;
+mod rvalue_aggregate;
 mod switch_edge_cases;
 mod switch_int;
 mod abi_classify;
