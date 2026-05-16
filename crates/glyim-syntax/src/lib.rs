@@ -45,6 +45,7 @@ pub enum SyntaxKind {
     KwConst,
     KwStatic,
     KwMove,
+    KwMacroRules,
     Lifetime,
     // Literals
     IntLit,
@@ -174,6 +175,9 @@ pub enum SyntaxKind {
     UseTree,
     MacroCall,
     TokenTree,
+    MacroDef,
+    MacroArm,
+    MacroPattern,
     StructField,
     EnumVariant,
     FieldList,
@@ -190,7 +194,7 @@ impl SyntaxKind {
         )
     }
     pub fn is_keyword(self) -> bool {
-        (self as u16) >= Self::KwFn as u16 && (self as u16) <= Self::KwStatic as u16
+        (self as u16) >= Self::KwFn as u16 && (self as u16) <= Self::KwMacroRules as u16
     }
     pub fn is_literal(self) -> bool {
         matches!(

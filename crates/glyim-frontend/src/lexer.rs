@@ -810,6 +810,7 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
         "unsafe" => SyntaxKind::KwUnsafe,
         "const" => SyntaxKind::KwConst,
         "static" => SyntaxKind::KwStatic,
+        "macro_rules" => SyntaxKind::KwMacroRules,
         "_" => SyntaxKind::Underscore,
         _ => SyntaxKind::Ident,
     }
