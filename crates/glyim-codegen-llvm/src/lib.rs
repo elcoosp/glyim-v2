@@ -388,9 +388,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 ptr.as_basic_value_enum()
             }
             Rvalue::BinaryOp(op, operands) => {
-                let lhs = self.lower_operand(&operands.0).into_int_value();
-                let rhs = self.lower_operand(&operands.1).into_int_value();
-                self.lower_binary_op(*op, lhs, rhs)
+                let lhs_val = self.lower_operand(&operands.0);
+                let rhs_val = self.lower_operand(&operands.1);
+                let is_unsigned = matches!(
+                    self.ty_ctx.ty_kind(self.operand_ty(&operands.0)),
+                    TyKind::Uint(_)
+                );
+                let lhs = lhs_val.into_int_value();
+                let rhs = rhs_val.into_int_value();
+                self.lower_binary_op(*op, lhs, rhs, is_unsigned)
             }
             Rvalue::UnaryOp(op, operand) => {
                 let val = self.lower_operand(operand).into_int_value();
@@ -399,7 +405,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             Rvalue::Aggregate(kind, operands) => self.lower_aggregate(kind, operands),
             Rvalue::Discriminant(place) => self.lower_discriminant(place),
             Rvalue::Len(place) => self.lower_len(place),
-            Rvalue::Cast(cast_kind, operand, _ty) => self.lower_cast(*cast_kind, operand),
+            Rvalue::Cast(cast_kind, operand, ty) => self.lower_cast(*cast_kind, operand, *ty),
             Rvalue::Repeat(operand, count) => self.lower_repeat(operand, count),
         }
     }
@@ -533,6 +539,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         op: BinOp,
         lhs: IntValue<'ctx>,
         rhs: IntValue<'ctx>,
+        is_unsigned: bool,
     ) -> BasicValueEnum<'ctx> {
         match op {
             BinOp::Add => self
@@ -550,16 +557,28 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_int_mul(lhs, rhs, "mul")
                 .expect("mul failed")
                 .into(),
-            BinOp::Div => self
-                .builder
-                .build_int_signed_div(lhs, rhs, "sdiv")
-                .expect("sdiv failed")
-                .into(),
-            BinOp::Rem => self
-                .builder
-                .build_int_signed_rem(lhs, rhs, "srem")
-                .expect("srem failed")
-                .into(),
+            BinOp::Div => if is_unsigned {
+                self.builder
+                    .build_int_unsigned_div(lhs, rhs, "udiv")
+                    .expect("udiv failed")
+                    .into()
+            } else {
+                self.builder
+                    .build_int_signed_div(lhs, rhs, "sdiv")
+                    .expect("sdiv failed")
+                    .into()
+            },
+            BinOp::Rem => if is_unsigned {
+                self.builder
+                    .build_int_unsigned_rem(lhs, rhs, "urem")
+                    .expect("urem failed")
+                    .into()
+            } else {
+                self.builder
+                    .build_int_signed_rem(lhs, rhs, "srem")
+                    .expect("srem failed")
+                    .into()
+            },
             BinOp::Eq => self
                 .builder
                 .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "eq")
@@ -647,23 +666,33 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
-    fn lower_cast(&self, kind: glyim_mir::CastKind, operand: &Operand) -> BasicValueEnum<'ctx> {
+    fn operand_ty(&self, operand: &Operand) -> Ty {
+        match operand {
+            Operand::Copy(place) | Operand::Move(place) => self.place_ty(place),
+            Operand::Constant(c) => c.ty,
+        }
+    }
+
+    fn lower_cast(&self, kind: glyim_mir::CastKind, operand: &Operand, target_ty: Ty) -> BasicValueEnum<'ctx> {
         let val = self.lower_operand(operand);
         match kind {
             glyim_mir::CastKind::IntToInt => {
                 let int_val = val.into_int_value();
+                let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
+                let dest_bits = dest_type.get_bit_width();
                 let src_bits = int_val.get_type().get_bit_width();
-                let dest_type = self.llvm_int_type(src_bits);
-                if src_bits < 64 {
+                if src_bits < dest_bits {
                     self.builder
-                        .build_int_s_extend(int_val, dest_type, "int_to_int")
+                        .build_int_s_extend(int_val, dest_type, "int_to_int_ext")
                         .expect("int_to_int ext failed")
                         .into()
-                } else {
+                } else if src_bits > dest_bits {
                     self.builder
-                        .build_int_truncate(int_val, dest_type, "int_to_int")
+                        .build_int_truncate(int_val, dest_type, "int_to_int_trunc")
                         .expect("int_to_int trunc failed")
                         .into()
+                } else {
+                    val
                 }
             }
             glyim_mir::CastKind::FloatToInt => {

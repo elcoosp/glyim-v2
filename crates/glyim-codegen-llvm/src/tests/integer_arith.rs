@@ -81,7 +81,7 @@ fn test_udiv_u32() {
 
 #[test]
 fn test_urem_u32() {
-    test_binop_u32(BinOp::Rem, 87, 3, 29);
+    test_binop_u32(BinOp::Rem, 87, 3, 0);
 }
 
 #[test]
