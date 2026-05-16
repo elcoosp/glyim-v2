@@ -2,6 +2,7 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
+use std::collections::HashSet;
 
 use crate::auto_trait::*;
 use crate::display::TypeLookup;
@@ -24,6 +25,7 @@ pub struct TyCtxMut {
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
+    interior_mutable_adt_ids: HashSet<AdtId>,
     _not_send_sync: PhantomData<*const ()>,
 }
 
@@ -37,6 +39,7 @@ impl TyCtxMut {
             resolver,
             auto_trait_registry: AutoTraitRegistry::new(),
             adt_reprs: HashMap::new(),
+            interior_mutable_adt_ids: HashSet::new(),
             _not_send_sync: PhantomData,
         };
         assert_eq!(
@@ -196,7 +199,13 @@ impl TyCtxMut {
             resolver: self.resolver,
             auto_trait_registry: self.auto_trait_registry,
             adt_reprs: self.adt_reprs,
+            interior_mutable_adt_ids: self.interior_mutable_adt_ids,
         }
+    }
+
+    /// Mark an ADT as containing `UnsafeCell` (interior mutability).
+    pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
+        self.interior_mutable_adt_ids.insert(adt_id);
     }
 }
 
@@ -216,6 +225,9 @@ impl TypeLookup for TyCtxMut {
     fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
+    fn is_interior_mutable_adt(&self, adt_id: AdtId) -> bool {
+        self.interior_mutable_adt_ids.contains(&adt_id)
+    }
 }
 
 pub struct TyCtx {
@@ -226,6 +238,7 @@ pub struct TyCtx {
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
+    interior_mutable_adt_ids: HashSet<AdtId>,
 }
 
 impl TyCtx {
@@ -334,6 +347,9 @@ impl TypeLookup for TyCtx {
     }
     fn error_ty(&self) -> Ty {
         Ty::ERROR
+    }
+    fn is_interior_mutable_adt(&self, adt_id: AdtId) -> bool {
+        self.interior_mutable_adt_ids.contains(&adt_id)
     }
 }
 

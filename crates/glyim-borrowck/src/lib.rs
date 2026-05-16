@@ -468,6 +468,7 @@ fn check_stmt_conflicts(
     current_stmt_idx: usize,
     block_data: &BasicBlockData,
     errors: &mut Vec<GlyimDiagnostic>,
+    interior_mutable_locals: &BitSet,
 ) {
     match &stmt.kind {
         StatementKind::Assign(dest, rvalue) => {
@@ -553,9 +554,29 @@ fn check_stmt_conflicts(
                     // During reservation, writes are still not allowed
                     // (reservation acts as shared, and you can't write to
                     // a shared-borrowed place).
+                    // Exception: interior mutability (e.g., Cell) allows writes through shared borrows.
                     let dest_local = dest.local;
                     for loan in active_loans {
                         if loan.borrowed_place.local == dest_local {
+                            // Skip if this is a shared borrow and the type has interior mutability
+                            if matches!(loan.kind, BorrowKind::Shared)
+                                && interior_mutable_locals.contains(dest_local.to_raw() as usize)
+                            {
+                                continue;
+                            }
+                            // Two-phase borrow in reservation acts like shared; also skip if interior mutable.
+                            let in_reservation = loan_is_in_reservation(
+                                loan,
+                                current_block,
+                                current_stmt_idx,
+                                block_data,
+                            );
+                            if in_reservation
+                                && interior_mutable_locals.contains(dest_local.to_raw() as usize)
+                            {
+                                continue;
+                            }
+
                             let msg = format!(
                                 "cannot assign to `{}` because it is borrowed",
                                 dest_local.to_raw()
@@ -665,6 +686,16 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     let liveness = compute_liveness(body);
     let mut errors = Vec::new();
 
+    // Precompute which locals have interior mutability (e.g., Cell, RefCell)
+    let mut interior_mutable_locals = BitSet::with_capacity(body.locals.len());
+    for (local_idx, local_decl) in body.locals.iter_enumerated() {
+        let ty_flags = ctx.ty_ctx().ty_flags(local_decl.ty);
+        if ty_flags.contains(glyim_type::TypeFlags::HAS_INTERIOR_MUTABILITY) {
+            interior_mutable_locals.insert(local_idx.to_raw() as usize);
+        }
+    }
+
+
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         let block_usize = block_idx.to_raw() as usize;
         let live_out = &liveness.live_out[block_usize];
@@ -687,6 +718,7 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
                 stmt_idx,
                 block_data,
                 &mut errors,
+                &interior_mutable_locals,
             );
         }
     }
