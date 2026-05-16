@@ -65,7 +65,17 @@ pub(crate) fn parse_pattern_from_node(node: &glyim_syntax::SyntaxNode) -> Option
 }
 
 fn parse_pattern(trees: &[TokenTree]) -> Option<Pattern> {
-    let (pieces, _) = parse_pattern_pieces(trees, 0)?;
+    // If the pattern is wrapped in a Group (e.g., (...) from CST), unwrap it.
+    let effective = if trees.len() == 1 {
+        if let TokenTree::Group(_, inner, _) = &trees[0] {
+            inner.as_slice()
+        } else {
+            trees
+        }
+    } else {
+        trees
+    };
+    let (pieces, _) = parse_pattern_pieces(effective, 0)?;
     Some(Pattern::new(pieces))
 }
 
@@ -198,13 +208,12 @@ fn match_pieces(
                 }
             }
             PatternPiece::Metavar { name, fragment: _ } => {
-                // Metavar can match zero tokens (for ? repetition) or one token tree
+                // Metavar matches exactly one token tree if available, zero if at end
                 if i < input.len() {
                     let captured = vec![input[i].clone()];
                     i += 1;
                     bindings.entry(name.clone()).or_default().extend(captured);
                 }
-                // If i >= input.len(), match zero tokens (empty binding)
             }
             PatternPiece::Repetition { inner, separator, kind } => {
                 let mut repetitions: Vec<HashMap<SmolStr, Vec<TokenTree>>> = Vec::new();
