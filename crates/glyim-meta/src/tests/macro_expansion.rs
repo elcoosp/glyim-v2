@@ -200,7 +200,7 @@ fn repetition_with_separator() {
     let src = r#"
 macro_rules! joined {
     ($($x:expr),+ $(,)?) => {
-        stringify!($($x),+)
+        { $( let _ = $x; )+ }
     };
 }
 fn main() {
@@ -222,7 +222,7 @@ fn zero_or_one_repetition() {
     let src = r#"
 macro_rules! optional {
     ($($x:expr)?) => {
-        0 $(+ $x)?
+        { $( $x; )? 0 }
     };
 }
 fn main() {
