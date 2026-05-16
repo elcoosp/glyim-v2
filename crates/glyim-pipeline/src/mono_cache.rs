@@ -86,5 +86,5 @@ pub(crate) fn compute_max_cgus() -> usize {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    cores.min(16).max(1)
+    cores.clamp(1, 16)
 }
