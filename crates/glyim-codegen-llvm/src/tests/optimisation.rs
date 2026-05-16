@@ -1,18 +1,19 @@
 use crate::LlvmBackend;
-use glyim_codegen::CodegenBackend;
-use glyim_core::primitives::*;
-use glyim_core::Interner;
+use glyim_core::{CrateId, DefId, Interner, LocalDefId, Mutability};
+use glyim_core::primitives::IntTy;
 use glyim_mir::{
-    BasicBlockIdx, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place,
+    Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place,
     Rvalue, SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
-use glyim_type::{Mutability, Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{Ty, TyCtxMut, TyKind};
 use inkwell::context::Context;
 use std::sync::Arc;
 
-fn dummy_ty_ctx() -> TyCtx {
-    TyCtxMut::new(Interner::default()).freeze()
+fn make_ty_ctx() -> (glyim_type::TyCtx, Ty) {
+    let mut ctx_mut = TyCtxMut::new(Interner::default());
+    let int_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    (ctx_mut.freeze(), int_ty)
 }
 
 fn simple_body_with_local(ty: Ty) -> Body {
@@ -63,10 +64,9 @@ fn count_allocas(module: &inkwell::module::Module) -> usize {
 
 #[test]
 fn test_o0_no_optimizations() {
-    let ctx = dummy_ty_ctx();
-    let int_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let (ctx, int_ty) = make_ty_ctx();
     let backend = LlvmBackend::new()
-        .with_ty_ctx(ctx.clone())
+        .with_ty_ctx(ctx)
         .with_opt_level(0);
     let body = Arc::new(simple_body_with_local(int_ty));
     let context = Context::create();
@@ -76,10 +76,9 @@ fn test_o0_no_optimizations() {
 
 #[test]
 fn test_o2_mem2reg() {
-    let ctx = dummy_ty_ctx();
-    let int_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let (ctx, int_ty) = make_ty_ctx();
     let backend = LlvmBackend::new()
-        .with_ty_ctx(ctx.clone())
+        .with_ty_ctx(ctx)
         .with_opt_level(2);
     let body = Arc::new(simple_body_with_local(int_ty));
     let context = Context::create();
@@ -89,10 +88,9 @@ fn test_o2_mem2reg() {
 
 #[test]
 fn test_oz_size_optimization() {
-    let ctx = dummy_ty_ctx();
-    let int_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let (ctx, int_ty) = make_ty_ctx();
     let backend = LlvmBackend::new()
-        .with_ty_ctx(ctx.clone())
+        .with_ty_ctx(ctx)
         .with_opt_level(2)
         .with_opt_for_size(true);
     let body = Arc::new(simple_body_with_local(int_ty));
@@ -103,10 +101,9 @@ fn test_oz_size_optimization() {
 
 #[test]
 fn test_lto_across_cgus() {
-    let ctx = dummy_ty_ctx();
-    let int_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let (ctx, int_ty) = make_ty_ctx();
     let backend = LlvmBackend::new()
-        .with_ty_ctx(ctx.clone())
+        .with_ty_ctx(ctx)
         .with_opt_level(2);
     let callee_owner = DefId::new(CrateId::from_raw(1), LocalDefId::from_raw(10));
     let mut callee_body = Body::dummy(callee_owner);
@@ -138,7 +135,7 @@ fn test_lto_across_cgus() {
     callee_body.return_ty = int_ty;
 
     let caller_owner = DefId::new(CrateId::from_raw(1), LocalDefId::from_raw(20));
-    let caller_body = Body::dummy(caller_owner); // empty caller, just to have two functions
+    let caller_body = Body::dummy(caller_owner);
 
     let bodies = vec![Arc::new(callee_body), Arc::new(caller_body)];
     let context = Context::create();

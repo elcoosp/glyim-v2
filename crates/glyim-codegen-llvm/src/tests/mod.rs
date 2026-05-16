@@ -26,3 +26,5 @@ mod switch_edge_cases;
 mod switch_int;
 mod unary_ops;
 mod unsigned_cmp;
+
+mod optimisation;
