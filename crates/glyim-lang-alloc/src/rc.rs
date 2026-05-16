@@ -21,16 +21,20 @@ impl<T> Rc<T> {
         let layout = Layout::from_size_align(
             core::mem::size_of::<RcInner<T>>(),
             core::mem::align_of::<RcInner<T>>(),
-        ).expect("Rc layout invalid");
+        )
+        .expect("Rc layout invalid");
         let ptr = crate::alloc::GLOBAL.alloc(layout) as *mut RcInner<T>;
         if ptr.is_null() {
             crate::alloc::handle_alloc_error(layout);
         }
         unsafe {
-            core::ptr::write(ptr, RcInner {
-                strong: Cell::new(1),
-                value,
-            });
+            core::ptr::write(
+                ptr,
+                RcInner {
+                    strong: Cell::new(1),
+                    value,
+                },
+            );
         }
         Rc { ptr }
     }
@@ -70,7 +74,8 @@ impl<T> Drop for Rc<T> {
                 let layout = Layout::from_size_align(
                     core::mem::size_of::<RcInner<T>>(),
                     core::mem::align_of::<RcInner<T>>(),
-                ).expect("Rc layout invalid at drop");
+                )
+                .expect("Rc layout invalid at drop");
                 crate::alloc::GLOBAL.dealloc(self.ptr as *mut u8, layout);
             }
         }

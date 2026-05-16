@@ -9,7 +9,10 @@ fn layout_valid() {
 
 #[test]
 fn layout_invalid_alignment() {
-    assert_eq!(Layout::from_size_align(1024, 3), Err(LayoutError::InvalidAlignment(3)));
+    assert_eq!(
+        Layout::from_size_align(1024, 3),
+        Err(LayoutError::InvalidAlignment(3))
+    );
 }
 
 #[test]

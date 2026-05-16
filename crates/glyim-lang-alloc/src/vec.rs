@@ -1,6 +1,3 @@
-//! A contiguous growable array type, `Vec<T>`.
-//! Stub – full implementation in progress.
-
 use crate::raw_vec::RawVec;
 use core::ops::{Index, IndexMut};
 
@@ -70,6 +67,12 @@ impl<T> Vec<T> {
             }
             self.len += 1;
         }
+    }
+}
+
+impl<T> Default for Vec<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

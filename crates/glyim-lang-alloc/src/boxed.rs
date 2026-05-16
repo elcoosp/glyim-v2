@@ -28,9 +28,11 @@ impl<T> Box<T> {
 impl<T: ?Sized> Drop for Box<T> {
     fn drop(&mut self) {
         // SAFETY: ptr was allocated by Box::new with the same layout.
-        let layout = Layout::from_size_align(core::mem::size_of_val(unsafe { &*self.ptr }),
-                                             core::mem::align_of_val(unsafe { &*self.ptr }))
-            .expect("Box layout invalid at drop");
+        let layout = Layout::from_size_align(
+            core::mem::size_of_val(unsafe { &*self.ptr }),
+            core::mem::align_of_val(unsafe { &*self.ptr }),
+        )
+        .expect("Box layout invalid at drop");
         unsafe {
             core::ptr::drop_in_place(self.ptr);
             crate::alloc::GLOBAL.dealloc(self.ptr as *mut u8, layout);

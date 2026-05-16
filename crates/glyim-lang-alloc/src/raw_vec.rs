@@ -1,6 +1,3 @@
-//! Low-level buffer management.
-//! Stub – full implementation in progress.
-
 use crate::alloc::{GlobalAlloc, Layout};
 
 /// A raw, untyped memory buffer with a capacity.
@@ -27,7 +24,8 @@ impl<T> RawVec<T> {
         let layout = Layout::from_size_align(
             new_cap * core::mem::size_of::<T>(),
             core::mem::align_of::<T>(),
-        ).expect("RawVec layout invalid");
+        )
+        .expect("RawVec layout invalid");
         let new_ptr = crate::alloc::GLOBAL.alloc(layout) as *mut T;
         if new_ptr.is_null() {
             crate::alloc::handle_alloc_error(layout);
@@ -39,7 +37,8 @@ impl<T> RawVec<T> {
             let old_layout = Layout::from_size_align(
                 self.cap * core::mem::size_of::<T>(),
                 core::mem::align_of::<T>(),
-            ).expect("Old layout invalid");
+            )
+            .expect("Old layout invalid");
             unsafe { crate::alloc::GLOBAL.dealloc(self.ptr as *mut u8, old_layout) };
         }
         self.ptr = new_ptr;
@@ -59,6 +58,12 @@ impl<T> RawVec<T> {
     }
 }
 
+impl<T> Default for RawVec<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Drop for RawVec<T> {
     fn drop(&mut self) {
         if self.cap == 0 || self.ptr.is_null() {
@@ -67,7 +72,8 @@ impl<T> Drop for RawVec<T> {
         let layout = Layout::from_size_align(
             self.cap * core::mem::size_of::<T>(),
             core::mem::align_of::<T>(),
-        ).expect("RawVec layout invalid at drop");
+        )
+        .expect("RawVec layout invalid at drop");
         unsafe { crate::alloc::GLOBAL.dealloc(self.ptr as *mut u8, layout) };
     }
 }

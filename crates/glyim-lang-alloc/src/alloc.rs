@@ -21,10 +21,14 @@ impl Layout {
     }
 
     /// The minimum size in bytes for a memory block of this layout.
-    pub fn size(&self) -> usize { self.size }
+    pub fn size(&self) -> usize {
+        self.size
+    }
 
     /// The minimum alignment for a memory block of this layout.
-    pub fn align(&self) -> usize { self.align }
+    pub fn align(&self) -> usize {
+        self.align
+    }
 }
 
 /// Error returned by `Layout::from_size_align` when parameters are invalid.

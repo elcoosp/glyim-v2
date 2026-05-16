@@ -1,6 +1,3 @@
-//! A UTF-8 encoded, growable string.
-//! Stub – full implementation in progress.
-
 use crate::vec::Vec;
 
 /// A mutable string type backed by a `Vec<u8>`.
@@ -32,5 +29,11 @@ impl String {
     /// Returns `true` if the string is empty.
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
+    }
+}
+
+impl Default for String {
+    fn default() -> Self {
+        Self::new()
     }
 }
