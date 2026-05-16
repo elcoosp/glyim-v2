@@ -387,7 +387,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             let i32_type = self.context.i32_type();
             let result_type = self.context.struct_type(&[ptr_type.into(), i32_type.into()], false);
 
-            let pad = self
+            let _pad = self
                 .builder
                 .build_landing_pad(result_type, personality_fn, &[], true, "pad")
                 .map_err(|e| {
