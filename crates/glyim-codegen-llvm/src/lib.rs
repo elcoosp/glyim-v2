@@ -177,6 +177,8 @@ struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
     _function: inkwell::values::FunctionValue<'ctx>,
+    drop_fn: inkwell::values::FunctionValue<'ctx>,
+    dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
     target_info: TargetInfo,
     ty_ctx: &'a TyCtx,
@@ -702,6 +704,201 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         array_val.as_basic_value_enum()
     }
 
+    fn lower_drop(
+        &mut self,
+        place: &Place,
+        target: &BasicBlockIdx,
+        cleanup: &Option<BasicBlockIdx>,
+    ) -> CompResult<()> {
+        let place_ty = self.place_ty(place);
+        let needs_drop = self.type_needs_drop(place_ty);
+
+        if needs_drop {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+            // Get pointer to the value to drop
+            let place_ptr = self.place_ptr(place);
+            let i8_ptr = self
+                .builder
+                .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
+                .expect("bitcast for drop failed");
+
+            self.builder
+                .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build drop_in_place call: {:?}",
+                        e
+                    ))]
+                })?;
+
+            // If the type is a reference/pointer to heap memory, also call glyim_dealloc
+            if self.type_needs_dealloc(place_ty) {
+                self.emit_dealloc_for_drop(place, cleanup)?;
+            }
+        }
+
+        // Branch to target
+        let target_bb = self.bb_map.get(target).unwrap();
+        self.builder
+            .build_unconditional_branch(*target_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build branch after Drop: {:?}",
+                    e
+                ))]
+            })?;
+        Ok(())
+    }
+
+    /// Check if a type needs a drop call.
+    /// Types that are Copy or trivially droppable do not need drop_in_place.
+    fn type_needs_drop(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            // Primitive types that are Copy and trivially droppable
+            TyKind::Never
+            | TyKind::Unit
+            | TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char => false,
+            // Error type - no drop needed
+            TyKind::Error => false,
+            // References, raw pointers - the referent may need drop
+            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
+            // Tuples - need drop if any field needs drop
+            TyKind::Tuple(subst) => {
+                let args = self.ty_ctx.substitution_args(*subst);
+                args.iter().any(|arg| {
+                    if let glyim_type::GenericArg::Ty(t) = arg {
+                        self.type_needs_drop(*t)
+                    } else {
+                        false
+                    }
+                })
+            }
+            // Arrays - need drop if element needs drop
+            TyKind::Array(elem, _) => self.type_needs_drop(*elem),
+            // ADTs, closures, etc. - conservatively assume they need drop
+            TyKind::Adt(_, _) | TyKind::Closure(_, _) | TyKind::FnDef(_, _) => true,
+            // Opaque types - may need drop
+            TyKind::Opaque(_, _) => true,
+            // Dynamic types (trait objects) - need drop
+            TyKind::Dynamic(_, _) => true,
+            // Slice - needs drop
+            TyKind::Slice(_) => true,
+            // Infer/Param/Bound - conservatively true
+            TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) => true,
+            // Function pointers - no drop needed
+            TyKind::FnPtr(_) => false,
+            // String - needs drop (has heap allocation)
+            TyKind::String => true,
+            // Projection - conservatively true
+            TyKind::Projection(_) => true,
+        }
+    }
+
+    /// Check if a type is a reference/pointer that owns heap memory
+    /// and therefore needs deallocation after drop_in_place.
+    fn type_needs_dealloc(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::Ref(_, inner, Mutability::Mut) => !self.is_copy_type(*inner),
+            TyKind::RawPtr(inner, Mutability::Mut) => !self.is_copy_type(*inner),
+            _ => false,
+        }
+    }
+
+    /// Check if a type implements Copy (simplified - no trait solver in codegen).
+    fn is_copy_type(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::Never
+            | TyKind::Unit
+            | TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char => true,
+            TyKind::Ref(_, inner, Mutability::Not) => self.is_copy_type(*inner),
+            TyKind::RawPtr(_, _) => true,
+            TyKind::FnPtr(_) => true,
+            TyKind::Tuple(subst) => {
+                let args = self.ty_ctx.substitution_args(*subst);
+                args.iter().all(|arg| {
+                    if let glyim_type::GenericArg::Ty(t) = arg {
+                        self.is_copy_type(*t)
+                    } else {
+                        true
+                    }
+                })
+            }
+            TyKind::Array(elem, _) => self.is_copy_type(*elem),
+            _ => false,
+        }
+    }
+
+    /// Emit a call to glyim_dealloc for a place that owns heap memory.
+    fn emit_dealloc_for_drop(
+        &mut self,
+        place: &Place,
+        _cleanup: &Option<BasicBlockIdx>,
+    ) -> CompResult<()> {
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.llvm_int_type(64);
+
+        // Get the pointer value (for a ref/ptr, load the pointer first)
+        let place_ptr = self.place_ptr(place);
+        let place_ty = self.place_ty(place);
+
+        let (inner_ty, is_ref) = match self.ty_ctx.ty_kind(place_ty) {
+            TyKind::Ref(_, inner, _) => (*inner, true),
+            TyKind::RawPtr(inner, _) => (*inner, true),
+            _ => (place_ty, false),
+        };
+
+        // Load the pointer value if it's a reference type
+        let ptr_val = if is_ref {
+            let ref_llvm_ty = self.llvm_type_for_ty(place_ty);
+            let loaded = self
+                .builder
+                .build_load(ref_llvm_ty, place_ptr, "drop_ref_load")
+                .expect("load ref for dealloc failed");
+            loaded.into_pointer_value()
+        } else {
+            place_ptr
+        };
+
+        // Bitcast to i8*
+        let i8_ptr = self
+            .builder
+            .build_bit_cast(ptr_val, ptr_type, "dealloc_ptr")
+            .expect("bitcast for dealloc failed");
+
+        // Compute size and alignment from layout
+        let layout_computer =
+            crate::abi::FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+        let layout = layout_computer
+            .layout_of(inner_ty)
+            .unwrap_or_else(|_| glyim_layout::Layout::unit());
+        let size_val = i64_type.const_int(layout.size.0, false);
+        let align_val = i64_type.const_int(layout.align.0, false);
+
+        self.builder
+            .build_call(
+                self.dealloc_fn,
+                &[i8_ptr.into(), size_val.into(), align_val.into()],
+                "dealloc_call",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build glyim_dealloc call: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
@@ -797,20 +994,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 })?;
             }
             TerminatorKind::Drop {
-                place: _,
+                place,
                 target,
-                cleanup: _,
+                cleanup,
             } => {
-                tracing::warn!("STUB: Drop terminator not yet implemented, jumping to target");
-                let target_bb = self.bb_map.get(target).unwrap();
-                self.builder
-                    .build_unconditional_branch(*target_bb)
-                    .map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "Failed to build branch for Drop: {:?}",
-                            e
-                        ))]
-                    })?;
+                self.lower_drop(place, target, cleanup)?;
             }
         }
         Ok(())
@@ -1044,10 +1232,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 }
 
 impl LlvmBackend {
-    fn lower_body<'ctx>(
+    fn lower_body<'ctx, 'b>(
         &'ctx self,
         context: &'ctx Context,
-        module: &Module<'ctx>,
+        module: &'b Module<'ctx>,
         body: &Body,
     ) -> CompResult<()> {
         let fn_name = format!(
@@ -1083,10 +1271,31 @@ impl LlvmBackend {
         }
 
         let ty_ctx = self.ty_ctx.as_ref().unwrap();
+
+        // Pre-declare runtime functions needed for drop/dealloc
+        let void_type = context.void_type();
+        let ptr_type = context.ptr_type(AddressSpace::default());
+        let i64_type = context
+            .custom_width_int_type(std::num::NonZeroU32::new(64).unwrap())
+            .unwrap();
+
+        let drop_fn_type = void_type.fn_type(&[ptr_type.into()], false);
+        let drop_fn = module
+            .get_function("glyim_drop_in_place")
+            .unwrap_or_else(|| module.add_function("glyim_drop_in_place", drop_fn_type, None));
+
+        let dealloc_fn_type =
+            void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+        let dealloc_fn = module
+            .get_function("glyim_dealloc")
+            .unwrap_or_else(|| module.add_function("glyim_dealloc", dealloc_fn_type, None));
+
         let mut lowering_ctx = LoweringCtx {
             context,
             builder,
             _function: function,
+            drop_fn,
+            dealloc_fn,
             body,
             target_info: self.target_info.clone(),
             ty_ctx,
