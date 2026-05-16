@@ -291,7 +291,10 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::LBrace);
         while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
             // Skip separators between arms
-            if matches!(self.current_kind(), SyntaxKind::Comma | SyntaxKind::Semicolon) {
+            if matches!(
+                self.current_kind(),
+                SyntaxKind::Comma | SyntaxKind::Semicolon
+            ) {
                 self.bump();
                 continue;
             }
@@ -303,7 +306,10 @@ impl<'a> Parser<'a> {
             self.parse_token_tree();
             self.finish_node(); // MacroArm
             // Consume optional separator
-            if matches!(self.current_kind(), SyntaxKind::Comma | SyntaxKind::Semicolon) {
+            if matches!(
+                self.current_kind(),
+                SyntaxKind::Comma | SyntaxKind::Semicolon
+            ) {
                 self.bump();
             }
         }
@@ -345,14 +351,7 @@ impl<'a> Parser<'a> {
                             if self.current_kind() == SyntaxKind::Colon {
                                 self.bump(); // :
                                 // Parse fragment specifier
-                                if matches!(
-                                    self.current_kind(),
-                                    SyntaxKind::Ident | SyntaxKind::Lifetime
-                                ) {
-                                    self.bump();
-                                } else {
-                                    self.bump();
-                                }
+                                self.bump();
                             }
                         } else {
                             // Standalone $ token

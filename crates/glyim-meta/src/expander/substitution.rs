@@ -34,9 +34,11 @@ pub(crate) fn substitute(
                         let separator = if i < template.len()
                             && !matches!(
                                 &template[i],
-                                TokenTree::Token(SyntaxKind::Star | SyntaxKind::Plus | SyntaxKind::Question, _)
-                            )
-                        {
+                                TokenTree::Token(
+                                    SyntaxKind::Star | SyntaxKind::Plus | SyntaxKind::Question,
+                                    _
+                                )
+                            ) {
                             let sep = template[i].clone();
                             i += 1;
                             Some(sep)
@@ -57,7 +59,8 @@ pub(crate) fn substitute(
                         // Find all metavariable names in the inner pattern
                         let var_names = find_all_metavars(inner);
                         // Determine repetition count from the first metavar with bindings
-                        let repetitions: usize = var_names.iter()
+                        let repetitions: usize = var_names
+                            .iter()
                             .filter_map(|name| bindings.get(name).map(|v| v.len()))
                             .max()
                             .unwrap_or(0);
@@ -70,14 +73,16 @@ pub(crate) fn substitute(
                                             result.push(sep.clone());
                                         }
                                     }
-                                    let rep_bindings = extract_repetition_bindings(bindings, &var_names, rep_idx);
+                                    let rep_bindings =
+                                        extract_repetition_bindings(bindings, &var_names, rep_idx);
                                     let subbed = substitute(inner, &rep_bindings);
                                     result.extend(subbed);
                                 }
                             }
                             RepKind::ZeroOrOne => {
                                 if repetitions > 0 {
-                                    let rep_bindings = extract_repetition_bindings(bindings, &var_names, 0);
+                                    let rep_bindings =
+                                        extract_repetition_bindings(bindings, &var_names, 0);
                                     let subbed = substitute(inner, &rep_bindings);
                                     result.extend(subbed);
                                 }

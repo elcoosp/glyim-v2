@@ -4,7 +4,9 @@ mod token_tree;
 
 use glyim_core::interner::{Interner, Name};
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::{ByteIdx, ExpnData, ExpnKind, FileId, HygieneCtx, Mark, Span, SyntaxContext, Transparency};
+use glyim_span::{
+    ByteIdx, ExpnData, ExpnKind, FileId, HygieneCtx, Mark, Span, SyntaxContext, Transparency,
+};
 use glyim_syntax::{GlyimLang, GreenNode, SyntaxKind, SyntaxNode};
 use rowan::Language;
 use std::collections::HashMap;
@@ -148,7 +150,11 @@ impl<'a> ExpanderImpl<'a> {
         token_tree::collect_token_trees(node)
     }
 
-    pub(crate) fn expand_node(&mut self, node: &SyntaxNode, depth: u32) -> (GreenNode, Vec<GlyimDiagnostic>) {
+    pub(crate) fn expand_node(
+        &mut self,
+        node: &SyntaxNode,
+        depth: u32,
+    ) -> (GreenNode, Vec<GlyimDiagnostic>) {
         use rowan::GreenNodeBuilder;
         let mut builder = GreenNodeBuilder::new();
         let mut diagnostics = Vec::new();
@@ -184,11 +190,18 @@ impl<'a> ExpanderImpl<'a> {
                         rowan::NodeOrToken::Node(n) => {
                             // Look for the FnDef's block and process its contents
                             if n.kind() == SyntaxKind::FnDef {
-                                if let Some(block) = n.children().find(|c| c.kind() == SyntaxKind::Block) {
+                                if let Some(block) =
+                                    n.children().find(|c| c.kind() == SyntaxKind::Block)
+                                {
                                     for stmt in block.children_with_tokens() {
                                         match stmt {
                                             rowan::NodeOrToken::Node(s) => {
-                                                self.expand_node_recursive(&s, depth + 1, builder, diagnostics);
+                                                self.expand_node_recursive(
+                                                    &s,
+                                                    depth + 1,
+                                                    builder,
+                                                    diagnostics,
+                                                );
                                             }
                                             rowan::NodeOrToken::Token(t) => {
                                                 let kind = GlyimLang::kind_to_raw(t.kind());
@@ -360,11 +373,17 @@ impl<'a> ExpanderImpl<'a> {
                 builder.token(GlyimLang::kind_to_raw(*kind), text.as_str());
             }
             TokenTree::Group(delim_open, children, delim_close) => {
-                builder.token(GlyimLang::kind_to_raw(*delim_open), delim_token_text(*delim_open));
+                builder.token(
+                    GlyimLang::kind_to_raw(*delim_open),
+                    delim_token_text(*delim_open),
+                );
                 for child in children {
                     self.build_token_tree_green(child, builder, _mark);
                 }
-                builder.token(GlyimLang::kind_to_raw(*delim_close), delim_token_text(*delim_close));
+                builder.token(
+                    GlyimLang::kind_to_raw(*delim_close),
+                    delim_token_text(*delim_close),
+                );
             }
             TokenTree::DollarCrate => {
                 builder.token(GlyimLang::kind_to_raw(SyntaxKind::KwCrate), "crate");

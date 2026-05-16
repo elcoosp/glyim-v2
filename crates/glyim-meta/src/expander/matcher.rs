@@ -112,7 +112,13 @@ fn parse_pattern_pieces(trees: &[TokenTree], pos: usize) -> Option<(Vec<PatternP
                     i += 1;
                     let separator = if i < trees.len() {
                         let sep_tree = &trees[i];
-                        if matches!(sep_tree, TokenTree::Token(SyntaxKind::Star | SyntaxKind::Plus | SyntaxKind::Question, _)) {
+                        if matches!(
+                            sep_tree,
+                            TokenTree::Token(
+                                SyntaxKind::Star | SyntaxKind::Plus | SyntaxKind::Question,
+                                _
+                            )
+                        ) {
                             None
                         } else {
                             let sep = sep_tree.clone();
@@ -152,24 +158,23 @@ fn parse_pattern_pieces(trees: &[TokenTree], pos: usize) -> Option<(Vec<PatternP
 
 fn parse_fragment_spec(tree: &TokenTree) -> Option<FragmentSpec> {
     match tree {
-        TokenTree::Token(SyntaxKind::Ident, text) | TokenTree::Token(SyntaxKind::Lifetime, text) => {
-            match text.as_str() {
-                "expr" => Some(FragmentSpec::Expr),
-                "ty" => Some(FragmentSpec::Ty),
-                "ident" => Some(FragmentSpec::Ident),
-                "path" => Some(FragmentSpec::Path),
-                "block" => Some(FragmentSpec::Block),
-                "stmt" => Some(FragmentSpec::Stmt),
-                "item" => Some(FragmentSpec::Item),
-                "pat" => Some(FragmentSpec::Pat),
-                "lifetime" => Some(FragmentSpec::Lifetime),
-                "literal" => Some(FragmentSpec::Literal),
-                "vis" => Some(FragmentSpec::Vis),
-                "meta" => Some(FragmentSpec::Meta),
-                "tt" => Some(FragmentSpec::Tt),
-                _ => None,
-            }
-        }
+        TokenTree::Token(SyntaxKind::Ident, text)
+        | TokenTree::Token(SyntaxKind::Lifetime, text) => match text.as_str() {
+            "expr" => Some(FragmentSpec::Expr),
+            "ty" => Some(FragmentSpec::Ty),
+            "ident" => Some(FragmentSpec::Ident),
+            "path" => Some(FragmentSpec::Path),
+            "block" => Some(FragmentSpec::Block),
+            "stmt" => Some(FragmentSpec::Stmt),
+            "item" => Some(FragmentSpec::Item),
+            "pat" => Some(FragmentSpec::Pat),
+            "lifetime" => Some(FragmentSpec::Lifetime),
+            "literal" => Some(FragmentSpec::Literal),
+            "vis" => Some(FragmentSpec::Vis),
+            "meta" => Some(FragmentSpec::Meta),
+            "tt" => Some(FragmentSpec::Tt),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -215,7 +220,11 @@ fn match_pieces(
                     bindings.entry(name.clone()).or_default().extend(captured);
                 }
             }
-            PatternPiece::Repetition { inner, separator, kind } => {
+            PatternPiece::Repetition {
+                inner,
+                separator,
+                kind,
+            } => {
                 let mut repetitions: Vec<HashMap<SmolStr, Vec<TokenTree>>> = Vec::new();
                 let _start_i = i;
                 loop {
@@ -291,9 +300,10 @@ mod tests {
 
     #[test]
     fn test_metavar_matches_one_token() {
-        let pattern = Pattern::new(vec![
-            PatternPiece::Metavar { name: SmolStr::from("x"), fragment: FragmentSpec::Expr },
-        ]);
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Expr,
+        }]);
         let input = vec![tok(SyntaxKind::IntLit, "42")];
         let result = match_pattern(&pattern, &input);
         assert!(matches!(result, MatchResult::FullMatch(_)));
@@ -301,9 +311,10 @@ mod tests {
 
     #[test]
     fn test_metavar_matches_zero_tokens() {
-        let pattern = Pattern::new(vec![
-            PatternPiece::Metavar { name: SmolStr::from("x"), fragment: FragmentSpec::Expr },
-        ]);
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Expr,
+        }]);
         let input = vec![];
         let result = match_pattern(&pattern, &input);
         // Empty input should match if metavar can be empty

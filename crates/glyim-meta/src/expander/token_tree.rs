@@ -46,14 +46,16 @@ pub(crate) fn collect_token_trees(node: &glyim_syntax::SyntaxNode) -> Vec<TokenT
                         let mut tokens = n.children_with_tokens();
                         let first = tokens.next();
                         let last = tokens.last();
-                        if let (Some(rowan::NodeOrToken::Token(open)), Some(rowan::NodeOrToken::Token(close))) = (first, last) {
+                        if let (
+                            Some(rowan::NodeOrToken::Token(open)),
+                            Some(rowan::NodeOrToken::Token(close)),
+                        ) = (first, last)
+                        {
                             if is_open_delim(open.kind()) && is_close_delim(close.kind()) {
                                 let inner = collect_token_trees(&n);
                                 let inner_len = inner.len().saturating_sub(2);
-                                let inner: Vec<_> = inner.into_iter()
-                                    .skip(1)
-                                    .take(inner_len)
-                                    .collect();
+                                let inner: Vec<_> =
+                                    inner.into_iter().skip(1).take(inner_len).collect();
                                 trees.push(TokenTree::Group(open.kind(), inner, close.kind()));
                                 continue;
                             }
@@ -71,7 +73,11 @@ pub(crate) fn collect_token_trees(node: &glyim_syntax::SyntaxNode) -> Vec<TokenT
             }
             rowan::NodeOrToken::Token(t) => {
                 let kind = t.kind();
-                if kind == SyntaxKind::Whitespace || kind == SyntaxKind::LineComment || kind == SyntaxKind::BlockComment || kind == SyntaxKind::DocComment {
+                if kind == SyntaxKind::Whitespace
+                    || kind == SyntaxKind::LineComment
+                    || kind == SyntaxKind::BlockComment
+                    || kind == SyntaxKind::DocComment
+                {
                     continue;
                 }
                 trees.push(TokenTree::Token(kind, SmolStr::from(t.text())));
@@ -87,9 +93,15 @@ pub(crate) fn flatten_token_tree(node: &glyim_syntax::SyntaxNode) -> Vec<TokenTr
 }
 
 fn is_open_delim(kind: SyntaxKind) -> bool {
-    matches!(kind, SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket)
+    matches!(
+        kind,
+        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+    )
 }
 
 fn is_close_delim(kind: SyntaxKind) -> bool {
-    matches!(kind, SyntaxKind::RParen | SyntaxKind::RBrace | SyntaxKind::RBracket)
+    matches!(
+        kind,
+        SyntaxKind::RParen | SyntaxKind::RBrace | SyntaxKind::RBracket
+    )
 }

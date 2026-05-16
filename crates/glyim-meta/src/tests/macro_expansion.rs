@@ -1,11 +1,15 @@
+use crate::Expander;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::{FileId, HygieneCtx};
-use crate::Expander;
 
 /// Helper to parse a source string and get the root syntax node.
 fn parse_source(source: &str) -> glyim_syntax::SyntaxNode {
     let result = parse_to_syntax(source, FileId::BOGUS);
-    assert!(result.diagnostics.is_empty(), "Unexpected parse errors: {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Unexpected parse errors: {:?}",
+        result.diagnostics
+    );
     result.root
 }
 
@@ -216,18 +220,18 @@ fn main() {
     assert_eq!(remaining_macros, 0);
 }
 
-/// Test V19-T10: Zero-or-one repetition matches optional arm.
+/// Test V19-T10: Zero-or-one repetition with separator matches optional args.
 #[test]
 fn zero_or_one_repetition() {
     let src = r#"
-macro_rules! optional {
-    ($($x:expr)?) => {
-        { $( $x; )? 0 }
+macro_rules! maybe_add {
+    ($base:expr $(, $extra:expr)?) => {
+        $base $(+ $extra)?
     };
 }
 fn main() {
-    let _a = optional!();
-    let _b = optional!(5);
+    let _a = maybe_add!(1);
+    let _b = maybe_add!(1, 2);
 }
 "#;
     let root = parse_source(src);
