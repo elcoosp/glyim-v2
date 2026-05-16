@@ -1,7 +1,8 @@
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId, StaticDefId};
+use glyim_core::def_id::{ConstDefId, CrateId, DefId, FnDefId, LocalDefId, StaticDefId};
 use glyim_core::interner::Name;
-use glyim_core::primitives::{IntTy, Mutability, UintTy};
+use glyim_core::primitives::{Abi, IntTy, Mutability, Safety, UintTy};
+use glyim_core::{AdtId, ClosureId, OpaqueTyId};
 use glyim_mir::*;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_test::test_ty_ctx;
@@ -684,4 +685,831 @@ fn deduplicate_preserves_order() {
         "should have 2 items: used_fn::<i32> and unused_fn::<()>, got {}",
         deduped.len()
     );
+}
+
+// ============================================================
+// Additional test: Param used in reference type
+// ============================================================
+
+#[test]
+fn param_used_in_ref_local() {
+    let mut ctx = test_ty_ctx();
+
+    // fn f<T>(x: &T) — T is used via Ref(Region, T, Not)
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let ref_ty = ctx.mk_ref(Region::Erased, param_t, Mutability::Not);
+
+    let body = build_body_with_local_of_type(ref_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(50);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside a reference type");
+}
+
+// ============================================================
+// Additional test: Param used in raw pointer type
+// ============================================================
+
+#[test]
+fn param_used_in_raw_ptr_local() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let ptr_ty = ctx.mk_ty(TyKind::RawPtr(param_t, Mutability::Not));
+
+    let body = build_body_with_local_of_type(ptr_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(51);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside a raw pointer type");
+}
+
+// ============================================================
+// Additional test: Param used in slice type
+// ============================================================
+
+#[test]
+fn param_used_in_slice_local() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let slice_ty = ctx.mk_ty(TyKind::Slice(param_t));
+
+    let body = build_body_with_local_of_type(slice_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(52);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside a slice type");
+}
+
+// ============================================================
+// Additional test: Param used in array type
+// ============================================================
+
+#[test]
+fn param_used_in_array_local() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let array_const = Const {
+        kind: ConstKind::Uint(3),
+        ty: ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
+    };
+    let array_ty = ctx.mk_ty(TyKind::Array(param_t, array_const));
+
+    let body = build_body_with_local_of_type(array_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(53);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside an array type");
+}
+
+// ============================================================
+// Additional test: Param used in tuple type
+// ============================================================
+
+#[test]
+fn param_used_in_tuple_local() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let tuple_subst =
+        ctx.intern_substitution(vec![GenericArg::Ty(param_t), GenericArg::Ty(i32_ty)]);
+    let tuple_ty = ctx.mk_ty(TyKind::Tuple(tuple_subst));
+
+    let body = build_body_with_local_of_type(tuple_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(54);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside a tuple type");
+}
+
+// ============================================================
+// Additional test: Param used in ADT type
+// ============================================================
+
+#[test]
+fn param_used_in_adt_local() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let adt_id = AdtId::from_raw(1);
+    let adt_subst = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let adt_ty = ctx.mk_ty(TyKind::Adt(adt_id, adt_subst));
+
+    let body = build_body_with_local_of_type(adt_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(55);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside an ADT type");
+}
+
+// ============================================================
+// Additional test: Param used in function pointer type
+// ============================================================
+
+#[test]
+fn param_used_in_fn_ptr_local() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let fn_sig = FnSig {
+        inputs: ctx.intern_substitution(vec![GenericArg::Ty(param_t)]),
+        output: Ty::UNIT,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    };
+    let fn_ptr_ty = ctx.mk_ty(TyKind::FnPtr(fn_sig));
+
+    let body = build_body_with_local_of_type(fn_ptr_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(56);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside a function pointer type");
+}
+
+// ============================================================
+// Additional test: All params unused
+// ============================================================
+
+#[test]
+fn all_params_unused() {
+    let mut ctx = test_ty_ctx();
+
+    // fn f<A, B, C>(x: i32) — none used
+    let name_a = intern_name(&mut ctx, "A");
+    let name_b = intern_name(&mut ctx, "B");
+    let name_c = intern_name(&mut ctx, "C");
+    let ty_a = ctx.mk_ty(TyKind::Param(ParamTy {
+        index: 0,
+        name: name_a,
+    }));
+    let ty_b = ctx.mk_ty(TyKind::Param(ParamTy {
+        index: 1,
+        name: name_b,
+    }));
+    let ty_c = ctx.mk_ty(TyKind::Param(ParamTy {
+        index: 2,
+        name: name_c,
+    }));
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    let substs = ctx.intern_substitution(vec![
+        GenericArg::Ty(ty_a),
+        GenericArg::Ty(ty_b),
+        GenericArg::Ty(ty_c),
+    ]);
+    let fn_def_id = FnDefId::from_raw(60);
+    let item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert_eq!(used.len(), 3);
+    assert!(!used[0], "A is unused");
+    assert!(!used[1], "B is unused");
+    assert!(!used[2], "C is unused");
+
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    match poly_item {
+        MonoItem::Fn {
+            substs: poly_substs,
+            ..
+        } => {
+            let args = ctx.substitution_args(poly_substs);
+            assert_eq!(args.len(), 3);
+            for (i, arg) in args.iter().enumerate() {
+                if let GenericArg::Ty(ty) = arg {
+                    assert!(
+                        matches!(ctx.ty_kind(*ty), TyKind::Unit),
+                        "param {} should be replaced with unit",
+                        i
+                    );
+                }
+            }
+        }
+        _ => panic!("expected Fn item"),
+    }
+}
+
+// ============================================================
+// Additional test: Deduplication with const item
+// ============================================================
+
+#[test]
+fn const_item_deduplication() {
+    let mut ctx = test_ty_ctx();
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    let bool_ty = ctx.bool_ty();
+    let substs_i32 = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let substs_bool = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty)]);
+
+    let const_def_id = ConstDefId::from_raw(70);
+
+    let item_i32 = MonoItemData {
+        item: MonoItem::Const {
+            def_id: const_def_id,
+            substs: substs_i32,
+        },
+        body: Arc::new(body.clone()),
+        symbol: "MY_CONST::<i32>".to_string(),
+        source_module: 0,
+    };
+    let item_bool = MonoItemData {
+        item: MonoItem::Const {
+            def_id: const_def_id,
+            substs: substs_bool,
+        },
+        body: Arc::new(body.clone()),
+        symbol: "MY_CONST::<bool>".to_string(),
+        source_module: 0,
+    };
+
+    let deduped = deduplicate(&mut ctx, &[item_i32, item_bool]);
+    assert_eq!(
+        deduped.len(),
+        1,
+        "const items with unused type param should deduplicate"
+    );
+}
+
+// ============================================================
+// Additional test: Different def_ids never deduplicate
+// ============================================================
+
+#[test]
+fn different_def_ids_never_deduplicate() {
+    let mut ctx = test_ty_ctx();
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+
+    let fn_a = FnDefId::from_raw(80);
+    let fn_b = FnDefId::from_raw(81);
+
+    let item_a = MonoItemData {
+        item: MonoItem::Fn {
+            def_id: fn_a,
+            substs,
+        },
+        body: Arc::new(body.clone()),
+        symbol: "a::<i32>".to_string(),
+        source_module: 0,
+    };
+    let item_b = MonoItemData {
+        item: MonoItem::Fn {
+            def_id: fn_b,
+            substs,
+        },
+        body: Arc::new(body.clone()),
+        symbol: "b::<i32>".to_string(),
+        source_module: 0,
+    };
+
+    let deduped = deduplicate(&mut ctx, &[item_a, item_b]);
+    assert_eq!(
+        deduped.len(),
+        2,
+        "different functions should never deduplicate even if both have unused params"
+    );
+}
+
+// ============================================================
+// Additional test: Param used via FnDef type (not just Fn const)
+// ============================================================
+
+#[test]
+fn param_used_in_fn_def_local_type() {
+    let mut ctx = test_ty_ctx();
+
+    // fn f<T>() where a local has type fn() -> T (FnDef)
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let fn_def_id = FnDefId::from_raw(90);
+    let fn_def_substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_ty = ctx.mk_ty(TyKind::FnDef(fn_def_id, fn_def_substs));
+
+    let body = build_body_with_local_of_type(fn_def_ty);
+
+    let caller_substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let caller_fn_id = FnDefId::from_raw(91);
+    let _item = MonoItem::Fn {
+        def_id: caller_fn_id,
+        substs: caller_substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, caller_substs);
+    assert!(used[0], "T is used via FnDef type in a local");
+}
+
+// ============================================================
+// Additional test: Param used in return type only
+// ============================================================
+
+#[test]
+fn param_used_in_return_type() {
+    let mut ctx = test_ty_ctx();
+
+    // fn f<T>() -> T — the return place (local 0) has type T
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    // build_body puts first type as return place (local 0)
+    let body = build_body(vec![param_t], 0);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(92);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used as the return type (local 0)");
+}
+
+// ============================================================
+// Additional test: Param used only in SwitchInt switch_ty
+// ============================================================
+
+#[test]
+fn param_used_in_switch_int_switch_ty() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    // Build a body with SwitchInt terminator where switch_ty is Param(T)
+    let owner = dummy_def_id();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: dummy_source_info(),
+    });
+    // discr local
+    let discr_local = LocalIdx::from_raw(1);
+    locals.push(LocalDecl {
+        ty: i32_ty,
+        mutability: Mutability::Not,
+        source_info: dummy_source_info(),
+    });
+
+    let discr_op = Operand::Copy(Place::new(discr_local));
+    let targets = SwitchTargets::new(Box::new([]), BasicBlockIdx::from_raw(1));
+
+    let term = Terminator {
+        kind: TerminatorKind::SwitchInt {
+            discr: discr_op,
+            switch_ty: param_t, // T used here!
+            targets,
+        },
+        source_info: dummy_source_info(),
+    };
+
+    let mut blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: term,
+        is_cleanup: false,
+    });
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: dummy_source_info(),
+        },
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks: blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: dummy_span(),
+        var_debug_info: Vec::new(),
+    };
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(93);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used in SwitchInt switch_ty");
+}
+
+// ============================================================
+// Additional test: Deduplication reduces mono item count correctly
+// ============================================================
+
+#[test]
+fn dedup_reduces_item_count() {
+    let mut ctx = test_ty_ctx();
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let bool_ty = ctx.bool_ty();
+    let u8_ty = ctx.mk_ty(TyKind::Uint(UintTy::U8));
+    let u16_ty = ctx.mk_ty(TyKind::Uint(UintTy::U16));
+
+    // Function where T is unused
+    let body_unused = build_body(vec![i32_ty, i32_ty], 1);
+    let fn_unused = FnDefId::from_raw(100);
+
+    // Function where T is used
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let body_used = build_body_with_local_of_type(param_t);
+    let fn_used = FnDefId::from_raw(101);
+
+    let types = vec![i32_ty, bool_ty, u8_ty, u16_ty];
+    let mut items = Vec::new();
+
+    // 4 instantiations of unused-T function
+    for (i, ty) in types.iter().enumerate() {
+        let substs = ctx.intern_substitution(vec![GenericArg::Ty(*ty)]);
+        items.push(MonoItemData {
+            item: MonoItem::Fn {
+                def_id: fn_unused,
+                substs,
+            },
+            body: Arc::new(body_unused.clone()),
+            symbol: format!("unused_fn::<{}>", i),
+            source_module: 0,
+        });
+    }
+
+    // 4 instantiations of used-T function
+    for (i, ty) in types.iter().enumerate() {
+        let substs = ctx.intern_substitution(vec![GenericArg::Ty(*ty)]);
+        items.push(MonoItemData {
+            item: MonoItem::Fn {
+                def_id: fn_used,
+                substs,
+            },
+            body: Arc::new(body_used.clone()),
+            symbol: format!("used_fn::<{}>", i),
+            source_module: 0,
+        });
+    }
+
+    let deduped = deduplicate(&mut ctx, &items);
+    // 4 unused-T instantiations → 1 polymorphized item
+    // 4 used-T instantiations → 4 separate items
+    // Total: 5
+    assert_eq!(
+        deduped.len(),
+        5,
+        "expected 1 unused-T + 4 used-T = 5 items, got {}",
+        deduped.len()
+    );
+}
+
+// ============================================================
+// Additional test: Mixed type and lifetime params
+// ============================================================
+
+#[test]
+fn lifetime_params_unchanged() {
+    let mut ctx = test_ty_ctx();
+
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let body = build_body(vec![i32_ty, i32_ty], 1);
+
+    // Substitution with both a type param and a lifetime
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let lifetime = Region::Erased;
+
+    let substs = ctx.intern_substitution(vec![
+        GenericArg::Ty(param_t),                // index 0: unused type param
+        GenericArg::Lifetime(lifetime.clone()), // index 1: lifetime (should be kept as-is)
+    ]);
+
+    let fn_def_id = FnDefId::from_raw(110);
+    let item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(!used[0], "T is unused");
+
+    let poly_item = compute_poly_item(&mut ctx, &item, &body);
+    match poly_item {
+        MonoItem::Fn {
+            substs: poly_substs,
+            ..
+        } => {
+            let args = ctx.substitution_args(poly_substs);
+            assert_eq!(args.len(), 2);
+            // Type param should be replaced with unit
+            if let GenericArg::Ty(ty) = args[0] {
+                assert!(matches!(ctx.ty_kind(ty), TyKind::Unit));
+            }
+            // Lifetime should remain unchanged
+            if let GenericArg::Lifetime(r) = &args[1] {
+                assert_eq!(
+                    r.clone(),
+                    lifetime,
+                    "lifetime should be preserved unchanged"
+                );
+            }
+        }
+        _ => panic!("expected Fn item"),
+    }
+}
+
+// ============================================================
+// Additional test: Deeply nested type usage (Ref<Slice<Param>>)
+// ============================================================
+
+#[test]
+fn deeply_nested_type_usage() {
+    let mut ctx = test_ty_ctx();
+
+    // fn f<T>(x: &[T]) — T used via Ref → Slice → Param
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let slice_ty = ctx.mk_ty(TyKind::Slice(param_t));
+    let ref_slice_ty = ctx.mk_ref(Region::Erased, slice_ty, Mutability::Not);
+
+    let body = build_body_with_local_of_type(ref_slice_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(120);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used deep inside Ref<Slice<T>>");
+}
+
+// ============================================================
+// Additional test: Param used in Assert condition operand
+// ============================================================
+
+#[test]
+fn param_used_via_assert_condition() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    // Build a body where a constant of type T appears in an Assert condition
+    let owner = dummy_def_id();
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: dummy_source_info(),
+    });
+
+    // Create a constant of type T (bool-like) used in assert
+    let cond_const = MirConst {
+        kind: MirConstKind::Bool(true),
+        ty: param_t,
+        span: dummy_span(),
+    };
+    let cond_op = Operand::Constant(cond_const);
+
+    let target_bb = BasicBlockIdx::from_raw(1);
+    let term = Terminator {
+        kind: TerminatorKind::Assert {
+            cond: cond_op,
+            expected: true,
+            target: target_bb,
+            cleanup: None,
+            msg: AssertMessage::DivisionByZero,
+        },
+        source_info: dummy_source_info(),
+    };
+
+    let mut blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: term,
+        is_cleanup: false,
+    });
+    blocks.push(BasicBlockData {
+        statements: Vec::new(),
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: dummy_source_info(),
+        },
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks: blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: dummy_span(),
+        var_debug_info: Vec::new(),
+    };
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(121);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(
+        used[0],
+        "T is used via constant type in Assert condition operand"
+    );
+}
+
+// ============================================================
+// Additional test: Opaque type with param
+// ============================================================
+
+#[test]
+fn param_used_in_opaque_type() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let opaque_id = OpaqueTyId::from_raw(1);
+    let opaque_subst = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let opaque_ty = ctx.mk_ty(TyKind::Opaque(opaque_id, opaque_subst));
+
+    let body = build_body_with_local_of_type(opaque_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(122);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside an opaque type");
+}
+
+// ============================================================
+// Additional test: Closure type with param
+// ============================================================
+
+#[test]
+fn param_used_in_closure_type() {
+    let mut ctx = test_ty_ctx();
+
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+
+    let closure_id = ClosureId::from_raw(1);
+    let closure_subst = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let closure_ty = ctx.mk_ty(TyKind::Closure(closure_id, closure_subst));
+
+    let body = build_body_with_local_of_type(closure_ty);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let fn_def_id = FnDefId::from_raw(123);
+    let _item = MonoItem::Fn {
+        def_id: fn_def_id,
+        substs,
+    };
+
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used inside a closure type");
 }
