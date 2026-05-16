@@ -15,7 +15,9 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
+use inkwell::values::{
+    AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, FloatValue, IntValue, PointerValue,
+};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -390,13 +392,18 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             Rvalue::BinaryOp(op, operands) => {
                 let lhs_val = self.lower_operand(&operands.0);
                 let rhs_val = self.lower_operand(&operands.1);
-                let is_unsigned = matches!(
-                    self.ty_ctx.ty_kind(self.operand_ty(&operands.0)),
-                    TyKind::Uint(_)
-                );
-                let lhs = lhs_val.into_int_value();
-                let rhs = rhs_val.into_int_value();
-                self.lower_binary_op(*op, lhs, rhs, is_unsigned)
+                let operand_ty = self.operand_ty(&operands.0);
+                let is_float = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_));
+                let is_unsigned = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Uint(_));
+                if is_float {
+                    let lhs = lhs_val.into_float_value();
+                    let rhs = rhs_val.into_float_value();
+                    self.lower_float_binary_op(*op, lhs, rhs)
+                } else {
+                    let lhs = lhs_val.into_int_value();
+                    let rhs = rhs_val.into_int_value();
+                    self.lower_binary_op(*op, lhs, rhs, is_unsigned)
+                }
             }
             Rvalue::UnaryOp(op, operand) => {
                 let val = self.lower_operand(operand).into_int_value();
@@ -593,26 +600,50 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_int_compare(inkwell::IntPredicate::NE, lhs, rhs, "ne")
                 .expect("ne failed")
                 .into(),
-            BinOp::Lt => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SLT, lhs, rhs, "lt")
-                .expect("lt failed")
-                .into(),
-            BinOp::Gt => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SGT, lhs, rhs, "gt")
-                .expect("gt failed")
-                .into(),
-            BinOp::LtEq => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SLE, lhs, rhs, "le")
-                .expect("le failed")
-                .into(),
-            BinOp::GtEq => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SGE, lhs, rhs, "ge")
-                .expect("ge failed")
-                .into(),
+            BinOp::Lt => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::ULT
+                } else {
+                    inkwell::IntPredicate::SLT
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "lt")
+                    .expect("lt failed")
+                    .into()
+            }
+            BinOp::Gt => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::UGT
+                } else {
+                    inkwell::IntPredicate::SGT
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "gt")
+                    .expect("gt failed")
+                    .into()
+            }
+            BinOp::LtEq => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::ULE
+                } else {
+                    inkwell::IntPredicate::SLE
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "le")
+                    .expect("le failed")
+                    .into()
+            }
+            BinOp::GtEq => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::UGE
+                } else {
+                    inkwell::IntPredicate::SGE
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "ge")
+                    .expect("ge failed")
+                    .into()
+            }
             BinOp::And => self
                 .builder
                 .build_and(lhs, rhs, "and")
@@ -648,6 +679,75 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_right_shift(lhs, rhs, true, "shr")
                 .expect("shr failed")
                 .into(),
+        }
+    }
+
+    fn lower_float_binary_op(
+        &self,
+        op: BinOp,
+        lhs: inkwell::values::FloatValue<'ctx>,
+        rhs: inkwell::values::FloatValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match op {
+            BinOp::Add => self
+                .builder
+                .build_float_add(lhs, rhs, "fadd")
+                .expect("fadd failed")
+                .into(),
+            BinOp::Sub => self
+                .builder
+                .build_float_sub(lhs, rhs, "fsub")
+                .expect("fsub failed")
+                .into(),
+            BinOp::Mul => self
+                .builder
+                .build_float_mul(lhs, rhs, "fmul")
+                .expect("fmul failed")
+                .into(),
+            BinOp::Div => self
+                .builder
+                .build_float_div(lhs, rhs, "fdiv")
+                .expect("fdiv failed")
+                .into(),
+            BinOp::Rem => self
+                .builder
+                .build_float_rem(lhs, rhs, "frem")
+                .expect("frem failed")
+                .into(),
+            BinOp::Eq => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OEQ, lhs, rhs, "feq")
+                .expect("feq failed")
+                .into(),
+            BinOp::Ne => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::ONE, lhs, rhs, "fne")
+                .expect("fne failed")
+                .into(),
+            BinOp::Lt => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "flt")
+                .expect("flt failed")
+                .into(),
+            BinOp::Gt => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "fgt")
+                .expect("fgt failed")
+                .into(),
+            BinOp::LtEq => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OLE, lhs, rhs, "fle")
+                .expect("fle failed")
+                .into(),
+            BinOp::GtEq => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OGE, lhs, rhs, "fge")
+                .expect("fge failed")
+                .into(),
+            _ => {
+                tracing::warn!("STUB: unsupported float binop {:?}", op);
+                lhs.into()
+            }
         }
     }
 

@@ -67,3 +67,19 @@ pub(crate) fn const_operand_bool(val: bool) -> Operand {
 pub(crate) fn box_operands(left: Operand, right: Operand) -> Box<(Operand, Operand)> {
     Box::new((left, right))
 }
+
+pub(crate) fn const_operand_f64(val: f64, f64_ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::FloatBits(val.to_bits()),
+        ty: f64_ty,
+        span: Span::DUMMY,
+    })
+}
+
+pub(crate) fn const_operand_f32(val: f32, f32_ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::FloatBits((val as f64).to_bits()),
+        ty: f32_ty,
+        span: Span::DUMMY,
+    })
+}
