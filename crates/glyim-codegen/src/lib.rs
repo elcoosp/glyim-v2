@@ -61,6 +61,7 @@ pub(crate) const OP_DISCRIMINANT: u8 = 0x1E;
 pub(crate) const OP_LEN: u8 = 0x1F;
 pub(crate) const OP_SWITCH_INT: u8 = 0x20;
 pub(crate) const OP_ASSERT: u8 = 0x21;
+pub(crate) const OP_CALL_INDIRECT: u8 = 0x22;
 
 impl CodegenBackend for BytecodeBackend {
     fn name(&self) -> &'static str {
@@ -290,13 +291,19 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
             target,
             cleanup: _,
         } => {
+            // Determine if this is a direct or indirect call
+            let is_indirect = matches!(func, Operand::Copy(_) | Operand::Move(_));
             emit_operand(bc, func)?;
             let arg_count = args.len() as u32;
             bc.extend_from_slice(&arg_count.to_le_bytes());
             for arg in args {
                 emit_operand(bc, arg)?;
             }
-            bc.push(OP_CALL);
+            if is_indirect {
+                bc.push(OP_CALL_INDIRECT);
+            } else {
+                bc.push(OP_CALL);
+            }
             bc.extend_from_slice(&destination.local.to_raw().to_le_bytes());
             let target_bb = target.unwrap_or_else(|| BasicBlockIdx::from_raw(u32::MAX));
             bc.extend_from_slice(&target_bb.to_raw().to_le_bytes());
@@ -329,3 +336,5 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
 
 #[cfg(test)]
 mod tests;
+
+pub mod vtable;

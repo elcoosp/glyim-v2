@@ -144,7 +144,9 @@ impl TyCtxMut {
     /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
+                true
+            }
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -153,7 +155,10 @@ impl TyCtxMut {
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
                     if let GenericArg::Ty(t) = arg
-                        && !self.is_copy(*t) { return false; }
+                        && !self.is_copy(*t)
+                    {
+                        return false;
+                    }
                 }
                 true
             }
@@ -256,7 +261,9 @@ impl TyCtx {
     /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
+                true
+            }
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -265,7 +272,10 @@ impl TyCtx {
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
                     if let GenericArg::Ty(t) = arg
-                        && !self.is_copy(*t) { return false; }
+                        && !self.is_copy(*t)
+                    {
+                        return false;
+                    }
                 }
                 true
             }
@@ -371,13 +381,9 @@ mod copy_tests {
         // Extract values first to avoid multiple mutable borrows
         let bool_ty = ctx.bool_ty();
         let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
-        let substs = ctx.intern_substitution(vec![
-            GenericArg::Ty(bool_ty),
-            GenericArg::Ty(i32_ty),
-        ]);
+        let substs = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty), GenericArg::Ty(i32_ty)]);
         let tuple_ty = ctx.mk_ty(TyKind::Tuple(substs));
 
         assert!(ctx.is_copy(tuple_ty));
     }
 }
-
