@@ -34,6 +34,7 @@ fn make_return_42_body(owner: LocalDefId) -> Body {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     }
 }
 
@@ -51,6 +52,7 @@ fn make_return_99_body(owner: LocalDefId) -> Body {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     }
 }
 
@@ -71,6 +73,7 @@ fn make_body_with_call(owner: LocalDefId, callee_name: Name) -> Body {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     }
 }
 

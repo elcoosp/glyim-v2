@@ -22,6 +22,7 @@ fn fn_returning_unit() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
 
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();

@@ -438,7 +438,7 @@ fn test_debug_info_multiline_source_line_numbers() {
     assert!(!locations.is_empty(), "No debug locations found");
     for (line, col) in &locations {
         assert!(*line >= 1, "Line number should be >= 1, got {}", line);
-        assert!(*col >= 0, "Column should be >= 0, got {}", col);
+        assert!(col >= &0, "Column should be >= 0, got {}", col);
     }
 }
 

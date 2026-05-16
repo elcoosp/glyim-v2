@@ -36,6 +36,7 @@ fn ref_mutable() {
         pats,
         params: vec![x_pat],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);

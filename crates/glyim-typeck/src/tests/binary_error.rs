@@ -30,6 +30,7 @@ fn binary_i32_add_bool_error() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);

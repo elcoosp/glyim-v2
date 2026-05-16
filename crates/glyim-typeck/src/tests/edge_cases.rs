@@ -25,6 +25,7 @@ fn multiple_functions() {
             pats: IndexVec::new(),
             params: vec![],
             span: Span::DUMMY,
+            expr_spans: IndexVec::new(),
         }
     };
 
@@ -118,6 +119,7 @@ fn multiple_params() {
         pats,
         params: vec![x_pat, y_pat],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -193,6 +195,7 @@ fn binary_multiply() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -253,6 +256,7 @@ fn binary_comparison() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -314,6 +318,7 @@ fn if_expression() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -374,6 +379,7 @@ fn block_expression() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -430,6 +436,7 @@ fn unresolved_variable() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);

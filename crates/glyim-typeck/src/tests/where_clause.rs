@@ -58,6 +58,7 @@ fn build_simple_hir(
         pats: IndexVec::new(),
         params: Vec::new(),
         span: dummy_span(),
+        expr_spans: IndexVec::new(),
     };
     let body_id = hir.bodies.push(body);
 
