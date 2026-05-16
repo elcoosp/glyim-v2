@@ -444,9 +444,9 @@ fn check_expr(
             )
         }
         Expr::MethodCall {
-            receiver,
+            receiver: _,
             method: _,
-            args,
+            args: _,
         } => {
             // FIXME: method calls not implemented
             unimplemented!("method calls not implemented");
@@ -538,7 +538,7 @@ fn check_expr(
         }
         Expr::Struct {
             path: _,
-            fields,
+            fields: _,
             spread: _,
         } => {
             // FIXME: struct literals not implemented

@@ -73,7 +73,7 @@ fn test_break_continue_lowering() {
         _ => panic!("Expected While"),
     };
     let (stmts, tail) = match &body.exprs[while_body_id] {
-        Expr::Block { stmts, tail } => (stmts.clone(), tail.clone()),
+        Expr::Block { stmts, tail } => (stmts.clone(), *tail),
         _ => panic!("Expected Block"),
     };
     let mut saw_break = false;

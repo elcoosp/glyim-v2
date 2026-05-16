@@ -7,7 +7,7 @@ use tempfile::NamedTempFile;
 #[test]
 fn test_compile_valid_file() {
     let mut tmp = NamedTempFile::new().unwrap();
-    write!(tmp, "fn main() {{}}\n").unwrap();
+    writeln!(tmp, "fn main() {{}}").unwrap();
     let path = tmp.into_temp_path();
     let args = CliArgs {
         input: path.to_path_buf(),
@@ -46,7 +46,7 @@ fn test_compile_invalid_file() {
 /// S20-T03: --help
 #[test]
 fn test_help_flag() {
-    let result = CliArgs::try_parse_from(&["glyim", "--help"]);
+    let result = CliArgs::try_parse_from(["glyim", "--help"]);
     assert!(result.is_err());
     let err = result.unwrap_err();
     let msg = err.to_string();
@@ -56,7 +56,7 @@ fn test_help_flag() {
 /// S20-T04: Missing input → error
 #[test]
 fn test_missing_input() {
-    let result = CliArgs::try_parse_from(&["glyim"]);
+    let result = CliArgs::try_parse_from(["glyim"]);
     assert!(
         result.is_err(),
         "Expected error for missing required argument"
@@ -66,20 +66,20 @@ fn test_missing_input() {
 /// S20-T05: --backend bytecode
 #[test]
 fn test_backend_bytecode_flag() {
-    let args = CliArgs::try_parse_from(&["glyim", "--backend", "bytecode", "input.g"]).unwrap();
+    let args = CliArgs::try_parse_from(["glyim", "--backend", "bytecode", "input.g"]).unwrap();
     assert_eq!(args.backend, "bytecode");
 }
 
 /// S20-T06: --emit mir flag
 #[test]
 fn test_emit_mir_flag() {
-    let args = CliArgs::try_parse_from(&["glyim", "--emit", "mir", "input.g"]).unwrap();
+    let args = CliArgs::try_parse_from(["glyim", "--emit", "mir", "input.g"]).unwrap();
     assert_eq!(args.emit, "mir");
 }
 
 /// S20-T07: --emit llvm-ir flag
 #[test]
 fn test_emit_llvm_ir_flag() {
-    let args = CliArgs::try_parse_from(&["glyim", "--emit", "llvm-ir", "input.g"]).unwrap();
+    let args = CliArgs::try_parse_from(["glyim", "--emit", "llvm-ir", "input.g"]).unwrap();
     assert_eq!(args.emit, "llvm-ir");
 }

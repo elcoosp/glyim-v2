@@ -146,12 +146,11 @@ fn test_reference_type_with_mut() {
     let mut interner = Interner::new();
     let hir = lower_crate(&parse_result.root, &mut interner);
     let item = &hir.items[ItemId::from_raw(0)];
-    if let ItemKind::Fn(fn_item) = &item.kind {
-        if let Some(ty) = &fn_item.return_ty {
+    if let ItemKind::Fn(fn_item) = &item.kind
+        && let Some(ty) = &fn_item.return_ty {
             // we just check that it doesn't panic
             eprintln!("return type: {:?}", ty);
         }
-    }
 }
 
 #[test]

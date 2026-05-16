@@ -240,7 +240,7 @@ fn propagate_int_constants() {
 
 #[test]
 fn propagate_through_chain() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_two_const_chain(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_two_const_chain);
     crate::constant_prop::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     if let StatementKind::Assign(_, Rvalue::BinaryOp(_, box_ops)) = &block.statements[2].kind {
@@ -259,7 +259,7 @@ fn propagate_through_chain() {
 
 #[test]
 fn overwrite_removes_from_const_map() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_overwrite(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_overwrite);
     crate::constant_prop::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     if let StatementKind::Assign(_, Rvalue::BinaryOp(_, box_ops)) = &block.statements[2].kind {
@@ -274,7 +274,7 @@ fn overwrite_removes_from_const_map() {
 
 #[test]
 fn projection_write_prevents_propagation() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_projection_no_propagate(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_projection_no_propagate);
     crate::constant_prop::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     if let StatementKind::Assign(_, Rvalue::Use(op)) = &block.statements[2].kind {

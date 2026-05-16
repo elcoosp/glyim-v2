@@ -170,8 +170,8 @@ fn fn_ptr_to_ptr_cast_returns_error() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i64_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i64_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![
@@ -304,14 +304,14 @@ fn overwrite_function_in_table_uses_latest() {
 
     // First version: returns 10
     let mut callee_v1 = Body::dummy(callee_id);
-    callee_v1.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    callee_v1.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     callee_v1.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Use(Operand::Constant(MirConst {
                     kind: MirConstKind::Int(10),
-                    ty: i32_ty.clone(),
+                    ty: i32_ty,
                     span: Span::DUMMY,
                 })),
             ),
@@ -326,14 +326,14 @@ fn overwrite_function_in_table_uses_latest() {
 
     // Second version: returns 99
     let mut callee_v2 = Body::dummy(callee_id);
-    callee_v2.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    callee_v2.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     callee_v2.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Use(Operand::Constant(MirConst {
                     kind: MirConstKind::Int(99),
-                    ty: i32_ty.clone(),
+                    ty: i32_ty,
                     span: Span::DUMMY,
                 })),
             ),
@@ -350,7 +350,7 @@ fn overwrite_function_in_table_uses_latest() {
     let mut caller = Body::dummy(dummy_def_id());
     caller.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     caller.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {
@@ -359,7 +359,7 @@ fn overwrite_function_in_table_uses_latest() {
                 kind: TerminatorKind::Call {
                     func: Operand::Constant(MirConst {
                         kind: MirConstKind::Int(callee_id.local_id.to_raw() as i128),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     }),
                     args: vec![],
@@ -446,7 +446,7 @@ fn storage_live_after_assign_reinitializes() {
     let local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![
@@ -455,7 +455,7 @@ fn storage_live_after_assign_reinitializes() {
                     Place::new(local),
                     Rvalue::Use(Operand::Constant(MirConst {
                         kind: MirConstKind::Int(42),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     })),
                 ),
@@ -470,7 +470,7 @@ fn storage_live_after_assign_reinitializes() {
                     Place::new(local),
                     Rvalue::Use(Operand::Constant(MirConst {
                         kind: MirConstKind::Int(99),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     })),
                 ),
@@ -507,12 +507,12 @@ fn negative_comparisons() {
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(-5),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(-3),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -547,7 +547,7 @@ fn unary_neg_on_negative_makes_positive() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(-42),
@@ -586,14 +586,14 @@ fn nested_calls_restore_local_decls() {
     // Inner callee: returns 5
     let inner_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(2));
     let mut inner = Body::dummy(inner_id);
-    inner.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    inner.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     inner.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Use(Operand::Constant(MirConst {
                     kind: MirConstKind::Int(5),
-                    ty: i32_ty.clone(),
+                    ty: i32_ty,
                     span: Span::DUMMY,
                 })),
             ),
@@ -610,8 +610,8 @@ fn nested_calls_restore_local_decls() {
     let outer_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1));
     let mut outer = Body::dummy(outer_id);
     outer.locals = IndexVec::from_raw(vec![
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     outer.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {
@@ -620,7 +620,7 @@ fn nested_calls_restore_local_decls() {
                 kind: TerminatorKind::Call {
                     func: Operand::Constant(MirConst {
                         kind: MirConstKind::Int(2),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     }),
                     args: vec![],
@@ -642,7 +642,7 @@ fn nested_calls_restore_local_decls() {
                             Operand::Copy(Place::new(LocalIdx::from_raw(1))),
                             Operand::Constant(MirConst {
                                 kind: MirConstKind::Int(10),
-                                ty: i32_ty.clone(),
+                                ty: i32_ty,
                                 span: Span::DUMMY,
                             }),
                         )),
@@ -662,7 +662,7 @@ fn nested_calls_restore_local_decls() {
     let mut caller = Body::dummy(dummy_def_id());
     caller.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     caller.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {
@@ -671,7 +671,7 @@ fn nested_calls_restore_local_decls() {
                 kind: TerminatorKind::Call {
                     func: Operand::Constant(MirConst {
                         kind: MirConstKind::Int(1),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     }),
                     args: vec![],
@@ -718,12 +718,12 @@ fn negative_gt_comparison() {
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(-3),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(-5),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {

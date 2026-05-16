@@ -2,7 +2,6 @@ use super::super::*;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::{BinOp, Mutability, UnOp};
 use glyim_span::Span;
-use glyim_test;
 use glyim_type::Ty;
 use std::sync::Arc;
 

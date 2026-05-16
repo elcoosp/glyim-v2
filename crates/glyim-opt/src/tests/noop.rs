@@ -179,7 +179,7 @@ fn make_body_optimization_resistant(ctx: &mut glyim_type::TyCtxMut) -> Body {
 
 #[test]
 fn noop_body_is_unchanged() {
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| make_minimal_body(ctx_mut));
+    let (ctx, body) = with_fresh_ty_ctx(make_minimal_body);
     let original = body.clone();
     let body = Arc::new(body);
     let optimized = optimize(&ctx, &body);
@@ -201,7 +201,7 @@ fn noop_body_is_unchanged() {
 
 #[test]
 fn idempotent_optimization() {
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| make_body_optimization_resistant(ctx_mut));
+    let (ctx, body) = with_fresh_ty_ctx(make_body_optimization_resistant);
     let body = Arc::new(body);
     let opt1 = optimize(&ctx, &body);
     let body2 = Arc::new(opt1.body.clone());
@@ -227,7 +227,7 @@ fn idempotent_optimization() {
 
 #[test]
 fn non_empty_body_preserves_semantics() {
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| make_body_optimization_resistant(ctx_mut));
+    let (ctx, body) = with_fresh_ty_ctx(make_body_optimization_resistant);
     let body = Arc::new(body);
     let optimized = optimize(&ctx, &body);
     let total_stmts: usize = optimized
@@ -326,7 +326,7 @@ fn make_loop_body(ctx: &mut glyim_type::TyCtxMut) -> Body {
 
 #[test]
 fn loop_idempotent() {
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| make_loop_body(ctx_mut));
+    let (ctx, body) = with_fresh_ty_ctx(make_loop_body);
     let body = Arc::new(body);
     let opt1 = optimize(&ctx, &body);
     let body2 = Arc::new(opt1.body.clone());

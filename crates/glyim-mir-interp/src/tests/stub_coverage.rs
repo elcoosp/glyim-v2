@@ -30,11 +30,11 @@ fn ref_rvalue_succeeds() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c42 = MirConst {
         kind: MirConstKind::Int(42),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -137,8 +137,8 @@ fn unsupported_cast_returns_error() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i64_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i64_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(42),
@@ -186,7 +186,7 @@ fn float_const_returns_error() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(f32_ty.clone(), Mutability::Mut),
+        local_decl(f32_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::FloatBits(0u64),
@@ -415,7 +415,7 @@ fn aggregate_tuple_returns_first_element() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(42),
@@ -457,7 +457,7 @@ fn repeat_rvalue_returns_operand() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(7),
@@ -503,8 +503,8 @@ fn int_to_int_cast_passes_through() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i64_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i64_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(42),

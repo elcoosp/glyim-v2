@@ -93,8 +93,8 @@ fn storage_dead_then_read_succeeds() {
     let read_local = LocalIdx::from_raw(2);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![
@@ -107,7 +107,7 @@ fn storage_dead_then_read_succeeds() {
                     Place::new(local),
                     Rvalue::Use(Operand::Constant(MirConst {
                         kind: MirConstKind::Int(42),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     })),
                 ),
@@ -143,7 +143,7 @@ fn aggregate_array_returns_success() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
@@ -173,7 +173,7 @@ fn aggregate_closure_returns_success() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
@@ -204,8 +204,8 @@ fn int_to_float_cast_returns_success() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(f32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(f32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![
@@ -250,16 +250,16 @@ fn binop_and_on_ints_returns_error() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(1),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(1),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -292,7 +292,7 @@ fn unary_not_on_int_returns_error() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(1),
@@ -387,14 +387,14 @@ fn multiple_sequential_calls_accumulate() {
 
     let callee1_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1));
     let mut callee1 = Body::dummy(callee1_id);
-    callee1.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    callee1.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     callee1.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Use(Operand::Constant(MirConst {
                     kind: MirConstKind::Int(10),
-                    ty: i32_ty.clone(),
+                    ty: i32_ty,
                     span: Span::DUMMY,
                 })),
             ),
@@ -409,14 +409,14 @@ fn multiple_sequential_calls_accumulate() {
 
     let callee2_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(2));
     let mut callee2 = Body::dummy(callee2_id);
-    callee2.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    callee2.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     callee2.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Use(Operand::Constant(MirConst {
                     kind: MirConstKind::Int(20),
-                    ty: i32_ty.clone(),
+                    ty: i32_ty,
                     span: Span::DUMMY,
                 })),
             ),
@@ -435,9 +435,9 @@ fn multiple_sequential_calls_accumulate() {
     let sum = LocalIdx::from_raw(3);
     caller.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     caller.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {
@@ -446,7 +446,7 @@ fn multiple_sequential_calls_accumulate() {
                 kind: TerminatorKind::Call {
                     func: Operand::Constant(MirConst {
                         kind: MirConstKind::Int(1),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     }),
                     args: vec![],
@@ -464,7 +464,7 @@ fn multiple_sequential_calls_accumulate() {
                 kind: TerminatorKind::Call {
                     func: Operand::Constant(MirConst {
                         kind: MirConstKind::Int(2),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     }),
                     args: vec![],
@@ -537,8 +537,8 @@ fn move_operand_reads_value() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![
@@ -547,7 +547,7 @@ fn move_operand_reads_value() {
                     Place::new(LocalIdx::from_raw(1)),
                     Rvalue::Use(Operand::Constant(MirConst {
                         kind: MirConstKind::Int(42),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     })),
                 ),
@@ -584,7 +584,7 @@ fn switch_int_multiple_values() {
     let discr = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Not),
+        local_decl(i32_ty, Mutability::Not),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {

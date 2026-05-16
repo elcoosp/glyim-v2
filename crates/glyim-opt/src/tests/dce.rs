@@ -292,7 +292,7 @@ fn eliminates_single_dead_store() {
 
 #[test]
 fn removes_multiple_dead_stores() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_multi_dead(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_multi_dead);
     crate::dce::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     assert_eq!(
@@ -311,7 +311,7 @@ fn removes_multiple_dead_stores() {
 
 #[test]
 fn keeps_live_stores_with_aggregate_use() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_aggregate_use(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_aggregate_use);
     crate::dce::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     assert_eq!(
@@ -323,7 +323,7 @@ fn keeps_live_stores_with_aggregate_use() {
 
 #[test]
 fn all_live_preserves_everything() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_all_live(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_all_live);
     crate::dce::run(&ctx, &mut body);
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     assert_eq!(

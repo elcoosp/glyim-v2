@@ -185,7 +185,7 @@ fn merges_single_goto_chain() {
 
 #[test]
 fn merges_double_goto_chain() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_double_goto(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_double_goto);
     crate::cfg_simplify::run(&ctx, &mut body);
     assert_eq!(
         body.basic_blocks.len(),
@@ -202,7 +202,7 @@ fn merges_double_goto_chain() {
 
 #[test]
 fn diamond_not_merged() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_diamond(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_diamond);
     let original_len = body.basic_blocks.len();
     crate::cfg_simplify::run(&ctx, &mut body);
     assert_eq!(
@@ -214,7 +214,7 @@ fn diamond_not_merged() {
 
 #[test]
 fn self_loop_not_merged() {
-    let (ctx, mut body) = with_fresh_ty_ctx(|ctx_mut| make_body_loop(ctx_mut));
+    let (ctx, mut body) = with_fresh_ty_ctx(make_body_loop);
     let original_len = body.basic_blocks.len();
     crate::cfg_simplify::run(&ctx, &mut body);
     assert_eq!(

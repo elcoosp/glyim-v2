@@ -21,16 +21,16 @@ pub fn build_add_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(ty.clone(), Mutability::Mut),
+        local_decl(ty, Mutability::Mut),
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     let stmt = Statement {
@@ -60,16 +60,16 @@ pub fn build_sub_body(_tcx: &TyCtxMut, lhs: i128, rhs: i128, ty: Ty) -> Body {
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(ty.clone(), Mutability::Mut),
+        local_decl(ty, Mutability::Mut),
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     let stmt = Statement {
@@ -244,11 +244,11 @@ pub fn build_allocation_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(ty.clone(), Mutability::Mut),
+        local_decl(ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(val),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {

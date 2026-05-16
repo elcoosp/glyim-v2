@@ -23,16 +23,16 @@ fn build_binop_body(tcx: &mut TyCtxMut, op: BinOp, lhs: i128, rhs: i128) -> Body
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(ty.clone(), Mutability::Mut),
+        local_decl(ty, Mutability::Mut),
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -59,11 +59,11 @@ fn build_unary_body(tcx: &mut TyCtxMut, op: UnOp, operand: i128) -> Body {
     let res_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(ty.clone(), Mutability::Mut),
+        local_decl(ty, Mutability::Mut),
     ]);
     let c = MirConst {
         kind: MirConstKind::Int(operand),
-        ty: ty.clone(),
+        ty: ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -95,12 +95,12 @@ fn build_cmp_body(tcx: &mut TyCtxMut, op: BinOp, lhs: i128, rhs: i128) -> Body {
     ]);
     let c1 = MirConst {
         kind: MirConstKind::Int(lhs),
-        ty: int_ty.clone(),
+        ty: int_ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(rhs),
-        ty: int_ty.clone(),
+        ty: int_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -254,10 +254,10 @@ fn build_nested_call_bodies(tcx: &mut TyCtxMut) -> (Body, Body, Body, DefId, Def
     let deepest_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1));
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let mut deepest = Body::dummy(deepest_id);
-    deepest.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    deepest.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     let c100 = MirConst {
         kind: MirConstKind::Int(100),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     deepest.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
@@ -279,13 +279,13 @@ fn build_nested_call_bodies(tcx: &mut TyCtxMut) -> (Body, Body, Body, DefId, Def
     let middle_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(2));
     let mut middle = Body::dummy(middle_id);
     middle.locals = IndexVec::from_raw(vec![
-        local_decl(i32_ty.clone(), Mutability::Mut), // return place
-        local_decl(i32_ty.clone(), Mutability::Mut), // temp for call result
+        local_decl(i32_ty, Mutability::Mut), // return place
+        local_decl(i32_ty, Mutability::Mut), // temp for call result
     ]);
     // Encode deepest_id as an Int constant for the call
     let fn_const = Operand::Constant(MirConst {
         kind: MirConstKind::Int(1), // LocalDefId raw
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     });
     middle.basic_blocks = IndexVec::from_raw(vec![
@@ -313,7 +313,7 @@ fn build_nested_call_bodies(tcx: &mut TyCtxMut) -> (Body, Body, Body, DefId, Def
                             Operand::Copy(Place::new(LocalIdx::from_raw(1))),
                             Operand::Constant(MirConst {
                                 kind: MirConstKind::Int(50),
-                                ty: i32_ty.clone(),
+                                ty: i32_ty,
                                 span: Span::DUMMY,
                             }),
                         )),
@@ -332,10 +332,10 @@ fn build_nested_call_bodies(tcx: &mut TyCtxMut) -> (Body, Body, Body, DefId, Def
     // top: calls middle, returns result
     let top_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(3));
     let mut top = Body::dummy(top_id);
-    top.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    top.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     let fn_const2 = Operand::Constant(MirConst {
         kind: MirConstKind::Int(2), // middle LocalDefId raw
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     });
     top.basic_blocks = IndexVec::from_raw(vec![

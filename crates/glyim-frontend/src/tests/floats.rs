@@ -103,7 +103,7 @@ fn float_error_incomplete_exponent_1e() {
         "1e should produce an error diagnostic"
     );
     assert!(
-        result.tokens.len() >= 1,
+        !result.tokens.is_empty(),
         "1e should produce at least one token"
     );
     assert_eq!(
@@ -123,7 +123,7 @@ fn float_error_exponent_sign_only_1e_plus() {
         "1e+ should produce an error diagnostic"
     );
     assert!(
-        result.tokens.len() >= 1,
+        !result.tokens.is_empty(),
         "1e+ should produce at least one token"
     );
     assert_eq!(
@@ -143,7 +143,7 @@ fn float_error_incomplete_exponent_with_fraction() {
         "1.0e should produce an error diagnostic"
     );
     assert!(
-        result.tokens.len() >= 1,
+        !result.tokens.is_empty(),
         "1.0e should produce at least one token"
     );
     assert_eq!(

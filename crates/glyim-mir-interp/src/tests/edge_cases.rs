@@ -133,8 +133,8 @@ fn build_callee_with_args_body(tcx: &mut TyCtxMut) -> Body {
     let arg_local = LocalIdx::from_raw(1);
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     body.locals = IndexVec::from_raw(vec![
-        local_decl(i32_ty.clone(), Mutability::Mut), // return
-        local_decl(i32_ty.clone(), Mutability::Not), // arg0
+        local_decl(i32_ty, Mutability::Mut), // return
+        local_decl(i32_ty, Mutability::Not), // arg0
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
@@ -169,7 +169,7 @@ fn build_caller_with_args_body(tcx: &mut TyCtxMut, callee_def_id: DefId, arg_val
     let ret_local = LocalIdx::from_raw(1);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let fn_const = Operand::Constant(MirConst {
         kind: MirConstKind::Int(callee_def_id.local_id.to_raw() as i128),
@@ -603,23 +603,23 @@ fn sequential_binary_ops() {
     let loc_result = LocalIdx::from_raw(3);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     let c10 = MirConst {
         kind: MirConstKind::Int(10),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     let c3 = MirConst {
         kind: MirConstKind::Int(3),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     let c2 = MirConst {
         kind: MirConstKind::Int(2),
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {

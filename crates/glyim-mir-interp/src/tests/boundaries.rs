@@ -70,8 +70,8 @@ fn len_of_non_array_panics() {
     let len_local = LocalIdx::from_raw(2);
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
@@ -101,14 +101,14 @@ fn call_with_no_target_falls_through() {
     // Callee: assigns 77 to return place and returns
     let callee_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1));
     let mut callee = Body::dummy(callee_id);
-    callee.locals = IndexVec::from_raw(vec![local_decl(i32_ty.clone(), Mutability::Mut)]);
+    callee.locals = IndexVec::from_raw(vec![local_decl(i32_ty, Mutability::Mut)]);
     callee.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(0)),
                 Rvalue::Use(Operand::Constant(MirConst {
                     kind: MirConstKind::Int(77),
-                    ty: i32_ty.clone(),
+                    ty: i32_ty,
                     span: Span::DUMMY,
                 })),
             ),
@@ -126,7 +126,7 @@ fn call_with_no_target_falls_through() {
     let result_local = LocalIdx::from_raw(1);
     caller.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Mut),
+        local_decl(i32_ty, Mutability::Mut),
     ]);
     caller.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {
@@ -135,7 +135,7 @@ fn call_with_no_target_falls_through() {
                 kind: TerminatorKind::Call {
                     func: Operand::Constant(MirConst {
                         kind: MirConstKind::Int(callee_id.local_id.to_raw() as i128),
-                        ty: i32_ty.clone(),
+                        ty: i32_ty,
                         span: Span::DUMMY,
                     }),
                     args: vec![],
@@ -224,7 +224,7 @@ fn assert_non_bool_condition_panics() {
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![
         local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty.clone(), Mutability::Not),
+        local_decl(i32_ty, Mutability::Not),
     ]);
     body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![Statement {

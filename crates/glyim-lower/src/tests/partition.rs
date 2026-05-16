@@ -34,7 +34,7 @@ fn v25_t02_multiple_modules_separate_cgus() {
     let items = vec![make_item(0, 1), make_item(1, 2), make_item(2, 3)];
     let cgus = partition(&items, 10);
     assert_eq!(cgus.len(), 3);
-    let mut found = vec![false; 3];
+    let mut found = [false; 3];
     for cgu in &cgus {
         assert_eq!(cgu.len(), 1);
         let idx = cgu[0];
@@ -56,7 +56,7 @@ fn v25_t03_cross_module_call_no_merge() {
 fn v25_t04_large_crate_multiple_cgus_limit() {
     let mut items = Vec::new();
     for i in 0..10 {
-        items.push(make_item(i, i as u32));
+        items.push(make_item(i, i));
     }
     let cgus = partition(&items, 3);
     assert!(cgus.len() <= 3);

@@ -46,7 +46,7 @@ fn test_fn_item_with_params() {
 
             let body_id = fn_item.body.unwrap();
             let body = &hir.bodies[body_id];
-            assert!(body.exprs.len() > 0, "body should have expressions");
+            assert!(!body.exprs.is_empty(), "body should have expressions");
             assert!(hir.body_owners.get(body_id).is_some());
             let block_id = last_expr_id(body);
             match &body.exprs[block_id] {

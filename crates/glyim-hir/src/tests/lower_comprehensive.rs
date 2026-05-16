@@ -202,7 +202,7 @@ fn test_break_continue() {
         _ => panic!(),
     };
     let (stmts, tail) = match &body.exprs[while_body_id] {
-        Expr::Block { stmts, tail } => (stmts.clone(), tail.clone()),
+        Expr::Block { stmts, tail } => (stmts.clone(), *tail),
         _ => panic!(),
     };
     let mut saw_break = false;

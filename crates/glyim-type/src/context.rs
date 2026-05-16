@@ -152,9 +152,8 @@ impl TyCtxMut {
             TyKind::Array(inner, _) => self.is_copy(*inner),
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg {
-                        if !self.is_copy(*t) { return false; }
-                    }
+                    if let GenericArg::Ty(t) = arg
+                        && !self.is_copy(*t) { return false; }
                 }
                 true
             }
@@ -265,9 +264,8 @@ impl TyCtx {
             TyKind::Array(inner, _) => self.is_copy(*inner),
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg {
-                        if !self.is_copy(*t) { return false; }
-                    }
+                    if let GenericArg::Ty(t) = arg
+                        && !self.is_copy(*t) { return false; }
                 }
                 true
             }

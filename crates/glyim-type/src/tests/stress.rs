@@ -45,7 +45,7 @@ fn allocate_100_substitutions() {
             let ty = c.mk_ty(TyKind::Uint(UintTy::U64));
             let cnst = Const {
                 kind: ConstKind::Uint(i),
-                ty: ty,
+                ty,
             };
             let sub = c.intern_substitution(vec![GenericArg::Ty(ty), GenericArg::Const(cnst)]);
             subs.push(sub);

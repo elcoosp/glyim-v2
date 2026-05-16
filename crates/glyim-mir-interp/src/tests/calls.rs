@@ -13,7 +13,7 @@ fn build_callee_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let ret_local = LocalIdx::from_raw(0);
     let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     body.locals = IndexVec::from_raw(vec![LocalDecl {
-        ty: i32_ty.clone(),
+        ty: i32_ty,
         mutability: Mutability::Mut,
         source_info: SourceInfo::new(Span::DUMMY),
     }]);
@@ -53,7 +53,7 @@ fn interpret_function_call() {
                 source_info: SourceInfo::new(Span::DUMMY),
             },
             LocalDecl {
-                ty: i32_ty.clone(),
+                ty: i32_ty,
                 mutability: Mutability::Mut,
                 source_info: SourceInfo::new(Span::DUMMY),
             },
