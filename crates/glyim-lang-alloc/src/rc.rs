@@ -3,6 +3,7 @@
 
 use crate::alloc::{GlobalAlloc, Layout};
 use core::cell::Cell;
+use core::ops::Deref;
 
 struct RcInner<T> {
     strong: Cell<usize>,
@@ -47,6 +48,14 @@ impl<T> Clone for Rc<T> {
             inner.strong.set(inner.strong.get() + 1);
         }
         Rc { ptr: self.ptr }
+    }
+}
+
+impl<T> Deref for Rc<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        unsafe { &(*self.ptr).value }
     }
 }
 

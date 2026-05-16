@@ -73,6 +73,16 @@ impl<T> Vec<T> {
     }
 }
 
+impl<T> core::iter::FromIterator<T> for Vec<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut vec = Vec::new();
+        for item in iter {
+            vec.push(item);
+        }
+        vec
+    }
+}
+
 impl<T> Index<usize> for Vec<T> {
     type Output = T;
     fn index(&self, index: usize) -> &T {
