@@ -76,14 +76,14 @@ impl<'a> ExpanderImpl<'a> {
         }
     }
 
-    pub(crate) fn collect_macros(&mut self, node: &SyntaxNode, interner: &mut Interner) {
+    pub(crate) fn collect_macros(&mut self, node: &SyntaxNode, _interner: &mut Interner) {
         for child in node.children() {
             if child.kind() == SyntaxKind::MacroDef {
-                if let Some(def) = self.parse_macro_def(&child, interner) {
+                if let Some(def) = self.parse_macro_def(&child) {
                     self.macros.insert(def.name, def);
                 }
             } else {
-                self.collect_macros(&child, interner);
+                self.collect_macros(&child, _interner);
             }
         }
     }
@@ -92,7 +92,7 @@ impl<'a> ExpanderImpl<'a> {
         self.macros.insert(def.name, def);
     }
 
-    fn parse_macro_def(&mut self, node: &SyntaxNode, interner: &mut Interner) -> Option<MacroDef> {
+    fn parse_macro_def(&mut self, node: &SyntaxNode) -> Option<MacroDef> {
         let file_id = self.file_id_from_node(node);
         let mut ident_text = None;
         for child in node.children_with_tokens() {
@@ -102,7 +102,7 @@ impl<'a> ExpanderImpl<'a> {
             }
         }
         let name_str = ident_text?;
-        let name = interner.intern(&name_str);
+        let name = self.interner.intern(&name_str);
         let mut arms = Vec::new();
         for arm_node in node.children().filter(|n| n.kind() == SyntaxKind::MacroArm) {
             if let Some(arm) = self.parse_macro_arm(&arm_node) {
@@ -123,7 +123,6 @@ impl<'a> ExpanderImpl<'a> {
         let mut children = node.children();
         let pattern_node = children.find(|c| c.kind() == SyntaxKind::TokenTree)?;
         let pattern = self.parse_pattern(&pattern_node)?;
-        // Skip FatArrow
         let expansion_node = children.find(|c| c.kind() == SyntaxKind::TokenTree)?;
         let expansion = self.parse_expansion(&expansion_node);
         let file_id = self.file_id_from_node(&expansion_node);
@@ -171,11 +170,34 @@ impl<'a> ExpanderImpl<'a> {
             let (expanded_green, mut diags) = self.try_expand_macro_call(node, depth);
             diagnostics.append(&mut diags);
             if let Some(green) = expanded_green {
-                let new_root = SyntaxNode::new_root(green.clone());
-                for child in new_root.children_with_tokens() {
+                // Re-parse the expanded token stream in a function body context
+                // so that expression/statement tokens are correctly parsed as MacroCalls.
+                let temp_root = SyntaxNode::new_root(green.clone());
+                let token_text = temp_root.text().to_string();
+                // Wrap in a function body to parse in statement context
+                let wrapped = format!("fn __glyim_expanded() {{ {} }}", token_text);
+                let parse_result = glyim_frontend::parse_to_syntax(&wrapped, FileId::BOGUS);
+                let reparsed_root = parse_result.root;
+                // Find the function body block and expand its statements
+                for child in reparsed_root.children_with_tokens() {
                     match child {
                         rowan::NodeOrToken::Node(n) => {
-                            self.expand_node_recursive(&n, depth + 1, builder, diagnostics);
+                            // Look for the FnDef's block and process its contents
+                            if n.kind() == SyntaxKind::FnDef {
+                                if let Some(block) = n.children().find(|c| c.kind() == SyntaxKind::Block) {
+                                    for stmt in block.children_with_tokens() {
+                                        match stmt {
+                                            rowan::NodeOrToken::Node(s) => {
+                                                self.expand_node_recursive(&s, depth + 1, builder, diagnostics);
+                                            }
+                                            rowan::NodeOrToken::Token(t) => {
+                                                let kind = GlyimLang::kind_to_raw(t.kind());
+                                                builder.token(kind, t.text());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         rowan::NodeOrToken::Token(t) => {
                             let kind = GlyimLang::kind_to_raw(t.kind());
@@ -207,6 +229,24 @@ impl<'a> ExpanderImpl<'a> {
         builder.finish_node();
     }
 
+    /// Recursively find the first Ident token in a syntax subtree.
+    fn find_ident_in_subtree(node: &SyntaxNode) -> Option<String> {
+        for child in node.children_with_tokens() {
+            match &child {
+                rowan::NodeOrToken::Token(t) if t.kind() == SyntaxKind::Ident => {
+                    return Some(t.text().to_string());
+                }
+                rowan::NodeOrToken::Node(n) => {
+                    if let Some(ident) = Self::find_ident_in_subtree(n) {
+                        return Some(ident);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     fn try_expand_macro_call(
         &mut self,
         node: &SyntaxNode,
@@ -222,37 +262,14 @@ impl<'a> ExpanderImpl<'a> {
             );
         }
 
-        // Extract macro name and args
-        let name_token = {
-            let mut found = None;
-            for child in node.children_with_tokens() {
-                if let Some(t) = child.clone().into_token() {
-                    if t.kind() == SyntaxKind::Ident {
-                        found = Some(t);
-                        break;
-                    }
-                } else if let Some(n) = child.clone().into_node() {
-                    if n.kind() == SyntaxKind::PathExpr {
-                        if let Some(t) = n.children_with_tokens()
-                            .filter_map(|c| c.into_token())
-                            .filter(|t| t.kind() == SyntaxKind::Ident)
-                            .last()
-                        {
-                            found = Some(t);
-                            break;
-                        }
-                    }
-                }
-            }
-            found
-        };
-
-        let name_token = match name_token {
+        // Find the macro name by searching all descendant tokens for an Ident
+        let ident_text = Self::find_ident_in_subtree(node);
+        let name_token_text = match ident_text {
             Some(t) => t,
             None => return (None, Vec::new()),
         };
 
-        let name = self.interner.intern(name_token.text());
+        let name = self.interner.intern(&name_token_text);
         let args_node = match node.children().find(|c| c.kind() == SyntaxKind::TokenTree) {
             Some(n) => n,
             None => return (None, Vec::new()),
@@ -323,9 +340,12 @@ impl<'a> ExpanderImpl<'a> {
         };
 
         let mut builder = rowan::GreenNodeBuilder::new();
+        // Wrap expansion tokens in a synthetic SourceFile node so the tree is balanced
+        builder.start_node(GlyimLang::kind_to_raw(SyntaxKind::SourceFile));
         for tree in trees {
             self.build_token_tree_green(tree, &mut builder, &mark);
         }
+        builder.finish_node();
         builder.finish()
     }
 
