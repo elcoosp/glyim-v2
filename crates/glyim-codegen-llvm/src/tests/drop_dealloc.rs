@@ -37,11 +37,6 @@ fn count_drop_calls(ir: &str) -> usize {
     ir.matches("call void @glyim_drop_in_place").count()
 }
 
-/// Helper: count occurrences of `call void @glyim_dealloc` in IR
-fn count_dealloc_calls(ir: &str) -> usize {
-    ir.matches("call void @glyim_dealloc").count()
-}
-
 /// V15-T01: Drop of Copy type at block end - no drop call emitted.
 #[test]
 fn v15_t01_drop_copy_type_at_block_end() {
@@ -848,14 +843,15 @@ fn v15_t11_drop_unit_type() {
     Target::initialize_all(&InitializationConfig::default());
 
     let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let unit_ty = ctx_mut.unit_ty();
         let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
         locals.push(LocalDecl {
-            ty: Ty::UNIT,
+            ty: unit_ty,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(glyim_span::Span::DUMMY),
         });
         locals.push(LocalDecl {
-            ty: Ty::UNIT,
+            ty: unit_ty,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(glyim_span::Span::DUMMY),
         });
@@ -913,14 +909,16 @@ fn v15_t12_drop_bool_type() {
     Target::initialize_all(&InitializationConfig::default());
 
     let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let unit_ty = ctx_mut.unit_ty();
+        let bool_ty = ctx_mut.bool_ty();
         let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
         locals.push(LocalDecl {
-            ty: Ty::UNIT,
+            ty: unit_ty,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(glyim_span::Span::DUMMY),
         });
         locals.push(LocalDecl {
-            ty: Ty::BOOL,
+            ty: bool_ty,
             mutability: Mutability::Mut,
             source_info: SourceInfo::new(glyim_span::Span::DUMMY),
         });
