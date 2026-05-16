@@ -477,6 +477,7 @@ version = "0.1.0"
 dependencies = [
  "glyim-core",
  "glyim-diag",
+ "glyim-layout",
  "glyim-mir",
  "glyim-span",
  "glyim-test",
@@ -567,6 +568,15 @@ dependencies = [
  "glyim-syntax",
  "glyim-test",
  "tracing",
+]
+
+[[package]]
+name = "glyim-lang-core"
+version = "0.1.0"
+dependencies = [
+ "glyim-frontend",
+ "glyim-span",
+ "glyim-test",
 ]
 
 [[package]]

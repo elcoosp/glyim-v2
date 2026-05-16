@@ -6,7 +6,7 @@ use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_layout::{LayoutComputer, PassMode};
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
 };
 use glyim_type::TyCtx;
 use glyim_type::{Ty, TyKind};
@@ -177,11 +177,14 @@ struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
     _function: inkwell::values::FunctionValue<'ctx>,
+    drop_fn: inkwell::values::FunctionValue<'ctx>,
+    dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
     target_info: TargetInfo,
     ty_ctx: &'a TyCtx,
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
+    personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
 }
 
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
@@ -378,6 +381,27 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
     fn place_ty(&self, place: &Place) -> Ty {
         self.body.locals[place.local].ty
+    }
+
+    fn emit_landingpad(&self) -> CompResult<()> {
+        if let Some(personality_fn) = self.personality_fn {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i32_type = self.context.i32_type();
+            let result_type = self
+                .context
+                .struct_type(&[ptr_type.into(), i32_type.into()], false);
+
+            let _pad = self
+                .builder
+                .build_landing_pad(result_type, personality_fn, &[], true, "pad")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "landingpad: {:?}",
+                        e
+                    ))]
+                })?;
+        }
+        Ok(())
     }
 
     fn lower_rvalue(&self, rvalue: &Rvalue) -> BasicValueEnum<'ctx> {
@@ -875,6 +899,201 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         array_val.as_basic_value_enum()
     }
 
+    fn lower_drop(
+        &mut self,
+        place: &Place,
+        target: &BasicBlockIdx,
+        cleanup: &Option<BasicBlockIdx>,
+    ) -> CompResult<()> {
+        let place_ty = self.place_ty(place);
+        let needs_drop = self.type_needs_drop(place_ty);
+
+        if needs_drop {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+            // Get pointer to the value to drop
+            let place_ptr = self.place_ptr(place);
+            let i8_ptr = self
+                .builder
+                .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
+                .expect("bitcast for drop failed");
+
+            self.builder
+                .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build drop_in_place call: {:?}",
+                        e
+                    ))]
+                })?;
+
+            // If the type is a reference/pointer to heap memory, also call glyim_dealloc
+            if self.type_needs_dealloc(place_ty) {
+                self.emit_dealloc_for_drop(place, cleanup)?;
+            }
+        }
+
+        // Branch to target
+        let target_bb = self.bb_map.get(target).unwrap();
+        self.builder
+            .build_unconditional_branch(*target_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build branch after Drop: {:?}",
+                    e
+                ))]
+            })?;
+        Ok(())
+    }
+
+    /// Check if a type needs a drop call.
+    /// Types that are Copy or trivially droppable do not need drop_in_place.
+    fn type_needs_drop(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            // Primitive types that are Copy and trivially droppable
+            TyKind::Never
+            | TyKind::Unit
+            | TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char => false,
+            // Error type - no drop needed
+            TyKind::Error => false,
+            // References, raw pointers - the referent may need drop
+            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
+            // Tuples - need drop if any field needs drop
+            TyKind::Tuple(subst) => {
+                let args = self.ty_ctx.substitution_args(*subst);
+                args.iter().any(|arg| {
+                    if let glyim_type::GenericArg::Ty(t) = arg {
+                        self.type_needs_drop(*t)
+                    } else {
+                        false
+                    }
+                })
+            }
+            // Arrays - need drop if element needs drop
+            TyKind::Array(elem, _) => self.type_needs_drop(*elem),
+            // ADTs, closures, etc. - conservatively assume they need drop
+            TyKind::Adt(_, _) | TyKind::Closure(_, _) | TyKind::FnDef(_, _) => true,
+            // Opaque types - may need drop
+            TyKind::Opaque(_, _) => true,
+            // Dynamic types (trait objects) - need drop
+            TyKind::Dynamic(_, _) => true,
+            // Slice - needs drop
+            TyKind::Slice(_) => true,
+            // Infer/Param/Bound - conservatively true
+            TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) => true,
+            // Function pointers - no drop needed
+            TyKind::FnPtr(_) => false,
+            // String - needs drop (has heap allocation)
+            TyKind::String => true,
+            // Projection - conservatively true
+            TyKind::Projection(_) => true,
+        }
+    }
+
+    /// Check if a type is a reference/pointer that owns heap memory
+    /// and therefore needs deallocation after drop_in_place.
+    fn type_needs_dealloc(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::Ref(_, inner, Mutability::Mut) => !self.is_copy_type(*inner),
+            TyKind::RawPtr(inner, Mutability::Mut) => !self.is_copy_type(*inner),
+            _ => false,
+        }
+    }
+
+    /// Check if a type implements Copy (simplified - no trait solver in codegen).
+    fn is_copy_type(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::Never
+            | TyKind::Unit
+            | TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char => true,
+            TyKind::Ref(_, inner, Mutability::Not) => self.is_copy_type(*inner),
+            TyKind::RawPtr(_, _) => true,
+            TyKind::FnPtr(_) => true,
+            TyKind::Tuple(subst) => {
+                let args = self.ty_ctx.substitution_args(*subst);
+                args.iter().all(|arg| {
+                    if let glyim_type::GenericArg::Ty(t) = arg {
+                        self.is_copy_type(*t)
+                    } else {
+                        true
+                    }
+                })
+            }
+            TyKind::Array(elem, _) => self.is_copy_type(*elem),
+            _ => false,
+        }
+    }
+
+    /// Emit a call to glyim_dealloc for a place that owns heap memory.
+    fn emit_dealloc_for_drop(
+        &mut self,
+        place: &Place,
+        _cleanup: &Option<BasicBlockIdx>,
+    ) -> CompResult<()> {
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.llvm_int_type(64);
+
+        // Get the pointer value (for a ref/ptr, load the pointer first)
+        let place_ptr = self.place_ptr(place);
+        let place_ty = self.place_ty(place);
+
+        let (inner_ty, is_ref) = match self.ty_ctx.ty_kind(place_ty) {
+            TyKind::Ref(_, inner, _) => (*inner, true),
+            TyKind::RawPtr(inner, _) => (*inner, true),
+            _ => (place_ty, false),
+        };
+
+        // Load the pointer value if it's a reference type
+        let ptr_val = if is_ref {
+            let ref_llvm_ty = self.llvm_type_for_ty(place_ty);
+            let loaded = self
+                .builder
+                .build_load(ref_llvm_ty, place_ptr, "drop_ref_load")
+                .expect("load ref for dealloc failed");
+            loaded.into_pointer_value()
+        } else {
+            place_ptr
+        };
+
+        // Bitcast to i8*
+        let i8_ptr = self
+            .builder
+            .build_bit_cast(ptr_val, ptr_type, "dealloc_ptr")
+            .expect("bitcast for dealloc failed");
+
+        // Compute size and alignment from layout
+        let layout_computer =
+            crate::abi::FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+        let layout = layout_computer
+            .layout_of(inner_ty)
+            .unwrap_or_else(|_| glyim_layout::Layout::unit());
+        let size_val = i64_type.const_int(layout.size.0, false);
+        let align_val = i64_type.const_int(layout.align.0, false);
+
+        self.builder
+            .build_call(
+                self.dealloc_fn,
+                &[i8_ptr.into(), size_val.into(), align_val.into()],
+                "dealloc_call",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build glyim_dealloc call: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
@@ -895,6 +1114,287 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
             StatementKind::Nop => {}
         }
+        Ok(())
+    }
+
+    fn lower_bool_switch(
+        &mut self,
+        discr_val: IntValue<'ctx>,
+        targets: &SwitchTargets,
+    ) -> CompResult<()> {
+        let branches: Vec<_> = targets.iter().collect();
+        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+
+        if branches.is_empty() {
+            self.builder
+                .build_unconditional_branch(*otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build unconditional branch for empty bool switch: {:?}",
+                        e
+                    ))]
+                })?;
+            return Ok(());
+        }
+
+        let true_val = discr_val.get_type().const_int(1, false);
+        let cond = self
+            .builder
+            .build_int_compare(inkwell::IntPredicate::EQ, discr_val, true_val, "bool_eq")
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for bool switch: {:?}",
+                    e
+                ))]
+            })?;
+
+        let true_bb = branches
+            .iter()
+            .find(|(v, _)| *v == 1)
+            .map(|(_, bb)| *self.bb_map.get(bb).unwrap())
+            .unwrap_or(*otherwise_bb);
+
+        let false_bb = branches
+            .iter()
+            .find(|(v, _)| *v == 0)
+            .map(|(_, bb)| *self.bb_map.get(bb).unwrap())
+            .unwrap_or(*otherwise_bb);
+
+        self.builder
+            .build_conditional_branch(cond, true_bb, false_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for bool switch: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
+    fn lower_small_switch(
+        &mut self,
+        discr_val: IntValue<'ctx>,
+        targets: &SwitchTargets,
+    ) -> CompResult<()> {
+        let branches: Vec<_> = targets.iter().collect();
+        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+
+        if branches.is_empty() {
+            self.builder
+                .build_unconditional_branch(*otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build unconditional branch for empty switch: {:?}",
+                        e
+                    ))]
+                })?;
+            return Ok(());
+        }
+
+        if branches.len() == 1 {
+            let (value, target_bb) = branches[0];
+            let target_block = self.bb_map.get(&target_bb).unwrap();
+            let case_val = discr_val.get_type().const_int(value as u64, false);
+            let cond = self
+                .builder
+                .build_int_compare(inkwell::IntPredicate::EQ, discr_val, case_val, "switch_eq")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build icmp for small switch: {:?}",
+                        e
+                    ))]
+                })?;
+            self.builder
+                .build_conditional_branch(cond, *target_block, *otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build conditional branch for small switch: {:?}",
+                        e
+                    ))]
+                })?;
+            return Ok(());
+        }
+
+        if branches.len() == 2 {
+            let first_case_val = discr_val.get_type().const_int(branches[0].0 as u64, false);
+            let first_cond = self
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    discr_val,
+                    first_case_val,
+                    "switch_eq_0",
+                )
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build icmp for small switch case 0: {:?}",
+                        e
+                    ))]
+                })?;
+
+            let first_target = *self.bb_map.get(&branches[0].1).unwrap();
+            let second_target = *self.bb_map.get(&branches[1].1).unwrap();
+
+            let second_case_val = discr_val.get_type().const_int(branches[1].0 as u64, false);
+            let second_cond = self
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    discr_val,
+                    second_case_val,
+                    "switch_eq_1",
+                )
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build icmp for small switch case 1: {:?}",
+                        e
+                    ))]
+                })?;
+
+            let merge_bb = self
+                .context
+                .append_basic_block(self._function, "small_switch_merge");
+
+            self.builder
+                .build_conditional_branch(first_cond, first_target, merge_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build conditional branch for small switch case 0: {:?}",
+                        e
+                    ))]
+                })?;
+
+            self.builder.position_at_end(merge_bb);
+            self.builder
+                .build_conditional_branch(second_cond, second_target, *otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build conditional branch for small switch case 1: {:?}",
+                        e
+                    ))]
+                })?;
+
+            return Ok(());
+        }
+
+        let first_case_val = discr_val.get_type().const_int(branches[0].0 as u64, false);
+        let first_cond = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                discr_val,
+                first_case_val,
+                "switch_eq_0",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for small switch case 0: {:?}",
+                    e
+                ))]
+            })?;
+
+        let first_target = *self.bb_map.get(&branches[0].1).unwrap();
+
+        let merge_bb = self
+            .context
+            .append_basic_block(self._function, "small_switch_merge");
+
+        self.builder
+            .build_conditional_branch(first_cond, first_target, merge_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for small switch case 0: {:?}",
+                    e
+                ))]
+            })?;
+
+        self.builder.position_at_end(merge_bb);
+
+        let second_case_val = discr_val.get_type().const_int(branches[1].0 as u64, false);
+        let second_cond = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                discr_val,
+                second_case_val,
+                "switch_eq_1",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for small switch case 1: {:?}",
+                    e
+                ))]
+            })?;
+
+        let second_target = *self.bb_map.get(&branches[1].1).unwrap();
+        let second_merge_bb = self
+            .context
+            .append_basic_block(self._function, "small_switch_merge2");
+
+        self.builder
+            .build_conditional_branch(second_cond, second_target, second_merge_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for small switch case 1: {:?}",
+                    e
+                ))]
+            })?;
+
+        self.builder.position_at_end(second_merge_bb);
+
+        let third_case_val = discr_val.get_type().const_int(branches[2].0 as u64, false);
+        let third_cond = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                discr_val,
+                third_case_val,
+                "switch_eq_2",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for small switch case 2: {:?}",
+                    e
+                ))]
+            })?;
+
+        let third_target_block = *self.bb_map.get(&branches[2].1).unwrap();
+        self.builder
+            .build_conditional_branch(third_cond, third_target_block, *otherwise_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for small switch case 2: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
+    fn lower_large_switch(
+        &mut self,
+        discr_val: IntValue<'ctx>,
+        targets: &SwitchTargets,
+    ) -> CompResult<()> {
+        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+
+        let mut cases = Vec::new();
+        for (value, target_bb) in targets.iter() {
+            let target_block = self.bb_map.get(&target_bb).unwrap();
+            let case_val = discr_val.get_type().const_int(value as u64, false);
+            cases.push((case_val, *target_block));
+        }
+
+        self.builder
+            .build_switch(discr_val, *otherwise_bb, &cases)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build switch: {:?}",
+                    e
+                ))]
+            })?;
+
         Ok(())
     }
 
@@ -929,27 +1429,21 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
             TerminatorKind::SwitchInt {
                 discr,
-                switch_ty: _,
+                switch_ty,
                 targets,
             } => {
-                let discr_val = self.lower_operand(discr).into_int_value();
-                let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+                let discr_val = self.lower_operand(discr);
+                let branch_count = targets.iter().count();
 
-                let mut cases = Vec::new();
-                for (value, target_bb) in targets.iter() {
-                    let target_block = self.bb_map.get(&target_bb).unwrap();
-                    let case_val = discr_val.get_type().const_int(value as u64, false);
-                    cases.push((case_val, *target_block));
+                let is_bool_switch = matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool);
+
+                if is_bool_switch && branch_count <= 2 {
+                    self.lower_bool_switch(discr_val.into_int_value(), targets)?;
+                } else if branch_count <= 2 {
+                    self.lower_small_switch(discr_val.into_int_value(), targets)?;
+                } else {
+                    self.lower_large_switch(discr_val.into_int_value(), targets)?;
                 }
-
-                self.builder
-                    .build_switch(discr_val, *otherwise_bb, &cases)
-                    .map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "Failed to build switch: {:?}",
-                            e
-                        ))]
-                    })?;
             }
             TerminatorKind::Call {
                 func,
@@ -970,20 +1464,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 })?;
             }
             TerminatorKind::Drop {
-                place: _,
+                place,
                 target,
-                cleanup: _,
+                cleanup,
             } => {
-                tracing::warn!("STUB: Drop terminator not yet implemented, jumping to target");
-                let target_bb = self.bb_map.get(target).unwrap();
-                self.builder
-                    .build_unconditional_branch(*target_bb)
-                    .map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "Failed to build branch for Drop: {:?}",
-                            e
-                        ))]
-                    })?;
+                self.lower_drop(place, target, cleanup)?;
             }
         }
         Ok(())
@@ -1121,22 +1606,61 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let metadata_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
             llvm_args.iter().map(|v| (*v).into()).collect();
 
-        let call = self
-            .builder
-            .build_indirect_call(fn_type, func_val, &metadata_args, "call")
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "build_indirect_call: {:?}",
-                    e
-                ))]
-            })?;
+        let use_invoke = cleanup.is_some();
+
+        let call_result = if use_invoke {
+            let normal_bb = if let Some(target_bb) = target {
+                *self.bb_map.get(target_bb).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error("target block not found")]
+                })?
+            } else {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "invoke requires a target block",
+                )]);
+            };
+            let cleanup_bb = if let Some(cleanup_bb_idx) = cleanup {
+                *self.bb_map.get(cleanup_bb_idx).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error("cleanup block not found")]
+                })?
+            } else {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "invoke requires a cleanup block",
+                )]);
+            };
+
+            self.builder
+                .build_indirect_invoke(fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "build_indirect_invoke: {:?}",
+                        e
+                    ))]
+                })?
+        } else {
+            self.builder
+                .build_indirect_call(fn_type, func_val, &metadata_args, "call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "build_indirect_call: {:?}",
+                        e
+                    ))]
+                })?
+        };
 
         if is_sret {
             let sret_attr = self.context.create_enum_attribute(
                 inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
                 0,
             );
-            call.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
+            call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
+        }
+
+        // Position at the normal destination block for return value handling
+        if use_invoke {
+            if let Some(target_bb) = target {
+                let target_block = self.bb_map.get(target_bb).unwrap();
+                self.builder.position_at_end(*target_block);
+            }
         }
 
         if is_sret {
@@ -1159,7 +1683,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 ))]
             })?;
         } else if !matches!(fn_abi.ret.mode, PassMode::Ignore) {
-            let ret_val = match call.as_any_value_enum() {
+            let ret_val = match call_result.as_any_value_enum() {
                 AnyValueEnum::IntValue(v) => BasicValueEnum::IntValue(v),
                 AnyValueEnum::FloatValue(v) => BasicValueEnum::FloatValue(v),
                 AnyValueEnum::PointerValue(v) => BasicValueEnum::PointerValue(v),
@@ -1182,34 +1706,25 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             })?;
         }
 
-        if let Some(target_bb) = target {
-            let target_block = self
-                .bb_map
-                .get(target_bb)
-                .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?;
-            self.builder
-                .build_unconditional_branch(*target_block)
-                .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))])?;
-        } else if let Some(cleanup_bb) = cleanup {
-            let cleanup_block = self
-                .bb_map
-                .get(cleanup_bb)
-                .ok_or_else(|| vec![GlyimDiagnostic::internal_error("cleanup block not found")])?;
-            self.builder
-                .build_unconditional_branch(*cleanup_block)
-                .map_err(|e| {
+        // For non-invoke calls, branch to target
+        if !use_invoke {
+            if let Some(target_bb) = target {
+                let target_block = self.bb_map.get(target_bb).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error("target block not found")]
+                })?;
+                self.builder
+                    .build_unconditional_branch(*target_block)
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))]
+                    })?;
+            } else {
+                self.builder.build_unreachable().map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "branch cleanup: {:?}",
+                        "unreachable: {:?}",
                         e
                     ))]
                 })?;
-        } else {
-            self.builder.build_unreachable().map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "unreachable: {:?}",
-                    e
-                ))]
-            })?;
+            }
         }
 
         Ok(())
@@ -1217,10 +1732,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 }
 
 impl LlvmBackend {
-    fn lower_body<'ctx>(
+    fn lower_body<'ctx, 'b>(
         &'ctx self,
         context: &'ctx Context,
-        module: &Module<'ctx>,
+        module: &'b Module<'ctx>,
         body: &Body,
     ) -> CompResult<()> {
         let fn_name = format!(
@@ -1256,15 +1771,48 @@ impl LlvmBackend {
         }
 
         let ty_ctx = self.ty_ctx.as_ref().unwrap();
+
+        // Pre-declare runtime functions needed for drop/dealloc
+        let ptr_type = context.ptr_type(AddressSpace::default());
+        let i64_type = context
+            .custom_width_int_type(std::num::NonZeroU32::new(64).unwrap())
+            .unwrap();
+
+        let drop_fn_type = void_type.fn_type(&[ptr_type.into()], false);
+        let drop_fn = module
+            .get_function("glyim_drop_in_place")
+            .unwrap_or_else(|| module.add_function("glyim_drop_in_place", drop_fn_type, None));
+
+        let dealloc_fn_type =
+            void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+        let dealloc_fn = module
+            .get_function("glyim_dealloc")
+            .unwrap_or_else(|| module.add_function("glyim_dealloc", dealloc_fn_type, None));
+
+        // Set up personality function if any basic block is a cleanup block
+        let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
+        let personality_fn = if has_cleanup {
+            let personality_fn_type = context.void_type().fn_type(&[], false);
+            let personality_fn =
+                module.add_function("__glyim_personality", personality_fn_type, None);
+            function.set_personality_function(personality_fn);
+            Some(personality_fn)
+        } else {
+            None
+        };
+
         let mut lowering_ctx = LoweringCtx {
             context,
             builder,
             _function: function,
+            drop_fn,
+            dealloc_fn,
             body,
             target_info: self.target_info.clone(),
             ty_ctx,
             locals,
             bb_map,
+            personality_fn,
         };
 
         for (local_idx, _local_decl) in body.locals.iter_enumerated() {
@@ -1274,6 +1822,10 @@ impl LlvmBackend {
         for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
             let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
             lowering_ctx.builder.position_at_end(*llvm_bb);
+
+            if bb_data.is_cleanup {
+                lowering_ctx.emit_landingpad()?;
+            }
 
             for stmt in &bb_data.statements {
                 lowering_ctx.lower_statement(stmt)?;

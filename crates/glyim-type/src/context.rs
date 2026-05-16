@@ -2,6 +2,7 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
+use std::collections::HashSet;
 
 use crate::auto_trait::*;
 use crate::display::TypeLookup;
@@ -24,6 +25,7 @@ pub struct TyCtxMut {
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
+    interior_mutable_adt_ids: HashSet<AdtId>,
     _not_send_sync: PhantomData<*const ()>,
 }
 
@@ -37,6 +39,7 @@ impl TyCtxMut {
             resolver,
             auto_trait_registry: AutoTraitRegistry::new(),
             adt_reprs: HashMap::new(),
+            interior_mutable_adt_ids: HashSet::new(),
             _not_send_sync: PhantomData,
         };
         assert_eq!(
@@ -144,7 +147,9 @@ impl TyCtxMut {
     /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
+                true
+            }
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -153,7 +158,10 @@ impl TyCtxMut {
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
                     if let GenericArg::Ty(t) = arg
-                        && !self.is_copy(*t) { return false; }
+                        && !self.is_copy(*t)
+                    {
+                        return false;
+                    }
                 }
                 true
             }
@@ -196,7 +204,13 @@ impl TyCtxMut {
             resolver: self.resolver,
             auto_trait_registry: self.auto_trait_registry,
             adt_reprs: self.adt_reprs,
+            interior_mutable_adt_ids: self.interior_mutable_adt_ids,
         }
+    }
+
+    /// Mark an ADT as containing `UnsafeCell` (interior mutability).
+    pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
+        self.interior_mutable_adt_ids.insert(adt_id);
     }
 }
 
@@ -216,6 +230,9 @@ impl TypeLookup for TyCtxMut {
     fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
+    fn is_interior_mutable_adt(&self, adt_id: AdtId) -> bool {
+        self.interior_mutable_adt_ids.contains(&adt_id)
+    }
 }
 
 pub struct TyCtx {
@@ -226,6 +243,7 @@ pub struct TyCtx {
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
+    interior_mutable_adt_ids: HashSet<AdtId>,
 }
 
 impl TyCtx {
@@ -256,7 +274,9 @@ impl TyCtx {
     /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
+                true
+            }
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -265,7 +285,10 @@ impl TyCtx {
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
                     if let GenericArg::Ty(t) = arg
-                        && !self.is_copy(*t) { return false; }
+                        && !self.is_copy(*t)
+                    {
+                        return false;
+                    }
                 }
                 true
             }
@@ -335,6 +358,9 @@ impl TypeLookup for TyCtx {
     fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
+    fn is_interior_mutable_adt(&self, adt_id: AdtId) -> bool {
+        self.interior_mutable_adt_ids.contains(&adt_id)
+    }
 }
 
 #[cfg(test)]
@@ -371,13 +397,9 @@ mod copy_tests {
         // Extract values first to avoid multiple mutable borrows
         let bool_ty = ctx.bool_ty();
         let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
-        let substs = ctx.intern_substitution(vec![
-            GenericArg::Ty(bool_ty),
-            GenericArg::Ty(i32_ty),
-        ]);
+        let substs = ctx.intern_substitution(vec![GenericArg::Ty(bool_ty), GenericArg::Ty(i32_ty)]);
         let tuple_ty = ctx.mk_ty(TyKind::Tuple(substs));
 
         assert!(ctx.is_copy(tuple_ty));
     }
 }
-

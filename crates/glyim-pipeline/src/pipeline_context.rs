@@ -124,5 +124,4 @@ impl<'a> BorrowckCtx for PipelineBorrowckCtx<'a> {
     fn local_decl(&self, idx: LocalIdx) -> &LocalDecl {
         &self.body.locals[idx]
     }
-
 }
