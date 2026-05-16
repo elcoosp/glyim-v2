@@ -274,3 +274,23 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
 mod tests;
 
 pub mod vtable;
+
+impl crate::vtable::VTableComputer for SimpleLayoutComputer<'_> {
+    fn vtable_of(
+        &self,
+        _trait_def_id: glyim_core::TraitDefId,
+        _concrete_ty: glyim_type::Ty,
+    ) -> Option<crate::vtable::VTableLayout> {
+        // STUB: return a minimal vtable layout for testing
+        let layout = crate::vtable::VTableLayout {
+            trait_def_id: _trait_def_id,
+            concrete_ty: _concrete_ty,
+            size: crate::Size::bytes(self.target.pointer_size()),
+            align: crate::Align::from_bytes(self.target.pointer_align()),
+            drop_fn: None,
+            methods: vec![],
+        };
+        Some(layout)
+    }
+}
+
