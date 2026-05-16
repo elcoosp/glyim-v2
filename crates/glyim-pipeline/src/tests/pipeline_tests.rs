@@ -193,6 +193,9 @@ fn if_else_mismatched_types_error() {
 
 #[test]
 fn backend_body_count() {
+    // With monomorphization, only entry-point-reachable functions are emitted.
+    // f1 and f2 are not called from main, so they are dead code and not
+    // collected as mono items. Only main (1 body) reaches the backend.
     let (backend, result) = compile_with_mock(
         "
 fn f1() {}
@@ -203,7 +206,11 @@ fn main() {}
     assert!(result.is_ok());
     let calls = backend.calls();
     assert!(!calls.is_empty(), "no backend calls");
-    // Each call contains a vec of Arc<Body>. We should have three bodies.
     let total_bodies: usize = calls.iter().map(|c| c.body_count).sum();
-    assert_eq!(total_bodies, 3, "expected 3 bodies, got {}", total_bodies);
+    // Only main is an entry point; f1/f2 are unreachable dead code.
+    assert_eq!(
+        total_bodies, 1,
+        "expected 1 body (main only), got {}",
+        total_bodies
+    );
 }

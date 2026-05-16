@@ -8,7 +8,11 @@ pub struct Database {
     vfs: Vfs,
     _ty_ctx: RwLock<Option<glyim_type::TyCtx>>,
     krate: CrateId,
-    _config: CrateConfig, // renamed to _config
+    _config: CrateConfig,
+    /// Cache of previously computed mono item symbols.
+    /// Allows reusing monomorphization results across compilations
+    /// with the same Database instance.
+    _mono_cache: RwLock<Option<Vec<String>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -20,18 +24,10 @@ pub struct CrateConfig {
 
 impl Database {
     /// Obtain a mutable reference to the interner.
-    /// This should only be called during HIR lowering when no other
-    /// references to the interner are held.
-    /// # Safety
-    /// This method returns a mutable reference to the interner.
-    /// Callers MUST ensure that no other references to any Name
-    /// (from this interner) exist when calling this method,
-    /// as mutation will invalidate all existing Name values.
-    /// This should only be called during HIR lowering before
-    /// any Name values are stored elsewhere.
     pub fn intern_mut(&mut self) -> &mut Interner {
         &mut self.interner
     }
+
     pub fn new(config: CrateConfig) -> Self {
         Self {
             interner: Interner::new(),
@@ -39,6 +35,7 @@ impl Database {
             _ty_ctx: RwLock::new(None),
             krate: CrateId::from_raw(0),
             _config: config,
+            _mono_cache: RwLock::new(None),
         }
     }
 
@@ -57,8 +54,19 @@ impl Database {
     pub fn set_ty_ctx(&self, ctx: glyim_type::TyCtx) {
         *self._ty_ctx.write() = Some(ctx);
     }
+
     pub fn ty_ctx(&self) -> parking_lot::RwLockReadGuard<'_, Option<glyim_type::TyCtx>> {
         self._ty_ctx.read()
+    }
+
+    /// Store mono item symbols in the cache for potential reuse.
+    pub fn set_mono_cache(&self, items: Vec<String>) {
+        *self._mono_cache.write() = Some(items);
+    }
+
+    /// Retrieve the cached mono item symbols from a previous compilation.
+    pub fn mono_cache(&self) -> parking_lot::RwLockReadGuard<'_, Option<Vec<String>>> {
+        self._mono_cache.read()
     }
 }
 
