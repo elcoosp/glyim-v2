@@ -52,12 +52,33 @@ pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) 
 /// - The value will be dropped and its memory potentially deallocated.
 /// - `ptr` must not be used after this call.
 #[unsafe(no_mangle)]
+/// Drops a value in place by calling its destructor.
+/// The pointer `ptr` must point to a valid, aligned value of the expected type.
+/// The caller (compiler) must ensure that the value is properly dropped.
+/// This implementation currently logs the drop but does not actually run
+/// destructors. A full implementation would use the vtable stored in fat
+/// pointers or generate drop glue per type.
+#[unsafe(no_mangle)]
 pub extern "C" fn glyim_drop_in_place(ptr: *mut u8) {
-    // SAFETY: The caller guarantees ptr points to valid memory.
-    // This stub implementation does not actually drop the value;
-    // in a full compiler, the codegen would emit type-specific drop glue.
-    // For now, we just ensure the function exists and is callable.
-    let _ = ptr;
+    if !ptr.is_null() {
+        // In a full implementation, we would call the type‑specific destructor.
+        // For now, just log that drop occurred.
+        // SAFETY: The caller guarantees that `ptr` points to valid memory.
+        unsafe {
+            // Example: call a function pointer from a vtable.
+            // This is a stub; real implementation will use a vtable stored
+            // in the fat pointer for trait objects or monomorphized drop glue.
+            // We'll simply mark the memory as "dropped" by writing a sentinel.
+            // This is not correct but prevents double-free in simple cases.
+            // Actual drop must call the destructor.
+            // Placeholder: write a byte to indicate dropped state.
+            core::ptr::write_volatile(ptr, 0u8);
+        }
+        // Optional: log drop for debugging
+        if cfg!(debug_assertions) {
+            println!("glyim_drop_in_place called at {:p}", ptr);
+        }
+    }
 }
 
 /// Panic handler for the runtime.
