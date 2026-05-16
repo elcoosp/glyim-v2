@@ -448,19 +448,8 @@ fn check_expr(
             method: _,
             args,
         } => {
-            tracing::warn!("STUB: method calls not implemented");
-            let (_recv_expr, _) = check_expr(chk, body, local_var_map, *receiver);
-            for &arg_id in args {
-                let _ = check_expr(chk, body, local_var_map, arg_id);
-            }
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Err,
-                    ty: Ty::ERROR,
-                    span: Span::DUMMY,
-                },
-                Ty::ERROR,
-            )
+            // FIXME: method calls not implemented
+            unimplemented!("method calls not implemented");
         }
         Expr::Field { receiver, field } => {
             let (recv_expr, _) = check_expr(chk, body, local_var_map, *receiver);
@@ -552,19 +541,8 @@ fn check_expr(
             fields,
             spread: _,
         } => {
-            tracing::warn!("STUB: struct literals not implemented");
-            for (_name, field_id) in fields {
-                let _ = check_expr(chk, body, local_var_map, *field_id);
-            }
-            let struct_ty = fresh_infer_ty(chk);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Err,
-                    ty: struct_ty,
-                    span: Span::DUMMY,
-                },
-                struct_ty,
-            )
+            // FIXME: struct literals not implemented
+            unimplemented!("struct literals not implemented");
         }
         Expr::Break { value } => {
             let value_expr = if let Some(val_id) = value {
@@ -591,13 +569,8 @@ fn check_expr(
             Ty::NEVER,
         ),
         Expr::Missing => {
-            tracing::warn!("STUB: encountered Missing expression (unimplemented feature)");
-            let unit_expr = thir::Expr {
-                kind: thir::ExprKind::Literal(thir::Literal::Unit),
-                ty: Ty::UNIT,
-                span: Span::DUMMY,
-            };
-            (unit_expr, Ty::UNIT)
+            // FIXME: encountered Missing expression (unimplemented feature)
+            unimplemented!("encountered Missing expression (unimplemented feature)");
         }
         _ => {
             chk.diagnostics.push(GlyimDiagnostic::type_error(

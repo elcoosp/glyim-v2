@@ -149,6 +149,7 @@ impl<I: IdxLike, T> IndexVec<I, T> {
         self.raw.is_empty()
     }
     pub fn get(&self, idx: I) -> Option<&T> {
+        debug_assert!(idx.index() < self.raw.len(), "IndexVec::get: index out of bounds");
         self.raw.get(idx.index())
     }
     pub fn get_mut(&mut self, idx: I) -> Option<&mut T> {

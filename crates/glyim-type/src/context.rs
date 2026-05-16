@@ -141,6 +141,7 @@ impl TyCtxMut {
         self.resolver.resolve(name)
     }
 
+    /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
             TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
@@ -253,6 +254,7 @@ impl TyCtx {
         self.resolver.resolve(name)
     }
 
+    /// Returns `true` if the type implements the `Copy` trait.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
             TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,

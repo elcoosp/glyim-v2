@@ -186,7 +186,8 @@ fn lower_fn_def(
         tracing::debug!("Found Block node in FnDef, lowering to expr");
         lower_block_to_expr(&block_node, interner, &mut body.exprs, &mut body.pats);
     } else {
-        tracing::warn!("STUB: FnDef without Block node");
+        // FIXME: FnDef without Block node
+        unimplemented!("FnDef without Block node")
     }
 
     let bid = bodies.push(body);
@@ -1988,6 +1989,6 @@ fn node_span(node: &SyntaxNode) -> Span {
     let range = node.text_range();
     let lo = ByteIdx::from_raw(u32::from(range.start()));
     let hi = ByteIdx::from_raw(u32::from(range.end()));
-    Span::new(FileId::from_raw(0), lo, hi, SyntaxContext::ROOT)
+    Span::new(FileId::from_raw(1), lo, hi, SyntaxContext::ROOT)
 }
 
