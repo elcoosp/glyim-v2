@@ -312,40 +312,47 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump(); // (
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
-                    // Match repetition pattern: $ ( var ) separator? rep_op
+                    // Match repetition pattern: $(...)sep?rep_op or metavar: $name:fragment
                     if self.current_kind() == SyntaxKind::Dollar {
                         self.start_node(SyntaxKind::TokenTree);
                         self.bump(); // $
-                        self.bump_expected(SyntaxKind::Ident); // variable name
-                        if self.current_kind() == SyntaxKind::Colon {
-                            self.bump(); // :
-                            // Parse fragment specifier (expr, ty, ident, etc.)
+                        if self.current_kind() == SyntaxKind::LParen {
+                            // Repetition: $(...)...
+                            self.parse_token_tree(); // parse the parenthesized group
+                            // Optional separator
                             if matches!(
                                 self.current_kind(),
-                                SyntaxKind::Ident | SyntaxKind::Lifetime
+                                SyntaxKind::Comma | SyntaxKind::Semicolon
                             ) {
                                 self.bump();
-                            } else {
-                                // Advance over any token for fragment specifier
-                                self.bump();
                             }
-                        }
-                        // Parse separator and repetition operator
-                        if matches!(
-                            self.current_kind(),
-                            SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question
-                        ) {
-                            self.bump();
-                        } else if self.current_kind() == SyntaxKind::Comma {
-                            self.bump();
+                            // Repetition operator
                             if matches!(
                                 self.current_kind(),
                                 SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question
                             ) {
                                 self.bump();
                             }
+                        } else if self.current_kind() == SyntaxKind::Ident {
+                            // Metavariable: $name or $name:fragment
+                            self.bump(); // variable name
+                            if self.current_kind() == SyntaxKind::Colon {
+                                self.bump(); // :
+                                // Parse fragment specifier
+                                if matches!(
+                                    self.current_kind(),
+                                    SyntaxKind::Ident | SyntaxKind::Lifetime
+                                ) {
+                                    self.bump();
+                                } else {
+                                    self.bump();
+                                }
+                            }
+                        } else {
+                            // Standalone $ token
+                            self.bump();
                         }
-                        self.finish_node(); // TokenTree for dollar var
+                        self.finish_node(); // TokenTree for dollar construct
                     } else {
                         // Regular token tree item
                         if matches!(
