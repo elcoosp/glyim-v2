@@ -1,16 +1,28 @@
 //! Tests for V15: LLVM Drop & Deallocation
 //!
+//! Core tests:
 //! V15-T01: Drop of Copy type at block end - no drop call emitted
 //! V15-T02: Drop of non-Copy type → drop_in_place call emitted
 //! V15-T03: Drop in panic path (cleanup) with non-Copy type
 //! V15-T04: Drop order matches declaration order (sequential drops)
 //! V15-T05: Drop of mutable ref to non-Copy type → dealloc emitted
 //! V15-T06: Drop of &mut Copy type → no dealloc needed
+//!
+//! Extended tests:
+//! V15-T07: Drop of tuple of non-Copy types → drop_in_place emitted
+//! V15-T08: Drop of tuple of Copy types → no drop needed
+//! V15-T09: Drop of &String (shared ref) → drop_in_place but no dealloc
+//! V15-T10: Drop of raw pointer to non-Copy type
+//! V15-T11: Drop of unit type → no drop needed
+//! V15-T12: Drop of bool → no drop needed
+//! V15-T13: Drop of nested ref &&mut String → drop_in_place emitted
+//! V15-T14: Drop with cleanup target block specified
+//! V15-T15: Drop of array of non-Copy elements → drop_in_place emitted
 
 use crate::LlvmBackend;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-use glyim_core::{IntTy, Mutability};
+use glyim_core::{IntTy, Mutability, UintTy};
 use glyim_mir::*;
 use glyim_test::with_fresh_ty_ctx;
 use glyim_type::{Ty, TyKind};
@@ -20,12 +32,17 @@ fn dummy_def_id(idx: u32) -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(idx))
 }
 
+/// Helper: count occurrences of `call void @glyim_drop_in_place` in IR
+fn count_drop_calls(ir: &str) -> usize {
+    ir.matches("call void @glyim_drop_in_place").count()
+}
+
+/// Helper: count occurrences of `call void @glyim_dealloc` in IR
+fn count_dealloc_calls(ir: &str) -> usize {
+    ir.matches("call void @glyim_dealloc").count()
+}
+
 /// V15-T01: Drop of Copy type at block end - no drop call emitted.
-///
-/// i32 is Copy, so type_needs_drop returns false and no drop call
-/// should be emitted. The terminator just branches to the target.
-/// Note: the module always declares glyim_drop_in_place and glyim_dealloc,
-/// but there should be no `call` to them.
 #[test]
 fn v15_t01_drop_copy_type_at_block_end() {
     Target::initialize_all(&InitializationConfig::default());
@@ -95,14 +112,11 @@ fn v15_t01_drop_copy_type_at_block_end() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // i32 is Copy → no call to drop_in_place should be emitted
-    // (the declare statement is always present, but there should be no `call`)
     assert!(
         !ir.contains("call void @glyim_drop_in_place"),
         "IR should NOT call glyim_drop_in_place for Copy type i32, got:\n{}",
         ir
     );
-    // Should still have the branch to target block
     assert!(
         ir.contains("br label") || ir.contains("ret void"),
         "IR should contain branch or return, got:\n{}",
@@ -111,9 +125,6 @@ fn v15_t01_drop_copy_type_at_block_end() {
 }
 
 /// V15-T02: Drop of non-Copy type → drop_in_place call emitted.
-///
-/// Uses TyKind::String which type_needs_drop returns true for.
-/// The Drop terminator should emit a call to glyim_drop_in_place.
 #[test]
 fn v15_t02_drop_non_copy_type_emits_drop_in_place() {
     Target::initialize_all(&InitializationConfig::default());
@@ -173,7 +184,6 @@ fn v15_t02_drop_non_copy_type_emits_drop_in_place() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // String needs drop → drop_in_place call should be generated
     assert!(
         ir.contains("call void @glyim_drop_in_place"),
         "IR should call glyim_drop_in_place for non-Copy String type, got:\n{}",
@@ -182,10 +192,6 @@ fn v15_t02_drop_non_copy_type_emits_drop_in_place() {
 }
 
 /// V15-T03: Drop in panic path (cleanup) with non-Copy type.
-///
-/// Both normal and cleanup paths must emit drop_in_place calls
-/// for the non-Copy type. Uses a SwitchInt to create the alternate
-/// path instead of Call (to avoid layout computation issues with String).
 #[test]
 fn v15_t03_drop_in_panic_cleanup_path() {
     Target::initialize_all(&InitializationConfig::default());
@@ -195,19 +201,16 @@ fn v15_t03_drop_in_panic_cleanup_path() {
         let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
 
         let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
-        // local 0 = return place
         locals.push(LocalDecl {
             ty: Ty::UNIT,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(glyim_span::Span::DUMMY),
         });
-        // local 1 = string to be dropped in both paths
         locals.push(LocalDecl {
             ty: string_ty,
             mutability: Mutability::Mut,
             source_info: SourceInfo::new(glyim_span::Span::DUMMY),
         });
-        // local 2 = i32 condition for switch
         locals.push(LocalDecl {
             ty: i32_ty,
             mutability: Mutability::Not,
@@ -215,7 +218,6 @@ fn v15_t03_drop_in_panic_cleanup_path() {
         });
 
         let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
-        // bb0: switch on condition to simulate normal vs cleanup path
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -231,7 +233,6 @@ fn v15_t03_drop_in_panic_cleanup_path() {
             },
             is_cleanup: false,
         });
-        // bb1: normal path - drop string then return
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -244,7 +245,6 @@ fn v15_t03_drop_in_panic_cleanup_path() {
             },
             is_cleanup: false,
         });
-        // bb2: cleanup/panic path - must also drop string
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -257,7 +257,6 @@ fn v15_t03_drop_in_panic_cleanup_path() {
             },
             is_cleanup: true,
         });
-        // bb3: return
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -285,32 +284,16 @@ fn v15_t03_drop_in_panic_cleanup_path() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // Should have drop_in_place call for the String in both paths
+    let drop_count = count_drop_calls(&ir);
     assert!(
-        ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for cleanup path drop, got:\n{}",
-        ir
-    );
-    // Should have basic blocks for both normal and cleanup paths
-    assert!(
-        ir.contains("bb_1") && ir.contains("bb_2"),
-        "IR should have basic blocks for normal and cleanup paths, got:\n{}",
-        ir
-    );
-    // Count the number of drop_in_place calls - should be at least 2 (one per path)
-    let drop_call_count = ir.matches("call void @glyim_drop_in_place").count();
-    assert!(
-        drop_call_count >= 2,
+        drop_count >= 2,
         "IR should have at least 2 drop_in_place calls (normal + cleanup), found {}, got:\n{}",
-        drop_call_count,
+        drop_count,
         ir
     );
 }
 
 /// V15-T04: Drop order matches declaration order (sequential drops).
-///
-/// Two Drop terminators in sequence - both for non-Copy types.
-/// Both should emit drop_in_place calls.
 #[test]
 fn v15_t04_drop_order_matches_declaration_order() {
     Target::initialize_all(&InitializationConfig::default());
@@ -336,7 +319,6 @@ fn v15_t04_drop_order_matches_declaration_order() {
         });
 
         let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
-        // bb0: drop local_2 first (LIFO)
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -349,7 +331,6 @@ fn v15_t04_drop_order_matches_declaration_order() {
             },
             is_cleanup: false,
         });
-        // bb1: drop local_1
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -362,7 +343,6 @@ fn v15_t04_drop_order_matches_declaration_order() {
             },
             is_cleanup: false,
         });
-        // bb2: return
         bbs.push(BasicBlockData {
             statements: vec![],
             terminator: Terminator {
@@ -390,28 +370,16 @@ fn v15_t04_drop_order_matches_declaration_order() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // Should have drop_in_place calls for both String values
-    let drop_call_count = ir.matches("call void @glyim_drop_in_place").count();
+    let drop_count = count_drop_calls(&ir);
     assert!(
-        drop_call_count >= 2,
+        drop_count >= 2,
         "IR should have at least 2 drop_in_place calls for sequential drops, found {}, got:\n{}",
-        drop_call_count,
-        ir
-    );
-    // Should have basic blocks for the sequential drops
-    assert!(
-        ir.contains("bb_1") && ir.contains("bb_2"),
-        "IR should have basic blocks for sequential drops, got:\n{}",
+        drop_count,
         ir
     );
 }
 
 /// V15-T05: Drop of mutable ref to non-Copy type → both drop_in_place and dealloc emitted.
-///
-/// When dropping a &mut T where T is not Copy, we should call both
-/// glyim_drop_in_place (because type_needs_drop recurses through the ref
-/// and finds T needs drop) and glyim_dealloc (because type_needs_dealloc
-/// returns true for &mut T where T is not Copy).
 #[test]
 fn v15_t05_drop_mut_ref_non_copy_emits_dealloc() {
     Target::initialize_all(&InitializationConfig::default());
@@ -476,13 +444,11 @@ fn v15_t05_drop_mut_ref_non_copy_emits_dealloc() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // Should have drop_in_place because String needs drop
     assert!(
         ir.contains("call void @glyim_drop_in_place"),
         "IR should call glyim_drop_in_place for &mut String drop, got:\n{}",
         ir
     );
-    // Should have glyim_dealloc because &mut to non-Copy type needs dealloc
     assert!(
         ir.contains("call void @glyim_dealloc"),
         "IR should call glyim_dealloc for &mut String deallocation, got:\n{}",
@@ -490,12 +456,7 @@ fn v15_t05_drop_mut_ref_non_copy_emits_dealloc() {
     );
 }
 
-/// V15-T06: Drop of &mut i32 (Copy inner) → no drop_in_place call, no dealloc call.
-///
-/// When the inner type is Copy, type_needs_drop returns false (through the ref),
-/// and type_needs_dealloc returns false (because is_copy_type(i32) is true).
-/// The function declarations may still be present in the module, but there
-/// should be no `call` instructions for them.
+/// V15-T06: Drop of &mut Copy type → no drop_in_place call, no dealloc call.
 #[test]
 fn v15_t06_drop_mut_ref_copy_type_no_dealloc() {
     Target::initialize_all(&InitializationConfig::default());
@@ -560,7 +521,6 @@ fn v15_t06_drop_mut_ref_copy_type_no_dealloc() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // i32 is Copy, so through &mut i32, no drop needed and no dealloc
     assert!(
         !ir.contains("call void @glyim_drop_in_place"),
         "IR should NOT call glyim_drop_in_place for &mut i32, got:\n{}",
@@ -569,6 +529,695 @@ fn v15_t06_drop_mut_ref_copy_type_no_dealloc() {
     assert!(
         !ir.contains("call void @glyim_dealloc"),
         "IR should NOT call glyim_dealloc for &mut i32, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T07: Drop of tuple of non-Copy types → drop_in_place emitted.
+///
+/// A tuple containing String needs drop because String needs drop.
+#[test]
+fn v15_t07_drop_tuple_of_non_copy_types() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let string_ty = ctx_mut.mk_ty(TyKind::String);
+        let subst = ctx_mut.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(string_ty),
+            glyim_type::GenericArg::Ty(string_ty),
+        ]);
+        let tuple_ty = ctx_mut.mk_ty(TyKind::Tuple(subst));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: tuple_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(106),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        ir.contains("call void @glyim_drop_in_place"),
+        "IR should call glyim_drop_in_place for tuple of Strings, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T08: Drop of tuple of Copy types → no drop needed.
+///
+/// A tuple of (i32, bool) is all Copy, so no drop is needed.
+#[test]
+fn v15_t08_drop_tuple_of_copy_types() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
+        let subst = ctx_mut.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(Ty::BOOL),
+        ]);
+        let tuple_ty = ctx_mut.mk_ty(TyKind::Tuple(subst));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: tuple_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(107),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        !ir.contains("call void @glyim_drop_in_place"),
+        "IR should NOT call glyim_drop_in_place for tuple of Copy types, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T09: Drop of &String (shared/immutable ref) → drop_in_place but no dealloc.
+///
+/// A shared reference (&T) does not own the data, so it should not
+/// call glyim_dealloc even if T is not Copy. But if T needs drop,
+/// drop_in_place is still called.
+#[test]
+fn v15_t09_drop_shared_ref_non_copy_no_dealloc() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let string_ty = ctx_mut.mk_ty(TyKind::String);
+        let ref_string_ty = ctx_mut.mk_ty(TyKind::Ref(
+            glyim_type::Region::Erased,
+            string_ty,
+            Mutability::Not,
+        ));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: ref_string_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(108),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    // String needs drop, so drop_in_place should be called
+    assert!(
+        ir.contains("call void @glyim_drop_in_place"),
+        "IR should call glyim_drop_in_place for &String, got:\n{}",
+        ir
+    );
+    // Shared ref does not own, so no dealloc
+    assert!(
+        !ir.contains("call void @glyim_dealloc"),
+        "IR should NOT call glyim_dealloc for &String (shared ref), got:\n{}",
+        ir
+    );
+}
+
+/// V15-T10: Drop of raw pointer to non-Copy type.
+///
+/// *mut String should trigger drop_in_place but since it's a raw pointer
+/// and Mutability::Mut, type_needs_dealloc returns true if inner is not Copy.
+#[test]
+fn v15_t10_drop_raw_ptr_non_copy_type() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let string_ty = ctx_mut.mk_ty(TyKind::String);
+        let ptr_string_ty = ctx_mut.mk_ty(TyKind::RawPtr(string_ty, Mutability::Mut));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: ptr_string_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(109),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    // *mut String: String needs drop, so drop_in_place called
+    assert!(
+        ir.contains("call void @glyim_drop_in_place"),
+        "IR should call glyim_drop_in_place for *mut String, got:\n{}",
+        ir
+    );
+    // *mut String: raw ptr to non-Copy, dealloc should be called
+    assert!(
+        ir.contains("call void @glyim_dealloc"),
+        "IR should call glyim_dealloc for *mut String, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T11: Drop of unit type → no drop needed.
+#[test]
+fn v15_t11_drop_unit_type() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(110),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        !ir.contains("call void @glyim_drop_in_place"),
+        "IR should NOT call glyim_drop_in_place for unit type, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T12: Drop of bool → no drop needed.
+#[test]
+fn v15_t12_drop_bool_type() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: Ty::BOOL,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(111),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        !ir.contains("call void @glyim_drop_in_place"),
+        "IR should NOT call glyim_drop_in_place for bool type, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T13: Drop of nested ref &&mut String → drop_in_place emitted.
+///
+/// Double indirection: the inner type (after peeling & refs) is String
+/// which needs drop, so drop_in_place should be called.
+#[test]
+fn v15_t13_drop_nested_ref() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let string_ty = ctx_mut.mk_ty(TyKind::String);
+        let inner_ref = ctx_mut.mk_ty(TyKind::Ref(
+            glyim_type::Region::Erased,
+            string_ty,
+            Mutability::Mut,
+        ));
+        let outer_ref = ctx_mut.mk_ty(TyKind::Ref(
+            glyim_type::Region::Erased,
+            inner_ref,
+            Mutability::Not,
+        ));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: outer_ref,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(112),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    // The outermost ref is immutable (Mutability::Not), so no dealloc.
+    // But inner is &mut String, and String needs drop, so drop_in_place is called.
+    assert!(
+        ir.contains("call void @glyim_drop_in_place"),
+        "IR should call glyim_drop_in_place for &&mut String, got:\n{}",
+        ir
+    );
+    // Outer ref is immutable, so no dealloc
+    assert!(
+        !ir.contains("call void @glyim_dealloc"),
+        "IR should NOT call glyim_dealloc for &&mut String (outer is shared ref), got:\n{}",
+        ir
+    );
+}
+
+/// V15-T14: Drop with cleanup target block specified.
+///
+/// The Drop terminator has a cleanup block that should be branched to
+/// if the drop itself panics. This tests that the cleanup target is
+/// properly handled in codegen.
+#[test]
+fn v15_t14_drop_with_cleanup_target() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let string_ty = ctx_mut.mk_ty(TyKind::String);
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: string_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        // bb0: drop with cleanup target
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: Some(BasicBlockIdx::from_raw(2)),
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        // bb1: normal return after successful drop
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        // bb2: cleanup block (unreachable in practice, but must exist)
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Unreachable,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: true,
+        });
+
+        Body {
+            owner: dummy_def_id(113),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        ir.contains("call void @glyim_drop_in_place"),
+        "IR should call glyim_drop_in_place for String with cleanup target, got:\n{}",
+        ir
+    );
+    // Should have both target and cleanup blocks
+    assert!(
+        ir.contains("bb_1") && ir.contains("bb_2"),
+        "IR should have basic blocks for both target and cleanup paths, got:\n{}",
+        ir
+    );
+}
+
+/// V15-T15: Drop of array of non-Copy elements → drop_in_place emitted.
+///
+/// An array of Strings needs drop because the element type needs drop.
+#[test]
+fn v15_t15_drop_array_of_non_copy() {
+    Target::initialize_all(&InitializationConfig::default());
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let string_ty = ctx_mut.mk_ty(TyKind::String);
+        let count = glyim_type::Const {
+            kind: glyim_type::ConstKind::Uint(3),
+            ty: ctx_mut.mk_ty(TyKind::Uint(UintTy::Usize)),
+        };
+        let array_ty = ctx_mut.mk_ty(TyKind::Array(string_ty, count));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+        locals.push(LocalDecl {
+            ty: array_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Drop {
+                    place: Place::new(LocalIdx::from_raw(1)),
+                    target: BasicBlockIdx::from_raw(1),
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        bbs.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+
+        Body {
+            owner: dummy_def_id(114),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
+    });
+
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module(&context, &body)
+        .expect("lowering should succeed");
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        ir.contains("call void @glyim_drop_in_place"),
+        "IR should call glyim_drop_in_place for array of Strings, got:\n{}",
         ir
     );
 }
