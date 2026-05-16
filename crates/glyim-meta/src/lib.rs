@@ -5,10 +5,12 @@
 //!
 //! Uses `HygieneCtx` from `glyim-span` (the merged hygiene crate).
 
-use glyim_core::interner::Name;
+use glyim_core::interner::{Interner, Name};
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::{HygieneCtx, Mark, Span, Transparency};
+use glyim_span::{HygieneCtx, Span};
 use glyim_syntax::SyntaxNode;
+
+mod expander;
 
 #[derive(Clone, Debug)]
 pub enum MacroKind {
@@ -42,6 +44,7 @@ pub struct ExpansionResult {
 pub struct Expander<'a> {
     hygiene: &'a mut HygieneCtx,
     macros: Vec<MacroDef>,
+    interner: Interner,
 }
 
 impl<'a> Expander<'a> {
@@ -49,6 +52,7 @@ impl<'a> Expander<'a> {
         Self {
             hygiene,
             macros: Vec::new(),
+            interner: Interner::default(),
         }
     }
 
@@ -58,25 +62,35 @@ impl<'a> Expander<'a> {
 
     #[tracing::instrument(level = "debug", skip(self, args, call_site))]
     pub fn expand(&mut self, name: Name, args: &SyntaxNode, call_site: Span) -> ExpansionResult {
-        let _ = (args, call_site);
-
-        if let Some(_def) = self.macros.iter().find(|m| m.name == name) {
-            let _mark = Mark {
-                expn_id: glyim_span::ExpnId::ROOT,
-                transparency: Transparency::SemiTransparent,
-            };
-            // STUB: apply mark and expand
-        }
-
+        let macro_map = self.build_macro_map();
+        let (green_opt, diags) = expander::expand_macro_invocation(
+            name,
+            args,
+            call_site,
+            self.hygiene,
+            &macro_map,
+            &self.interner,
+            0,
+        );
+        let expanded = green_opt.map(SyntaxNode::new_root);
         ExpansionResult {
-            expanded: None,
-            diagnostics: Vec::new(),
+            expanded,
+            diagnostics: diags,
         }
     }
 
     #[tracing::instrument(level = "info", skip(self, root))]
     pub fn expand_crate(&mut self, root: &SyntaxNode) -> (SyntaxNode, Vec<GlyimDiagnostic>) {
-        let _ = self.hygiene;
-        (root.clone(), Vec::new())
+        let (green, diags) = expander::expand_crate(root, &mut self.interner, self.hygiene);
+        // Also expand using any HIR-registered macros (but they need arms from syntax)
+        let expanded = SyntaxNode::new_root(green);
+        (expanded, diags)
+    }
+
+    fn build_macro_map(&self) -> std::collections::HashMap<Name, expander::MacroDef> {
+        std::collections::HashMap::new()
     }
 }
+
+#[cfg(test)]
+mod tests;

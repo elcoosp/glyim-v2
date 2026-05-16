@@ -228,6 +228,9 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::Semicolon);
                 self.finish_node();
             }
+            SyntaxKind::KwMacroRules => {
+                self.parse_macro_def();
+            }
             SyntaxKind::KwExtern => {
                 self.start_node(SyntaxKind::ExternBlock);
                 self.bump(); // extern
@@ -259,6 +262,7 @@ impl<'a> Parser<'a> {
                             | SyntaxKind::KwExtern
                             | SyntaxKind::KwPub
                             | SyntaxKind::KwUnsafe
+                            | SyntaxKind::KwMacroRules
                     )
                 {
                     self.bump();
@@ -273,6 +277,149 @@ impl<'a> Parser<'a> {
             true
         } else {
             false
+        }
+    }
+
+    // ---- MACRO ----
+
+    fn parse_macro_def(&mut self) {
+        self.start_node(SyntaxKind::MacroDef);
+        self.bump_expected(SyntaxKind::KwMacroRules);
+        self.bump(); // !
+        self.bump_expected(SyntaxKind::Ident); // macro name
+        // Body: { arms }
+        self.expect(SyntaxKind::LBrace);
+        while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+            // Skip separators between arms
+            if matches!(
+                self.current_kind(),
+                SyntaxKind::Comma | SyntaxKind::Semicolon
+            ) {
+                self.bump();
+                continue;
+            }
+            self.start_node(SyntaxKind::MacroArm);
+            // Pattern: token tree (must be parenthesized token tree)
+            self.parse_token_tree();
+            self.expect(SyntaxKind::FatArrow);
+            // Expansion: token tree (must be braced token tree)
+            self.parse_token_tree();
+            self.finish_node(); // MacroArm
+            // Consume optional separator
+            if matches!(
+                self.current_kind(),
+                SyntaxKind::Comma | SyntaxKind::Semicolon
+            ) {
+                self.bump();
+            }
+        }
+        self.expect(SyntaxKind::RBrace);
+        self.finish_node(); // MacroDef
+    }
+
+    fn parse_token_tree(&mut self) {
+        // Parse a balanced token tree: either a single token, or a group delimited by parens/braces/brackets
+        match self.current_kind() {
+            SyntaxKind::LParen => {
+                self.start_node(SyntaxKind::TokenTree);
+                self.bump(); // (
+                while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
+                    // Match repetition pattern: $(...)sep?rep_op or metavar: $name:fragment
+                    if self.current_kind() == SyntaxKind::Dollar {
+                        self.start_node(SyntaxKind::TokenTree);
+                        self.bump(); // $
+                        if self.current_kind() == SyntaxKind::LParen {
+                            // Repetition: $(...)...
+                            self.parse_token_tree(); // parse the parenthesized group
+                            // Optional separator
+                            if matches!(
+                                self.current_kind(),
+                                SyntaxKind::Comma | SyntaxKind::Semicolon
+                            ) {
+                                self.bump();
+                            }
+                            // Repetition operator
+                            if matches!(
+                                self.current_kind(),
+                                SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question
+                            ) {
+                                self.bump();
+                            }
+                        } else if self.current_kind() == SyntaxKind::Ident {
+                            // Metavariable: $name or $name:fragment
+                            self.bump(); // variable name
+                            if self.current_kind() == SyntaxKind::Colon {
+                                self.bump(); // :
+                                // Parse fragment specifier
+                                self.bump();
+                            }
+                        } else {
+                            // Standalone $ token
+                            self.bump();
+                        }
+                        self.finish_node(); // TokenTree for dollar construct
+                    } else {
+                        // Regular token tree item
+                        if matches!(
+                            self.current_kind(),
+                            SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+                        ) {
+                            self.parse_token_tree();
+                        } else {
+                            self.start_node(SyntaxKind::TokenTree);
+                            self.bump();
+                            self.finish_node();
+                        }
+                    }
+                    if self.current_kind() == SyntaxKind::Comma {
+                        self.bump();
+                    }
+                }
+                self.expect(SyntaxKind::RParen);
+                self.finish_node(); // TokenTree group
+            }
+            SyntaxKind::LBrace => {
+                self.start_node(SyntaxKind::TokenTree);
+                self.bump();
+                while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+                    ) {
+                        self.parse_token_tree();
+                    } else {
+                        self.start_node(SyntaxKind::TokenTree);
+                        self.bump();
+                        self.finish_node();
+                    }
+                }
+                self.expect(SyntaxKind::RBrace);
+                self.finish_node();
+            }
+            SyntaxKind::LBracket => {
+                self.start_node(SyntaxKind::TokenTree);
+                self.bump();
+                while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+                    ) {
+                        self.parse_token_tree();
+                    } else {
+                        self.start_node(SyntaxKind::TokenTree);
+                        self.bump();
+                        self.finish_node();
+                    }
+                }
+                self.expect(SyntaxKind::RBracket);
+                self.finish_node();
+            }
+            _ => {
+                // Single token
+                self.start_node(SyntaxKind::TokenTree);
+                self.bump();
+                self.finish_node();
+            }
         }
     }
 
@@ -978,6 +1125,15 @@ impl<'a> Parser<'a> {
     fn parse_postfix_expr(&mut self) {
         let cp = self.checkpoint();
         self.parse_primary_expr();
+        // Macro invocation: path followed by '!'
+        if self.current_kind() == SyntaxKind::Bang && self.last_was_path {
+            self.start_node_at(cp, SyntaxKind::MacroCall);
+            self.bump(); // !
+            // Parse token tree as arguments
+            self.parse_token_tree();
+            self.finish_node();
+            return;
+        }
         loop {
             match self.current_kind() {
                 SyntaxKind::Dot => {
