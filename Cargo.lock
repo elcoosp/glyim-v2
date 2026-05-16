@@ -571,6 +571,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyim-lang-alloc"
+version = "0.1.0"
+dependencies = [
+ "glyim-core",
+ "glyim-frontend",
+ "glyim-runtime",
+ "glyim-span",
+ "glyim-test",
+]
+
+[[package]]
 name = "glyim-lang-core"
 version = "0.1.0"
 dependencies = [
