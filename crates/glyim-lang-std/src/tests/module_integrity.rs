@@ -324,14 +324,14 @@ fn sync_defines_mutex() {
 fn sync_defines_mutex_guard() {
     let src = std_source("sync").unwrap();
     assert!(src.contains("struct MutexGuard"), "sync.g should define MutexGuard");
-    assert!(src.contains("impl Drop for MutexGuard"), "sync.g should impl Drop for MutexGuard");
+    assert!(src.contains("impl<T> Drop for MutexGuard"), "sync.g should impl Drop for MutexGuard");
 }
 
 #[test]
 fn sync_mutex_guard_implements_deref() {
     let src = std_source("sync").unwrap();
-    assert!(src.contains("impl Deref for MutexGuard"), "sync.g should impl Deref for MutexGuard");
-    assert!(src.contains("impl DerefMut for MutexGuard"), "sync.g should impl DerefMut for MutexGuard");
+    assert!(src.contains("impl<T> Deref for MutexGuard"), "sync.g should impl Deref for MutexGuard");
+    assert!(src.contains("impl<T> DerefMut for MutexGuard"), "sync.g should impl DerefMut for MutexGuard");
 }
 
 #[test]
@@ -379,9 +379,9 @@ fn sync_defines_atomics() {
 fn sync_defines_arc() {
     let src = std_source("sync").unwrap();
     assert!(src.contains("struct Arc"), "sync.g should define Arc");
-    assert!(src.contains("impl Clone for Arc"), "sync.g should impl Clone for Arc");
-    assert!(src.contains("impl Drop for Arc"), "sync.g should impl Drop for Arc");
-    assert!(src.contains("impl Deref for Arc"), "sync.g should impl Deref for Arc");
+    assert!(src.contains("impl<T> Clone for Arc"), "sync.g should impl Clone for Arc");
+    assert!(src.contains("impl<T> Drop for Arc"), "sync.g should impl Drop for Arc");
+    assert!(src.contains("impl<T> Deref for Arc"), "sync.g should impl Deref for Arc");
 }
 
 // ============================================================================
