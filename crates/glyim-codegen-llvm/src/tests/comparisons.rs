@@ -1,7 +1,7 @@
 use super::helpers::*;
 use glyim_core::primitives::*;
 use glyim_mir::Rvalue;
-use glyim_type::{TyCtxMut, TyKind};
+use glyim_type::{Ty, TyCtxMut, TyKind};
 
 #[test]
 fn test_eq_i32_true() {
