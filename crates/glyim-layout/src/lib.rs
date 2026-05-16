@@ -272,3 +272,5 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
 
 #[cfg(test)]
 mod tests;
+
+pub mod vtable;
