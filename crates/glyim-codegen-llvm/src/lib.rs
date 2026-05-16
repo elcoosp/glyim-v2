@@ -18,11 +18,14 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
+#[allow(unused_imports)]
+use crate::debug_info::DebugInfoCtx;
 use glyim_span::FileId;
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 mod abi;
+mod debug_info;
 
 pub struct LlvmBackend {
     context: Context,
@@ -202,6 +205,7 @@ struct LoweringCtx<'ctx, 'a> {
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
     personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
+    debug_ctx: Option<DebugInfoCtx<'ctx>>,
 }
 
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
@@ -1114,6 +1118,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
+                // Set debug location if available
+                if let Some(ref di) = self.debug_ctx {
+                    if let Some(loc) = di.location_for_span(self.context, &stmt.source_info.span) {
+                        self.builder.set_current_debug_location(loc);
+                    }
+                }
                 let value = self.lower_rvalue(rvalue);
                 let ptr = self.place_ptr(place);
                 self.builder.build_store(ptr, value).map_err(|e| {
@@ -1818,6 +1828,20 @@ impl LlvmBackend {
             None
         };
 
+                // Setup debug info context
+        let debug_ctx = if self.debug_info {
+            let source_map = self.source_map.clone();
+            let di = crate::debug_info::DebugInfoCtx::new(
+                context,
+                &module,
+                source_map,
+                true,
+            );
+            Some(di)
+        } else {
+            None
+        };
+
         let mut lowering_ctx = LoweringCtx {
             context,
             builder,
@@ -1830,10 +1854,42 @@ impl LlvmBackend {
             locals,
             bb_map,
             personality_fn,
+            debug_ctx,
         };
 
         for (local_idx, _local_decl) in body.locals.iter_enumerated() {
             lowering_ctx.alloc_local(local_idx);
+        }
+
+        // Declare debug variables
+        if let Some(ref di) = lowering_ctx.debug_ctx {
+            for var_info in &body.var_debug_info {
+                let place = match &var_info.value {
+                    glyim_mir::VarDebugInfoValue::Place(p) => p,
+                    _ => continue,
+                };
+                if let Some(alloca) = lowering_ctx.locals.get(place.local).and_then(|o| *o) {
+                    di.declare_local(&lowering_ctx.builder, context, alloca, var_info, ty_ctx);
+                }
+            }
+        }
+
+        // Set function debug info if enabled
+        if let Some(ref mut di) = lowering_ctx.debug_ctx {
+            let fn_name = format!(
+                "func_{}_{}",
+                body.owner.krate.to_raw(),
+                body.owner.local_id.to_raw()
+            );
+            // Use first file from source map (assuming body has spans, but fallback to 0)
+            let file_id = body.span.file;
+            let _line = if !body.span.is_dummy() {
+                // approximate: always line 1 for now
+                1u32
+            } else {
+                1
+            };
+            di.set_function(context, &function, &fn_name, file_id, 1);
         }
 
         for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
@@ -1849,6 +1905,11 @@ impl LlvmBackend {
             }
 
             lowering_ctx.lower_terminator(&bb_data.terminator)?;
+        }
+
+        // Finalize debug info
+        if let Some(di) = lowering_ctx.debug_ctx {
+            di.finalize();
         }
 
         Ok(())
