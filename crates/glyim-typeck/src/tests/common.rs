@@ -1,11 +1,11 @@
 use crate::thir;
+use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_hir::*;
 use glyim_solve::InferenceTable;
 use glyim_type::*;
-use glyim_core::arena::IndexVec;
 
 /// Helper: create a minimal CrateHir with one function body containing the given expressions.
 /// Returns the CrateHir and the BodyId of that function.
@@ -26,7 +26,8 @@ pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, glyim_hir::BodyId) {
         exprs: body_exprs,
         pats: glyim_core::arena::IndexVec::new(),
         params: Vec::new(),
-        span: glyim_span::Span::DUMMY, expr_spans: IndexVec::new()
+        span: glyim_span::Span::DUMMY,
+        expr_spans: IndexVec::new(),
     };
     let body_id = hir.bodies.push(body);
     hir.body_owners.push(LocalDefId::from_raw(0));

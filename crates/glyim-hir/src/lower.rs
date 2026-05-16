@@ -153,7 +153,7 @@ fn lower_fn_def(
         pats: IndexVec::new(),
         params: Vec::new(),
         span: node_span(node),
-        expr_spans: IndexVec::new(),   // Initialize empty
+        expr_spans: IndexVec::new(), // Initialize empty
     };
 
     // ParamList
@@ -185,7 +185,13 @@ fn lower_fn_def(
     // Block
     if let Some(block_node) = node.children().find(|c| c.kind() == SyntaxKind::Block) {
         tracing::debug!("Found Block node in FnDef, lowering to expr");
-        lower_block_to_expr(&block_node, interner, &mut body.exprs, &mut body.pats, &mut body.expr_spans);
+        lower_block_to_expr(
+            &block_node,
+            interner,
+            &mut body.exprs,
+            &mut body.pats,
+            &mut body.expr_spans,
+        );
     } else {
         // FIXME: FnDef without Block node
         unimplemented!("FnDef without Block node")
@@ -711,7 +717,9 @@ fn lower_expr(
         SyntaxKind::PathExpr => lower_path_expr(node, interner, exprs, expr_spans),
         SyntaxKind::LitExpr => lower_lit_expr(node, interner, exprs, expr_spans),
         SyntaxKind::CallExpr => lower_call_expr(node, interner, exprs, pats, expr_spans),
-        SyntaxKind::MethodCallExpr => lower_method_call_expr(node, interner, exprs, pats, expr_spans),
+        SyntaxKind::MethodCallExpr => {
+            lower_method_call_expr(node, interner, exprs, pats, expr_spans)
+        }
         SyntaxKind::UnaryExpr => lower_unary_expr(node, interner, exprs, pats, expr_spans),
         SyntaxKind::RefExpr => lower_ref_expr(node, interner, exprs, pats, expr_spans),
         SyntaxKind::MatchExpr => lower_match_expr(node, interner, exprs, pats, expr_spans),
@@ -801,7 +809,11 @@ fn lower_binary_expr(
             let lhs_id = lower_expr(&lhs, interner, exprs, pats, expr_spans)?;
             let rhs_id = lower_expr(&rhs, interner, exprs, pats, expr_spans)?;
             let op = lower_bin_op_token(&op_token);
-            let expr = Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
+            let expr = Expr::Binary {
+                op,
+                lhs: lhs_id,
+                rhs: rhs_id,
+            };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             return Some(eid);
@@ -836,7 +848,11 @@ fn lower_binary_expr(
                 && !t.kind().is_trivia()
         });
     let op = op_token.map_or(BinOp::Add, |t| lower_bin_op_token(&t));
-    let expr = Expr::Binary { op, lhs: lhs_id, rhs: rhs_id };
+    let expr = Expr::Binary {
+        op,
+        lhs: lhs_id,
+        rhs: rhs_id,
+    };
     let eid = exprs.push(expr);
     expr_spans.push(node_span(node));
     Some(eid)

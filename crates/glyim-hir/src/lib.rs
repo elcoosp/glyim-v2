@@ -261,7 +261,7 @@ pub struct Body {
     pub pats: IndexVec<PatId, Pat>,
     pub params: Vec<PatId>,
     pub span: Span,
-    pub expr_spans: IndexVec<ExprId, Span>,   // Added field
+    pub expr_spans: IndexVec<ExprId, Span>, // Added field
 }
 
 #[derive(Clone, Debug)]

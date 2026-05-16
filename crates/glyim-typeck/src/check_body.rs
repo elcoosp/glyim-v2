@@ -396,10 +396,7 @@ fn check_expr(
             let mut thir_arms = Vec::new();
             for arm in arms {
                 let (arm_body_expr, arm_body_ty) = check_expr(chk, body, local_var_map, arm.body);
-                if let Err(diags) = chk
-                    .infer
-                    .unify(chk.ctx, arm_body_ty, result_ty, expr_span)
-                {
+                if let Err(diags) = chk.infer.unify(chk.ctx, arm_body_ty, result_ty, expr_span) {
                     chk.diagnostics.extend(diags);
                 }
                 thir_arms.push(thir::MatchArm {
@@ -458,28 +455,36 @@ fn check_expr(
                 TyKind::Adt(adt_id, substs) => {
                     if let Some(field_idx) = chk.ctx.field_index(*adt_id, *field) {
                         if let Some(def) = chk.ctx.adt_def(*adt_id) {
-                            if let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32)) {
+                            if let Some(field_def) =
+                                def.fields.get(FieldIdx::from_raw(field_idx as u32))
+                            {
                                 let field_ty = field_def.ty;
                                 // TODO: apply substitution if ADT is generic
                                 field_ty
                             } else {
                                 chk.diagnostics.push(GlyimDiagnostic::type_error(
                                     expr_span,
-                                    format!("field `{}` not found in ADT (internal error)", chk.ctx.name_str(*field))
+                                    format!(
+                                        "field `{}` not found in ADT (internal error)",
+                                        chk.ctx.name_str(*field)
+                                    ),
                                 ));
                                 chk.ctx.error_ty()
                             }
                         } else {
                             chk.diagnostics.push(GlyimDiagnostic::type_error(
                                 expr_span,
-                                format!("ADT definition missing for field `{}`", chk.ctx.name_str(*field))
+                                format!(
+                                    "ADT definition missing for field `{}`",
+                                    chk.ctx.name_str(*field)
+                                ),
                             ));
                             chk.ctx.error_ty()
                         }
                     } else {
                         chk.diagnostics.push(GlyimDiagnostic::type_error(
                             expr_span,
-                            format!("no field `{}` in ADT", chk.ctx.name_str(*field))
+                            format!("no field `{}` in ADT", chk.ctx.name_str(*field)),
                         ));
                         chk.ctx.error_ty()
                     }
@@ -487,7 +492,10 @@ fn check_expr(
                 _ => {
                     chk.diagnostics.push(GlyimDiagnostic::type_error(
                         expr_span,
-                        format!("field access on non-ADT type: {}", PrintTy::new(recv_ty, chk.ctx))
+                        format!(
+                            "field access on non-ADT type: {}",
+                            PrintTy::new(recv_ty, chk.ctx)
+                        ),
                     ));
                     chk.ctx.error_ty()
                 }
