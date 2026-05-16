@@ -10,3 +10,5 @@ glyim-runtime = { path = "../glyim-runtime" }
 
 [dev-dependencies]
 glyim-test = { workspace = true }
+glyim-frontend = { workspace = true }
+glyim-span = { workspace = true }
