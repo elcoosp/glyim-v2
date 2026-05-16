@@ -412,18 +412,36 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 ptr.as_basic_value_enum()
             }
             Rvalue::BinaryOp(op, operands) => {
-                let lhs = self.lower_operand(&operands.0).into_int_value();
-                let rhs = self.lower_operand(&operands.1).into_int_value();
-                self.lower_binary_op(*op, lhs, rhs)
+                let lhs_val = self.lower_operand(&operands.0);
+                let rhs_val = self.lower_operand(&operands.1);
+                let operand_ty = self.operand_ty(&operands.0);
+                let is_float = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_));
+                let is_unsigned = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Uint(_));
+                if is_float {
+                    let lhs = lhs_val.into_float_value();
+                    let rhs = rhs_val.into_float_value();
+                    self.lower_float_binary_op(*op, lhs, rhs)
+                } else {
+                    let lhs = lhs_val.into_int_value();
+                    let rhs = rhs_val.into_int_value();
+                    self.lower_binary_op(*op, lhs, rhs, is_unsigned)
+                }
             }
             Rvalue::UnaryOp(op, operand) => {
-                let val = self.lower_operand(operand).into_int_value();
-                self.lower_unary_op(*op, val)
+                let val = self.lower_operand(operand);
+                let operand_ty = self.operand_ty(operand);
+                if matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_)) {
+                    let float_val = val.into_float_value();
+                    self.lower_float_unary_op(*op, float_val)
+                } else {
+                    let int_val = val.into_int_value();
+                    self.lower_unary_op(*op, int_val)
+                }
             }
             Rvalue::Aggregate(kind, operands) => self.lower_aggregate(kind, operands),
             Rvalue::Discriminant(place) => self.lower_discriminant(place),
             Rvalue::Len(place) => self.lower_len(place),
-            Rvalue::Cast(cast_kind, operand, _ty) => self.lower_cast(*cast_kind, operand),
+            Rvalue::Cast(cast_kind, operand, ty) => self.lower_cast(*cast_kind, operand, *ty),
             Rvalue::Repeat(operand, count) => self.lower_repeat(operand, count),
         }
     }
@@ -557,6 +575,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         op: BinOp,
         lhs: IntValue<'ctx>,
         rhs: IntValue<'ctx>,
+        is_unsigned: bool,
     ) -> BasicValueEnum<'ctx> {
         match op {
             BinOp::Add => self
@@ -574,16 +593,32 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_int_mul(lhs, rhs, "mul")
                 .expect("mul failed")
                 .into(),
-            BinOp::Div => self
-                .builder
-                .build_int_signed_div(lhs, rhs, "sdiv")
-                .expect("sdiv failed")
-                .into(),
-            BinOp::Rem => self
-                .builder
-                .build_int_signed_rem(lhs, rhs, "srem")
-                .expect("srem failed")
-                .into(),
+            BinOp::Div => {
+                if is_unsigned {
+                    self.builder
+                        .build_int_unsigned_div(lhs, rhs, "udiv")
+                        .expect("udiv failed")
+                        .into()
+                } else {
+                    self.builder
+                        .build_int_signed_div(lhs, rhs, "sdiv")
+                        .expect("sdiv failed")
+                        .into()
+                }
+            }
+            BinOp::Rem => {
+                if is_unsigned {
+                    self.builder
+                        .build_int_unsigned_rem(lhs, rhs, "urem")
+                        .expect("urem failed")
+                        .into()
+                } else {
+                    self.builder
+                        .build_int_signed_rem(lhs, rhs, "srem")
+                        .expect("srem failed")
+                        .into()
+                }
+            }
             BinOp::Eq => self
                 .builder
                 .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "eq")
@@ -594,26 +629,50 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_int_compare(inkwell::IntPredicate::NE, lhs, rhs, "ne")
                 .expect("ne failed")
                 .into(),
-            BinOp::Lt => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SLT, lhs, rhs, "lt")
-                .expect("lt failed")
-                .into(),
-            BinOp::Gt => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SGT, lhs, rhs, "gt")
-                .expect("gt failed")
-                .into(),
-            BinOp::LtEq => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SLE, lhs, rhs, "le")
-                .expect("le failed")
-                .into(),
-            BinOp::GtEq => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::SGE, lhs, rhs, "ge")
-                .expect("ge failed")
-                .into(),
+            BinOp::Lt => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::ULT
+                } else {
+                    inkwell::IntPredicate::SLT
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "lt")
+                    .expect("lt failed")
+                    .into()
+            }
+            BinOp::Gt => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::UGT
+                } else {
+                    inkwell::IntPredicate::SGT
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "gt")
+                    .expect("gt failed")
+                    .into()
+            }
+            BinOp::LtEq => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::ULE
+                } else {
+                    inkwell::IntPredicate::SLE
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "le")
+                    .expect("le failed")
+                    .into()
+            }
+            BinOp::GtEq => {
+                let pred = if is_unsigned {
+                    inkwell::IntPredicate::UGE
+                } else {
+                    inkwell::IntPredicate::SGE
+                };
+                self.builder
+                    .build_int_compare(pred, lhs, rhs, "ge")
+                    .expect("ge failed")
+                    .into()
+            }
             BinOp::And => self
                 .builder
                 .build_and(lhs, rhs, "and")
@@ -652,6 +711,97 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
+    fn lower_float_binary_op(
+        &self,
+        op: BinOp,
+        lhs: inkwell::values::FloatValue<'ctx>,
+        rhs: inkwell::values::FloatValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match op {
+            BinOp::Add => self
+                .builder
+                .build_float_add(lhs, rhs, "fadd")
+                .expect("fadd failed")
+                .into(),
+            BinOp::Sub => self
+                .builder
+                .build_float_sub(lhs, rhs, "fsub")
+                .expect("fsub failed")
+                .into(),
+            BinOp::Mul => self
+                .builder
+                .build_float_mul(lhs, rhs, "fmul")
+                .expect("fmul failed")
+                .into(),
+            BinOp::Div => self
+                .builder
+                .build_float_div(lhs, rhs, "fdiv")
+                .expect("fdiv failed")
+                .into(),
+            BinOp::Rem => self
+                .builder
+                .build_float_rem(lhs, rhs, "frem")
+                .expect("frem failed")
+                .into(),
+            BinOp::Eq => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OEQ, lhs, rhs, "feq")
+                .expect("feq failed")
+                .into(),
+            BinOp::Ne => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::ONE, lhs, rhs, "fne")
+                .expect("fne failed")
+                .into(),
+            BinOp::Lt => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "flt")
+                .expect("flt failed")
+                .into(),
+            BinOp::Gt => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "fgt")
+                .expect("fgt failed")
+                .into(),
+            BinOp::LtEq => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OLE, lhs, rhs, "fle")
+                .expect("fle failed")
+                .into(),
+            BinOp::GtEq => self
+                .builder
+                .build_float_compare(inkwell::FloatPredicate::OGE, lhs, rhs, "fge")
+                .expect("fge failed")
+                .into(),
+            _ => {
+                tracing::warn!("STUB: unsupported float binop {:?}", op);
+                lhs.into()
+            }
+        }
+    }
+
+    fn lower_float_unary_op(
+        &self,
+        op: UnOp,
+        val: inkwell::values::FloatValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match op {
+            UnOp::Neg => self
+                .builder
+                .build_float_neg(val, "fneg")
+                .expect("fneg failed")
+                .into(),
+            UnOp::Not => {
+                tracing::warn!("STUB: float Not not supported");
+                val.into()
+            }
+            UnOp::Deref => {
+                tracing::warn!("STUB: Deref on float");
+                val.into()
+            }
+        }
+    }
+
     fn lower_unary_op(&self, op: UnOp, val: IntValue<'ctx>) -> BasicValueEnum<'ctx> {
         match op {
             UnOp::Not => self
@@ -671,32 +821,55 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
-    fn lower_cast(&self, kind: glyim_mir::CastKind, operand: &Operand) -> BasicValueEnum<'ctx> {
+    fn operand_ty(&self, operand: &Operand) -> Ty {
+        match operand {
+            Operand::Copy(place) | Operand::Move(place) => self.place_ty(place),
+            Operand::Constant(c) => c.ty,
+        }
+    }
+
+    fn lower_cast(
+        &self,
+        kind: glyim_mir::CastKind,
+        operand: &Operand,
+        target_ty: Ty,
+    ) -> BasicValueEnum<'ctx> {
         let val = self.lower_operand(operand);
         match kind {
             glyim_mir::CastKind::IntToInt => {
                 let int_val = val.into_int_value();
+                let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
+                let dest_bits = dest_type.get_bit_width();
                 let src_bits = int_val.get_type().get_bit_width();
-                let dest_type = self.llvm_int_type(src_bits);
-                if src_bits < 64 {
+                if src_bits < dest_bits {
                     self.builder
-                        .build_int_s_extend(int_val, dest_type, "int_to_int")
+                        .build_int_s_extend(int_val, dest_type, "int_to_int_ext")
                         .expect("int_to_int ext failed")
                         .into()
-                } else {
+                } else if src_bits > dest_bits {
                     self.builder
-                        .build_int_truncate(int_val, dest_type, "int_to_int")
+                        .build_int_truncate(int_val, dest_type, "int_to_int_trunc")
                         .expect("int_to_int trunc failed")
                         .into()
+                } else {
+                    val
                 }
             }
             glyim_mir::CastKind::FloatToInt => {
-                tracing::warn!("STUB: FloatToInt cast");
-                val
+                let float_val = val.into_float_value();
+                let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
+                self.builder
+                    .build_float_to_signed_int(float_val, dest_type, "float_to_int")
+                    .expect("float_to_int failed")
+                    .into()
             }
             glyim_mir::CastKind::IntToFloat => {
-                tracing::warn!("STUB: IntToFloat cast");
-                val
+                let int_val = val.into_int_value();
+                let dest_type = self.llvm_type_for_ty(target_ty).into_float_type();
+                self.builder
+                    .build_signed_int_to_float(int_val, dest_type, "int_to_float")
+                    .expect("int_to_float failed")
+                    .into()
             }
             glyim_mir::CastKind::PtrToPtr => val,
             glyim_mir::CastKind::FnPtrToPtr => val,

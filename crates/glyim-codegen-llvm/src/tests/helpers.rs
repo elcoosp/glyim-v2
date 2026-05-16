@@ -1,0 +1,85 @@
+use glyim_core::arena::IndexVec;
+use glyim_core::primitives::*;
+use glyim_core::{CrateId, DefId, LocalDefId};
+use glyim_mir::{
+    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand,
+    Place, Rvalue, SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
+};
+use glyim_span::Span;
+use glyim_type::Ty;
+
+pub(crate) fn simple_mir_body(dest_ty: Ty, rvalue: Rvalue) -> Body {
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    let local0 = locals.push(LocalDecl {
+        ty: dest_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    let place = Place::new(local0);
+
+    let stmt = Statement {
+        kind: StatementKind::Assign(place, rvalue),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+
+    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    let bb0 = basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+    basic_blocks[bb0].statements.push(stmt);
+
+    Body {
+        owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: Span::DUMMY,
+        var_debug_info: vec![],
+    }
+}
+
+pub(crate) fn const_operand_i32(val: i64, i32_ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::Int(val as i128),
+        ty: i32_ty,
+        span: Span::DUMMY,
+    })
+}
+
+pub(crate) fn const_operand_u32(val: u64, u32_ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::Uint(val as u128),
+        ty: u32_ty,
+        span: Span::DUMMY,
+    })
+}
+
+pub(crate) fn const_operand_bool(val: bool) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::Bool(val),
+        ty: Ty::BOOL,
+        span: Span::DUMMY,
+    })
+}
+
+pub(crate) fn box_operands(left: Operand, right: Operand) -> Box<(Operand, Operand)> {
+    Box::new((left, right))
+}
+
+pub(crate) fn const_operand_f64(val: f64, f64_ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::FloatBits(val.to_bits()),
+        ty: f64_ty,
+        span: Span::DUMMY,
+    })
+}
+
+pub(crate) fn const_operand_f32(val: f32, f32_ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::FloatBits((val as f64).to_bits()),
+        ty: f32_ty,
+        span: Span::DUMMY,
+    })
+}
