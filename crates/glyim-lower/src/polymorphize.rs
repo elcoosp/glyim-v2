@@ -16,7 +16,9 @@
 //! and `foo::<bool>()` would generate separate mono items. With polymorphization,
 //! both map to `foo::<()>()` and share a single mono item.
 
-use glyim_mir::{self, AggregateKind, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKind};
+use glyim_mir::{
+    self, AggregateKind, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKind,
+};
 use glyim_type::*;
 use std::collections::HashSet;
 
@@ -77,14 +79,14 @@ pub fn polymorphize_substs(
             if i < used.len() && !used[i] {
                 match arg {
                     GenericArg::Ty(_) => GenericArg::Ty(ctx.unit_ty()),
-                    GenericArg::Lifetime(r) => GenericArg::Lifetime(*r),
+                    GenericArg::Lifetime(r) => GenericArg::Lifetime(r.clone()),
                     GenericArg::Const(_) => GenericArg::Const(Const {
                         kind: ConstKind::Unit,
                         ty: ctx.unit_ty(),
                     }),
                 }
             } else {
-                *arg
+                arg.clone()
             }
         })
         .collect();
@@ -99,11 +101,7 @@ pub fn polymorphize_substs(
 /// This is the core of polymorphization: two MonoItems that differ only in
 /// unused generic parameters will produce the same polymorphized MonoItem,
 /// allowing them to be deduplicated.
-pub fn compute_poly_item(
-    ctx: &mut TyCtxMut,
-    item: &MonoItem,
-    body: &glyim_mir::Body,
-) -> MonoItem {
+pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &glyim_mir::Body) -> MonoItem {
     match item {
         MonoItem::Fn { def_id, substs } => {
             if substs.is_empty() {
@@ -200,7 +198,7 @@ fn mark_used_params(ty: Ty, ctx: &dyn TypeLookup, used: &mut [bool]) {
             mark_used_params(sig.output, ctx, used);
         }
         TyKind::Dynamic(binder, _) => {
-            for pred in binder.skip_binder().iter() {
+            for pred in binder.clone().skip_binder().iter() {
                 mark_used_params_in_predicate(pred, ctx, used);
             }
         }
@@ -330,8 +328,6 @@ fn mark_used_params_in_terminator(kind: &TerminatorKind, ctx: &dyn TypeLookup, u
             // in any local, there's nothing of type T to drop, so
             // polymorphization is safe.
         }
-        TerminatorKind::Goto { .. }
-        | TerminatorKind::Return
-        | TerminatorKind::Unreachable => {}
+        TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {}
     }
 }
