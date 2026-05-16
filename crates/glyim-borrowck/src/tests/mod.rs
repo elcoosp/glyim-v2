@@ -9,3 +9,5 @@ mod move_tests;
 mod same_block;
 mod two_phase_borrows;
 mod write_conflicts;
+mod drop_check;
+mod interior_mutability;
