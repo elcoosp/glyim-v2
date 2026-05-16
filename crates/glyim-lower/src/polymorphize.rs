@@ -126,6 +126,7 @@ pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &glyim_mir::
             }
         }
         MonoItem::Static { .. } => item.clone(),
+        MonoItem::DropGlue { .. } => item.clone(),
     }
 }
 

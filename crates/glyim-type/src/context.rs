@@ -6,9 +6,9 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 
+use crate::ty::{FieldIdx, RegionVid};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
-use crate::ty::{FieldIdx, RegionVid};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
 
@@ -177,7 +177,9 @@ impl TyCtxMut {
 
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
+                true
+            }
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -185,7 +187,9 @@ impl TyCtxMut {
             TyKind::Array(inner, _) => self.is_copy(*inner),
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg && !self.is_copy(*t) {
+                    if let GenericArg::Ty(t) = arg
+                        && !self.is_copy(*t)
+                    {
                         return false;
                     }
                 }
@@ -212,11 +216,13 @@ impl TyCtxMut {
     }
 
     pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
-        self.auto_trait_registry.register_negative_impl(adt_id, auto_trait);
+        self.auto_trait_registry
+            .register_negative_impl(adt_id, auto_trait);
     }
 
     pub fn register_manual_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
-        self.auto_trait_registry.register_manual_impl(adt_id, auto_trait);
+        self.auto_trait_registry
+            .register_manual_impl(adt_id, auto_trait);
     }
 
     pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
@@ -225,6 +231,18 @@ impl TyCtxMut {
 
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
+    }
+
+    /// Returns the index of a field by name for a given ADT.
+    pub fn field_index(&self, adt_id: AdtId, field_name: Name) -> Option<usize> {
+        if let Some(def) = self.adt_defs.get(&adt_id) {
+            for (i, field) in def.fields.iter_enumerated() {
+                if field.name == field_name {
+                    return Some(i.index());
+                }
+            }
+        }
+        None
     }
 
     pub fn freeze(self) -> TyCtx {
@@ -306,7 +324,9 @@ impl TyCtx {
 
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
+                true
+            }
             TyKind::Never | TyKind::Unit => true,
             TyKind::Ref(_, _, _) => false,
             TyKind::RawPtr(_, _) => false,
@@ -314,7 +334,9 @@ impl TyCtx {
             TyKind::Array(inner, _) => self.is_copy(*inner),
             TyKind::Tuple(substs) => {
                 for arg in self.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg && !self.is_copy(*t) {
+                    if let GenericArg::Ty(t) = arg
+                        && !self.is_copy(*t)
+                    {
                         return false;
                     }
                 }
@@ -357,7 +379,8 @@ impl TyCtx {
     }
 
     pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
-        self.auto_trait_registry.has_negative_impl(adt_id, auto_trait)
+        self.auto_trait_registry
+            .has_negative_impl(adt_id, auto_trait)
     }
 
     pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
@@ -370,7 +393,10 @@ impl TyCtx {
 
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(repr) = self.adt_reprs.get(&adt_id) {
-            repr.field_tys.get(field_idx).copied().unwrap_or_else(|| self.error_ty())
+            repr.field_tys
+                .get(field_idx)
+                .copied()
+                .unwrap_or_else(|| self.error_ty())
         } else {
             self.error_ty()
         }

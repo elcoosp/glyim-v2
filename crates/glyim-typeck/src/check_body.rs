@@ -10,6 +10,7 @@ use glyim_span::Span;
 use glyim_type::*;
 
 use crate::thir::{self, LocalVarId};
+use crate::ty::FieldIdx;
 
 /// Context struct to bundle the many mutable references needed during expression checking.
 #[allow(dead_code)]
@@ -161,14 +162,14 @@ fn check_expr(
     expr_id: ExprId,
 ) -> (thir::Expr, Ty) {
     let expr = &body.exprs[expr_id];
+    let expr_span = body.expr_spans[expr_id];
     match expr {
         Expr::Literal(lit) => {
             let ty = literal_ty(chk.ctx, lit);
-            let span = Span::DUMMY;
             let thir_expr = thir::Expr {
                 kind: thir::ExprKind::Literal(thir_literal(lit)),
                 ty,
-                span,
+                span: expr_span,
             };
             (thir_expr, ty)
         }
@@ -182,7 +183,7 @@ fn check_expr(
                     let thir_expr = thir::Expr {
                         kind: thir::ExprKind::VarRef(local_id),
                         ty,
-                        span: Span::DUMMY,
+                        span: expr_span,
                     };
                     return (thir_expr, ty);
                 }
@@ -196,18 +197,18 @@ fn check_expr(
                     let thir_expr = thir::Expr {
                         kind: thir::ExprKind::VarRef(local_id),
                         ty: param_ty,
-                        span: Span::DUMMY,
+                        span: expr_span,
                     };
                     return (thir_expr, param_ty);
                 }
             }
             chk.diagnostics
-                .push(GlyimDiagnostic::type_error(Span::DUMMY, "unresolved name"));
+                .push(GlyimDiagnostic::type_error(expr_span, "unresolved name"));
             (
                 thir::Expr {
                     kind: thir::ExprKind::Err,
                     ty: Ty::ERROR,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 Ty::ERROR,
             )
@@ -215,13 +216,13 @@ fn check_expr(
         Expr::Binary { op, lhs, rhs } => {
             let (lhs_expr, lhs_ty) = check_expr(chk, body, local_var_map, *lhs);
             let (rhs_expr, rhs_ty) = check_expr(chk, body, local_var_map, *rhs);
-            if let Err(diags) = chk.infer.unify(chk.ctx, lhs_ty, rhs_ty, Span::DUMMY) {
+            if let Err(diags) = chk.infer.unify(chk.ctx, lhs_ty, rhs_ty, expr_span) {
                 chk.diagnostics.extend(diags);
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Err,
                         ty: Ty::ERROR,
-                        span: Span::DUMMY,
+                        span: expr_span,
                     },
                     Ty::ERROR,
                 )
@@ -235,7 +236,7 @@ fn check_expr(
                             rhs: Box::new(rhs_expr),
                         },
                         ty: result_ty,
-                        span: Span::DUMMY,
+                        span: expr_span,
                     },
                     result_ty,
                 )
@@ -251,7 +252,7 @@ fn check_expr(
                         operand: Box::new(inner_expr),
                     },
                     ty: ref_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 ref_ty,
             )
@@ -262,13 +263,13 @@ fn check_expr(
             else_branch,
         } => {
             let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
-            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, Span::DUMMY) {
+            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, expr_span) {
                 chk.diagnostics.extend(diags);
             }
             let (then_expr, then_ty) = check_expr(chk, body, local_var_map, *then_branch);
             if let Some(else_id) = else_branch {
                 let (_else_expr, else_ty) = check_expr(chk, body, local_var_map, *else_id);
-                if let Err(diags) = chk.infer.unify(chk.ctx, then_ty, else_ty, Span::DUMMY) {
+                if let Err(diags) = chk.infer.unify(chk.ctx, then_ty, else_ty, expr_span) {
                     chk.diagnostics.extend(diags);
                 }
             }
@@ -286,12 +287,12 @@ fn check_expr(
                             Box::new(thir::Expr {
                                 kind: thir::ExprKind::Literal(thir::Literal::Unit),
                                 ty: Ty::UNIT,
-                                span: Span::DUMMY,
+                                span: expr_span,
                             })
                         }),
                     },
                     ty: result_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 result_ty,
             )
@@ -310,7 +311,7 @@ fn check_expr(
                         tail: Some(Box::new(tail_expr)),
                     },
                     ty: tail_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 };
                 (block_expr, tail_ty)
             } else {
@@ -320,7 +321,7 @@ fn check_expr(
                         tail: None,
                     },
                     ty: Ty::UNIT,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 };
                 (unit_expr, Ty::UNIT)
             }
@@ -330,7 +331,7 @@ fn check_expr(
             body: body_id,
         } => {
             let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
-            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, Span::DUMMY) {
+            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, expr_span) {
                 chk.diagnostics.extend(diags);
             }
             let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
@@ -341,7 +342,7 @@ fn check_expr(
                         body: Box::new(body_expr),
                     },
                     ty: Ty::UNIT,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 Ty::UNIT,
             )
@@ -354,7 +355,7 @@ fn check_expr(
                         body: Box::new(body_expr),
                     },
                     ty: Ty::NEVER,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 Ty::NEVER,
             )
@@ -378,13 +379,13 @@ fn check_expr(
                                 subpattern: None,
                             },
                             ty: pat_ty,
-                            span: Span::DUMMY,
+                            span: expr_span,
                         }),
                         iterable: Box::new(_iter_expr),
                         body: Box::new(body_expr),
                     },
                     ty: Ty::UNIT,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 Ty::UNIT,
             )
@@ -395,17 +396,14 @@ fn check_expr(
             let mut thir_arms = Vec::new();
             for arm in arms {
                 let (arm_body_expr, arm_body_ty) = check_expr(chk, body, local_var_map, arm.body);
-                if let Err(diags) = chk
-                    .infer
-                    .unify(chk.ctx, arm_body_ty, result_ty, Span::DUMMY)
-                {
+                if let Err(diags) = chk.infer.unify(chk.ctx, arm_body_ty, result_ty, expr_span) {
                     chk.diagnostics.extend(diags);
                 }
                 thir_arms.push(thir::MatchArm {
                     pat: thir::Pattern {
                         kind: thir::PatternKind::Wild,
                         ty: Ty::UNIT,
-                        span: Span::DUMMY,
+                        span: expr_span,
                     },
                     guard: None,
                     body: arm_body_expr,
@@ -418,7 +416,7 @@ fn check_expr(
                         arms: thir_arms,
                     },
                     ty: result_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 result_ty,
             )
@@ -438,7 +436,7 @@ fn check_expr(
                         args: thir_args,
                     },
                     ty: ret_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 ret_ty,
             )
@@ -452,20 +450,66 @@ fn check_expr(
             unimplemented!("method calls not implemented");
         }
         Expr::Field { receiver, field } => {
-            let (recv_expr, _recv_ty) = check_expr(chk, body, local_var_map, *receiver);
-            let field_ty = fresh_infer_ty(chk);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Field {
-                        receiver: Box::new(recv_expr),
-                        field: *field,
-                        ty: field_ty,
-                    },
+            let (recv_expr, recv_ty) = check_expr(chk, body, local_var_map, *receiver);
+            let field_ty = match chk.ctx.ty_kind(recv_ty) {
+                TyKind::Adt(adt_id, substs) => {
+                    if let Some(field_idx) = chk.ctx.field_index(*adt_id, *field) {
+                        if let Some(def) = chk.ctx.adt_def(*adt_id) {
+                            if let Some(field_def) =
+                                def.fields.get(FieldIdx::from_raw(field_idx as u32))
+                            {
+                                let field_ty = field_def.ty;
+                                // TODO: apply substitution if ADT is generic
+                                field_ty
+                            } else {
+                                chk.diagnostics.push(GlyimDiagnostic::type_error(
+                                    expr_span,
+                                    format!(
+                                        "field `{}` not found in ADT (internal error)",
+                                        chk.ctx.name_str(*field)
+                                    ),
+                                ));
+                                chk.ctx.error_ty()
+                            }
+                        } else {
+                            chk.diagnostics.push(GlyimDiagnostic::type_error(
+                                expr_span,
+                                format!(
+                                    "ADT definition missing for field `{}`",
+                                    chk.ctx.name_str(*field)
+                                ),
+                            ));
+                            chk.ctx.error_ty()
+                        }
+                    } else {
+                        chk.diagnostics.push(GlyimDiagnostic::type_error(
+                            expr_span,
+                            format!("no field `{}` in ADT", chk.ctx.name_str(*field)),
+                        ));
+                        chk.ctx.error_ty()
+                    }
+                }
+                _ => {
+                    chk.diagnostics.push(GlyimDiagnostic::type_error(
+                        expr_span,
+                        format!(
+                            "field access on non-ADT type: {}",
+                            PrintTy::new(recv_ty, chk.ctx)
+                        ),
+                    ));
+                    chk.ctx.error_ty()
+                }
+            };
+            let thir_expr = thir::Expr {
+                kind: thir::ExprKind::Field {
+                    receiver: Box::new(recv_expr),
+                    field: *field,
                     ty: field_ty,
-                    span: Span::DUMMY,
                 },
-                field_ty,
-            )
+                ty: field_ty,
+                span: expr_span,
+            };
+            (thir_expr, field_ty)
         }
         Expr::Index { base, index } => {
             let (base_expr, _) = check_expr(chk, body, local_var_map, *base);
@@ -478,7 +522,7 @@ fn check_expr(
                         index: Box::new(idx_expr),
                     },
                     ty: elem_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 elem_ty,
             )
@@ -495,7 +539,7 @@ fn check_expr(
                         expr: Box::new(inner_expr),
                     },
                     ty: target_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 target_ty,
             )
@@ -505,7 +549,7 @@ fn check_expr(
             let elem_ty = fresh_infer_ty(chk);
             for &elem_id in elements {
                 let (e_expr, e_ty) = check_expr(chk, body, local_var_map, elem_id);
-                if let Err(diags) = chk.infer.unify(chk.ctx, e_ty, elem_ty, Span::DUMMY) {
+                if let Err(diags) = chk.infer.unify(chk.ctx, e_ty, elem_ty, expr_span) {
                     chk.diagnostics.extend(diags);
                 }
                 elem_exprs.push(e_expr);
@@ -515,7 +559,7 @@ fn check_expr(
                 thir::Expr {
                     kind: thir::ExprKind::Array(elem_exprs),
                     ty: arr_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 arr_ty,
             )
@@ -531,7 +575,7 @@ fn check_expr(
                 thir::Expr {
                     kind: thir::ExprKind::Tuple(tuple_exprs),
                     ty: tup_ty,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 tup_ty,
             )
@@ -555,7 +599,7 @@ fn check_expr(
                 thir::Expr {
                     kind: thir::ExprKind::Break { value: value_expr },
                     ty: Ty::NEVER,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 Ty::NEVER,
             )
@@ -564,7 +608,7 @@ fn check_expr(
             thir::Expr {
                 kind: thir::ExprKind::Continue,
                 ty: Ty::NEVER,
-                span: Span::DUMMY,
+                span: expr_span,
             },
             Ty::NEVER,
         ),
@@ -574,14 +618,14 @@ fn check_expr(
         }
         _ => {
             chk.diagnostics.push(GlyimDiagnostic::type_error(
-                Span::DUMMY,
+                expr_span,
                 "unsupported expression".to_string(),
             ));
             (
                 thir::Expr {
                     kind: thir::ExprKind::Err,
                     ty: Ty::ERROR,
-                    span: Span::DUMMY,
+                    span: expr_span,
                 },
                 Ty::ERROR,
             )
