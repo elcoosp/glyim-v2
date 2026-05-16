@@ -39,8 +39,6 @@ impl TyCtxMut {
             adt_reprs: HashMap::new(),
             _not_send_sync: PhantomData,
         };
-        // Pre-intern sentinels — must be in this order:
-        // Ty::ERROR=0, Ty::NEVER=1, Ty::UNIT=2, Ty::BOOL=3
         assert_eq!(
             ctx.alloc_ty_internal(TyKind::Error).to_raw(),
             Ty::ERROR.to_raw(),
@@ -143,33 +141,47 @@ impl TyCtxMut {
         self.resolver.resolve(name)
     }
 
-    /// Allocate a new region variable with the given initial value.
+    pub fn is_copy(&self, ty: Ty) -> bool {
+        match self.ty_kind(ty) {
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Never | TyKind::Unit => true,
+            TyKind::Ref(_, _, _) => false,
+            TyKind::RawPtr(_, _) => false,
+            TyKind::Slice(_) => false,
+            TyKind::Array(inner, _) => self.is_copy(*inner),
+            TyKind::Tuple(substs) => {
+                for arg in self.substitution_args(*substs) {
+                    if let GenericArg::Ty(t) = arg {
+                        if !self.is_copy(*t) { return false; }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn new_region_var(&mut self, initial: Region) -> RegionVid {
         self.regions.push(initial)
     }
 
-    /// Retrieve the region associated with a region variable.
     pub fn region_var(&self, vid: RegionVid) -> &Region {
         &self.regions[vid]
     }
 
-    /// Return the number of allocated region variables.
     pub fn region_var_count(&self) -> usize {
         self.regions.len()
     }
 
-    /// Register the field types for an ADT, used for auto trait computation.
     pub fn register_adt_repr(&mut self, adt_id: AdtId, field_tys: Vec<Ty>) {
         self.adt_reprs.insert(adt_id, AdtRepr::new(field_tys));
     }
 
-    /// Register a negative auto trait impl: `impl !Trait for Adt`.
     pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.auto_trait_registry
             .register_negative_impl(adt_id, auto_trait);
     }
 
-    /// Register a manual auto trait impl: `impl Trait for Adt`.
     pub fn register_manual_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.auto_trait_registry
             .register_manual_impl(adt_id, auto_trait);
@@ -241,6 +253,26 @@ impl TyCtx {
         self.resolver.resolve(name)
     }
 
+    pub fn is_copy(&self, ty: Ty) -> bool {
+        match self.ty_kind(ty) {
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => true,
+            TyKind::Never | TyKind::Unit => true,
+            TyKind::Ref(_, _, _) => false,
+            TyKind::RawPtr(_, _) => false,
+            TyKind::Slice(_) => false,
+            TyKind::Array(inner, _) => self.is_copy(*inner),
+            TyKind::Tuple(substs) => {
+                for arg in self.substitution_args(*substs) {
+                    if let GenericArg::Ty(t) = arg {
+                        if !self.is_copy(*t) { return false; }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
@@ -265,28 +297,23 @@ impl TyCtx {
         self.ty_flags(ty).contains(TypeFlags::HAS_DEPTH_OVERFLOW)
     }
 
-    /// Compute auto trait flags for a type using this frozen context.
     pub fn auto_trait_flags(&self, ty: Ty) -> AutoTraitFlags {
         compute_auto_traits(ty, self, &self.auto_trait_registry, &self.adt_reprs)
     }
 
-    /// Check whether a type implements a specific auto trait.
     pub fn implements_auto_trait(&self, ty: Ty, auto_trait: AutoTrait) -> bool {
         self.auto_trait_flags(ty).contains(auto_trait.flag())
     }
 
-    /// Check if a specific ADT has a negative impl for an auto trait.
     pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.auto_trait_registry
             .has_negative_impl(adt_id, auto_trait)
     }
 
-    /// Check if a specific ADT has a manual impl for an auto trait.
     pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.auto_trait_registry.has_manual_impl(adt_id, auto_trait)
     }
 
-    /// Access the ADT representation (field types).
     pub fn adt_repr(&self, adt_id: AdtId) -> Option<&AdtRepr> {
         self.adt_reprs.get(&adt_id)
     }

@@ -45,7 +45,9 @@ pub struct BorrowckResult {
 pub trait BorrowckCtx {
     fn ty_ctx(&self) -> &TyCtx;
     fn local_decl(&self, local: LocalIdx) -> &glyim_mir::LocalDecl;
-    fn is_copy(&self, ty: glyim_type::Ty) -> bool;
+    fn is_copy(&self, ty: glyim_type::Ty) -> bool {
+        self.ty_ctx().is_copy(ty)
+    }
 }
 
 // ---------------------------------------------------------------------------
