@@ -18,6 +18,7 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
+use glyim_span::FileId;
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
@@ -28,6 +29,8 @@ pub struct LlvmBackend {
     target_triple: String,
     ty_ctx: Option<TyCtx>,
     target_info: TargetInfo,
+    debug_info: bool,
+    source_map: HashMap<FileId, (String, String)>,
 }
 
 impl Default for LlvmBackend {
@@ -46,6 +49,8 @@ impl LlvmBackend {
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
             ty_ctx: Some(default_ctx),
             target_info,
+            debug_info: false,
+            source_map: HashMap::new(),
         }
     }
 
@@ -59,11 +64,23 @@ impl LlvmBackend {
             target_triple: triple,
             ty_ctx: Some(default_ctx),
             target_info,
+            debug_info: false,
+            source_map: HashMap::new(),
         }
     }
 
     pub fn with_ty_ctx(mut self, ctx: TyCtx) -> Self {
         self.ty_ctx = Some(ctx);
+        self
+    }
+
+    pub fn with_debug_info(mut self, enable: bool) -> Self {
+        self.debug_info = enable;
+        self
+    }
+
+    pub fn with_source_map(mut self, map: HashMap<FileId, (String, String)>) -> Self {
+        self.source_map = map;
         self
     }
 
