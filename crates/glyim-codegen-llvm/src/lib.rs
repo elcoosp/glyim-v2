@@ -34,6 +34,8 @@ pub struct LlvmBackend {
     target_info: TargetInfo,
     debug_info: bool,
     source_map: HashMap<FileId, (String, String)>,
+    opt_level: u8,
+    opt_for_size: bool,
 }
 
 impl Default for LlvmBackend {
@@ -54,6 +56,8 @@ impl LlvmBackend {
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
+            opt_level: 0,
+            opt_for_size: false,
         }
     }
 
@@ -69,6 +73,8 @@ impl LlvmBackend {
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
+            opt_level: 0,
+            opt_for_size: false,
         }
     }
 
@@ -86,6 +92,69 @@ impl LlvmBackend {
         self.source_map = map;
         self
     }
+
+    pub(crate) fn with_opt_level(mut self, level: u8) -> Self {
+        self.opt_level = level;
+        self
+    }
+
+    pub(crate) fn with_opt_for_size(mut self, size: bool) -> Self {
+        self.opt_for_size = size;
+        self
+    }
+
+
+    pub(crate) fn run_passes_on_module<'ctx>(
+        &self,
+        module: &inkwell::module::Module<'ctx>,
+        target_machine: &inkwell::targets::TargetMachine,
+    ) -> Result<(), String> {
+        use inkwell::passes::PassBuilderOptions;
+        let pass_str = match (self.opt_level, self.opt_for_size) {
+            (0, _) => "default<O0>",
+            (1, false) => "default<O1>",
+            (1, true) => "default<Os>",
+            (2, false) => "default<O2>",
+            (2, true) => "default<Oz>",
+            (3, false) => "default<O3>",
+            (3, true) => "default<Oz>",
+            _ => "default<O2>",
+        };
+        let opts = PassBuilderOptions::create();
+        module
+            .run_passes(pass_str, target_machine, opts)
+            .map_err(|e| format!("Failed to run LLVM passes: {}", e))
+    }
+
+    pub(crate) fn lower_bodies_to_module<'ctx>(
+        &'ctx self,
+        context: &'ctx inkwell::context::Context,
+        bodies: &[std::sync::Arc<glyim_mir::Body>],
+    ) -> glyim_diag::CompResult<inkwell::module::Module<'ctx>> {
+        let module = context.create_module("glyim_module");
+        let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
+        module.set_triple(&triple);
+        for body in bodies {
+            self.lower_body(context, &module, body)?;
+        }
+        let target = inkwell::targets::Target::from_triple(&triple).map_err(|e| {
+            vec![glyim_diag::GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
+        })?;
+        let target_machine = target
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                inkwell::OptimizationLevel::Default,
+                inkwell::targets::RelocMode::Default,
+                inkwell::targets::CodeModel::Default,
+            )
+            .ok_or_else(|| vec![glyim_diag::GlyimDiagnostic::internal_error("Failed to create target machine")])?;
+        self.run_passes_on_module(&module, &target_machine)
+            .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(e)])?;
+        Ok(module)
+    }
+
 
     /// For testing: lower a body and return the LLVM module
     #[allow(dead_code)]
@@ -139,6 +208,9 @@ impl CodegenBackend for LlvmBackend {
             self.lower_body(context, &module, body)?;
         }
 
+        self.run_passes_on_module(&module, &target_machine)
+            .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
+
         target_machine
             .write_to_file(&module, inkwell::targets::FileType::Object, output)
             .map_err(|e| {
@@ -180,6 +252,9 @@ impl CodegenBackend for LlvmBackend {
                     "Failed to create target machine",
                 )]
             })?;
+
+        self.run_passes_on_module(&module, &target_machine)
+            .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
 
         target_machine
             .write_to_memory_buffer(&module, inkwell::targets::FileType::Object)
