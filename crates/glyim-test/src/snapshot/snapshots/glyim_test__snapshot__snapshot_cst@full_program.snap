@@ -246,56 +246,56 @@ SourceFile@0..543
             Ident@355..358 "age"
           LBrace@358..359 "{"
           MatchArmList@359..431
-            MatchArm@359..373
+            MatchArm@359..384
               PatLit@359..364
                 IntLit@359..360 "0"
                 DotDotEq@360..363 "..="
                 PatLit@363..364
                   IntLit@363..364 "1"
               FatArrow@364..366 "=>"
-              PathExpr@366..373
-                UsePath@366..373
-                  Ident@366..373 "println"
-            MatchArm@373..384
-              NeverType@373..374
+              MacroCall@366..383
+                PathExpr@366..373
+                  UsePath@366..373
+                    Ident@366..373 "println"
                 Bang@373..374 "!"
-              LParen@374..375 "("
-              LitExpr@375..382
-                StringLit@375..382 "\"puppy\""
-              RParen@382..383 ")"
+                TokenTree@374..383
+                  LParen@374..375 "("
+                  TokenTree@375..382
+                    StringLit@375..382 "\"puppy\""
+                  RParen@382..383 ")"
               Comma@383..384 ","
-            MatchArm@384..398
+            MatchArm@384..409
               PatLit@384..389
                 IntLit@384..385 "2"
                 DotDotEq@385..388 "..="
                 PatLit@388..389
                   IntLit@388..389 "7"
               FatArrow@389..391 "=>"
-              PathExpr@391..398
-                UsePath@391..398
-                  Ident@391..398 "println"
-            MatchArm@398..409
-              NeverType@398..399
+              MacroCall@391..408
+                PathExpr@391..398
+                  UsePath@391..398
+                    Ident@391..398 "println"
                 Bang@398..399 "!"
-              LParen@399..400 "("
-              LitExpr@400..407
-                StringLit@400..407 "\"adult\""
-              RParen@407..408 ")"
+                TokenTree@399..408
+                  LParen@399..400 "("
+                  TokenTree@400..407
+                    StringLit@400..407 "\"adult\""
+                  RParen@407..408 ")"
               Comma@408..409 ","
-            MatchArm@409..419
+            MatchArm@409..431
               PatWild@409..410
                 Underscore@409..410 "_"
               FatArrow@410..412 "=>"
-              PathExpr@412..419
-                UsePath@412..419
-                  Ident@412..419 "println"
-            MatchArm@419..431
-              NeverType@419..420
+              MacroCall@412..430
+                PathExpr@412..419
+                  UsePath@412..419
+                    Ident@412..419 "println"
                 Bang@419..420 "!"
-              LParen@420..421 "("
-              LitExpr@421..429
-                StringLit@421..429 "\"senior\""
-              RParen@429..430 ")"
+                TokenTree@420..430
+                  LParen@420..421 "("
+                  TokenTree@421..429
+                    StringLit@421..429 "\"senior\""
+                  RParen@429..430 ")"
               Comma@430..431 ","
           RBrace@431..432 "}"
       LetStmt@432..466
