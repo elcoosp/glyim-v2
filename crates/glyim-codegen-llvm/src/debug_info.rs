@@ -6,7 +6,7 @@ use inkwell::debug_info::{
     AsDIScope, DIFile, DIFlagsConstants, DIScope, DISubprogram, DWARFEmissionKind,
     DWARFSourceLanguage, DebugInfoBuilder,
 };
-use inkwell::values::{FunctionValue, MetadataValue};
+use inkwell::values::FunctionValue;
 use std::collections::HashMap;
 
 pub(crate) struct DebugInfoCtx<'ctx> {
@@ -16,32 +16,31 @@ pub(crate) struct DebugInfoCtx<'ctx> {
     files: HashMap<FileId, DIFile<'ctx>>,
     source_map: HashMap<FileId, (String, String)>,
     pub(crate) enabled: bool,
-    dbg_declare_fn: Option<FunctionValue<'ctx>>,
 }
 
 impl<'ctx> DebugInfoCtx<'ctx> {
     pub(crate) fn new(
-        context: &'ctx Context,
+        _context: &'ctx Context,
         module: &inkwell::module::Module<'ctx>,
         source_map: HashMap<FileId, (String, String)>,
         enable: bool,
     ) -> Self {
         let (builder, compile_unit) = module.create_debug_info_builder(
-            true,                            // allow_unresolved
-            DWARFSourceLanguage::C,          // language
-            "test.g",                        // filename (dummy)
-            ".",                             // directory
-            "glyim",                         // producer
-            false,                           // is_optimized
-            "",                              // flags
-            0u32,                            // runtime_ver
-            "",                              // split_name
-            DWARFEmissionKind::Full,         // kind
-            0u32,                            // dwo_id
-            true,                            // split_debug_inlining
-            false,                           // debug_info_for_profiling
-            "",                              // sysroot
-            "",                              // sdk
+            true,
+            DWARFSourceLanguage::C,
+            "test.g",
+            ".",
+            "glyim",
+            false,
+            "",
+            0u32,
+            "",
+            DWARFEmissionKind::Full,
+            0u32,
+            true,
+            false,
+            "",
+            "",
         );
 
         let compile_unit_scope = compile_unit.as_debug_info_scope();
@@ -60,18 +59,6 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             files.insert(*file_id, file);
         }
 
-        let dbg_declare_fn = if enable {
-            let void_type = context.void_type();
-            let metadata_type = context.metadata_type();
-            let fn_type = void_type.fn_type(
-                &[metadata_type.into(), metadata_type.into(), metadata_type.into()],
-                false,
-            );
-            Some(module.add_function("llvm.dbg.declare", fn_type, None))
-        } else {
-            None
-        };
-
         DebugInfoCtx {
             builder,
             compile_unit_scope,
@@ -79,7 +66,6 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             files,
             source_map,
             enabled: enable,
-            dbg_declare_fn,
         }
     }
 
@@ -135,11 +121,11 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
     pub(crate) fn declare_local(
         &self,
-        builder: &inkwell::builder::Builder<'ctx>,
         context: &'ctx Context,
         alloca: inkwell::values::PointerValue<'ctx>,
         var_info: &VarDebugInfo,
         ty_ctx: &TyCtx,
+        block: inkwell::basic_block::BasicBlock<'ctx>,
     ) {
         if !self.enabled || self.subprogram.is_none() {
             return;
@@ -175,13 +161,21 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             0,
         );
 
-        let location = self
-            .builder
-            .create_debug_location(context, line, col, scope, None);
+        let location = self.builder.create_debug_location(
+            context,
+            line,
+            col,
+            scope,
+            None,
+        );
 
-        // STUB: llvm.dbg.declare intrinsic not yet implemented; conversion of debug
-        // info types to MetadataValue requires LLVMMetadataAsValue, not yet exposed.
-        tracing::warn!("STUB: debug variable {} declared but no dbg.declare emitted", name);
+        let _ = self.builder.insert_declare_at_end(
+            alloca,
+            Some(local_var),
+            None, // expression
+            location,
+            block,
+        );
     }
 
     pub(crate) fn finalize(self) {

@@ -1869,7 +1869,8 @@ impl LlvmBackend {
                     _ => continue,
                 };
                 if let Some(alloca) = lowering_ctx.locals.get(place.local).and_then(|o| *o) {
-                    di.declare_local(&lowering_ctx.builder, context, alloca, var_info, ty_ctx);
+                    let block = lowering_ctx.builder.get_insert_block().unwrap();
+                    di.declare_local(context, alloca, var_info, ty_ctx, block);
                 }
             }
         }
