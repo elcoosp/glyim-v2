@@ -23,6 +23,6 @@ pub use region::*;
 pub use substitution::*;
 pub use ty::*;
 
+pub mod object_safety;
 #[cfg(test)]
 mod tests;
-pub mod object_safety;

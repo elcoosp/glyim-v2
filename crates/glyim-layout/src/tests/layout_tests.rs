@@ -78,8 +78,8 @@ fn s04_t12_layout_slice_is_unsized() {
 
 #[test]
 fn s04_t13_layout_dyn_is_unsized() {
-    use glyim_type::*;
     use glyim_core::TraitDefId;
+    use glyim_type::*;
     // Create a dyn Trait type
     let (ctx, dyn_ty) = glyim_test::with_fresh_ty_ctx(|ctx| {
         let empty_subst = ctx.intern_substitution(vec![]);
@@ -100,14 +100,17 @@ fn s04_t13_layout_dyn_is_unsized() {
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
     let result = computer.layout_of(dyn_ty);
     // Now dyn Trait is laid out as fat pointer (data + vtable), not unsized
-    assert!(result.is_ok(), "Expected fat pointer layout, got {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Expected fat pointer layout, got {:?}",
+        result
+    );
     let layout = result.unwrap();
     let ptr_size = computer.ptr_size();
     assert_eq!(layout.size, Size::bytes(ptr_size.0 * 2));
     assert_eq!(layout.align, computer.ptr_align());
     assert!(!layout.is_unsized);
 }
-
 
 #[test]
 fn s04_t14_fn_abi_of_basic_signature() {

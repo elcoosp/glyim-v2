@@ -5,5 +5,5 @@ mod comprehensive;
 mod discriminant_len;
 mod existing;
 mod terminators;
-mod unary_ops;
 mod trait_objects;
+mod unary_ops;

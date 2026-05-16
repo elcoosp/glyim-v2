@@ -1,9 +1,9 @@
+use crate::*;
 use glyim_core::{CrateId, DefId, FnDefId, Interner, LocalDefId, TargetInfo, TraitDefId};
 use glyim_mir::*;
 use glyim_test::with_fresh_ty_ctx;
 use glyim_type::*;
 use std::sync::Arc;
-use crate::*;
 
 fn make_dyn_ty(ctx: &mut TyCtxMut) -> Ty {
     let empty_subst = ctx.intern_substitution(vec![]);
@@ -369,8 +369,8 @@ fn vtable_layout_matches_expectations() {
 
 #[test]
 fn vtable_layout_offsets_with_methods() {
-    use glyim_layout::vtable::{VTableComputer, VTableLayout, VTableEntry};
-    use glyim_core::{Name, Safety, Abi};
+    use glyim_core::{Abi, Name, Safety};
+    use glyim_layout::vtable::{VTableComputer, VTableEntry, VTableLayout};
     use glyim_type::FnSig;
     let (ctx, dyn_ty) = with_fresh_ty_ctx(|ctx| {
         let empty_subst = ctx.intern_substitution(vec![]);
@@ -425,7 +425,11 @@ fn vtable_layout_offsets_with_methods() {
         ..vtable_layout
     };
     let mem2 = vtable_with_methods.memory_size(8);
-    assert_eq!(mem2.size, (3 + 2) * 8, "size should include two method pointers");
+    assert_eq!(
+        mem2.size,
+        (3 + 2) * 8,
+        "size should include two method pointers"
+    );
     assert_eq!(
         vtable_with_methods.method_offset(0, 8),
         3 * 8,

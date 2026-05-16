@@ -1,4 +1,3 @@
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use crate::{
     Body, BodyId, ConstRef, CrateHir, EnumItem, Expr, ExprId, Field, FnItem, Item, ItemId,
     ItemKind, Literal, MatchArm, Param, Pat, PatId, Path as HirPath, PathSegment, StructItem,
@@ -8,6 +7,7 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::*;
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
 // ---------- helpers ----------
@@ -1991,4 +1991,3 @@ fn node_span(node: &SyntaxNode) -> Span {
     let hi = ByteIdx::from_raw(u32::from(range.end()));
     Span::new(FileId::from_raw(1), lo, hi, SyntaxContext::ROOT)
 }
-

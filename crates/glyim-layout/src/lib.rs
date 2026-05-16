@@ -293,4 +293,3 @@ impl crate::vtable::VTableComputer for SimpleLayoutComputer<'_> {
         Some(layout)
     }
 }
-

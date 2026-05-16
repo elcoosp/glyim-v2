@@ -138,7 +138,7 @@ impl Place {
                     }
                     TyKind::Adt(_adt_id, _substs) => {
                         // FIXME: ADT field type lookup not yet implemented
-        unimplemented!("ADT field type lookup not yet implemented")
+                        unimplemented!("ADT field type lookup not yet implemented")
                     }
                     _ => {
                         tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");

@@ -5,9 +5,9 @@
 //! a static constant in the codegen backend and referenced by trait
 //! object fat pointers.
 
+use crate::{Align, Size};
 use glyim_core::{FnDefId, Name, TraitDefId};
 use glyim_type::*;
-use crate::{Size, Align};
 
 /// Represents a single entry in a vtable: a pointer to a method or metadata function.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,9 +71,5 @@ impl VTableLayout {
 /// Trait for layout computers that can compute vtable layouts.
 pub trait VTableComputer {
     /// Compute the vtable layout for a given trait and concrete type.
-    fn vtable_of(
-        &self,
-        trait_def_id: TraitDefId,
-        concrete_ty: Ty,
-    ) -> Option<VTableLayout>;
+    fn vtable_of(&self, trait_def_id: TraitDefId, concrete_ty: Ty) -> Option<VTableLayout>;
 }
