@@ -1,0 +1,11 @@
+[package]
+name = "glyim-lang-core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+glyim-test = { workspace = true }
+glyim-frontend = { workspace = true }
+glyim-core = { workspace = true }
