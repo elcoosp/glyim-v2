@@ -591,7 +591,7 @@ fn param_used_via_fn_call_substitution() {
 
     let caller_substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
     let fn_def_id = FnDefId::from_raw(12);
-    let item = MonoItem::Fn {
+    let _item = MonoItem::Fn {
         def_id: fn_def_id,
         substs: caller_substs,
     };
