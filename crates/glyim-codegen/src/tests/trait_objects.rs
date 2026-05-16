@@ -1,6 +1,5 @@
 use crate::*;
 use glyim_core::{CrateId, DefId, FnDefId, Interner, LocalDefId, TargetInfo, TraitDefId};
-use glyim_mir::*;
 use glyim_test::with_fresh_ty_ctx;
 use glyim_type::*;
 use std::sync::Arc;
@@ -369,7 +368,7 @@ fn vtable_layout_matches_expectations() {
 
 #[test]
 fn vtable_layout_offsets_with_methods() {
-    use glyim_core::{Abi, Name, Safety};
+    use glyim_core::{Abi, Safety};
     use glyim_layout::vtable::{VTableComputer, VTableEntry, VTableLayout};
     use glyim_type::FnSig;
     let (ctx, dyn_ty) = with_fresh_ty_ctx(|ctx| {

@@ -68,7 +68,7 @@ fn dummy_body() -> Body {
 /// - then a write to local 0 while the shared borrow is still live.
 /// `interior_mutable` determines whether the ADT is marked as interior-mutable.
 fn build_interior_mut_body(interior_mutable: bool) -> (TyCtx, Body) {
-    let (ctx, (adt_id, adt_ty)) = with_fresh_ty_ctx(|ctx_mut| {
+    let (ctx, (_adt_id, adt_ty)) = with_fresh_ty_ctx(|ctx_mut| {
         // Create a dummy ADT type: struct Dummy(i32) with 1 field.
         let adt_id = AdtId::from_raw(0);
         // Mark interior mutability BEFORE creating the type so flags are correct.
