@@ -11,19 +11,35 @@ pub struct SourceMap {
     path: PathBuf,
     file_id: FileId,
     content: String,
+    line_starts: Vec<usize>,
 }
 
 impl SourceMap {
     pub fn new(path: PathBuf, file_id: FileId, content: String) -> Self {
-        Self { path, file_id, content }
+        let line_starts = std::iter::once(0)
+            .chain(content.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        Self { path, file_id, content, line_starts }
     }
     pub fn file_id(&self) -> FileId { self.file_id }
     pub fn source(&self) -> &str { &self.content }
-    pub fn span_to_position(&self, _lo: usize, _hi: usize) -> Option<((usize, usize), (usize, usize))> {
-        Some(((0, 0), (0, 0)))
+    pub fn span_to_position(&self, lo: usize, hi: usize) -> Option<((usize, usize), (usize, usize))> {
+        let start_line = self.line_starts.binary_search(&lo).unwrap_or_else(|i| i - 1);
+        let start_col = lo - self.line_starts[start_line];
+        let end_line = self.line_starts.binary_search(&hi).unwrap_or_else(|i| i - 1);
+        let end_col = hi - self.line_starts[end_line];
+        Some(((start_line, start_col), (end_line, end_col)))
     }
-    pub fn line_col_to_offset(&self, _line: usize, _col: usize) -> Option<usize> {
-        Some(0)
+    pub fn line_col_to_offset(&self, line: usize, col: usize) -> Option<usize> {
+        if line >= self.line_starts.len() {
+            return None;
+        }
+        let offset = self.line_starts[line] + col;
+        if offset > self.content.len() {
+            None
+        } else {
+            Some(offset)
+        }
     }
 }
 

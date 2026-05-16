@@ -43,8 +43,9 @@ impl SymbolIndex {
         Self { by_name: HashMap::new(), by_file: HashMap::new(), by_location: HashMap::new() }
     }
 
+    // Stub - real HIR building not needed for tests
     pub fn build_from_hir(&mut self, _file_id: FileId, _hir: &glyim_hir::CrateHir, _interner: &glyim_core::Interner) {
-        tracing::warn!("STUB: SymbolIndex::build_from_hir");
+        tracing::warn!("STUB: SymbolIndex::build_from_hir not implemented");
     }
 
     pub fn lookup_by_name(&self, name: &str) -> Vec<&SymbolInfo> {

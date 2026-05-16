@@ -1,3 +1,4 @@
+pub mod helpers;
 pub mod completion_tests;
 pub mod hover_tests;
 pub mod navigation_tests;

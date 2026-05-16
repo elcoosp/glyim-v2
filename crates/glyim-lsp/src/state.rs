@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use crate::driver::AnalysisMessage;
 use crate::database::AnalysisDatabase;
+use glyim_diag::GlyimDiagnostic;
 
 pub struct LspState {
     pub db: Database,
@@ -66,7 +67,14 @@ impl LspState {
         self.db.vfs().file_content(file_id).map(|s| s.to_string())
     }
 
-    pub fn diagnostics_for_file(&self, _path: &PathBuf) -> Vec<glyim_diag::GlyimDiagnostic> {
+    pub fn diagnostics_for_file(&self, path: &PathBuf) -> Vec<GlyimDiagnostic> {
+        let file_id = self.file_id(path);
+        if let Some(file_id) = file_id {
+            let guard = self.analysis.diagnostics.read();
+            if let Some(lsp_diag) = guard.get(&file_id) {
+                return vec![GlyimDiagnostic::internal_error(lsp_diag.message.clone())];
+            }
+        }
         Vec::new()
     }
 
