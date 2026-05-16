@@ -15,9 +15,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use inkwell::types::BasicType;
-use inkwell::values::{
-    AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, FloatValue, IntValue, PointerValue,
-};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
