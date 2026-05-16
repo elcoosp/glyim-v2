@@ -1,28 +1,21 @@
 use std::path::{Path, PathBuf};
+use url::Url;
 
-/// Convert a filesystem path to a file:// URI.
 pub fn path_to_uri(path: &Path) -> Result<String, String> {
-    let s = path
-        .to_str()
-        .ok_or_else(|| format!("path is not valid UTF-8: {}", path.display()))?;
-    file_url::file_path_to_url(s)
-        .map(|url| url.to_string())
-        .map_err(|e| format!("cannot convert path to URI: {e}"))
+    let url = Url::from_file_path(path)
+        .map_err(|_| format!("path is not absolute or cannot be represented as file:// URI: {}", path.display()))?;
+    Ok(url.to_string())
 }
 
-/// Convert a file:// URI string back to a filesystem path.
 pub fn uri_to_file_path(uri: &str) -> Result<PathBuf, String> {
-    let url = url::Url::parse(uri).map_err(|e| format!("invalid URI: {e}"))?;
-    file_url::url_to_path(&url).ok_or_else(|| format!("not a file:// URI: {uri}"))
+    let url = Url::parse(uri).map_err(|e| format!("invalid URI: {e}"))?;
+    url.to_file_path()
+        .map_err(|_| format!("not a file:// URI or cannot be converted to path: {uri}"))
 }
 
-/// Convert a byte offset to (line, column), both 0-based.
 pub fn offset_to_position(text: &str, offset: usize) -> Result<(usize, usize), String> {
     if offset > text.len() {
-        return Err(format!(
-            "offset {offset} out of bounds (len {})",
-            text.len()
-        ));
+        return Err(format!("offset {offset} out of bounds (len {})", text.len()));
     }
     let mut line = 0;
     let mut col = 0;
