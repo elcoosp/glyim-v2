@@ -80,3 +80,6 @@ impl<'a> Expander<'a> {
         (root.clone(), Vec::new())
     }
 }
+
+#[cfg(test)]
+mod tests;
