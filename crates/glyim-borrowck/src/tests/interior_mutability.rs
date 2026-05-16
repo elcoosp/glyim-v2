@@ -4,23 +4,23 @@
 //! allow writes through the shared reference, whereas non-interior-mutable types
 //! reject such writes.
 
-use glyim_test::with_fresh_ty_ctx;
-use glyim_core::arena::IndexVec;
+use crate::check_borrows;
 use glyim_core::AdtId;
+use glyim_core::arena::IndexVec;
 use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    StatementKind, TerminatorKind, BorrowKind, Statement, SourceInfo,
+    BasicBlockData, Body, BorrowKind, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place,
+    Rvalue, SourceInfo, Statement, StatementKind, TerminatorKind,
 };
 use glyim_span::Span;
+use glyim_test::with_fresh_ty_ctx;
 use glyim_type::{Ty, TyKind};
-use crate::check_borrows;
 
 // ---------------------------------------------------------------------------
 // Simple mock context implementing crate::BorrowckCtx
 // ---------------------------------------------------------------------------
 
-use glyim_type::TyCtx;
 use glyim_mir::LocalDecl as MirLocalDecl;
+use glyim_type::TyCtx;
 
 struct TestCtx<'a> {
     ty_ctx: &'a TyCtx,
@@ -49,7 +49,10 @@ impl<'a> crate::BorrowckCtx for TestCtx<'a> {
 
 fn dummy_body() -> Body {
     Body {
-        owner: glyim_core::DefId::new(glyim_core::CrateId::from_raw(0), glyim_core::LocalDefId::from_raw(0)),
+        owner: glyim_core::DefId::new(
+            glyim_core::CrateId::from_raw(0),
+            glyim_core::LocalDefId::from_raw(0),
+        ),
         basic_blocks: IndexVec::new(),
         locals: IndexVec::new(),
         arg_count: 0,
@@ -98,10 +101,7 @@ fn build_interior_mut_body(interior_mutable: bool) -> (TyCtx, Body) {
         Statement {
             kind: StatementKind::Assign(
                 Place::new(LocalIdx::from_raw(1)),
-                Rvalue::Ref(
-                    Place::new(LocalIdx::from_raw(0)),
-                    BorrowKind::Shared,
-                ),
+                Rvalue::Ref(Place::new(LocalIdx::from_raw(0)), BorrowKind::Shared),
             ),
             source_info: SourceInfo::new(Span::DUMMY),
         },
@@ -172,7 +172,6 @@ fn interior_mutable_allows_write_through_shared() {
     );
 }
 
-
 #[test]
 fn interior_mutability_flag_is_set() {
     // Verify that marking an ADT as interior mutable sets HAS_INTERIOR_MUTABILITY on the type.
@@ -183,9 +182,11 @@ fn interior_mutability_flag_is_set() {
         ctx_mut.mk_ty(TyKind::Adt(adt_id, substs))
     });
     let flags = ctx.ty_flags(adt_ty);
-    assert!(flags.contains(glyim_type::TypeFlags::HAS_INTERIOR_MUTABILITY), "Expected HAS_INTERIOR_MUTABILITY flag");
+    assert!(
+        flags.contains(glyim_type::TypeFlags::HAS_INTERIOR_MUTABILITY),
+        "Expected HAS_INTERIOR_MUTABILITY flag"
+    );
 }
-
 
 #[test]
 fn interior_mutable_mut_borrow_still_conflicts() {
@@ -206,7 +207,10 @@ fn non_interior_mutable_write_through_shared_errors() {
     let (ctx, body) = build_interior_mut_body(false);
     let test_ctx = TestCtx::new(&ctx, &body.locals);
     let result = check_borrows(&test_ctx, &body);
-    assert!(!result.errors.is_empty(), "Expected error for write through shared borrow");
+    assert!(
+        !result.errors.is_empty(),
+        "Expected error for write through shared borrow"
+    );
 }
 
 #[test]

@@ -1,21 +1,21 @@
 //! Tests for drop checking: use after drop, drop order, conditional drop flags.
 
-use glyim_test::with_fresh_ty_ctx;
+use crate::check_borrows;
 use glyim_core::arena::IndexVec;
 use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, LocalIdx, Operand, Place, Rvalue,
-    StatementKind, TerminatorKind, Statement, SourceInfo,
+    BasicBlockData, Body, LocalDecl, LocalIdx, Operand, Place, Rvalue, SourceInfo, Statement,
+    StatementKind, TerminatorKind,
 };
 use glyim_span::Span;
+use glyim_test::with_fresh_ty_ctx;
 use glyim_type::Ty;
-use crate::check_borrows;
 
 // ---------------------------------------------------------------------------
 // Simple mock context implementing crate::BorrowckCtx
 // ---------------------------------------------------------------------------
 
-use glyim_type::TyCtx;
 use glyim_mir::LocalDecl as MirLocalDecl;
+use glyim_type::TyCtx;
 
 struct TestCtx<'a> {
     ty_ctx: &'a TyCtx,
@@ -44,7 +44,10 @@ impl<'a> crate::BorrowckCtx for TestCtx<'a> {
 
 fn dummy_body() -> Body {
     Body {
-        owner: glyim_core::DefId::new(glyim_core::CrateId::from_raw(0), glyim_core::LocalDefId::from_raw(0)),
+        owner: glyim_core::DefId::new(
+            glyim_core::CrateId::from_raw(0),
+            glyim_core::LocalDefId::from_raw(0),
+        ),
         basic_blocks: IndexVec::new(),
         locals: IndexVec::new(),
         arg_count: 0,
@@ -121,18 +124,18 @@ fn drop_order_mixed_fields() {
     // V11-T03: Dropping a struct with mixed fields should not cause false errors.
     // The test simply drops a local (representing a struct) and does not use it afterwards.
     let (ctx, _) = with_fresh_ty_ctx(|_ctx_mut| {});
-    let stmts = vec![
-        glyim_mir::Statement {
-            kind: StatementKind::StorageDead(LocalIdx::from_raw(0)),
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-    ];
+    let stmts = vec![glyim_mir::Statement {
+        kind: StatementKind::StorageDead(LocalIdx::from_raw(0)),
+        source_info: SourceInfo::new(Span::DUMMY),
+    }];
     let body = body_with_statements(stmts);
     let test_ctx = TestCtx::new(&ctx, &body.locals);
     let result = check_borrows(&test_ctx, &body);
-    assert!(result.errors.is_empty(), "dropping a local with no subsequent use should be ok");
+    assert!(
+        result.errors.is_empty(),
+        "dropping a local with no subsequent use should be ok"
+    );
 }
-
 
 #[test]
 fn use_after_drop_field_error() {
@@ -148,7 +151,9 @@ fn use_after_drop_field_error() {
                 Place::new(LocalIdx::from_raw(1)),
                 Rvalue::Use(Operand::Move(Place {
                     local: LocalIdx::from_raw(0),
-                    projection: Box::new([glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(0))]),
+                    projection: Box::new([glyim_mir::ProjectionElem::Field(
+                        glyim_type::FieldIdx::from_raw(0),
+                    )]),
                 })),
             ),
             source_info: SourceInfo::new(Span::DUMMY),
@@ -157,7 +162,10 @@ fn use_after_drop_field_error() {
     let body = body_with_statements(stmts);
     let test_ctx = TestCtx::new(&ctx, &body.locals);
     let result = check_borrows(&test_ctx, &body);
-    assert!(!result.errors.is_empty(), "Expected error for use of dropped struct field");
+    assert!(
+        !result.errors.is_empty(),
+        "Expected error for use of dropped struct field"
+    );
 }
 
 #[test]
@@ -185,8 +193,15 @@ fn use_before_drop_no_error() {
     // Actually, moving local 0 will be caught by move analysis as use-after-move if it was moved before.
     // Since local 0 is never initialized, it's not moved; just used. That's fine.
     // No drop check error expected because use comes before StorageDead.
-    let drop_errors: Vec<_> = result.errors.iter().filter(|e| e.message.contains("use of moved")).collect();
-    assert!(drop_errors.is_empty(), "No use-after-drop errors when use precedes drop");
+    let drop_errors: Vec<_> = result
+        .errors
+        .iter()
+        .filter(|e| e.message.contains("use of moved"))
+        .collect();
+    assert!(
+        drop_errors.is_empty(),
+        "No use-after-drop errors when use precedes drop"
+    );
 }
 
 #[test]
@@ -203,7 +218,9 @@ fn drop_then_use_copy_field_error() {
                 Place::new(LocalIdx::from_raw(1)),
                 Rvalue::Use(Operand::Copy(Place {
                     local: LocalIdx::from_raw(0),
-                    projection: Box::new([glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(0))]),
+                    projection: Box::new([glyim_mir::ProjectionElem::Field(
+                        glyim_type::FieldIdx::from_raw(0),
+                    )]),
                 })),
             ),
             source_info: SourceInfo::new(Span::DUMMY),
@@ -212,7 +229,10 @@ fn drop_then_use_copy_field_error() {
     let body = body_with_statements(stmts);
     let test_ctx = TestCtx::new(&ctx, &body.locals);
     let result = check_borrows(&test_ctx, &body);
-    assert!(!result.errors.is_empty(), "Expected error for Copy of dropped struct field");
+    assert!(
+        !result.errors.is_empty(),
+        "Expected error for Copy of dropped struct field"
+    );
 }
 
 #[test]
@@ -239,7 +259,10 @@ fn conditional_drop_one_branch_only() {
     body.locals[LocalIdx::from_raw(0)].ty = Ty::BOOL; // Copy type
     let test_ctx = TestCtx::new(&ctx, &body.locals);
     let result = check_borrows(&test_ctx, &body);
-    assert!(result.errors.is_empty(), "No errors expected for Copy type move then drop");
+    assert!(
+        result.errors.is_empty(),
+        "No errors expected for Copy type move then drop"
+    );
 }
 
 #[test]

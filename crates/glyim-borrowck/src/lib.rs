@@ -695,7 +695,6 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
         }
     }
 
-
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         let block_usize = block_idx.to_raw() as usize;
         let live_out = &liveness.live_out[block_usize];
