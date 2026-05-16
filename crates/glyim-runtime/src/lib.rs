@@ -140,7 +140,7 @@ mod tests {
             assert!(!ptr.is_null(), "alloc with align {} failed", align);
             let addr = ptr as usize;
             assert_eq!(
-                addr % align as usize,
+                addr % align,
                 0,
                 "allocated memory must be aligned to {}",
                 align
@@ -225,6 +225,71 @@ mod tests {
             glyim_drop_in_place(ptr);
             unsafe {
                 glyim_dealloc(ptr, 16, 8);
+            }
+        }
+    }
+
+    #[test]
+    fn test_drop_in_place_multiple_calls() {
+        // Call drop_in_place multiple times on different allocations
+        for _ in 0..50 {
+            let ptr = glyim_alloc(32, 8);
+            assert!(!ptr.is_null());
+            unsafe {
+                std::ptr::write_bytes(ptr, 0xFF, 32);
+            }
+            glyim_drop_in_place(ptr);
+            unsafe {
+                glyim_dealloc(ptr, 32, 8);
+            }
+        }
+    }
+
+    #[test]
+    fn test_alloc_dealloc_varying_sizes() {
+        // Test allocation and deallocation with various sizes
+        for size in [
+            1, 2, 4, 7, 8, 13, 16, 31, 32, 63, 64, 127, 128, 255, 256, 512, 1024, 4096,
+        ] {
+            let ptr = glyim_alloc(size, 8);
+            assert!(!ptr.is_null(), "alloc of size {} failed", size);
+            unsafe {
+                std::ptr::write_bytes(ptr, 0x42, size);
+            }
+            glyim_drop_in_place(ptr);
+            unsafe {
+                glyim_dealloc(ptr, size, 8);
+            }
+        }
+    }
+
+    #[test]
+    fn test_alloc_dealloc_interleaved() {
+        // Interleave allocations and deallocations to test heap consistency
+        let mut live = Vec::new();
+        for i in 0..100 {
+            if i % 3 == 0 && !live.is_empty() {
+                // Deallocate the oldest
+                let (ptr, size) = live.remove(0);
+                glyim_drop_in_place(ptr);
+                unsafe {
+                    glyim_dealloc(ptr, size, 8);
+                }
+            } else {
+                let size = 8 + (i % 4) * 8;
+                let ptr = glyim_alloc(size, 8);
+                assert!(!ptr.is_null());
+                unsafe {
+                    std::ptr::write_bytes(ptr, (i % 256) as u8, size);
+                }
+                live.push((ptr, size));
+            }
+        }
+        // Clean up remaining
+        for (ptr, size) in live {
+            glyim_drop_in_place(ptr);
+            unsafe {
+                glyim_dealloc(ptr, size, 8);
             }
         }
     }
