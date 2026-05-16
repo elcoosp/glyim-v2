@@ -1,3 +1,5 @@
+mod switch_edge_cases;
+mod switch_int;
 mod abi_classify;
 mod call_c_abi;
 mod call_cleanup;

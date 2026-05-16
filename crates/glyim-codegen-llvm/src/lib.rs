@@ -6,7 +6,7 @@ use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_layout::{LayoutComputer, PassMode};
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
 };
 use glyim_type::TyCtx;
 use glyim_type::{Ty, TyKind};
@@ -747,6 +747,287 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         Ok(())
     }
 
+    fn lower_bool_switch(
+        &mut self,
+        discr_val: IntValue<'ctx>,
+        targets: &SwitchTargets,
+    ) -> CompResult<()> {
+        let branches: Vec<_> = targets.iter().collect();
+        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+
+        if branches.is_empty() {
+            self.builder
+                .build_unconditional_branch(*otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build unconditional branch for empty bool switch: {:?}",
+                        e
+                    ))]
+                })?;
+            return Ok(());
+        }
+
+        let true_val = discr_val.get_type().const_int(1, false);
+        let cond = self
+            .builder
+            .build_int_compare(inkwell::IntPredicate::EQ, discr_val, true_val, "bool_eq")
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for bool switch: {:?}",
+                    e
+                ))]
+            })?;
+
+        let true_bb = branches
+            .iter()
+            .find(|(v, _)| *v == 1)
+            .map(|(_, bb)| *self.bb_map.get(bb).unwrap())
+            .unwrap_or(*otherwise_bb);
+
+        let false_bb = branches
+            .iter()
+            .find(|(v, _)| *v == 0)
+            .map(|(_, bb)| *self.bb_map.get(bb).unwrap())
+            .unwrap_or(*otherwise_bb);
+
+        self.builder
+            .build_conditional_branch(cond, true_bb, false_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for bool switch: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
+    fn lower_small_switch(
+        &mut self,
+        discr_val: IntValue<'ctx>,
+        targets: &SwitchTargets,
+    ) -> CompResult<()> {
+        let branches: Vec<_> = targets.iter().collect();
+        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+
+        if branches.is_empty() {
+            self.builder
+                .build_unconditional_branch(*otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build unconditional branch for empty switch: {:?}",
+                        e
+                    ))]
+                })?;
+            return Ok(());
+        }
+
+        if branches.len() == 1 {
+            let (value, target_bb) = branches[0];
+            let target_block = self.bb_map.get(&target_bb).unwrap();
+            let case_val = discr_val.get_type().const_int(value as u64, false);
+            let cond = self
+                .builder
+                .build_int_compare(inkwell::IntPredicate::EQ, discr_val, case_val, "switch_eq")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build icmp for small switch: {:?}",
+                        e
+                    ))]
+                })?;
+            self.builder
+                .build_conditional_branch(cond, *target_block, *otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build conditional branch for small switch: {:?}",
+                        e
+                    ))]
+                })?;
+            return Ok(());
+        }
+
+        if branches.len() == 2 {
+            let first_case_val = discr_val.get_type().const_int(branches[0].0 as u64, false);
+            let first_cond = self
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    discr_val,
+                    first_case_val,
+                    "switch_eq_0",
+                )
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build icmp for small switch case 0: {:?}",
+                        e
+                    ))]
+                })?;
+
+            let first_target = *self.bb_map.get(&branches[0].1).unwrap();
+            let second_target = *self.bb_map.get(&branches[1].1).unwrap();
+
+            let second_case_val = discr_val.get_type().const_int(branches[1].0 as u64, false);
+            let second_cond = self
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    discr_val,
+                    second_case_val,
+                    "switch_eq_1",
+                )
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build icmp for small switch case 1: {:?}",
+                        e
+                    ))]
+                })?;
+
+            let merge_bb = self
+                .context
+                .append_basic_block(self._function, "small_switch_merge");
+
+            self.builder
+                .build_conditional_branch(first_cond, first_target, merge_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build conditional branch for small switch case 0: {:?}",
+                        e
+                    ))]
+                })?;
+
+            self.builder.position_at_end(merge_bb);
+            self.builder
+                .build_conditional_branch(second_cond, second_target, *otherwise_bb)
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build conditional branch for small switch case 1: {:?}",
+                        e
+                    ))]
+                })?;
+
+            return Ok(());
+        }
+
+        let first_case_val = discr_val.get_type().const_int(branches[0].0 as u64, false);
+        let first_cond = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                discr_val,
+                first_case_val,
+                "switch_eq_0",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for small switch case 0: {:?}",
+                    e
+                ))]
+            })?;
+
+        let first_target = *self.bb_map.get(&branches[0].1).unwrap();
+
+        let merge_bb = self
+            .context
+            .append_basic_block(self._function, "small_switch_merge");
+
+        self.builder
+            .build_conditional_branch(first_cond, first_target, merge_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for small switch case 0: {:?}",
+                    e
+                ))]
+            })?;
+
+        self.builder.position_at_end(merge_bb);
+
+        let second_case_val = discr_val.get_type().const_int(branches[1].0 as u64, false);
+        let second_cond = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                discr_val,
+                second_case_val,
+                "switch_eq_1",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for small switch case 1: {:?}",
+                    e
+                ))]
+            })?;
+
+        let second_target = *self.bb_map.get(&branches[1].1).unwrap();
+        let second_merge_bb = self
+            .context
+            .append_basic_block(self._function, "small_switch_merge2");
+
+        self.builder
+            .build_conditional_branch(second_cond, second_target, second_merge_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for small switch case 1: {:?}",
+                    e
+                ))]
+            })?;
+
+        self.builder.position_at_end(second_merge_bb);
+
+        let third_case_val = discr_val.get_type().const_int(branches[2].0 as u64, false);
+        let third_cond = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                discr_val,
+                third_case_val,
+                "switch_eq_2",
+            )
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build icmp for small switch case 2: {:?}",
+                    e
+                ))]
+            })?;
+
+        let third_target_block = *self.bb_map.get(&branches[2].1).unwrap();
+        self.builder
+            .build_conditional_branch(third_cond, third_target_block, *otherwise_bb)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build conditional branch for small switch case 2: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
+    fn lower_large_switch(
+        &mut self,
+        discr_val: IntValue<'ctx>,
+        targets: &SwitchTargets,
+    ) -> CompResult<()> {
+        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+
+        let mut cases = Vec::new();
+        for (value, target_bb) in targets.iter() {
+            let target_block = self.bb_map.get(&target_bb).unwrap();
+            let case_val = discr_val.get_type().const_int(value as u64, false);
+            cases.push((case_val, *target_block));
+        }
+
+        self.builder
+            .build_switch(discr_val, *otherwise_bb, &cases)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to build switch: {:?}",
+                    e
+                ))]
+            })?;
+
+        Ok(())
+    }
+
     fn lower_terminator(&mut self, terminator: &Terminator) -> CompResult<()> {
         match &terminator.kind {
             TerminatorKind::Goto { target } => {
@@ -778,27 +1059,21 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
             TerminatorKind::SwitchInt {
                 discr,
-                switch_ty: _,
+                switch_ty,
                 targets,
             } => {
-                let discr_val = self.lower_operand(discr).into_int_value();
-                let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
+                let discr_val = self.lower_operand(discr);
+                let branch_count = targets.iter().count();
 
-                let mut cases = Vec::new();
-                for (value, target_bb) in targets.iter() {
-                    let target_block = self.bb_map.get(&target_bb).unwrap();
-                    let case_val = discr_val.get_type().const_int(value as u64, false);
-                    cases.push((case_val, *target_block));
+                let is_bool_switch = matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool);
+
+                if is_bool_switch && branch_count <= 2 {
+                    self.lower_bool_switch(discr_val.into_int_value(), targets)?;
+                } else if branch_count <= 2 {
+                    self.lower_small_switch(discr_val.into_int_value(), targets)?;
+                } else {
+                    self.lower_large_switch(discr_val.into_int_value(), targets)?;
                 }
-
-                self.builder
-                    .build_switch(discr_val, *otherwise_bb, &cases)
-                    .map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "Failed to build switch: {:?}",
-                            e
-                        ))]
-                    })?;
             }
             TerminatorKind::Call {
                 func,
