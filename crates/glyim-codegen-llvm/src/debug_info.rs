@@ -181,14 +181,23 @@ impl<'ctx> DebugInfoCtx<'ctx> {
     }
 
     fn get_file(&self, file_id: FileId) -> DIFile<'ctx> {
-        *self
-            .files
-            .get(&file_id)
-            .unwrap_or_else(|| self.files.values().next().unwrap())
+        self.files.get(&file_id).copied().unwrap_or_else(|| {
+            // Return any available file, or create a dummy file if map is empty.
+            // In practice, files is always populated when enabled, but we guard for safety.
+            self.files
+                .values()
+                .next()
+                .copied()
+                .unwrap_or_else(|| self.builder.create_file("unknown.g", "."))
+        })
     }
 
     fn get_file_for_place(&self, _place: &glyim_mir::Place, _ty_ctx: &TyCtx) -> DIFile<'ctx> {
-        *self.files.values().next().unwrap()
+        self.files
+            .values()
+            .next()
+            .copied()
+            .unwrap_or_else(|| self.builder.create_file("unknown.g", "."))
     }
 
     fn span_for_place(&self, _place: &glyim_mir::Place, _ty_ctx: &TyCtx) -> Option<Span> {
