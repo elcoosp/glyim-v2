@@ -696,12 +696,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 }
             }
             glyim_mir::CastKind::FloatToInt => {
-                tracing::warn!("STUB: FloatToInt cast");
-                val
+                let float_val = val.into_float_value();
+                let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
+                self.builder
+                    .build_float_to_signed_int(float_val, dest_type, "float_to_int")
+                    .expect("float_to_int failed")
+                    .into()
             }
             glyim_mir::CastKind::IntToFloat => {
-                tracing::warn!("STUB: IntToFloat cast");
-                val
+                let int_val = val.into_int_value();
+                let dest_type = self.llvm_type_for_ty(target_ty).into_float_type();
+                self.builder
+                    .build_signed_int_to_float(int_val, dest_type, "int_to_float")
+                    .expect("int_to_float failed")
+                    .into()
             }
             glyim_mir::CastKind::PtrToPtr => val,
             glyim_mir::CastKind::FnPtrToPtr => val,
