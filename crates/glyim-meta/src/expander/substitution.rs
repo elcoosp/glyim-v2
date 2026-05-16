@@ -25,10 +25,8 @@ pub(crate) fn substitute(
                             result.push(TokenTree::DollarCrate);
                         } else if let Some(captured) = bindings.get(name) {
                             result.extend(captured.clone());
-                        } else {
-                            result.push(TokenTree::Token(SyntaxKind::Dollar, SmolStr::from("$")));
-                            result.push(TokenTree::Token(SyntaxKind::Ident, name.clone()));
                         }
+                        // If not in bindings, skip the variable (no output)
                         i += 1;
                     }
                     TokenTree::Group(SyntaxKind::LParen, inner, SyntaxKind::RParen) => {
@@ -56,12 +54,13 @@ pub(crate) fn substitute(
                         };
                         i += 1;
 
-                        let var_name = find_first_metavar(inner);
-                        let repetitions: usize = if let Some(ref name) = var_name {
-                            bindings.get(name).map(|v: &Vec<TokenTree>| v.len()).unwrap_or(0)
-                        } else {
-                            0
-                        };
+                        // Find all metavariable names in the inner pattern
+                        let var_names = find_all_metavars(inner);
+                        // Determine repetition count from the first metavar with bindings
+                        let repetitions: usize = var_names.iter()
+                            .filter_map(|name| bindings.get(name).map(|v| v.len()))
+                            .max()
+                            .unwrap_or(0);
 
                         match rep_kind {
                             RepKind::ZeroOrMore | RepKind::OneOrMore => {
@@ -71,14 +70,14 @@ pub(crate) fn substitute(
                                             result.push(sep.clone());
                                         }
                                     }
-                                    let rep_bindings = extract_repetition_bindings(bindings, inner, rep_idx);
+                                    let rep_bindings = extract_repetition_bindings(bindings, &var_names, rep_idx);
                                     let subbed = substitute(inner, &rep_bindings);
                                     result.extend(subbed);
                                 }
                             }
                             RepKind::ZeroOrOne => {
                                 if repetitions > 0 {
-                                    let rep_bindings = extract_repetition_bindings(bindings, inner, 0);
+                                    let rep_bindings = extract_repetition_bindings(bindings, &var_names, 0);
                                     let subbed = substitute(inner, &rep_bindings);
                                     result.extend(subbed);
                                 }
@@ -113,30 +112,33 @@ enum RepKind {
     ZeroOrOne,
 }
 
-fn find_first_metavar(trees: &[TokenTree]) -> Option<SmolStr> {
+fn find_all_metavars(trees: &[TokenTree]) -> Vec<SmolStr> {
+    let mut names = Vec::new();
     let mut i = 0;
     while i < trees.len() {
         if let TokenTree::Token(SyntaxKind::Dollar, _) = &trees[i] {
             if i + 1 < trees.len() {
                 if let TokenTree::Token(SyntaxKind::Ident, name) = &trees[i + 1] {
-                    return Some(name.clone());
+                    names.push(name.clone());
                 }
             }
         }
         i += 1;
     }
-    None
+    names
 }
 
 fn extract_repetition_bindings(
     bindings: &HashMap<SmolStr, Vec<TokenTree>>,
-    _inner: &[TokenTree],
+    var_names: &[SmolStr],
     index: usize,
 ) -> HashMap<SmolStr, Vec<TokenTree>> {
     let mut result = HashMap::new();
-    for (name, tokens) in bindings {
-        if index < tokens.len() {
-            result.insert(name.clone(), vec![tokens[index].clone()]);
+    for name in var_names {
+        if let Some(tokens) = bindings.get(name) {
+            if index < tokens.len() {
+                result.insert(name.clone(), vec![tokens[index].clone()]);
+            }
         }
     }
     result

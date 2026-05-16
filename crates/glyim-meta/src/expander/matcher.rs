@@ -167,9 +167,9 @@ fn parse_fragment_spec(tree: &TokenTree) -> Option<FragmentSpec> {
 pub(crate) fn match_pattern(pattern: &Pattern, input: &[TokenTree]) -> MatchResult {
     let mut bindings: HashMap<SmolStr, Vec<TokenTree>> = HashMap::new();
     match match_pieces(&pattern.pieces, input, 0, &mut bindings) {
-        Ok((_, Some(consumed))) if consumed == input.len() => MatchResult::FullMatch(bindings),
-        Ok((_, Some(_))) => MatchResult::PartialMatch,
-        _ => MatchResult::NoMatch,
+        Ok((consumed, _)) if consumed == input.len() => MatchResult::FullMatch(bindings),
+        Ok((_, _)) => MatchResult::PartialMatch,
+        Err(()) => MatchResult::NoMatch,
     }
 }
 
@@ -178,7 +178,7 @@ fn match_pieces(
     input: &[TokenTree],
     pos: usize,
     bindings: &mut HashMap<SmolStr, Vec<TokenTree>>,
-) -> Result<(usize, Option<usize>), ()> {
+) -> Result<(usize, usize), ()> {
     let mut i = pos;
     for piece in pieces {
         match piece {
@@ -198,19 +198,25 @@ fn match_pieces(
                 }
             }
             PatternPiece::Metavar { name, fragment: _ } => {
-                if i >= input.len() {
-                    return Err(());
+                // Metavar can match zero tokens (for ? repetition) or one token tree
+                if i < input.len() {
+                    let captured = vec![input[i].clone()];
+                    i += 1;
+                    bindings.entry(name.clone()).or_default().extend(captured);
                 }
-                let captured = vec![input[i].clone()];
-                i += 1;
-                bindings.entry(name.clone()).or_default().extend(captured);
+                // If i >= input.len(), match zero tokens (empty binding)
             }
             PatternPiece::Repetition { inner, separator, kind } => {
-                let mut repetitions = Vec::new();
+                let mut repetitions: Vec<HashMap<SmolStr, Vec<TokenTree>>> = Vec::new();
+                let _start_i = i;
                 loop {
                     let mut rep_bindings: HashMap<SmolStr, Vec<TokenTree>> = HashMap::new();
                     match match_pieces(inner, input, i, &mut rep_bindings) {
-                        Ok((new_i, consumed)) => {
+                        Ok((new_i, _matched_count)) => {
+                            // Require at least one token matched if inner is non-empty
+                            if new_i == i && !inner.is_empty() {
+                                break;
+                            }
                             i = new_i;
                             repetitions.push(rep_bindings);
                             // Check for separator
@@ -258,5 +264,40 @@ fn match_pieces(
             }
         }
     }
-    Ok((i, Some(i)))
+    Ok((i, i - pos))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_syntax::SyntaxKind;
+
+    fn tok(kind: SyntaxKind, text: &str) -> TokenTree {
+        TokenTree::Token(kind, SmolStr::from(text))
+    }
+
+    fn ident(name: &str) -> TokenTree {
+        TokenTree::Token(SyntaxKind::Ident, SmolStr::from(name))
+    }
+
+    #[test]
+    fn test_metavar_matches_one_token() {
+        let pattern = Pattern::new(vec![
+            PatternPiece::Metavar { name: SmolStr::from("x"), fragment: FragmentSpec::Expr },
+        ]);
+        let input = vec![tok(SyntaxKind::IntLit, "42")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_metavar_matches_zero_tokens() {
+        let pattern = Pattern::new(vec![
+            PatternPiece::Metavar { name: SmolStr::from("x"), fragment: FragmentSpec::Expr },
+        ]);
+        let input = vec![];
+        let result = match_pattern(&pattern, &input);
+        // Empty input should match if metavar can be empty
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
 }
