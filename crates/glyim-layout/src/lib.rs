@@ -197,7 +197,24 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
             TyKind::Never => Layout::scalar(Size::ZERO, Align::ONE),
             TyKind::Unit => Layout::unit(),
             TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => Layout::scalar(ptr_size, ptr_align),
-            TyKind::Slice(_) | TyKind::Dynamic(_, _) => return Err(LayoutError::Unsized(ty)),
+            TyKind::Dynamic(_binder, _region) => {
+                let raw_size = self.target.pointer_size();
+                Layout {
+                    size: Size::bytes(raw_size * 2),
+                    align: Align::from_bytes(self.target.pointer_align()),
+                    fields: FieldsShape::Arbitrary {
+                        offsets: {
+                            let mut off = IndexVec::new();
+                            off.push(Size::ZERO);
+                            off.push(Size::bytes(raw_size));
+                            off
+                        },
+                    },
+                    variants: VariantsShape::Single { index: 0 },
+                    is_unsized: false,
+                }
+            }
+            TyKind::Slice(_) => return Err(LayoutError::Unsized(ty)),
             TyKind::Error => return Err(LayoutError::UnknownType(ty)),
             _ => return Err(LayoutError::UnknownType(ty)),
         };

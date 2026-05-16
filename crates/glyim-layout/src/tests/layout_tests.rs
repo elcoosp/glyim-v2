@@ -78,19 +78,36 @@ fn s04_t12_layout_slice_is_unsized() {
 
 #[test]
 fn s04_t13_layout_dyn_is_unsized() {
-    let (ctx, ty) = with_fresh_ty_ctx(|c| {
-        c.mk_ty(TyKind::Dynamic(
-            glyim_type::Binder {
-                bound_vars: vec![].into(),
-                value: Box::new([]),
-            },
-            Region::Erased,
-        ))
+    use glyim_type::*;
+    use glyim_core::TraitDefId;
+    // Create a dyn Trait type
+    let (ctx, dyn_ty) = glyim_test::with_fresh_ty_ctx(|ctx| {
+        let empty_subst = ctx.intern_substitution(vec![]);
+        let trait_ref = TraitRef {
+            def_id: TraitDefId::from_raw(0),
+            substs: empty_subst,
+        };
+        let predicate = Predicate::Trait(TraitPredicate {
+            trait_ref,
+            polarity: ImplPolarity::Positive,
+        });
+        let box_predicates: Box<[Predicate]> = Box::new([predicate]);
+        let bound_vars: Box<[BoundVariableKind]> = vec![].into();
+        let binder = Binder::bind(box_predicates, bound_vars);
+        let kind = TyKind::Dynamic(binder, Region::Erased);
+        ctx.mk_ty(kind)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let result = computer.layout_of(ty);
-    assert!(matches!(result, Err(LayoutError::Unsized(_))));
+    let result = computer.layout_of(dyn_ty);
+    // Now dyn Trait is laid out as fat pointer (data + vtable), not unsized
+    assert!(result.is_ok(), "Expected fat pointer layout, got {:?}", result);
+    let layout = result.unwrap();
+    let ptr_size = computer.ptr_size();
+    assert_eq!(layout.size, Size::bytes(ptr_size.0 * 2));
+    assert_eq!(layout.align, computer.ptr_align());
+    assert!(!layout.is_unsized);
 }
+
 
 #[test]
 fn s04_t14_fn_abi_of_basic_signature() {
