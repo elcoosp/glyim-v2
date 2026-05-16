@@ -182,6 +182,7 @@ struct LoweringCtx<'ctx, 'a> {
     ty_ctx: &'a TyCtx,
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
+    personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
 }
 
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
@@ -378,6 +379,25 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
     fn place_ty(&self, place: &Place) -> Ty {
         self.body.locals[place.local].ty
+    }
+
+    fn emit_landingpad(&self) -> CompResult<()> {
+        if let Some(personality_fn) = self.personality_fn {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i32_type = self.context.i32_type();
+            let result_type = self.context.struct_type(&[ptr_type.into(), i32_type.into()], false);
+
+            let pad = self
+                .builder
+                .build_landing_pad(result_type, personality_fn, &[], true, "pad")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "landingpad: {:?}",
+                        e
+                    ))]
+                })?;
+        }
+        Ok(())
     }
 
     fn lower_rvalue(&self, rvalue: &Rvalue) -> BasicValueEnum<'ctx> {
@@ -948,22 +968,63 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let metadata_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
             llvm_args.iter().map(|v| (*v).into()).collect();
 
-        let call = self
-            .builder
-            .build_indirect_call(fn_type, func_val, &metadata_args, "call")
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "build_indirect_call: {:?}",
-                    e
-                ))]
-            })?;
+        let use_invoke = cleanup.is_some();
+
+        let call_result = if use_invoke {
+            let normal_bb = if let Some(target_bb) = target {
+                *self
+                    .bb_map
+                    .get(target_bb)
+                    .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?
+            } else {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "invoke requires a target block",
+                )]);
+            };
+            let cleanup_bb = if let Some(cleanup_bb_idx) = cleanup {
+                *self
+                    .bb_map
+                    .get(cleanup_bb_idx)
+                    .ok_or_else(|| vec![GlyimDiagnostic::internal_error("cleanup block not found")])?
+            } else {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "invoke requires a cleanup block",
+                )]);
+            };
+
+            self.builder
+                .build_indirect_invoke(fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "build_indirect_invoke: {:?}",
+                        e
+                    ))]
+                })?
+        } else {
+            self.builder
+                .build_indirect_call(fn_type, func_val, &metadata_args, "call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "build_indirect_call: {:?}",
+                        e
+                    ))]
+                })?
+        };
 
         if is_sret {
             let sret_attr = self.context.create_enum_attribute(
                 inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
                 0,
             );
-            call.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
+            call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
+        }
+
+        // Position at the normal destination block for return value handling
+        if use_invoke {
+            if let Some(target_bb) = target {
+                let target_block = self.bb_map.get(target_bb).unwrap();
+                self.builder.position_at_end(*target_block);
+            }
         }
 
         if is_sret {
@@ -986,7 +1047,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 ))]
             })?;
         } else if !matches!(fn_abi.ret.mode, PassMode::Ignore) {
-            let ret_val = match call.as_any_value_enum() {
+            let ret_val = match call_result.as_any_value_enum() {
                 AnyValueEnum::IntValue(v) => BasicValueEnum::IntValue(v),
                 AnyValueEnum::FloatValue(v) => BasicValueEnum::FloatValue(v),
                 AnyValueEnum::PointerValue(v) => BasicValueEnum::PointerValue(v),
@@ -1009,38 +1070,29 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             })?;
         }
 
-        if let Some(target_bb) = target {
-            let target_block = self
-                .bb_map
-                .get(target_bb)
-                .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?;
-            self.builder
-                .build_unconditional_branch(*target_block)
-                .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))])?;
-        } else if let Some(cleanup_bb) = cleanup {
-            let cleanup_block = self
-                .bb_map
-                .get(cleanup_bb)
-                .ok_or_else(|| vec![GlyimDiagnostic::internal_error("cleanup block not found")])?;
-            self.builder
-                .build_unconditional_branch(*cleanup_block)
-                .map_err(|e| {
+        // For non-invoke calls, branch to target
+        if !use_invoke {
+            if let Some(target_bb) = target {
+                let target_block = self
+                    .bb_map
+                    .get(target_bb)
+                    .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?;
+                self.builder
+                    .build_unconditional_branch(*target_block)
+                    .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))])?;
+            } else {
+                self.builder.build_unreachable().map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "branch cleanup: {:?}",
+                        "unreachable: {:?}",
                         e
                     ))]
                 })?;
-        } else {
-            self.builder.build_unreachable().map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "unreachable: {:?}",
-                    e
-                ))]
-            })?;
+            }
         }
 
         Ok(())
     }
+
 }
 
 impl LlvmBackend {
@@ -1083,6 +1135,17 @@ impl LlvmBackend {
         }
 
         let ty_ctx = self.ty_ctx.as_ref().unwrap();
+
+        let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
+        let personality_fn = if has_cleanup {
+            let personality_fn_type = context.void_type().fn_type(&[], false);
+            let personality_fn = module.add_function("__glyim_personality", personality_fn_type, None);
+            function.set_personality_function(personality_fn);
+            Some(personality_fn)
+        } else {
+            None
+        };
+
         let mut lowering_ctx = LoweringCtx {
             context,
             builder,
@@ -1092,6 +1155,7 @@ impl LlvmBackend {
             ty_ctx,
             locals,
             bb_map,
+            personality_fn,
         };
 
         for (local_idx, _local_decl) in body.locals.iter_enumerated() {
@@ -1101,6 +1165,10 @@ impl LlvmBackend {
         for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
             let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
             lowering_ctx.builder.position_at_end(*llvm_bb);
+
+            if bb_data.is_cleanup {
+                lowering_ctx.emit_landingpad()?;
+            }
 
             for stmt in &bb_data.statements {
                 lowering_ctx.lower_statement(stmt)?;

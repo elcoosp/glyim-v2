@@ -1,19 +1,19 @@
 //! V14-T03: Pass struct arguments by value according to ABI
 
 use glyim_core::arena::IndexVec;
-use glyim_core::primitives::*;
-use glyim_core::Interner;
+use glyim_core::{Abi, CrateId, DefId, Interner, LocalDefId, Mutability, Safety};
 use glyim_mir::*;
-use glyim_type::{Abi, FnSig, Mutability, Region, Safety, Substitution, Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{FnSig, GenericArg, TyCtxMut, TyKind};
 
 use crate::LlvmBackend;
 
 fn make_struct_call_body(ctx: &mut TyCtxMut) -> Body {
     let i32_ty = ctx.mk_ty(TyKind::Int(glyim_core::IntTy::I32));
-    let tuple_ty = ctx.mk_tuple(vec![i32_ty, i32_ty]);
+    let tuple_subst = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(i32_ty)]);
+    let tuple_ty = ctx.mk_tuple(tuple_subst);
 
     let fn_sig = FnSig {
-        inputs: ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(tuple_ty)]),
+        inputs: ctx.intern_substitution(vec![GenericArg::Ty(tuple_ty)]),
         output: i32_ty,
         c_variadic: false,
         unsafety: Safety::Safe,

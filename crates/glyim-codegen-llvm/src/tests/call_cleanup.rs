@@ -1,10 +1,9 @@
 //! V14-T05: Call with cleanup (landingpad stub)
 
 use glyim_core::arena::IndexVec;
-use glyim_core::primitives::*;
-use glyim_core::Interner;
+use glyim_core::{Abi, CrateId, DefId, Interner, LocalDefId, Mutability, Safety};
 use glyim_mir::*;
-use glyim_type::{Abi, FnSig, Mutability, Region, Safety, Substitution, Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{FnSig, TyCtxMut, TyKind};
 
 use crate::LlvmBackend;
 

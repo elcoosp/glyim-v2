@@ -1,11 +1,10 @@
 //! V14-T04: Return struct via sret when ABI requires
 
 use glyim_core::arena::IndexVec;
-use glyim_core::primitives::*;
-use glyim_core::Interner;
-use glyim_layout::{LayoutComputer, SimpleLayoutComputer};
+use glyim_core::{Abi, CrateId, DefId, Interner, LocalDefId, Mutability, Safety};
+use glyim_layout::LayoutComputer;
 use glyim_mir::*;
-use glyim_type::{Abi, FnSig, Mutability, Region, Safety, Substitution, Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{FnSig, GenericArg, TyCtxMut, TyKind};
 
 use crate::LlvmBackend;
 
@@ -13,9 +12,17 @@ use crate::LlvmBackend;
 /// which should trigger sret passing convention.
 fn make_sret_call_body(ctx: &mut TyCtxMut) -> Body {
     let i64_ty = ctx.mk_ty(TyKind::Int(glyim_core::IntTy::I64));
-    let large_tuple = ctx.mk_tuple(vec![i64_ty, i64_ty, i64_ty, i64_ty, i64_ty]);
+    let large_tuple_subst = ctx.intern_substitution(vec![
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+    ]);
+    let large_tuple = ctx.mk_tuple(large_tuple_subst);
+    let empty_inputs = ctx.intern_substitution(vec![]);
     let fn_ptr_ty = ctx.mk_ty(TyKind::FnPtr(FnSig {
-        inputs: ctx.intern_substitution(vec![]),
+        inputs: empty_inputs,
         output: large_tuple,
         c_variadic: false,
         unsafety: Safety::Safe,
@@ -76,7 +83,14 @@ fn make_sret_call_body(ctx: &mut TyCtxMut) -> Body {
 fn sret_return_triggers_indirect_pass_mode() {
     let mut ctx_mut = TyCtxMut::new(Interner::default());
     let i64_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::IntTy::I64));
-    let large_tuple = ctx_mut.mk_tuple(vec![i64_ty, i64_ty, i64_ty, i64_ty, i64_ty]);
+    let large_tuple_subst = ctx_mut.intern_substitution(vec![
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+        GenericArg::Ty(i64_ty),
+    ]);
+    let large_tuple = ctx_mut.mk_tuple(large_tuple_subst);
     let fn_sig = FnSig {
         inputs: ctx_mut.intern_substitution(vec![]),
         output: large_tuple,
@@ -85,7 +99,8 @@ fn sret_return_triggers_indirect_pass_mode() {
         abi: Abi::Glyim,
     };
     let target_info = glyim_core::TargetInfo::default();
-    let layout_computer = crate::abi::FullLayoutComputer::new(&ctx_mut, target_info.clone());
+    let ctx = ctx_mut.freeze();
+    let layout_computer = crate::abi::FullLayoutComputer::new(&ctx, target_info.clone());
     let fn_abi = layout_computer.fn_abi_of(&fn_sig);
     assert!(fn_abi.is_ok(), "fn_abi_of failed: {:?}", fn_abi.err());
     let abi = fn_abi.unwrap();
