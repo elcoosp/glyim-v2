@@ -5,7 +5,7 @@ use glyim_type::{Ty, TyCtxMut, TyKind};
 
 #[test]
 fn test_not_bool() {
-    let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+    let ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let frozen = ctx_mut.freeze();
     let op = const_operand_bool(true);
     let rv = Rvalue::UnaryOp(UnOp::Not, op);
@@ -19,7 +19,7 @@ fn test_not_bool() {
 
 #[test]
 fn test_not_bool_false() {
-    let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+    let ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let frozen = ctx_mut.freeze();
     let op = const_operand_bool(false);
     let rv = Rvalue::UnaryOp(UnOp::Not, op);
@@ -33,7 +33,7 @@ fn test_not_bool_false() {
 
 #[test]
 fn test_neg_i32() {
-    let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+    let ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let frozen = ctx_mut.freeze();
     let op = const_operand_i32(42, i32_ty);
