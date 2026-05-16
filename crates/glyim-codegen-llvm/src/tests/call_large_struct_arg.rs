@@ -1,7 +1,7 @@
 //! Pass a large struct argument that should be passed indirectly
 
 use glyim_core::arena::IndexVec;
-use glyim_core::{Abi, CrateId, DefId, Interner, IntTy, LocalDefId, Mutability, Safety};
+use glyim_core::{Abi, CrateId, DefId, IntTy, Interner, LocalDefId, Mutability, Safety};
 use glyim_layout::LayoutComputer;
 use glyim_mir::*;
 use glyim_type::{FnSig, GenericArg, TyCtxMut, TyKind};
@@ -32,9 +32,21 @@ fn make_large_struct_arg_body(ctx: &mut TyCtxMut) -> Body {
     let arg_count = 2;
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-    locals.push(LocalDecl { ty: return_ty, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: large_tuple, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: fn_ptr_ty, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: return_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: large_tuple,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: fn_ptr_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     let bb0 = BasicBlockData {
         statements: vec![],
@@ -80,7 +92,11 @@ fn call_with_large_struct_arg_compiles() {
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let inkwell_ctx = inkwell::context::Context::create();
     let result = backend.lower_body_to_module(&inkwell_ctx, &body);
-    assert!(result.is_ok(), "large struct arg lowering failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "large struct arg lowering failed: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -105,7 +121,9 @@ fn large_struct_arg_classified_indirect() {
     let target_info = glyim_core::TargetInfo::default();
     let ctx = ctx_mut.freeze();
     let layout_computer = crate::abi::FullLayoutComputer::new(&ctx, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert!(
         matches!(fn_abi.args[0].mode, glyim_layout::PassMode::Indirect { .. }),
         "Large struct argument should be Indirect, got {:?}",

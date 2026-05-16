@@ -120,7 +120,11 @@ fn sret_call_compiles() {
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let inkwell_ctx = inkwell::context::Context::create();
     let result = backend.lower_body_to_module(&inkwell_ctx, &body);
-    assert!(result.is_ok(), "sret call lowering failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "sret call lowering failed: {:?}",
+        result.err()
+    );
 
     let module = result.unwrap();
     let ir = module.print_to_string().to_string();

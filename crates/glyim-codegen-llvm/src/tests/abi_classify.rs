@@ -1,6 +1,6 @@
 //! ABI classification tests: verify PassMode decisions for different types
 
-use glyim_core::{Abi, Interner, Safety, TargetInfo, IntTy, UintTy, FloatTy};
+use glyim_core::{Abi, FloatTy, IntTy, Interner, Safety, TargetInfo, UintTy};
 use glyim_layout::LayoutComputer;
 use glyim_type::{FnSig, GenericArg, TyCtxMut, TyKind};
 
@@ -28,7 +28,9 @@ fn scalar_types_pass_direct() {
         };
         let frozen = ctx.freeze();
         let layout_computer = FullLayoutComputer::new(&frozen, target_info.clone());
-        let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+        let fn_abi = layout_computer
+            .fn_abi_of(&fn_sig)
+            .expect("fn_abi_of should succeed");
         assert!(
             matches!(fn_abi.ret.mode, glyim_layout::PassMode::Direct),
             "{:?} should pass directly, got {:?}",
@@ -43,7 +45,8 @@ fn scalar_types_pass_direct() {
 fn small_tuple_pass_direct() {
     let mut ctx = TyCtxMut::new(Interner::default());
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
-    let small_tuple_subst = ctx.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(i32_ty)]);
+    let small_tuple_subst =
+        ctx.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(i32_ty)]);
     let tuple_ty = ctx.mk_ty(TyKind::Tuple(small_tuple_subst));
     let empty_inputs = ctx.intern_substitution(vec![]);
     let fn_sig = FnSig {
@@ -56,7 +59,9 @@ fn small_tuple_pass_direct() {
     let target_info = TargetInfo::default();
     let frozen = ctx.freeze();
     let layout_computer = FullLayoutComputer::new(&frozen, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert!(
         matches!(fn_abi.ret.mode, glyim_layout::PassMode::Direct),
         "Small tuple (8 bytes) should pass directly, got {:?}",
@@ -87,7 +92,9 @@ fn large_tuple_pass_indirect() {
     let target_info = TargetInfo::default();
     let frozen = ctx.freeze();
     let layout_computer = FullLayoutComputer::new(&frozen, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert!(
         matches!(fn_abi.ret.mode, glyim_layout::PassMode::Indirect { .. }),
         "Large tuple (40 bytes) should pass indirectly, got {:?}",
@@ -109,7 +116,9 @@ fn pointer_sized_types_pass_direct() {
     let target_info = TargetInfo::default();
     let frozen = ctx.freeze();
     let layout_computer = FullLayoutComputer::new(&frozen, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert!(
         matches!(fn_abi.args[0].mode, glyim_layout::PassMode::Direct),
         "i64 arg should pass directly, got {:?}",
@@ -132,7 +141,9 @@ fn c_abi_call_convention() {
     let target_info = TargetInfo::default();
     let frozen = ctx.freeze();
     let layout_computer = FullLayoutComputer::new(&frozen, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert_eq!(fn_abi.conv, glyim_layout::CallConvention::C);
 }
 
@@ -151,7 +162,9 @@ fn glyim_abi_call_convention() {
     let target_info = TargetInfo::default();
     let frozen = ctx.freeze();
     let layout_computer = FullLayoutComputer::new(&frozen, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert_eq!(fn_abi.conv, glyim_layout::CallConvention::Glyim);
 }
 
@@ -171,7 +184,9 @@ fn unit_return_ignored() {
     let target_info = TargetInfo::default();
     let frozen = ctx.freeze();
     let layout_computer = FullLayoutComputer::new(&frozen, target_info);
-    let fn_abi = layout_computer.fn_abi_of(&fn_sig).expect("fn_abi_of should succeed");
+    let fn_abi = layout_computer
+        .fn_abi_of(&fn_sig)
+        .expect("fn_abi_of should succeed");
     assert!(
         matches!(fn_abi.ret.mode, glyim_layout::PassMode::Ignore),
         "Unit return should be Ignore, got {:?}",

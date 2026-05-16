@@ -385,7 +385,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         if let Some(personality_fn) = self.personality_fn {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let i32_type = self.context.i32_type();
-            let result_type = self.context.struct_type(&[ptr_type.into(), i32_type.into()], false);
+            let result_type = self
+                .context
+                .struct_type(&[ptr_type.into(), i32_type.into()], false);
 
             let _pad = self
                 .builder
@@ -972,20 +974,18 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
         let call_result = if use_invoke {
             let normal_bb = if let Some(target_bb) = target {
-                *self
-                    .bb_map
-                    .get(target_bb)
-                    .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?
+                *self.bb_map.get(target_bb).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error("target block not found")]
+                })?
             } else {
                 return Err(vec![GlyimDiagnostic::internal_error(
                     "invoke requires a target block",
                 )]);
             };
             let cleanup_bb = if let Some(cleanup_bb_idx) = cleanup {
-                *self
-                    .bb_map
-                    .get(cleanup_bb_idx)
-                    .ok_or_else(|| vec![GlyimDiagnostic::internal_error("cleanup block not found")])?
+                *self.bb_map.get(cleanup_bb_idx).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error("cleanup block not found")]
+                })?
             } else {
                 return Err(vec![GlyimDiagnostic::internal_error(
                     "invoke requires a cleanup block",
@@ -1073,13 +1073,14 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         // For non-invoke calls, branch to target
         if !use_invoke {
             if let Some(target_bb) = target {
-                let target_block = self
-                    .bb_map
-                    .get(target_bb)
-                    .ok_or_else(|| vec![GlyimDiagnostic::internal_error("target block not found")])?;
+                let target_block = self.bb_map.get(target_bb).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error("target block not found")]
+                })?;
                 self.builder
                     .build_unconditional_branch(*target_block)
-                    .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))])?;
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!("branch: {:?}", e))]
+                    })?;
             } else {
                 self.builder.build_unreachable().map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
@@ -1092,7 +1093,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
         Ok(())
     }
-
 }
 
 impl LlvmBackend {
@@ -1139,7 +1139,8 @@ impl LlvmBackend {
         let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
         let personality_fn = if has_cleanup {
             let personality_fn_type = context.void_type().fn_type(&[], false);
-            let personality_fn = module.add_function("__glyim_personality", personality_fn_type, None);
+            let personality_fn =
+                module.add_function("__glyim_personality", personality_fn_type, None);
             function.set_personality_function(personality_fn);
             Some(personality_fn)
         } else {

@@ -94,11 +94,19 @@ fn call_direct_produces_call_instruction() {
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let inkwell_ctx = inkwell::context::Context::create();
     let result = backend.lower_body_to_module(&inkwell_ctx, &body);
-    assert!(result.is_ok(), "lower_body_to_module failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "lower_body_to_module failed: {:?}",
+        result.err()
+    );
 
     let module = result.unwrap();
     let ir = module.print_to_string().to_string();
-    assert!(ir.contains("call"), "LLVM IR must contain 'call' instruction:\n{}", ir);
+    assert!(
+        ir.contains("call"),
+        "LLVM IR must contain 'call' instruction:\n{}",
+        ir
+    );
 }
 
 #[test]
@@ -116,5 +124,8 @@ fn call_direct_has_function_with_body() {
     let func = module.get_first_function();
     assert!(func.is_some(), "Module must contain at least one function");
     let f = func.unwrap();
-    assert!(f.count_basic_blocks() >= 1, "Function must have at least one basic block");
+    assert!(
+        f.count_basic_blocks() >= 1,
+        "Function must have at least one basic block"
+    );
 }

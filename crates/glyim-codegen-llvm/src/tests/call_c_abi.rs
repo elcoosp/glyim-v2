@@ -1,7 +1,7 @@
 //! Call with C ABI convention
 
 use glyim_core::arena::IndexVec;
-use glyim_core::{Abi, CrateId, DefId, Interner, IntTy, LocalDefId, Mutability, Safety};
+use glyim_core::{Abi, CrateId, DefId, IntTy, Interner, LocalDefId, Mutability, Safety};
 use glyim_mir::*;
 use glyim_type::{FnSig, GenericArg, TyCtxMut, TyKind};
 
@@ -23,9 +23,21 @@ fn make_c_abi_call_body(ctx: &mut TyCtxMut) -> Body {
     let arg_count = 2;
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-    locals.push(LocalDecl { ty: return_ty, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: i32_ty, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: fn_ptr_ty, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: return_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: i32_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: fn_ptr_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     let bb0 = BasicBlockData {
         statements: vec![],
@@ -71,7 +83,11 @@ fn call_with_c_abi_compiles() {
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let inkwell_ctx = inkwell::context::Context::create();
     let result = backend.lower_body_to_module(&inkwell_ctx, &body);
-    assert!(result.is_ok(), "C ABI call lowering failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "C ABI call lowering failed: {:?}",
+        result.err()
+    );
 
     let module = result.unwrap();
     let ir = module.print_to_string().to_string();
