@@ -166,12 +166,15 @@ impl MonoCtx {
                     self.scan_operand(arg);
                 }
             }
-            TerminatorKind::Drop { place: _, .. } => {
-                // Enqueue drop glue for the type of the dropped place
-                // In real implementation, we'd get the type from place.ty()
-                // Here we assume the type is available via a context; simplified.
-                // For now, we'll skip because we don't have the type; the real implementation
-                // would call a method to get the type and enqueue MonoItem::DropGlue { ty }.
+            TerminatorKind::Drop { place, .. } => {
+                // In a real implementation we would get the type of the place from the body's local decls.
+                // Since we don't have access to the body here, we need to pass the type.
+                // This is a placeholder; the actual monomorphization collector will need to have
+                // access to the body's locals to compute the type.
+                // For now, we'll skip and rely on the caller to handle drop glue generation.
+                // In the full implementation, this method would be called with access to the body.
+                // We'll add a stub warning.
+                tracing::warn!("STUB: drop glue scanning not fully implemented");
             }
             TerminatorKind::SwitchInt { discr, .. } => self.scan_operand(discr),
             TerminatorKind::Assert { cond, .. } => self.scan_operand(cond),

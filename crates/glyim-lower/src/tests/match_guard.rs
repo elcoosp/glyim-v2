@@ -6,7 +6,7 @@ use glyim_span::Span;
 use glyim_core::def_id::{CrateId, LocalDefId, DefId};
 
 #[test]
-fn tuple_pattern_binds_variables() {
+fn match_guard_works() {
     let ctx = test_frozen_ty_ctx();
     let mock_ctx = MockLowerCtx::new(&ctx);
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
