@@ -50,3 +50,16 @@ impl ProviderPool {
         }
     }
 }
+
+impl ProviderPool {
+    pub fn provider_ids(&self) -> Vec<String> {
+        self.providers.keys().cloned().collect()
+    }
+
+    pub fn available_slots(&self, provider_id: &str) -> usize {
+        self.providers
+            .get(provider_id)
+            .map(|s| s.config.max_concurrent.saturating_sub(s.active_slots))
+            .unwrap_or(0)
+    }
+}
