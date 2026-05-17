@@ -1,4 +1,5 @@
 //! Tests for associated type projections.
+use crate::*;
 use glyim_core::def_id::TraitDefId;
 use glyim_core::primitives::{Abi, IntTy, Mutability, Safety};
 

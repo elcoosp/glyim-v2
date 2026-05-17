@@ -1,4 +1,4 @@
-use crate::context::{TyCtx, TyCtxMut};
+use crate::*;
 use glyim_core::interner::Interner;
 
 pub(crate) fn test_ty_ctx() -> TyCtxMut {

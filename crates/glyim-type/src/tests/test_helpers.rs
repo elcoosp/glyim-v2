@@ -2,7 +2,7 @@
 //! We cannot use `glyim_test` crate here because it depends on `glyim_type`,
 //! creating a circular dependency that results in multiple crate versions.
 
-use crate::context::{TyCtx, TyCtxMut};
+use crate::*;
 use glyim_core::interner::Interner;
 
 /// Create a fresh mutable type context for testing.
