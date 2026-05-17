@@ -1,3 +1,34 @@
+use crate::config::types::ResolvedCommitGates;
+use crate::domain_types::{BannedPattern, DependencyRule};
 use crate::error::PilotError;
-use super::types::{GateContext, PipelineResult};
-pub async fn run_commit_pipeline(_: &GateContext, _: &crate::config::types::ResolvedCommitGates, _: Vec<crate::domain_types::BannedPattern>, _: Vec<crate::domain_types::DependencyRule>) -> Result<PipelineResult, PilotError> { Ok(PipelineResult { gates: vec![], passed: true }) }
+use crate::gates::types::GateContext;
+use crate::gates::{Gate, PipelineResult, fmt_check::FmtCheckGate, check::CheckGate, clippy::ClippyGate, test::TestGate, banned_pattern::BannedPatternGate, architecture::ArchitectureGate, contracts::ContractGate};
+use std::sync::Arc;
+use std::time::Instant;
+
+pub async fn run_commit_pipeline(
+    ctx: &GateContext,
+    config: &ResolvedCommitGates,
+    banned_patterns: Vec<BannedPattern>,
+    architecture_rules: Vec<DependencyRule>,
+) -> Result<PipelineResult, PilotError> {
+    let mut gates: Vec<Arc<dyn Gate>> = Vec::new();
+    if config.fmt { gates.push(Arc::new(FmtCheckGate)); }
+    if config.check { gates.push(Arc::new(CheckGate)); }
+    if config.clippy { gates.push(Arc::new(ClippyGate)); }
+    if config.test { gates.push(Arc::new(TestGate)); }
+    if config.banned_patterns { gates.push(Arc::new(BannedPatternGate::new(banned_patterns))); }
+    if config.architecture { gates.push(Arc::new(ArchitectureGate::new(architecture_rules))); }
+    if config.contracts { gates.push(Arc::new(ContractGate)); }
+
+    let mut results = Vec::new();
+    for gate in &gates {
+        let start = Instant::now();
+        let result = gate.run(ctx).await?;
+        tracing::info!(gate = gate.name(), elapsed = ?start.elapsed(), passed = result.passed, "commit gate completed");
+        let passed = result.passed;
+        results.push(result);
+        if !passed { break; }
+    }
+    Ok(PipelineResult::from_gates(results))
+}

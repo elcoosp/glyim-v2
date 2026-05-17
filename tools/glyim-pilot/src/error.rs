@@ -99,3 +99,9 @@ mod tests {
         assert!(!format!("{err}").contains("I/O"));
     }
 }
+
+impl From<std::io::Error> for PilotError {
+    fn from(e: std::io::Error) -> Self {
+        PilotError::Io(e)
+    }
+}
