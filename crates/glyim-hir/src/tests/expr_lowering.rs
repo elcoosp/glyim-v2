@@ -1,17 +1,31 @@
-use glyim_core::interner::Interner;
-use glyim_span::FileId;
-use glyim_frontend::parse_to_syntax;
-use glyim_syntax::{SyntaxKind, SyntaxNode};
-use crate::lower::{lower_expr, is_expr_node};
+use crate::lower::{is_expr_node, lower_expr};
 use crate::{Expr, Pat, TypeRef};
+use glyim_core::interner::Interner;
+use glyim_frontend::parse_to_syntax;
+use glyim_span::FileId;
+use glyim_syntax::{SyntaxKind, SyntaxNode};
 
 fn parse_expr(src: &str) -> SyntaxNode {
     let full_src = format!("fn main() {{ {} }}", src);
     let parse = parse_to_syntax(&full_src, FileId::from_raw(1));
-    let fn_def = parse.root.children().find(|n| n.kind() == SyntaxKind::FnDef).expect("FnDef not found");
-    let block = fn_def.children().find(|n| n.kind() == SyntaxKind::Block).expect("Block not found");
-    block.children().find(|n| is_expr_node(n))
-        .or_else(|| block.children().find(|n| n.kind() == SyntaxKind::ExprStmt).and_then(|stmt| stmt.children().find(|c| is_expr_node(c))))
+    let fn_def = parse
+        .root
+        .children()
+        .find(|n| n.kind() == SyntaxKind::FnDef)
+        .expect("FnDef not found");
+    let block = fn_def
+        .children()
+        .find(|n| n.kind() == SyntaxKind::Block)
+        .expect("Block not found");
+    block
+        .children()
+        .find(|n| is_expr_node(n))
+        .or_else(|| {
+            block
+                .children()
+                .find(|n| n.kind() == SyntaxKind::ExprStmt)
+                .and_then(|stmt| stmt.children().find(|c| is_expr_node(c)))
+        })
         .expect("expr node not found")
         .clone()
 }
@@ -48,7 +62,11 @@ fn test_lower_struct_expr() {
     let mut expr_spans = glyim_core::arena::IndexVec::new();
     let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
     match &exprs[eid] {
-        Expr::Struct { path, fields, spread } => {
+        Expr::Struct {
+            path,
+            fields,
+            spread,
+        } => {
             if !fields.is_empty() {
                 assert_eq!(path.as_name(), Some(interner.intern("Point")));
                 assert_eq!(fields.len(), 2);
@@ -70,7 +88,11 @@ fn test_lower_range_expr() {
     let mut expr_spans = glyim_core::arena::IndexVec::new();
     let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
     match &exprs[eid] {
-        Expr::Range { start, end, inclusive } => {
+        Expr::Range {
+            start,
+            end,
+            inclusive,
+        } => {
             assert!(start.is_some());
             assert!(end.is_some());
             assert!(!inclusive);
@@ -96,12 +118,10 @@ fn test_lower_cast_expr() {
     let mut expr_spans = glyim_core::arena::IndexVec::new();
     let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
     match &exprs[eid] {
-        Expr::Cast { expr, ty } => {
-            match ty {
-                TypeRef::Path(p) => assert_eq!(p.as_name(), Some(interner.intern("i32"))),
-                _ => panic!("expected Path type"),
-            }
-        }
+        Expr::Cast { expr, ty } => match ty {
+            TypeRef::Path(p) => assert_eq!(p.as_name(), Some(interner.intern("i32"))),
+            _ => panic!("expected Path type"),
+        },
         _ => panic!("expected Cast expr"),
     }
 }

@@ -1,17 +1,30 @@
-use glyim_core::primitives::*;
-use glyim_span::FileId;
-use glyim_frontend::parse_to_syntax;
-use crate::lower::lower_literal;
 use crate::Literal;
+use crate::lower::lower_literal;
+use glyim_core::primitives::*;
+use glyim_frontend::parse_to_syntax;
+use glyim_span::FileId;
+use glyim_syntax::SyntaxKind;
 
-// Extract the literal token from a parsed literal expression
 fn token_from_literal(src: &str) -> glyim_syntax::SyntaxToken {
-    let parse = parse_to_syntax(src, FileId::from_raw(1));
-    let lit_node = parse.root
+    let full_src = format!("fn main() {{ {} }}", src);
+    let parse = parse_to_syntax(&full_src, FileId::from_raw(1));
+    let fn_def = parse
+        .root
         .children()
-        .find(|n| n.kind() == glyim_syntax::SyntaxKind::LitExpr)
-        .expect("LitExpr node not found");
-    lit_node
+        .find(|n| n.kind() == SyntaxKind::FnDef)
+        .expect("FnDef not found");
+    let block = fn_def
+        .children()
+        .find(|n| n.kind() == SyntaxKind::Block)
+        .expect("Block not found");
+    // Look for ExprStmt containing the literal, or direct literal node
+    let lit_expr = block
+        .children()
+        .find(|n| n.kind() == SyntaxKind::ExprStmt)
+        .and_then(|stmt| stmt.children().find(|c| c.kind() == SyntaxKind::LitExpr))
+        .or_else(|| block.children().find(|c| c.kind() == SyntaxKind::LitExpr))
+        .expect("LitExpr not found");
+    lit_expr
         .children_with_tokens()
         .filter_map(|el| el.into_token())
         .find(|t| t.kind().is_literal())

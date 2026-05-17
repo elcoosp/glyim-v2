@@ -1225,7 +1225,10 @@ impl<'a> Parser<'a> {
                                 // Emit the field name as a PathExpr for the value
                                 self.start_node(SyntaxKind::PathExpr);
                                 self.start_node(SyntaxKind::UsePath);
-                                self.builder.token(GlyimLang::kind_to_raw(field_name_token.kind), field_name_token.text.as_str());
+                                self.builder.token(
+                                    GlyimLang::kind_to_raw(field_name_token.kind),
+                                    field_name_token.text.as_str(),
+                                );
                                 self.finish_node(); // UsePath
                                 self.finish_node(); // PathExpr
                                 self.finish_node(); // StructField

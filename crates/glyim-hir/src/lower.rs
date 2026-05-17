@@ -751,7 +751,8 @@ pub(crate) fn lower_expr(
             for child in node.children() {
                 match child.kind() {
                     SyntaxKind::ParamList => {
-                        for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
+                        for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param)
+                        {
                             let (_, pat_id) = lower_param(&param_node, interner, pats);
                             params.push(pat_id);
                         }
@@ -768,7 +769,10 @@ pub(crate) fn lower_expr(
                 let missing = Expr::Missing;
                 exprs.push(missing)
             });
-            let expr = Expr::Closure { params, body: body_id };
+            let expr = Expr::Closure {
+                params,
+                body: body_id,
+            };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             Some(eid)
@@ -792,7 +796,9 @@ pub(crate) fn lower_expr(
                         let mut found_expr = false;
                         for next in node.children() {
                             if found_expr {
-                                if let Some(spread_id) = lower_expr(&next, interner, exprs, pats, expr_spans) {
+                                if let Some(spread_id) =
+                                    lower_expr(&next, interner, exprs, pats, expr_spans)
+                                {
                                     spread = Some(spread_id);
                                 }
                                 break;
@@ -804,8 +810,12 @@ pub(crate) fn lower_expr(
                     } else if child.kind() == SyntaxKind::StructField {
                         let field_name = first_ident_text(&child).unwrap_or_default();
                         let name = interner.intern(&field_name);
-                        let expr_node = child.children().find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
-                        if let Some(expr_id) = expr_node.and_then(|n| lower_expr(&n, interner, exprs, pats, expr_spans)) {
+                        let expr_node = child
+                            .children()
+                            .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
+                        if let Some(expr_id) = expr_node
+                            .and_then(|n| lower_expr(&n, interner, exprs, pats, expr_spans))
+                        {
                             fields.push((name, expr_id));
                         }
                     } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
@@ -830,7 +840,11 @@ pub(crate) fn lower_expr(
                     kind: glyim_core::path::PathKind::Plain,
                 }
             };
-            let expr = Expr::Struct { path: path_struct, fields, spread };
+            let expr = Expr::Struct {
+                path: path_struct,
+                fields,
+                spread,
+            };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             Some(eid)
@@ -1123,7 +1137,7 @@ fn split_int_literal(s: &str) -> (String, Option<String>) {
     }
     // Check for 0x, 0o, 0b
     if i + 1 < chars.len() && chars[i] == '0' {
-        let prefix = chars[i+1];
+        let prefix = chars[i + 1];
         if prefix == 'x' || prefix == 'X' {
             i += 2;
             while i < chars.len() && (chars[i].is_ascii_hexdigit() || chars[i] == '_') {
@@ -1877,7 +1891,7 @@ pub(crate) fn lower_pat(
         }
         _ => {
             tracing::warn!("STUB: unknown pattern kind {:?}", node.kind());
-            None
+            Some(pats.push(Pat::Err))
         }
     }
 }
