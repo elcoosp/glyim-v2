@@ -1,3 +1,9 @@
+mod completion;
+mod diagnostics;
+mod goto_definition;
+mod hover;
+mod reference_graph;
+mod symbol_index;
 mod completion_tests;
 mod diagnostics_tests;
 mod folding_tests;

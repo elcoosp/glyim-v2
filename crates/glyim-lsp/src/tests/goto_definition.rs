@@ -1,0 +1,71 @@
+use crate::database::{AnalysisDatabase, SourceMap};
+use crate::goto_definition;
+use crate::symbol_index::{DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use lsp_types::{
+    GotoDefinitionParams, GotoDefinitionResponse, Position, TextDocumentIdentifier,
+    TextDocumentPositionParams, Url,
+};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+#[test]
+fn test_goto_definition_returns_location() {
+    let db = Arc::new(AnalysisDatabase::new());
+    let mut file_map = crate::FileMap::new();
+
+    let path = PathBuf::from("/test/main.g");
+    let file_id = file_map.get_or_create(&path);
+
+    let content = "fn main() {}\n";
+    let sm = SourceMap::new(path.clone(), file_id, content.to_string());
+    db.source_maps.write().insert(file_id, sm);
+
+    let mut index = db.symbol_index.write();
+    index.insert_test_symbol(
+        file_id,
+        SymbolInfo {
+            name: "main".to_string(),
+            kind: SymbolKind::Function,
+            definition: DefinitionLocation {
+                file_id,
+                span: Span::new(
+                    FileId::from_raw(0),
+                    ByteIdx::from_raw(0),
+                    ByteIdx::from_raw(4),
+                    SyntaxContext::ROOT,
+                ),
+            },
+            type_signature: Some(TypeSignature {
+                params: vec![],
+                return_type: None,
+            }),
+            is_pub: true,
+            documentation: None,
+        },
+    );
+    drop(index);
+
+    let uri = Url::from_file_path(&path).unwrap();
+    let params = GotoDefinitionParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 0,
+                character: 0,
+            },
+        },
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+
+    let result = goto_definition(&db, &file_map, &params);
+
+    assert!(result.is_some());
+    if let GotoDefinitionResponse::Scalar(loc) = result.unwrap() {
+        assert_eq!(loc.uri, uri);
+        assert_eq!(loc.range.start.line, 0);
+    } else {
+        panic!("Expected Scalar location");
+    }
+}

@@ -7,6 +7,7 @@ pub mod diagnostics;
 pub mod driver;
 pub mod folding;
 pub mod formatting;
+pub mod goto_definition;
 pub mod handler;
 pub mod hover;
 pub mod navigation;
@@ -21,6 +22,8 @@ pub mod uri; // Make database public
 mod tests;
 
 pub use database::AnalysisDatabase;
+pub use database::{FileMap, SourceMap};
+pub use goto_definition::goto_definition;
 pub use reference_graph::{Reference, ReferenceGraph, ReferenceKind};
 pub use state::LspState;
 pub use symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind, TypeSignature};
