@@ -81,9 +81,7 @@ pub fn dispatch_wave(
             while let Some(id) = unassigned.pop_front() {
                 let mut providers = pool.provider_ids();
                 // Sort by available slots descending (most free first)
-                providers.sort_by(|a, b| {
-                    pool.available_slots(b).cmp(&pool.available_slots(a))
-                });
+                providers.sort_by(|a, b| pool.available_slots(b).cmp(&pool.available_slots(a)));
                 let mut assigned = false;
                 for pid in providers {
                     if pool.allocate(&pid).is_ok() {
@@ -107,9 +105,9 @@ pub fn dispatch_wave(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::types::ProviderConfig;
     use crate::dispatch::provider_pool::ProviderPool;
     use std::collections::HashMap;
-    use crate::config::types::ProviderConfig;
 
     fn setup_pool() -> ProviderPool {
         let mut providers = HashMap::new();
@@ -132,32 +130,38 @@ mod tests {
     fn test_most_slots_first() {
         let mut pool = setup_pool();
         let streams = vec!["s1".to_string(), "s2".to_string()];
-        let assignments = dispatch_wave(&streams, &mut pool, &DispatchStrategy::MostSlotsFirst).unwrap();
+        let assignments =
+            dispatch_wave(&streams, &mut pool, &DispatchStrategy::MostSlotsFirst).unwrap();
         assert_eq!(assignments.len(), 2);
         // The provider with most slots (p2 has 3 slots) should get first assignment
         assert_eq!(assignments[0].provider_id, "p2");
     }
 
-    
     #[test]
     fn test_round_robin() {
         let mut pool = setup_pool();
-        let streams = vec!["s1".to_string(), "s2".to_string(), "s3".to_string(), "s4".to_string()];
-        let assignments = dispatch_wave(&streams, &mut pool, &DispatchStrategy::RoundRobin).unwrap();
+        let streams = vec![
+            "s1".to_string(),
+            "s2".to_string(),
+            "s3".to_string(),
+            "s4".to_string(),
+        ];
+        let assignments =
+            dispatch_wave(&streams, &mut pool, &DispatchStrategy::RoundRobin).unwrap();
         assert_eq!(assignments.len(), 4);
         // Since provider iteration order is arbitrary, we just check that assignments are alternating between providers
         let ids: Vec<&str> = assignments.iter().map(|a| a.provider_id.as_str()).collect();
         // The two possible patterns: ["p1","p2","p1","p2"] or ["p2","p1","p2","p1"]
-        assert!(ids == vec!["p1","p2","p1","p2"] || ids == vec!["p2","p1","p2","p1"]);
+        assert!(ids == vec!["p1", "p2", "p1", "p2"] || ids == vec!["p2", "p1", "p2", "p1"]);
     }
-
 
     #[test]
     fn test_least_loaded() {
         let mut pool = setup_pool();
         // Initially both have 0 slots used, so any order
         let streams = vec!["s1".to_string()];
-        let assignments = dispatch_wave(&streams, &mut pool, &DispatchStrategy::LeastLoaded).unwrap();
+        let assignments =
+            dispatch_wave(&streams, &mut pool, &DispatchStrategy::LeastLoaded).unwrap();
         assert_eq!(assignments.len(), 1);
         // Should pick the one with most available slots (p2 has 3 > p1's 2)
         assert_eq!(assignments[0].provider_id, "p2");

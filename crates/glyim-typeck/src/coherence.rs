@@ -56,9 +56,10 @@ impl<'a> CoherenceChecker<'a> {
         }
 
         if let Some(trait_def_id) = header.trait_def_id
-            && let Some(errors) = self.check_overlap(trait_def_id, &header, ctx) {
-                return Err(errors);
-            }
+            && let Some(errors) = self.check_overlap(trait_def_id, &header, ctx)
+        {
+            return Err(errors);
+        }
 
         self.register(header);
         Ok(())

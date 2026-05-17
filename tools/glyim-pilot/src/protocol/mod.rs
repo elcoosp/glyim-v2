@@ -1,3 +1,3 @@
-pub mod types;
 pub mod parser;
+pub mod types;
 pub use types::PROTOCOL_VERSION;

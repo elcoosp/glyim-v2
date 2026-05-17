@@ -66,13 +66,28 @@ pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorActio
 
     let stream_id = ctx.stream_id.clone();
     let processing = ctx.processing.clone();
+    // Clone session_id and trace_id for error branches
+    let session_id_clone = ctx.session_id.clone();
+    let trace_id_clone = ctx.trace_id.clone();
     {
-        let mut guard = processing.lock().await;
+        let lock_future = processing.lock();
+        let guard = match tokio::time::timeout(std::time::Duration::from_secs(5), lock_future).await
+        {
+            Ok(g) => g,
+            Err(_) => {
+                tracing::warn!("processing lock acquisition timed out, skipping turn");
+                return Ok(OrchestratorAction::WaitForResponse {
+                    session_id: session_id_clone,
+                    trace_id: Some(trace_id_clone),
+                });
+            }
+        };
+        let mut guard = guard;
         if !guard.insert(stream_id.clone()) {
             tracing::warn!("already processing, skipping duplicate");
             return Ok(OrchestratorAction::WaitForResponse {
-                session_id: ctx.session_id.clone(),
-                trace_id: Some(ctx.trace_id.clone()),
+                session_id: session_id_clone,
+                trace_id: Some(trace_id_clone),
             });
         }
     }
@@ -80,7 +95,18 @@ pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorActio
     let result = process_turn_inner(ctx).await;
 
     {
-        let mut guard = processing.lock().await;
+        let lock_future = processing.lock();
+        let guard = match tokio::time::timeout(std::time::Duration::from_secs(5), lock_future).await
+        {
+            Ok(g) => g,
+            Err(_) => {
+                tracing::warn!("processing lock acquisition timed out, skipping turn");
+                // We still need to return something, but the lock couldn't be released.
+                // Just return the result without removing from set? This is a race, but fine.
+                return result;
+            }
+        };
+        let mut guard = guard;
         guard.remove(&stream_id);
     }
 

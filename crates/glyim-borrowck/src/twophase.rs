@@ -6,9 +6,9 @@
 //! If a two‑phase borrow crosses a block boundary, it is considered
 //! already activated (conservative, matches Rust's semantics).
 
+use crate::visitor::{LocalReadChecker, walk_rvalue_reads};
 use fixedbitset::FixedBitSet as BitSet;
 use glyim_mir::{BasicBlockIdx, Body, LocalIdx, StatementKind};
-use crate::visitor::{LocalReadChecker, walk_rvalue_reads};
 
 /// Result of the reservation analysis for a single loan.
 pub struct ReservationAnalysis {
@@ -25,7 +25,8 @@ impl ReservationAnalysis {
         loan_stmt: usize,
         dest_local: LocalIdx,
     ) -> Self {
-        let stmt_counts: Vec<usize> = body.basic_blocks
+        let stmt_counts: Vec<usize> = body
+            .basic_blocks
             .iter()
             .map(|b| b.statements.len())
             .collect();
@@ -64,7 +65,10 @@ impl ReservationAnalysis {
             }
         }
 
-        ReservationAnalysis { per_block, creation_block: loan_block }
+        ReservationAnalysis {
+            per_block,
+            creation_block: loan_block,
+        }
     }
 
     pub fn is_reservation(&self, block: BasicBlockIdx, stmt_idx: usize) -> bool {
@@ -81,12 +85,12 @@ impl ReservationAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glyim_mir::{
-        BasicBlockData, Body, LocalDecl, LocalIdx, Statement, StatementKind,
-        Terminator, TerminatorKind, SourceInfo, BorrowKind, Operand, Place,
-    };
-    use glyim_core::def_id::{DefId, CrateId, LocalDefId};
+    use glyim_core::def_id::{CrateId, DefId, LocalDefId};
     use glyim_core::primitives::Mutability;
+    use glyim_mir::{
+        BasicBlockData, Body, BorrowKind, LocalDecl, Place, Rvalue, SourceInfo, Statement,
+        StatementKind, Terminator, TerminatorKind,
+    };
     use glyim_span::Span;
     use glyim_type::Ty;
 
@@ -121,7 +125,9 @@ mod tests {
                 Place::new(local_2),
                 Rvalue::Ref(
                     Place::new(local_1),
-                    BorrowKind::Mut { allow_two_phase_borrow: true },
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: true,
+                    },
                 ),
             ),
             source_info: SourceInfo::new(Span::DUMMY),
@@ -165,18 +171,31 @@ mod tests {
         let borrow_stmt = Statement {
             kind: StatementKind::Assign(
                 Place::new(local_2),
-                Rvalue::Ref(Place::new(local_1), BorrowKind::Mut { allow_two_phase_borrow: true }),
+                Rvalue::Ref(
+                    Place::new(local_1),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: true,
+                    },
+                ),
             ),
             source_info: SourceInfo::new(Span::DUMMY),
         };
         let block0 = BasicBlockData {
             statements: vec![borrow_stmt],
-            terminator: Terminator { kind: TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) }, source_info: SourceInfo::new(Span::DUMMY) },
+            terminator: Terminator {
+                kind: TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
             is_cleanup: false,
         };
         let block1 = BasicBlockData {
             statements: vec![],
-            terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
             is_cleanup: false,
         };
         body.basic_blocks.push(block0);

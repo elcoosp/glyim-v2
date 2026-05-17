@@ -49,29 +49,50 @@ pub fn parse_ops_block(input: &str) -> Result<ParsedOps, PilotError> {
 
     while let Some((line_num, line)) = lines.next() {
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         if let Some(rest) = trimmed.strip_prefix("::WRITE ") {
             let path = rest.trim().to_string();
             if path.is_empty() {
-                return Err(PilotError::Parse { line: line_num + 1, message: "WRITE requires a path".into() });
+                return Err(PilotError::Parse {
+                    line: line_num + 1,
+                    message: "WRITE requires a path".into(),
+                });
             }
-            ops.push(FileOp::Write { path, content: read_until_end(&mut lines, line_num)? });
+            ops.push(FileOp::Write {
+                path,
+                content: read_until_end(&mut lines, line_num)?,
+            });
         } else if let Some(rest) = trimmed.strip_prefix("::REPLACE ") {
             let path = rest.trim().to_string();
             if path.is_empty() {
-                return Err(PilotError::Parse { line: line_num + 1, message: "REPLACE requires a path".into() });
+                return Err(PilotError::Parse {
+                    line: line_num + 1,
+                    message: "REPLACE requires a path".into(),
+                });
             }
             let (find, replace) = read_find_replace(&mut lines, line_num)?;
-            ops.push(FileOp::Replace { path, find, replace });
+            ops.push(FileOp::Replace {
+                path,
+                find,
+                replace,
+            });
         } else if let Some(rest) = trimmed.strip_prefix("::DELETE ") {
             let path = rest.trim().to_string();
             if path.is_empty() {
-                return Err(PilotError::Parse { line: line_num + 1, message: "DELETE requires a path".into() });
+                return Err(PilotError::Parse {
+                    line: line_num + 1,
+                    message: "DELETE requires a path".into(),
+                });
             }
             ops.push(FileOp::Delete { path });
         } else if trimmed == "::DELETE" {
-            return Err(PilotError::Parse { line: line_num + 1, message: "DELETE requires a path".into() });
+            return Err(PilotError::Parse {
+                line: line_num + 1,
+                message: "DELETE requires a path".into(),
+            });
         } else if let Some(msg) = trimmed.strip_prefix("::COMMIT ") {
             commit_message = Some(msg.trim().to_string());
         } else if trimmed == "::COMMIT" {
@@ -85,7 +106,13 @@ pub fn parse_ops_block(input: &str) -> Result<ParsedOps, PilotError> {
         }
     }
 
-    Ok(ParsedOps { ops, commit_message, incomplete, done, approved })
+    Ok(ParsedOps {
+        ops,
+        commit_message,
+        incomplete,
+        done,
+        approved,
+    })
 }
 
 fn read_until_end<'a>(
@@ -95,14 +122,20 @@ fn read_until_end<'a>(
     let mut content_lines = Vec::new();
     for (_, line) in lines {
         if line.trim() == "::END" {
-            while content_lines.last().is_some_and(|l: &String| l.trim().is_empty()) {
+            while content_lines
+                .last()
+                .is_some_and(|l: &String| l.trim().is_empty())
+            {
                 content_lines.pop();
             }
             return Ok(content_lines.join("\n"));
         }
         content_lines.push(line.to_string());
     }
-    Err(PilotError::Parse { line: start_line + 1, message: "unexpected end of input: expected ::END".into() })
+    Err(PilotError::Parse {
+        line: start_line + 1,
+        message: "unexpected end of input: expected ::END".into(),
+    })
 }
 
 fn read_find_replace<'a>(
@@ -116,20 +149,42 @@ fn read_find_replace<'a>(
 
     for (_, line) in lines {
         match line.trim() {
-            "---FIND---" => { in_find = true; in_replace = false; }
-            "---REPLACE---" => { in_find = false; in_replace = true; }
+            "---FIND---" => {
+                in_find = true;
+                in_replace = false;
+            }
+            "---REPLACE---" => {
+                in_find = false;
+                in_replace = true;
+            }
             "::END" => {
-                while find_lines.last().is_some_and(|l: &String| l.trim().is_empty()) { find_lines.pop(); }
-                while replace_lines.last().is_some_and(|l: &String| l.trim().is_empty()) { replace_lines.pop(); }
+                while find_lines
+                    .last()
+                    .is_some_and(|l: &String| l.trim().is_empty())
+                {
+                    find_lines.pop();
+                }
+                while replace_lines
+                    .last()
+                    .is_some_and(|l: &String| l.trim().is_empty())
+                {
+                    replace_lines.pop();
+                }
                 return Ok((find_lines.join("\n"), replace_lines.join("\n")));
             }
             _ => {
-                if in_find { find_lines.push(line.to_string()); }
-                else if in_replace { replace_lines.push(line.to_string()); }
+                if in_find {
+                    find_lines.push(line.to_string());
+                } else if in_replace {
+                    replace_lines.push(line.to_string());
+                }
             }
         }
     }
-    Err(PilotError::Parse { line: start_line + 1, message: "unexpected end of input: expected ::END in REPLACE block".into() })
+    Err(PilotError::Parse {
+        line: start_line + 1,
+        message: "unexpected end of input: expected ::END in REPLACE block".into(),
+    })
 }
 
 #[cfg(test)]
@@ -141,14 +196,27 @@ mod tests {
     fn test_parse_write() {
         let input = "::WRITE src/main.rs\nfn main() {}\n::END";
         let result = parse_ops_block(input).unwrap();
-        assert_eq!(result.ops[0], FileOp::Write { path: "src/main.rs".into(), content: "fn main() {}".into() });
+        assert_eq!(
+            result.ops[0],
+            FileOp::Write {
+                path: "src/main.rs".into(),
+                content: "fn main() {}".into()
+            }
+        );
     }
 
     #[test]
     fn test_parse_replace() {
         let input = "::REPLACE src/lib.rs\n---FIND---\nold\n---REPLACE---\nnew\n::END";
         let result = parse_ops_block(input).unwrap();
-        assert_eq!(result.ops[0], FileOp::Replace { path: "src/lib.rs".into(), find: "old".into(), replace: "new".into() });
+        assert_eq!(
+            result.ops[0],
+            FileOp::Replace {
+                path: "src/lib.rs".into(),
+                find: "old".into(),
+                replace: "new".into()
+            }
+        );
     }
 
     #[test]

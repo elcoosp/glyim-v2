@@ -1,5 +1,5 @@
 use crate::state::LspState;
-use glyim_db::{Database, CrateConfig};
+use glyim_db::{CrateConfig, Database};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -27,6 +27,9 @@ fn diagnostics_are_emitted_on_change() {
         state.did_change(path.clone(), invalid, 2);
         tokio::time::sleep(Duration::from_millis(100)).await;
         let diags2 = state.diagnostics_for_file(&path);
-        assert!(!diags2.is_empty(), "File with 'error' should produce diagnostics");
+        assert!(
+            !diags2.is_empty(),
+            "File with 'error' should produce diagnostics"
+        );
     });
 }

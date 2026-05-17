@@ -28,7 +28,9 @@ fn sequential_mono_item_ids() {
         })
         .collect();
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
 
     for (i, item) in items.iter().enumerate() {
         let id = ctx.lookup(item).expect("item should be in cache");
@@ -51,7 +53,9 @@ fn lookup_nonexistent_returns_none() {
         def_id: FnDefId::from_raw(1),
         substs: empty_subst,
     };
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
 
     let other = MonoItem::Fn {
         def_id: FnDefId::from_raw(999),
@@ -168,7 +172,9 @@ fn symbol_names_generated() {
     let item = MonoItem::Static {
         def_id: StaticDefId::from_raw(42),
     };
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
 
     let id = ctx.lookup(&item).expect("should find item");
     let symbol = &ctx.items()[id.to_raw() as usize].symbol;
@@ -233,7 +239,9 @@ fn cache_consistency_after_many_ops() {
             def_id: FnDefId::from_raw(i),
             substs: empty_subst,
         };
-        ctx.collect(&[item], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+        ctx.collect(&[item], &|_def_id, _substs| dummy_body(), &|_ty| {
+            dummy_body()
+        });
     }
 
     assert_eq!(ctx.item_count(), 20);
@@ -244,7 +252,9 @@ fn cache_consistency_after_many_ops() {
             def_id: FnDefId::from_raw(i),
             substs: empty_subst,
         };
-        ctx.collect(&[item], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+        ctx.collect(&[item], &|_def_id, _substs| dummy_body(), &|_ty| {
+            dummy_body()
+        });
     }
 
     assert_eq!(ctx.item_count(), 20, "re-collecting should not add items");

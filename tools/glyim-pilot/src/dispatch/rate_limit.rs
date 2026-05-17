@@ -63,7 +63,9 @@ pub fn handle_rate_limit(
     }
 
     // Calculate backoff with jitter
-    let exp = base_delay_secs.saturating_mul(2u64.saturating_pow(attempt)).min(max_delay_secs);
+    let exp = base_delay_secs
+        .saturating_mul(2u64.saturating_pow(attempt))
+        .min(max_delay_secs);
     let stagger = (attempt as u64 * 17) % ((exp as f64 * 0.2).max(1.0) as u64);
     let delay = exp.saturating_add(stagger).min(max_delay_secs);
 
@@ -82,9 +84,9 @@ pub fn handle_rate_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::types::ProviderConfig;
     use crate::dispatch::provider_pool::ProviderPool;
     use std::collections::HashMap;
-    use crate::config::types::ProviderConfig;
 
     fn test_pool() -> ProviderPool {
         let mut providers = HashMap::new();

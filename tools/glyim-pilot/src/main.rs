@@ -20,7 +20,11 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-enum Commands { Serve, Status, Preflight }
+enum Commands {
+    Serve,
+    Status,
+    Preflight,
+}
 
 #[tokio::main]
 async fn main() {
@@ -31,7 +35,10 @@ async fn main() {
     let cli = Cli::parse();
     let config = match config::load_config(&cli.project_root) {
         Ok(c) => Arc::new(c),
-        Err(e) => { eprintln!("Config error: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Config error: {e}");
+            std::process::exit(1);
+        }
     };
 
     match cli.command {
@@ -48,14 +55,24 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
     let server = Arc::new(server);
     let server_clone = Arc::clone(&server);
     tokio::spawn(async move {
-        if let Err(e) = server_clone.run().await { tracing::error!("Server error: {e}"); }
+        if let Err(e) = server_clone.run().await {
+            tracing::error!("Server error: {e}");
+        }
     });
 
-    let persistence = Arc::new(StatePersistence::load(&project_root).await.expect("failed to load state"));
+    let persistence = Arc::new(
+        StatePersistence::load(&project_root)
+            .await
+            .expect("failed to load state"),
+    );
     let processing: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let metrics: Arc<dyn glyim_pilot::metrics::Metrics> = production_metrics().into();
 
-    tracing::info!("Glym Pilot server started on ws://{}:{}", config.server.host, config.server.port);
+    tracing::info!(
+        "Glym Pilot server started on ws://{}:{}",
+        config.server.host,
+        config.server.port
+    );
 
     loop {
         tokio::select! {
@@ -86,10 +103,21 @@ async fn handle_extension_message(
     metrics: &Arc<dyn glyim_pilot::metrics::Metrics>,
 ) {
     match msg {
-        ExtensionMessage::SessionReady { session_id, provider_id, tab_id, .. } => {
+        ExtensionMessage::SessionReady {
+            session_id,
+            provider_id,
+            tab_id,
+            ..
+        } => {
             tracing::info!(session_id, provider_id, tab_id, "session ready");
         }
-        ExtensionMessage::OpsReady { session_id, content, turn, trace_id, .. } => {
+        ExtensionMessage::OpsReady {
+            session_id,
+            content,
+            turn,
+            trace_id,
+            ..
+        } => {
             let trace_id = trace_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
             let worktree_path = persistence.get_worktree_path(&session_id).await;
@@ -98,15 +126,21 @@ async fn handle_extension_message(
                 None => {
                     tracing::error!(session_id, "worktree_path not found");
                     let err_msg = CliMessage::FeedbackSend {
-                        session_id: session_id.clone(), message: "Internal error: worktree path not found".into(),
-                        turn: turn + 1, trace_id: Some(trace_id), v: PROTOCOL_VERSION,
+                        session_id: session_id.clone(),
+                        message: "Internal error: worktree path not found".into(),
+                        turn: turn + 1,
+                        trace_id: Some(trace_id),
+                        v: PROTOCOL_VERSION,
                     };
                     let _ = cli_sender.send(serde_json::to_string(&err_msg).unwrap());
                     return;
                 }
             };
 
-            let stream_id = persistence.get_stream_id(&session_id).await.unwrap_or_else(|| session_id.clone());
+            let stream_id = persistence
+                .get_stream_id(&session_id)
+                .await
+                .unwrap_or_else(|| session_id.clone());
 
             let turn_ctx = glyim_pilot::orchestrator::TurnContext {
                 ops_block: content,
@@ -130,44 +164,76 @@ async fn handle_extension_message(
 
                 match glyim_pilot::orchestrator::process_turn_dispatch(turn_ctx).await {
                     Ok(action) => {
-                        if let Some(cli_msg) = glyim_pilot::server::event_handler::map_action_to_cli_message(action, turn) {
+                        if let Some(cli_msg) =
+                            glyim_pilot::server::event_handler::map_action_to_cli_message(
+                                action, turn,
+                            )
+                        {
                             let json = serde_json::to_string(&cli_msg).unwrap();
                             if let Err(e) = cli_sender_clone.send(json) {
                                 tracing::warn!("failed to send CLI message: {e}");
                             }
                         } else {
-                            tracing::debug!("orchestrator waiting for response — no CLI message needed");
+                            tracing::debug!(
+                                "orchestrator waiting for response — no CLI message needed"
+                            );
                         }
                     }
                     Err(e) => {
                         tracing::error!(?e, "orchestrator error");
-                        metrics_clone.increment_counter("orchestrator_error", &[("code", e.code())]);
+                        metrics_clone
+                            .increment_counter("orchestrator_error", &[("code", e.code())]);
                     }
                 }
             });
         }
-        ExtensionMessage::StreamComplete { session_id, turn, .. } => {
+        ExtensionMessage::StreamComplete {
+            session_id, turn, ..
+        } => {
             tracing::info!(session_id, turn, "stream complete");
             metrics.increment_counter("stream_complete", &[]);
         }
-        ExtensionMessage::ErrorDetected { session_id, error_type, error_message, recoverable, trace_id, .. } => {
-            tracing::warn!(session_id, error_type, error_message, recoverable, "error from extension");
+        ExtensionMessage::ErrorDetected {
+            session_id,
+            error_type,
+            error_message,
+            recoverable,
+            trace_id,
+            ..
+        } => {
+            tracing::warn!(
+                session_id,
+                error_type,
+                error_message,
+                recoverable,
+                "error from extension"
+            );
             metrics.increment_counter("extension_error", &[("type", &error_type)]);
             if recoverable {
                 let response = CliMessage::FeedbackSend {
-                    session_id: session_id.clone(), message: format!("Provider error: {}", error_message),
-                    turn: 0, trace_id, v: PROTOCOL_VERSION,
+                    session_id: session_id.clone(),
+                    message: format!("Provider error: {}", error_message),
+                    turn: 0,
+                    trace_id,
+                    v: PROTOCOL_VERSION,
                 };
                 let _ = cli_sender.send(serde_json::to_string(&response).unwrap());
             }
         }
-        ExtensionMessage::Pong { timestamp, .. } => { tracing::debug!(timestamp, "pong"); }
+        ExtensionMessage::Pong { timestamp, .. } => {
+            tracing::debug!(timestamp, "pong");
+        }
     }
 }
 
 async fn run_status(project_root: PathBuf) {
-    let persistence = StatePersistence::load(&project_root).await.expect("failed to load state");
+    let persistence = StatePersistence::load(&project_root)
+        .await
+        .expect("failed to load state");
     let sessions = persistence.all_sessions().await;
-    if sessions.is_empty() { println!("No sessions found."); }
-    else { println!("{}", render_status_table(&sessions)); }
+    if sessions.is_empty() {
+        println!("No sessions found.");
+    } else {
+        println!("{}", render_status_table(&sessions));
+    }
 }

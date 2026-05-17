@@ -15,7 +15,10 @@ impl Gate for ContractGate {
     async fn run(&self, ctx: &GateContext) -> Result<GateResult, PilotError> {
         let contracts_path = ctx.project_root.join("CONTRACTS_LOCKED.md");
         if !contracts_path.exists() {
-            return Ok(GateResult::pass_with_note("contracts", "no CONTRACTS_LOCKED.md found"));
+            return Ok(GateResult::pass_with_note(
+                "contracts",
+                "no CONTRACTS_LOCKED.md found",
+            ));
         }
 
         let content = tokio::fs::read_to_string(&contracts_path)
@@ -40,7 +43,11 @@ impl Gate for ContractGate {
             if line.starts_with('-') && !line.starts_with("---") {
                 for name in &locked_names {
                     if line.contains(name.as_str()) {
-                        violations.push(format!("locked interface '{}' in removed line: {}", name, line.trim_start_matches('-').trim()));
+                        violations.push(format!(
+                            "locked interface '{}' in removed line: {}",
+                            name,
+                            line.trim_start_matches('-').trim()
+                        ));
                     }
                 }
             }
@@ -102,11 +109,13 @@ fn extract_pub_name(line: &str) -> Option<String> {
 
     match after_pub.0 {
         "fn" => after_pub.1.split('(').next().map(|s| s.trim().to_string()),
-        "struct" | "enum" => after_pub.1
+        "struct" | "enum" => after_pub
+            .1
             .split(['<', '{', ' ', ';'])
             .next()
             .map(|s| s.trim().to_string()),
-        "trait" => after_pub.1
+        "trait" => after_pub
+            .1
             .split(['<', '{', ':'])
             .next()
             .map(|s| s.trim().to_string()),
@@ -135,11 +144,20 @@ pub struct Config { ... }
 
     #[test]
     fn test_extract_pub_name() {
-        assert_eq!(extract_pub_name("pub fn foo() -> i32"), Some("foo".to_string()));
-        assert_eq!(extract_pub_name("pub struct Bar<T>"), Some("Bar".to_string()));
+        assert_eq!(
+            extract_pub_name("pub fn foo() -> i32"),
+            Some("foo".to_string())
+        );
+        assert_eq!(
+            extract_pub_name("pub struct Bar<T>"),
+            Some("Bar".to_string())
+        );
         assert_eq!(extract_pub_name("pub enum Baz"), Some("Baz".to_string()));
         assert_eq!(extract_pub_name("pub trait Qux"), Some("Qux".to_string()));
-        assert_eq!(extract_pub_name("pub async fn async_func()"), Some("async_func".to_string()));
+        assert_eq!(
+            extract_pub_name("pub async fn async_func()"),
+            Some("async_func".to_string())
+        );
         assert_eq!(extract_pub_name("fn not_pub()"), None);
     }
 }

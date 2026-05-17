@@ -732,11 +732,12 @@ impl<'a> FnCtxt<'a> {
     fn lookup_field_ty(&mut self, adt_id: AdtId, field: Name, span: Span) -> Ty {
         if let Some(field_idx) = self.ctx.field_index(adt_id, field)
             && let Some(def) = self.ctx.adt_def(adt_id)
-                && let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32)) {
-                    let field_ty = field_def.ty;
-                    // TODO: Apply substitution
-                    return field_ty;
-                }
+            && let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32))
+        {
+            let field_ty = field_def.ty;
+            // TODO: Apply substitution
+            return field_ty;
+        }
         self.diagnostics.push(GlyimDiagnostic::type_error(
             span,
             format!("no field `{}` in ADT", self.ctx.name_str(field)),

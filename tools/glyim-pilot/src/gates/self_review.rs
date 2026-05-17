@@ -1,6 +1,6 @@
 pub fn build_review_prompt(diff: &str, commit_log: &str) -> String {
     format!(
-r#"## Self-Review Required
+        r#"## Self-Review Required
 
 ### Commit History
 ```

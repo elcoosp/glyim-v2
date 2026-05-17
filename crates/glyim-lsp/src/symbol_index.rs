@@ -13,7 +13,14 @@ pub struct SymbolInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolKind {
-    Function, Struct, Enum, EnumVariant, Field, TypeParameter, Local, Module,
+    Function,
+    Struct,
+    Enum,
+    EnumVariant,
+    Field,
+    TypeParameter,
+    Local,
+    Module,
 }
 
 #[derive(Debug, Clone)]
@@ -35,21 +42,35 @@ pub struct SymbolIndex {
 }
 
 impl Default for SymbolIndex {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SymbolIndex {
     pub fn new() -> Self {
-        Self { by_name: HashMap::new(), by_file: HashMap::new(), by_location: HashMap::new() }
+        Self {
+            by_name: HashMap::new(),
+            by_file: HashMap::new(),
+            by_location: HashMap::new(),
+        }
     }
 
     // Stub - real HIR building not needed for tests
-    pub fn build_from_hir(&mut self, _file_id: FileId, _hir: &glyim_hir::CrateHir, _interner: &glyim_core::Interner) {
+    pub fn build_from_hir(
+        &mut self,
+        _file_id: FileId,
+        _hir: &glyim_hir::CrateHir,
+        _interner: &glyim_core::Interner,
+    ) {
         tracing::warn!("STUB: SymbolIndex::build_from_hir not implemented");
     }
 
     pub fn lookup_by_name(&self, name: &str) -> Vec<&SymbolInfo> {
-        self.by_name.get(name).map(|v| v.iter().collect()).unwrap_or_default()
+        self.by_name
+            .get(name)
+            .map(|v| v.iter().collect())
+            .unwrap_or_default()
     }
 
     pub fn lookup_by_location(&self, file_id: FileId, offset: usize) -> Option<&SymbolInfo> {
@@ -57,7 +78,10 @@ impl SymbolIndex {
     }
 
     pub fn symbols_in_file(&self, file_id: FileId) -> Vec<&SymbolInfo> {
-        self.by_file.get(&file_id).map(|v| v.iter().collect()).unwrap_or_default()
+        self.by_file
+            .get(&file_id)
+            .map(|v| v.iter().collect())
+            .unwrap_or_default()
     }
 
     pub fn query(&self, prefix: &str, limit: usize) -> Vec<&SymbolInfo> {
@@ -86,15 +110,20 @@ impl SymbolIndex {
                         self.by_name.remove(&sym.name);
                     }
                 }
-                self.by_location.remove(&(file_id.to_raw(), sym.definition.span.lo.to_usize()));
+                self.by_location
+                    .remove(&(file_id.to_raw(), sym.definition.span.lo.to_usize()));
             }
         }
     }
 
     #[doc(hidden)]
     pub fn insert_test_symbol(&mut self, file_id: FileId, sym: SymbolInfo) {
-        self.by_name.entry(sym.name.clone()).or_default().push(sym.clone());
+        self.by_name
+            .entry(sym.name.clone())
+            .or_default()
+            .push(sym.clone());
         self.by_file.entry(file_id).or_default().push(sym.clone());
-        self.by_location.insert((file_id.to_raw(), sym.definition.span.lo.to_usize()), sym);
+        self.by_location
+            .insert((file_id.to_raw(), sym.definition.span.lo.to_usize()), sym);
     }
 }

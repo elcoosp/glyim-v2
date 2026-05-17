@@ -42,7 +42,9 @@ fn fn_and_const_same_raw_different_subst_len() {
         },
     ];
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
 
     assert_eq!(
         ctx.item_count(),
@@ -78,7 +80,11 @@ fn int_vs_uint_substitution() {
         substs: subst_u32,
     };
 
-    ctx.collect(&[item_i32, item_u32], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(
+        &[item_i32, item_u32],
+        &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
+    );
 
     assert_eq!(
         ctx.item_count(),
@@ -95,17 +101,23 @@ fn static_dedup_across_collects() {
         def_id: StaticDefId::from_raw(1),
     };
 
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
     assert_eq!(ctx.item_count(), 1);
 
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
     assert_eq!(
         ctx.item_count(),
         1,
         "static should be deduplicated across collects"
     );
 
-    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&[item.clone()], &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
     assert_eq!(ctx.item_count(), 1, "static should still be deduplicated");
 }
 
@@ -123,7 +135,9 @@ fn items_in_collection_order() {
         })
         .collect();
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
 
     let collected = ctx.items();
     for (i, item) in items.iter().enumerate() {
@@ -162,7 +176,11 @@ fn const_different_substs() {
         substs: subst_b,
     };
 
-    ctx.collect(&[item_a, item_b], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(
+        &[item_a, item_b],
+        &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
+    );
 
     assert_eq!(
         ctx.item_count(),
@@ -188,13 +206,25 @@ fn interleaved_collect_no_readd() {
         substs: empty_subst,
     };
 
-    ctx.collect(&[item_a.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(
+        &[item_a.clone()],
+        &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
+    );
     assert_eq!(ctx.item_count(), 1);
 
-    ctx.collect(&[item_b.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(
+        &[item_b.clone()],
+        &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
+    );
     assert_eq!(ctx.item_count(), 2);
 
-    ctx.collect(&[item_a.clone()], &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(
+        &[item_a.clone()],
+        &|_def_id, _substs| dummy_body(),
+        &|_ty| dummy_body(),
+    );
     assert_eq!(ctx.item_count(), 2, "item_a should not be re-added");
 }
 
@@ -209,7 +239,9 @@ fn multiple_statics() {
         })
         .collect();
 
-    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| dummy_body());
+    ctx.collect(&items, &|_def_id, _substs| dummy_body(), &|_ty| {
+        dummy_body()
+    });
 
     assert_eq!(ctx.item_count(), 10);
 

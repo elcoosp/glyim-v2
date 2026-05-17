@@ -10,7 +10,11 @@ pub enum PilotError {
     Apply(#[from] ApplyError),
 
     #[error("path security violation: {path} escapes worktree {root}: {reason}")]
-    PathEscape { path: String, root: String, reason: String },
+    PathEscape {
+        path: String,
+        root: String,
+        reason: String,
+    },
 
     #[error("git operation failed: {0}")]
     Git(String),
@@ -56,7 +60,12 @@ pub enum ApplyError {
     #[error("file not found: {0}")]
     FileNotFound(String),
     #[error("I/O error during {operation} on {path}: {source}")]
-    Io { path: String, operation: String, #[source] source: io::Error },
+    Io {
+        path: String,
+        operation: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("task join failure during {operation}: {reason}")]
     TaskJoin { operation: String, reason: String },
     #[error("apply failed and was rolled back: {detail}")]
@@ -83,8 +92,8 @@ mod tests {
     #[test]
     fn test_all_error_codes_documented() {
         let codes = [
-            "E0100", "E0201", "E0202", "E0203", "E0204", "E0205", "E0206",
-            "E0300", "E0400", "E0500", "E0600", "E0700", "E0800", "E0900",
+            "E0100", "E0201", "E0202", "E0203", "E0204", "E0205", "E0206", "E0300", "E0400",
+            "E0500", "E0600", "E0700", "E0800", "E0900",
         ];
         let md = include_str!("../ERROR_CODES.md");
         for code in codes {
@@ -94,7 +103,10 @@ mod tests {
 
     #[test]
     fn test_task_join_distinct_from_io() {
-        let err = ApplyError::TaskJoin { operation: "test".into(), reason: "panic".into() };
+        let err = ApplyError::TaskJoin {
+            operation: "test".into(),
+            reason: "panic".into(),
+        };
         assert_eq!(err.code(), "E0205");
         assert!(!format!("{err}").contains("I/O"));
     }

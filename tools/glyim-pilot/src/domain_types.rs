@@ -38,7 +38,10 @@ pub struct BannedPattern {
 
 impl BannedPattern {
     pub fn new(pattern: impl Into<String>, description: impl Into<String>) -> Self {
-        Self { pattern: pattern.into(), description: description.into() }
+        Self {
+            pattern: pattern.into(),
+            description: description.into(),
+        }
     }
 }
 
@@ -59,9 +62,25 @@ pub struct DependencyRule {
 
 pub fn default_architecture_rules() -> Vec<DependencyRule> {
     vec![
-        DependencyRule { from_crate: "glyim-frontend".into(), forbidden_dep: "glyim-type".into(), reason: "frontend must not depend on type directly".into() },
-        DependencyRule { from_crate: "glyim-frontend".into(), forbidden_dep: "glyim-ir".into(), reason: "frontend must not depend on IR".into() },
-        DependencyRule { from_crate: "glyim-syntax".into(), forbidden_dep: "glyim-ir".into(), reason: "syntax must not depend on IR".into() },
-        DependencyRule { from_crate: "glyim-type".into(), forbidden_dep: "glyim-codegen".into(), reason: "type must not depend on codegen".into() },
+        DependencyRule {
+            from_crate: "glyim-frontend".into(),
+            forbidden_dep: "glyim-type".into(),
+            reason: "frontend must not depend on type directly".into(),
+        },
+        DependencyRule {
+            from_crate: "glyim-frontend".into(),
+            forbidden_dep: "glyim-ir".into(),
+            reason: "frontend must not depend on IR".into(),
+        },
+        DependencyRule {
+            from_crate: "glyim-syntax".into(),
+            forbidden_dep: "glyim-ir".into(),
+            reason: "syntax must not depend on IR".into(),
+        },
+        DependencyRule {
+            from_crate: "glyim-type".into(),
+            forbidden_dep: "glyim-codegen".into(),
+            reason: "type must not depend on codegen".into(),
+        },
     ]
 }

@@ -64,10 +64,9 @@ pub mod prometheus_impl {
                 return;
             }
 
-            let opts = prometheus::Opts::new(name, name)
-                .const_labels(make_const_labels(labels));
-            let counter = prometheus::IntCounter::with_opts(opts)
-                .expect("failed to create counter opts");
+            let opts = prometheus::Opts::new(name, name).const_labels(make_const_labels(labels));
+            let counter =
+                prometheus::IntCounter::with_opts(opts).expect("failed to create counter opts");
 
             let _ = prometheus::default_registry().register(Box::new(counter.clone()));
 
@@ -83,10 +82,10 @@ pub mod prometheus_impl {
                 return;
             }
 
-            let opts = prometheus::HistogramOpts::new(name, name)
-                .const_labels(make_const_labels(labels));
-            let histo = prometheus::Histogram::with_opts(opts)
-                .expect("failed to create histogram opts");
+            let opts =
+                prometheus::HistogramOpts::new(name, name).const_labels(make_const_labels(labels));
+            let histo =
+                prometheus::Histogram::with_opts(opts).expect("failed to create histogram opts");
 
             let _ = prometheus::default_registry().register(Box::new(histo.clone()));
 
@@ -96,15 +95,22 @@ pub mod prometheus_impl {
     }
 
     fn make_const_labels(labels: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
-        labels.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect()
+        labels
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
     }
 }
 
 pub fn production_metrics() -> Box<dyn Metrics> {
     #[cfg(feature = "prometheus")]
-    { Box::new(prometheus_impl::PrometheusMetrics::new()) }
+    {
+        Box::new(prometheus_impl::PrometheusMetrics::new())
+    }
     #[cfg(not(feature = "prometheus"))]
-    { Box::new(LoggingMetrics) }
+    {
+        Box::new(LoggingMetrics)
+    }
 }
 
 #[cfg(test)]

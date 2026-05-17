@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use regex::Regex;
 use std::sync::LazyLock;
 
-static MUTATION_PCT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"kill rate (\d+(?:\.\d+)?)%").unwrap());
+static MUTATION_PCT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"kill rate (\d+(?:\.\d+)?)%").unwrap());
 
 pub struct MutationGate {
     pub min_kill_rate: f64,
@@ -26,7 +27,8 @@ impl Gate for MutationGate {
             &ctx.worktree_dir,
             ctx.timeout_secs,
             "mutation",
-        ).await;
+        )
+        .await;
 
         match output {
             Ok(out) if out.status.success() => {
@@ -35,18 +37,40 @@ impl Gate for MutationGate {
                     if let Some(rate_str) = caps.get(1) {
                         if let Ok(rate) = rate_str.as_str().parse::<f64>() {
                             if rate >= self.min_kill_rate {
-                                Ok(GateResult::pass_with_note("mutation", format!("Mutation kill rate {:.1}% meets minimum {}%", rate, self.min_kill_rate)))
+                                Ok(GateResult::pass_with_note(
+                                    "mutation",
+                                    format!(
+                                        "Mutation kill rate {:.1}% meets minimum {}%",
+                                        rate, self.min_kill_rate
+                                    ),
+                                ))
                             } else {
-                                Ok(GateResult::fail_with_details("mutation", format!("Mutation kill rate {:.1}% < {}%", rate, self.min_kill_rate), stdout.to_string()))
+                                Ok(GateResult::fail_with_details(
+                                    "mutation",
+                                    format!(
+                                        "Mutation kill rate {:.1}% < {}%",
+                                        rate, self.min_kill_rate
+                                    ),
+                                    stdout.to_string(),
+                                ))
                             }
                         } else {
-                            Ok(GateResult::fail("mutation", "Failed to parse kill rate percentage"))
+                            Ok(GateResult::fail(
+                                "mutation",
+                                "Failed to parse kill rate percentage",
+                            ))
                         }
                     } else {
-                        Ok(GateResult::fail("mutation", "Could not find kill rate in output"))
+                        Ok(GateResult::fail(
+                            "mutation",
+                            "Could not find kill rate in output",
+                        ))
                     }
                 } else {
-                    Ok(GateResult::fail("mutation", "No mutation data found. Run tests with mutants first."))
+                    Ok(GateResult::fail(
+                        "mutation",
+                        "No mutation data found. Run tests with mutants first.",
+                    ))
                 }
             }
             Ok(out) => {
@@ -55,10 +79,16 @@ impl Gate for MutationGate {
                 if is_command_not_found(&stdout, &stderr) {
                     Err(PilotError::Gate {
                         gate: "mutation".into(),
-                        message: "cargo-mutants not installed. Install with: cargo install cargo-mutants".into(),
+                        message:
+                            "cargo-mutants not installed. Install with: cargo install cargo-mutants"
+                                .into(),
                     })
                 } else {
-                    Ok(GateResult::fail_with_details("mutation", "cargo mutants failed", format!("{}{}", stdout, stderr)))
+                    Ok(GateResult::fail_with_details(
+                        "mutation",
+                        "cargo mutants failed",
+                        format!("{}{}", stdout, stderr),
+                    ))
                 }
             }
             Err(e) => Err(e),
@@ -85,7 +115,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_mutation_gate_parsing() {
-        let gate = MutationGate { min_kill_rate: 75.0 };
+        let gate = MutationGate {
+            min_kill_rate: 75.0,
+        };
         let result = gate.run(&test_context()).await;
         assert!(result.is_ok() || result.is_err());
     }

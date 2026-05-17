@@ -19,22 +19,27 @@ impl Gate for AuditGate {
             &ctx.worktree_dir,
             ctx.timeout_secs,
             "audit",
-        ).await;
+        )
+        .await;
 
         match output {
-            Ok(out) if out.status.success() => {
-                Ok(GateResult::pass("audit"))
-            }
+            Ok(out) if out.status.success() => Ok(GateResult::pass("audit")),
             Ok(out) => {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 if is_command_not_found(&stdout, &stderr) {
                     Err(PilotError::Gate {
                         gate: "audit".into(),
-                        message: "cargo-audit not installed. Install with: cargo install cargo-audit".into(),
+                        message:
+                            "cargo-audit not installed. Install with: cargo install cargo-audit"
+                                .into(),
                     })
                 } else {
-                    Ok(GateResult::fail_with_details("audit", "Security vulnerabilities found", format!("{}{}", stdout, stderr)))
+                    Ok(GateResult::fail_with_details(
+                        "audit",
+                        "Security vulnerabilities found",
+                        format!("{}{}", stdout, stderr),
+                    ))
                 }
             }
             Err(e) => Err(e),

@@ -8,7 +8,11 @@ pub enum FileOp {
     #[serde(rename = "write")]
     Write { path: String, content: String },
     #[serde(rename = "replace")]
-    Replace { path: String, find: String, replace: String },
+    Replace {
+        path: String,
+        find: String,
+        replace: String,
+    },
     #[serde(rename = "delete")]
     Delete { path: String },
 }
@@ -34,10 +38,20 @@ pub struct ParsedOps {
 
 impl ParsedOps {
     pub fn empty() -> Self {
-        Self { ops: Vec::new(), commit_message: None, incomplete: false, done: false, approved: false }
+        Self {
+            ops: Vec::new(),
+            commit_message: None,
+            incomplete: false,
+            done: false,
+            approved: false,
+        }
     }
     pub fn is_empty(&self) -> bool {
-        self.ops.is_empty() && self.commit_message.is_none() && !self.incomplete && !self.done && !self.approved
+        self.ops.is_empty()
+            && self.commit_message.is_none()
+            && !self.incomplete
+            && !self.done
+            && !self.approved
     }
 }
 
@@ -52,7 +66,20 @@ mod tests {
 
     #[test]
     fn test_file_op_path_accessor() {
-        assert_eq!(FileOp::Write { path: "a.rs".into(), content: String::new() }.path(), "a.rs");
-        assert_eq!(FileOp::Delete { path: "c.rs".into() }.path(), "c.rs");
+        assert_eq!(
+            FileOp::Write {
+                path: "a.rs".into(),
+                content: String::new()
+            }
+            .path(),
+            "a.rs"
+        );
+        assert_eq!(
+            FileOp::Delete {
+                path: "c.rs".into()
+            }
+            .path(),
+            "c.rs"
+        );
     }
 }

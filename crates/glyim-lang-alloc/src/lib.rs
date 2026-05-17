@@ -1,8 +1,7 @@
 //! Glyim Alloc Library – source access only.
 //!
-//! This crate provides access to the source code of the alloc library
-//! written in Glyim. It does not contain Rust implementations of the
-//! types; those are defined in the `.g` files.
+//! The actual implementation is in `.g` files. This crate only provides
+//! access to those sources.
 
 /// Returns the source code of an alloc library module by name.
 pub fn alloc_source(name: &str) -> Option<&'static str> {
@@ -17,12 +16,10 @@ pub fn alloc_source(name: &str) -> Option<&'static str> {
     }
 }
 
-/// Returns the names of all alloc library modules.
 pub fn alloc_modules() -> &'static [&'static str] {
     &["alloc", "boxed", "vec", "string", "rc", "raw_vec"]
 }
 
-/// Returns the combined source of all alloc library modules.
 pub fn alloc_source_all() -> String {
     let mut out = String::new();
     for name in alloc_modules() {

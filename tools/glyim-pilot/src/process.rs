@@ -19,11 +19,18 @@ impl std::fmt::Display for ProcessError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             ProcessErrorKind::ExecutionFailed(e) => write!(
-                f, "{} failed in {}: {e} (args: {:?})", self.program, self.cwd.display(), self.args
+                f,
+                "{} failed in {}: {e} (args: {:?})",
+                self.program,
+                self.cwd.display(),
+                self.args
             ),
             ProcessErrorKind::TimedOut { timeout_secs } => write!(
-                f, "{} timed out after {timeout_secs}s in {} (args: {:?})",
-                self.program, self.cwd.display(), self.args
+                f,
+                "{} timed out after {timeout_secs}s in {} (args: {:?})",
+                self.program,
+                self.cwd.display(),
+                self.args
             ),
         }
     }
@@ -55,7 +62,9 @@ pub async fn run_timed_command(
             program: program.into(),
             cwd: cwd.to_path_buf(),
             args: args.iter().map(|s| s.to_string()).collect(),
-            kind: ProcessErrorKind::TimedOut { timeout_secs: effective_timeout },
+            kind: ProcessErrorKind::TimedOut {
+                timeout_secs: effective_timeout,
+            },
         }),
     }
 }
@@ -83,9 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_timed_command_not_found() {
-        let result = run_timed_command(
-            "nonexistent_command_xyz", &[], Path::new("."), 5,
-        ).await;
+        let result = run_timed_command("nonexistent_command_xyz", &[], Path::new("."), 5).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err.kind, ProcessErrorKind::ExecutionFailed(_)));

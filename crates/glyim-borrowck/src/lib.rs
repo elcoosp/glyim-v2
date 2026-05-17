@@ -35,9 +35,7 @@ use glyim_span::Span;
 use smallvec::SmallVec;
 use tracing::{debug, trace};
 
-use crate::visitor::{
-    ReadVisitor, borrow_kind_label, places_conflict, walk_rvalue_reads,
-};
+use crate::visitor::{ReadVisitor, borrow_kind_label, places_conflict, walk_rvalue_reads};
 
 // ---------------------------------------------------------------------------
 // Public API

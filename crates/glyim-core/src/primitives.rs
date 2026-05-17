@@ -1,11 +1,25 @@
 #[derive(Clone, Debug)]
 pub struct TargetInfo {
     pointer_width: u32,
+    pub triple: String,
+    pub abi: TargetAbi,
 }
 
 impl TargetInfo {
-    pub const fn x86_64() -> Self {
-        Self { pointer_width: 64 }
+    pub fn aarch64() -> Self {
+        Self {
+            pointer_width: 64,
+            triple: "aarch64-unknown-linux-gnu".to_string(),
+            abi: TargetAbi::AArch64AAPCS,
+        }
+    }
+
+    pub fn x86_64() -> Self {
+        Self {
+            pointer_width: 64,
+            triple: "x86_64-unknown-linux-gnu".to_string(),
+            abi: TargetAbi::X86_64SystemV,
+        }
     }
     pub fn pointer_width(&self) -> u32 {
         self.pointer_width
@@ -18,9 +32,19 @@ impl TargetInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetAbi {
+    X86_64SystemV,
+    AArch64AAPCS,
+}
+
 impl Default for TargetInfo {
     fn default() -> Self {
-        Self::x86_64()
+        Self {
+            pointer_width: 64,
+            triple: "x86_64-unknown-linux-gnu".to_string(),
+            abi: TargetAbi::X86_64SystemV,
+        }
     }
 }
 

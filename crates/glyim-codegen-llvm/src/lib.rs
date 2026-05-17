@@ -1632,6 +1632,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
                 PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
                 PassMode::Ignore => continue,
+                _ => {
+                    tracing::warn!("Unhandled PassMode {:?}, treating as Direct", arg_abi.mode);
+                    self.llvm_type_for_ty(arg_abi.ty)
+                }
             };
             param_types.push(llvm_ty);
         }
@@ -1708,10 +1712,13 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     llvm_args.push(tmp_ptr.as_basic_value_enum());
                 }
                 PassMode::Ignore => unreachable!(),
+                _ => {
+                    tracing::warn!("Unhandled PassMode {:?}, treating as Direct", arg_abi.mode);
+                    llvm_args.push(arg_val);
+                }
             }
             arg_idx += 1;
         }
-
         let metadata_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
             llvm_args.iter().map(|v| (*v).into()).collect();
 
@@ -1764,7 +1771,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
         }
 
-        // Position at the normal destination block for return value handling
         if use_invoke {
             if let Some(target_bb) = target {
                 let target_block = self.bb_map.get(target_bb).unwrap();
@@ -1815,7 +1821,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             })?;
         }
 
-        // For non-invoke calls, branch to target
         if !use_invoke {
             if let Some(target_bb) = target {
                 let target_block = self.bb_map.get(target_bb).ok_or_else(|| {

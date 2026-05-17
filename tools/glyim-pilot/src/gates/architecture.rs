@@ -1,7 +1,7 @@
 //! Architecture dependency gate.
 //! Checks changed Cargo.toml files for forbidden dependencies.
 
-use crate::domain_types::{DependencyRule, default_architecture_rules};
+use crate::domain_types::{default_architecture_rules, DependencyRule};
 use crate::error::PilotError;
 use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
@@ -90,7 +90,12 @@ impl Gate for ArchitectureGate {
     }
 }
 
-fn check_cargo_toml(content: &str, rel_path: &str, rules: &[DependencyRule], violations: &mut Vec<String>) {
+fn check_cargo_toml(
+    content: &str,
+    rel_path: &str,
+    rules: &[DependencyRule],
+    violations: &mut Vec<String>,
+) {
     let crate_name = extract_crate_name(content);
     let deps = extract_dependencies(content);
     if let Some(name) = crate_name {

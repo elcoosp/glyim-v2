@@ -11,9 +11,17 @@ const EVENT_CHANNEL_CAPACITY: usize = 1024;
 
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
-    Connected { addr: SocketAddr },
-    Message { session_id: Option<String>, trace_id: Option<String>, msg: ExtensionMessage },
-    Disconnected { addr: SocketAddr },
+    Connected {
+        addr: SocketAddr,
+    },
+    Message {
+        session_id: Option<String>,
+        trace_id: Option<String>,
+        msg: ExtensionMessage,
+    },
+    Disconnected {
+        addr: SocketAddr,
+    },
 }
 
 pub struct WsServer {
@@ -25,13 +33,24 @@ pub struct WsServer {
 
 impl WsServer {
     pub fn new(host: &str, port: u16) -> Self {
-        let addr: SocketAddr = format!("{host}:{port}").parse().expect("invalid bind address");
+        let addr: SocketAddr = format!("{host}:{port}")
+            .parse()
+            .expect("invalid bind address");
         let (event_tx, event_rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
         let (cli_msg_tx, _) = broadcast::channel(256);
-        Self { addr, event_tx, event_rx: Some(event_rx), cli_msg_tx }
+        Self {
+            addr,
+            event_tx,
+            event_rx: Some(event_rx),
+            cli_msg_tx,
+        }
     }
-    pub fn take_event_rx(&mut self) -> Option<mpsc::Receiver<ServerEvent>> { self.event_rx.take() }
-    pub fn cli_msg_sender(&self) -> broadcast::Sender<String> { self.cli_msg_tx.clone() }
+    pub fn take_event_rx(&mut self) -> Option<mpsc::Receiver<ServerEvent>> {
+        self.event_rx.take()
+    }
+    pub fn cli_msg_sender(&self) -> broadcast::Sender<String> {
+        self.cli_msg_tx.clone()
+    }
     pub async fn run(&self) -> Result<(), PilotError> {
         let listener = TcpListener::bind(&self.addr).await?;
         tracing::info!("WebSocket server listening on ws://{}", self.addr);
@@ -72,10 +91,18 @@ impl WsServer {
                         while let Some(msg) = ws_receiver.next().await {
                             match msg {
                                 Ok(Message::Text(text)) => {
-                                    if let Ok(ext_msg) = serde_json::from_str::<ExtensionMessage>(&text) {
+                                    if let Ok(ext_msg) =
+                                        serde_json::from_str::<ExtensionMessage>(&text)
+                                    {
                                         let sid = ext_msg.session_id().map(|s| s.to_string());
                                         let tid = ext_msg.trace_id().map(|s| s.to_string());
-                                        let _ = event_tx.send(ServerEvent::Message { session_id: sid, trace_id: tid, msg: ext_msg }).await;
+                                        let _ = event_tx
+                                            .send(ServerEvent::Message {
+                                                session_id: sid,
+                                                trace_id: tid,
+                                                msg: ext_msg,
+                                            })
+                                            .await;
                                     }
                                 }
                                 Ok(Message::Ping(data)) => {

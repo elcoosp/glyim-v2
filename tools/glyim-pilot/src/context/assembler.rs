@@ -18,13 +18,24 @@ pub struct ContextAssembler {
 
 impl ContextAssembler {
     pub async fn new(project_root: std::path::PathBuf, config: Arc<PilotConfig>) -> Self {
-        Self { project_root, config }
+        Self {
+            project_root,
+            config,
+        }
     }
     pub async fn assemble(
-        &self, _stream_id: &str, owned_files: &[String],
-        _dependency_interfaces: &[String], ___test_files: &[String], provider_id: &str,
+        &self,
+        _stream_id: &str,
+        owned_files: &[String],
+        _dependency_interfaces: &[String],
+        ___test_files: &[String],
+        provider_id: &str,
     ) -> Result<AssembledContext, PilotError> {
-        let max_tokens = self.config.context.providers.get(provider_id)
+        let max_tokens = self
+            .config
+            .context
+            .providers
+            .get(provider_id)
             .map(|c| c.max_context_tokens)
             .unwrap_or(self.config.context.max_context_tokens);
         let mut budget = TokenBudget::new(max_tokens);
@@ -47,6 +58,12 @@ impl ContextAssembler {
             }
         }
         let tier2_tokens = budget.used_tokens - tier1_tokens;
-        Ok(AssembledContext { prompt, total_tokens: budget.used_tokens, tier1_tokens, tier2_tokens, tier3_tokens: 0 })
+        Ok(AssembledContext {
+            prompt,
+            total_tokens: budget.used_tokens,
+            tier1_tokens,
+            tier2_tokens,
+            tier3_tokens: 0,
+        })
     }
 }

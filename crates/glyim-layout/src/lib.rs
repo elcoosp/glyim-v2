@@ -121,11 +121,14 @@ pub struct ArgAbi {
     pub mode: PassMode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PassMode {
     Direct,
     Indirect { meta_attrs: bool },
     Ignore,
+    Cast { to: Ty, cast_int: bool },
+    HomogeneousAggregate { element_ty: Ty, count: u32 },
+    Split { pieces: Vec<PassMode> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

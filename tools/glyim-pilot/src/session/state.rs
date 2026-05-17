@@ -5,8 +5,19 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StreamStatus {
-    Init, Seeding, Waiting, Streaming, Executing, Feedback,
-    Committing, Committed, Verifying, Reviewing, Complete, Error, Paused,
+    Init,
+    Seeding,
+    Waiting,
+    Streaming,
+    Executing,
+    Feedback,
+    Committing,
+    Committed,
+    Verifying,
+    Reviewing,
+    Complete,
+    Error,
+    Paused,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,10 +42,20 @@ impl SessionState {
     pub fn new(stream_id: String, provider_id: String, worktree_path: String) -> Self {
         let now = Utc::now();
         Self {
-            session_id: uuid::Uuid::new_v4().to_string(), stream_id, provider_id,
-            tab_id: None, status: StreamStatus::Init, turn: 0, fix_round: 0, commits: 0,
-            worktree_path, created_at: now, updated_at: now, last_activity: now,
-            error_message: None, provider_cooldown_until: None,
+            session_id: uuid::Uuid::new_v4().to_string(),
+            stream_id,
+            provider_id,
+            tab_id: None,
+            status: StreamStatus::Init,
+            turn: 0,
+            fix_round: 0,
+            commits: 0,
+            worktree_path,
+            created_at: now,
+            updated_at: now,
+            last_activity: now,
+            error_message: None,
+            provider_cooldown_until: None,
         }
     }
     pub(crate) fn transition(&mut self, new_status: StreamStatus) {
@@ -44,11 +65,23 @@ impl SessionState {
         self.last_activity = now;
     }
     #[allow(dead_code)]
-    pub(crate) fn record_commit(&mut self) { self.commits += 1; self.fix_round = 0; self.last_activity = Utc::now(); }
-    pub(crate) fn record_turn(&mut self) { self.turn += 1; self.last_activity = Utc::now(); }
+    pub(crate) fn record_commit(&mut self) {
+        self.commits += 1;
+        self.fix_round = 0;
+        self.last_activity = Utc::now();
+    }
+    pub(crate) fn record_turn(&mut self) {
+        self.turn += 1;
+        self.last_activity = Utc::now();
+    }
     #[allow(dead_code)]
-    pub(crate) fn set_provider_cooldown(&mut self, until: DateTime<Utc>) { self.provider_cooldown_until = Some(until); }
-    pub fn is_provider_in_cooldown(&self) -> bool { self.provider_cooldown_until.is_some_and(|until| Utc::now() < until) }
+    pub(crate) fn set_provider_cooldown(&mut self, until: DateTime<Utc>) {
+        self.provider_cooldown_until = Some(until);
+    }
+    pub fn is_provider_in_cooldown(&self) -> bool {
+        self.provider_cooldown_until
+            .is_some_and(|until| Utc::now() < until)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,5 +89,16 @@ pub struct GlobalState {
     pub sessions: HashMap<String, SessionState>,
     pub version: String,
 }
-impl GlobalState { pub fn new() -> Self { Self { sessions: HashMap::new(), version: env!("CARGO_PKG_VERSION").to_string() } } }
-impl Default for GlobalState { fn default() -> Self { Self::new() } }
+impl GlobalState {
+    pub fn new() -> Self {
+        Self {
+            sessions: HashMap::new(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        }
+    }
+}
+impl Default for GlobalState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

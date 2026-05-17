@@ -7,13 +7,31 @@ use async_trait::async_trait;
 pub struct TestGate;
 #[async_trait]
 impl Gate for TestGate {
-    fn name(&self) -> &str { "test" }
+    fn name(&self) -> &str {
+        "test"
+    }
     async fn run(&self, ctx: &GateContext) -> Result<GateResult, PilotError> {
-        let output = run_gate_command("cargo", &["test"], &ctx.worktree_dir, ctx.timeout_secs, "test").await?;
-        if output.status.success() { Ok(GateResult::pass("test")) }
-        else {
-            let combined = format!("{}\n{}", strip_ansi(&String::from_utf8_lossy(&output.stdout)), strip_ansi(&String::from_utf8_lossy(&output.stderr)));
-            Ok(GateResult::fail_with_details("test", "test failures detected", trim_test_failures(&combined)))
+        let output = run_gate_command(
+            "cargo",
+            &["test"],
+            &ctx.worktree_dir,
+            ctx.timeout_secs,
+            "test",
+        )
+        .await?;
+        if output.status.success() {
+            Ok(GateResult::pass("test"))
+        } else {
+            let combined = format!(
+                "{}\n{}",
+                strip_ansi(&String::from_utf8_lossy(&output.stdout)),
+                strip_ansi(&String::from_utf8_lossy(&output.stderr))
+            );
+            Ok(GateResult::fail_with_details(
+                "test",
+                "test failures detected",
+                trim_test_failures(&combined),
+            ))
         }
     }
 }

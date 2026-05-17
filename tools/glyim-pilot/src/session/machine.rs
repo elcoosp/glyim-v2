@@ -1,5 +1,5 @@
-use crate::error::PilotError;
 use super::state::{SessionState, StreamStatus};
+use crate::error::PilotError;
 
 const VALID_TRANSITIONS: &[(StreamStatus, StreamStatus)] = &[
     (StreamStatus::Init, StreamStatus::Seeding),
@@ -35,14 +35,25 @@ pub struct TransitionValidator;
 
 impl TransitionValidator {
     pub fn validate(session: &SessionState, new_status: StreamStatus) -> Result<(), PilotError> {
-        if session.status == new_status { return Ok(()); }
-        if VALID_TRANSITIONS.iter().any(|(from, to)| from == &session.status && to == &new_status) {
+        if session.status == new_status {
+            return Ok(());
+        }
+        if VALID_TRANSITIONS
+            .iter()
+            .any(|(from, to)| from == &session.status && to == &new_status)
+        {
             Ok(())
         } else {
-            Err(PilotError::Session(format!("invalid state transition: {:?} → {:?} (session {})", session.status, new_status, session.stream_id)))
+            Err(PilotError::Session(format!(
+                "invalid state transition: {:?} → {:?} (session {})",
+                session.status, new_status, session.stream_id
+            )))
         }
     }
-    pub fn transition(session: &mut SessionState, new_status: StreamStatus) -> Result<(), PilotError> {
+    pub fn transition(
+        session: &mut SessionState,
+        new_status: StreamStatus,
+    ) -> Result<(), PilotError> {
         Self::validate(session, new_status.clone())?;
         session.transition(new_status);
         Ok(())

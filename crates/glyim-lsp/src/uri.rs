@@ -2,8 +2,12 @@ use std::path::{Path, PathBuf};
 use url::Url;
 
 pub fn path_to_uri(path: &Path) -> Result<String, String> {
-    let url = Url::from_file_path(path)
-        .map_err(|_| format!("path is not absolute or cannot be represented as file:// URI: {}", path.display()))?;
+    let url = Url::from_file_path(path).map_err(|_| {
+        format!(
+            "path is not absolute or cannot be represented as file:// URI: {}",
+            path.display()
+        )
+    })?;
     Ok(url.to_string())
 }
 
@@ -15,7 +19,10 @@ pub fn uri_to_file_path(uri: &str) -> Result<PathBuf, String> {
 
 pub fn offset_to_position(text: &str, offset: usize) -> Result<(usize, usize), String> {
     if offset > text.len() {
-        return Err(format!("offset {offset} out of bounds (len {})", text.len()));
+        return Err(format!(
+            "offset {offset} out of bounds (len {})",
+            text.len()
+        ));
     }
     let mut line = 0;
     let mut col = 0;

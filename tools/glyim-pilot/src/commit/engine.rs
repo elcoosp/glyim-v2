@@ -9,9 +9,18 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum CommitDecision {
-    Committed { message: String, new_fix_round: u32 },
-    GateFailed { new_fix_round: u32, feedback: String },
-    Escalated { new_fix_round: u32, feedback: String },
+    Committed {
+        message: String,
+        new_fix_round: u32,
+    },
+    GateFailed {
+        new_fix_round: u32,
+        feedback: String,
+    },
+    Escalated {
+        new_fix_round: u32,
+        feedback: String,
+    },
 }
 
 impl CommitDecision {
@@ -46,49 +55,96 @@ pub struct CommitEngine {
 
 impl CommitEngine {
     pub fn new(
-        gate_config: ResolvedCommitGates, max_fix_rounds: u32,
-        banned_patterns: Vec<BannedPattern>, architecture_rules: Vec<DependencyRule>,
+        gate_config: ResolvedCommitGates,
+        max_fix_rounds: u32,
+        banned_patterns: Vec<BannedPattern>,
+        architecture_rules: Vec<DependencyRule>,
     ) -> Self {
-        Self { gate_config, max_fix_rounds, banned_patterns, architecture_rules }
+        Self {
+            gate_config,
+            max_fix_rounds,
+            banned_patterns,
+            architecture_rules,
+        }
     }
 
     pub async fn evaluate_commit(&self, ctx: &CommitContext) -> Result<CommitDecision, PilotError> {
         let gate_ctx = GateContext::new(
-            ctx.worktree_dir.clone(), ctx.project_root.clone(),
-            ctx.default_branch.clone(), ctx.branch_version.clone(),
-            ctx.timeout_secs, ctx.changed_files.clone(),
+            ctx.worktree_dir.clone(),
+            ctx.project_root.clone(),
+            ctx.default_branch.clone(),
+            ctx.branch_version.clone(),
+            ctx.timeout_secs,
+            ctx.changed_files.clone(),
         );
 
         let pipeline_result = commit_pipeline::run_commit_pipeline(
-            &gate_ctx, &self.gate_config,
-            self.banned_patterns.clone(), self.architecture_rules.clone(),
-        ).await?;
+            &gate_ctx,
+            &self.gate_config,
+            self.banned_patterns.clone(),
+            self.architecture_rules.clone(),
+        )
+        .await?;
 
         if pipeline_result.passed {
-            commit_all(&ctx.worktree_dir, &ctx.stream_id, &ctx.commit_message, ctx.timeout_secs).await?;
-            Ok(CommitDecision::Committed { message: ctx.commit_message.clone(), new_fix_round: 0 })
+            commit_all(
+                &ctx.worktree_dir,
+                &ctx.stream_id,
+                &ctx.commit_message,
+                ctx.timeout_secs,
+            )
+            .await?;
+            Ok(CommitDecision::Committed {
+                message: ctx.commit_message.clone(),
+                new_fix_round: 0,
+            })
         } else {
-            let fmt_failed = pipeline_result.gates.iter().any(|g| g.gate_name == "fmt" && !g.passed);
+            let fmt_failed = pipeline_result
+                .gates
+                .iter()
+                .any(|g| g.gate_name == "fmt" && !g.passed);
             if fmt_failed {
                 let fix_result = fmt_fix::run_fmt_fix(&gate_ctx).await?;
                 if fix_result.passed {
                     let updated_changed = crate::git_ops::diff_name_only(
-                        &ctx.worktree_dir, &ctx.default_branch, ctx.timeout_secs,
-                    ).await.unwrap_or_default()
-                        .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();
+                        &ctx.worktree_dir,
+                        &ctx.default_branch,
+                        ctx.timeout_secs,
+                    )
+                    .await
+                    .unwrap_or_default()
+                    .lines()
+                    .map(|l| l.to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
                     let retry_ctx = GateContext::new(
-                        ctx.worktree_dir.clone(), ctx.project_root.clone(),
-                        ctx.default_branch.clone(), ctx.branch_version.clone(),
-                        ctx.timeout_secs, updated_changed,
+                        ctx.worktree_dir.clone(),
+                        ctx.project_root.clone(),
+                        ctx.default_branch.clone(),
+                        ctx.branch_version.clone(),
+                        ctx.timeout_secs,
+                        updated_changed,
                     );
                     let retry_result = commit_pipeline::run_commit_pipeline(
-                        &retry_ctx, &self.gate_config,
-                        self.banned_patterns.clone(), self.architecture_rules.clone(),
-                    ).await?;
+                        &retry_ctx,
+                        &self.gate_config,
+                        self.banned_patterns.clone(),
+                        self.architecture_rules.clone(),
+                    )
+                    .await?;
                     if retry_result.passed {
                         let fix_msg = format!("{} (fmt auto-fixed)", ctx.commit_message);
-                        commit_all(&ctx.worktree_dir, &ctx.stream_id, &fix_msg, ctx.timeout_secs).await?;
-                        return Ok(CommitDecision::Committed { message: fix_msg, new_fix_round: 0 });
+                        commit_all(
+                            &ctx.worktree_dir,
+                            &ctx.stream_id,
+                            &fix_msg,
+                            ctx.timeout_secs,
+                        )
+                        .await?;
+                        return Ok(CommitDecision::Committed {
+                            message: fix_msg,
+                            new_fix_round: 0,
+                        });
                     }
                     let feedback = retry_result.failure_message();
                     return self.escalate_or_retry(ctx, ctx.current_fix_round + 1, &feedback);
@@ -100,12 +156,21 @@ impl CommitEngine {
     }
 
     fn escalate_or_retry(
-        &self, _ctx: &CommitContext, new_fix_round: u32, feedback: &str,
+        &self,
+        _ctx: &CommitContext,
+        new_fix_round: u32,
+        feedback: &str,
     ) -> Result<CommitDecision, PilotError> {
         if new_fix_round > self.max_fix_rounds {
-            Ok(CommitDecision::Escalated { new_fix_round, feedback: feedback.to_string() })
+            Ok(CommitDecision::Escalated {
+                new_fix_round,
+                feedback: feedback.to_string(),
+            })
         } else {
-            Ok(CommitDecision::GateFailed { new_fix_round, feedback: feedback.to_string() })
+            Ok(CommitDecision::GateFailed {
+                new_fix_round,
+                feedback: feedback.to_string(),
+            })
         }
     }
 

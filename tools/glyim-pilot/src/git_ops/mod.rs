@@ -1,6 +1,5 @@
 pub mod worktree;
 pub use worktree::{
-    create_worktree, commit_all, emergency_wip_commit, push_branch,
-    create_pr, status_porcelain, diff_main, log_oneline, diff_name_only,
-    remove_worktree, detect_default_branch,
+    commit_all, create_pr, create_worktree, detect_default_branch, diff_main, diff_name_only,
+    emergency_wip_commit, log_oneline, push_branch, remove_worktree, status_porcelain,
 };

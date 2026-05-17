@@ -3,7 +3,7 @@ use glyim_layout::{
     Align, ArgAbi, CallConvention, FieldsShape, FnAbi, Layout, LayoutComputer, LayoutError,
     PassMode, SimpleLayoutComputer, Size, VariantsShape,
 };
-use glyim_type::{ConstKind, FieldIdx, Ty, TyCtx, TyKind};
+use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
 
 pub(crate) struct FullLayoutComputer<'a> {
     simple: SimpleLayoutComputer<'a>,
@@ -28,12 +28,10 @@ impl LayoutComputer for FullLayoutComputer<'_> {
         match self.ctx.ty_kind(ty) {
             TyKind::Tuple(subst) => {
                 let args = self.ctx.substitution_args(*subst);
-                let mut field_layouts: Vec<Layout> = Vec::new();
+                let mut field_layouts = Vec::new();
                 for arg in args {
                     if let glyim_type::GenericArg::Ty(t) = arg {
                         field_layouts.push(self.layout_of(*t)?);
-                    } else {
-                        return Err(LayoutError::UnknownType(ty));
                     }
                 }
                 if field_layouts.is_empty() {
@@ -41,8 +39,7 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                 }
                 let mut size = Size::ZERO;
                 let mut align = Align::ONE;
-                let mut offsets: glyim_core::arena::IndexVec<FieldIdx, Size> =
-                    glyim_core::arena::IndexVec::new();
+                let mut offsets = glyim_core::arena::IndexVec::new();
                 for layout in &field_layouts {
                     let offset = size.align_to(layout.align);
                     offsets.push(offset);
@@ -81,25 +78,40 @@ impl LayoutComputer for FullLayoutComputer<'_> {
     }
 
     fn fn_abi_of(&self, sig: &glyim_type::FnSig) -> Result<FnAbi, LayoutError> {
-        let args = self.ctx.substitution_args(sig.inputs);
-        let arg_abis: Vec<ArgAbi> = args
-            .iter()
-            .filter_map(|arg| {
-                if let glyim_type::GenericArg::Ty(t) = arg {
-                    let layout = self.layout_of(*t).ok()?;
-                    let mode = classify_pass_mode(&layout, self.ptr_size());
-                    Some(ArgAbi {
-                        ty: *t,
-                        layout,
-                        mode,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let ptr_size = self.ptr_size();
+        let large_threshold = ptr_size.0 * 2; // > 2*ptr_size -> indirect
+
+        // Classify return type
         let ret_layout = self.layout_of(sig.output)?;
-        let ret_mode = classify_pass_mode(&ret_layout, self.ptr_size());
+        let ret_mode = if ret_layout.size.0 == 0 {
+            PassMode::Ignore
+        } else if ret_layout.size.0 > large_threshold {
+            PassMode::Indirect { meta_attrs: false }
+        } else {
+            PassMode::Direct
+        };
+
+        // Classify arguments
+        let args = self.ctx.substitution_args(sig.inputs);
+        let mut arg_abis = Vec::new();
+        for arg in args {
+            if let glyim_type::GenericArg::Ty(t) = arg {
+                let layout = self.layout_of(*t)?;
+                let mode = if layout.size.0 == 0 {
+                    PassMode::Ignore
+                } else if layout.size.0 > large_threshold {
+                    PassMode::Indirect { meta_attrs: false }
+                } else {
+                    PassMode::Direct
+                };
+                arg_abis.push(ArgAbi {
+                    ty: *t,
+                    layout,
+                    mode,
+                });
+            }
+        }
+
         Ok(FnAbi {
             args: arg_abis,
             ret: ArgAbi {
@@ -122,15 +134,5 @@ impl LayoutComputer for FullLayoutComputer<'_> {
 
     fn target_info(&self) -> &TargetInfo {
         self.simple.target_info()
-    }
-}
-
-fn classify_pass_mode(layout: &Layout, ptr_size: Size) -> PassMode {
-    if layout.size.0 == 0 {
-        PassMode::Ignore
-    } else if layout.size.0 > ptr_size.0 * 2 {
-        PassMode::Indirect { meta_attrs: false }
-    } else {
-        PassMode::Direct
     }
 }

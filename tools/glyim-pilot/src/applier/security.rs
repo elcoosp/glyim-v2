@@ -1,10 +1,13 @@
-use std::path::{Path, PathBuf};
 use dunce::canonicalize;
+use std::path::{Path, PathBuf};
 
 pub fn validate_path(worktree_root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     let relative = Path::new(relative_path);
     if relative.is_absolute() {
-        return Err(format!("path '{}' is absolute; must be relative to worktree", relative_path));
+        return Err(format!(
+            "path '{}' is absolute; must be relative to worktree",
+            relative_path
+        ));
     }
 
     let canonical_root = if worktree_root.exists() {
@@ -20,15 +23,26 @@ pub fn validate_path(worktree_root: &Path, relative_path: &str) -> Result<PathBu
     let normalized = path_clean::PathClean::clean(&candidate);
 
     if normalized == canonical_root {
-        return Err(format!("path '{}' resolves to worktree root, not a file", relative_path));
+        return Err(format!(
+            "path '{}' resolves to worktree root, not a file",
+            relative_path
+        ));
     }
     if !normalized.starts_with(&canonical_root) {
         if worktree_root.exists() {
-            if let (Ok(can_child), Ok(can_parent)) = (canonicalize(&normalized), canonicalize(&canonical_root)) {
-                if can_child.starts_with(can_parent) { return Ok(normalized); }
+            if let (Ok(can_child), Ok(can_parent)) =
+                (canonicalize(&normalized), canonicalize(&canonical_root))
+            {
+                if can_child.starts_with(can_parent) {
+                    return Ok(normalized);
+                }
             }
         }
-        return Err(format!("path '{}' escapes worktree '{}'", relative_path, canonical_root.display()));
+        return Err(format!(
+            "path '{}' escapes worktree '{}'",
+            relative_path,
+            canonical_root.display()
+        ));
     }
     Ok(normalized)
 }

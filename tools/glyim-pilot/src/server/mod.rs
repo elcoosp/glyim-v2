@@ -1,5 +1,5 @@
+pub mod event_handler;
 pub mod messages;
 pub mod ws;
-pub mod event_handler;
-pub use messages::{ExtensionMessage, CliMessage};
+pub use messages::{CliMessage, ExtensionMessage};
 pub use ws::{ServerEvent, WsServer};

@@ -13,11 +13,21 @@ pub struct GateContext {
 
 impl GateContext {
     pub fn new(
-        worktree_dir: PathBuf, project_root: PathBuf,
-        default_branch: String, branch_version: String,
-        timeout_secs: u64, changed_files: Vec<String>,
+        worktree_dir: PathBuf,
+        project_root: PathBuf,
+        default_branch: String,
+        branch_version: String,
+        timeout_secs: u64,
+        changed_files: Vec<String>,
     ) -> Self {
-        Self { worktree_dir, project_root, default_branch, branch_version, timeout_secs, changed_files }
+        Self {
+            worktree_dir,
+            project_root,
+            default_branch,
+            branch_version,
+            timeout_secs,
+            changed_files,
+        }
     }
 }
 
@@ -38,24 +48,62 @@ pub struct GateResult {
 
 impl GateResult {
     pub fn pass(name: impl Into<String>) -> Self {
-        Self { gate_name: name.into(), passed: true, message: "passed".into(), details: None, side_effects: Vec::new() }
+        Self {
+            gate_name: name.into(),
+            passed: true,
+            message: "passed".into(),
+            details: None,
+            side_effects: Vec::new(),
+        }
     }
     pub fn pass_with_note(name: impl Into<String>, note: impl Into<String>) -> Self {
-        Self { gate_name: name.into(), passed: true, message: note.into(), details: None, side_effects: Vec::new() }
+        Self {
+            gate_name: name.into(),
+            passed: true,
+            message: note.into(),
+            details: None,
+            side_effects: Vec::new(),
+        }
     }
     pub fn pass_with_side_effects(
-        name: impl Into<String>, note: impl Into<String>,
-        details: impl Into<String>, side_effects: Vec<GateSideEffect>,
+        name: impl Into<String>,
+        note: impl Into<String>,
+        details: impl Into<String>,
+        side_effects: Vec<GateSideEffect>,
     ) -> Self {
-        Self { gate_name: name.into(), passed: true, message: note.into(), details: Some(details.into()), side_effects }
+        Self {
+            gate_name: name.into(),
+            passed: true,
+            message: note.into(),
+            details: Some(details.into()),
+            side_effects,
+        }
     }
     pub fn fail(name: impl Into<String>, message: impl Into<String>) -> Self {
-        Self { gate_name: name.into(), passed: false, message: message.into(), details: None, side_effects: Vec::new() }
+        Self {
+            gate_name: name.into(),
+            passed: false,
+            message: message.into(),
+            details: None,
+            side_effects: Vec::new(),
+        }
     }
-    pub fn fail_with_details(name: impl Into<String>, message: impl Into<String>, details: impl Into<String>) -> Self {
-        Self { gate_name: name.into(), passed: false, message: message.into(), details: Some(details.into()), side_effects: Vec::new() }
+    pub fn fail_with_details(
+        name: impl Into<String>,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            gate_name: name.into(),
+            passed: false,
+            message: message.into(),
+            details: Some(details.into()),
+            side_effects: Vec::new(),
+        }
     }
-    pub fn has_side_effects(&self) -> bool { !self.side_effects.is_empty() }
+    pub fn has_side_effects(&self) -> bool {
+        !self.side_effects.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +126,9 @@ impl PipelineResult {
             if let Some(details) = &fail.details {
                 msg = format!("{msg}\n\n```\n{details}\n```");
             }
-            let side_effects: Vec<&GateSideEffect> = self.gates.iter()
+            let side_effects: Vec<&GateSideEffect> = self
+                .gates
+                .iter()
                 .filter(|g| g.passed && g.has_side_effects())
                 .flat_map(|g| &g.side_effects)
                 .collect();

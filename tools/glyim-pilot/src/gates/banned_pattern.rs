@@ -1,6 +1,6 @@
 //! Banned pattern gate with full string literal stripping (raw strings, byte strings, etc.)
 
-use crate::domain_types::{BannedPattern, default_banned_patterns};
+use crate::domain_types::{default_banned_patterns, BannedPattern};
 use crate::error::PilotError;
 use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
@@ -55,7 +55,12 @@ impl Gate for BannedPatternGate {
                     }
                     let path = dir.join(rel_path);
                     if let Ok(content) = std::fs::read_to_string(&path) {
-                        check_content_for_violations(&content, rel_path, &patterns, &mut violations);
+                        check_content_for_violations(
+                            &content,
+                            rel_path,
+                            &patterns,
+                            &mut violations,
+                        );
                     }
                 }
             } else {
@@ -70,7 +75,12 @@ impl Gate for BannedPatternGate {
                         let rel = path.strip_prefix(&dir).unwrap_or(path);
                         let rel_str = rel.to_string_lossy().to_string();
                         if let Ok(content) = std::fs::read_to_string(path) {
-                            check_content_for_violations(&content, &rel_str, &patterns, &mut violations);
+                            check_content_for_violations(
+                                &content,
+                                &rel_str,
+                                &patterns,
+                                &mut violations,
+                            );
                         }
                     }
                 }
@@ -263,10 +273,7 @@ mod tests {
     #[test]
     fn test_strip_byte_string() {
         let input = r#"let b = b"hello {"; let y = foo;"#;
-        assert_eq!(
-            strip_string_literals(input),
-            "let b = ; let y = foo;"
-        );
+        assert_eq!(strip_string_literals(input), "let b = ; let y = foo;");
     }
 
     #[test]

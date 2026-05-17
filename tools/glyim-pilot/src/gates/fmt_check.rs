@@ -7,10 +7,26 @@ use async_trait::async_trait;
 pub struct FmtCheckGate;
 #[async_trait]
 impl Gate for FmtCheckGate {
-    fn name(&self) -> &str { "fmt" }
+    fn name(&self) -> &str {
+        "fmt"
+    }
     async fn run(&self, ctx: &GateContext) -> Result<GateResult, PilotError> {
-        let output = run_gate_command("cargo", &["fmt", "--", "--check"], &ctx.worktree_dir, ctx.timeout_secs, "fmt").await?;
-        if output.status.success() { Ok(GateResult::pass("fmt")) }
-        else { Ok(GateResult::fail_with_details("fmt", "formatting check failed", trim_errors_and_warnings(&strip_ansi(&String::from_utf8_lossy(&output.stdout))))) }
+        let output = run_gate_command(
+            "cargo",
+            &["fmt", "--", "--check"],
+            &ctx.worktree_dir,
+            ctx.timeout_secs,
+            "fmt",
+        )
+        .await?;
+        if output.status.success() {
+            Ok(GateResult::pass("fmt"))
+        } else {
+            Ok(GateResult::fail_with_details(
+                "fmt",
+                "formatting check failed",
+                trim_errors_and_warnings(&strip_ansi(&String::from_utf8_lossy(&output.stdout))),
+            ))
+        }
     }
 }
