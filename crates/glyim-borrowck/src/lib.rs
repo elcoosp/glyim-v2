@@ -54,7 +54,7 @@ pub trait BorrowckCtx {
         self.ty_ctx().is_copy(ty)
     }
     /// Returns a human-readable name for the local, for error messages.
-    fn local_name(&self, local: LocalIdx) -> &str;
+    fn local_name(&self, local: LocalIdx) -> String;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +198,8 @@ impl ReadVisitor for PlaceCollector<'_> {
 /// `active_loans` contains all loans whose `dest_local` is live at this
 /// program point, meaning the reference is still in use and the borrow
 /// is still active.
-fn check_stmt_conflicts<C: BorrowckCtx>(
-    ctx: &C,
+fn check_stmt_conflicts(
+    ctx: &dyn BorrowckCtx,
     stmt: &glyim_mir::Statement,
     active_loans: &[&Loan],
     current_block: BasicBlockIdx,
@@ -337,7 +337,7 @@ fn check_stmt_conflicts<C: BorrowckCtx>(
 /// start in a reservation phase where shared access to the borrowed place
 /// is still allowed. They transition to activated (full mutable semantics)
 /// when the reference (`dest_local`) is first read.
-pub fn check_borrows<C: BorrowckCtx>(ctx: &C, body: &Body) -> BorrowckResult {
+pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     trace!("starting borrow checking");
     let loans = collect_loans(body);
     let liveness_result = liveness::compute_liveness(body);

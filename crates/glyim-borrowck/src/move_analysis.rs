@@ -98,9 +98,6 @@ impl MovePathArena {
     }
 
     /// Find the move path for a given place.
-    ///
-    /// For a bare local, looks up the root index. For a projected place,
-    /// walks children of the root to find a matching projection prefix.
     fn find(&self, place: &Place) -> Option<MovePathIdx> {
         let root_idx = *self.root_index.get(place.local.to_raw() as usize)?;
 
@@ -108,7 +105,6 @@ impl MovePathArena {
             return root_idx;
         }
 
-        // Walk children to find a path matching the projection
         let mut current_idx = root_idx?;
         for proj_elem in place.projection.iter() {
             let current = self.get(current_idx);
@@ -123,11 +119,10 @@ impl MovePathArena {
                         }
                     }
                 }
-                // For Deref / Index / Downcast, fall through to parent
             }
             match found {
                 Some(idx) => current_idx = idx,
-                None => return Some(current_idx), // best prefix match
+                None => return Some(current_idx),
             }
         }
 
@@ -147,17 +142,12 @@ impl MovePathArena {
 // Building move paths
 // ---------------------------------------------------------------------------
 
-/// Build the move path arena for a MIR body.
-///
-/// For each local, creates a root move path. For locals whose type is a
-/// tuple or struct (ADT), also creates child move paths for each field.
 fn build_move_paths(body: &Body, ctx: &dyn BorrowckCtx) -> MovePathArena {
     let mut arena = MovePathArena::new(body.locals.len());
 
     for (local_idx, local_decl) in body.locals.iter_enumerated() {
         let ty = local_decl.ty;
 
-        // Create root move path for this local
         let root_idx = arena.push(MovePath {
             place: Place::new(local_idx),
             parent: None,
@@ -165,7 +155,6 @@ fn build_move_paths(body: &Body, ctx: &dyn BorrowckCtx) -> MovePathArena {
         });
         arena.root_index[local_idx.to_raw() as usize] = Some(root_idx);
 
-        // Create child move paths for fields of tuple / ADT types
         let ty_ctx = ctx.ty_ctx();
         if let Some(field_count) = count_fields(ty, ty_ctx) {
             for field_idx in 0..field_count {
@@ -188,8 +177,6 @@ fn build_move_paths(body: &Body, ctx: &dyn BorrowckCtx) -> MovePathArena {
     arena
 }
 
-/// Count the number of fields in a type, if it is a tuple or ADT.
-/// Returns `None` for non-aggregate types (scalars, references, arrays, etc.).
 fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
     match ctx.ty_kind(ty) {
         glyim_type::TyKind::Tuple(substs) => Some(u32::from(substs.len())),
@@ -203,20 +190,13 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
 // Move dataflow analysis
 // ---------------------------------------------------------------------------
 
-/// Result of the move dataflow analysis.
 struct MoveAnalysisResult {
-    /// For each basic block, the set of move path indices that are moved
-    /// on entry to that block.
     moved_in: Vec<BitSet>,
-    /// For each basic block, the set of move path indices that are moved
-    /// on exit from that block.
     #[allow(dead_code)]
     moved_out: Vec<BitSet>,
-    /// The move path arena (owned, for later lookups).
     move_paths: MovePathArena,
 }
 
-/// Record a move of a move path and all its children (whole-struct move).
 fn record_move(move_paths: &MovePathArena, mp_idx: MovePathIdx, moved: &mut BitSet) {
     moved.insert(mp_idx.to_raw() as usize);
     for &child in &move_paths.get(mp_idx).children {
@@ -224,7 +204,6 @@ fn record_move(move_paths: &MovePathArena, mp_idx: MovePathIdx, moved: &mut BitS
     }
 }
 
-/// Record an initialisation of a move path and all its children.
 fn record_init(move_paths: &MovePathArena, mp_idx: MovePathIdx, inits: &mut BitSet) {
     inits.insert(mp_idx.to_raw() as usize);
     for &child in &move_paths.get(mp_idx).children {
@@ -232,17 +211,14 @@ fn record_init(move_paths: &MovePathArena, mp_idx: MovePathIdx, inits: &mut BitS
     }
 }
 
-/// Compute which move paths are moved at each program point using a forward
-/// dataflow analysis.
-fn compute_move_dataflow<C: BorrowckCtx>(
+fn compute_move_dataflow(
     body: &Body,
     move_paths: MovePathArena,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
 ) -> MoveAnalysisResult {
     let num_blocks = body.basic_blocks.len();
     let num_paths = move_paths.len();
 
-    // Per-block move/init effects
     let mut block_moves: Vec<BitSet> = (0..num_blocks)
         .map(|_| BitSet::with_capacity(num_paths))
         .collect();
@@ -264,7 +240,6 @@ fn compute_move_dataflow<C: BorrowckCtx>(
         }
     }
 
-    // Precompute predecessors
     let mut predecessors: Vec<Vec<BasicBlockIdx>> = vec![Vec::new(); num_blocks];
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         for succ in successor_blocks(&block_data.terminator.kind) {
@@ -279,7 +254,6 @@ fn compute_move_dataflow<C: BorrowckCtx>(
         .map(|_| BitSet::with_capacity(num_paths))
         .collect();
 
-    // Worklist-driven forward dataflow
     let mut worklist: Vec<usize> = (0..num_blocks).collect();
     let mut in_worklist = BitSet::with_capacity(num_blocks);
     for i in 0..num_blocks {
@@ -289,8 +263,6 @@ fn compute_move_dataflow<C: BorrowckCtx>(
     while let Some(bi) = worklist.pop() {
         in_worklist.remove(bi);
 
-        // moved_in(B) = ∪ moved_out(P) for all predecessors P
-        // Entry block starts with nothing moved.
         let mut new_moved_in = BitSet::with_capacity(num_paths);
         if bi != 0 {
             for &pred in &predecessors[bi] {
@@ -298,7 +270,6 @@ fn compute_move_dataflow<C: BorrowckCtx>(
             }
         }
 
-        // moved_out(B) = (moved_in(B) ∪ moves(B)) − inits(B)
         let mut new_moved_out = new_moved_in.clone();
         new_moved_out.union_with(&block_moves[bi]);
         new_moved_out.difference_with(&block_inits[bi]);
@@ -326,23 +297,19 @@ fn compute_move_dataflow<C: BorrowckCtx>(
     }
 }
 
-/// Collect the move/init effects of a single statement.
-fn collect_stmt_move_effects<C: BorrowckCtx>(
+fn collect_stmt_move_effects(
     stmt: &glyim_mir::Statement,
     move_paths: &MovePathArena,
     moves: &mut BitSet,
     inits: &mut BitSet,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
 ) {
     match &stmt.kind {
         StatementKind::Assign(dest, rvalue) => {
-            // Destination is initialised
             if let Some(mp_idx) = move_paths.find(dest) {
                 record_init(move_paths, mp_idx, inits);
             }
-
-            // Collect moves from the rvalue
             collect_rvalue_move_operands(rvalue, move_paths, moves, ctx, local_decls);
         }
         StatementKind::StorageLive(local) => {
@@ -359,21 +326,18 @@ fn collect_stmt_move_effects<C: BorrowckCtx>(
     }
 }
 
-/// Collect moves from Move operands in an rvalue (skipping Copy operands).
-fn collect_rvalue_move_operands<C: BorrowckCtx>(
+fn collect_rvalue_move_operands(
     rvalue: &Rvalue,
     move_paths: &MovePathArena,
     moves: &mut BitSet,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
 ) {
     match rvalue {
         Rvalue::Use(operand) => {
             collect_operand_move(operand, move_paths, moves, ctx, local_decls);
         }
-        Rvalue::Ref(_, _) => {
-            // Borrowing does not move the borrowed place
-        }
+        Rvalue::Ref(_, _) => {}
         Rvalue::BinaryOp(_, pair) => {
             let (left, right) = pair.as_ref();
             collect_operand_move(left, move_paths, moves, ctx, local_decls);
@@ -387,9 +351,7 @@ fn collect_rvalue_move_operands<C: BorrowckCtx>(
                 collect_operand_move(op, move_paths, moves, ctx, local_decls);
             }
         }
-        Rvalue::Discriminant(_) | Rvalue::Len(_) => {
-            // Reading a discriminant or length does not move the place
-        }
+        Rvalue::Discriminant(_) | Rvalue::Len(_) => {}
         Rvalue::Cast(_, operand, _) => {
             collect_operand_move(operand, move_paths, moves, ctx, local_decls);
         }
@@ -399,12 +361,11 @@ fn collect_rvalue_move_operands<C: BorrowckCtx>(
     }
 }
 
-/// Record a move from an operand (only `Operand::Move` of a non-Copy type).
-fn collect_operand_move<C: BorrowckCtx>(
+fn collect_operand_move(
     operand: &Operand,
     move_paths: &MovePathArena,
     moves: &mut BitSet,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
 ) {
     match operand {
@@ -424,13 +385,12 @@ fn collect_operand_move<C: BorrowckCtx>(
 // Per-statement move state
 // ---------------------------------------------------------------------------
 
-/// Compute per-statement move state by scanning forward within a block.
-fn compute_stmt_moved<C: BorrowckCtx>(
+fn compute_stmt_moved(
     body: &Body,
     block: BasicBlockIdx,
     moved_in: &BitSet,
     move_paths: &MovePathArena,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
 ) -> Vec<BitSet> {
     let block_data = &body.basic_blocks[block];
     let num_stmts = block_data.statements.len();
@@ -454,24 +414,21 @@ fn compute_stmt_moved<C: BorrowckCtx>(
     moved
 }
 
-fn apply_stmt_move_effects<C: BorrowckCtx>(
+fn apply_stmt_move_effects(
     stmt: &glyim_mir::Statement,
     move_paths: &MovePathArena,
     moved: &mut BitSet,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
 ) {
     match &stmt.kind {
         StatementKind::Assign(dest, rvalue) => {
-            // Init destination
             if let Some(mp_idx) = move_paths.find(dest) {
                 moved.remove(mp_idx.to_raw() as usize);
                 for &child in &move_paths.get(mp_idx).children {
                     moved.remove(child.to_raw() as usize);
                 }
             }
-
-            // Record moves from rvalue
             collect_rvalue_move_operands(rvalue, move_paths, moved, ctx, local_decls);
         }
         StatementKind::StorageLive(local) => {
@@ -495,8 +452,7 @@ fn apply_stmt_move_effects<C: BorrowckCtx>(
 // Use-after-move checking
 // ---------------------------------------------------------------------------
 
-/// Check for use-after-move errors.
-pub(crate) fn check_moves<C: BorrowckCtx>(ctx: &C, body: &Body) -> Vec<GlyimDiagnostic> {
+pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagnostic> {
     let mut errors = Vec::new();
 
     let move_paths = build_move_paths(body, ctx);
@@ -528,21 +484,17 @@ pub(crate) fn check_moves<C: BorrowckCtx>(ctx: &C, body: &Body) -> Vec<GlyimDiag
     errors
 }
 
-/// A place that is used (read) by a statement, together with how it is used.
 enum UsedPlace<'a> {
-    /// The place is read via an operand (Copy or Move).
     Operand(&'a Place),
-    /// The place is borrowed (Rvalue::Ref).
     Borrow(&'a Place),
-    /// The place is inspected (Discriminant, Len).
     Inspect(&'a Place),
 }
 
-fn check_stmt_use_after_move<C: BorrowckCtx>(
+fn check_stmt_use_after_move(
     stmt: &glyim_mir::Statement,
     moved: &BitSet,
     move_paths: &MovePathArena,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
     errors: &mut Vec<GlyimDiagnostic>,
 ) {
@@ -615,12 +567,12 @@ fn collect_rvalue_used_places<'a>(rvalue: &'a Rvalue, places: &mut SmallVec<[Use
     }
 }
 
-fn check_place_use_after_move<C: BorrowckCtx>(
+fn check_place_use_after_move(
     used_place: &UsedPlace<'_>,
     stmt: &glyim_mir::Statement,
     moved: &BitSet,
     move_paths: &MovePathArena,
-    ctx: &C,
+    ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
     errors: &mut Vec<GlyimDiagnostic>,
 ) {
@@ -630,7 +582,6 @@ fn check_place_use_after_move<C: BorrowckCtx>(
         UsedPlace::Inspect(p) => *p,
     };
 
-    // For Operand::Copy of a Copy type, there is no move — skip.
     if let UsedPlace::Operand(p) = used_place {
         let place_ty = p.ty(ctx.ty_ctx(), local_decls);
         if ctx.is_copy(place_ty) {
@@ -638,7 +589,6 @@ fn check_place_use_after_move<C: BorrowckCtx>(
         }
     }
 
-    // Check if the exact move path is moved
     if let Some(mp_idx) = move_paths.find(place) {
         if moved.contains(mp_idx.to_raw() as usize) {
             let name = ctx.local_name(place.local);
@@ -652,7 +602,6 @@ fn check_place_use_after_move<C: BorrowckCtx>(
         }
     }
 
-    // For a bare local, also check if any of its fields have been partially moved.
     if place.projection.is_empty() {
         if let Some(root_idx) = move_paths.find_root(place.local) {
             let any_child_moved = move_paths
