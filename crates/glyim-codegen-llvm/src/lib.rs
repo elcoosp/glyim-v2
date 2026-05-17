@@ -123,6 +123,7 @@ impl LlvmBackend {
         )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn lower_bodies_to_module<'ctx>(
         &'ctx self,
         context: &'ctx Context,
