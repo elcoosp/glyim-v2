@@ -2,7 +2,6 @@ use super::Parser;
 use glyim_syntax::SyntaxKind;
 
 impl<'a> Parser<'a> {
-
     pub(crate) fn parse_stmt(&mut self) {
         match self.current_kind() {
             SyntaxKind::KwLet => {

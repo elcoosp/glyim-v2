@@ -4,11 +4,11 @@ use glyim_syntax::{GlyimLang, GreenNode, SyntaxKind, SyntaxNode};
 use rowan::Language;
 
 // Submodules containing specific parsing logic
-mod item;
 mod expr;
+mod item;
+mod pat;
 mod stmt;
 mod ty;
-mod pat;
 
 #[derive(Clone, Debug)]
 pub struct ParseResult {

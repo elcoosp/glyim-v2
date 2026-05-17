@@ -3,7 +3,6 @@ use glyim_syntax::{GlyimLang, SyntaxKind};
 use rowan::Language;
 
 impl<'a> Parser<'a> {
-
     pub(crate) fn parse_block(&mut self) {
         self.start_node(SyntaxKind::Block);
         self.expect(SyntaxKind::LBrace);
@@ -587,7 +586,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-
     pub(crate) fn parse_path_inner(&mut self) {
         // First segment
         match self.current_kind() {
@@ -623,7 +621,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
-pub(crate) fn parse_loop_expr(&mut self) {
+    pub(crate) fn parse_loop_expr(&mut self) {
         self.start_node(SyntaxKind::LoopExpr);
         self.parse_label();
         self.bump(); // loop
@@ -634,6 +632,4 @@ pub(crate) fn parse_loop_expr(&mut self) {
         }
         self.finish_node();
     }
-
-    }
-
+}

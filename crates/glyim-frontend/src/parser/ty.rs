@@ -3,7 +3,6 @@ use glyim_syntax::{GlyimLang, SyntaxKind};
 use rowan::Language;
 
 impl<'a> Parser<'a> {
-
     pub(crate) fn parse_type(&mut self) {
         match self.current_kind() {
             SyntaxKind::AndAnd => {

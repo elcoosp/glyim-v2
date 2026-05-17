@@ -2,7 +2,6 @@ use super::Parser;
 use glyim_syntax::SyntaxKind;
 
 impl<'a> Parser<'a> {
-
     pub(crate) fn parse_pat(&mut self) {
         let cp = self.checkpoint();
         self.parse_pat_single();

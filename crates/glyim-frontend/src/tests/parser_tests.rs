@@ -9,7 +9,11 @@ fn test_parse_fn() {
         }
     "#;
     let result = parse_to_syntax(source, FileId::from_raw(0));
-    assert!(result.diagnostics.is_empty(), "Parsing failed: {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Parsing failed: {:?}",
+        result.diagnostics
+    );
     assert_eq!(result.root.kind(), glyim_syntax::SyntaxKind::SourceFile);
 }
 
@@ -22,7 +26,11 @@ fn test_parse_struct() {
         }
     "#;
     let result = parse_to_syntax(source, FileId::from_raw(0));
-    assert!(result.diagnostics.is_empty(), "Parsing failed: {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Parsing failed: {:?}",
+        result.diagnostics
+    );
 }
 
 #[test]
@@ -33,7 +41,11 @@ fn test_parse_expr() {
         }
     "#;
     let result = parse_to_syntax(source, FileId::from_raw(0));
-    assert!(result.diagnostics.is_empty(), "Parsing failed: {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Parsing failed: {:?}",
+        result.diagnostics
+    );
 }
 
 #[test]
@@ -47,7 +59,11 @@ fn test_parse_if_let() {
         }
     "#;
     let result = parse_to_syntax(source, FileId::from_raw(0));
-    assert!(result.diagnostics.is_empty(), "Parsing failed: {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Parsing failed: {:?}",
+        result.diagnostics
+    );
 }
 
 #[test]
@@ -58,5 +74,9 @@ fn test_parse_macro_def() {
         }
     "#;
     let result = parse_to_syntax(source, FileId::from_raw(0));
-    assert!(result.diagnostics.is_empty(), "Parsing failed: {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Parsing failed: {:?}",
+        result.diagnostics
+    );
 }

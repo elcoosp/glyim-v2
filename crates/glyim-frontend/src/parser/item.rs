@@ -3,7 +3,6 @@ use glyim_syntax::{GlyimLang, SyntaxKind};
 use rowan::Language; // Required for kind_to_raw
 
 impl<'a> Parser<'a> {
-
     pub(crate) fn parse_item(&mut self) {
         let _vis = self.parse_visibility();
 
@@ -769,5 +768,4 @@ impl<'a> Parser<'a> {
 
         self.finish_node();
     }
-
 }
