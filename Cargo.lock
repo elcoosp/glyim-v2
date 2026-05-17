@@ -1093,6 +1093,7 @@ dependencies = [
  "bitflags 2.11.1",
  "glyim-core",
  "glyim-span",
+ "glyim-test",
  "indexmap",
  "smallvec",
  "tracing",
