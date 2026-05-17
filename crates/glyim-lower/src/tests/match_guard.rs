@@ -1,7 +1,7 @@
 //! Tests for match guard lowering (U02-T04)
 use glyim_test::mock::MockLowerCtx;
 use glyim_test::test_frozen_ty_ctx;
-use glyim_lower::lower_body;
+use crate::lower_body;
 use glyim_typeck::thir;
 use glyim_core::arena::IndexVec;
 use glyim_span::Span;
@@ -16,15 +16,11 @@ fn match_guard_correctly_lowered() {
     );
     let thir_body = thir::Body {
         owner: dummy_owner,
-        exprs: IndexVec::new(),
-        pats: IndexVec::new(),
+        stmts: vec![],
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::new(),
         return_ty: ctx.unit_ty(),
-        stmts: vec![],
     };
     let result = lower_body(&mock_ctx, &thir_body);
-    // After implementation, guard expressions will be lowered.
     assert!(!result.diagnostics.iter().any(|d| d.is_error()));
 }
