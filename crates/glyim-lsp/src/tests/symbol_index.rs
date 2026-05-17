@@ -1,4 +1,4 @@
-use crate::symbol_index::{SymbolIndex, SymbolInfo, SymbolKind, DefinitionLocation, TypeSignature};
+use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind, TypeSignature};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 #[test]
@@ -11,7 +11,12 @@ fn test_insert_and_lookup() {
         kind: SymbolKind::Function,
         definition: DefinitionLocation {
             file_id,
-            span: Span::new(file_id, ByteIdx::from_raw(0), ByteIdx::from_raw(3), SyntaxContext::ROOT),
+            span: Span::new(
+                file_id,
+                ByteIdx::from_raw(0),
+                ByteIdx::from_raw(3),
+                SyntaxContext::ROOT,
+            ),
         },
         type_signature: Some(TypeSignature {
             params: vec![],
@@ -55,7 +60,12 @@ fn test_clear_file() {
             kind: SymbolKind::Struct,
             definition: DefinitionLocation {
                 file_id,
-                span: Span::new(file_id, ByteIdx::from_raw(0), ByteIdx::from_raw(3), SyntaxContext::ROOT),
+                span: Span::new(
+                    file_id,
+                    ByteIdx::from_raw(0),
+                    ByteIdx::from_raw(3),
+                    SyntaxContext::ROOT,
+                ),
             },
             type_signature: None,
             is_pub: true,

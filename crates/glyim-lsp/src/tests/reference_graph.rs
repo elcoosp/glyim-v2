@@ -1,4 +1,4 @@
-use crate::reference_graph::{ReferenceGraph, Reference, ReferenceKind};
+use crate::reference_graph::{Reference, ReferenceGraph, ReferenceKind};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 #[test]
@@ -8,7 +8,12 @@ fn test_insert_and_find() {
 
     let ref1 = Reference {
         file_id,
-        span: Span::new(file_id, ByteIdx::from_raw(0), ByteIdx::from_raw(3), SyntaxContext::ROOT),
+        span: Span::new(
+            file_id,
+            ByteIdx::from_raw(0),
+            ByteIdx::from_raw(3),
+            SyntaxContext::ROOT,
+        ),
         is_definition: true,
         kind: ReferenceKind::Call,
     };

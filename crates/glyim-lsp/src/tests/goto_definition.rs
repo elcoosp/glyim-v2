@@ -1,4 +1,4 @@
-use crate::database::{AnalysisDatabase, FileMap, SourceMap};
+use crate::database::{AnalysisDatabase, SourceMap};
 use crate::goto_definition;
 use crate::symbol_index::{DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
