@@ -1,7 +1,7 @@
 use glyim_core::TargetInfo;
 use glyim_type::{Ty, TyCtx, TyKind};
-use inkwell::types::{BasicTypeEnum, IntType};
 use inkwell::context::Context;
+use inkwell::types::{BasicTypeEnum, IntType};
 use std::num::NonZeroU32;
 
 pub(crate) fn llvm_type_for_ty<'ctx>(
@@ -37,8 +37,12 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             }
         }
         TyKind::Char => int_type(context, 32).into(),
-        TyKind::Ref(..) | TyKind::RawPtr(..) => context.ptr_type(inkwell::AddressSpace::default()).into(),
-        TyKind::FnPtr(_) | TyKind::FnDef(..) => context.ptr_type(inkwell::AddressSpace::default()).into(),
+        TyKind::Ref(..) | TyKind::RawPtr(..) => {
+            context.ptr_type(inkwell::AddressSpace::default()).into()
+        }
+        TyKind::FnPtr(_) | TyKind::FnDef(..) => {
+            context.ptr_type(inkwell::AddressSpace::default()).into()
+        }
         TyKind::Tuple(_) | TyKind::Array(..) | TyKind::Slice(_) => {
             tracing::warn!("STUB: aggregate type lowered as opaque pointer");
             context.ptr_type(inkwell::AddressSpace::default()).into()
@@ -51,5 +55,7 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
 }
 
 fn int_type<'ctx>(context: &'ctx Context, bits: u32) -> IntType<'ctx> {
-    context.custom_width_int_type(NonZeroU32::new(bits).unwrap_or(NonZeroU32::new(64).unwrap())).unwrap()
+    context
+        .custom_width_int_type(NonZeroU32::new(bits).unwrap_or(NonZeroU32::new(64).unwrap()))
+        .unwrap()
 }

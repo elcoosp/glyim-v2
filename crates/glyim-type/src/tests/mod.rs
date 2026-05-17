@@ -3,6 +3,7 @@ mod binder;
 mod compile_fail;
 mod const_val;
 mod context_api;
+mod context_tests;
 mod depth_overflow;
 mod display;
 mod display_complex;

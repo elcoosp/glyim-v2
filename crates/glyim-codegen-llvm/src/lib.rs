@@ -1,12 +1,12 @@
 #[allow(unused_imports)]
 use glyim_codegen::CodegenBackend;
+use glyim_core::Interner;
 use glyim_core::TargetInfo;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_mir::Body;
 use glyim_span::FileId;
 use glyim_type::TyCtx;
 use glyim_type::TyCtxMut;
-use glyim_core::Interner;
 use inkwell::context::Context;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use std::collections::HashMap;
