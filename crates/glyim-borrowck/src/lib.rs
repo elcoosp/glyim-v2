@@ -36,7 +36,7 @@ use smallvec::SmallVec;
 use tracing::{debug, trace};
 
 use crate::visitor::{
-    LocalReadChecker, ReadVisitor, borrow_kind_label, places_conflict, walk_rvalue_reads,
+    ReadVisitor, borrow_kind_label, places_conflict, walk_rvalue_reads,
 };
 
 // ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ fn check_stmt_conflicts(
     active_loans: &[&Loan],
     current_block: BasicBlockIdx,
     current_stmt_idx: usize,
-    block_data: &BasicBlockData,
+    _block_data: &BasicBlockData,
     errors: &mut Vec<GlyimDiagnostic>,
 ) {
     match &stmt.kind {

@@ -7,7 +7,7 @@
 //! already activated (conservative, matches Rust's semantics).
 
 use fixedbitset::FixedBitSet as BitSet;
-use glyim_mir::{BasicBlockIdx, Body, LocalIdx, StatementKind, BorrowKind, Rvalue, Operand, Place};
+use glyim_mir::{BasicBlockIdx, Body, LocalIdx, StatementKind};
 use crate::visitor::{LocalReadChecker, walk_rvalue_reads};
 
 /// Result of the reservation analysis for a single loan.
