@@ -1,654 +1,716 @@
-//! Body type-checking: HIR → THIR with inference.
+//! Per-function type-checking engine.
 
-use glyim_core::def_id::{CrateId, LocalDefId};
+use std::collections::HashMap;
+
+use glyim_core::def_id::{AdtId, DefId, FnDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_solve::{InferenceTable, Obligation};
 use glyim_span::Span;
-use glyim_type::*;
+use glyim_type::{FieldIdx, GenericArg, InferVar, Region, Ty, TyCtxMut, TyKind};
 
+use crate::env::LocalEnv;
 use crate::thir::{self, LocalVarId};
-use crate::ty::FieldIdx;
 
-/// Context struct to bundle the many mutable references needed during expression checking.
 #[allow(dead_code)]
-struct CheckCtx<'a, 'b, 'c, 'd, 'e> {
-    ctx: &'a mut TyCtxMut,
-    infer: &'b mut InferenceTable,
-    diagnostics: &'c mut Vec<GlyimDiagnostic>,
-    pending_obligations: &'d mut Vec<Obligation>,
-    hir: &'e CrateHir,
-    local_var_types: std::collections::HashMap<Name, Ty>,
+pub struct FnCtxt<'a> {
+    pub ctx: &'a mut TyCtxMut,
+    pub infer: &'a mut InferenceTable,
+    pub diagnostics: &'a mut Vec<GlyimDiagnostic>,
+    pub pending_obligations: &'a mut Vec<Obligation>,
+    pub hir: &'a CrateHir,
+    pub body: &'a Body,
+    pub env: LocalEnv,
+    pub return_ty: Ty,
+    pub owner: DefId,
+    pub expr_cache: HashMap<ExprId, (thir::Expr, Ty)>,
+    pub def_map: &'a glyim_def_map::CrateDefMap,
 }
 
-#[allow(clippy::too_many_arguments, unused_assignments)]
-pub(crate) fn check_function_body(
-    ctx: &mut TyCtxMut,
-    infer: &mut InferenceTable,
-    diagnostics: &mut Vec<GlyimDiagnostic>,
-    pending_obligations: &mut Vec<Obligation>,
-    body_id: BodyId,
-    hir: &CrateHir,
-    local_def_id: LocalDefId,
-    return_ty: Ty,
-    params: &[glyim_hir::Param],
-) -> thir::Body {
-    let body = &hir.bodies[body_id];
-    let mut local_var_map = std::collections::HashMap::new();
-    let mut thir_params = Vec::new();
+impl<'a> FnCtxt<'a> {
+    pub fn check(mut self, params: &[(Name, Ty, Span)]) -> thir::Body {
+        let mut thir_params = Vec::with_capacity(params.len());
+        for (i, (name, ty, span)) in params.iter().enumerate() {
+            let _local_id = LocalVarId::from_raw(i as u32);
+            self.env.add_binding(*name, *ty, Mutability::Not);
 
-    // Process parameters
-    for (i, param) in params.iter().enumerate() {
-        let ty = {
-            let var = infer.new_ty_var(ctx);
-            ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-        };
-        let local_id = LocalVarId::from_raw(i as u32);
-        local_var_map.insert(param.name, local_id);
-        thir_params.push(thir::Param {
-            name: param.name,
-            ty,
-            span: param.span,
-            pat: thir::Pattern {
-                kind: thir::PatternKind::Binding {
-                    name: param.name,
-                    mutability: Mutability::Not,
-                    subpattern: None,
-                },
-                ty,
-                span: param.span,
-            },
-        });
-    }
+            thir_params.push(thir::Param {
+                name: *name,
+                ty: *ty,
+                span: *span,
+                pat: thir::Pattern::binding(*name, Mutability::Not, *ty, *span),
+            });
+        }
 
-    let mut local_var_types = std::collections::HashMap::new();
-    for (i, param) in params.iter().enumerate() {
-        let ty = thir_params[i].ty;
-        local_var_types.insert(param.name, ty);
-    }
+        let mut stmts = Vec::new();
+        let len = self.body.exprs.len();
 
-    let mut chk = CheckCtx {
-        ctx,
-        infer,
-        diagnostics,
-        pending_obligations,
-        hir,
-        local_var_types,
-    };
+        for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
+            let is_tail = pos == len - 1;
+            let span = self.body.expr_spans[expr_id];
 
-    let mut thir_stmts = Vec::new();
-    let mut _tail_expr_ty: Option<Ty> = None;
-    let len = body.exprs.len();
-    for (pos, (expr_id, expr)) in body.exprs.iter_enumerated().enumerate() {
-        let is_tail = pos == len - 1;
-
-        match expr {
-            Expr::Assign { lhs, rhs } => {
-                let (lhs_expr, _lhs_ty) = check_expr(&mut chk, body, &local_var_map, *lhs);
-                let (rhs_expr, _rhs_ty) = check_expr(&mut chk, body, &local_var_map, *rhs);
-                thir_stmts.push(thir::Stmt::Assign {
-                    lhs: lhs_expr,
-                    rhs: rhs_expr,
-                    span: Span::DUMMY,
-                });
+            if self.expr_cache.contains_key(&expr_id) {
                 if is_tail {
-                    _tail_expr_ty = Some(Ty::UNIT);
+                    let (_, ty) = self.expr_cache.get(&expr_id).unwrap().clone();
+                    self.unify(ty, self.return_ty, span);
                 }
+                continue;
             }
-            Expr::Return { value } => {
-                let value_opt = if let Some(val_id) = value {
-                    let (val_expr, _val_ty) = check_expr(&mut chk, body, &local_var_map, *val_id);
-                    Some(val_expr)
-                } else {
-                    None
-                };
-                thir_stmts.push(thir::Stmt::Return {
-                    value: value_opt,
-                    span: Span::DUMMY,
-                });
-            }
-            Expr::Break { .. } => {
-                let (thir_br, _ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
-                thir_stmts.push(thir::Stmt::Expr { expr: thir_br });
-                if is_tail {
-                    _tail_expr_ty = Some(Ty::NEVER);
-                }
-            }
-            Expr::Continue => {
-                let (thir_cont, _ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
-                thir_stmts.push(thir::Stmt::Expr { expr: thir_cont });
-                if is_tail {
-                    _tail_expr_ty = Some(Ty::NEVER);
-                }
-            }
-            _ => {
-                let (thir_expr, expr_ty) = check_expr(&mut chk, body, &local_var_map, expr_id);
-                if is_tail {
-                    if return_ty != Ty::UNIT {
-                        let span = body.span;
-                        if let Err(diags) = chk.infer.unify(chk.ctx, expr_ty, return_ty, span) {
-                            chk.diagnostics.extend(diags);
-                        }
+
+            match expr {
+                Expr::Assign { lhs, rhs } => {
+                    let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
+                    let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                    self.unify(rhs_ty, lhs_ty, span);
+                    if is_tail {
+                        self.unify(Ty::UNIT, self.return_ty, span);
                     }
-                    _tail_expr_ty = Some(expr_ty);
-                } else {
-                    thir_stmts.push(crate::thir::Stmt::Expr { expr: thir_expr });
+                    stmts.push(thir::Stmt::Assign {
+                        lhs: lhs_expr,
+                        rhs: rhs_expr,
+                        span,
+                    });
+                }
+                Expr::Return { value } => {
+                    let value_opt = value.map(|val_id| {
+                        let (val_expr, val_ty) = self.check_expr(val_id);
+                        self.unify(val_ty, self.return_ty, span);
+                        val_expr
+                    });
+                    stmts.push(thir::Stmt::Return {
+                        value: value_opt,
+                        span,
+                    });
+                }
+                _ => {
+                    let (thir_expr, ty) = self.check_expr(expr_id);
+                    if is_tail {
+                        self.unify(ty, self.return_ty, span);
+                    }
+                    stmts.push(thir::Stmt::Expr { expr: thir_expr });
                 }
             }
         }
-    }
-    let _ = _tail_expr_ty;
 
-    thir::Body {
-        owner: glyim_core::def_id::DefId::new(CrateId::from_raw(0), local_def_id),
-        params: thir_params,
-        return_ty,
-        stmts: thir_stmts,
-        span: body.span,
-    }
-}
-
-fn fresh_infer_ty(chk: &mut CheckCtx) -> Ty {
-    let var = chk.infer.new_ty_var(chk.ctx);
-    chk.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-}
-
-fn check_expr(
-    chk: &mut CheckCtx,
-    body: &Body,
-    local_var_map: &std::collections::HashMap<Name, LocalVarId>,
-    expr_id: ExprId,
-) -> (thir::Expr, Ty) {
-    let expr = &body.exprs[expr_id];
-    let expr_span = body.expr_spans[expr_id];
-    match expr {
-        Expr::Literal(lit) => {
-            let ty = literal_ty(chk.ctx, lit);
-            let thir_expr = thir::Expr {
-                kind: thir::ExprKind::Literal(thir_literal(lit)),
-                ty,
-                span: expr_span,
-            };
-            (thir_expr, ty)
+        thir::Body {
+            owner: self.owner,
+            params: thir_params,
+            return_ty: self.return_ty,
+            stmts,
+            span: self.body.span,
         }
-        Expr::Path(path) => {
-            if let Some(name) = path.as_name() {
-                if let Some(&ty) = chk.local_var_types.get(&name) {
-                    let local_id = local_var_map
-                        .get(&name)
-                        .copied()
-                        .unwrap_or_else(|| LocalVarId::from_raw(0));
-                    let thir_expr = thir::Expr {
-                        kind: thir::ExprKind::VarRef(local_id),
+    }
+
+    fn check_expr(&mut self, expr_id: ExprId) -> (thir::Expr, Ty) {
+        if let Some(&(ref e, ty)) = self.expr_cache.get(&expr_id) {
+            return (e.clone(), ty);
+        }
+
+        let expr = &self.body.exprs[expr_id];
+        let span = self.body.expr_spans[expr_id];
+
+        let result = match expr {
+            Expr::Literal(lit) => {
+                let ty = literal_ty(self.ctx, lit);
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Literal(thir_literal(lit)),
                         ty,
-                        span: expr_span,
-                    };
-                    return (thir_expr, ty);
-                }
-                if let Some(&local_id) = local_var_map.get(&name) {
-                    let idx = local_id.to_raw() as usize;
-                    let param_ty = if idx < body.params.len() {
-                        fresh_infer_ty(chk)
-                    } else {
-                        chk.ctx.mk_ty(TyKind::Error)
-                    };
-                    let thir_expr = thir::Expr {
-                        kind: thir::ExprKind::VarRef(local_id),
-                        ty: param_ty,
-                        span: expr_span,
-                    };
-                    return (thir_expr, param_ty);
+                        span,
+                    },
+                    ty,
+                )
+            }
+
+            Expr::Path(path) => self.check_path(path, span),
+
+            Expr::Binary { op, lhs, rhs } => {
+                let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
+                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
+
+                let operand_ty = if self.unify(lhs_ty, rhs_ty, span) {
+                    lhs_ty
+                } else {
+                    Ty::ERROR
+                };
+
+                let result_ty = match op {
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt => Ty::BOOL,
+                    BinOp::And | BinOp::Or => {
+                        self.unify(operand_ty, Ty::BOOL, span);
+                        Ty::BOOL
+                    }
+                    _ => operand_ty,
+                };
+
+                if result_ty == Ty::ERROR || operand_ty == Ty::ERROR {
+                    (thir::Expr::err(span), Ty::ERROR)
+                } else {
+                    (
+                        thir::Expr {
+                            kind: thir::ExprKind::Binary {
+                                op: *op,
+                                lhs: Box::new(lhs_expr),
+                                rhs: Box::new(rhs_expr),
+                            },
+                            ty: result_ty,
+                            span,
+                        },
+                        result_ty,
+                    )
                 }
             }
-            chk.diagnostics
-                .push(GlyimDiagnostic::type_error(expr_span, "unresolved name"));
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Err,
-                    ty: Ty::ERROR,
-                    span: expr_span,
-                },
-                Ty::ERROR,
-            )
-        }
-        Expr::Binary { op, lhs, rhs } => {
-            let (lhs_expr, lhs_ty) = check_expr(chk, body, local_var_map, *lhs);
-            let (rhs_expr, rhs_ty) = check_expr(chk, body, local_var_map, *rhs);
-            if let Err(diags) = chk.infer.unify(chk.ctx, lhs_ty, rhs_ty, expr_span) {
-                chk.diagnostics.extend(diags);
+
+            Expr::Ref { expr, mutability } => {
+                let (inner_expr, inner_ty) = self.check_expr(*expr);
+                let ref_ty = self.ctx.mk_ref(Region::Erased, inner_ty, *mutability);
                 (
                     thir::Expr {
-                        kind: thir::ExprKind::Err,
-                        ty: Ty::ERROR,
-                        span: expr_span,
+                        kind: thir::ExprKind::Ref {
+                            mutability: *mutability,
+                            operand: Box::new(inner_expr),
+                        },
+                        ty: ref_ty,
+                        span,
                     },
-                    Ty::ERROR,
+                    ref_ty,
                 )
-            } else {
-                let result_ty = lhs_ty;
+            }
+
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                let (cond_expr, cond_ty) = self.check_expr(*cond);
+                self.unify(cond_ty, Ty::BOOL, span);
+
+                let (then_expr, then_ty) = self.check_expr(*then_branch);
+
+                let (else_opt, else_ty) = if let Some(else_id) = else_branch {
+                    let (e, t) = self.check_expr(*else_id);
+                    (Some(Box::new(e)), t)
+                } else {
+                    (None, Ty::UNIT)
+                };
+
+                let result_ty = if self.unify(then_ty, else_ty, span) {
+                    then_ty
+                } else {
+                    Ty::ERROR
+                };
+
                 (
                     thir::Expr {
-                        kind: thir::ExprKind::Binary {
-                            op: *op,
-                            lhs: Box::new(lhs_expr),
-                            rhs: Box::new(rhs_expr),
+                        kind: thir::ExprKind::If {
+                            cond: Box::new(cond_expr),
+                            then_branch: Box::new(then_expr),
+                            else_branch: else_opt,
                         },
                         ty: result_ty,
-                        span: expr_span,
+                        span,
                     },
                     result_ty,
                 )
             }
-        }
-        Expr::Ref { expr, mutability } => {
-            let (inner_expr, inner_ty) = check_expr(chk, body, local_var_map, *expr);
-            let ref_ty = chk.ctx.mk_ref(Region::Erased, inner_ty, *mutability);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Ref {
-                        mutability: *mutability,
-                        operand: Box::new(inner_expr),
-                    },
-                    ty: ref_ty,
-                    span: expr_span,
-                },
-                ref_ty,
-            )
-        }
-        Expr::If {
-            cond,
-            then_branch,
-            else_branch,
-        } => {
-            let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
-            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, expr_span) {
-                chk.diagnostics.extend(diags);
-            }
-            let (then_expr, then_ty) = check_expr(chk, body, local_var_map, *then_branch);
-            if let Some(else_id) = else_branch {
-                let (_else_expr, else_ty) = check_expr(chk, body, local_var_map, *else_id);
-                if let Err(diags) = chk.infer.unify(chk.ctx, then_ty, else_ty, expr_span) {
-                    chk.diagnostics.extend(diags);
-                }
-            }
-            let result_ty = if then_ty != Ty::ERROR {
-                then_ty
-            } else {
-                Ty::UNIT
-            };
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::If {
-                        cond: Box::new(cond_expr),
-                        then_branch: Box::new(then_expr),
-                        else_branch: else_branch.map(|_| {
-                            Box::new(thir::Expr {
-                                kind: thir::ExprKind::Literal(thir::Literal::Unit),
-                                ty: Ty::UNIT,
-                                span: expr_span,
-                            })
-                        }),
-                    },
-                    ty: result_ty,
-                    span: expr_span,
-                },
-                result_ty,
-            )
-        }
-        Expr::Block { stmts, tail } => {
-            let mut block_stmts = Vec::new();
-            for &stmt_id in stmts {
-                let (stmt_expr, _) = check_expr(chk, body, local_var_map, stmt_id);
-                block_stmts.push(thir::Stmt::Expr { expr: stmt_expr });
-            }
-            if let Some(tail_id) = tail {
-                let (tail_expr, tail_ty) = check_expr(chk, body, local_var_map, *tail_id);
-                let block_expr = thir::Expr {
-                    kind: thir::ExprKind::Block {
-                        stmts: block_stmts,
-                        tail: Some(Box::new(tail_expr)),
-                    },
-                    ty: tail_ty,
-                    span: expr_span,
-                };
-                (block_expr, tail_ty)
-            } else {
-                let unit_expr = thir::Expr {
-                    kind: thir::ExprKind::Block {
-                        stmts: block_stmts,
-                        tail: None,
-                    },
-                    ty: Ty::UNIT,
-                    span: expr_span,
-                };
-                (unit_expr, Ty::UNIT)
-            }
-        }
-        Expr::While {
-            cond,
-            body: body_id,
-        } => {
-            let (cond_expr, cond_ty) = check_expr(chk, body, local_var_map, *cond);
-            if let Err(diags) = chk.infer.unify(chk.ctx, cond_ty, Ty::BOOL, expr_span) {
-                chk.diagnostics.extend(diags);
-            }
-            let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::While {
-                        cond: Box::new(cond_expr),
-                        body: Box::new(body_expr),
-                    },
-                    ty: Ty::UNIT,
-                    span: expr_span,
-                },
-                Ty::UNIT,
-            )
-        }
-        Expr::Loop { body: body_id } => {
-            let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Loop {
-                        body: Box::new(body_expr),
-                    },
-                    ty: Ty::NEVER,
-                    span: expr_span,
-                },
-                Ty::NEVER,
-            )
-        }
-        Expr::For {
-            pat: _,
-            iterable,
-            body: body_id,
-        } => {
-            // Ignore pattern for now, infer fresh type
-            let pat_ty = fresh_infer_ty(chk);
-            let (_iter_expr, _) = check_expr(chk, body, local_var_map, *iterable);
-            let (body_expr, _) = check_expr(chk, body, local_var_map, *body_id);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::For {
-                        pat: Box::new(thir::Pattern {
-                            kind: thir::PatternKind::Binding {
-                                name: glyim_core::interner::Interner::new().intern("for_pat"),
-                                mutability: Mutability::Not,
-                                subpattern: None,
-                            },
-                            ty: pat_ty,
-                            span: expr_span,
-                        }),
-                        iterable: Box::new(_iter_expr),
-                        body: Box::new(body_expr),
-                    },
-                    ty: Ty::UNIT,
-                    span: expr_span,
-                },
-                Ty::UNIT,
-            )
-        }
-        Expr::Match { scrutinee, arms } => {
-            let (scrut_expr, _) = check_expr(chk, body, local_var_map, *scrutinee);
-            let result_ty = fresh_infer_ty(chk);
-            let mut thir_arms = Vec::new();
-            for arm in arms {
-                let (arm_body_expr, arm_body_ty) = check_expr(chk, body, local_var_map, arm.body);
-                if let Err(diags) = chk.infer.unify(chk.ctx, arm_body_ty, result_ty, expr_span) {
-                    chk.diagnostics.extend(diags);
-                }
-                thir_arms.push(thir::MatchArm {
-                    pat: thir::Pattern {
-                        kind: thir::PatternKind::Wild,
+
+            Expr::While {
+                cond,
+                body: body_id,
+            } => {
+                let (cond_expr, cond_ty) = self.check_expr(*cond);
+                self.unify(cond_ty, Ty::BOOL, span);
+                let (body_expr, _) = self.check_expr(*body_id);
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::While {
+                            cond: Box::new(cond_expr),
+                            body: Box::new(body_expr),
+                        },
                         ty: Ty::UNIT,
-                        span: expr_span,
+                        span,
                     },
-                    guard: None,
-                    body: arm_body_expr,
-                });
+                    Ty::UNIT,
+                )
             }
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Match {
-                        scrutinee: Box::new(scrut_expr),
-                        arms: thir_arms,
+
+            Expr::Loop { body: body_id } => {
+                let (body_expr, _) = self.check_expr(*body_id);
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Loop {
+                            body: Box::new(body_expr),
+                        },
+                        ty: Ty::NEVER,
+                        span,
                     },
-                    ty: result_ty,
-                    span: expr_span,
-                },
-                result_ty,
-            )
-        }
-        Expr::Call { func, args } => {
-            let (func_expr, _) = check_expr(chk, body, local_var_map, *func);
-            let mut thir_args = Vec::new();
-            for &arg_id in args {
-                let (arg_expr, _) = check_expr(chk, body, local_var_map, arg_id);
-                thir_args.push(arg_expr);
+                    Ty::NEVER,
+                )
             }
-            let ret_ty = fresh_infer_ty(chk);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Call {
-                        func: Box::new(func_expr),
-                        args: thir_args,
+
+            Expr::For {
+                pat,
+                iterable,
+                body: body_id,
+            } => {
+                let (_iter_expr, iter_ty) = self.check_expr(*iterable);
+                let item_ty = self.fresh_infer_ty();
+                let _ = (iter_ty, item_ty); // TODO: Emit Iterator obligation
+
+                self.env.enter_scope();
+                let pat_thir = self.check_pattern(*pat, Ty::ERROR); // Stub expected
+                self.env.leave_scope();
+
+                self.env.enter_scope();
+                let (body_expr, _) = self.check_expr(*body_id);
+                self.env.leave_scope();
+
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::For {
+                            pat: Box::new(pat_thir),
+                            iterable: Box::new(thir::Expr::err(span)),
+                            body: Box::new(body_expr),
+                        },
+                        ty: Ty::UNIT,
+                        span,
                     },
-                    ty: ret_ty,
-                    span: expr_span,
-                },
-                ret_ty,
-            )
-        }
-        Expr::MethodCall {
-            receiver: _,
-            method: _,
-            args: _,
-        } => {
-            // FIXME: method calls not implemented
-            unimplemented!("method calls not implemented");
-        }
-        Expr::Field { receiver, field } => {
-            let (recv_expr, recv_ty) = check_expr(chk, body, local_var_map, *receiver);
-            let field_ty = match chk.ctx.ty_kind(recv_ty) {
-                TyKind::Adt(adt_id, _substs) => {
-                    if let Some(field_idx) = chk.ctx.field_index(*adt_id, *field) {
-                        if let Some(def) = chk.ctx.adt_def(*adt_id) {
-                            if let Some(field_def) =
-                                def.fields.get(FieldIdx::from_raw(field_idx as u32))
-                            {
-                                let field_ty = field_def.ty;
-                                // TODO: apply substitution if ADT is generic
-                                field_ty
-                            } else {
-                                chk.diagnostics.push(GlyimDiagnostic::type_error(
-                                    expr_span,
-                                    format!(
-                                        "field `{}` not found in ADT (internal error)",
-                                        chk.ctx.name_str(*field)
-                                    ),
-                                ));
-                                chk.ctx.error_ty()
-                            }
-                        } else {
-                            chk.diagnostics.push(GlyimDiagnostic::type_error(
-                                expr_span,
-                                format!(
-                                    "ADT definition missing for field `{}`",
-                                    chk.ctx.name_str(*field)
-                                ),
-                            ));
-                            chk.ctx.error_ty()
-                        }
-                    } else {
-                        chk.diagnostics.push(GlyimDiagnostic::type_error(
-                            expr_span,
-                            format!("no field `{}` in ADT", chk.ctx.name_str(*field)),
-                        ));
-                        chk.ctx.error_ty()
-                    }
+                    Ty::UNIT,
+                )
+            }
+
+            Expr::Match { scrutinee, arms } => {
+                let (scrut_expr, scrut_ty) = self.check_expr(*scrutinee);
+                let result_ty = self.fresh_infer_ty();
+
+                let mut thir_arms = Vec::with_capacity(arms.len());
+                for arm in arms {
+                    self.env.enter_scope();
+                    let pat_thir = self.check_pattern(arm.pat, scrut_ty);
+                    let (body_expr, body_ty) = self.check_expr(arm.body);
+                    self.env.leave_scope();
+
+                    self.unify(body_ty, result_ty, span);
+                    thir_arms.push(thir::MatchArm {
+                        pat: pat_thir,
+                        guard: None,
+                        body: body_expr,
+                    });
                 }
-                _ => {
-                    chk.diagnostics.push(GlyimDiagnostic::type_error(
-                        expr_span,
-                        format!(
-                            "field access on non-ADT type: {}",
-                            PrintTy::new(recv_ty, chk.ctx)
-                        ),
+
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Match {
+                            scrutinee: Box::new(scrut_expr),
+                            arms: thir_arms,
+                        },
+                        ty: result_ty,
+                        span,
+                    },
+                    result_ty,
+                )
+            }
+
+            Expr::Call { func, args } => {
+                let (func_expr, func_ty) = self.check_expr(*func);
+
+                let mut arg_exprs = Vec::with_capacity(args.len());
+                for &arg_id in args {
+                    arg_exprs.push(self.check_expr(arg_id).0);
+                }
+
+                // Extract data from ty_kind to avoid borrow conflicts
+                let (is_fn_def, def_id, is_error) = match self.ctx.ty_kind(func_ty) {
+                    TyKind::FnDef(def_id, _) => (true, *def_id, false),
+                    TyKind::Error => (false, FnDefId::from_raw(0), true),
+                    _ => (false, FnDefId::from_raw(0), false),
+                };
+
+                let ret_ty = if is_fn_def {
+                    self.instantiate_fn_sig(def_id, span)
+                } else if is_error {
+                    Ty::ERROR
+                } else {
+                    self.diagnostics.push(GlyimDiagnostic::type_error(
+                        span,
+                        "call to non-function type",
                     ));
-                    chk.ctx.error_ty()
-                }
-            };
-            let thir_expr = thir::Expr {
-                kind: thir::ExprKind::Field {
-                    receiver: Box::new(recv_expr),
-                    field: *field,
-                    ty: field_ty,
-                },
-                ty: field_ty,
-                span: expr_span,
-            };
-            (thir_expr, field_ty)
-        }
-        Expr::Index { base, index } => {
-            let (base_expr, _) = check_expr(chk, body, local_var_map, *base);
-            let (idx_expr, _) = check_expr(chk, body, local_var_map, *index);
-            let elem_ty = fresh_infer_ty(chk);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Index {
-                        base: Box::new(base_expr),
-                        index: Box::new(idx_expr),
+                    Ty::ERROR
+                };
+
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Call {
+                            func: Box::new(func_expr),
+                            args: arg_exprs,
+                        },
+                        ty: ret_ty,
+                        span,
                     },
-                    ty: elem_ty,
-                    span: expr_span,
-                },
-                elem_ty,
-            )
-        }
-        Expr::Cast {
-            expr,
-            ty: _type_ref,
-        } => {
-            let (inner_expr, _) = check_expr(chk, body, local_var_map, *expr);
-            let target_ty = fresh_infer_ty(chk);
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Cast {
-                        expr: Box::new(inner_expr),
-                    },
-                    ty: target_ty,
-                    span: expr_span,
-                },
-                target_ty,
-            )
-        }
-        Expr::Array(elements) => {
-            let mut elem_exprs = Vec::new();
-            let elem_ty = fresh_infer_ty(chk);
-            for &elem_id in elements {
-                let (e_expr, e_ty) = check_expr(chk, body, local_var_map, elem_id);
-                if let Err(diags) = chk.infer.unify(chk.ctx, e_ty, elem_ty, expr_span) {
-                    chk.diagnostics.extend(diags);
+                    ret_ty,
+                )
+            }
+
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                let (recv_expr, _recv_ty) = self.check_expr(*receiver);
+                let mut arg_exprs = Vec::new();
+                for &arg_id in args {
+                    arg_exprs.push(self.check_expr(arg_id).0);
                 }
-                elem_exprs.push(e_expr);
+
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "method calls are not yet implemented",
+                ));
+                let _ = (method, recv_expr, arg_exprs);
+                (thir::Expr::err(span), Ty::ERROR)
             }
-            let arr_ty = chk.ctx.mk_ty(TyKind::Slice(elem_ty));
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Array(elem_exprs),
-                    ty: arr_ty,
-                    span: expr_span,
-                },
-                arr_ty,
-            )
-        }
-        Expr::Tuple(elements) => {
-            let mut tuple_exprs = Vec::new();
-            for &elem_id in elements {
-                let (e_expr, _) = check_expr(chk, body, local_var_map, elem_id);
-                tuple_exprs.push(e_expr);
+
+            Expr::Field { receiver, field } => {
+                let (recv_expr, recv_ty) = self.check_expr(*receiver);
+
+                // Extract data from ty_kind to avoid borrow conflicts
+                let (is_adt, adt_id, is_tuple) = match self.ctx.ty_kind(recv_ty) {
+                    TyKind::Adt(adt_id, _) => (true, *adt_id, false),
+                    TyKind::Tuple(_) => (false, AdtId::from_raw(0), true),
+                    _ => (false, AdtId::from_raw(0), false),
+                };
+
+                let field_ty = if is_adt {
+                    self.lookup_field_ty(adt_id, *field, span)
+                } else if is_tuple {
+                    let idx = self.ctx.name_str(*field).parse::<usize>().ok();
+                    if idx.is_some() {
+                        self.fresh_infer_ty() // Cannot index into Substitution safely
+                    } else {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            format!("no field `{}` on tuple", self.ctx.name_str(*field)),
+                        ));
+                        Ty::ERROR
+                    }
+                } else {
+                    self.diagnostics.push(GlyimDiagnostic::type_error(
+                        span,
+                        "field access on non-ADT, non-tuple type",
+                    ));
+                    Ty::ERROR
+                };
+
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Field {
+                            receiver: Box::new(recv_expr),
+                            field: *field,
+                            ty: field_ty,
+                        },
+                        ty: field_ty,
+                        span,
+                    },
+                    field_ty,
+                )
             }
-            let tup_ty = fresh_infer_ty(chk);
-            (
+
+            Expr::Index { base, index } => {
+                let (base_expr, base_ty) = self.check_expr(*base);
+                let (idx_expr, _idx_ty) = self.check_expr(*index);
+                let elem_ty = self.fresh_infer_ty();
+                let _ = base_ty; // TODO: Emit Index obligation
+
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Index {
+                            base: Box::new(base_expr),
+                            index: Box::new(idx_expr),
+                        },
+                        ty: elem_ty,
+                        span,
+                    },
+                    elem_ty,
+                )
+            }
+
+            Expr::Cast {
+                expr,
+                ty: target_ref,
+            } => {
+                let (inner_expr, _inner_ty) = self.check_expr(*expr);
+                let target_ty = crate::tyconv::resolve_type_ref(
+                    self.ctx,
+                    self.infer,
+                    self.def_map,
+                    self.diagnostics,
+                    target_ref,
+                    &HashMap::new(),
+                    span,
+                );
+                let result_ty = if target_ty == Ty::ERROR {
+                    Ty::ERROR
+                } else {
+                    target_ty
+                };
+
+                // The THIR Cast node doesn't hold the target type explicitly; expr.ty holds it.
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Cast {
+                            expr: Box::new(inner_expr),
+                        },
+                        ty: result_ty,
+                        span,
+                    },
+                    result_ty,
+                )
+            }
+
+            Expr::Array(elements) => {
+                let elem_ty = self.fresh_infer_ty();
+                let mut elem_exprs = Vec::with_capacity(elements.len());
+                for &elem_id in elements {
+                    let (e_expr, e_ty) = self.check_expr(elem_id);
+                    self.unify(e_ty, elem_ty, span);
+                    elem_exprs.push(e_expr);
+                }
+                let arr_ty = self.ctx.mk_ty(TyKind::Slice(elem_ty));
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Array(elem_exprs),
+                        ty: arr_ty,
+                        span,
+                    },
+                    arr_ty,
+                )
+            }
+
+            Expr::Tuple(elements) => {
+                let mut elem_exprs = Vec::with_capacity(elements.len());
+                let mut elem_tys = Vec::with_capacity(elements.len());
+                for &elem_id in elements {
+                    let (e_expr, e_ty) = self.check_expr(elem_id);
+                    elem_exprs.push(e_expr);
+                    elem_tys.push(GenericArg::Ty(e_ty));
+                }
+                let substs = self.ctx.intern_substitution(elem_tys);
+                let tup_ty = self.ctx.mk_ty(TyKind::Tuple(substs));
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Tuple(elem_exprs),
+                        ty: tup_ty,
+                        span,
+                    },
+                    tup_ty,
+                )
+            }
+
+            Expr::Struct {
+                path,
+                fields,
+                spread,
+            } => {
+                let _ = (path, spread);
+                for field in fields {
+                    let _ = self.check_expr(field.1);
+                }
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "struct literals are not yet implemented",
+                ));
+                (thir::Expr::err(span), Ty::ERROR)
+            }
+
+            Expr::Assign { lhs, rhs } => {
+                // This arm is only hit for nested assignments, top-level is handled in check()
+                let (_lhs_expr, lhs_ty) = self.check_expr(*lhs);
+                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                self.unify(rhs_ty, lhs_ty, span);
+                let _ = rhs_expr; // Suppressed unused
+                (thir::Expr::err(span), Ty::UNIT) // Wrap in Stmt externally if needed
+            }
+
+            Expr::Return { value } => {
+                // This arm is only hit for nested returns, top-level is handled in check()
+                let value_opt = value.map(|val_id| {
+                    let (val_expr, val_ty) = self.check_expr(val_id);
+                    self.unify(val_ty, self.return_ty, span);
+                    val_expr
+                });
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Break {
+                            value: value_opt.map(Box::new),
+                        },
+                        ty: Ty::NEVER,
+                        span,
+                    },
+                    Ty::NEVER,
+                )
+            }
+
+            Expr::Break { value } => {
+                let value_expr = value.map(|val_id| Box::new(self.check_expr(val_id).0));
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Break { value: value_expr },
+                        ty: Ty::NEVER,
+                        span,
+                    },
+                    Ty::NEVER,
+                )
+            }
+
+            Expr::Continue => (
                 thir::Expr {
-                    kind: thir::ExprKind::Tuple(tuple_exprs),
-                    ty: tup_ty,
-                    span: expr_span,
-                },
-                tup_ty,
-            )
-        }
-        Expr::Struct {
-            path: _,
-            fields: _,
-            spread: _,
-        } => {
-            // FIXME: struct literals not implemented
-            unimplemented!("struct literals not implemented");
-        }
-        Expr::Break { value } => {
-            let value_expr = if let Some(val_id) = value {
-                let (val_expr, _) = check_expr(chk, body, local_var_map, *val_id);
-                Some(Box::new(val_expr))
-            } else {
-                None
-            };
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Break { value: value_expr },
+                    kind: thir::ExprKind::Continue,
                     ty: Ty::NEVER,
-                    span: expr_span,
+                    span,
                 },
                 Ty::NEVER,
-            )
-        }
-        Expr::Continue => (
-            thir::Expr {
-                kind: thir::ExprKind::Continue,
-                ty: Ty::NEVER,
-                span: expr_span,
-            },
-            Ty::NEVER,
-        ),
-        Expr::Missing => {
-            // FIXME: encountered Missing expression (unimplemented feature)
-            unimplemented!("encountered Missing expression (unimplemented feature)");
-        }
-        _ => {
-            chk.diagnostics.push(GlyimDiagnostic::type_error(
-                expr_span,
-                "unsupported expression".to_string(),
+            ),
+
+            Expr::Missing => {
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "encountered missing expression",
+                ));
+                (thir::Expr::err(span), Ty::ERROR)
+            }
+
+            _ => {
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "unsupported expression kind",
+                ));
+                (thir::Expr::err(span), Ty::ERROR)
+            }
+        };
+
+        self.expr_cache.insert(expr_id, result.clone());
+        result
+    }
+
+    fn check_path(&mut self, path: &Path, span: Span) -> (thir::Expr, Ty) {
+        if let Some(name) = path.as_name() {
+            if let Some(var_info) = self.env.lookup_by_name(name) {
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::VarRef(var_info.id),
+                    ty: var_info.ty,
+                    span,
+                };
+                return (thir_expr, var_info.ty);
+            }
+            self.diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                format!("unresolved name `{}`", self.ctx.name_str(name)),
             ));
-            (
-                thir::Expr {
-                    kind: thir::ExprKind::Err,
-                    ty: Ty::ERROR,
-                    span: expr_span,
-                },
-                Ty::ERROR,
-            )
+            return (thir::Expr::err(span), Ty::ERROR);
         }
+        self.diagnostics.push(GlyimDiagnostic::type_error(
+            span,
+            "multi-segment paths not yet implemented",
+        ));
+        (thir::Expr::err(span), Ty::ERROR)
+    }
+
+    fn check_pattern(&mut self, pat_id: PatId, expected_ty: Ty) -> thir::Pattern {
+        let pat = &self.body.pats[pat_id];
+        let span = Span::DUMMY; // Body lacks pat_spans
+
+        match pat {
+            Pat::Wild => thir::Pattern::wild(expected_ty, span),
+            Pat::Binding {
+                name,
+                mutability,
+                subpattern,
+            } => {
+                self.env.add_binding(*name, expected_ty, *mutability);
+                let sub =
+                    subpattern.map(|sub_id| Box::new(self.check_pattern(sub_id, expected_ty)));
+                thir::Pattern {
+                    kind: thir::PatternKind::Binding {
+                        name: *name,
+                        mutability: *mutability,
+                        subpattern: sub,
+                    },
+                    ty: expected_ty,
+                    span,
+                }
+            }
+            Pat::Tuple(pats) => {
+                let mut thir_pats = Vec::with_capacity(pats.len());
+                for &p_id in pats {
+                    // Without iterating Substitution safely, we fallback to Ty::ERROR for elements
+                    thir_pats.push(self.check_pattern(p_id, Ty::ERROR));
+                }
+                thir::Pattern {
+                    kind: thir::PatternKind::Tuple(thir_pats),
+                    ty: expected_ty,
+                    span,
+                }
+            }
+            _ => {
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "unsupported pattern kind",
+                ));
+                thir::Pattern::err(span)
+            }
+        }
+    }
+
+    fn fresh_infer_ty(&mut self) -> Ty {
+        let var = self.infer.new_ty_var(self.ctx);
+        self.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+    }
+
+    fn unify(&mut self, a: Ty, b: Ty, span: Span) -> bool {
+        if a == Ty::ERROR || b == Ty::ERROR {
+            return false;
+        }
+        match self.infer.unify(self.ctx, a, b, span) {
+            Ok(_) => true,
+            Err(diags) => {
+                self.diagnostics.extend(diags);
+                false
+            }
+        }
+    }
+
+    fn lookup_field_ty(&mut self, adt_id: AdtId, field: Name, span: Span) -> Ty {
+        if let Some(field_idx) = self.ctx.field_index(adt_id, field) {
+            if let Some(def) = self.ctx.adt_def(adt_id) {
+                if let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32)) {
+                    let field_ty = field_def.ty;
+                    // TODO: Apply substitution
+                    return field_ty;
+                }
+            }
+        }
+        self.diagnostics.push(GlyimDiagnostic::type_error(
+            span,
+            format!("no field `{}` in ADT", self.ctx.name_str(field)),
+        ));
+        Ty::ERROR
+    }
+
+    fn instantiate_fn_sig(&mut self, def_id: FnDefId, span: Span) -> Ty {
+        let _ = (def_id, span);
+        self.fresh_infer_ty()
     }
 }
 
 fn literal_ty(ctx: &mut TyCtxMut, lit: &Literal) -> Ty {
     match lit {
-        Literal::Int(_, Some(IntTy::I8)) => ctx.mk_ty(TyKind::Int(IntTy::I8)),
-        Literal::Int(_, Some(IntTy::I16)) => ctx.mk_ty(TyKind::Int(IntTy::I16)),
-        Literal::Int(_, Some(IntTy::I32)) => ctx.mk_ty(TyKind::Int(IntTy::I32)),
-        Literal::Int(_, Some(IntTy::I64)) => ctx.mk_ty(TyKind::Int(IntTy::I64)),
-        Literal::Int(_, Some(IntTy::Isize)) => ctx.mk_ty(TyKind::Int(IntTy::Isize)),
+        Literal::Int(_, Some(hint)) => ctx.mk_ty(TyKind::Int(*hint)),
         Literal::Int(_, None) => ctx.mk_ty(TyKind::Int(IntTy::I32)),
-        Literal::Uint(_, Some(UintTy::U8)) => ctx.mk_ty(TyKind::Uint(UintTy::U8)),
-        Literal::Uint(_, Some(UintTy::U16)) => ctx.mk_ty(TyKind::Uint(UintTy::U16)),
-        Literal::Uint(_, Some(UintTy::U32)) => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
-        Literal::Uint(_, Some(UintTy::U64)) => ctx.mk_ty(TyKind::Uint(UintTy::U64)),
-        Literal::Uint(_, Some(UintTy::Usize)) => ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
+        Literal::Uint(_, Some(hint)) => ctx.mk_ty(TyKind::Uint(*hint)),
         Literal::Uint(_, None) => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
-        Literal::Float(_, FloatTy::F32) => ctx.mk_ty(TyKind::Float(FloatTy::F32)),
-        Literal::Float(_, FloatTy::F64) => ctx.mk_ty(TyKind::Float(FloatTy::F64)),
+        Literal::Float(_, ft) => ctx.mk_ty(TyKind::Float(*ft)),
         Literal::Bool(_) => Ty::BOOL,
         Literal::Char(_) => ctx.mk_ty(TyKind::Char),
         Literal::String(_) => ctx.mk_ty(TyKind::String),

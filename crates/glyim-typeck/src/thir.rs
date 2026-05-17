@@ -55,6 +55,18 @@ pub struct Expr {
     pub span: Span,
 }
 
+impl Expr {
+    /// Create an error-recovery expression at the given span.
+    #[inline]
+    pub fn err(span: Span) -> Self {
+        Self {
+            kind: ExprKind::Err,
+            ty: Ty::ERROR,
+            span,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Literal(Literal),
@@ -145,6 +157,39 @@ pub struct Pattern {
     pub kind: PatternKind,
     pub ty: Ty,
     pub span: Span,
+}
+
+impl Pattern {
+    #[inline]
+    pub fn wild(ty: Ty, span: Span) -> Self {
+        Self {
+            kind: PatternKind::Wild,
+            ty,
+            span,
+        }
+    }
+
+    #[inline]
+    pub fn binding(name: Name, mutability: Mutability, ty: Ty, span: Span) -> Self {
+        Self {
+            kind: PatternKind::Binding {
+                name,
+                mutability,
+                subpattern: None,
+            },
+            ty,
+            span,
+        }
+    }
+
+    #[inline]
+    pub fn err(span: Span) -> Self {
+        Self {
+            kind: PatternKind::Error,
+            ty: Ty::ERROR,
+            span,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

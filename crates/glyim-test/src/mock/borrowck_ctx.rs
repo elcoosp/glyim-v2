@@ -23,4 +23,7 @@ impl BorrowckCtx for MockBorrowckCtx<'_> {
     fn is_copy(&self, _ty: Ty) -> bool {
         false
     }
+    fn local_name(&self, idx: LocalIdx) -> String {
+        format!("_{}", idx.to_raw())
+    }
 }

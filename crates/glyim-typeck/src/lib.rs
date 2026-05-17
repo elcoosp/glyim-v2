@@ -1,29 +1,24 @@
 //! Type checker: HIR → THIR with full inference and trait solving.
-//!
-//! `TypeckCtx` does NOT hold a solver reference. Obligations are
-//! collected into a `Vec<Obligation>` during type-checking, then
-//! processed by `FulfillmentCtx` after each body is checked.
 
 mod check_body;
 mod coherence;
+mod env;
 pub mod thir;
+mod tyconv;
 
-use glyim_core::arena::IndexVec;
-use glyim_core::def_id::LocalDefId;
-use glyim_core::def_id::TraitDefId;
+use glyim_core::def_id::{DefId, LocalDefId, TraitDefId};
+use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
+use glyim_hir::ItemKind;
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
 use glyim_span::Span;
-use glyim_type::*;
-use glyim_type::{GenericArg, ImplPolarity, ParamTy};
-use std::collections::HashMap;
+use glyim_type::{
+    GenericArg, ImplPolarity, Predicate, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut,
+};
 
 #[derive(Clone, Debug)]
 pub struct TypeckResult {
-    pub expr_types: IndexVec<glyim_hir::ExprId, Option<Ty>>,
-    pub pat_types: IndexVec<glyim_hir::PatId, Option<Ty>>,
-    pub adjustments: IndexVec<glyim_hir::ExprId, Option<Vec<Adjustment>>>,
     pub thir_bodies: Vec<(LocalDefId, thir::Body)>,
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
@@ -41,36 +36,6 @@ pub enum AdjustKind {
     NeverToAny,
 }
 
-pub struct TypeckCtx<'a> {
-    pub ctx: &'a mut TyCtxMut,
-    pub infer: &'a mut InferenceTable,
-    pub diagnostics: &'a mut Vec<GlyimDiagnostic>,
-    pub pending_obligations: Vec<Obligation>,
-}
-
-impl<'a> TypeckCtx<'a> {
-    pub fn unify(&mut self, a: Ty, b: Ty, span: Span) -> bool {
-        match self.infer.unify(self.ctx, a, b, span) {
-            Ok(_) => true,
-            Err(diags) => {
-                self.diagnostics.extend(diags);
-                false
-            }
-        }
-    }
-
-    pub fn require_trait_bound(&mut self, ty: Ty, trait_pred: TraitPredicate, span: Span) {
-        let _ = ty;
-        self.pending_obligations.push(Obligation {
-            predicate: Predicate::Trait(trait_pred),
-            cause: ObligationCause {
-                span,
-                code: glyim_solve::ObligationCauseCode::TypeConstruction,
-            },
-        });
-    }
-}
-
 #[tracing::instrument(level = "info", skip(ctx, solver))]
 pub fn typeck_crate(
     mut ctx: TyCtxMut,
@@ -78,100 +43,159 @@ pub fn typeck_crate(
     hir: &glyim_hir::CrateHir,
     solver: &mut dyn glyim_solve::TraitSolver,
 ) -> (TyCtx, TypeckResult) {
-    /// Emit a diagnostic for an unresolved projection.
-    #[allow(dead_code)]
-    fn emit_unresolved_projection(
-        ctx: &TyCtxMut,
-        diags: &mut Vec<GlyimDiagnostic>,
-        proj: &ProjectionTy,
-        span: Span,
-    ) {
-        let msg = format!(
-            "cannot resolve projection <_ as Trait{}>::{}",
-            proj.trait_ref.def_id.to_raw(),
-            ctx.name_str(proj.item_name)
-        );
-        diags.push(GlyimDiagnostic::type_error(span, msg));
-    }
     let mut diagnostics = Vec::new();
     let mut infer = InferenceTable::new();
     let mut all_obligations: Vec<Obligation> = Vec::new();
-
-    let expr_types: IndexVec<glyim_hir::ExprId, Option<Ty>> = IndexVec::new();
-    let pat_types: IndexVec<glyim_hir::PatId, Option<Ty>> = IndexVec::new();
-    let adjustments: IndexVec<glyim_hir::ExprId, Option<Vec<Adjustment>>> = IndexVec::new();
     let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
 
+    let local_krate = def_map.krate;
+
+    let mut next_local_def_id: u32 = 0;
+    let mut alloc_local_def_id = |diags: &mut Vec<GlyimDiagnostic>| -> LocalDefId {
+        let id = next_local_def_id;
+        next_local_def_id += 1;
+        if next_local_def_id == u32::MAX {
+            diags.push(GlyimDiagnostic::type_error(
+                Span::DUMMY,
+                "exhausted LocalDefId space",
+            ));
+        }
+        LocalDefId::from_raw(id)
+    };
+
+    // 1. Coherence pass
+    let mut coherence = coherence::CoherenceChecker::new(def_map);
+
     for (_item_id, item) in hir.items.iter_enumerated() {
-        let mut impl_body_infos: Vec<(glyim_hir::BodyId, u32, Vec<glyim_hir::Param>, Ty)> =
-            Vec::new();
+        if let ItemKind::Impl(impl_item) = &item.kind {
+            let span = item.span;
+            let header = tyconv::resolve_impl_header(
+                &mut ctx,
+                &mut infer,
+                def_map,
+                &mut diagnostics,
+                impl_item,
+                span,
+            );
+
+            if let Err(mut cohesion_diags) = coherence.check_and_register(header, &ctx) {
+                diagnostics.append(&mut cohesion_diags);
+            }
+        }
+    }
+
+    // 2. Body checking pass
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        let item_span = item.span;
 
         match &item.kind {
-            glyim_hir::ItemKind::Fn(f) => {
-                let ret_ty = match &f.return_ty {
-                    Some(_) => {
-                        let var = infer.new_ty_var(&mut ctx);
-                        ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-                    }
-                    None => Ty::UNIT,
-                };
-                if let Some(b) = f.body {
-                    impl_body_infos.push((b, item.id.to_raw(), f.params.clone(), ret_ty));
+            ItemKind::Fn(f) => {
+                let local_def_id = alloc_local_def_id(&mut diagnostics);
+                let owner = DefId::new(local_krate, local_def_id);
 
-                    // Process where clauses for this function
-                    let generic_params = &f.generic_params;
-                    let where_clauses = &f.where_clauses;
-                    let param_tys = build_param_tys(&mut ctx, generic_params);
-                    for wc in where_clauses {
-                        if let Some(ty) = resolve_type_ref_to_ty(&mut ctx, &wc.ty, &param_tys) {
-                            for bound in &wc.bounds {
-                                let trait_def_id = TraitDefId::from_raw(0); // mock
-                                let trait_ref = TraitRef {
-                                    def_id: trait_def_id,
-                                    substs: ctx.intern_substitution(vec![GenericArg::Ty(ty)]),
-                                };
-                                let trait_pred = TraitPredicate {
-                                    trait_ref,
-                                    polarity: ImplPolarity::Positive,
-                                };
-                                all_obligations.push(Obligation {
-                                    predicate: Predicate::Trait(trait_pred),
-                                    cause: ObligationCause {
-                                        span: bound.span,
-                                        code: glyim_solve::ObligationCauseCode::WellFormed,
-                                    },
-                                });
-                            }
-                        }
-                    }
+                let sig = tyconv::resolve_fn_sig(
+                    &mut ctx,
+                    &mut infer,
+                    def_map,
+                    &mut diagnostics,
+                    &f.params,
+                    &f.return_ty,
+                    &f.generic_params,
+                    item_span,
+                );
+
+                process_where_clauses(
+                    &mut ctx,
+                    &mut infer,
+                    def_map,
+                    &mut diagnostics,
+                    &mut all_obligations,
+                    &f.generic_params,
+                    &f.where_clauses,
+                    item_span,
+                );
+
+                if let Some(body_id) = f.body {
+                    let params: Vec<(Name, Ty, Span)> = f
+                        .params
+                        .iter()
+                        .zip(sig.param_tys.iter())
+                        .map(|(p, ty)| (p.name, *ty, p.span))
+                        .collect();
+                    check_body(
+                        &mut ctx,
+                        &mut infer,
+                        &mut diagnostics,
+                        &mut all_obligations,
+                        hir,
+                        body_id,
+                        owner,
+                        sig.return_ty,
+                        &params,
+                        &mut thir_bodies,
+                        local_def_id,
+                        def_map,
+                    );
                 }
             }
-            glyim_hir::ItemKind::Impl(impl_item) => {
-                let mut method_local_def_counter = item.id.to_raw() * 1000 + 1;
+
+            ItemKind::Impl(impl_item) => {
+                let impl_span = item_span;
+
                 for method in &impl_item.methods {
-                    let ret_ty = match &method.return_ty {
-                        Some(_) => {
-                            let var = infer.new_ty_var(&mut ctx);
-                            ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
-                        }
-                        None => Ty::UNIT,
-                    };
-                    let local_def_raw = method_local_def_counter;
-                    method_local_def_counter += 1;
+                    let local_def_id = alloc_local_def_id(&mut diagnostics);
+                    let owner = DefId::new(local_krate, local_def_id);
 
-                    let body_id = if let Some(impl_body) = method.body {
-                        Some(impl_body)
-                    } else if let Some(trait_ref_path) = &impl_item.trait_ref {
-                        find_trait_default_body(hir, trait_ref_path, method.name)
-                    } else {
-                        None
-                    };
+                    let sig = tyconv::resolve_fn_sig(
+                        &mut ctx,
+                        &mut infer,
+                        def_map,
+                        &mut diagnostics,
+                        &method.params,
+                        &method.return_ty,
+                        &impl_item.generic_params,
+                        impl_span,
+                    );
 
-                    if let Some(b) = body_id {
-                        impl_body_infos.push((b, local_def_raw, method.params.clone(), ret_ty));
+                    process_where_clauses(
+                        &mut ctx,
+                        &mut infer,
+                        def_map,
+                        &mut diagnostics,
+                        &mut all_obligations,
+                        &impl_item.generic_params,
+                        &impl_item.where_clauses,
+                        impl_span,
+                    );
+
+                    let body_id = method.body.or_else(|| {
+                        find_trait_default_body(hir, &impl_item.trait_ref, method.name)
+                    });
+
+                    if let Some(body_id) = body_id {
+                        let params: Vec<(Name, Ty, Span)> = method
+                            .params
+                            .iter()
+                            .zip(sig.param_tys.iter())
+                            .map(|(p, ty)| (p.name, *ty, p.span))
+                            .collect();
+                        check_body(
+                            &mut ctx,
+                            &mut infer,
+                            &mut diagnostics,
+                            &mut all_obligations,
+                            hir,
+                            body_id,
+                            owner,
+                            sig.return_ty,
+                            &params,
+                            &mut thir_bodies,
+                            local_def_id,
+                            def_map,
+                        );
                     } else {
                         diagnostics.push(GlyimDiagnostic::type_error(
-                            Span::DUMMY,
+                            impl_span,
                             format!(
                                 "method `{}` has no implementation and no default",
                                 ctx.name_str(method.name)
@@ -180,141 +204,153 @@ pub fn typeck_crate(
                     }
                 }
             }
+
             _ => {}
-        }
-
-        // Process all collected body infos (both Fn and Impl)
-        for (body_id, local_def_raw, params, return_ty) in impl_body_infos {
-            let local_def_id = LocalDefId::from_raw(local_def_raw);
-            let mut pending = Vec::new();
-
-            let thir_body = check_body::check_function_body(
-                &mut ctx,
-                &mut infer,
-                &mut diagnostics,
-                &mut pending,
-                body_id,
-                hir,
-                local_def_id,
-                return_ty,
-                &params,
-            );
-            all_obligations.extend(pending);
-            thir_bodies.push((local_def_id, thir_body));
         }
     }
 
+    // 3. Obligation fulfillment
     let frozen_ctx = ctx.freeze();
 
     let mut fulfill = FulfillmentCtx::new(&frozen_ctx, solver);
     fulfill.extend(all_obligations);
+
     if let Err(overflow) = fulfill.process_obligations(100_000) {
         diagnostics.push(GlyimDiagnostic::type_error(
             Span::DUMMY,
             format!("overflow evaluating obligation: {:?}", overflow.predicate),
         ));
     }
+
     diagnostics.extend(fulfill.into_diagnostics());
 
     let result = TypeckResult {
-        expr_types,
-        pat_types,
-        adjustments,
         thir_bodies,
         diagnostics,
     };
-
     (frozen_ctx, result)
 }
 
-// ---- Where clause helpers (pub(crate) for testing) ----
-#[allow(dead_code)]
-pub(crate) fn get_generic_params(kind: &glyim_hir::ItemKind) -> Option<&[glyim_hir::GenericParam]> {
-    use glyim_hir::ItemKind;
-    match kind {
-        ItemKind::Fn(f) => Some(&f.generic_params),
-        ItemKind::Trait(t) => Some(&t.generic_params),
-        ItemKind::Impl(i) => Some(&i.generic_params),
-        ItemKind::Struct(s) => Some(&s.generic_params),
-        ItemKind::Enum(e) => Some(&e.generic_params),
-        ItemKind::TypeAlias(a) => Some(&a.generic_params),
-        _ => None,
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) fn get_where_clauses(
-    kind: &glyim_hir::ItemKind,
-) -> &[glyim_hir::where_clause::WhereClause] {
-    use glyim_hir::ItemKind;
-    match kind {
-        ItemKind::Fn(f) => &f.where_clauses,
-        ItemKind::Trait(t) => &t.where_clauses,
-        ItemKind::Impl(i) => &i.where_clauses,
-        _ => &[],
-    }
-}
-
-pub(crate) fn build_param_tys(
+fn check_body(
     ctx: &mut TyCtxMut,
-    params: &[glyim_hir::GenericParam],
-) -> HashMap<glyim_core::interner::Name, Ty> {
-    let mut map = HashMap::new();
-    for (i, param) in params.iter().enumerate() {
-        let pt = ParamTy {
-            index: i as u32,
-            name: param.name,
-        };
-        let ty = ctx.mk_ty(TyKind::Param(pt));
-        map.insert(param.name, ty);
-    }
-    map
+    infer: &mut InferenceTable,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+    pending_obligations: &mut Vec<Obligation>,
+    hir: &glyim_hir::CrateHir,
+    body_id: glyim_hir::BodyId,
+    owner: DefId,
+    return_ty: Ty,
+    params: &[(Name, Ty, Span)],
+    thir_bodies: &mut Vec<(LocalDefId, thir::Body)>,
+    local_def_id: LocalDefId,
+    def_map: &glyim_def_map::CrateDefMap,
+) {
+    let body = &hir.bodies[body_id];
+    let env = env::LocalEnv::new();
+
+    let fn_ctxt = check_body::FnCtxt {
+        ctx,
+        infer,
+        diagnostics,
+        pending_obligations,
+        hir,
+        body,
+        env,
+        return_ty,
+        owner,
+        expr_cache: Default::default(),
+        def_map,
+    };
+
+    let thir_body = fn_ctxt.check(params);
+    thir_bodies.push((local_def_id, thir_body));
 }
 
-pub(crate) fn resolve_type_ref_to_ty(
+fn process_where_clauses(
     ctx: &mut TyCtxMut,
-    ty_ref: &glyim_hir::TypeRef,
-    param_map: &HashMap<glyim_core::interner::Name, Ty>,
-) -> Option<Ty> {
-    use glyim_hir::TypeRef;
-    match ty_ref {
-        TypeRef::Path(path) => {
-            if let Some(name) = path.as_name() {
-                if let Some(&ty) = param_map.get(&name) {
-                    Some(ty)
+    infer: &mut InferenceTable,
+    def_map: &glyim_def_map::CrateDefMap,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+    obligations: &mut Vec<Obligation>,
+    generic_params: &[glyim_hir::GenericParam],
+    where_clauses: &[glyim_hir::where_clause::WhereClause],
+    _item_span: Span,
+) {
+    let param_map = tyconv::build_param_tys(ctx, generic_params);
+
+    for wc in where_clauses {
+        let ty = tyconv::resolve_type_ref(
+            ctx,
+            infer,
+            def_map,
+            diagnostics,
+            &wc.ty,
+            &param_map,
+            wc.span,
+        );
+        if ty == Ty::ERROR {
+            continue;
+        }
+
+        for bound in &wc.bounds {
+            let trait_path = &bound.trait_path;
+            let trait_def_id = if let Some(name) = trait_path.as_name() {
+                if let Some(res) = def_map.modules[def_map.root].scope.resolve(name) {
+                    Some(TraitDefId::from_raw(res.0.to_raw()))
                 } else {
-                    // Unknown type – create error
-                    Some(ctx.mk_ty(TyKind::Error))
+                    diagnostics.push(GlyimDiagnostic::type_error(
+                        bound.span,
+                        format!(
+                            "unresolved trait `{}` in where clause",
+                            def_map.interner.resolve(name)
+                        ),
+                    ));
+                    None
                 }
             } else {
-                // Multi-segment path not supported yet
-                tracing::warn!("STUB: multi-segment path in where clause not resolved");
-                Some(ctx.mk_ty(TyKind::Error))
+                diagnostics.push(GlyimDiagnostic::type_error(
+                    bound.span,
+                    "multi-segment trait paths in where clauses not yet supported",
+                ));
+                None
+            };
+
+            if let Some(trait_def_id) = trait_def_id {
+                let trait_ref = TraitRef {
+                    def_id: trait_def_id,
+                    substs: ctx.intern_substitution(vec![GenericArg::Ty(ty)]),
+                };
+                let trait_pred = TraitPredicate {
+                    trait_ref,
+                    polarity: ImplPolarity::Positive,
+                };
+                obligations.push(Obligation {
+                    predicate: Predicate::Trait(trait_pred),
+                    cause: ObligationCause {
+                        span: bound.span,
+                        code: glyim_solve::ObligationCauseCode::WellFormed,
+                    },
+                });
             }
-        }
-        _ => {
-            tracing::warn!("STUB: non-path type in where clause not resolved");
-            Some(ctx.mk_ty(TyKind::Error))
         }
     }
 }
 
-#[cfg(test)]
-mod tests;
-
-pub(crate) fn find_trait_default_body(
+fn find_trait_default_body(
     hir: &glyim_hir::CrateHir,
-    trait_ref_path: &glyim_hir::Path,
-    method_name: glyim_core::interner::Name,
+    trait_ref_path: &Option<glyim_hir::Path>,
+    method_name: Name,
 ) -> Option<glyim_hir::BodyId> {
-    let trait_name = trait_ref_path.as_name()?;
+    let trait_path = trait_ref_path.as_ref()?;
+    let trait_name = trait_path.as_name()?;
+
     for (_item_id, item) in hir.items.iter_enumerated() {
-        if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind
-            && item.name == trait_name
-        {
-            for method in &trait_item.methods {
-                if method.name == method_name {
-                    return method.default_body;
+        if let ItemKind::Trait(trait_item) = &item.kind {
+            if item.name == trait_name {
+                for method in &trait_item.methods {
+                    if method.name == method_name {
+                        return method.default_body;
+                    }
                 }
             }
         }

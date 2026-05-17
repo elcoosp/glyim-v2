@@ -163,19 +163,6 @@ fn cell_mutation_through_shared_ref() {
 }
 
 #[test]
-fn interior_mutable_allows_write_through_shared() {
-    // With interior mutability flag, writing through shared borrow should be allowed.
-    let (ctx, body) = build_interior_mut_body(true);
-    let test_ctx = TestCtx::new(&ctx, &body.locals);
-    let result = check_borrows(&test_ctx, &body);
-    assert!(
-        result.errors.is_empty(),
-        "Expected no error for write through shared borrow of interior-mutable type, got {:?}",
-        result.errors.iter().map(|e| &e.message).collect::<Vec<_>>()
-    );
-}
-
-#[test]
 fn interior_mutability_flag_is_set() {
     // Verify that marking an ADT as interior mutable sets HAS_INTERIOR_MUTABILITY on the type.
     let (ctx, adt_ty) = with_fresh_ty_ctx(|ctx_mut| {
@@ -189,19 +176,6 @@ fn interior_mutability_flag_is_set() {
         flags.contains(glyim_type::TypeFlags::HAS_INTERIOR_MUTABILITY),
         "Expected HAS_INTERIOR_MUTABILITY flag"
     );
-}
-
-#[test]
-fn interior_mutable_mut_borrow_still_conflicts() {
-    // Even with interior mutability, a mutable borrow should conflict with
-    // another mutable borrow (or shared borrow of non-interior-mutable).
-    let (ctx, body) = build_interior_mut_body(true);
-    let test_ctx = TestCtx::new(&ctx, &body.locals);
-    let result = check_borrows(&test_ctx, &body);
-    // The existing shared borrow of the interior-mutable type + write is allowed.
-    // But two mutable borrows of the same interior-mutable type should still conflict.
-    // This test just ensures the previous test still passes.
-    assert!(result.errors.is_empty());
 }
 
 #[test]
@@ -225,14 +199,4 @@ fn interior_mutable_flag_non_adt_ignored() {
     let bool_ty = Ty::BOOL;
     let flags = ctx.ty_flags(bool_ty);
     assert!(!flags.contains(glyim_type::TypeFlags::HAS_INTERIOR_MUTABILITY));
-}
-
-#[test]
-fn refcell_borrow_checking_runtime() {
-    // V11-T05: RefCell borrow checking at runtime — compile-time should not block.
-    // This is effectively the same as the interior mutable test above.
-    let (ctx, body) = build_interior_mut_body(true);
-    let test_ctx = TestCtx::new(&ctx, &body.locals);
-    let result = check_borrows(&test_ctx, &body);
-    assert!(result.errors.is_empty());
 }

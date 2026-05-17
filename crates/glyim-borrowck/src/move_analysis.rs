@@ -189,11 +189,17 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
 // ---------------------------------------------------------------------------
 // Move dataflow analysis
 // ---------------------------------------------------------------------------
-
+/// Result of the move dataflow analysis.
 struct MoveAnalysisResult {
     moved_in: Vec<BitSet>,
     #[allow(dead_code)]
     moved_out: Vec<BitSet>,
+    /// For each basic block, the set of move path indices that have been
+    /// StorageDead'd (storage deallocated). Unlike regular moves, using a
+    /// dead local is always an error, even for Copy types.
+    dead_in: Vec<BitSet>,
+    #[allow(dead_code)]
+    dead_out: Vec<BitSet>,
     move_paths: MovePathArena,
 }
 
@@ -225,6 +231,13 @@ fn compute_move_dataflow(
     let mut block_inits: Vec<BitSet> = (0..num_blocks)
         .map(|_| BitSet::with_capacity(num_paths))
         .collect();
+    // Track StorageDead separately — applies even to Copy types
+    let mut block_deads: Vec<BitSet> = (0..num_blocks)
+        .map(|_| BitSet::with_capacity(num_paths))
+        .collect();
+    let mut block_dead_inits: Vec<BitSet> = (0..num_blocks)
+        .map(|_| BitSet::with_capacity(num_paths))
+        .collect();
 
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         let bi = block_idx.to_raw() as usize;
@@ -234,6 +247,8 @@ fn compute_move_dataflow(
                 &move_paths,
                 &mut block_moves[bi],
                 &mut block_inits[bi],
+                &mut block_deads[bi],
+                &mut block_dead_inits[bi],
                 ctx,
                 &body.locals,
             );
@@ -253,6 +268,12 @@ fn compute_move_dataflow(
     let mut moved_out: Vec<BitSet> = (0..num_blocks)
         .map(|_| BitSet::with_capacity(num_paths))
         .collect();
+    let mut dead_in: Vec<BitSet> = (0..num_blocks)
+        .map(|_| BitSet::with_capacity(num_paths))
+        .collect();
+    let mut dead_out: Vec<BitSet> = (0..num_blocks)
+        .map(|_| BitSet::with_capacity(num_paths))
+        .collect();
 
     let mut worklist: Vec<usize> = (0..num_blocks).collect();
     let mut in_worklist = BitSet::with_capacity(num_blocks);
@@ -263,20 +284,37 @@ fn compute_move_dataflow(
     while let Some(bi) = worklist.pop() {
         in_worklist.remove(bi);
 
+        // --- Moved dataflow ---
         let mut new_moved_in = BitSet::with_capacity(num_paths);
         if bi != 0 {
             for &pred in &predecessors[bi] {
                 new_moved_in.union_with(&moved_out[pred.to_raw() as usize]);
             }
         }
-
         let mut new_moved_out = new_moved_in.clone();
         new_moved_out.union_with(&block_moves[bi]);
         new_moved_out.difference_with(&block_inits[bi]);
 
-        if new_moved_in != moved_in[bi] || new_moved_out != moved_out[bi] {
+        // --- Dead dataflow ---
+        let mut new_dead_in = BitSet::with_capacity(num_paths);
+        if bi != 0 {
+            for &pred in &predecessors[bi] {
+                new_dead_in.union_with(&dead_out[pred.to_raw() as usize]);
+            }
+        }
+        let mut new_dead_out = new_dead_in.clone();
+        new_dead_out.union_with(&block_deads[bi]);
+        new_dead_out.difference_with(&block_dead_inits[bi]);
+
+        if new_moved_in != moved_in[bi]
+            || new_moved_out != moved_out[bi]
+            || new_dead_in != dead_in[bi]
+            || new_dead_out != dead_out[bi]
+        {
             moved_in[bi] = new_moved_in;
             moved_out[bi] = new_moved_out;
+            dead_in[bi] = new_dead_in;
+            dead_out[bi] = new_dead_out;
 
             let block_idx = BasicBlockIdx::from_raw(bi as u32);
             let block_data = &body.basic_blocks[block_idx];
@@ -293,15 +331,18 @@ fn compute_move_dataflow(
     MoveAnalysisResult {
         moved_in,
         moved_out,
+        dead_in,
+        dead_out,
         move_paths,
     }
 }
-
 fn collect_stmt_move_effects(
     stmt: &glyim_mir::Statement,
     move_paths: &MovePathArena,
     moves: &mut BitSet,
     inits: &mut BitSet,
+    deads: &mut BitSet,
+    dead_inits: &mut BitSet,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
 ) {
@@ -309,17 +350,22 @@ fn collect_stmt_move_effects(
         StatementKind::Assign(dest, rvalue) => {
             if let Some(mp_idx) = move_paths.find(dest) {
                 record_init(move_paths, mp_idx, inits);
+                record_init(move_paths, mp_idx, dead_inits);
             }
             collect_rvalue_move_operands(rvalue, move_paths, moves, ctx, local_decls);
         }
         StatementKind::StorageLive(local) => {
             if let Some(mp_idx) = move_paths.find_root(*local) {
                 record_init(move_paths, mp_idx, inits);
+                record_init(move_paths, mp_idx, dead_inits);
             }
         }
         StatementKind::StorageDead(local) => {
             if let Some(mp_idx) = move_paths.find_root(*local) {
+                // StorageDead is both a move (value is gone) and a dead (storage is gone).
+                // Dead applies even to Copy types.
                 record_move(move_paths, mp_idx, moves);
+                record_move(move_paths, mp_idx, deads);
             }
         }
         StatementKind::Nop => {}
@@ -384,40 +430,46 @@ fn collect_operand_move(
 // ---------------------------------------------------------------------------
 // Per-statement move state
 // ---------------------------------------------------------------------------
-
 fn compute_stmt_moved(
     body: &Body,
     block: BasicBlockIdx,
     moved_in: &BitSet,
+    dead_in: &BitSet,
     move_paths: &MovePathArena,
     ctx: &dyn BorrowckCtx,
-) -> Vec<BitSet> {
+) -> (Vec<BitSet>, Vec<BitSet>) {
     let block_data = &body.basic_blocks[block];
     let num_stmts = block_data.statements.len();
     let num_paths = move_paths.len();
 
     let mut moved = vec![BitSet::with_capacity(num_paths); num_stmts + 1];
+    let mut dead = vec![BitSet::with_capacity(num_paths); num_stmts + 1];
     moved[0] = moved_in.clone();
+    dead[0] = dead_in.clone();
 
     for i in 0..num_stmts {
-        let mut current = moved[i].clone();
+        let mut current_moved = moved[i].clone();
+        let mut current_dead = dead[i].clone();
         apply_stmt_move_effects(
             &block_data.statements[i],
             move_paths,
-            &mut current,
+            &mut current_moved,
+            &mut current_dead,
             ctx,
             &body.locals,
         );
-        moved[i + 1] = current;
+        moved[i + 1] = current_moved;
+        dead[i + 1] = current_dead;
     }
 
-    moved
+    (moved, dead)
 }
 
 fn apply_stmt_move_effects(
     stmt: &glyim_mir::Statement,
     move_paths: &MovePathArena,
     moved: &mut BitSet,
+    dead: &mut BitSet,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
 ) {
@@ -425,8 +477,10 @@ fn apply_stmt_move_effects(
         StatementKind::Assign(dest, rvalue) => {
             if let Some(mp_idx) = move_paths.find(dest) {
                 moved.remove(mp_idx.to_raw() as usize);
+                dead.remove(mp_idx.to_raw() as usize);
                 for &child in &move_paths.get(mp_idx).children {
                     moved.remove(child.to_raw() as usize);
+                    dead.remove(child.to_raw() as usize);
                 }
             }
             collect_rvalue_move_operands(rvalue, move_paths, moved, ctx, local_decls);
@@ -434,14 +488,17 @@ fn apply_stmt_move_effects(
         StatementKind::StorageLive(local) => {
             if let Some(mp_idx) = move_paths.find_root(*local) {
                 moved.remove(mp_idx.to_raw() as usize);
+                dead.remove(mp_idx.to_raw() as usize);
                 for &child in &move_paths.get(mp_idx).children {
                     moved.remove(child.to_raw() as usize);
+                    dead.remove(child.to_raw() as usize);
                 }
             }
         }
         StatementKind::StorageDead(local) => {
             if let Some(mp_idx) = move_paths.find_root(*local) {
                 record_move(move_paths, mp_idx, moved);
+                record_move(move_paths, mp_idx, dead);
             }
         }
         StatementKind::Nop => {}
@@ -465,14 +522,24 @@ pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagno
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         let block_usize = block_idx.to_raw() as usize;
         let moved_in = &move_result.moved_in[block_usize];
-        let stmt_moved =
-            compute_stmt_moved(body, block_idx, moved_in, &move_result.move_paths, ctx);
+        let dead_in = &move_result.dead_in[block_usize];
+
+        let (stmt_moved, stmt_dead) = compute_stmt_moved(
+            body,
+            block_idx,
+            moved_in,
+            dead_in,
+            &move_result.move_paths,
+            ctx,
+        );
 
         for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
             let current_moved = &stmt_moved[stmt_idx];
+            let current_dead = &stmt_dead[stmt_idx];
             check_stmt_use_after_move(
                 stmt,
                 current_moved,
+                current_dead,
                 &move_result.move_paths,
                 ctx,
                 &body.locals,
@@ -483,7 +550,6 @@ pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagno
 
     errors
 }
-
 enum UsedPlace<'a> {
     Operand(&'a Place),
     Borrow(&'a Place),
@@ -493,6 +559,7 @@ enum UsedPlace<'a> {
 fn check_stmt_use_after_move(
     stmt: &glyim_mir::Statement,
     moved: &BitSet,
+    dead: &BitSet,
     move_paths: &MovePathArena,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
@@ -504,6 +571,7 @@ fn check_stmt_use_after_move(
             &used_place,
             stmt,
             moved,
+            dead,
             move_paths,
             ctx,
             local_decls,
@@ -571,6 +639,7 @@ fn check_place_use_after_move(
     used_place: &UsedPlace<'_>,
     stmt: &glyim_mir::Statement,
     moved: &BitSet,
+    dead: &BitSet,
     move_paths: &MovePathArena,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
@@ -582,6 +651,39 @@ fn check_place_use_after_move(
         UsedPlace::Inspect(p) => *p,
     };
 
+    // Check use-after-dead FIRST — this applies regardless of Copy status.
+    // StorageDead means the local's storage is deallocated; any subsequent
+    // use is undefined behaviour, even for Copy types.
+    if let Some(mp_idx) = move_paths.find(place) {
+        if dead.contains(mp_idx.to_raw() as usize) {
+            let name = ctx.local_name(place.local);
+            let msg = if place.projection.is_empty() {
+                format!("use of dead local `{name}`")
+            } else {
+                format!("use of dead local `{name}.*`")
+            };
+            errors.push(GlyimDiagnostic::borrow_error(stmt.source_info.span, msg));
+            return;
+        }
+    }
+    // For a bare local, also check if any field has been dead'd
+    if place.projection.is_empty() {
+        if let Some(root_idx) = move_paths.find_root(place.local) {
+            let any_child_dead = move_paths
+                .get(root_idx)
+                .children
+                .iter()
+                .any(|child| dead.contains(child.to_raw() as usize));
+            if any_child_dead {
+                let name = ctx.local_name(place.local);
+                let msg = format!("use of partially dead local `{name}`");
+                errors.push(GlyimDiagnostic::borrow_error(stmt.source_info.span, msg));
+                return;
+            }
+        }
+    }
+
+    // Check use-after-move — only for non-Copy types.
     if let UsedPlace::Operand(p) = used_place {
         let place_ty = p.ty(ctx.ty_ctx(), local_decls);
         if ctx.is_copy(place_ty) {
@@ -617,7 +719,6 @@ fn check_place_use_after_move(
         }
     }
 }
-
 #[allow(dead_code)]
 fn describe_projection(projection: &[ProjectionElem]) -> String {
     projection

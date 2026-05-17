@@ -36,6 +36,7 @@ members = [
     "crates/glyip",
     "crates/glyim-lang-std",
     "crates/glyim-lang-alloc",
+    "tools/glyim-pilot",
 ]
 
 [workspace.dependencies]
