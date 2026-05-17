@@ -1204,18 +1204,34 @@ impl<'a> Parser<'a> {
                     self.parse_type();
                     self.finish_node();
                 }
-                SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
+                                SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
                     self.start_node_at(cp, SyntaxKind::StructExpr);
-                    self.bump();
+                    self.bump(); // {
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
                         if self.current_kind() == SyntaxKind::Ident {
-                            self.bump();
+                            let field_cp = self.checkpoint();
+                            let field_name_token = self.current().unwrap().clone();
+                            self.bump(); // consume field name
                             if self.current_kind() == SyntaxKind::Colon {
-                                self.bump();
+                                // Explicit field: name: expr
+                                self.bump(); // consume colon
+                                self.start_node_at(field_cp, SyntaxKind::StructField);
+                                // Emit the field name as a token (already emitted by bump), then parse the expression
+                                self.finish_node();
                                 self.parse_expr();
+                            } else {
+                                // Shorthand field: name
+                                self.start_node_at(field_cp, SyntaxKind::StructField);
+                                // Emit the field name as a PathExpr
+                                self.start_node(SyntaxKind::PathExpr);
+                                self.start_node(SyntaxKind::UsePath);
+                                self.builder.token(GlyimLang::kind_to_raw(field_name_token.kind), field_name_token.text.as_str());
+                                self.finish_node(); // UsePath
+                                self.finish_node(); // PathExpr
+                                self.finish_node(); // StructField
                             }
                         } else if self.current_kind() == SyntaxKind::DotDot {
-                            self.bump();
+                            self.bump(); // ..
                             if self.current_kind() != SyntaxKind::RBrace {
                                 self.parse_expr();
                             }
@@ -1230,10 +1246,8 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(SyntaxKind::RBrace);
-                    self.finish_node();
+                    self.finish_node(); // StructExpr
                 }
-                _ => break,
-            }
         }
     }
 
@@ -1520,36 +1534,50 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    fn parse_closure_expr(&mut self) {
+            fn parse_closure_expr(&mut self) {
         self.start_node(SyntaxKind::ClosureExpr);
         if self.current_kind() == SyntaxKind::KwMove {
-            self.bump(); // move
+            self.bump();
         }
+        // Opening pipe
         if self.current_kind() == SyntaxKind::Or {
-            self.bump(); // first |
-            if self.current_kind() == SyntaxKind::Or {
-                self.bump(); // second |
-            } else {
-                while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
-                    self.parse_pat_single();
-                    if self.current_kind() == SyntaxKind::Colon {
-                        self.bump();
-                        self.parse_type();
-                    }
-                    if self.current_kind() == SyntaxKind::Comma {
-                        self.bump();
-                    }
-                }
-                self.expect(SyntaxKind::Or);
+            self.bump();
+        } else {
+            self.error("expected '|' for closure");
+            return;
+        }
+        // Parameters
+        self.start_node(SyntaxKind::ParamList);
+        while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
+            self.start_node(SyntaxKind::Param);
+            self.parse_pat_single();
+            if self.current_kind() == SyntaxKind::Colon {
+                self.bump();
+                self.parse_type();
+            }
+            self.finish_node();
+            if self.current_kind() == SyntaxKind::Comma {
+                self.bump();
             }
         }
+        self.finish_node();
+        // Closing pipe
+        if self.current_kind() == SyntaxKind::Or {
+            self.bump();
+        } else {
+            self.error("expected '|' after closure parameters");
+            return;
+        }
+        // Optional return type
         if self.current_kind() == SyntaxKind::Arrow {
             self.bump();
             self.parse_type();
         }
+        // Body: required
         if self.current_kind() == SyntaxKind::LBrace {
             self.parse_block();
         } else {
+            // Parse the expression body. Even if it's followed by a semicolon, parse it.
             self.parse_expr();
         }
         self.finish_node();
