@@ -1,16 +1,16 @@
-use crate::database::{FileMap, SourceMap};
+use crate::database::SourceMap;
 use crate::rename::rename_symbol;
 use crate::AnalysisDatabase;
 use lsp_types::*;
-use std::path::PathBuf;
 
-fn setup_analysis(content: &str, path: &PathBuf) -> (AnalysisDatabase, FileMap) {
+fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {
     let db = AnalysisDatabase::new();
-    let mut file_map = FileMap::new();
-    let file_id = file_map.get_or_create(path);
-    let source_map = SourceMap::new(path.clone(), file_id, content.to_string());
+    let path = std::env::current_dir().unwrap().join("main.gly");
+    let uri = Url::from_file_path(&path).unwrap();
+    let file_id = db.file_map.write().get_or_create(&path);
+    let source_map = SourceMap::new(path, file_id, content.to_string());
     db.source_maps.write().insert(file_id, source_map);
-    (db, file_map)
+    (db, uri)
 }
 
 #[test]
@@ -18,18 +18,19 @@ fn test_rename_updates_all_references() {
     let content = r#"fn foo() {
     let x = foo();
 }"#;
-    let path = PathBuf::from("main.gly");
-    let (db, file_map) = setup_analysis(content, &path);
-    let uri = Url::from_file_path(&path).unwrap();
+    let (db, uri) = setup_analysis(content);
+    // Position the cursor over the 'f' of 'foo' in the definition (line 0, column 3)
     let params = RenameParams {
         text_document_position: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
-            position: Position { line: 1, character: 4 }, // over 'foo'
+            position: Position { line: 0, character: 3 },
         },
         new_name: "bar".to_string(),
         work_done_progress_params: WorkDoneProgressParams::default(),
     };
-    let edit = rename_symbol(&db, &file_map, &params);
+    let file_map_guard = db.file_map.read();
+    let edit = rename_symbol(&db, &*file_map_guard, &params);
+    drop(file_map_guard);
     assert!(edit.is_some());
     let edit = edit.unwrap();
     let changes = edit.changes;
@@ -37,6 +38,6 @@ fn test_rename_updates_all_references() {
     let changes = changes.unwrap();
     let file_edits = changes.get(&uri);
     assert!(file_edits.is_some());
-    // Should have two edits: one for definition (line 1) and one for reference (line 2)
+    // Should have two edits: definition (line 0) and reference (line 1)
     assert_eq!(file_edits.unwrap().len(), 2);
 }

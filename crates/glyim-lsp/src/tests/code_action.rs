@@ -1,16 +1,16 @@
 use crate::code_action::provide_code_actions;
-use crate::database::{FileMap, SourceMap};
+use crate::database::SourceMap;
 use crate::AnalysisDatabase;
 use lsp_types::*;
-use std::path::PathBuf;
 
-fn setup_analysis(content: &str, path: &PathBuf) -> (AnalysisDatabase, FileMap) {
+fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {
     let db = AnalysisDatabase::new();
-    let mut file_map = FileMap::new();
-    let file_id = file_map.get_or_create(path);
-    let source_map = SourceMap::new(path.clone(), file_id, content.to_string());
+    let path = std::env::current_dir().unwrap().join("main.gly");
+    let uri = Url::from_file_path(&path).unwrap();
+    let file_id = db.file_map.write().get_or_create(&path);
+    let source_map = SourceMap::new(path, file_id, content.to_string());
     db.source_maps.write().insert(file_id, source_map);
-    (db, file_map)
+    (db, uri)
 }
 
 #[test]
@@ -19,9 +19,7 @@ fn test_remove_unused_import_code_action() {
 fn main() {
     let x = 42;
 }"#;
-    let path = PathBuf::from("main.gly");
-    let (db, file_map) = setup_analysis(content, &path);
-    let uri = Url::from_file_path(path).unwrap();
+    let (db, uri) = setup_analysis(content);
     let params = CodeActionParams {
         text_document: TextDocumentIdentifier { uri: uri.clone() },
         range: Range::default(),
@@ -29,7 +27,9 @@ fn main() {
         work_done_progress_params: WorkDoneProgressParams::default(),
         partial_result_params: PartialResultParams::default(),
     };
-    let actions = provide_code_actions(&db, &file_map, &params);
+    let file_map_guard = db.file_map.read();
+    let actions = provide_code_actions(&db, &*file_map_guard, &params);
+    drop(file_map_guard);
     assert!(actions.is_some());
     let actions = actions.unwrap();
     assert!(!actions.is_empty());

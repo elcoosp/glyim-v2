@@ -7,23 +7,25 @@ fn find_references_in_source(source: &str, target_name: &str) -> Vec<Range> {
     let lines: Vec<&str> = source.lines().collect();
     let mut ranges = Vec::new();
     for (line_idx, line) in lines.iter().enumerate() {
+        let mut start_col = 0;
         let chars: Vec<char> = line.chars().collect();
         let mut j = 0;
         while j < chars.len() {
-            if chars[j].is_alphabetic() || chars[j] == '_' {
-                let start = j;
-                while j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
-                    j += 1;
-                }
-                let word: String = chars[start..j].iter().collect();
-                if word == target_name {
-                    ranges.push(Range {
-                        start: Position { line: line_idx as u32, character: start as u32 },
-                        end: Position { line: line_idx as u32, character: j as u32 },
-                    });
-                }
-            } else {
+            // Skip non-alphabetic
+            if !chars[j].is_alphabetic() && chars[j] != '_' {
                 j += 1;
+                continue;
+            }
+            let start = j;
+            while j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                j += 1;
+            }
+            let word: String = chars[start..j].iter().collect();
+            if word == target_name {
+                ranges.push(Range {
+                    start: Position { line: line_idx as u32, character: start as u32 },
+                    end: Position { line: line_idx as u32, character: j as u32 },
+                });
             }
         }
     }
