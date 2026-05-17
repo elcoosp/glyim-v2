@@ -153,7 +153,7 @@ fn lower_fn_def(
         pats: IndexVec::new(),
         params: Vec::new(),
         span: node_span(node),
-        expr_spans: IndexVec::new(), // Initialize empty
+        expr_spans: IndexVec::new(),
     };
 
     // ParamList
@@ -193,7 +193,6 @@ fn lower_fn_def(
             &mut body.expr_spans,
         );
     } else {
-        // FIXME: FnDef without Block node
         unimplemented!("FnDef without Block node")
     }
 
@@ -491,14 +490,12 @@ fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef>
             Some(TypeRef::Slice(Box::new(inner)))
         }
         SyntaxKind::ArrayType => {
-            // Array type contains inner type and length (ConstRef)
             let mut inner = None;
             let mut len = None;
             for child in node.children() {
                 if is_type_node(&child) {
                     inner = lower_type_ref(&child, interner);
                 } else if child.kind() == SyntaxKind::LitExpr {
-                    // We can't extract length easily; stub with Error
                     len = Some(ConstRef::Error);
                 }
             }
@@ -520,7 +517,6 @@ fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef>
         SyntaxKind::NeverType => Some(TypeRef::Never),
         SyntaxKind::InferType => Some(TypeRef::Infer),
         SyntaxKind::DynType => {
-            // For now, lower as a PathType containing the trait name
             let path = lower_path_from_type(node, interner)?;
             Some(TypeRef::Path(path))
         }
@@ -590,7 +586,6 @@ fn lower_block_to_expr(
                     if !is_expr_node(&inner) && inner.kind() != SyntaxKind::Block {
                         continue;
                     }
-                    // Handle chained field/method calls (sibling nodes from parser)
                     if (inner.kind() == SyntaxKind::FieldExpr
                         || inner.kind() == SyntaxKind::MethodCallExpr)
                         && let Some(base_id) = chain_base
@@ -742,15 +737,85 @@ fn lower_expr(
         SyntaxKind::RangeExpr => lower_range_expr(node, interner, exprs, pats, expr_spans),
         SyntaxKind::ReturnExpr => lower_return_expr(node, interner, exprs, pats, expr_spans),
         SyntaxKind::ClosureExpr => {
-            // Stub for now: produce Missing
-            let expr = Expr::Missing;
+            let mut params = Vec::new();
+            let mut body = None;
+            for child in node.children() {
+                match child.kind() {
+                    SyntaxKind::ParamList => {
+                        for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
+                            let (_, pat_id) = lower_param(&param_node, interner, pats);
+                            params.push(pat_id);
+                        }
+                    }
+                    _ if is_expr_node(&child) || child.kind() == SyntaxKind::Block => {
+                        if body.is_none() {
+                            body = lower_expr(&child, interner, exprs, pats, expr_spans);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let body_id = body.unwrap_or_else(|| {
+                let missing = Expr::Missing;
+                exprs.push(missing)
+            });
+            let expr = Expr::Closure { params, body: body_id };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             Some(eid)
         }
         SyntaxKind::StructExpr => {
-            // Stub
-            let expr = Expr::Missing;
+            // StructExpr: path { fields, ..spread? }
+            let mut path = None;
+            let mut fields = Vec::new();
+            let mut spread = None;
+            let mut in_braces = false;
+            for child in node.children() {
+                if child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath {
+                    if path.is_none() {
+                        path = lower_path_expr(&child, interner, exprs, expr_spans);
+                    }
+                } else if child.kind() == SyntaxKind::LBrace {
+                    in_braces = true;
+                } else if child.kind() == SyntaxKind::RBrace {
+                    in_braces = false;
+                } else if in_braces {
+                    if child.kind() == SyntaxKind::DotDot && spread.is_none() {
+                        let mut found_expr = false;
+                        for next in node.children() {
+                            if found_expr {
+                                if let Some(spread_id) = lower_expr(&next, interner, exprs, pats, expr_spans) {
+                                    spread = Some(spread_id);
+                                }
+                                break;
+                            }
+                            if next == child {
+                                found_expr = true;
+                            }
+                        }
+                    } else if child.kind() == SyntaxKind::StructField {
+                        let field_name = first_ident_text(&child).unwrap_or_default();
+                        let name = interner.intern(&field_name);
+                        let expr_node = child.children().find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
+                        if let Some(expr_id) = expr_node.and_then(|n| lower_expr(&n, interner, exprs, pats, expr_spans)) {
+                            fields.push((name, expr_id));
+                        }
+                    }
+                }
+            }
+            let path_id = path.unwrap_or_else(|| {
+                let missing = Expr::Missing;
+                exprs.push(missing)
+            });
+            let path_struct = if let Expr::Path(p) = &exprs[path_id] {
+                p.clone()
+            } else {
+                HirPath {
+                    segments: vec![],
+                    kind: glyim_core::path::PathKind::Plain,
+                }
+            };
+            let expr = Expr::Struct { path: path_struct, fields, spread };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             Some(eid)
@@ -771,7 +836,6 @@ fn lower_binary_expr(
     pats: &mut IndexVec<PatId, Pat>,
     expr_spans: &mut IndexVec<ExprId, Span>,
 ) -> Option<ExprId> {
-    // First, try to find operator and adjacent expressions by token position
     let op_token = node
         .children_with_tokens()
         .filter_map(|el| el.into_token())
@@ -783,7 +847,6 @@ fn lower_binary_expr(
         });
 
     if let Some(op_token) = op_token {
-        // Find LHS: expression node that ends before the operator starts
         let lhs_node = node
             .children_with_tokens()
             .take_while(|el| match el {
@@ -794,7 +857,6 @@ fn lower_binary_expr(
             .last()
             .filter(|n| is_expr_node(n) || n.kind() == SyntaxKind::Block);
 
-        // Find RHS: expression node that starts after the operator ends
         let rhs_node = node
             .children_with_tokens()
             .skip_while(|el| match el {
@@ -820,7 +882,6 @@ fn lower_binary_expr(
         }
     }
 
-    // Fallback: collect all expression children in order
     let expr_children: Vec<SyntaxNode> = node
         .children()
         .filter(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)
@@ -835,7 +896,6 @@ fn lower_binary_expr(
     let rhs_node = &expr_children[1];
     let lhs_id = lower_expr(lhs_node, interner, exprs, pats, expr_spans)?;
     let rhs_id = lower_expr(rhs_node, interner, exprs, pats, expr_spans)?;
-    // Find any operator token between them (for completeness)
     let lhs_range = lhs_node.text_range();
     let rhs_range = rhs_node.text_range();
     let op_token = node
@@ -978,7 +1038,6 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
     let text = token.text().to_string();
     match token.kind() {
         SyntaxKind::IntLit => {
-            // Strip suffix (e.g., 42i32 -> 42) and parse
             let (num_str, suffix) = split_int_literal(&text);
             let (value, is_unsigned) = parse_int_with_prefix(&num_str);
             if let Some(suffix) = suffix {
@@ -1024,15 +1083,12 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
             }
         }
         SyntaxKind::StringLit => {
-            // For now, just create a dummy Name; real interner needed
-            // String literals not fully supported in HIR lowering yet; return unit.
             Literal::Unit
         }
         _ => Literal::Unit,
     }
 }
 
-// Helper functions (to be added above)
 fn split_int_literal(s: &str) -> (String, Option<String>) {
     let mut digits_end = s.len();
     for (i, ch) in s.char_indices() {
@@ -1081,7 +1137,6 @@ fn parse_int_with_prefix(s: &str) -> (i128, bool) {
 }
 
 fn split_float_literal(s: &str) -> (String, Option<String>) {
-    // Similar but simpler: find first non-digit, non-'.', non-'e', non-'E', non-'+', non'-'
     let mut digits_end = s.len();
     for (i, ch) in s.char_indices() {
         if !(ch.is_ascii_digit() || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') {
@@ -1102,7 +1157,6 @@ fn parse_char_literal(s: &str) -> Option<char> {
     if s.len() == 1 {
         return s.chars().next();
     }
-    // Basic escape handling
     if let Some(stripped) = s.strip_prefix('\\') {
         match stripped {
             "n" => Some('\n'),
@@ -1154,12 +1208,9 @@ fn lower_method_call_expr(
     pats: &mut IndexVec<PatId, Pat>,
     expr_spans: &mut IndexVec<ExprId, Span>,
 ) -> Option<ExprId> {
-    // MethodCallExpr structure:
-    // PathExpr (receiver), Dot (token), Ident (method name), LParen, args..., RParen
     let receiver = node.children().find(|c| c.kind() == SyntaxKind::PathExpr)?;
     let receiver_id = lower_expr(&receiver, interner, exprs, pats, expr_spans)?;
 
-    // Find the Ident token that comes directly after a Dot token
     let mut found_dot = false;
     let mut method_name = None;
     for el in node.children_with_tokens() {
@@ -1178,7 +1229,6 @@ fn lower_method_call_expr(
     }
     let method = method_name?;
 
-    // Args: expression nodes (not PathExpr which is receiver)
     let mut arg_ids = Vec::new();
     for child in node.children() {
         if child.kind() != SyntaxKind::PathExpr
@@ -1218,9 +1268,8 @@ fn lower_unary_expr(
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
     let expr_id = lower_expr(&inner, interner, exprs, pats, expr_spans)?;
-    // Check if this is a reference (&) operator -> produce Expr::Ref
     if op_token.kind() == SyntaxKind::And {
-        let mutability = Mutability::Not; // &mut is handled by parser differently
+        let mutability = Mutability::Not;
         let expr = Expr::Ref {
             expr: expr_id,
             mutability,
@@ -1275,7 +1324,6 @@ fn lower_match_expr(
     pats: &mut IndexVec<PatId, Pat>,
     expr_spans: &mut IndexVec<ExprId, Span>,
 ) -> Option<ExprId> {
-    // MatchExpr children: expression (scrutinee), MatchArmList
     let scrutinee = node
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
@@ -1336,8 +1384,6 @@ pub(crate) fn lower_pat(
         SyntaxKind::PatIdent => {
             let name_text = first_ident_text(node).unwrap_or_else(|| "_".to_string());
             let name = interner.intern(&name_text);
-            // Heuristic: if the name starts with an uppercase letter, treat as a path pattern;
-            // otherwise, treat as a binding. This compensates for lack of name resolution in early lowering.
             if name_text.starts_with(|c: char| c.is_uppercase()) {
                 let path = HirPath {
                     segments: vec![PathSegment {
@@ -1348,7 +1394,6 @@ pub(crate) fn lower_pat(
                 };
                 Some(pats.push(Pat::Path(path)))
             } else {
-                // Look for subpattern (e.g., x @ 0..=5)
                 let subpat = node
                     .children()
                     .find(|c| {
@@ -1372,11 +1417,7 @@ pub(crate) fn lower_pat(
         }
         SyntaxKind::PatWild => Some(pats.push(Pat::Wild)),
         SyntaxKind::PatLit => {
-            // The parser emits a PatLit node containing either:
-            //   - A single literal token (plain literal pattern)
-            //   - Literal token, DotDot/DotDotEq, nested PatLit (range pattern)
             let children: Vec<glyim_syntax::SyntaxElement> = node.children_with_tokens().collect();
-            // Check if this is a range pattern (has DotDot or DotDotEq)
             let is_range = children.iter().any(|c| {
                 matches!(c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDot || t.kind() == SyntaxKind::DotDotEq)
             });
@@ -1408,9 +1449,7 @@ pub(crate) fn lower_pat(
                             before_dot = false;
                         }
                         glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatLit => {
-                            // Nested PatLit contains the end literal
                             if let Some(inner_lit) = lower_pat(n, interner, pats) {
-                                // Extract literal from the inner pat
                                 if let Pat::Literal(lit) = &pats[inner_lit] {
                                     end = Some(lit.clone());
                                 }
@@ -1425,7 +1464,6 @@ pub(crate) fn lower_pat(
                     inclusive,
                 }))
             } else {
-                // Plain literal
                 let lit_token = node
                     .children_with_tokens()
                     .filter_map(|c| c.into_token())
@@ -1439,7 +1477,6 @@ pub(crate) fn lower_pat(
             }
         }
         SyntaxKind::PatTuple => {
-            // Check if this PatTuple is preceded by a UsePath sibling (e.g., Color(r,g,b) in let Color(r,g,b) = ...)
             if let Some(parent) = node.parent() {
                 let siblings: Vec<glyim_syntax::SyntaxElement> =
                     parent.children_with_tokens().collect();
@@ -1486,7 +1523,6 @@ pub(crate) fn lower_pat(
                     }));
                 }
             }
-            // Otherwise, process as a regular tuple or mixed UsePath+PatTuple inside
             let mut elems = Vec::new();
             let children: Vec<glyim_syntax::SyntaxNode> = node.children().collect();
             let mut i = 0;
@@ -1558,13 +1594,11 @@ pub(crate) fn lower_pat(
         }
         SyntaxKind::PatOr => {
             let mut pat_ids = Vec::new();
-            // Similar handling: UsePath + PatTuple inside PatOr creates PatStruct arms.
             let children: Vec<glyim_syntax::SyntaxNode> = node.children().collect();
             let mut i = 0;
             while i < children.len() {
                 let child = &children[i];
                 if child.kind() == SyntaxKind::UsePath {
-                    // Struct-like pattern in or: Some(x)
                     let mut segments = Vec::new();
                     for el in child.children_with_tokens() {
                         if let glyim_syntax::SyntaxElement::Token(t) = el
@@ -1628,15 +1662,9 @@ pub(crate) fn lower_pat(
             Some(pats.push(Pat::Or(pat_ids)))
         }
         SyntaxKind::PatStruct => {
-            // Extract path from the parent context (UsePath before PatStruct)
-            // Actually, the parser gives us UsePath as a sibling, then PatStruct with LBrace...RBrace.
-            // But in some cases (let Point { x, y: 0 } = ...), the parser gives PatStruct directly.
-            // We need to look at the parent node for a UsePath sibling.
-            // For now, try to extract the path from a preceding sibling in the parent.
             let parent = node.parent()?;
             let siblings: Vec<glyim_syntax::SyntaxElement> =
                 parent.children_with_tokens().collect();
-            // Find the preceding sibling that is a UsePath or PathExpr
             let path = 'path_lookup: {
                 let mut found = None;
                 for el in &siblings {
@@ -1672,10 +1700,8 @@ pub(crate) fn lower_pat(
             while i < children.len() {
                 match &children[i] {
                     glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatIdent => {
-                        // Field: either shorthand (no colon) or with subpattern after colon
                         let field_name_text = first_ident_text(n).unwrap_or_default();
                         let name = interner.intern(&field_name_text);
-                        // Check next non-trivia token for colon
                         let mut j = i + 1;
                         let mut has_colon = false;
                         while j < children.len() {
@@ -1690,7 +1716,6 @@ pub(crate) fn lower_pat(
                             j += 1;
                         }
                         if has_colon {
-                            // Find the pattern node after the colon
                             let mut k = j + 1;
                             while k < children.len() {
                                 if let glyim_syntax::SyntaxElement::Node(sub_n) = &children[k]
@@ -1711,9 +1736,8 @@ pub(crate) fn lower_pat(
                                 }
                                 k += 1;
                             }
-                            i = j + 1; // continue after the colon (the subpattern is consumed by lower_pat)
+                            i = j + 1;
                         } else {
-                            // Shorthand binding
                             let binding_id = pats.push(Pat::Binding {
                                 name,
                                 mutability: Mutability::Not,
@@ -1737,8 +1761,6 @@ pub(crate) fn lower_pat(
             Some(pats.push(Pat::Struct { path, fields, rest }))
         }
         SyntaxKind::UsePath => {
-            // Standalone UsePath (e.g., `None` in match arm).
-            // Extract path and create Pat::Path.
             let mut segments = Vec::new();
             for el in node.children_with_tokens() {
                 if let glyim_syntax::SyntaxElement::Token(t) = el
@@ -1760,7 +1782,6 @@ pub(crate) fn lower_pat(
             Some(pats.push(Pat::Path(path)))
         }
         SyntaxKind::PathExpr => {
-            // Standalone PathExpr (rare in pattern context, but handle)
             let mut segments = Vec::new();
             for el in node.children_with_tokens() {
                 if let glyim_syntax::SyntaxElement::Token(t) = el
@@ -1783,7 +1804,7 @@ pub(crate) fn lower_pat(
         }
         _ => {
             tracing::warn!("STUB: unknown pattern kind {:?}", node.kind());
-            None
+            Some(pats.push(Pat::Err))
         }
     }
 }
@@ -1837,7 +1858,6 @@ fn lower_for_expr(
     pats: &mut IndexVec<PatId, Pat>,
     expr_spans: &mut IndexVec<ExprId, Span>,
 ) -> Option<ExprId> {
-    // ForExpr children: pattern (PatIdent/PatWild), expression (iterable), Block
     let mut children = node.children();
     let pat_node = children.find(|c| {
         matches!(
@@ -1957,7 +1977,6 @@ fn lower_field_expr(
 ) -> Option<ExprId> {
     let receiver = node.children().find(|c| c.kind() == SyntaxKind::PathExpr)?;
     let receiver_id = lower_expr(&receiver, interner, exprs, pats, expr_spans)?;
-    // Field name is the Ident token after Dot
     let mut found_dot = false;
     let mut field_name = None;
     for el in node.children_with_tokens() {
@@ -2066,7 +2085,6 @@ fn lower_range_expr(
     let end = children
         .get(1)
         .and_then(|n| lower_expr(n, interner, exprs, pats, expr_spans));
-    // inclusive if DotDotEq token present
     let inclusive = node.children_with_tokens().any(
         |c| matches!(&c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDotEq),
     );
