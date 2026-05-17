@@ -8,3 +8,8 @@ mod lsp_state_tests;
 mod navigation_tests;
 mod uri_tests;
 mod workspace_symbol_tests;
+// New test modules for M10
+mod code_action;
+mod folding;
+mod formatting;
+mod rename;

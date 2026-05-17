@@ -1,10 +1,82 @@
 use crate::AnalysisDatabase;
 use lsp_types::*;
 
+fn format_code(source: &str) -> String {
+    let mut result = String::new();
+    let mut indent_level = 0;
+    let chars: Vec<char> = source.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '{' => {
+                result.push('{');
+                result.push('\n');
+                indent_level += 1;
+                result.push_str(&"    ".repeat(indent_level));
+            }
+            '}' => {
+                result.push('\n');
+                indent_level = indent_level.saturating_sub(1);
+                result.push_str(&"    ".repeat(indent_level));
+                result.push('}');
+                result.push('\n');
+                if i + 1 < chars.len() && chars[i+1] != '}' {
+                    result.push_str(&"    ".repeat(indent_level));
+                }
+            }
+            ',' => {
+                result.push(',');
+                result.push(' ');
+            }
+            ';' => {
+                result.push(';');
+                if i + 1 < chars.len() && chars[i+1] != '}' && chars[i+1] != '\n' {
+                    result.push('\n');
+                    result.push_str(&"    ".repeat(indent_level));
+                }
+            }
+            '\n' => {
+                result.push('\n');
+                result.push_str(&"    ".repeat(indent_level));
+            }
+            ' ' => {
+                if !result.ends_with(' ') && !result.ends_with('\n') {
+                    result.push(' ');
+                }
+            }
+            _ => {
+                result.push(c);
+            }
+        }
+        i += 1;
+    }
+    let trimmed: String = result
+        .lines()
+        .map(|l| l.trim_end())
+        .collect::<Vec<&str>>()
+        .join("\n");
+    trimmed + "\n"
+}
+
 pub fn format_document(
     _db: &AnalysisDatabase,
-    _params: &DocumentFormattingParams,
+    params: &DocumentFormattingParams,
 ) -> Option<Vec<TextEdit>> {
-    tracing::warn!("STUB: format_document");
-    None
+    let uri = &params.text_document.uri;
+    let path = uri.to_file_path().ok()?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let formatted = format_code(&content);
+    if formatted == content {
+        return None;
+    }
+    let line_count = content.lines().count() as u32;
+    let full_range = Range {
+        start: Position { line: 0, character: 0 },
+        end: Position { line: line_count, character: 0 },
+    };
+    Some(vec![TextEdit {
+        range: full_range,
+        new_text: formatted,
+    }])
 }
