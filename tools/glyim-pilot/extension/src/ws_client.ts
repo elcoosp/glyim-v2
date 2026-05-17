@@ -30,7 +30,7 @@ export class WsClient {
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as CliMessage;
-        const versionError = validateMessageVersion((msg as Record<string, unknown>).v as number | undefined);
+        const versionError = validateMessageVersion((msg as any).v as number | undefined);
         if (versionError) console.warn(`glyim-pilot: ${versionError}`);
         this.messageHandler?.(msg);
       } catch (e) { console.warn('glyim-pilot: failed to parse WS message:', e); }
@@ -45,7 +45,7 @@ export class WsClient {
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => this.doConnect(), delay);
   }
-  private startPing(): void { this.stopPing(); this.pingTimer = setInterval(() => this.send({ type: 'ping', timestamp: Date.now(), v: PROTOCOL_VERSION }), PING_INTERVAL); }
+  private startPing(): void { this.stopPing(); this.pingTimer = setInterval(() => this.send({ type: 'pong', timestamp: Date.now(), v: PROTOCOL_VERSION } as any), PING_INTERVAL); }
   private stopPing(): void { if (this.pingTimer) clearInterval(this.pingTimer); }
   private cleanup(): void { if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.stopPing(); }
 }

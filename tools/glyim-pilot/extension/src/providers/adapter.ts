@@ -98,7 +98,9 @@ export class ConfigurableAdapter implements ProviderAdapter {
 
   detectError(): ProviderError | null {
     for (const selector of this.config.errorSelectors) {
-      for (const el of document.querySelectorAll(selector)) {
+      // Convert NodeList to array to satisfy TypeScript iterator constraint
+      const elements = Array.from(document.querySelectorAll(selector));
+      for (const el of elements) {
         if (el.closest(this.assistantSelector)) continue;
         const text = el.textContent?.toLowerCase() ?? '';
         if (text.includes('rate limit') || text.includes('too frequent'))

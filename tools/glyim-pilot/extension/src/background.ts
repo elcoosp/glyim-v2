@@ -10,7 +10,7 @@ const tabSessions = new Map<number, TabSession>();
 const watchers = new Map<number, StreamWatcher>();
 
 ws.onMessage(async (msg: CliMessage) => {
-  const versionError = validateMessageVersion((msg as Record<string, unknown>).v as number | undefined);
+  const versionError = validateMessageVersion((msg as any).v as number | undefined);
   if (versionError) console.warn(`glyim-pilot: ${versionError}`);
   try {
     switch (msg.type) {
