@@ -193,25 +193,38 @@ fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     if chars.peek() != Some(&'"') {
         return;
     }
-    chars.next();
-    let mut prev_quote = false;
-    let mut matched = 0;
-    loop {
-        match chars.next() {
-            None => break,
-            Some('"') => {
-                prev_quote = true;
-                matched = 0;
+    chars.next(); // consume opening "
+    if hash_count == 0 {
+        // Simple raw string without hash: skip until the next unescaped "
+        while let Some(nc) = chars.next() {
+            if nc == '\\' {
+                chars.next();
+                continue;
             }
-            Some('#') if prev_quote => {
-                matched += 1;
-                if matched == hash_count {
-                    break;
+            if nc == '"' {
+                break;
+            }
+        }
+    } else {
+        let mut prev_quote = false;
+        let mut matched = 0;
+        loop {
+            match chars.next() {
+                None => break,
+                Some('"') => {
+                    prev_quote = true;
+                    matched = 0;
                 }
-            }
-            Some(_) => {
-                prev_quote = false;
-                matched = 0;
+                Some('#') if prev_quote => {
+                    matched += 1;
+                    if matched == hash_count {
+                        break;
+                    }
+                }
+                Some(_) => {
+                    prev_quote = false;
+                    matched = 0;
+                }
             }
         }
     }
