@@ -472,13 +472,14 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
                     continue;
                 }
                 if is_type_node(&child)
-                    && let Some(ty) = lower_type_ref(&child, interner) {
-                        if after_arrow {
-                            ret = Some(Box::new(ty));
-                        } else {
-                            params.push(ty);
-                        }
+                    && let Some(ty) = lower_type_ref(&child, interner)
+                {
+                    if after_arrow {
+                        ret = Some(Box::new(ty));
+                    } else {
+                        params.push(ty);
                     }
+                }
             }
             Some(TypeRef::Fn { params, ret })
         }
