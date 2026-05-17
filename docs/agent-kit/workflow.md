@@ -107,7 +107,7 @@ After the agent outputs the bash scripts:
 
 1. Run each script in order.
 2. Verify with `cargo test -p <crate>` and `cargo clippy -p <crate>`.
-3. Create a PR against `main` with branch `stream-S{XX}/v0.1.0`.
+3. Create a PR against `main` with branch `stream-{XX}/v0.1.0`.
 4. Once merged, move to the next stream.
 
 ## Adding New Streams (e.g., Unstubbing U01‑U08)

@@ -44,11 +44,11 @@ Shell out to `git` CLI — **not `git2`**. The `git2` crate is massive, hard to 
 
 ```bash
 git worktree add --detach <dir> main
-git checkout -b stream-SXX/v0.1.0
+git checkout -b stream-XX/v0.1.0
 git add -A
 git commit -m "message"
-git push -u origin stream-SXX/v0.1.0
-gh pr create --base main --head stream-SXX/v0.1.0 --title "..." --body "..."
+git push -u origin stream-XX/v0.1.0
+gh pr create --base main --head stream-XX/v0.1.0 --title "..." --body "..."
 git status --porcelain
 git diff main..HEAD
 git log main..HEAD --oneline

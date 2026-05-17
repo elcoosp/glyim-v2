@@ -78,7 +78,7 @@ Every script starts with:
 
 This ensures:
 - No work happens on main directly.
-- The branch follows the convention stream-SXX/v0.1.0.
+- The branch follows the convention stream-XX/v0.1.0.
 - The worktree is created once and reused.
 - Subsequent scripts in the same stream do NOT repeat worktree creation.
 
@@ -209,7 +209,7 @@ stream-S01: fix(lex): correct keyword recognition
 
 ### Worktree Workflow
 - First script:
-  1. Creates `../glyim-worktrees/stream-SXX` (relative to the main repo root)
+  1. Creates `../glyim-worktrees/stream-XX` (relative to the main repo root)
   2. Uses `git worktree add --detach` to avoid branch conflicts
   3. Creates the stream branch inside the worktree
 - Subsequent scripts: Assume the worktree exists, `cd` into it, and proceed.
@@ -217,10 +217,10 @@ stream-S01: fix(lex): correct keyword recognition
 - Never commit to main directly. All work happens in the worktree on the stream branch.
 - When the stream is complete:
   ```bash
-  cd ../glyim-worktrees/stream-SXX
-  git push origin stream-SXX/v0.1.0
+  cd ../glyim-worktrees/stream-XX
+  git push origin stream-XX/v0.1.0
   cd "$REPO_ROOT"
-  git worktree remove ../glyim-worktrees/stream-SXX
+  git worktree remove ../glyim-worktrees/stream-XX
   ```
 - The worktree can be deleted after merging.
 

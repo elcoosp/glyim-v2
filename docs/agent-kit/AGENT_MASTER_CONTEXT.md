@@ -42,8 +42,8 @@ You are implementing one stream of work within this project.
 
 ## Git Convention
 
-- Branch: `stream-S{XX}/v0.1.0` (e.g., `stream-S01/v0.1.0`)
-- Commit format: `stream-S{XX}: description` (e.g., `stream-S01: feat(lex): add float exponent scanning`)
+- Branch: `stream-{XX}/v0.1.0` (e.g., `stream-S01/v0.1.0`)
+- Commit format: `stream-{XX}: description` (e.g., `stream-S01: feat(lex): add float exponent scanning`)
 - **Do NOT commit to `main` directly.** Create a PR.
 - The first script in a stream **MUST** create and checkout the branch. Subsequent scripts assume the branch is already checked out.
 
@@ -59,7 +59,7 @@ When the user declares a stream is “finished” or “ready for PR”, you **M
 
 ```bash
 # Navigate to the worktree
-cd /path/to/glyim-worktrees/stream-SXX
+cd /path/to/glyim-worktrees/stream-XX
 
 # Get commit log (commits not in main)
 git log main..HEAD --oneline > /tmp/sXX_commits.txt
@@ -155,7 +155,7 @@ This PR unblocks:
 
 ---
 
-**Branch:** `stream-SXX/v0.1.0` → `main`
+**Branch:** `stream-XX/v0.1.0` → `main`
 
 **Ready for review!** 🚀
 ```
@@ -171,21 +171,21 @@ echo "=== COMMITS ===" && git log main..HEAD --oneline && echo "=== STATS ===" &
 You **MUST** follow the `plan-to-cat-scripts` skill. Key requirements:
 
 - Every message is **exactly one fenced bash code block** – no other text.
-- The first script creates branch `stream-SXX/v0.1.0` from `main`.
+- The first script creates branch `stream-XX/v0.1.0` from `main`.
 - Every action is logged with `echo` – **no hash‑comment lines**.
 - Write complete files via heredoc with **unique delimiters**.
 - Patch trivial single‑line changes with `sed`; all other patches use Python with temp files.
 - **Never truncate files.** Set `INCOMPLETE=true` and continue in the next script.
 - Compile check runs at the end; failure blocks commit but never halts the script.
-- Commit messages are prefixed with `stream-SXX:`.
+- Commit messages are prefixed with `stream-XX:`.
 - When the user pastes an error log, respond with a single surgical fix script.
 
 ## Parallel Worktree Workflow (MANDATORY)
 
 To allow multiple streams to run in parallel without branch conflicts, **each stream MUST operate inside its own git worktree**.
 
-- **Worktree location:** `../glyim-worktrees/stream-SXX/` (relative to the main repository root).
-- **Branch naming:** `stream-SXX/v0.1.0`
+- **Worktree location:** `../glyim-worktrees/stream-XX/` (relative to the main repository root).
+- **Branch naming:** `stream-XX/v0.1.0`
 - **Main repository:** The main clone is never modified directly; all changes happen in the worktree.
 
 **Why worktrees?** Worktrees allow multiple branches to be checked out simultaneously in separate directories, avoiding the need to stash or switch branches.
