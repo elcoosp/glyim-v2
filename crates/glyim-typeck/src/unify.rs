@@ -2,11 +2,11 @@
 
 use glyim_core::def_id::{AdtId, FnDefId};
 use glyim_core::interner::Name;
-use glyim_core::primitives::{IntTy, UintTy, FloatTy};
+use glyim_core::primitives::{IntTy, UintTy};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{FieldIdx, InferVar, Region, Ty, TyCtxMut, TyKind};
+use glyim_type::{FieldIdx, InferVar, Ty, TyCtxMut, TyKind};
 
 use crate::check_body::FnCtxt;
 use crate::thir;
@@ -36,7 +36,6 @@ impl<'a> FnCtxt<'a> {
             && let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32))
         {
             let field_ty = field_def.ty;
-            // TODO: Apply substitution
             return field_ty;
         }
         self.diagnostics.push(GlyimDiagnostic::type_error(

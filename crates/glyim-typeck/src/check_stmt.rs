@@ -27,8 +27,6 @@ impl<'a> FnCtxt<'a> {
         let mut stmts = Vec::new();
         let len = self.body.exprs.len();
 
-        // Process all expressions in the arena as top-level statements.
-        // This matches the original compiler behavior and satisfies downstream passes.
         for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
             let is_tail = pos == len - 1;
             let span = self.body.expr_spans[expr_id];
@@ -39,8 +37,6 @@ impl<'a> FnCtxt<'a> {
                     let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
                     self.unify(rhs_ty, lhs_ty, span);
                     if is_tail {
-                        // Assignments evaluate to unit. We enforce that a unit
-                        // return type is expected if it's the tail expression.
                         self.unify(Ty::UNIT, self.return_ty, span);
                     }
                     stmts.push(thir::Stmt::Assign {
@@ -63,10 +59,6 @@ impl<'a> FnCtxt<'a> {
                 _ => {
                     let (thir_expr, ty) = self.check_expr(expr_id);
                     if is_tail {
-                        // Replicate original behavior: only unify tail with
-                        // return type if the return type is not UNIT.
-                        // This allows expressions like `1 + 2` to be the tail
-                        // of a unit-returning function, discarding their value.
                         if self.return_ty != Ty::UNIT {
                             self.unify(ty, self.return_ty, span);
                         }

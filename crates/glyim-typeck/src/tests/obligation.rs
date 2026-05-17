@@ -1,5 +1,5 @@
 use super::test_utils::{empty_def_map, make_ty_ctx};
-use crate::{TypeckCtx, typeck_crate};
+use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;

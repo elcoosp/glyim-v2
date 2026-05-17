@@ -11,7 +11,7 @@ use crate::thir;
 impl<'a> FnCtxt<'a> {
     pub fn check_pattern(&mut self, pat_id: PatId, expected_ty: Ty) -> thir::Pattern {
         let pat = &self.body.pats[pat_id];
-        let span = Span::DUMMY; // Body lacks pat_spans
+        let span = Span::DUMMY;
 
         match pat {
             Pat::Wild => thir::Pattern::wild(expected_ty, span),
@@ -36,7 +36,6 @@ impl<'a> FnCtxt<'a> {
             Pat::Tuple(pats) => {
                 let mut thir_pats = Vec::with_capacity(pats.len());
                 for &p_id in pats {
-                    // Without iterating Substitution safely, we fallback to Ty::ERROR for elements
                     thir_pats.push(self.check_pattern(p_id, Ty::ERROR));
                 }
                 thir::Pattern {

@@ -6,7 +6,6 @@ use glyim_core::def_id::{AdtId, FnDefId};
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
-use glyim_span::Span;
 use glyim_type::{GenericArg, Region, Ty, TyKind};
 
 use crate::check_body::FnCtxt;
@@ -15,8 +14,8 @@ use crate::unify::{thir_literal, literal_ty};
 
 impl<'a> FnCtxt<'a> {
     pub fn check_expr(&mut self, expr_id: ExprId) -> (thir::Expr, Ty) {
-        if let Some(&(ref e, ty)) = self.expr_cache.get(&expr_id) {
-            return (e.clone(), ty);
+        if let Some(cached) = self.expr_cache.get(&expr_id) {
+            return (cached.0.clone(), cached.1);
         }
 
         let expr = &self.body.exprs[expr_id];
@@ -215,10 +214,10 @@ impl<'a> FnCtxt<'a> {
             } => {
                 let (_iter_expr, iter_ty) = self.check_expr(*iterable);
                 let item_ty = self.fresh_infer_ty();
-                let _ = (iter_ty, item_ty); // TODO: Emit Iterator obligation
+                let _ = (iter_ty, item_ty);
 
                 self.env.enter_scope();
-                let pat_thir = self.check_pattern(*pat, Ty::ERROR); // Stub expected
+                let pat_thir = self.check_pattern(*pat, Ty::ERROR);
                 self.env.leave_scope();
 
                 self.env.enter_scope();
@@ -279,7 +278,6 @@ impl<'a> FnCtxt<'a> {
                     arg_exprs.push(self.check_expr(arg_id).0);
                 }
 
-                // Extract data from ty_kind to avoid borrow conflicts
                 let (is_fn_def, def_id, is_error) = match self.ctx.ty_kind(func_ty) {
                     TyKind::FnDef(def_id, _) => (true, *def_id, false),
                     TyKind::Error => (false, FnDefId::from_raw(0), true),
@@ -333,7 +331,6 @@ impl<'a> FnCtxt<'a> {
             Expr::Field { receiver, field } => {
                 let (recv_expr, recv_ty) = self.check_expr(*receiver);
 
-                // Extract data from ty_kind to avoid borrow conflicts
                 let (is_adt, adt_id, is_tuple) = match self.ctx.ty_kind(recv_ty) {
                     TyKind::Adt(adt_id, _) => (true, *adt_id, false),
                     TyKind::Tuple(_) => (false, AdtId::from_raw(0), true),
@@ -345,7 +342,7 @@ impl<'a> FnCtxt<'a> {
                 } else if is_tuple {
                     let idx = self.ctx.name_str(*field).parse::<usize>().ok();
                     if idx.is_some() {
-                        self.fresh_infer_ty() // Cannot index into Substitution safely
+                        self.fresh_infer_ty()
                     } else {
                         self.diagnostics.push(GlyimDiagnostic::type_error(
                             span,
@@ -379,7 +376,7 @@ impl<'a> FnCtxt<'a> {
                 let (base_expr, base_ty) = self.check_expr(*base);
                 let (idx_expr, _idx_ty) = self.check_expr(*index);
                 let elem_ty = self.fresh_infer_ty();
-                let _ = base_ty; // TODO: Emit Index obligation
+                let _ = base_ty;
 
                 (
                     thir::Expr {
@@ -482,16 +479,14 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Assign { lhs, rhs } => {
-                // This arm is only hit for nested assignments, top-level is handled in check()
                 let (_lhs_expr, lhs_ty) = self.check_expr(*lhs);
                 let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
                 self.unify(rhs_ty, lhs_ty, span);
-                let _ = rhs_expr; // Suppressed unused
-                (thir::Expr::err(span), Ty::UNIT) // Wrap in Stmt externally if needed
+                let _ = rhs_expr;
+                (thir::Expr::err(span), Ty::UNIT)
             }
 
             Expr::Return { value } => {
-                // This arm is only hit for nested returns, top-level is handled in check()
                 let value_opt = value.map(|val_id| {
                     let (val_expr, val_ty) = self.check_expr(val_id);
                     self.unify(val_ty, self.return_ty, span);
