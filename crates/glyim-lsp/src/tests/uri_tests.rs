@@ -2,6 +2,7 @@ use crate::uri::*;
 use std::path::PathBuf;
 
 #[test]
+#[cfg(unix)]
 fn unix_roundtrip() {
     let path = PathBuf::from("/home/user/foo.g");
     let uri = path_to_uri(&path).expect("should produce a URI");
@@ -10,6 +11,7 @@ fn unix_roundtrip() {
 }
 
 #[test]
+#[cfg(windows)]
 fn windows_roundtrip() {
     let path = PathBuf::from("C:\\Users\\user\\foo.g");
     let uri = path_to_uri(&path).expect("should produce a URI");
@@ -38,6 +40,7 @@ fn no_scheme_is_error() {
 }
 
 #[test]
+#[cfg(unix)]
 fn path_to_uri_and_back() {
     let original = PathBuf::from("/tmp/test.g");
     let uri = path_to_uri(&original).unwrap();

@@ -5,26 +5,41 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 
 pub enum AnalysisMessage {
-    FileChanged { path: PathBuf, content: String, version: i32 },
-    FileClosed { path: PathBuf },
+    FileChanged {
+        path: PathBuf,
+        content: String,
+        version: i32,
+    },
+    FileClosed {
+        path: PathBuf,
+    },
     Shutdown,
 }
 
 pub struct AnalysisDriver {
     db: Arc<AnalysisDatabase>,
     rx: Receiver<AnalysisMessage>,
+    #[allow(unused)]
     cache_dir: PathBuf,
 }
 
 impl AnalysisDriver {
-    pub fn new(db: Arc<AnalysisDatabase>, rx: Receiver<AnalysisMessage>, cache_dir: PathBuf) -> Self {
+    pub fn new(
+        db: Arc<AnalysisDatabase>,
+        rx: Receiver<AnalysisMessage>,
+        cache_dir: PathBuf,
+    ) -> Self {
         Self { db, rx, cache_dir }
     }
 
     pub async fn run(mut self) {
         while let Some(msg) = self.rx.recv().await {
             match msg {
-                AnalysisMessage::FileChanged { path, content, version: _ } => {
+                AnalysisMessage::FileChanged {
+                    path,
+                    content,
+                    version: _,
+                } => {
                     self.analyze_file(&path, &content).await;
                 }
                 AnalysisMessage::FileClosed { path } => {

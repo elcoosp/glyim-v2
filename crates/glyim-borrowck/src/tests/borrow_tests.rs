@@ -25,6 +25,9 @@ impl BorrowckCtx for LocalMockBorrowckCtx {
     fn is_copy(&self, _ty: Ty) -> bool {
         false
     }
+    fn local_name(&self, idx: LocalIdx) -> String {
+        format!("_{}", idx.to_raw())
+    }
 }
 
 fn make_body(statements: Vec<Statement>, locals: Vec<LocalDecl>) -> Body {
@@ -317,18 +320,24 @@ fn t08_local_ty_via_borrowck_ctx() {
 
 #[test]
 fn t09_multiple_conflicts_in_one_body() {
+    // With NLL, borrows only live until their last use. This test ensures
+    // that overlapping active borrows are detected, while dead borrows
+    // (whose dest local is overwritten before being read) are correctly
+    // excluded from conflict checking.
     let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
         let unit = ctx_mut.unit_ty();
         let mut_ref_ty = make_ref_ty(ctx_mut, unit, true);
         let locals = vec![
-            local_decl(unit),
-            local_decl(unit),
-            local_decl(mut_ref_ty),
-            local_decl(mut_ref_ty),
-            local_decl(unit),
+            local_decl(unit),       // 0
+            local_decl(unit),       // 1
+            local_decl(mut_ref_ty), // 2
+            local_decl(mut_ref_ty), // 3
+            local_decl(unit),       // 4
+            local_decl(unit),       // 5
         ];
         make_body(
             vec![
+                // _2 = &mut _0  (first mutable borrow of _0)
                 assign_borrow(
                     LocalIdx::from_raw(2),
                     Place::new(LocalIdx::from_raw(0)),
@@ -336,6 +345,8 @@ fn t09_multiple_conflicts_in_one_body() {
                         allow_two_phase_borrow: false,
                     },
                 ),
+                // _3 = &mut _0  (second mutable borrow of _0 — CONFLICTS
+                // because _2 is still live: it's used at stmt 2)
                 assign_borrow(
                     LocalIdx::from_raw(3),
                     Place::new(LocalIdx::from_raw(0)),
@@ -343,15 +354,9 @@ fn t09_multiple_conflicts_in_one_body() {
                         allow_two_phase_borrow: false,
                     },
                 ),
-                assign_borrow(
-                    LocalIdx::from_raw(2),
-                    Place::new(LocalIdx::from_raw(1)),
-                    BorrowKind::Mut {
-                        allow_two_phase_borrow: false,
-                    },
-                ),
+                // Use both borrows to keep them live at stmt 1
                 use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(2)),
-                use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)),
+                use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(3)),
             ],
             locals,
         )
@@ -360,10 +365,9 @@ fn t09_multiple_conflicts_in_one_body() {
     let result = check_borrows(&mock, &mock.body);
     assert!(
         !result.errors.is_empty(),
-        "Expected at least one borrow conflict"
+        "Expected at least one borrow conflict: two active mutable borrows of same local"
     );
 }
-
 #[test]
 fn t10_shared_borrow_after_mutable_expires_no_error() {
     let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
@@ -635,6 +639,9 @@ fn t18_is_copy_delegates_to_ctx() {
         }
         fn is_copy(&self, _ty: Ty) -> bool {
             true
+        }
+        fn local_name(&self, idx: LocalIdx) -> String {
+            format!("_{}", idx.to_raw())
         }
     }
 

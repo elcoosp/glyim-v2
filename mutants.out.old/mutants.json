@@ -9696,7 +9696,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace consume_raw_string with ()\n@@ -180,46 +180,17 @@\n             continue;\n         }\n         result.push(c);\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n-    let mut hash_count = 0usize;\n-    while chars.peek() == Some(&'#') {\n-        chars.next();\n-        hash_count += 1;\n-    }\n-    if chars.peek() != Some(&'\"') {\n-        return;\n-    }\n-    chars.next();\n-    let mut prev_quote = false;\n-    let mut matched = 0;\n-    loop {\n-        match chars.next() {\n-            None => break,\n-            Some('\"') => {\n-                prev_quote = true;\n-                matched = 0;\n-            }\n-            Some('#') if prev_quote => {\n-                matched += 1;\n-                if matched == hash_count {\n-                    break;\n-                }\n-            }\n-            Some(_) => {\n-                prev_quote = false;\n-                matched = 0;\n-            }\n-        }\n-    }\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn test_strip_regular_string() {\n",
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace consume_raw_string with ()\n@@ -180,59 +180,17 @@\n             continue;\n         }\n         result.push(c);\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n-    let mut hash_count = 0usize;\n-    while chars.peek() == Some(&'#') {\n-        chars.next();\n-        hash_count += 1;\n-    }\n-    if chars.peek() != Some(&'\"') {\n-        return;\n-    }\n-    chars.next(); // consume opening \"\n-    if hash_count == 0 {\n-        // Simple raw string without hash: skip until the next unescaped \"\n-        while let Some(nc) = chars.next() {\n-            if nc == '\\\\' {\n-                chars.next();\n-                continue;\n-            }\n-            if nc == '\"' {\n-                break;\n-            }\n-        }\n-    } else {\n-        let mut prev_quote = false;\n-        let mut matched = 0;\n-        loop {\n-            match chars.next() {\n-                None => break,\n-                Some('\"') => {\n-                    prev_quote = true;\n-                    matched = 0;\n-                }\n-                Some('#') if prev_quote => {\n-                    matched += 1;\n-                    if matched == hash_count {\n-                        break;\n-                    }\n-                }\n-                Some(_) => {\n-                    prev_quote = false;\n-                    matched = 0;\n-                }\n-            }\n-        }\n-    }\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn test_strip_regular_string() {\n",
     "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
     "function": {
       "function_name": "consume_raw_string",
@@ -9704,7 +9704,7 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 218
+          "line": 231
         },
         "start": {
           "column": 1,
@@ -9719,7 +9719,7 @@
     "span": {
       "end": {
         "column": 6,
-        "line": 217
+        "line": 230
       },
       "start": {
         "column": 5,
@@ -9728,7 +9728,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -181,17 +181,17 @@\n         }\n         result.push(c);\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n-    while chars.peek() == Some(&'#') {\n+    while chars.peek() != /* ~ changed by cargo-mutants ~ */ Some(&'#') {\n         chars.next();\n         hash_count += 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next();\n     let mut prev_quote = false;\n",
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -181,17 +181,17 @@\n         }\n         result.push(c);\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n-    while chars.peek() == Some(&'#') {\n+    while chars.peek() != /* ~ changed by cargo-mutants ~ */ Some(&'#') {\n         chars.next();\n         hash_count += 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next(); // consume opening \"\n     if hash_count == 0 {\n",
     "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
     "function": {
       "function_name": "consume_raw_string",
@@ -9736,7 +9736,7 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 218
+          "line": 231
         },
         "start": {
           "column": 1,
@@ -9760,7 +9760,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with -= in consume_raw_string\n@@ -183,17 +183,17 @@\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n     while chars.peek() == Some(&'#') {\n         chars.next();\n-        hash_count += 1;\n+        hash_count -= /* ~ changed by cargo-mutants ~ */ 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next();\n     let mut prev_quote = false;\n     let mut matched = 0;\n     loop {\n",
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with -= in consume_raw_string\n@@ -183,17 +183,17 @@\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n     while chars.peek() == Some(&'#') {\n         chars.next();\n-        hash_count += 1;\n+        hash_count -= /* ~ changed by cargo-mutants ~ */ 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next(); // consume opening \"\n     if hash_count == 0 {\n         // Simple raw string without hash: skip until the next unescaped \"\n         while let Some(nc) = chars.next() {\n",
     "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
     "function": {
       "function_name": "consume_raw_string",
@@ -9768,7 +9768,7 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 218
+          "line": 231
         },
         "start": {
           "column": 1,
@@ -9792,7 +9792,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with *= in consume_raw_string\n@@ -183,17 +183,17 @@\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n     while chars.peek() == Some(&'#') {\n         chars.next();\n-        hash_count += 1;\n+        hash_count *= /* ~ changed by cargo-mutants ~ */ 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next();\n     let mut prev_quote = false;\n     let mut matched = 0;\n     loop {\n",
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with *= in consume_raw_string\n@@ -183,17 +183,17 @@\n     }\n     result\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n     while chars.peek() == Some(&'#') {\n         chars.next();\n-        hash_count += 1;\n+        hash_count *= /* ~ changed by cargo-mutants ~ */ 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next(); // consume opening \"\n     if hash_count == 0 {\n         // Simple raw string without hash: skip until the next unescaped \"\n         while let Some(nc) = chars.next() {\n",
     "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
     "function": {
       "function_name": "consume_raw_string",
@@ -9800,7 +9800,7 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 218
+          "line": 231
         },
         "start": {
           "column": 1,
@@ -9824,7 +9824,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace != with == in consume_raw_string\n@@ -185,17 +185,17 @@\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n     while chars.peek() == Some(&'#') {\n         chars.next();\n         hash_count += 1;\n     }\n-    if chars.peek() != Some(&'\"') {\n+    if chars.peek() == /* ~ changed by cargo-mutants ~ */ Some(&'\"') {\n         return;\n     }\n     chars.next();\n     let mut prev_quote = false;\n     let mut matched = 0;\n     loop {\n         match chars.next() {\n             None => break,\n",
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace != with == in consume_raw_string\n@@ -185,17 +185,17 @@\n }\n \n fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {\n     let mut hash_count = 0usize;\n     while chars.peek() == Some(&'#') {\n         chars.next();\n         hash_count += 1;\n     }\n-    if chars.peek() != Some(&'\"') {\n+    if chars.peek() == /* ~ changed by cargo-mutants ~ */ Some(&'\"') {\n         return;\n     }\n     chars.next(); // consume opening \"\n     if hash_count == 0 {\n         // Simple raw string without hash: skip until the next unescaped \"\n         while let Some(nc) = chars.next() {\n             if nc == '\\\\' {\n                 chars.next();\n",
     "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
     "function": {
       "function_name": "consume_raw_string",
@@ -9832,7 +9832,7 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 218
+          "line": 231
         },
         "start": {
           "column": 1,
@@ -9856,7 +9856,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace match guard prev_quote with true in consume_raw_string\n@@ -198,17 +198,17 @@\n     let mut matched = 0;\n     loop {\n         match chars.next() {\n             None => break,\n             Some('\"') => {\n                 prev_quote = true;\n                 matched = 0;\n             }\n-            Some('#') if prev_quote => {\n+            Some('#') if true /* ~ changed by cargo-mutants ~ */ => {\n                 matched += 1;\n                 if matched == hash_count {\n                     break;\n                 }\n             }\n             Some(_) => {\n                 prev_quote = false;\n                 matched = 0;\n",
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -189,17 +189,17 @@\n     while chars.peek() == Some(&'#') {\n         chars.next();\n         hash_count += 1;\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next(); // consume opening \"\n-    if hash_count == 0 {\n+    if hash_count != /* ~ changed by cargo-mutants ~ */ 0 {\n         // Simple raw string without hash: skip until the next unescaped \"\n         while let Some(nc) = chars.next() {\n             if nc == '\\\\' {\n                 chars.next();\n                 continue;\n             }\n             if nc == '\"' {\n                 break;\n",
     "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
     "function": {
       "function_name": "consume_raw_string",
@@ -9864,71 +9864,7 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 218
-        },
-        "start": {
-          "column": 1,
-          "line": 187
-        }
-      }
-    },
-    "genre": "MatchArmGuard",
-    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:206:26: replace match guard prev_quote with true in consume_raw_string",
-    "package": "glyim-pilot",
-    "replacement": "true",
-    "span": {
-      "end": {
-        "column": 36,
-        "line": 206
-      },
-      "start": {
-        "column": 26,
-        "line": 206
-      }
-    }
-  },
-  {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace match guard prev_quote with false in consume_raw_string\n@@ -198,17 +198,17 @@\n     let mut matched = 0;\n     loop {\n         match chars.next() {\n             None => break,\n             Some('\"') => {\n                 prev_quote = true;\n                 matched = 0;\n             }\n-            Some('#') if prev_quote => {\n+            Some('#') if false /* ~ changed by cargo-mutants ~ */ => {\n                 matched += 1;\n                 if matched == hash_count {\n                     break;\n                 }\n             }\n             Some(_) => {\n                 prev_quote = false;\n                 matched = 0;\n",
-    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
-    "function": {
-      "function_name": "consume_raw_string",
-      "return_type": "",
-      "span": {
-        "end": {
-          "column": 2,
-          "line": 218
-        },
-        "start": {
-          "column": 1,
-          "line": 187
-        }
-      }
-    },
-    "genre": "MatchArmGuard",
-    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:206:26: replace match guard prev_quote with false in consume_raw_string",
-    "package": "glyim-pilot",
-    "replacement": "false",
-    "span": {
-      "end": {
-        "column": 36,
-        "line": 206
-      },
-      "start": {
-        "column": 26,
-        "line": 206
-      }
-    }
-  },
-  {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with -= in consume_raw_string\n@@ -199,17 +199,17 @@\n     loop {\n         match chars.next() {\n             None => break,\n             Some('\"') => {\n                 prev_quote = true;\n                 matched = 0;\n             }\n             Some('#') if prev_quote => {\n-                matched += 1;\n+                matched -= /* ~ changed by cargo-mutants ~ */ 1;\n                 if matched == hash_count {\n                     break;\n                 }\n             }\n             Some(_) => {\n                 prev_quote = false;\n                 matched = 0;\n             }\n",
-    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
-    "function": {
-      "function_name": "consume_raw_string",
-      "return_type": "",
-      "span": {
-        "end": {
-          "column": 2,
-          "line": 218
+          "line": 231
         },
         "start": {
           "column": 1,
@@ -9937,81 +9873,241 @@
       }
     },
     "genre": "BinaryOperator",
-    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:207:25: replace += with -= in consume_raw_string",
-    "package": "glyim-pilot",
-    "replacement": "-=",
-    "span": {
-      "end": {
-        "column": 27,
-        "line": 207
-      },
-      "start": {
-        "column": 25,
-        "line": 207
-      }
-    }
-  },
-  {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with *= in consume_raw_string\n@@ -199,17 +199,17 @@\n     loop {\n         match chars.next() {\n             None => break,\n             Some('\"') => {\n                 prev_quote = true;\n                 matched = 0;\n             }\n             Some('#') if prev_quote => {\n-                matched += 1;\n+                matched *= /* ~ changed by cargo-mutants ~ */ 1;\n                 if matched == hash_count {\n                     break;\n                 }\n             }\n             Some(_) => {\n                 prev_quote = false;\n                 matched = 0;\n             }\n",
-    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
-    "function": {
-      "function_name": "consume_raw_string",
-      "return_type": "",
-      "span": {
-        "end": {
-          "column": 2,
-          "line": 218
-        },
-        "start": {
-          "column": 1,
-          "line": 187
-        }
-      }
-    },
-    "genre": "BinaryOperator",
-    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:207:25: replace += with *= in consume_raw_string",
-    "package": "glyim-pilot",
-    "replacement": "*=",
-    "span": {
-      "end": {
-        "column": 27,
-        "line": 207
-      },
-      "start": {
-        "column": 25,
-        "line": 207
-      }
-    }
-  },
-  {
-    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -200,17 +200,17 @@\n         match chars.next() {\n             None => break,\n             Some('\"') => {\n                 prev_quote = true;\n                 matched = 0;\n             }\n             Some('#') if prev_quote => {\n                 matched += 1;\n-                if matched == hash_count {\n+                if matched != /* ~ changed by cargo-mutants ~ */ hash_count {\n                     break;\n                 }\n             }\n             Some(_) => {\n                 prev_quote = false;\n                 matched = 0;\n             }\n         }\n",
-    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
-    "function": {
-      "function_name": "consume_raw_string",
-      "return_type": "",
-      "span": {
-        "end": {
-          "column": 2,
-          "line": 218
-        },
-        "start": {
-          "column": 1,
-          "line": 187
-        }
-      }
-    },
-    "genre": "BinaryOperator",
-    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:208:28: replace == with != in consume_raw_string",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:197:19: replace == with != in consume_raw_string",
     "package": "glyim-pilot",
     "replacement": "!=",
     "span": {
       "end": {
-        "column": 30,
-        "line": 208
+        "column": 21,
+        "line": 197
       },
       "start": {
-        "column": 28,
-        "line": 208
+        "column": 19,
+        "line": 197
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -192,17 +192,17 @@\n     }\n     if chars.peek() != Some(&'\"') {\n         return;\n     }\n     chars.next(); // consume opening \"\n     if hash_count == 0 {\n         // Simple raw string without hash: skip until the next unescaped \"\n         while let Some(nc) = chars.next() {\n-            if nc == '\\\\' {\n+            if nc != /* ~ changed by cargo-mutants ~ */ '\\\\' {\n                 chars.next();\n                 continue;\n             }\n             if nc == '\"' {\n                 break;\n             }\n         }\n     } else {\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:200:19: replace == with != in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 200
+      },
+      "start": {
+        "column": 19,
+        "line": 200
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -196,17 +196,17 @@\n     chars.next(); // consume opening \"\n     if hash_count == 0 {\n         // Simple raw string without hash: skip until the next unescaped \"\n         while let Some(nc) = chars.next() {\n             if nc == '\\\\' {\n                 chars.next();\n                 continue;\n             }\n-            if nc == '\"' {\n+            if nc != /* ~ changed by cargo-mutants ~ */ '\"' {\n                 break;\n             }\n         }\n     } else {\n         let mut prev_quote = false;\n         let mut matched = 0;\n         loop {\n             match chars.next() {\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:204:19: replace == with != in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 204
+      },
+      "start": {
+        "column": 19,
+        "line": 204
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace match guard prev_quote with true in consume_raw_string\n@@ -210,17 +210,17 @@\n         let mut matched = 0;\n         loop {\n             match chars.next() {\n                 None => break,\n                 Some('\"') => {\n                     prev_quote = true;\n                     matched = 0;\n                 }\n-                Some('#') if prev_quote => {\n+                Some('#') if true /* ~ changed by cargo-mutants ~ */ => {\n                     matched += 1;\n                     if matched == hash_count {\n                         break;\n                     }\n                 }\n                 Some(_) => {\n                     prev_quote = false;\n                     matched = 0;\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:218:30: replace match guard prev_quote with true in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 218
+      },
+      "start": {
+        "column": 30,
+        "line": 218
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace match guard prev_quote with false in consume_raw_string\n@@ -210,17 +210,17 @@\n         let mut matched = 0;\n         loop {\n             match chars.next() {\n                 None => break,\n                 Some('\"') => {\n                     prev_quote = true;\n                     matched = 0;\n                 }\n-                Some('#') if prev_quote => {\n+                Some('#') if false /* ~ changed by cargo-mutants ~ */ => {\n                     matched += 1;\n                     if matched == hash_count {\n                         break;\n                     }\n                 }\n                 Some(_) => {\n                     prev_quote = false;\n                     matched = 0;\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:218:30: replace match guard prev_quote with false in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 218
+      },
+      "start": {
+        "column": 30,
+        "line": 218
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with -= in consume_raw_string\n@@ -211,17 +211,17 @@\n         loop {\n             match chars.next() {\n                 None => break,\n                 Some('\"') => {\n                     prev_quote = true;\n                     matched = 0;\n                 }\n                 Some('#') if prev_quote => {\n-                    matched += 1;\n+                    matched -= /* ~ changed by cargo-mutants ~ */ 1;\n                     if matched == hash_count {\n                         break;\n                     }\n                 }\n                 Some(_) => {\n                     prev_quote = false;\n                     matched = 0;\n                 }\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:219:29: replace += with -= in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 219
+      },
+      "start": {
+        "column": 29,
+        "line": 219
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace += with *= in consume_raw_string\n@@ -211,17 +211,17 @@\n         loop {\n             match chars.next() {\n                 None => break,\n                 Some('\"') => {\n                     prev_quote = true;\n                     matched = 0;\n                 }\n                 Some('#') if prev_quote => {\n-                    matched += 1;\n+                    matched *= /* ~ changed by cargo-mutants ~ */ 1;\n                     if matched == hash_count {\n                         break;\n                     }\n                 }\n                 Some(_) => {\n                     prev_quote = false;\n                     matched = 0;\n                 }\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:219:29: replace += with *= in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 219
+      },
+      "start": {
+        "column": 29,
+        "line": 219
+      }
+    }
+  },
+  {
+    "diff": "--- tools/glyim-pilot/src/gates/banned_pattern.rs\n+++ replace == with != in consume_raw_string\n@@ -212,17 +212,17 @@\n             match chars.next() {\n                 None => break,\n                 Some('\"') => {\n                     prev_quote = true;\n                     matched = 0;\n                 }\n                 Some('#') if prev_quote => {\n                     matched += 1;\n-                    if matched == hash_count {\n+                    if matched != /* ~ changed by cargo-mutants ~ */ hash_count {\n                         break;\n                     }\n                 }\n                 Some(_) => {\n                     prev_quote = false;\n                     matched = 0;\n                 }\n             }\n",
+    "file": "tools/glyim-pilot/src/gates/banned_pattern.rs",
+    "function": {
+      "function_name": "consume_raw_string",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 231
+        },
+        "start": {
+          "column": 1,
+          "line": 187
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "tools/glyim-pilot/src/gates/banned_pattern.rs:220:32: replace == with != in consume_raw_string",
+    "package": "glyim-pilot",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 34,
+        "line": 220
+      },
+      "start": {
+        "column": 32,
+        "line": 220
       }
     }
   },

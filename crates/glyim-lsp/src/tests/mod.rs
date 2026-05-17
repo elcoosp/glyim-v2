@@ -1,6 +1,10 @@
-pub mod helpers;
-pub mod completion_tests;
-pub mod hover_tests;
-pub mod navigation_tests;
-pub mod diagnostics_tests;
-pub mod workspace_symbol_tests;
+mod completion_tests;
+mod diagnostics_tests;
+mod folding_tests;
+mod formatting_tests;
+mod helpers;
+mod hover_tests;
+mod lsp_state_tests;
+mod navigation_tests;
+mod uri_tests;
+mod workspace_symbol_tests;

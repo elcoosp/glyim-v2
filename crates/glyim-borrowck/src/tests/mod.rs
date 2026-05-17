@@ -1,3 +1,4 @@
+mod borrow_tests;
 mod conflicts;
 mod cross_block;
 mod deep_cfg;

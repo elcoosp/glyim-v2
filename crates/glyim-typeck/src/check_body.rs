@@ -47,17 +47,11 @@ impl<'a> FnCtxt<'a> {
         let mut stmts = Vec::new();
         let len = self.body.exprs.len();
 
+        // Process all expressions in the arena as top-level statements.
+        // This matches the original compiler behavior and satisfies downstream passes.
         for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
             let is_tail = pos == len - 1;
             let span = self.body.expr_spans[expr_id];
-
-            if self.expr_cache.contains_key(&expr_id) {
-                if is_tail {
-                    let (_, ty) = self.expr_cache.get(&expr_id).unwrap().clone();
-                    self.unify(ty, self.return_ty, span);
-                }
-                continue;
-            }
 
             match expr {
                 Expr::Assign { lhs, rhs } => {
@@ -65,6 +59,8 @@ impl<'a> FnCtxt<'a> {
                     let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
                     self.unify(rhs_ty, lhs_ty, span);
                     if is_tail {
+                        // Assignments evaluate to unit. We enforce that a unit
+                        // return type is expected if it's the tail expression.
                         self.unify(Ty::UNIT, self.return_ty, span);
                     }
                     stmts.push(thir::Stmt::Assign {
@@ -87,7 +83,13 @@ impl<'a> FnCtxt<'a> {
                 _ => {
                     let (thir_expr, ty) = self.check_expr(expr_id);
                     if is_tail {
-                        self.unify(ty, self.return_ty, span);
+                        // Replicate original behavior: only unify tail with
+                        // return type if the return type is not UNIT.
+                        // This allows expressions like `1 + 2` to be the tail
+                        // of a unit-returning function, discarding their value.
+                        if self.return_ty != Ty::UNIT {
+                            self.unify(ty, self.return_ty, span);
+                        }
                     }
                     stmts.push(thir::Stmt::Expr { expr: thir_expr });
                 }
@@ -125,6 +127,53 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Path(path) => self.check_path(path, span),
+
+            Expr::Block {
+                stmts: block_stmts,
+                tail,
+            } => {
+                let mut thir_block_stmts = Vec::new();
+                for &stmt_id in block_stmts {
+                    let (stmt_expr, _) = self.check_expr(stmt_id);
+                    thir_block_stmts.push(thir::Stmt::Expr { expr: stmt_expr });
+                }
+                if let Some(tail_id) = tail {
+                    let (tail_expr, tail_ty) = self.check_expr(*tail_id);
+                    let block_expr = thir::Expr {
+                        kind: thir::ExprKind::Block {
+                            stmts: thir_block_stmts,
+                            tail: Some(Box::new(tail_expr)),
+                        },
+                        ty: tail_ty,
+                        span,
+                    };
+                    (block_expr, tail_ty)
+                } else {
+                    let unit_expr = thir::Expr {
+                        kind: thir::ExprKind::Block {
+                            stmts: thir_block_stmts,
+                            tail: None,
+                        },
+                        ty: Ty::UNIT,
+                        span,
+                    };
+                    (unit_expr, Ty::UNIT)
+                }
+            }
+
+            Expr::Unary { op, expr: operand } => {
+                let (inner_expr, inner_ty) = self.check_expr(*operand);
+                let result_ty = inner_ty;
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::Unary {
+                        op: *op,
+                        operand: Box::new(inner_expr),
+                    },
+                    ty: result_ty,
+                    span,
+                };
+                (thir_expr, result_ty)
+            }
 
             Expr::Binary { op, lhs, rhs } => {
                 let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
@@ -456,7 +505,6 @@ impl<'a> FnCtxt<'a> {
                     target_ty
                 };
 
-                // The THIR Cast node doesn't hold the target type explicitly; expr.ty holds it.
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Cast {

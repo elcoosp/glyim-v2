@@ -1,11 +1,11 @@
+use crate::database::AnalysisDatabase;
+use crate::driver::AnalysisMessage;
 use glyim_db::Database;
+use glyim_diag::GlyimDiagnostic;
 use glyim_span::FileId;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use crate::driver::AnalysisMessage;
-use crate::database::AnalysisDatabase;
-use glyim_diag::GlyimDiagnostic;
 
 pub struct LspState {
     pub db: Database,
@@ -36,19 +36,32 @@ impl LspState {
     }
 
     pub fn did_open(&mut self, path: PathBuf, content: String, version: i32) {
-        let file_id = self.db.vfs().add_file_content(&path, Arc::from(content.clone()));
+        let file_id = self
+            .db
+            .vfs()
+            .add_file_content(&path, Arc::from(content.clone()));
         self.open_files.insert(path.clone(), (file_id, version));
         if let Some(tx) = &self.driver_tx {
-            let _ = tx.try_send(AnalysisMessage::FileChanged { path, content, version });
+            let _ = tx.try_send(AnalysisMessage::FileChanged {
+                path,
+                content,
+                version,
+            });
         }
     }
 
     pub fn did_change(&mut self, path: PathBuf, content: String, version: i32) {
         if let Some(&(file_id, _)) = self.open_files.get(&path) {
-            self.db.vfs().set_file_content(file_id, Arc::from(content.clone()));
+            self.db
+                .vfs()
+                .set_file_content(file_id, Arc::from(content.clone()));
             self.open_files.insert(path.clone(), (file_id, version));
             if let Some(tx) = &self.driver_tx {
-                let _ = tx.try_send(AnalysisMessage::FileChanged { path, content, version });
+                let _ = tx.try_send(AnalysisMessage::FileChanged {
+                    path,
+                    content,
+                    version,
+                });
             }
         } else {
             tracing::warn!("did_change for unopened file: {:?}", path);
@@ -82,6 +95,7 @@ impl LspState {
         self.open_files.get(path).map(|&(id, _)| id)
     }
 
+    #[allow(unused)]
     pub(crate) fn analysis(&self) -> &Arc<AnalysisDatabase> {
         &self.analysis
     }
