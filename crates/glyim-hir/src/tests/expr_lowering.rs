@@ -1,15 +1,16 @@
 use glyim_core::interner::Interner;
-use glyim_span::{FileId, Span, SyntaxContext};
-use glyim_syntax::{GlyimLang, SyntaxNode};
+use glyim_span::FileId;
+use glyim_frontend::parse_to_syntax;
+use glyim_syntax::SyntaxNode;
 use crate::lower::lower_expr;
-use crate::{Expr, ExprId, Pat, TypeRef};
+use crate::{Expr, Pat, TypeRef};
 
 fn parse_expr(src: &str) -> SyntaxNode {
-    let parse = glyim_syntax::parse_to_syntax(src, FileId::from_raw(1)).unwrap();
+    let parse = parse_to_syntax(src, FileId::from_raw(1)).unwrap();
     parse.root
         .children()
         .find(|n| n.kind().is_expr())
-        .unwrap()
+        .expect("expr node not found")
         .clone()
 }
 
@@ -26,7 +27,8 @@ fn test_lower_closure_expr() {
             assert_eq!(params.len(), 1);
             match &pats[params[0]] {
                 Pat::Binding { name, .. } => {
-                    assert_eq!(interner.resolve(*name).unwrap(), "x");
+                    let resolved = interner.resolve(*name).unwrap();
+                    assert_eq!(resolved, "x");
                 }
                 _ => panic!("expected Binding pattern"),
             }
@@ -47,8 +49,10 @@ fn test_lower_struct_expr() {
         Expr::Struct { path, fields, spread } => {
             assert_eq!(path.as_name(), Some(interner.intern("Point")));
             assert_eq!(fields.len(), 2);
-            assert_eq!(interner.resolve(fields[0].0).unwrap(), "x");
-            assert_eq!(interner.resolve(fields[1].0).unwrap(), "y");
+            let resolved0 = interner.resolve(fields[0].0).unwrap();
+            let resolved1 = interner.resolve(fields[1].0).unwrap();
+            assert_eq!(resolved0, "x");
+            assert_eq!(resolved1, "y");
             assert!(spread.is_none());
         }
         _ => panic!("expected Struct expr"),

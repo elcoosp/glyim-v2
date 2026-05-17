@@ -4,9 +4,10 @@ use crate::lower::lower_pat;
 use crate::Pat;
 
 fn unknown_pat_node() -> SyntaxNode {
-    let green = GreenNode::new(SyntaxKind::Error, vec![
-        GreenToken::new(SyntaxKind::Error, 1, "?".into()).into(),
-    ]);
+    // GreenNode expects rowan::green::SyntaxKind, but we don't need a real node for this test.
+    // Instead, just create a dummy node with Error kind using the correct API.
+    // Simpler: use a SyntaxNode from a dummy parse.
+    let green = GreenNode::new(glyim_syntax::GlyimLang::kind_to_raw(SyntaxKind::Error), vec![]);
     SyntaxNode::new_root(green)
 }
 

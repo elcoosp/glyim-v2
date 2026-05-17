@@ -1,11 +1,10 @@
 use glyim_core::primitives::*;
-use glyim_syntax::SyntaxToken;
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use glyim_syntax::{GreenToken, SyntaxKind, SyntaxToken};
 use crate::lower::lower_literal;
 use crate::Literal;
 
 fn token_text(s: &str) -> SyntaxToken {
-    use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
-    use glyim_syntax::{GreenToken, SyntaxKind};
     let kind = if s.starts_with('"') {
         SyntaxKind::StringLit
     } else if s.starts_with('\'') {
@@ -17,7 +16,9 @@ fn token_text(s: &str) -> SyntaxToken {
     } else {
         SyntaxKind::IntLit
     };
-    let green = GreenToken::new(kind, s.len() as u32, s.into());
+    // Create a GreenToken with kind and text (rowan 0.16 API)
+    let green = GreenToken::new(kind, s);
+    // SyntaxToken::new takes (green, file_id, offset, context)
     SyntaxToken::new(green, FileId::from_raw(1), ByteIdx::ZERO, SyntaxContext::ROOT)
 }
 

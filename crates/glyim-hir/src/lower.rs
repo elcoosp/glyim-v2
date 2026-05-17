@@ -444,7 +444,7 @@ fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Option<Variant> 
 
 // ---------- types ----------
 
-fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef> {
+pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef> {
     match node.kind() {
         SyntaxKind::PathType => {
             let path = lower_path_from_type(node, interner)?;
@@ -698,7 +698,7 @@ fn lower_field_or_method_with_receiver(
     }
 }
 
-fn lower_expr(
+pub(crate) fn lower_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     exprs: &mut IndexVec<ExprId, Expr>,
@@ -1034,7 +1034,7 @@ fn lower_lit_expr(
     Some(eid)
 }
 
-fn lower_literal(token: &SyntaxToken) -> Literal {
+pub(crate) fn lower_literal(token: &SyntaxToken) -> Literal {
     let text = token.text().to_string();
     match token.kind() {
         SyntaxKind::IntLit => {
