@@ -10,8 +10,6 @@ fn tuple_pattern_binds_variables() {
     let ctx = test_frozen_ty_ctx();
     let mock_ctx = MockLowerCtx::new(&ctx);
     let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
-    // This test is just a placeholder; we need actual THIR with a tuple pattern.
-    // Since constructing THIR manually is complex, we rely on higher-level tests.
     let thir_body = thir::Body {
         owner,
         stmts: vec![],
