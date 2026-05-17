@@ -471,13 +471,13 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
                     after_arrow = true;
                     continue;
                 }
-                if is_type_node(&child) {
-                    if let Some(ty) = lower_type_ref(&child, interner) {
-                        if after_arrow {
-                            ret = Some(Box::new(ty));
-                        } else {
-                            params.push(ty);
-                        }
+                if is_type_node(&child)
+                    && let Some(ty) = lower_type_ref(&child, interner)
+                {
+                    if after_arrow {
+                        ret = Some(Box::new(ty));
+                    } else {
+                        params.push(ty);
                     }
                 }
             }
@@ -520,7 +520,7 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
         SyntaxKind::NeverType => Some(TypeRef::Never),
         SyntaxKind::InferType => Some(TypeRef::Infer),
         SyntaxKind::DynType => {
-            let inner = node.children().find(|c| is_type_node(c));
+            let inner = node.children().find(is_type_node);
             if let Some(ty_node) = inner {
                 lower_type_ref(&ty_node, interner)
             } else {
@@ -820,7 +820,7 @@ pub(crate) fn lower_expr(
                         }
                     } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
                         // shorthand field name (e.g., "x" without colon)
-                        let name = interner.intern(&child.text().to_string().trim());
+                        let name = interner.intern(child.text().to_string().trim());
                         let expr_id = lower_expr(&child, interner, exprs, pats, expr_spans);
                         if let Some(eid) = expr_id {
                             fields.push((name, eid));
