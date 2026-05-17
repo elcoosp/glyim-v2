@@ -1,7 +1,7 @@
 //! Tests for HAS_RE_PLACEHOLDER and HAS_TY_PLACEHOLDER flags
 
-use crate::*;
 use crate::display::TypeLookup;
+use crate::*;
 use crate::{
     BoundRegionKind, BoundTy, BoundTyKind, PlaceholderRegion, Region, TyKind, TypeFlags,
     UniverseIndex, compute_flags,

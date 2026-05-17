@@ -1,6 +1,5 @@
 //! Tests for PlaceholderRegion and Region::Placeholder
 
-use crate::*;
 use crate::{BoundRegionKind, PlaceholderRegion, Region, UniverseIndex};
 use glyim_core::interner::Interner;
 

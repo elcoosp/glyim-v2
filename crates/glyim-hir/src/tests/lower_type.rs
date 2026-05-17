@@ -44,12 +44,15 @@ fn test_type_ref_ref() {
 
 #[test]
 fn test_type_ref_fn_ptr() {
-    let ty = get_fn_return_type_opt("fn f() -> fn(i32) -> bool {}").expect("should have return type");
+    let ty =
+        get_fn_return_type_opt("fn f() -> fn(i32) -> bool {}").expect("should have return type");
     match ty {
         TypeRef::Fn { params, ret } => {
             assert!(params.len() >= 1);
             if ret.is_none() {
-                eprintln!("Note: return type missing in Fn pointer (parser limitation), test passes anyway");
+                eprintln!(
+                    "Note: return type missing in Fn pointer (parser limitation), test passes anyway"
+                );
             }
         }
         TypeRef::Path(_) => {

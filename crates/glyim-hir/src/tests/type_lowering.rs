@@ -1,7 +1,6 @@
 use crate::TypeRef;
 use crate::lower::{is_type_node, lower_type_ref};
 use glyim_core::interner::Interner;
-use glyim_core::primitives::*;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
