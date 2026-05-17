@@ -6,13 +6,138 @@ You are implementing one stream of work within this project.
 
 ## Architecture Rules (NON‑NEGOTIABLE)
 
-1. **No `pub` signature changes.** If a public type or function exists in a crate you don’t own, you MAY NOT modify it. If you need a change, add a `pub(crate)` helper instead.
+1. **No `pub` signature changes.** If a public type or function exists in a crate you don't own, you MAY NOT modify it. If you need a change, add a `pub(crate)` helper instead.
 2. **No new `pub` items in existing modules** without explicit approval. You MAY add new private modules and `pub(crate)` items freely.
 3. **No `unsafe` in compiler crates.** Only `glyim-runtime` may contain `unsafe`, and each block must have a `// SAFETY:` proof.
-4. **No `todo!()` in non‑test code.** Use `tracing::warn!("STUB: {reason}")` for optional paths that need attention but won’t crash.
+4. **No `todo!()` in non‑test code.** Use `tracing::warn!("STUB: {reason}")` for optional paths that need attention but won't crash.
 5. **All stubs must be visible.** Silent no‑ops (empty match arms, `let _ = x`) are forbidden in implementation code. Every stub must emit a warning on first execution.
 6. **Tracing convention:** `trace` for hot paths, `debug` for inference, `info` for phases. Always `skip(self, ctx)`.
-7. **Test‑first:** Write all test cases from your stream’s TDD plan **before** implementing. Tests must compile before implementation begins.
+7. **Test‑first:** Write all test cases from your stream's TDD plan **before** implementing. Tests must compile before implementation begins.
+
+---
+
+## Code Quality Mandate (NON‑NEGOTIABLE)
+
+Every piece of Rust code produced in any stream is subject to a ruthless review across six dimensions. Before committing, mentally run the following checklist. **If any item fails, fix it — do not ship.**
+
+The target bar is: *a senior principal engineer reads the diff and thinks "this is clean, correct, and maintainable."*
+
+---
+
+### 1. Correctness & Compilation Safety
+
+**Goal:** The code must compile with `cargo check --all-targets` and `cargo clippy -- -D warnings` with zero errors and zero warnings. Logic must be provably correct, not just "probably fine".
+
+**Rules:**
+
+- **Exhaustive `match`.** Every `match` on an enum must cover all variants explicitly. Do not use a catch‑all `_` arm unless the remaining variants are genuinely identical *and* you leave a comment explaining why.
+- **No integer arithmetic without overflow consideration.** Use `checked_add`, `saturating_add`, or `wrapping_add` where overflow is conceivable. Bare `+` on `usize`/`u32` is forbidden in index arithmetic.
+- **No silent lossy conversions.** `as usize` and `as u32` casts are banned unless the value is provably within range; use `try_from` or a named conversion function with a documented panic/error contract.
+- **No `unwrap()` / `expect()` in non‑test, non‑infallible code.** An `expect()` is allowed only when the caller can *statically prove* the `Option`/`Result` is `Some`/`Ok` — add an `// INVARIANT: <reason>` comment on the same line. Use `?` or propagate `GlyimDiagnostic` otherwise.
+- **No logic inversion bugs.** Every `if !cond` or `unless` pattern must have a unit test that exercises *both* branches. If you write a predicate, write a test that catches a sign flip.
+- **All error paths return `GlyimDiagnostic`.** Never swallow an error into `()` or a default value. If recovery is intentional, document it with `// RECOVERY: <why this is safe>`.
+- **Off‑by‑one discipline.** Spans, slices, and index ranges must use half‑open intervals `[lo, hi)` consistently. Any closed range must be called out with a comment.
+- **No dead code.** `#[allow(dead_code)]` is forbidden in production paths. If a function is not yet called, it is not yet needed — don't write it.
+
+**Self‑check before committing:**
+```
+cargo clippy --all-targets -- -D warnings
+cargo test --all
+```
+
+---
+
+### 2. Boundaries & Contracts
+
+**Goal:** Every public and `pub(crate)` item is a *contract*, not an implementation detail. A caller should never need to read the body to use the function correctly.
+
+**Rules:**
+
+- **Document every `pub` and `pub(crate)` item.** At minimum: what it does, what it expects (preconditions), what it returns (postconditions), and what it emits (side effects: diagnostics, tracing spans, mutations). Use `///` doc comments, not `//`.
+- **State preconditions as `debug_assert!`.** If a function requires `idx < self.len()`, add `debug_assert!(idx < self.len(), "…")` as the first line. This makes implicit contracts explicit *and* catches violations in debug builds.
+- **No leaking internals.** A `pub(crate)` function must not return a `&mut` to an internal field that callers can corrupt. Return a typed wrapper or a copy.
+- **Infallible vs. fallible is a type-level choice.** A function that can fail returns `Result<T, GlyimDiagnostic>` or `CompResult<T>`. A function that panics on contract violation is documented as such. Never mix the two silently.
+- **No God functions.** Any function longer than ~60 lines or with cyclomatic complexity > 10 must be decomposed. Extract named helper functions with their own contracts.
+- **`Default` must be meaningful.** If you `#[derive(Default)]`, the default value must be a valid, usable instance — not a half‑initialised placeholder. If no valid default exists, do not derive it; require explicit construction.
+
+---
+
+### 3. Modularity & Separation of Concerns
+
+**Goal:** Each module does one thing. Dependencies point inward (toward stable abstractions), never outward (toward volatile implementations).
+
+**Rules:**
+
+- **One concept per module.** A `.rs` file that handles both parsing *and* type inference, or both lowering *and* codegen, is wrong. Split it.
+- **Acyclic module graph.** Within a crate, module `A` importing from module `B` which imports from `A` is forbidden. Structure: data types → algorithms → drivers, never the reverse.
+- **Traits as seams.** Any place where two subsystems communicate, the dependency must flow through a trait, not a concrete type. This enables independent testing of both sides.
+- **No ambient state.** No `static mut`, no `thread_local!` in compiler logic, no hidden global singletons. All state flows through explicit parameters (`&mut TyCtxMut`, `&mut DiagSink`, etc.).
+- **Feature cohesion.** If you add a helper function, it belongs in the module whose *data* it primarily operates on, not the module that first needed it.
+- **Test isolation.** Every non‑trivial function must be testable without spinning up the entire compiler pipeline. If it isn't, extract a pure sub‑function that is.
+
+---
+
+### 4. Performance & Resource Efficiency
+
+**Goal:** Compiler performance is a feature. Allocate intentionally; never accidentally.
+
+**Rules:**
+
+- **No O(n²) in disguise.** Nested loops over compiler-managed collections (`Vec`, `IndexVec`, `HashMap`) must be justified. If the inner loop is bounded by a small constant (< 8), document it. Otherwise, redesign.
+- **Intern aggressively.** Strings, types, and substitutions that escape a single function call must be interned. Never store a `String` where a `Symbol` or `Ty` (interned) will do.
+- **Avoid cloning across hot paths.** `Clone` on a non‑`Copy` type in a path called per‑expression or per‑statement is a red flag. Profile first, but default to borrowing.
+- **Pre‑allocate collections.** When the approximate size is known at construction time, use `Vec::with_capacity`, `HashMap::with_capacity_and_hasher`, etc. A `push` into a default `Vec::new()` in a tight loop will trigger repeated reallocation.
+- **Bound recursion depth.** Every recursive function that follows user‑provided structure (types, expressions, patterns) must track depth and return an error diagnostic at a configurable limit (default 128). This prevents stack overflows on adversarial input.
+- **No redundant traversals.** If you need two properties of the same node, compute them in one pass. Two `for` loops over the same `Vec` is almost always reducible to one.
+
+---
+
+### 5. Debuggability & Observability
+
+**Goal:** When something goes wrong in a 50,000‑line compilation, a developer must be able to trace it in under five minutes.
+
+**Rules:**
+
+- **Every phase boundary gets an `info!` span.** Use `tracing::info_span!("phase_name", crate = %name)` at the start of each compiler phase. The span must be entered with `.entered()` so it appears in nested traces.
+- **Every non‑trivial decision gets a `debug!` log.** Type inference decisions, trait resolution results, and MIR lowering choices must be logged at `debug` level with enough context to reconstruct the reasoning.
+- **Diagnostics carry full context.** A `GlyimDiagnostic` must include: the source span, the human‑readable message, and at least one note explaining *why* the error occurred (not just *what* went wrong). "type mismatch" is not a message; "expected `i32`, found `u8` because the return type of `foo` is declared as `i32`" is.
+- **No silent fallbacks.** If a lookup fails and you substitute a sentinel (`Ty::ERROR`), emit a `tracing::debug!` log at that point. Sentinels silently propagating is the number‑one cause of confusing cascading errors.
+- **Assertions in debug builds.** Use `debug_assert!` liberally on invariants that are expensive to check in release. They are free in production and priceless during development.
+- **`Display` on all domain types.** Every type that appears in a diagnostic message must implement `std::fmt::Display` (via the `TypeLookup` trait where a context is needed). `{:?}` in user-visible output is forbidden.
+
+---
+
+### 6. Elegance & Hack‑Free Design
+
+**Goal:** The implementation is the simplest correct solution. No clever tricks. No "temporary" workarounds. No accidental complexity.
+
+**Rules:**
+
+- **No `#[allow(...)]` without a justification comment.** If you suppress a warning, explain in the same line why it is safe to do so. `#[allow(clippy::too_many_arguments)]` followed by a 12‑argument function is not allowed — refactor into a builder or a context struct.
+- **Builder or context struct over long argument lists.** More than 4 parameters to a function is a code smell. Group related parameters into a typed struct. This also makes future additions non‑breaking.
+- **No stringly‑typed logic.** Never branch on `&str` or `String` values for compiler-internal decisions. Use enums. If the string comes from user source, intern it to a `Symbol` immediately.
+- **Pattern-match, don't interrogate.** Prefer `if let Some(x) = opt { … }` and `match` over `.is_some()` followed by `.unwrap()`. Rust's type system is your friend — use it.
+- **No boolean traps.** A function `fn process(node: Node, is_lvalue: bool, is_type_pos: bool)` is a trap. Each `bool` parameter is a hidden enum. Define `enum Position { LValue, RValue }` and `enum Context { TypePosition, ExprPosition }` and use them.
+- **Newtype wrappers for distinct indices.** Never use bare `u32` or `usize` as an index into more than one collection. Wrap each in a named newtype (`LocalIdx`, `DefId`, `HirId`). Cross‑kind indexing must be a compile error.
+- **Derive traits, don't implement them manually unless necessary.** `PartialEq`, `Eq`, `Hash`, `Clone`, `Copy`, `Debug` — derive them. Manual implementations of structural traits must be accompanied by a comment explaining why the derived version is wrong.
+- **No speculative code.** Do not implement functionality that is not required by the current stream's TDD plan. YAGNI is a hard rule here. Speculative code creates maintenance burden and untested surface area.
+
+---
+
+### Applying the Mandate: Workflow
+
+When implementing a feature or fixing a bug, follow this order:
+
+1. **Plan** — write out the types, traits, and function signatures in comments before writing bodies. Run the Boundaries & Contracts checklist mentally.
+2. **Test** — write the tests per the TDD plan. They must compile (but can fail) before step 3.
+3. **Implement** — write the minimum correct implementation that makes the tests pass. Apply all six dimensions above.
+4. **Refactor** — clean up: rename, extract helpers, add doc comments, add `debug_assert!`s, add tracing spans.
+5. **Verify** — `cargo clippy -- -D warnings` and `cargo test --all` must both pass clean.
+6. **Review yourself** — read the diff as if you are a merciless senior reviewer. Would you approve it? If not, fix it before committing.
+
+**If you are uncertain whether a design decision meets this mandate, the answer is: make it simpler, more explicit, and better typed. Complexity is never the right default.**
+
+---
 
 ## Crate Dependency Rules
 
@@ -49,7 +174,7 @@ You are implementing one stream of work within this project.
 
 ## PR Description Assembly Process (When Stream is Finished)
 
-When the user declares a stream is “finished” or “ready for PR”, you **MUST**:
+When the user declares a stream is "finished" or "ready for PR", you **MUST**:
 
 1. Get the diff from `main` to understand what changed.
 2. Get the commit log from `main` to understand the commit history.
