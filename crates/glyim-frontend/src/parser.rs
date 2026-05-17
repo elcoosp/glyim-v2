@@ -1204,7 +1204,7 @@ impl<'a> Parser<'a> {
                     self.parse_type();
                     self.finish_node();
                 }
-                                SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
+                SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
                     self.start_node_at(cp, SyntaxKind::StructExpr);
                     self.bump(); // {
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
@@ -1216,8 +1216,7 @@ impl<'a> Parser<'a> {
                                 // Explicit field: name: expr
                                 self.bump(); // consume colon
                                 self.start_node_at(field_cp, SyntaxKind::StructField);
-                                // Emit the field name as a token (already emitted by bump), then parse the expression
-                                self.finish_node();
+                                self.finish_node(); // the field name token is already emitted, just close the node
                                 self.parse_expr();
                             } else {
                                 // Shorthand field: name
@@ -1248,6 +1247,8 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::RBrace);
                     self.finish_node(); // StructExpr
                 }
+                _ => break,
+            }
         }
     }
 
@@ -1534,7 +1535,7 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-            fn parse_closure_expr(&mut self) {
+    fn parse_closure_expr(&mut self) {
         self.start_node(SyntaxKind::ClosureExpr);
         if self.current_kind() == SyntaxKind::KwMove {
             self.bump();
@@ -1577,7 +1578,6 @@ impl<'a> Parser<'a> {
         if self.current_kind() == SyntaxKind::LBrace {
             self.parse_block();
         } else {
-            // Parse the expression body. Even if it's followed by a semicolon, parse it.
             self.parse_expr();
         }
         self.finish_node();
