@@ -188,6 +188,21 @@ impl<'a> MirBuilder<'a> {
         match &expr.kind {
             thir::ExprKind::Literal(lit) => {
                 let mir_const = match lit {
+                    thir::Literal::Int(val, _) => glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Int(*val), ty: expr.ty, span: expr.span },
+                    thir::Literal::Uint(val, _) => glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Uint(*val), ty: expr.ty, span: expr.span },
+                    thir::Literal::Bool(val) => glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Bool(*val), ty: expr.ty, span: expr.span },
+                    thir::Literal::String(_) | thir::Literal::Char(_) => {
+                        tracing::warn!("unsupported literal type, emitting error constant");
+                        glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Error, ty: expr.ty, span: expr.span }
+                    }
+                    _ => {
+                        tracing::warn!("STUB: unsupported literal");
+                        glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Error, ty: expr.ty, span: expr.span }
+                    }
+                };
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const))
+            }
+                let mir_const = match lit {
                     thir::Literal::Int(val, _) => glyim_mir::MirConst {
                         kind: glyim_mir::MirConstKind::Int(*val),
                         ty: expr.ty,
@@ -610,6 +625,7 @@ impl<'a> MirBuilder<'a> {
         }
     }
     fn bind_pattern(&mut self, pat: &thir::Pattern, init_local: Option<LocalIdx>, span: Span) {
+    fn bind_pattern(&mut self, pat: &thir::Pattern, init_local: Option<LocalIdx>, span: Span) {
         match &pat.kind {
             thir::PatternKind::Binding { name, mutability, subpattern } => {
                 let local = self.alloc_local(pat.ty, *mutability, span);
@@ -625,15 +641,49 @@ impl<'a> MirBuilder<'a> {
                 }
             }
             thir::PatternKind::Wild => {
-                // Nothing to bind, but we still need to evaluate the init expression if present
+                // Evaluate init if present (for side effects) but no binding
                 if let Some(init) = init_local {
-                    // Dummy statement to keep init alive? Not needed; just no binding.
+                    // No assignment needed
+                }
+            }
+            thir::PatternKind::Tuple(fields) => {
+                // For tuple pattern, we need to project each field out of the init value
+                if let Some(init) = init_local {
+                    let init_place = glyim_mir::Place::new(init);
+                    for (idx, field_pat) in fields.iter().enumerate() {
+                        let field_proj = {
+                            let mut proj = init_place.projection.to_vec();
+                            proj.push(glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(idx as u32)));
+                            proj.into_boxed_slice()
+                        };
+                        let field_place = glyim_mir::Place {
+                            local: init_place.local,
+                            projection: field_proj,
+                        };
+                        // Create a temporary local to hold the field value
+                        let temp_local = self.alloc_local(field_pat.ty, glyim_core::primitives::Mutability::Not, span);
+                        self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
+                        self.push_stmt(
+                            glyim_mir::StatementKind::Assign(
+                                glyim_mir::Place::new(temp_local),
+                                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(field_place)),
+                            ),
+                            span,
+                        );
+                        self.bind_pattern(field_pat, Some(temp_local), span);
+                    }
+                } else {
+                    // No initializer, pattern binds uninitialized values? Not allowed in Rust.
+                    // Emit diagnostic.
+                    tracing::warn!("STUB: tuple pattern without initializer");
                 }
             }
             _ => {
-                tracing::warn!("STUB: pattern destructuring for non-binding pattern not implemented");
+                tracing::warn!("STUB: pattern destructuring for non-binding pattern not implemented: {:?}", pat.kind);
             }
         }
+    }
+
     }
 }
 
