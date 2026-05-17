@@ -1,10 +1,4 @@
-mod completion_tests;
-mod diagnostics_tests;
-mod folding_tests;
-mod formatting_tests;
-mod helpers;
-mod hover_tests;
-mod lsp_state_tests;
-mod navigation_tests;
-mod uri_tests;
-mod workspace_symbol_tests;
+mod completion;
+mod diagnostics;
+mod goto_definition;
+mod hover;
