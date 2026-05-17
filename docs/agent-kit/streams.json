@@ -1,959 +1,193 @@
 [
   {
-    "id": "V01",
-    "name": "Associated Types & Projections",
-    "crate": "glyim-type",
-    "wave": 1,
-    "scope_summary": "Add associated type declarations to traits, projection types (T::Item), projection equality in unification and type checker. Implement occurs check for projections to prevent cycles. Provide diagnostics for unresolved projections.",
+    "id": "U01",
+    "name": "HIR Lowering – Expressions & Types",
+    "crate": "glyim-hir",
+    "wave": 0,
+    "scope_summary": "Remove stubs in `glyim-hir/src/lower.rs` for `lower_type_ref`, `lower_expr`, `lower_bin_op_token`, and `lower_pat`. Implement all missing type kinds (Array, Dyn, Slice, FnPtr) and expression kinds (Closure, Struct, Range, Index, Cast). Also implement number suffix parsing and unknown pattern handling.",
     "owned_crates": [
-      "glyim-type",
-      "glyim-solve",
-      "glyim-typeck"
-    ],
-    "locked_interfaces": [
-      "glyim_type::TyKind::Projection",
-      "glyim_type::TyKind::Opaque",
-      "glyim_solve::InferenceTable::unify",
-      "glyim_typeck::typeck_crate"
-    ],
-    "tests": {
-      "V01-T01": "Define trait `Iterator { type Item; }` with impl `type Item = u32` → projection `I::Item` resolves to `u32` (run-pass)",
-      "V01-T02": "Nested projection: `T::Item::Target` where `T::Item` is another trait with associated type → resolves correctly (run-pass)",
-      "V01-T03": "Unify `I::Item` with `u32` where `I` bound to impl → Ok (run-pass)",
-      "V01-T04": "Projection in where clause: `fn foo<T>() where T::Item: Clone` → compiles (run-pass)",
-      "V01-T05": "Associated type defaults: `type Item = ()` → works (run-pass)",
-      "V01-T06": "Cycle detection: `type A = Self::B; type B = Self::A;` → error (compile-fail)",
-      "V01-T07": "Unresolved projection → error diagnostic (compile-fail)",
-      "V01-T08": "Projection with mismatched trait bound → error (compile-fail)"
-    },
-    "mocking": "No mocking. Extend existing TyCtx and InferenceTable. Use `glyim_test::assert_ty` and `assert_diag_contains`.",
-    "upstream": [],
-    "downstream": [
-      "V03",
-      "V04",
-      "V05",
-      "V06",
-      "V07",
-      "V22",
-      "V23",
-      "V24",
-      "V25"
-    ]
-  },
-  {
-    "id": "V02",
-    "name": "Where Clauses & Supertraits",
-    "crate": "glyim-typeck",
-    "wave": 1,
-    "scope_summary": "Implement parsing, HIR lowering, and type checking of `where` clauses on functions, traits, and impls. Enforce supertrait inheritance (e.g., `trait Copy: Clone` requires `Clone` impl). Propagate implied bounds from supertraits and where clauses.",
-    "owned_crates": [
-      "glyim-hir",
-      "glyim-typeck",
-      "glyim-solve"
-    ],
-    "locked_interfaces": [
-      "glyim_hir::GenericParamKind",
-      "glyim_typeck::TypeckCtx::require_trait_bound",
-      "glyim_solve::TraitSolver"
-    ],
-    "tests": {
-      "V02-T01": "Function with `where T: Clone` → compiles if T implements Clone (run-pass)",
-      "V02-T02": "Trait with supertrait, impl must satisfy both → compiles (run-pass)",
-      "V02-T03": "Where clause on trait impl → constraints enforced (run-pass)",
-      "V02-T04": "Multiple where bounds (run-pass)",
-      "V02-T05": "Where clause referencing associated types (run-pass)",
-      "V02-T06": "Missing supertrait impl → error (compile-fail)",
-      "V02-T07": "Where bound not satisfied → error (compile-fail)"
-    },
-    "mocking": "Extend existing solver to handle inheritance. Use `glyim_test::mock::MockSolver` for testing where clauses in isolation.",
-    "upstream": [],
-    "downstream": [
-      "V04",
-      "V06"
-    ]
-  },
-  {
-    "id": "V03",
-    "name": "Default Methods",
-    "crate": "glyim-typeck",
-    "wave": 2,
-    "scope_summary": "Allow trait methods to have default implementations. Implement inheritance: impls can override default methods or inherit them. Ensure correct dispatch and that default methods can call other trait methods (including default ones).",
-    "owned_crates": [
-      "glyim-hir",
-      "glyim-typeck",
-      "glyim-lower"
-    ],
-    "locked_interfaces": [
-      "glyim_hir::TraitItem",
-      "glyim_lower::lower_body"
-    ],
-    "tests": {
-      "V03-T01": "Trait with default method, impl without overriding → default used (run-pass)",
-      "V03-T02": "Overridden default method → override used (run-pass)",
-      "V03-T03": "Default method calling another default method (run-pass)",
-      "V03-T04": "Default method with generic parameters (run-pass)",
-      "V03-T05": "Default method calls missing method → error (compile-fail)"
-    },
-    "mocking": "Use existing HIR and THIR. No mocking.",
-    "upstream": [
-      "V01"
-    ],
-    "downstream": [
-      "V07"
-    ]
-  },
-  {
-    "id": "V04",
-    "name": "Coherence & Orphan Rules",
-    "crate": "glyim-typeck",
-    "wave": 2,
-    "scope_summary": "Implement orphan rules: impl of a foreign trait on a foreign type is only allowed if at least one local type appears. Check overlap between impls (trait + self type + where clauses). Report conflicts. Support negative impls (e.g., `impl !Send for T`).",
-    "owned_crates": [
-      "glyim-typeck",
-      "glyim-def-map"
+      "glyim-hir"
     ],
     "locked_interfaces": [],
     "tests": {
-      "V04-T01": "Duplicate impl for same type → error (compile-fail)",
-      "V04-T02": "Impl for foreign trait on foreign type → error unless local type (compile-fail)",
-      "V04-T03": "Blanket impl conflicts with concrete impl → error (compile-fail)",
-      "V04-T04": "Valid orphan: impl ForeignTrait for LocalType → compiles (run-pass)",
-      "V04-T05": "Negative impl `impl !Send for T` → overrides auto trait (run-pass)"
+      "U01-T01": "lower_type_ref parses Array, Dyn, Slice, FnPtr correctly (unit test)",
+      "U01-T02": "lower_expr handles Closure, Struct, Range, Index, Cast (unit test)",
+      "U01-T03": "Number suffix parsing works for i32, u64, f64, etc. (unit test)",
+      "U01-T04": "Unknown pattern kind falls back to error (unit test)"
     },
-    "mocking": "Use TraitContext to register impls and check. Use `glyim_test::mock::TestDbBuilder` to create crates with different local/foreign types.",
-    "upstream": [
-      "V01",
-      "V02"
-    ],
+    "mocking": "No mocking. Use `glyim_test::assert_ty` and `glyim_test::snapshot_cst` to verify HIR output.",
+    "upstream": [],
     "downstream": [
-      "V07"
+      "U02",
+      "U03"
     ]
   },
   {
-    "id": "V05",
-    "name": "HRTB (Higher‑Ranked Trait Bounds)",
-    "crate": "glyim-solve",
-    "wave": 3,
-    "scope_summary": "Parse and solve `for<'a> Fn(&'a i32)`. Introduce binder handling in unification and trait matching. Support placeholder regions and universes. Integrate with trait solver to prove higher‑ranked bounds.",
+    "id": "U02",
+    "name": "MIR Lowering & Monomorphization",
+    "crate": "glyim-lower",
+    "wave": 0,
+    "scope_summary": "Remove stubs in `glyim-lower/src/lower.rs` (pattern destructuring, expr stmt dropped, unsupported literal, FnRef fallback, match guards, unhandled expr/place) and `glyim-pipeline/src/mono_cache.rs` (generic instantiation, drop glue generation, missing MIR body fallback). Also fix ADT field type resolution in `pipeline_context.rs`.",
     "owned_crates": [
-      "glyim-type",
-      "glyim-solve",
-      "glyim-typeck"
+      "glyim-lower",
+      "glyim-pipeline"
     ],
-    "locked_interfaces": [
-      "glyim_type::Binder",
-      "glyim_solve::InferenceTable"
-    ],
+    "locked_interfaces": [],
     "tests": {
-      "V05-T01": "Function bound with `for<'a> Fn(&'a u32)` → compiles (run-pass)",
-      "V05-T02": "Higher‑ranked region constraint solving (run-pass)",
-      "V05-T03": "Nested HRTB (run-pass)",
-      "V05-T04": "HRTB with associated types (run-pass)",
-      "V05-T05": "Unmet higher‑ranked bound → error (compile-fail)"
+      "U02-T01": "Let binding with tuple pattern destructures correctly (unit test)",
+      "U02-T02": "Expr statement with side effects is not dropped (unit test)",
+      "U02-T03": "Unsupported literal falls back to error constant (unit test)",
+      "U02-T04": "Match guard expression is correctly lowered (unit test)",
+      "U02-T05": "Generic function instantiation works (run-pass via pipeline)",
+      "U02-T06": "Drop glue generated for struct with Box field (run-pass)"
     },
-    "mocking": "Extend unification to handle bound regions. Use `glyim_test::property::check_ty_property` for property‑based testing of binder substitution.",
+    "mocking": "Use `glyim_test::mock::MockLowerCtx` and `glyim_test::assert_mir`.",
     "upstream": [
-      "V01"
+      "U01"
     ],
     "downstream": []
   },
   {
-    "id": "V06",
-    "name": "Auto Traits (Send, Sync)",
-    "crate": "glyim-type",
-    "wave": 3,
-    "scope_summary": "Automatically implement marker traits (Send, Sync, Unpin) for types when all field types implement the trait. Support negative impls (`impl !Send for T`) to opt out. Compute auto traits during type collection and store in `TyCtx`. Ensure coherence with manual impls.",
+    "id": "U03",
+    "name": "MIR Interpreter Stubs",
+    "crate": "glyim-mir-interp",
+    "wave": 0,
+    "scope_summary": "Remove all stubs in `glyim-mir-interp/src/lib.rs`: implement `Discriminant` for aggregates, all `CastKind` variants, `Repeat` rvalue, support for `FloatBits`, `String`, `Fn`, `ConstRef` constants, and `Len` for non‑constant array lengths.",
     "owned_crates": [
-      "glyim-type",
-      "glyim-typeck"
+      "glyim-mir-interp"
     ],
-    "locked_interfaces": [
-      "glyim_type::TyFlags",
-      "glyim_typeck::TypeckCtx"
-    ],
+    "locked_interfaces": [],
     "tests": {
-      "V06-T01": "Struct with all Send fields → auto impl Send (run-pass)",
-      "V06-T02": "Struct with non‑Send field → no auto Send (compile-fail if used as Send)",
-      "V06-T03": "Negative impl `impl !Send for T` → overrides auto (run-pass)",
-      "V06-T04": "Transitive auto traits (Sync requires Send) (run-pass)",
-      "V06-T05": "Manual impl of auto trait overrides auto (run-pass)"
+      "U03-T01": "Discriminant of enum returns correct tag (unit test)",
+      "U03-T02": "Cast IntToFloat produces float value (unit test)",
+      "U03-T03": "Cast FloatToInt truncates correctly (unit test)",
+      "U03-T04": "Repeat rvalue builds array constant (unit test)",
+      "U03-T05": "Len of array with const generic works (unit test)",
+      "U03-T06": "Fn constant used as operand is handled (unit test)"
     },
-    "mocking": "Compute during type collection. Use `glyim_test::assert_ty` to check that `TyCtx::ty_flags` includes auto trait markers.",
+    "mocking": "Use `glyim_test::phase::MirGenTester` to obtain MIR bodies, then run interpreter.",
     "upstream": [
-      "V01",
-      "V02"
+      "U02"
     ],
-    "downstream": [
-      "V07"
-    ]
+    "downstream": []
   },
   {
-    "id": "V07",
-    "name": "Trait Objects",
+    "id": "U04",
+    "name": "Bytecode Backend Stubs",
     "crate": "glyim-codegen",
-    "wave": 4,
-    "scope_summary": "Implement `dyn Trait` types: vtable layout (pointers to methods, drop, size), dynamic dispatch via vtable pointers, code generation for trait object method calls, and upcasting to supertraits. Enforce object safety (no Self: Sized, no generic methods).",
+    "wave": 0,
+    "scope_summary": "Remove stubs in `glyim-codegen/src/lib.rs`: implement `Assign` with projections, `Rvalue::Ref`, `UnaryOp::Deref`, `TerminatorKind::Drop`, and support all `MirConstKind` variants (float, char, string). Implement `Repeat` rvalue correctly.",
     "owned_crates": [
-      "glyim-type",
-      "glyim-layout",
-      "glyim-codegen-llvm",
       "glyim-codegen"
     ],
-    "locked_interfaces": [
-      "glyim_type::TyKind::Dynamic",
-      "glyim_layout::LayoutComputer",
-      "glyim_codegen::CodegenBackend"
-    ],
-    "tests": {
-      "V07-T01": "Create trait object from concrete type (run-pass)",
-      "V07-T02": "Call method through trait object (run-pass)",
-      "V07-T03": "Upcast to supertrait object (run-pass)",
-      "V07-T04": "Object safety check: non‑object‑safe trait → error (compile-fail)",
-      "V07-T05": "Vtable layout: size and alignment match pointer width (run-pass)"
-    },
-    "mocking": "Use real layout and codegen. Use `glyim_test::assert_layout` to verify vtable layout.",
-    "upstream": [
-      "V01",
-      "V03",
-      "V04",
-      "V06"
-    ],
-    "downstream": [
-      "V14",
-      "V16",
-      "V17"
-    ]
-  },
-  {
-    "id": "V08",
-    "name": "Polonius Region Inference (Base)",
-    "crate": "glyim-borrowck",
-    "wave": 1,
-    "scope_summary": "Implement Polonius‑style region inference: regions as sets of loans, liveness + outlives constraints, Datalog‑like solver using `datafrog`. Replace single‑block analysis with full CFG traversal. Generate constraints from MIR and solve.",
-    "owned_crates": [
-      "glyim-borrowck"
-    ],
-    "locked_interfaces": [
-      "glyim_borrowck::check_borrows",
-      "glyim_mir::Body"
-    ],
-    "tests": {
-      "V08-T01": "Borrow that crosses a basic block (if condition) → no error (run-pass)",
-      "V08-T02": "Mutable borrow of field used after loop → allowed (run-pass)",
-      "V08-T03": "Borrow expires after last use in different block → no error (run-pass)",
-      "V08-T04": "Multiple loans, subset constraints (run-pass)",
-      "V08-T05": "Conflicting loans across blocks → error (compile-fail)"
-    },
-    "mocking": "Integrate with MIR; use `datafrog` for Datalog. Use `glyim_test::snapshot_mir` to verify constraint generation.",
-    "upstream": [],
-    "downstream": [
-      "V09",
-      "V10",
-      "V11"
-    ]
-  },
-  {
-    "id": "V09",
-    "name": "Two‑Phase Borrows",
-    "crate": "glyim-borrowck",
-    "wave": 2,
-    "scope_summary": "Support two‑phase borrows: reservation phase acts as shared, activation at call site. Implement `BorrowKind::Mut` with `allow_two_phase_borrow` flag and checking logic (reservation conflicts, activation point).",
-    "owned_crates": [
-      "glyim-borrowck",
-      "glyim-mir"
-    ],
-    "locked_interfaces": [
-      "glyim_mir::BorrowKind::Mut",
-      "glyim_borrowck::BorrowckCtx"
-    ],
-    "tests": {
-      "V09-T01": "`vec.push(vec.len())` compiles (run-pass)",
-      "V09-T02": "Two‑phase borrow with intervening shared borrow (run-pass)",
-      "V09-T03": "Activation point conflict detection → error (compile-fail)",
-      "V09-T04": "Reservation conflict with mutable borrow → error (compile-fail)"
-    },
-    "mocking": "Extend borrowck with activation points. Use `glyim_test::assert_borrow_error`.",
-    "upstream": [
-      "V08"
-    ],
-    "downstream": [
-      "V11"
-    ]
-  },
-  {
-    "id": "V10",
-    "name": "Move Analysis & Partial Moves",
-    "crate": "glyim-borrowck",
-    "wave": 3,
-    "scope_summary": "Dataflow analysis to track moved‑out paths; prevent use after move; allow partial moves of struct fields (move one field, keep others usable). Implement path‑sensitive move analysis.",
-    "owned_crates": [
-      "glyim-borrowck",
-      "glyim-mir"
-    ],
-    "locked_interfaces": [
-      "glyim_borrowck::BorrowckResult"
-    ],
-    "tests": {
-      "V10-T01": "Move of whole struct, field access → error (compile-fail)",
-      "V10-T02": "Partial move of one field, other fields still usable (run-pass)",
-      "V10-T03": "Move of copy type is not a move (run-pass)",
-      "V10-T04": "Move out of array element → error (compile-fail)",
-      "V10-T05": "Move of field and later reassign → allowed (run-pass)"
-    },
-    "mocking": "Add move dataflow analysis. Use `glyim_test::assert_borrow_error`.",
-    "upstream": [
-      "V08"
-    ],
-    "downstream": [
-      "V11"
-    ]
-  },
-  {
-    "id": "V11",
-    "name": "Drop Checking & Interior Mutability",
-    "crate": "glyim-borrowck",
-    "wave": 4,
-    "scope_summary": "Ensure drop order safety (values cannot be used after drop). Recognise `Cell`/`RefCell` as interior mutability and allow shared mutable borrows. Integrate with borrowck and add drop‑flag tracking.",
-    "owned_crates": [
-      "glyim-borrowck",
-      "glyim-type"
-    ],
-    "locked_interfaces": [
-      "glyim_borrowck::BorrowckCtx::is_copy"
-    ],
-    "tests": {
-      "V11-T01": "Use after drop → error (compile-fail)",
-      "V11-T02": "Interior mutability: `Cell<i32>` allows mutation through shared ref (run-pass)",
-      "V11-T03": "Drop order for structs with mixed fields (run-pass)",
-      "V11-T04": "Drop flags for conditionally dropped values (run-pass)",
-      "V11-T05": "`RefCell` borrow checking at runtime (run-pass)"
-    },
-    "mocking": "Requires `UnsafeCell` detection. Use `glyim_test::assert_layout` to verify `Cell` layout.",
-    "upstream": [
-      "V09",
-      "V10"
-    ],
-    "downstream": [
-      "V18"
-    ]
-  },
-  {
-    "id": "V12",
-    "name": "LLVM Module & Basic Block Lowering",
-    "crate": "glyim-codegen-llvm",
-    "wave": 1,
-    "scope_summary": "Create LLVM module, set target triple and data layout. Translate MIR basic blocks and terminators (Goto, Return, Unreachable, SwitchInt) to LLVM IR. Use placeholders for rvalues (to be filled later).",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [
-      "glyim_codegen::CodegenBackend"
-    ],
-    "tests": {
-      "V12-T01": "Empty function → LLVM function with `ret void` (run-pass via `lli`)",
-      "V12-T02": "Function with `if` → conditional branch (run-pass)",
-      "V12-T03": "SwitchInt on integer → LLVM `switch` (run-pass)",
-      "V12-T04": "Unreachable → LLVM `unreachable` (run-pass)",
-      "V12-T05": "Basic block ordering preserved (run-pass)"
-    },
-    "mocking": "Use real MIR from U02. Write tests that compile to LLVM IR and run via `lli` (LLVM interpreter) to verify behaviour.",
-    "upstream": [],
-    "downstream": [
-      "V13",
-      "V27",
-      "V28",
-      "V29"
-    ]
-  },
-  {
-    "id": "V13",
-    "name": "LLVM Rvalue Lowering (Aggregates & Memory Ops)",
-    "crate": "glyim-codegen-llvm",
-    "wave": 2,
-    "scope_summary": "Lower aggregate rvalues: `Aggregate` (struct/tuple/array literals), `Ref` (address‑of), `Discriminant` (enum tag read), `Len` (array length). Produce LLVM `alloca`, `getelementptr`, `load`/`store`, and constant aggregates.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [
-      "glyim_mir::Rvalue",
-      "glyim_layout::LayoutComputer"
-    ],
-    "tests": {
-      "V13-T01": "Struct literal → LLVM aggregate constant (run-pass)",
-      "V13-T02": "Array literal → LLVM array constant (run-pass)",
-      "V13-T03": "Ref local → `alloca` + pointer (run-pass)",
-      "V13-T04": "Discriminant of enum → read tag field (run-pass)",
-      "V13-T05": "Len of array → constant or `getelementptr` diff (run-pass)"
-    },
-    "mocking": "Uses MIR from U02, layout from V01. Test with `lli`.",
-    "upstream": [
-      "V12"
-    ],
-    "downstream": [
-      "V14",
-      "V15"
-    ]
-  },
-  {
-    "id": "V14",
-    "name": "LLVM Function Calls & ABI",
-    "crate": "glyim-codegen-llvm",
-    "wave": 4,
-    "scope_summary": "Implement `Call` terminator: direct/indirect calls, argument passing according to target ABI (using `LayoutComputer`), return value handling (including sret for large structs), and unwind/cleanup (basic landingpad).",
-    "owned_crates": [
-      "glyim-codegen-llvm",
-      "glyim-layout"
-    ],
-    "locked_interfaces": [
-      "glyim_layout::FnAbi",
-      "glyim_mir::TerminatorKind::Call"
-    ],
-    "tests": {
-      "V14-T01": "Call a defined function → LLVM `call` (run-pass)",
-      "V14-T02": "Call a function pointer (run-pass)",
-      "V14-T03": "Pass struct arguments by value according to ABI (run-pass)",
-      "V14-T04": "Return struct via sret when ABI requires (run-pass)",
-      "V14-T05": "Call with cleanup (landingpad stub) (run-pass)"
-    },
-    "mocking": "Requires `FnAbi` from layout. Use `glyim_test::assert_layout` to verify ABI decisions.",
-    "upstream": [
-      "V13",
-      "V07"
-    ],
-    "downstream": [
-      "V15",
-      "V16"
-    ]
-  },
-  {
-    "id": "V15",
-    "name": "LLVM Drop & Deallocation",
-    "crate": "glyim-codegen-llvm",
-    "wave": 4,
-    "scope_summary": "Generate calls to `core::ptr::drop_in_place` for values going out of scope (Drop terminators). Allocate/deallocate memory using `glyim_alloc`/`glyim_dealloc` (runtime). Implement drop flags and cleanup paths.",
-    "owned_crates": [
-      "glyim-codegen-llvm",
-      "glyim-runtime"
-    ],
-    "locked_interfaces": [
-      "glyim_mir::TerminatorKind::Drop"
-    ],
-    "tests": {
-      "V15-T01": "Drop of local variable at block end (run-pass)",
-      "V15-T02": "Drop of boxed value → deallocation call (run-pass)",
-      "V15-T03": "Drop in panic path (cleanup) (run-pass)",
-      "V15-T04": "Drop order matches declaration order (run-pass)"
-    },
-    "mocking": "Uses runtime alloc/dealloc. Test with `valgrind` or address sanitizer to detect leaks.",
-    "upstream": [
-      "V13",
-      "V14"
-    ],
-    "downstream": [
-      "V17"
-    ]
-  },
-  {
-    "id": "V16",
-    "name": "Core Crate (no_std)",
-    "crate": "core",
-    "wave": 4,
-    "scope_summary": "Implement complete `core` library: `option`, `result`, `iter`, `slice`, `str`, `cell`, `mem`, `ptr`, `ops`, `cmp`, `marker`, `panic`, `hint`, `convert`, `default`. Include all lang items and panic handler. Must be compilable with Glyim and pass all tests.",
-    "owned_crates": [
-      "core"
-    ],
-    "locked_interfaces": [
-      "core::*"
-    ],
-    "tests": {
-      "V16-T01": "`Option::unwrap` works (run-pass)",
-      "V16-T02": "Iterate over slice using `for` loop (requires `IntoIterator`) (run-pass)",
-      "V16-T03": "`panic!` macro prints message and aborts (run-pass with expected abort)",
-      "V16-T04": "`mem::replace`, `mem::swap` (run-pass)",
-      "V16-T05": "`cmp::min`, `cmp::max` (run-pass)",
-      "V16-T06": "`Default` derive macro (run-pass)"
-    },
-    "mocking": "Must compile with Glyim; no mocks. Use `glyim_test::TestRunner` with `--test` flag.",
-    "upstream": [
-      "V01",
-      "V07",
-      "V14"
-    ],
-    "downstream": [
-      "V17",
-      "V18",
-      "V19"
-    ]
-  },
-  {
-    "id": "V17",
-    "name": "Alloc Crate",
-    "crate": "alloc",
-    "wave": 5,
-    "scope_summary": "Implement `alloc` crate: `Vec`, `String`, `Box`, `Rc`, `Arc`, `RawVec`, `alloc::alloc` (global allocator), allocator API (`GlobalAlloc`), `Layout`. Include all methods, tests, and documentation.",
-    "owned_crates": [
-      "alloc"
-    ],
-    "locked_interfaces": [
-      "alloc::vec::Vec",
-      "alloc::string::String",
-      "alloc::boxed::Box"
-    ],
-    "tests": {
-      "V17-T01": "`Vec::push` and indexing (run-pass)",
-      "V17-T02": "`String` concatenation (run-pass)",
-      "V17-T03": "`Box` allocation and deref (run-pass)",
-      "V17-T04": "`Rc` cloning and reference counting (run-pass)",
-      "V17-T05": "Allocator layout and OOM handling (run-pass with expected abort)",
-      "V17-T06": "`Vec::from_iter` (run-pass)"
-    },
-    "mocking": "Depends on core and global allocator (glyim-runtime). Use `glyim_test::TestRunner`.",
-    "upstream": [
-      "V16",
-      "V15"
-    ],
-    "downstream": [
-      "V18"
-    ]
-  },
-  {
-    "id": "V18",
-    "name": "Std Crate (I/O, Files, Threads)",
-    "crate": "std",
-    "wave": 5,
-    "scope_summary": "Build `std` on top of core/alloc: I/O (`std::io`, `std::fs`, `std::net` basics), threading (`std::thread`), environment (`std::env`), time (`std::time`), process (`std::process`). Uses OS syscalls via FFI (extern \"C\" stubs).",
-    "owned_crates": [
-      "std"
-    ],
-    "locked_interfaces": [
-      "std::io::Write",
-      "std::fs::File",
-      "std::thread::spawn",
-      "std::sync::Mutex"
-    ],
-    "tests": {
-      "V18-T01": "Write to stdout via `println!` (run-pass)",
-      "V18-T02": "Read a file from disk (run-pass)",
-      "V18-T03": "Spawn a thread and join (run-pass)",
-      "V18-T04": "Mutex lock and unlock (run-pass)",
-      "V18-T05": "Environment variables (run-pass)"
-    },
-    "mocking": "Uses OS syscalls via `extern \"C\"`. For tests, use actual OS calls (no mocks).",
-    "upstream": [
-      "V16",
-      "V17",
-      "V11",
-      "V14"
-    ],
-    "downstream": [
-      "V20",
-      "V21"
-    ]
-  },
-  {
-    "id": "V19",
-    "name": "Declarative Macros (macro_rules!)",
-    "crate": "glyim-meta",
-    "wave": 4,
-    "scope_summary": "Implement full `macro_rules!` with hygiene: token matching (patterns with `$`), repetition (`$(...)*`), expansion, and macro hygiene (marks, transparency). Support `$crate` and macro export/import.",
-    "owned_crates": [
-      "glyim-meta",
-      "glyim-frontend"
-    ],
-    "locked_interfaces": [
-      "glyim_meta::Expander"
-    ],
-    "tests": {
-      "V19-T01": "`vec![]` macro expands to `Vec::new()` (run-pass)",
-      "V19-T02": "Macro with repetition `$(...)*` (run-pass)",
-      "V19-T03": "Hygiene: macro variables don't leak (run-pass)",
-      "V19-T04": "`$crate` resolves to current crate (run-pass)",
-      "V19-T05": "Macro with multiple arms (pattern matching) (run-pass)",
-      "V19-T06": "Macro recursion limit (run-pass)"
-    },
-    "mocking": "Use real token streams. Use `glyim_test::snapshot_cst` to test macro expansion results.",
-    "upstream": [
-      "V16"
-    ],
-    "downstream": [
-      "V20",
-      "V21"
-    ]
-  },
-  {
-    "id": "V20",
-    "name": "Build Tool (Glyip)",
-    "crate": "glyip",
-    "wave": 5,
-    "scope_summary": "Create Cargo‑like build system: `glyip new`, `glyip build`, `glyip test`, `glyip run`. Support dependency resolution (Cargo.toml), incremental compilation, and crate caching. Integrate with the compiler.",
-    "owned_crates": [
-      "glyip"
-    ],
     "locked_interfaces": [],
     "tests": {
-      "V20-T01": "`glyip new` creates a new crate with correct structure (integration test)",
-      "V20-T02": "`glyip build` compiles a crate with dependencies (integration test)",
-      "V20-T03": "`glyip test` runs tests (integration test)",
-      "V20-T04": "`glyip run` executes binary (integration test)",
-      "V20-T05": "Dependency resolution from index (integration test)"
+      "U04-T01": "Assign with field projection writes to correct offset (run-pass via bytecode interpreter)",
+      "U04-T02": "Ref creates pointer (run-pass)",
+      "U04-T03": "Deref loads from pointer (run-pass)",
+      "U04-T04": "Drop calls `glyim_drop_in_place` (run-pass)",
+      "U04-T05": "Repeat builds array constant (run-pass)",
+      "U04-T06": "Float constant emits correctly (run-pass)"
     },
-    "mocking": "Uses existing compiler via CLI. Write integration tests in `tests/` directory of the `glyip` crate.",
+    "mocking": "Bytecode backend is self‑contained; test via `glyim_codegen::BytecodeBackend::generate_function`.",
     "upstream": [
-      "V18",
-      "V19"
+      "U02"
     ],
     "downstream": []
   },
   {
-    "id": "V21",
-    "name": "Language Server Enhancements",
+    "id": "U05",
+    "name": "LLVM Backend – Core Types & Aggregates",
+    "crate": "glyim-codegen-llvm",
+    "wave": 0,
+    "scope_summary": "Remove stubs for type lowering: map all TyKinds to proper LLVM types (error → i64, floats → f32/f64, aggregates → structs/arrays). Implement `lower_aggregate` for ADTs and closures, `lower_len`, `lower_repeat`, and fix unknown TyKind fallback.",
+    "owned_crates": [
+      "glyim-codegen-llvm"
+    ],
+    "locked_interfaces": [],
+    "tests": {
+      "U05-T01": "Struct type lowered to LLVM struct (run-pass via lli)",
+      "U05-T02": "Array literal lowered to LLVM constant array (run-pass)",
+      "U05-T03": "Len of array returns correct length (run-pass)",
+      "U05-T04": "Repeat rvalue builds array with repeated element (run-pass)",
+      "U05-T05": "Float type uses f32/f64, not i64 (run-pass)"
+    },
+    "mocking": "Use real MIR from pipeline, compile to LLVM IR, run with `lli` to verify.",
+    "upstream": [
+      "U02"
+    ],
+    "downstream": [
+      "U06"
+    ]
+  },
+  {
+    "id": "U06",
+    "name": "LLVM Backend – Operators & Casts",
+    "crate": "glyim-codegen-llvm",
+    "wave": 0,
+    "scope_summary": "Remove stubs for binary and unary ops on floats, `Not` on float, `Deref` on float, and `Cast` kinds (IntToFloat, FloatToInt, PtrToPtr). Implement all missing float arithmetic and comparisons.",
+    "owned_crates": [
+      "glyim-codegen-llvm"
+    ],
+    "locked_interfaces": [],
+    "tests": {
+      "U06-T01": "Float addition (fadd) works (run-pass via lli)",
+      "U06-T02": "Float comparison (oeq) works (run-pass)",
+      "U06-T03": "IntToFloat cast (i32 -> f64) works (run-pass)",
+      "U06-T04": "FloatToInt cast (f64 -> i32) truncates (run-pass)",
+      "U06-T05": "Logical `!` on float is rejected (compile-fail)"
+    },
+    "mocking": "Same as U05; test with `lli`.",
+    "upstream": [
+      "U05"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "U07",
+    "name": "LSP Server – Core Features",
     "crate": "glyim-lsp",
-    "wave": 6,
-    "scope_summary": "Implement full LSP capabilities: go‑to‑definition, hover, completions (with semantic tokens), document symbols, diagnostics on change, and workspace symbol search. Use the compiler's incremental compilation database.",
+    "wave": 0,
+    "scope_summary": "Implement `SymbolIndex::build_from_hir` and `ReferenceGraph::build_from_hir` to populate symbol and reference databases. Also implement `provide_completions`, `goto_definition`, `hover`, `document_symbols`, `workspace_symbols` (already stubbed, need full logic).",
     "owned_crates": [
       "glyim-lsp"
     ],
-    "locked_interfaces": [
-      "glyim_lsp::LspState"
-    ],
+    "locked_interfaces": [],
     "tests": {
-      "V21-T01": "Goto definition for local variable (LSP test)",
-      "V21-T02": "Hover shows type information (LSP test)",
-      "V21-T03": "Completion for struct fields (LSP test)",
-      "V21-T04": "Diagnostics update on didChange (LSP test)",
-      "V21-T05": "Workspace symbol search (fuzzy) (LSP test)"
+      "U07-T01": "SymbolIndex built from HIR contains all definitions (unit test)",
+      "U07-T02": "Goto definition returns correct location (LSP test)",
+      "U07-T03": "Hover shows type signature (LSP test)",
+      "U07-T04": "Completions include local variables and functions (LSP test)",
+      "U07-T05": "Workspace symbol search fuzzy matches (LSP test)"
     },
-    "mocking": "Use Database to query analysis. Use `lsp-types` to simulate LSP requests.",
+    "mocking": "Use `glyim_test::mock::TestDbBuilder` to create a database, then call LSP methods.",
     "upstream": [
-      "V18",
-      "V19"
+      "U01",
+      "U02"
     ],
-    "downstream": []
-  },
-  {
-    "id": "V22",
-    "name": "Mono Item Root Discovery",
-    "crate": "glyim-lower",
-    "wave": 1,
-    "scope_summary": "Implement mono item root discovery: scan crate for entry points (`main`, `#[start]`, `#[no_mangle]` (exported) functions, and reachable statics). Build initial queue of `MonoItem`s (functions, constants, statics).",
-    "owned_crates": [
-      "glyim-lower",
-      "glyim-mir",
-      "glyim-type"
-    ],
-    "locked_interfaces": [
-      "glyim_lower::MonoItem"
-    ],
-    "tests": {
-      "V22-T01": "Crate with `main` function → root item detected (run-pass)",
-      "V22-T02": "`#[no_mangle] pub extern \"C\" fn` → root item (run-pass)",
-      "V22-T03": "Static with `#[used]` → root item (run-pass)",
-      "V22-T04": "No entry points → no mono items (warning) (compile-pass)"
-    },
-    "mocking": "Uses real HIR and MIR. Use `glyim_test::snapshot_mir` to verify mono item list.",
-    "upstream": [],
     "downstream": [
-      "V23"
+      "U08"
     ]
   },
   {
-    "id": "V23",
-    "name": "Mono Item Graph Traversal & Collection",
-    "crate": "glyim-lower",
-    "wave": 1,
-    "scope_summary": "Implement mono item graph traversal: recursively follow function calls, drop glue, and constant references from collected items. Use worklist algorithm, avoid infinite recursion, and collect all required instantiations.",
+    "id": "U08",
+    "name": "LSP Server – Advanced Features",
+    "crate": "glyim-lsp",
+    "wave": 0,
+    "scope_summary": "Implement remaining LSP stubs: `code_action`, `folding_ranges`, `format_document`, `rename`. Also implement `provide_folding_ranges` and `provide_code_actions` (quick fixes).",
     "owned_crates": [
-      "glyim-lower",
-      "glyim-mir",
-      "glyim-type"
-    ],
-    "locked_interfaces": [
-      "glyim_lower::MonoCtx"
-    ],
-    "tests": {
-      "V23-T01": "Call graph: `main` calls `foo<T>` with concrete T → `foo<T>` added (run-pass)",
-      "V23-T02": "Recursive function → no duplicate items (run-pass)",
-      "V23-T03": "Drop glue for structs → collected (run-pass)",
-      "V23-T04": "Constant used in generic → instantiated (run-pass)"
-    },
-    "mocking": "Uses MIR bodies and substitution. Use `glyim_test::snapshot_mir` to verify final item set.",
-    "upstream": [
-      "V22"
-    ],
-    "downstream": [
-      "V24",
-      "V25",
-      "V26"
-    ]
-  },
-  {
-    "id": "V24",
-    "name": "Mono Item Cache & Deduplication",
-    "crate": "glyim-lower",
-    "wave": 2,
-    "scope_summary": "Implement cache that maps `(DefId, Substitution)` to `MonoItemId`. Ensure each instantiation is processed exactly once across the crate. Use hash consing for substitutions.",
-    "owned_crates": [
-      "glyim-lower"
-    ],
-    "locked_interfaces": [
-      "glyim_lower::MonoCtx"
-    ],
-    "tests": {
-      "V24-T01": "Same generic instantiation called twice → only one mono item (run-pass)",
-      "V24-T02": "Different substitutions → distinct items (run-pass)",
-      "V24-T03": "Cache survives across multiple worklist iterations (run-pass)",
-      "V24-T04": "Zero memory leaks (no duplicate `Arc<Body>`) (run under valgrind)"
-    },
-    "mocking": "Work with real `DefId`. Use `glyim_test::assert_mir` to compare mono item counts.",
-    "upstream": [
-      "V23"
-    ],
-    "downstream": [
-      "V25",
-      "V33"
-    ]
-  },
-  {
-    "id": "V25",
-    "name": "Codegen Unit Partitioning",
-    "crate": "glyim-lower",
-    "wave": 2,
-    "scope_summary": "Partition mono items into codegen units (CGUs) for parallel code generation. Strategy: function‑level partitioning, collect items by source module, optionally by call graph to minimise cross‑CGU references.",
-    "owned_crates": [
-      "glyim-lower"
+      "glyim-lsp"
     ],
     "locked_interfaces": [],
     "tests": {
-      "V25-T01": "Single module → one CGU (run-pass)",
-      "V25-T02": "Multiple modules → separate CGUs (run-pass)",
-      "V25-T03": "Cross‑module call edge does not force CGU merge (run-pass)",
-      "V25-T04": "Large crate → multiple CGUs (configurable limit) (run-pass)"
+      "U08-T01": "Code action suggests removing unused import (LSP test)",
+      "U08-T02": "Folding ranges are generated for braces (LSP test)",
+      "U08-T03": "Format document runs `cargo fmt` and returns edits (LSP test)",
+      "U08-T04": "Rename updates all references (LSP test)"
     },
-    "mocking": "Uses collected mono items. Use `glyim_test::snapshot` to inspect CGU partitions.",
+    "mocking": "Same as U07.",
     "upstream": [
-      "V23",
-      "V24"
-    ],
-    "downstream": [
-      "V33"
-    ]
-  },
-  {
-    "id": "V26",
-    "name": "Post‑Monomorphization Checks",
-    "crate": "glyim-lower",
-    "wave": 3,
-    "scope_summary": "Run lint‑like checks after monomorphization: detect unused generic parameters (polymorphisation light), detect mono item size blow‑up, and emit errors for unsized locals in instantiated functions.",
-    "owned_crates": [
-      "glyim-lower",
-      "glyim-typeck"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "V26-T01": "Generic parameter unused → warning (compile-pass with warning)",
-      "V26-T02": "Monomorphization with unsized local → error (compile-fail)",
-      "V26-T03": "Large mono item set → warning (compile-pass)"
-    },
-    "mocking": "Requires MIR after instantiation. Use `glyim_test::assert_diag_contains`.",
-    "upstream": [
-      "V23"
-    ],
-    "downstream": [
-      "V31"
-    ]
-  },
-  {
-    "id": "V27",
-    "name": "LLVM ABI‑Aware Function Call Lowering",
-    "crate": "glyim-codegen-llvm",
-    "wave": 3,
-    "scope_summary": "Use `glyim_layout::FnAbi` to lower function calls and arguments correctly. Implement by‑value passing, indirect (sret) returns, and handling of homogenous aggregates (HVA/HFA) for ARM/x86.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [
-      "glyim_layout::FnAbi"
-    ],
-    "tests": {
-      "V27-T01": "Function returning large struct → sret parameter (run-pass)",
-      "V27-T02": "Argument passing with ABI‑specified alignment (run-pass)",
-      "V27-T03": "Variadic function calls (C‑style) (run-pass)",
-      "V27-T04": "ARM HVA: struct of four floats passed in SIMD regs (run-pass)"
-    },
-    "mocking": "Uses `FnAbi` from layout crate. Test with `lli` and verify argument registers.",
-    "upstream": [
-      "V12",
-      "V13"
-    ],
-    "downstream": [
-      "V14"
-    ]
-  },
-  {
-    "id": "V28",
-    "name": "LLVM Rvalue Lowering (Operators & Casts)",
-    "crate": "glyim-codegen-llvm",
-    "wave": 4,
-    "scope_summary": "Lower remaining rvalues: `BinaryOp` (all integer, float, boolean, bitwise ops), `UnaryOp` (not, neg), `Cast` (int↔int, int↔float, pointer casts). Use LLVM instructions (add, sub, mul, udiv, sdiv, fadd, etc.) and handle overflow checks.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [
-      "glyim_mir::Rvalue",
-      "glyim_type::Ty"
-    ],
-    "tests": {
-      "V28-T01": "Integer arithmetic (+, -, *, /, %) (run-pass)",
-      "V28-T02": "Comparisons (==, !=, <, >, <=, >=) (run-pass)",
-      "V28-T03": "Logical operators (&&, ||) via branches (run-pass)",
-      "V28-T04": "Bitwise ops (&, |, ^, <<, >>) (run-pass)",
-      "V28-T05": "Cast int to float and vice versa (run-pass)",
-      "V28-T06": "Cast pointer to integer and back (run-pass)",
-      "V28-T07": "Overflow checks for `+` in debug mode → panic (run-pass with abort)"
-    },
-    "mocking": "Uses real types and values. Test with `lli`.",
-    "upstream": [
-      "V12"
-    ],
-    "downstream": [
-      "V14",
-      "V15"
-    ]
-  },
-  {
-    "id": "V29",
-    "name": "LLVM SwitchInt & Switch Target Lowering",
-    "crate": "glyim-codegen-llvm",
-    "wave": 4,
-    "scope_summary": "Lower `SwitchInt` terminators to LLVM `switch` instruction, including large number of branches and fallback (otherwise). Optimise small switches (2‑3 cases) to `if` ladder when beneficial.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [
-      "glyim_mir::SwitchTargets"
-    ],
-    "tests": {
-      "V29-T01": "Switch over small integer range → LLVM switch (run-pass)",
-      "V29-T02": "Switch with missing values → default branch (run-pass)",
-      "V29-T03": "Switch on bool → `icmp` + conditional branch (run-pass)",
-      "V29-T04": "Large switch (20+ branches) → jump table (run-pass)"
-    },
-    "mocking": "Uses MIR switch constructs. Test with `lli` and verify branch behaviour.",
-    "upstream": [
-      "V12"
-    ],
-    "downstream": [
-      "V14"
-    ]
-  },
-  {
-    "id": "V30",
-    "name": "LLVM Debug Info (DWARF) Generation",
-    "crate": "glyim-codegen-llvm",
-    "wave": 4,
-    "scope_summary": "Generate DWARF debug info: compile unit, subprograms, lexical blocks, variables (locations), line numbers. Use LLVM DI builder. Support source file mappings and `-g` flag.",
-    "owned_crates": [
-      "glyim-codegen-llvm",
-      "glyim-span"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "V30-T01": "Compile with `-g` → debug info in object file (run‑pass, check with `llvm-dwarfdump`)",
-      "V30-T02": "Breakpoint on function entry works (run under `lldb` or `gdb`)",
-      "V30-T03": "Variable location shown in debugger (run under debugger)",
-      "V30-T04": "Line number stepping matches source (run under debugger)"
-    },
-    "mocking": "LLVM DI builder. Use `llvm-dwarfdump` to verify metadata.",
-    "upstream": [
-      "V12",
-      "V13",
-      "V14",
-      "V15",
-      "V27",
-      "V28",
-      "V29"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "V31",
-    "name": "Polymorphization (Optional Advanced)",
-    "crate": "glyim-lower",
-    "wave": 5,
-    "scope_summary": "Implement polymorphization: detect generic parameters not used in the function body and avoid monomorphizing over them, reducing code size. Follow rustc's defunct `-Zpolymorphize` design. Optional – can be skipped for v0.2.0.",
-    "owned_crates": [
-      "glyim-lower",
-      "glyim-typeck"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "V31-T01": "Function `fn foo<T>(x: i32)` where T unused → not monomorphized over T (run-pass)",
-      "V31-T02": "Function `fn bar<T>(x: T)` where T used → monomorphized (run-pass)",
-      "V31-T03": "Polymorphization across multiple calls keeps consistency (run-pass)",
-      "V31-T04": "Correctness with drop glue (may still need T for drop) (run-pass)"
-    },
-    "mocking": "Uses mono item graph. Use `glyim_test::snapshot` to compare mono item counts with and without flag.",
-    "upstream": [
-      "V23",
-      "V26"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "V32",
-    "name": "LLVM Optimisation Pipeline Integration",
-    "crate": "glyim-codegen-llvm",
-    "wave": 6,
-    "scope_summary": "Integrate LLVM’s optimisation pipeline: set optimisation level (`-O0`/`-O1`/`-O2`/`-O3`), run corresponding LLVM passes (inlining, mem2reg, loop optimisations, etc.). Use `LLVMPassManagerBuilder` or Inkwell’s `OptimizationLevel`.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "V32-T01": "`-O0` → no optimisations, fast compile (run-pass)",
-      "V32-T02": "`-O2` → inlining and mem2reg performed (run-pass, check generated assembly)",
-      "V32-T03": "`-Oz` → optimise for size (run-pass)",
-      "V32-T04": "LTO support (fat LTO) across CGUs (run-pass)"
-    },
-    "mocking": "LLVM pass manager. Use `glyim_test::snapshot` to compare assembly output.",
-    "upstream": [
-      "V12",
-      "V13",
-      "V14",
-      "V15",
-      "V27",
-      "V28",
-      "V29",
-      "V30"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "V33",
-    "name": "End‑to‑End Monomorphization Pipeline Integration",
-    "crate": "glyim-pipeline",
-    "wave": 6,
-    "scope_summary": "Integrate mono item collection, caching, codegen unit partitioning into the main pipeline. Replace placeholder with real monomorphization. Enable parallel code generation per CGU using rayon. Ensure error propagation and diagnostics.",
-    "owned_crates": [
-      "glyim-pipeline",
-      "glyim-db"
-    ],
-    "locked_interfaces": [
-      "glyim_pipeline::Pipeline::compile_file"
-    ],
-    "tests": {
-      "V33-T01": "Generic function used from multiple crates → mono items collected (run-pass)",
-      "V33-T02": "Parallel codegen over CGUs → correct output (run-pass)",
-      "V33-T03": "Cached mono items reused across compilations (run-pass)",
-      "V33-T04": "End‑to‑end compilation of generic library + binary (run-pass)"
-    },
-    "mocking": "Real Database and backend. Use `glyim_test::TestRunner` with `--test` flag.",
-    "upstream": [
-      "V24",
-      "V25",
-      "V14",
-      "V15",
-      "V16"
+      "U07"
     ],
     "downstream": []
   }
