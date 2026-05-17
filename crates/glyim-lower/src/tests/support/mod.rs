@@ -1,5 +1,5 @@
+use crate::{AdtDef, AdtKind, LowerCtx};
 use glyim_core::def_id::AdtId;
-use glyim_lower::{AdtDef, AdtKind, LowerCtx};
 use glyim_span::Span;
 use glyim_type::TyCtx;
 use std::cell::RefCell;
