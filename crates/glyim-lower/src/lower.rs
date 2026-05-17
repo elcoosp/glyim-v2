@@ -2,6 +2,12 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;
 use glyim_type::*;
 use glyim_typeck::thir;
+use glyim_core::IndexVec;
+use glyim_core::Name;
+use glyim_core::primitives::Mutability;
+use glyim_mir::{BasicBlockIdx, LocalIdx, ProjectionElem, CastKind};
+use std::collections::HashMap;
+use glyim_core::def_id::AdtId;
 
 #[derive(Clone, Debug)]
 pub struct LowerResult {
@@ -42,7 +48,7 @@ struct MirBuilder<'a> {
     owner: glyim_core::def_id::DefId,
     span: Span,
     diagnostics: Vec<GlyimDiagnostic>,
-    var_map: std::collections::HashMap<Name, LocalIdx>,
+    var_map: HashMap<Name, LocalIdx>,
 
     current_block: Option<BasicBlockIdx>,
 }
@@ -129,6 +135,7 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
+    #[allow(unused_variables)]
     fn lower_stmt(&mut self, stmt: &thir::Stmt) {
         match stmt {
             thir::Stmt::Let {
@@ -172,6 +179,7 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
+    #[allow(unused_variables)]
     fn lower_expr_to_rvalue(&mut self, expr: &thir::Expr) -> glyim_mir::Rvalue {
         match &expr.kind {
             thir::ExprKind::Literal(lit) => {
