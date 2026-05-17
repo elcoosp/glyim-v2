@@ -1,135 +1,14 @@
+use crate::builder::MirBuilder;
+use crate::lower_terminator::TerminatorExt;
+use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::Span;
+use glyim_mir::{self, BasicBlockIdx, LocalIdx};
+use glyim_mir::{CastKind, ProjectionElem};
 use glyim_type::*;
 use glyim_typeck::thir;
 
-#[derive(Clone, Debug)]
-pub struct LowerResult {
-    pub body: glyim_mir::Body,
-    pub diagnostics: Vec<GlyimDiagnostic>,
-}
-
-pub trait LowerCtx {
-    fn ty_ctx(&self) -> &TyCtx;
-    fn adt_def(&self, id: glyim_core::def_id::AdtId) -> AdtDef;
-    fn push_span(&self, span: Span);
-    fn pop_span(&self);
-}
-
-pub struct AdtDef {
-    pub variants: Vec<AdtVariant>,
-    pub kind: AdtKind,
-}
-
-pub struct AdtVariant {
-    pub fields: Vec<Ty>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AdtKind {
-    Struct,
-    Enum,
-    Union,
-}
-
-#[allow(dead_code)]
-struct MirBuilder<'a> {
-    _ctx: &'a dyn LowerCtx,
-    locals: IndexVec<LocalIdx, glyim_mir::LocalDecl>,
-    basic_blocks: IndexVec<BasicBlockIdx, glyim_mir::BasicBlockData>,
-    arg_count: usize,
-    return_ty: Ty,
-    owner: glyim_core::def_id::DefId,
-    span: Span,
-    diagnostics: Vec<GlyimDiagnostic>,
-    var_map: std::collections::HashMap<Name, LocalIdx>,
-
-    current_block: Option<BasicBlockIdx>,
-}
-
 impl<'a> MirBuilder<'a> {
-    fn new(ctx: &'a dyn LowerCtx, thir: &thir::Body) -> Self {
-        let mut locals = IndexVec::new();
-        // _0 is return place
-        locals.push(glyim_mir::LocalDecl {
-            ty: thir.return_ty,
-            mutability: Mutability::Mut,
-            source_info: glyim_mir::SourceInfo::new(thir.span),
-        });
-
-        Self {
-            _ctx: ctx,
-            locals,
-            basic_blocks: IndexVec::new(),
-            arg_count: thir.params.len(),
-            return_ty: thir.return_ty,
-            owner: thir.owner,
-            span: thir.span,
-            diagnostics: Vec::new(),
-            var_map: std::collections::HashMap::new(),
-            current_block: None,
-        }
-    }
-
-    fn new_block(&mut self) -> BasicBlockIdx {
-        self.basic_blocks.push(glyim_mir::BasicBlockData {
-            statements: Vec::new(),
-            terminator: glyim_mir::Terminator {
-                kind: glyim_mir::TerminatorKind::Unreachable,
-                source_info: glyim_mir::SourceInfo::new(self.span),
-            },
-            is_cleanup: false,
-        })
-    }
-
-    fn alloc_local(&mut self, ty: Ty, mutability: Mutability, span: Span) -> LocalIdx {
-        self.locals.push(glyim_mir::LocalDecl {
-            ty,
-            mutability,
-            source_info: glyim_mir::SourceInfo::new(span),
-        })
-    }
-
-    fn push_stmt(&mut self, stmt: glyim_mir::StatementKind, span: Span) {
-        if let Some(bb) = self.current_block {
-            self.basic_blocks[bb].statements.push(glyim_mir::Statement {
-                kind: stmt,
-                source_info: glyim_mir::SourceInfo::new(span),
-            });
-        }
-    }
-
-    fn terminate(&mut self, kind: glyim_mir::TerminatorKind, span: Span) {
-        if let Some(bb) = self.current_block {
-            self.basic_blocks[bb].terminator = glyim_mir::Terminator {
-                kind,
-                source_info: glyim_mir::SourceInfo::new(span),
-            };
-            self.current_block = None;
-        }
-    }
-
-    fn lower_body(&mut self, thir: &thir::Body) {
-        let entry = self.new_block();
-        self.current_block = Some(entry);
-
-        for param in &thir.params {
-            let local = self.alloc_local(param.ty, Mutability::Not, param.span);
-            if let thir::PatternKind::Binding { name, .. } = &param.pat.kind {
-                self.var_map.insert(*name, local);
-            }
-        }
-
-        for stmt in &thir.stmts {
-            self.lower_stmt(stmt);
-        }
-
-        if self.current_block.is_some() {
-            self.terminate(glyim_mir::TerminatorKind::Return, thir.span);
-        }
-    }
-
-    fn lower_stmt(&mut self, stmt: &thir::Stmt) {
+    pub fn lower_stmt(&mut self, stmt: &thir::Stmt) {
         match stmt {
             thir::Stmt::Let {
                 name,
@@ -139,19 +18,19 @@ impl<'a> MirBuilder<'a> {
                 pat,
                 ..
             } => {
-                let init_local = if let Some(init_expr) = init {
-                    let temp_local = self.alloc_local(*ty, Mutability::Mut, *span);
-                    self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), *span);
+                let _ = pat;
+                tracing::warn!("STUB: pattern destructuring not implemented (pattern ignored)");
+                let local = self.alloc_local(*ty, Mutability::Mut, *span);
+                self.var_map.insert(*name, local);
+                self.push_stmt(glyim_mir::StatementKind::StorageLive(local), *span);
+
+                if let Some(init_expr) = init {
                     let rvalue = self.lower_expr_to_rvalue(init_expr);
                     self.push_stmt(
-                        glyim_mir::StatementKind::Assign(glyim_mir::Place::new(temp_local), rvalue),
+                        glyim_mir::StatementKind::Assign(glyim_mir::Place::new(local), rvalue),
                         *span,
                     );
-                    Some(temp_local)
-                } else {
-                    None
-                };
-                self.bind_pattern(pat, init_local, *span);
+                }
             }
             thir::Stmt::Assign { lhs, rhs, span } => {
                 let place = self.lower_expr_to_place(lhs);
@@ -168,11 +47,12 @@ impl<'a> MirBuilder<'a> {
             }
             thir::Stmt::Expr { expr } => {
                 let _ = self.lower_expr_to_rvalue(expr);
+                tracing::warn!("STUB: expr stmt dropped");
             }
         }
     }
 
-    fn lower_expr_to_rvalue(&mut self, expr: &thir::Expr) -> glyim_mir::Rvalue {
+    pub fn lower_expr_to_rvalue(&mut self, expr: &thir::Expr) -> glyim_mir::Rvalue {
         match &expr.kind {
             thir::ExprKind::Literal(lit) => {
                 let mir_const = match lit {
@@ -191,14 +71,6 @@ impl<'a> MirBuilder<'a> {
                         ty: expr.ty,
                         span: expr.span,
                     },
-                    thir::Literal::String(_) | thir::Literal::Char(_) => {
-                        tracing::warn!("unsupported literal type, emitting error constant");
-                        glyim_mir::MirConst {
-                            kind: glyim_mir::MirConstKind::Error,
-                            ty: expr.ty,
-                            span: expr.span,
-                        }
-                    }
                     _ => {
                         tracing::warn!("STUB: unsupported literal");
                         glyim_mir::MirConst {
@@ -223,13 +95,16 @@ impl<'a> MirBuilder<'a> {
                 let op_val = self.lower_expr_to_operand(operand);
                 glyim_mir::Rvalue::UnaryOp(*op, op_val)
             }
-            thir::ExprKind::Ref { mutability, operand } => {
+            thir::ExprKind::Ref {
+                mutability,
+                operand,
+            } => {
                 let place = self.lower_expr_to_place(operand);
                 let borrow_kind = match mutability {
-                    Mutability::Mut => glyim_mir::BorrowKind::Mut {
+                    glyim_core::primitives::Mutability::Mut => glyim_mir::BorrowKind::Mut {
                         allow_two_phase_borrow: false,
                     },
-                    Mutability::Not => glyim_mir::BorrowKind::Shared,
+                    glyim_core::primitives::Mutability::Not => glyim_mir::BorrowKind::Shared,
                 };
                 glyim_mir::Rvalue::Ref(place, borrow_kind)
             }
@@ -258,7 +133,11 @@ impl<'a> MirBuilder<'a> {
                 self.current_block = Some(next_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
-            thir::ExprKind::If { cond, then_branch, else_branch } => {
+            thir::ExprKind::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 let cond_op = self.lower_expr_to_operand(cond);
 
                 let then_bb = self.new_block();
@@ -394,10 +273,7 @@ impl<'a> MirBuilder<'a> {
 
                 self.current_block = Some(header_bb);
                 let cond_op = self.lower_expr_to_operand(cond);
-                let targets = glyim_mir::SwitchTargets::new(
-                    Box::new([(1, body_bb)]),
-                    exit_bb,
-                );
+                let targets = glyim_mir::SwitchTargets::new(Box::new([(1, body_bb)]), exit_bb);
                 self.terminate(
                     glyim_mir::TerminatorKind::SwitchInt {
                         discr: cond_op,
@@ -408,7 +284,7 @@ impl<'a> MirBuilder<'a> {
                 );
 
                 self.current_block = Some(body_bb);
-                let _ = self.lower_expr_to_rvalue(body);
+                let _body_rval = self.lower_expr_to_rvalue(body);
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: header_bb },
                     body.span,
@@ -442,8 +318,12 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-            thir::ExprKind::Field { receiver, field, ty: field_ty } => {
-                let base_place = self.lower_expr_to_place(receiver);
+            thir::ExprKind::Field {
+                receiver,
+                field,
+                ty: field_ty,
+            } => {
+                let _base_place = self.lower_expr_to_place(receiver);
                 let adt_id = match self._ctx.ty_ctx().ty_kind(receiver.ty) {
                     TyKind::Adt(adt_id, _) => *adt_id,
                     _ => {
@@ -461,28 +341,19 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
-                let adt_def = self._ctx.adt_def(adt_id);
-                let variant = &adt_def.variants[0];
-                let field_idx = variant.fields.iter().enumerate()
-                    .find(|(_, _ty)| false)
-                    .map(|(idx, _)| idx);
-                let field_idx = match field_idx {
-                    Some(idx) => idx,
-                    None => {
-                        tracing::warn!("STUB: field name resolution not available, using field index 0");
-                        0
-                    }
-                };
-                let projection = {
-                    let mut proj = base_place.projection.to_vec();
-                    proj.push(glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(field_idx as u32)));
-                    proj.into_boxed_slice()
-                };
-                let place = glyim_mir::Place {
-                    local: base_place.local,
-                    projection,
-                };
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+                let _adt_def = self._ctx.adt_def(adt_id);
+                let _variant = &_adt_def.variants[0];
+                let err_msg = format!(
+                    "field `{:?}` resolution not implemented (need HIR access)",
+                    field
+                );
+                self.diagnostics
+                    .push(GlyimDiagnostic::type_error(expr.span, err_msg));
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Error,
+                    ty: *field_ty,
+                    span: expr.span,
+                }))
             }
             thir::ExprKind::Index { base, index } => {
                 let base_place = self.lower_expr_to_place(base);
@@ -539,7 +410,7 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
-    fn lower_expr_to_operand(&mut self, expr: &thir::Expr) -> glyim_mir::Operand {
+    pub fn lower_expr_to_operand(&mut self, expr: &thir::Expr) -> glyim_mir::Operand {
         match &expr.kind {
             thir::ExprKind::Literal(_) | thir::ExprKind::FnRef(_) => {
                 if let glyim_mir::Rvalue::Use(op) = self.lower_expr_to_rvalue(expr) {
@@ -565,7 +436,7 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
-    fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
+    pub fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
                 let local = LocalIdx::from_raw(var_id.to_raw());
@@ -576,75 +447,5 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Place::new(LocalIdx::from_raw(0))
             }
         }
-    }
-
-    fn bind_pattern(&mut self, pat: &thir::Pattern, init_local: Option<LocalIdx>, span: Span) {
-        match &pat.kind {
-            thir::PatternKind::Binding { name, mutability, subpattern } => {
-                let local = self.alloc_local(pat.ty, *mutability, span);
-                self.var_map.insert(*name, local);
-                self.push_stmt(glyim_mir::StatementKind::StorageLive(local), span);
-                if let Some(init) = init_local {
-                    let place = glyim_mir::Place::new(local);
-                    let rvalue = glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(glyim_mir::Place::new(init)));
-                    self.push_stmt(glyim_mir::StatementKind::Assign(place, rvalue), span);
-                }
-                if let Some(sub) = subpattern {
-                    self.bind_pattern(sub, Some(local), span);
-                }
-            }
-            thir::PatternKind::Wild => {
-                // Evaluate init for side effects if present
-                let _ = init_local;
-            }
-            thir::PatternKind::Tuple(fields) => {
-                if let Some(init) = init_local {
-                    let init_place = glyim_mir::Place::new(init);
-                    for (idx, field_pat) in fields.iter().enumerate() {
-                        let field_proj = {
-                            let mut proj = init_place.projection.to_vec();
-                            proj.push(glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(idx as u32)));
-                            proj.into_boxed_slice()
-                        };
-                        let field_place = glyim_mir::Place {
-                            local: init_place.local,
-                            projection: field_proj,
-                        };
-                        let temp_local = self.alloc_local(field_pat.ty, Mutability::Not, span);
-                        self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
-                        self.push_stmt(
-                            glyim_mir::StatementKind::Assign(
-                                glyim_mir::Place::new(temp_local),
-                                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(field_place)),
-                            ),
-                            span,
-                        );
-                        self.bind_pattern(field_pat, Some(temp_local), span);
-                    }
-                } else {
-                    tracing::warn!("STUB: tuple pattern without initializer");
-                }
-            }
-            _ => {
-                tracing::warn!("STUB: pattern destructuring for non-binding pattern not implemented: {:?}", pat.kind);
-            }
-        }
-    }
-}
-
-pub fn lower_body(ctx: &dyn LowerCtx, thir: &thir::Body) -> LowerResult {
-    let mut builder = crate::builder::MirBuilder::new(ctx, thir);
-    builder.lower_body(thir);
-
-    let mut body = glyim_mir::Body::dummy(builder.owner);
-    body.basic_blocks = builder.basic_blocks;
-    body.locals = builder.locals;
-    body.arg_count = builder.arg_count;
-    body.return_ty = builder.return_ty;
-    body.span = builder.span;
-
-    LowerResult {
-        body,
-        diagnostics: builder.diagnostics,
     }
 }
