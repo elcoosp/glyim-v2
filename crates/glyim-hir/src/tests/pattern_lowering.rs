@@ -1,14 +1,18 @@
 use glyim_core::interner::Interner;
-use glyim_syntax::{GreenNode, GreenToken, SyntaxKind, SyntaxNode};
+use glyim_span::FileId;
+use glyim_frontend::parse_to_syntax;
+use glyim_syntax::SyntaxKind;
 use crate::lower::lower_pat;
 use crate::Pat;
 
-fn unknown_pat_node() -> SyntaxNode {
-    // GreenNode expects rowan::green::SyntaxKind, but we don't need a real node for this test.
-    // Instead, just create a dummy node with Error kind using the correct API.
-    // Simpler: use a SyntaxNode from a dummy parse.
-    let green = GreenNode::new(glyim_syntax::GlyimLang::kind_to_raw(SyntaxKind::Error), vec![]);
-    SyntaxNode::new_root(green)
+fn unknown_pat_node() -> glyim_syntax::SyntaxNode {
+    // Create a minimal error node by parsing something that produces an error node
+    let parse = parse_to_syntax("!!!", FileId::from_raw(1));
+    // The root may contain an error node; we'll just take the first node that is Error kind
+    parse.root
+        .children()
+        .find(|n| n.kind() == SyntaxKind::Error)
+        .unwrap_or_else(|| parse.root.clone()) // fallback to root which might be Error
 }
 
 #[test]

@@ -2,14 +2,14 @@ use glyim_core::interner::Interner;
 use glyim_span::FileId;
 use glyim_frontend::parse_to_syntax;
 use glyim_syntax::SyntaxNode;
-use crate::lower::lower_expr;
+use crate::lower::{lower_expr, is_expr_node};
 use crate::{Expr, Pat, TypeRef};
 
 fn parse_expr(src: &str) -> SyntaxNode {
-    let parse = parse_to_syntax(src, FileId::from_raw(1)).unwrap();
+    let parse = parse_to_syntax(src, FileId::from_raw(1));
     parse.root
         .children()
-        .find(|n| n.kind().is_expr())
+        .find(|n| is_expr_node(n))
         .expect("expr node not found")
         .clone()
 }
@@ -71,7 +71,7 @@ fn test_lower_range_expr() {
         Expr::Range { start, end, inclusive } => {
             assert!(start.is_some());
             assert!(end.is_some());
-            assert!(!*inclusive);
+            assert!(!inclusive);
         }
         _ => panic!("expected Range expr"),
     }

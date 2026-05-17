@@ -11,4 +11,6 @@ glyim-span = { workspace = true }
 
 
 [dev-dependencies]
+rowan = { workspace = true }
+glyim-frontend = { workspace = true }
 glyim-test = { workspace = true }

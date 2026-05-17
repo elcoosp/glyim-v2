@@ -23,7 +23,7 @@ pub(crate) fn first_ident_text(node: &SyntaxNode) -> Option<String> {
     None
 }
 
-fn is_type_node(node: &SyntaxNode) -> bool {
+pub(crate) fn is_type_node(node: &SyntaxNode) -> bool {
     matches!(
         node.kind(),
         SyntaxKind::PathType
@@ -38,7 +38,7 @@ fn is_type_node(node: &SyntaxNode) -> bool {
     )
 }
 
-fn is_expr_node(node: &SyntaxNode) -> bool {
+pub(crate) fn is_expr_node(node: &SyntaxNode) -> bool {
     matches!(
         node.kind(),
         SyntaxKind::Block

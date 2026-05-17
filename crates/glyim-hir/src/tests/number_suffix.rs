@@ -1,58 +1,55 @@
 use glyim_core::primitives::*;
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
-use glyim_syntax::{GreenToken, SyntaxKind, SyntaxToken};
+use glyim_span::FileId;
+use glyim_frontend::parse_to_syntax;
 use crate::lower::lower_literal;
 use crate::Literal;
 
-fn token_text(s: &str) -> SyntaxToken {
-    let kind = if s.starts_with('"') {
-        SyntaxKind::StringLit
-    } else if s.starts_with('\'') {
-        SyntaxKind::CharLit
-    } else if s.contains('.') {
-        SyntaxKind::FloatLit
-    } else if s == "true" || s == "false" {
-        SyntaxKind::BoolLit
-    } else {
-        SyntaxKind::IntLit
-    };
-    // Create a GreenToken with kind and text (rowan 0.16 API)
-    let green = GreenToken::new(kind, s);
-    // SyntaxToken::new takes (green, file_id, offset, context)
-    SyntaxToken::new(green, FileId::from_raw(1), ByteIdx::ZERO, SyntaxContext::ROOT)
+// Extract the literal token from a parsed literal expression
+fn token_from_literal(src: &str) -> glyim_syntax::SyntaxToken {
+    let parse = parse_to_syntax(src, FileId::from_raw(1));
+    let lit_node = parse.root
+        .children()
+        .find(|n| n.kind() == glyim_syntax::SyntaxKind::LitExpr)
+        .expect("LitExpr node not found");
+    lit_node
+        .children_with_tokens()
+        .filter_map(|el| el.into_token())
+        .find(|t| t.kind().is_literal())
+        .expect("literal token not found")
+        .clone()
 }
 
 #[test]
 fn test_int_suffix_i32() {
-    let tok = token_text("42i32");
+    let tok = token_from_literal("42i32");
     let lit = lower_literal(&tok);
     assert_eq!(lit, Literal::Int(42, Some(IntTy::I32)));
 }
 
 #[test]
 fn test_int_suffix_u64() {
-    let tok = token_text("100u64");
+    let tok = token_from_literal("100u64");
     let lit = lower_literal(&tok);
     assert_eq!(lit, Literal::Uint(100, Some(UintTy::U64)));
 }
 
 #[test]
 fn test_int_hex_no_suffix() {
-    let tok = token_text("0x1A");
+    let tok = token_from_literal("0x1A");
     let lit = lower_literal(&tok);
     assert_eq!(lit, Literal::Int(26, None));
 }
 
 #[test]
 fn test_int_binary() {
-    let tok = token_text("0b1010");
+    let tok = token_from_literal("0b1010");
     let lit = lower_literal(&tok);
     assert_eq!(lit, Literal::Int(10, None));
 }
 
 #[test]
 fn test_float_suffix_f64() {
-    let tok = token_text("3.14f64");
+    let tok = token_from_literal("3.14f64");
     let lit = lower_literal(&tok);
     match lit {
         Literal::Float(bits, FloatTy::F64) => {
@@ -65,7 +62,7 @@ fn test_float_suffix_f64() {
 
 #[test]
 fn test_float_no_suffix() {
-    let tok = token_text("2.71828");
+    let tok = token_from_literal("2.71828");
     let lit = lower_literal(&tok);
     match lit {
         Literal::Float(bits, FloatTy::F64) => {

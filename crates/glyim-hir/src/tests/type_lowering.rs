@@ -3,14 +3,14 @@ use glyim_core::primitives::*;
 use glyim_span::FileId;
 use glyim_frontend::parse_to_syntax;
 use glyim_syntax::SyntaxNode;
-use crate::lower::lower_type_ref;
+use crate::lower::{lower_type_ref, is_type_node};
 use crate::TypeRef;
 
 fn parse_type(src: &str) -> SyntaxNode {
-    let parse = parse_to_syntax(src, FileId::from_raw(1)).unwrap();
+    let parse = parse_to_syntax(src, FileId::from_raw(1));
     parse.root
         .children()
-        .find(|n| n.kind().is_type())
+        .find(|n| is_type_node(n))
         .expect("type node not found")
         .clone()
 }
