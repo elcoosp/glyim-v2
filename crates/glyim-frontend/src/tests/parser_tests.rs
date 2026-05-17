@@ -1,4 +1,4 @@
-use glyim_frontend::parse_to_syntax;
+use crate::parse_to_syntax;
 use glyim_span::FileId;
 
 #[test]
@@ -27,7 +27,11 @@ fn test_parse_struct() {
 
 #[test]
 fn test_parse_expr() {
-    let source = "1 + 2 * 3";
+    let source = r#"
+        fn main() {
+            let x = 1 + 2 * 3;
+        }
+    "#;
     let result = parse_to_syntax(source, FileId::from_raw(0));
     assert!(result.diagnostics.is_empty(), "Parsing failed: {:?}", result.diagnostics);
 }
