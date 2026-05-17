@@ -1,10 +1,14 @@
 //! Type checker: HIR → THIR with full inference and trait solving.
 
 mod check_body;
+mod check_expr;
+mod check_pat;
+mod check_stmt;
 mod coherence;
 mod env;
 pub mod thir;
 mod tyconv;
+mod unify;
 
 use glyim_core::def_id::{DefId, LocalDefId, TraitDefId};
 use glyim_core::interner::Name;
