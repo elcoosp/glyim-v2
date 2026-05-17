@@ -10,7 +10,7 @@ use glyim_type::{GenericArg, Region, Ty, TyKind};
 
 use crate::check_body::FnCtxt;
 use crate::thir;
-use crate::unify::{thir_literal, literal_ty};
+use crate::unify::{literal_ty, thir_literal};
 
 impl<'a> FnCtxt<'a> {
     pub fn check_expr(&mut self, expr_id: ExprId) -> (thir::Expr, Ty) {

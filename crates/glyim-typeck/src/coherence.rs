@@ -65,7 +65,10 @@ impl<'a> CoherenceChecker<'a> {
         Ok(())
     }
 
-    pub fn check_orphan_rule(&self, header: &ResolvedImplHeader) -> Result<(), Vec<GlyimDiagnostic>> {
+    pub fn check_orphan_rule(
+        &self,
+        header: &ResolvedImplHeader,
+    ) -> Result<(), Vec<GlyimDiagnostic>> {
         let trait_is_local = header
             .trait_name
             .and_then(|n| self.def_map.modules[self.def_map.root].scope.resolve(n))
