@@ -5,8 +5,8 @@ pub mod mono;
 
 // New split modules (private to crate, exposed via lower)
 pub mod builder;
-pub mod lower_terminator;
 pub mod lower_rvalue;
+pub mod lower_terminator;
 
 pub use lower::*;
 pub use mono::*;

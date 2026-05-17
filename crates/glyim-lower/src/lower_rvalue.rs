@@ -273,10 +273,7 @@ impl<'a> MirBuilder<'a> {
 
                 self.current_block = Some(header_bb);
                 let cond_op = self.lower_expr_to_operand(cond);
-                let targets = glyim_mir::SwitchTargets::new(
-                    Box::new([(1, body_bb)]),
-                    exit_bb,
-                );
+                let targets = glyim_mir::SwitchTargets::new(Box::new([(1, body_bb)]), exit_bb);
                 self.terminate(
                     glyim_mir::TerminatorKind::SwitchInt {
                         discr: cond_op,

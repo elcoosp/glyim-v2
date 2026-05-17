@@ -1,7 +1,7 @@
+use glyim_diag::GlyimDiagnostic;
+use glyim_span::Span;
 use glyim_type::*;
 use glyim_typeck::thir;
-use glyim_span::Span;
-use glyim_diag::GlyimDiagnostic;
 
 #[derive(Clone, Debug)]
 pub struct LowerResult {

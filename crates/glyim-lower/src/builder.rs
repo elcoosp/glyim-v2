@@ -1,3 +1,4 @@
+use crate::lower_terminator::TerminatorExt;
 use glyim_core::arena::IndexVec;
 use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
@@ -6,7 +7,6 @@ use glyim_mir::{BasicBlockIdx, LocalIdx};
 use glyim_span::Span;
 use glyim_type::*;
 use glyim_typeck::thir;
-use crate::lower_terminator::TerminatorExt;
 
 use crate::lower::LowerCtx;
 
