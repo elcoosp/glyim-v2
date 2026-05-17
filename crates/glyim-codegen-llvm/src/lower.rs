@@ -1,5 +1,3 @@
-use glyim_span::FileId;
-use inkwell::types::BasicType;
 use crate::abi::FullLayoutComputer;
 use crate::debug::DebugInfoCtx;
 use crate::types::llvm_type_for_ty;
@@ -12,10 +10,12 @@ use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
     Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
 };
+use glyim_span::FileId;
 use glyim_type::{Ty, TyCtx, TyKind};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
+use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
@@ -1552,7 +1552,8 @@ pub(crate) fn lower_body<'ctx>(
     }
 
     let num_locals = body.locals.len();
-    let mut locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>> = IndexVec::with_capacity(num_locals);
+    let mut locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>> =
+        IndexVec::with_capacity(num_locals);
     for _ in 0..num_locals {
         locals.push(None);
     }
@@ -1567,7 +1568,8 @@ pub(crate) fn lower_body<'ctx>(
         .get_function("glyim_drop_in_place")
         .unwrap_or_else(|| module.add_function("glyim_drop_in_place", drop_fn_type, None));
 
-    let dealloc_fn_type = void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+    let dealloc_fn_type =
+        void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
     let dealloc_fn = module
         .get_function("glyim_dealloc")
         .unwrap_or_else(|| module.add_function("glyim_dealloc", dealloc_fn_type, None));

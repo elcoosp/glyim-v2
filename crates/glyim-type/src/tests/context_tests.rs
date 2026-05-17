@@ -1,6 +1,6 @@
+use crate::*;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::*;
-use crate::*;
 
 #[test]
 fn test_is_copy_for_primitives() {
