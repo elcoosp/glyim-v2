@@ -145,9 +145,6 @@ impl<'a> MirBuilder<'a> {
                 pat,
                 ..
             } => {
-                // Pattern destructuring: bind the pattern's names to locals
-                // For now, we only support simple identifier patterns; tuple patterns are not implemented.
-                // We'll match on the pattern kind and create locals accordingly.
                 let init_local = if let Some(init_expr) = init {
                     let temp_local = self.alloc_local(*ty, Mutability::Mut, *span);
                     self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), *span);
@@ -160,8 +157,6 @@ impl<'a> MirBuilder<'a> {
                 } else {
                     None
                 };
-
-                // Recursively bind pattern
                 self.bind_pattern(pat, init_local, *span);
             }
             thir::Stmt::Assign { lhs, rhs, span } => {
@@ -178,7 +173,6 @@ impl<'a> MirBuilder<'a> {
                 self.terminate(glyim_mir::TerminatorKind::Return, *span);
             }
             thir::Stmt::Expr { expr } => {
-                // Evaluate expression for side effects, discard result
                 let _ = self.lower_expr_to_rvalue(expr);
             }
         }
@@ -187,21 +181,6 @@ impl<'a> MirBuilder<'a> {
     fn lower_expr_to_rvalue(&mut self, expr: &thir::Expr) -> glyim_mir::Rvalue {
         match &expr.kind {
             thir::ExprKind::Literal(lit) => {
-                let mir_const = match lit {
-                    thir::Literal::Int(val, _) => glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Int(*val), ty: expr.ty, span: expr.span },
-                    thir::Literal::Uint(val, _) => glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Uint(*val), ty: expr.ty, span: expr.span },
-                    thir::Literal::Bool(val) => glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Bool(*val), ty: expr.ty, span: expr.span },
-                    thir::Literal::String(_) | thir::Literal::Char(_) => {
-                        tracing::warn!("unsupported literal type, emitting error constant");
-                        glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Error, ty: expr.ty, span: expr.span }
-                    }
-                    _ => {
-                        tracing::warn!("STUB: unsupported literal");
-                        glyim_mir::MirConst { kind: glyim_mir::MirConstKind::Error, ty: expr.ty, span: expr.span }
-                    }
-                };
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const))
-            }
                 let mir_const = match lit {
                     thir::Literal::Int(val, _) => glyim_mir::MirConst {
                         kind: glyim_mir::MirConstKind::Int(*val),
@@ -218,6 +197,14 @@ impl<'a> MirBuilder<'a> {
                         ty: expr.ty,
                         span: expr.span,
                     },
+                    thir::Literal::String(_) | thir::Literal::Char(_) => {
+                        tracing::warn!("unsupported literal type, emitting error constant");
+                        glyim_mir::MirConst {
+                            kind: glyim_mir::MirConstKind::Error,
+                            ty: expr.ty,
+                            span: expr.span,
+                        }
+                    }
                     _ => {
                         tracing::warn!("STUB: unsupported literal");
                         glyim_mir::MirConst {
@@ -242,16 +229,13 @@ impl<'a> MirBuilder<'a> {
                 let op_val = self.lower_expr_to_operand(operand);
                 glyim_mir::Rvalue::UnaryOp(*op, op_val)
             }
-            thir::ExprKind::Ref {
-                mutability,
-                operand,
-            } => {
+            thir::ExprKind::Ref { mutability, operand } => {
                 let place = self.lower_expr_to_place(operand);
                 let borrow_kind = match mutability {
-                    glyim_core::primitives::Mutability::Mut => glyim_mir::BorrowKind::Mut {
+                    Mutability::Mut => glyim_mir::BorrowKind::Mut {
                         allow_two_phase_borrow: false,
                     },
-                    glyim_core::primitives::Mutability::Not => glyim_mir::BorrowKind::Shared,
+                    Mutability::Not => glyim_mir::BorrowKind::Shared,
                 };
                 glyim_mir::Rvalue::Ref(place, borrow_kind)
             }
@@ -280,11 +264,7 @@ impl<'a> MirBuilder<'a> {
                 self.current_block = Some(next_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
-            thir::ExprKind::If {
-                cond,
-                then_branch,
-                else_branch,
-            } => {
+            thir::ExprKind::If { cond, then_branch, else_branch } => {
                 let cond_op = self.lower_expr_to_operand(cond);
 
                 let then_bb = self.new_block();
@@ -413,18 +393,16 @@ impl<'a> MirBuilder<'a> {
                 let body_bb = self.new_block();
                 let exit_bb = self.new_block();
 
-                // Jump to header
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: header_bb },
                     expr.span,
                 );
 
-                // Header: evaluate condition and branch
                 self.current_block = Some(header_bb);
                 let cond_op = self.lower_expr_to_operand(cond);
                 let targets = glyim_mir::SwitchTargets::new(
-                    Box::new([(1, body_bb)]), // true -> body
-                    exit_bb,                  // false -> exit
+                    Box::new([(1, body_bb)]),
+                    exit_bb,
                 );
                 self.terminate(
                     glyim_mir::TerminatorKind::SwitchInt {
@@ -435,17 +413,14 @@ impl<'a> MirBuilder<'a> {
                     cond.span,
                 );
 
-                // Body block
                 self.current_block = Some(body_bb);
-                let _body_rval = self.lower_expr_to_rvalue(body);
-                // after body, jump back to header
+                let _ = self.lower_expr_to_rvalue(body);
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: header_bb },
                     body.span,
                 );
 
                 self.current_block = Some(exit_bb);
-                // while produces unit value
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
                     ty: Ty::UNIT,
@@ -461,14 +436,11 @@ impl<'a> MirBuilder<'a> {
 
                 self.current_block = Some(loop_bb);
                 let _ = self.lower_expr_to_rvalue(body);
-                // Infinite loop: jump back to itself (unless break inserted, not handled)
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: loop_bb },
                     body.span,
                 );
 
-                // Loop never exits; unreachable after.
-                // Return value is never, but we'll use a dummy
                 self.current_block = Some(self.new_block());
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Error,
@@ -476,13 +448,8 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-            thir::ExprKind::Field {
-                receiver,
-                field,
-                ty: field_ty,
-            } => {
+            thir::ExprKind::Field { receiver, field, ty: field_ty } => {
                 let base_place = self.lower_expr_to_place(receiver);
-                // Find field index by name in the ADT's variant.
                 let adt_id = match self._ctx.ty_ctx().ty_kind(receiver.ty) {
                     TyKind::Adt(adt_id, _) => *adt_id,
                     _ => {
@@ -501,20 +468,13 @@ impl<'a> MirBuilder<'a> {
                     }
                 };
                 let adt_def = self._ctx.adt_def(adt_id);
-                // Assume first variant (for structs) or lookup variant by discriminant.
                 let variant = &adt_def.variants[0];
                 let field_idx = variant.fields.iter().enumerate()
-                    .find(|(_, _ty)| {
-                        // We don't have field names in AdtVariant, only types. So we cannot resolve by name.
-                        // This is a limitation; we'll need to store field names in AdtDef.
-                        // For now, we'll assume the field index is 0 and emit a warning.
-                        false
-                    })
+                    .find(|(_, _ty)| false)
                     .map(|(idx, _)| idx);
                 let field_idx = match field_idx {
                     Some(idx) => idx,
                     None => {
-                        // Fallback: use index 0 with warning
                         tracing::warn!("STUB: field name resolution not available, using field index 0");
                         0
                     }
@@ -554,9 +514,8 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::Cast { expr: inner } => {
                 let operand = self.lower_expr_to_operand(inner);
-                // Determine CastKind simplistically
                 let inner_ty = inner.ty;
-                let target_ty = expr.ty; // overall cast expression type
+                let target_ty = expr.ty;
                 let cast_kind = match (
                     self._ctx.ty_ctx().ty_kind(inner_ty),
                     self._ctx.ty_ctx().ty_kind(target_ty),
@@ -564,7 +523,7 @@ impl<'a> MirBuilder<'a> {
                     (TyKind::Int(_), TyKind::Int(_)) => CastKind::IntToInt,
                     (TyKind::Float(_), TyKind::Int(_)) => CastKind::FloatToInt,
                     (TyKind::Int(_), TyKind::Float(_)) => CastKind::IntToFloat,
-                    _ => CastKind::PtrToPtr, // dummy
+                    _ => CastKind::PtrToPtr,
                 };
                 glyim_mir::Rvalue::Cast(cast_kind, operand, target_ty)
             }
@@ -624,7 +583,7 @@ impl<'a> MirBuilder<'a> {
             }
         }
     }
-    fn bind_pattern(&mut self, pat: &thir::Pattern, init_local: Option<LocalIdx>, span: Span) {
+
     fn bind_pattern(&mut self, pat: &thir::Pattern, init_local: Option<LocalIdx>, span: Span) {
         match &pat.kind {
             thir::PatternKind::Binding { name, mutability, subpattern } => {
@@ -641,13 +600,10 @@ impl<'a> MirBuilder<'a> {
                 }
             }
             thir::PatternKind::Wild => {
-                // Evaluate init if present (for side effects) but no binding
-                if let Some(init) = init_local {
-                    // No assignment needed
-                }
+                // Evaluate init for side effects if present
+                let _ = init_local;
             }
             thir::PatternKind::Tuple(fields) => {
-                // For tuple pattern, we need to project each field out of the init value
                 if let Some(init) = init_local {
                     let init_place = glyim_mir::Place::new(init);
                     for (idx, field_pat) in fields.iter().enumerate() {
@@ -660,8 +616,7 @@ impl<'a> MirBuilder<'a> {
                             local: init_place.local,
                             projection: field_proj,
                         };
-                        // Create a temporary local to hold the field value
-                        let temp_local = self.alloc_local(field_pat.ty, glyim_core::primitives::Mutability::Not, span);
+                        let temp_local = self.alloc_local(field_pat.ty, Mutability::Not, span);
                         self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
                         self.push_stmt(
                             glyim_mir::StatementKind::Assign(
@@ -673,8 +628,6 @@ impl<'a> MirBuilder<'a> {
                         self.bind_pattern(field_pat, Some(temp_local), span);
                     }
                 } else {
-                    // No initializer, pattern binds uninitialized values? Not allowed in Rust.
-                    // Emit diagnostic.
                     tracing::warn!("STUB: tuple pattern without initializer");
                 }
             }
@@ -682,8 +635,6 @@ impl<'a> MirBuilder<'a> {
                 tracing::warn!("STUB: pattern destructuring for non-binding pattern not implemented: {:?}", pat.kind);
             }
         }
-    }
-
     }
 }
 
