@@ -8,7 +8,7 @@
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 26.066071625,
+          "duration": 22.4500305,
           "process_status": "Success",
           "argv": [
             "/Users/adm/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
@@ -20,7 +20,7 @@
         },
         {
           "phase": "Test",
-          "duration": 22.822759125,
+          "duration": 11.758440833,
           "process_status": "Success",
           "argv": [
             "/Users/adm/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
@@ -38,7 +38,7 @@
   "timeout": 0,
   "unviable": 0,
   "success": 0,
-  "start_time": "2026-05-17T14:02:49.829437Z",
+  "start_time": "2026-05-17T14:03:58.396253Z",
   "end_time": null,
   "cargo_mutants_version": "27.0.0"
 }

@@ -7,7 +7,7 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
     let mut const_map: HashMap<LocalIdx, MirConst> = HashMap::new();
     let mut changed = true;
     let mut iteration = 0;
-    const MAX_ITERATIONS: usize = 100;
+    const MAX_ITERATIONS: usize = 1000;
 
     while changed && iteration < MAX_ITERATIONS {
         changed = false;

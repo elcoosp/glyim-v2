@@ -15,12 +15,34 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub enum OrchestratorAction {
-    Feedback { session_id: String, message: String, trace_id: Option<String> },
-    Continue { session_id: String, trace_id: Option<String> },
-    SelfReview { session_id: String, prompt: String, trace_id: Option<String> },
-    StreamComplete { session_id: String, pr_url: String, trace_id: Option<String> },
-    Escalate { session_id: String, reason: String, trace_id: Option<String> },
-    WaitForResponse { session_id: String, trace_id: Option<String> },
+    Feedback {
+        session_id: String,
+        message: String,
+        trace_id: Option<String>,
+    },
+    Continue {
+        session_id: String,
+        trace_id: Option<String>,
+    },
+    SelfReview {
+        session_id: String,
+        prompt: String,
+        trace_id: Option<String>,
+    },
+    StreamComplete {
+        session_id: String,
+        pr_url: String,
+        trace_id: Option<String>,
+    },
+    Escalate {
+        session_id: String,
+        reason: String,
+        trace_id: Option<String>,
+    },
+    WaitForResponse {
+        session_id: String,
+        trace_id: Option<String>,
+    },
 }
 
 #[derive(Clone)]
@@ -48,7 +70,10 @@ pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorActio
         let mut guard = processing.lock().await;
         if !guard.insert(stream_id.clone()) {
             tracing::warn!("already processing, skipping duplicate");
-            return Ok(OrchestratorAction::WaitForResponse { session_id: ctx.session_id.clone(), trace_id: Some(ctx.trace_id.clone()) });
+            return Ok(OrchestratorAction::WaitForResponse {
+                session_id: ctx.session_id.clone(),
+                trace_id: Some(ctx.trace_id.clone()),
+            });
         }
     }
 
@@ -67,47 +92,120 @@ async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, Pilo
     tracing::info!(ops_count = ops.ops.len(), "parsed ops block");
 
     if !ops.ops.is_empty() {
-        let results = apply_ops_async(ctx.worktree_dir.clone(), ops.ops.clone(), ctx.config.limits.clone()).await?;
+        let results = apply_ops_async(
+            ctx.worktree_dir.clone(),
+            ops.ops.clone(),
+            ctx.config.limits.clone(),
+        )
+        .await?;
         tracing::info!(applied = results.len(), "file operations applied");
     }
 
     let trace_id_some = Some(ctx.trace_id.clone());
 
     if ops.approved {
-        push_branch(&ctx.worktree_dir, &ctx.stream_id, &ctx.config.execution.branch_version, ctx.config.execution.command_timeout).await?;
+        push_branch(
+            &ctx.worktree_dir,
+            &ctx.stream_id,
+            &ctx.config.execution.branch_version,
+            ctx.config.execution.command_timeout,
+        )
+        .await?;
         let title = format!("stream-{}: implementation", ctx.stream_id);
         let body = format!("Automated implementation for stream {}", ctx.stream_id);
-        let pr_url = create_pr(&ctx.worktree_dir, &ctx.stream_id, &ctx.config.execution.default_branch, &ctx.config.execution.branch_version, &title, &body, ctx.config.execution.command_timeout).await?;
-        return Ok(OrchestratorAction::StreamComplete { session_id: ctx.session_id.clone(), pr_url, trace_id: trace_id_some });
+        let pr_url = create_pr(
+            &ctx.worktree_dir,
+            &ctx.stream_id,
+            &ctx.config.execution.default_branch,
+            &ctx.config.execution.branch_version,
+            &title,
+            &body,
+            ctx.config.execution.command_timeout,
+        )
+        .await?;
+        return Ok(OrchestratorAction::StreamComplete {
+            session_id: ctx.session_id.clone(),
+            pr_url,
+            trace_id: trace_id_some,
+        });
     }
 
     if ops.done {
         let resolved = ctx.config.gates.done.resolve(ctx.config.gates.level);
-        let changed_files = diff_name_only(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await.unwrap_or_default()
-            .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();
+        let changed_files = diff_name_only(
+            &ctx.worktree_dir,
+            &ctx.config.execution.default_branch,
+            ctx.config.execution.command_timeout,
+        )
+        .await
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
         let gate_ctx = crate::gates::types::GateContext::new(
-            ctx.worktree_dir.clone(), ctx.project_root.clone(),
-            ctx.config.execution.default_branch.clone(), ctx.config.execution.branch_version.clone(),
-            ctx.config.execution.command_timeout, changed_files,
+            ctx.worktree_dir.clone(),
+            ctx.project_root.clone(),
+            ctx.config.execution.default_branch.clone(),
+            ctx.config.execution.branch_version.clone(),
+            ctx.config.execution.command_timeout,
+            changed_files,
         );
         let result = done_pipeline::run_done_pipeline(&gate_ctx, &resolved).await?;
         if result.passed {
-            let diff = diff_main(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await?;
-            let log = log_oneline(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await?;
-            Ok(OrchestratorAction::SelfReview { session_id: ctx.session_id.clone(), prompt: build_review_prompt(&diff, &log), trace_id: trace_id_some })
+            let diff = diff_main(
+                &ctx.worktree_dir,
+                &ctx.config.execution.default_branch,
+                ctx.config.execution.command_timeout,
+            )
+            .await?;
+            let log = log_oneline(
+                &ctx.worktree_dir,
+                &ctx.config.execution.default_branch,
+                ctx.config.execution.command_timeout,
+            )
+            .await?;
+            Ok(OrchestratorAction::SelfReview {
+                session_id: ctx.session_id.clone(),
+                prompt: build_review_prompt(&diff, &log),
+                trace_id: trace_id_some,
+            })
         } else {
-            Ok(OrchestratorAction::Feedback { session_id: ctx.session_id.clone(), message: format!("Done gate failed:\n{}", result.failure_message()), trace_id: trace_id_some })
+            Ok(OrchestratorAction::Feedback {
+                session_id: ctx.session_id.clone(),
+                message: format!("Done gate failed:\n{}", result.failure_message()),
+                trace_id: trace_id_some,
+            })
         }
     } else if ops.incomplete {
-        Ok(OrchestratorAction::Continue { session_id: ctx.session_id.clone(), trace_id: trace_id_some })
+        Ok(OrchestratorAction::Continue {
+            session_id: ctx.session_id.clone(),
+            trace_id: trace_id_some,
+        })
     } else if let Some(msg) = ops.commit_message {
         let current_fix_round = ctx.persistence.get_fix_round(&ctx.stream_id).await;
         let resolved = ctx.config.gates.commit.resolve(
-            ctx.config.gates.level, ctx.config.execution.default_branch.clone(), ctx.config.execution.branch_version.clone(),
+            ctx.config.gates.level,
+            ctx.config.execution.default_branch.clone(),
+            ctx.config.execution.branch_version.clone(),
         );
-        let changed_files = diff_name_only(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await.unwrap_or_default()
-            .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();
-        let engine = CommitEngine::new(resolved, ctx.config.execution.max_fix_rounds, ctx.config.gates.banned_patterns.clone(), ctx.config.gates.architecture_rules.clone());
+        let changed_files = diff_name_only(
+            &ctx.worktree_dir,
+            &ctx.config.execution.default_branch,
+            ctx.config.execution.command_timeout,
+        )
+        .await
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+        let engine = CommitEngine::new(
+            resolved,
+            ctx.config.execution.max_fix_rounds,
+            ctx.config.gates.banned_patterns.clone(),
+            ctx.config.gates.architecture_rules.clone(),
+        );
         let commit_ctx = CommitContext {
             worktree_dir: ctx.worktree_dir.clone(),
             project_root: ctx.project_root.clone(),
@@ -121,12 +219,32 @@ async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, Pilo
         };
         let decision = engine.evaluate_commit(&commit_ctx).await?;
         match decision {
-            CommitDecision::Committed { message, .. } => Ok(OrchestratorAction::Feedback { session_id: ctx.session_id.clone(), message: format!("✅ Committed: {}", message), trace_id: trace_id_some }),
-            CommitDecision::GateFailed { feedback, .. } => Ok(OrchestratorAction::Feedback { session_id: ctx.session_id.clone(), message: format!("❌ Commit gate failed:\n\n{}", feedback), trace_id: trace_id_some }),
-            CommitDecision::Escalated { feedback, .. } => Ok(OrchestratorAction::Escalate { session_id: ctx.session_id.clone(), reason: format!("Fix rounds exceeded.\n\n{}", feedback), trace_id: trace_id_some }),
+            CommitDecision::Committed { message, .. } => Ok(OrchestratorAction::Feedback {
+                session_id: ctx.session_id.clone(),
+                message: format!("✅ Committed: {}", message),
+                trace_id: trace_id_some,
+            }),
+            CommitDecision::GateFailed { feedback, .. } => Ok(OrchestratorAction::Feedback {
+                session_id: ctx.session_id.clone(),
+                message: format!("❌ Commit gate failed:\n\n{}", feedback),
+                trace_id: trace_id_some,
+            }),
+            CommitDecision::Escalated { feedback, .. } => Ok(OrchestratorAction::Escalate {
+                session_id: ctx.session_id.clone(),
+                reason: format!("Fix rounds exceeded.\n\n{}", feedback),
+                trace_id: trace_id_some,
+            }),
         }
     } else {
-        ctx.persistence.try_update_session(&ctx.stream_id, |s| { s.record_turn(); Ok(()) }).await?;
-        Ok(OrchestratorAction::WaitForResponse { session_id: ctx.session_id.clone(), trace_id: trace_id_some })
+        ctx.persistence
+            .try_update_session(&ctx.stream_id, |s| {
+                s.record_turn();
+                Ok(())
+            })
+            .await?;
+        Ok(OrchestratorAction::WaitForResponse {
+            session_id: ctx.session_id.clone(),
+            trace_id: trace_id_some,
+        })
     }
 }
