@@ -1,6 +1,6 @@
-# Locked Public Contracts — v0.1.0
+# Locked Public Contracts — v0.2.0
 
-Generated from: actual codebase scan (2026-05-14)  
+Generated from: actual codebase scan (2026-05-17)  
 Any change to items listed here requires a formal Change Request.
 
 ---
@@ -20,7 +20,8 @@ Any change to items listed here requires a formal Change Request.
 - `pub enum PathKind` — `Plain`, `SelfPath`, `Super(u32)`, `Crate`
 - `pub struct PathSegment` — `name: Name`
 - `pub struct Path` — `from_single`, `as_name`, `segments: Vec<PathSegment>`, `kind: PathKind`
-- `pub struct TargetInfo` — `x86_64`, `pointer_width`, `pointer_size`, `pointer_align`, `default`
+- `pub struct TargetInfo` — `aarch64`, `x86_64`, `pointer_width`, `pointer_size`, `pointer_align`, `default`; fields: `triple`, `abi`
+- `pub enum TargetAbi` — `X86_64SystemV`, `AArch64AAPCS`
 - `pub enum IntTy` — `I8`, `I16`, `I32`, `I64`, `Isize`; `bit_width`, `name`
 - `pub enum UintTy` — `U8`, `U16`, `U32`, `U64`, `Usize`; `bit_width`, `name`
 - `pub enum FloatTy` — `F32`, `F64`; `bit_width`, `name`
@@ -64,13 +65,15 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct SubDiagnostic` — `severity: DiagSeverity`, `message: String`, `span: Option<MultiSpan>`
 - `pub struct Suggestion` — `message: String`, `replacements: Vec<(Span, String)>`, `applicability: Applicability`
 - `pub enum Applicability` — `MachineApplicable`, `MaybeIncorrect`, `HasPlaceholders`, `Unspecified`
-- Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDiagnostic, Report, Severity, SourceSpan}`
+- `pub macro stub!` — accepts one or two arguments, compiles to error
+
+Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDiagnostic, Report, Severity, SourceSpan}`
 
 ---
 
 ## glyim-syntax
 
-- `pub enum SyntaxKind` — `KwFn`, `KwLet`, `KwStruct`, `KwEnum`, `KwIf`, `KwElse`, `KwReturn`, `KwMatch`, `KwMod`, `KwComptime`, `KwSelf`, `KwSuper`, `KwCrate`, `KwTrue`, `KwFalse`, `KwMut`, `KwRef`, `KwAs`, `KwWhile`, `KwFor`, `KwLoop`, `KwIn`, `KwBreak`, `KwContinue`, `KwTrait`, `KwImpl`, `KwWhere`, `KwDyn`, `KwType`, `KwPub`, `KwPriv`, `KwExtern`, `KwUnsafe`, `KwUse`, `KwConst`, `KwStatic`, `KwMove`, `Lifetime`, `IntLit`, `FloatLit`, `StringLit`, `CharLit`, `BoolLit`, `Ident`, `Plus`, `Minus`, `Star`, `Slash`, `Percent`, `Eq`, `EqEq`, `Bang`, `BangEq`, `Lt`, `Gt`, `LtEq`, `GtEq`, `And`, `Or`, `AndAnd`, `OrOr`, `Caret`, `Shl`, `Shr`, `PlusEq`, `MinusEq`, `StarEq`, `SlashEq`, `Arrow`, `FatArrow`, `Dot`, `DotDot`, `DotDotEq`, `Comma`, `Semicolon`, `Colon`, `ColonColon`, `At`, `Hash`, `Dollar`, `Tilde`, `Underscore`, `Question`, `LParen`, `RParen`, `LBrace`, `RBrace`, `LBracket`, `RBracket`, `Whitespace`, `LineComment`, `BlockComment`, `DocComment`, `SourceFile`, `Module`, `FnDef`, `StructDef`, `EnumDef`, `TraitDef`, `ImplDef`, `TypeAlias`, `ConstDef`, `StaticDef`, `UseDecl`, `ExternBlock`, `ParamList`, `Param`, `TypeParamList`, `TypeParam`, `WhereClause`, `Block`, `LetStmt`, `ExprStmt`, `IfExpr`, `WhileExpr`, `LoopExpr`, `ForExpr`, `MatchExpr`, `MatchArmList`, `MatchArm`, `CallExpr`, `MethodCallExpr`, `FieldExpr`, `IndexExpr`, `UnaryExpr`, `BinaryExpr`, `CastExpr`, `RefExpr`, `ClosureExpr`, `PathExpr`, `LitExpr`, `ArrayExpr`, `TupleExpr`, `StructExpr`, `RangeExpr`, `BreakExpr`, `ContinueExpr`, `ReturnExpr`, `AssignExpr`, `PathType`, `FnType`, `DynType`, `RefType`, `SliceType`, `ArrayType`, `TupleType`, `NeverType`, `InferType`, `GenericArgList`, `PatIdent`, `PatStruct`, `PatTuple`, `PatOr`, `PatLit`, `PatRange`, `PatWild`, `UsePath`, `UseTree`, `MacroCall`, `TokenTree`, `StructField`, `EnumVariant`, `FieldList`, `VariantList`, `Error`; `is_trivia`, `is_keyword`, `is_literal`, `is_node`, `try_from_raw` (via `num_enum::TryFromPrimitive` derive)
+- `pub enum SyntaxKind` — exhaustive list including `KwFn`, `KwLet`, `KwStruct`, `KwEnum`, `KwIf`, `KwElse`, `KwReturn`, `KwMatch`, `KwMod`, `KwComptime`, `KwSelf`, `KwSuper`, `KwCrate`, `KwTrue`, `KwFalse`, `KwMut`, `KwRef`, `KwAs`, `KwWhile`, `KwFor`, `KwLoop`, `KwIn`, `KwBreak`, `KwContinue`, `KwTrait`, `KwImpl`, `KwWhere`, `KwDyn`, `KwType`, `KwPub`, `KwPriv`, `KwExtern`, `KwUnsafe`, `KwUse`, `KwConst`, `KwStatic`, `KwMove`, `KwMacroRules`, `Lifetime`, `IntLit`, `FloatLit`, `StringLit`, `CharLit`, `BoolLit`, `Ident`, all operators, punctuation, delimiters, trivia, and node kinds (e.g., `SourceFile`, `Module`, `FnDef`, … `Error`). Implements `is_trivia`, `is_keyword`, `is_literal`, `is_node`, `try_from_raw` (via `num_enum::TryFromPrimitive`)
 - `pub enum GlyimLang` — implements `rowan::Language` (`kind_from_raw`, `kind_to_raw`)
 - `pub type SyntaxNode = rowan::SyntaxNode<GlyimLang>`
 - `pub type SyntaxToken = rowan::SyntaxToken<GlyimLang>`
@@ -133,8 +136,11 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct FnItem` — `params: Vec<Param>`, `return_ty: Option<TypeRef>`, `body: Option<BodyId>`, `is_unsafe: bool`, `is_async: bool`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
 - `pub struct StructItem` — `fields: Vec<Field>`, `kind: StructKind`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
 - `pub struct EnumItem` — `variants: Vec<Variant>`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
-- `pub struct TraitItem` — `associated_types: Vec<Name>`, `methods: Vec<Name>`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
-- `pub struct ImplItem` — `trait_ref: Option<Path>`, `self_ty: TypeRef`, `methods: Vec<Name>`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
+- `pub struct Variant` — `name: Name`, `fields: Vec<Field>`, `kind: StructKind`, `span: Span`
+- `pub struct TraitMethod` — `name: Name`, `params: Vec<Param>`, `return_ty: Option<TypeRef>`, `default_body: Option<BodyId>`
+- `pub struct ImplMethod` — `name: Name`, `body: Option<BodyId>`, `params: Vec<Param>`, `return_ty: Option<TypeRef>`
+- `pub struct TraitItem` — `associated_types: Vec<Name>`, `methods: Vec<TraitMethod>`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
+- `pub struct ImplItem` — `trait_ref: Option<Path>`, `self_ty: TypeRef`, `methods: Vec<ImplMethod>`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
 - `pub struct TypeAliasItem` — `ty: Option<TypeRef>`, `generic_params: Vec<GenericParam>`, `where_clauses: Vec<WhereClause>`
 - `pub struct ConstItem` — `ty: TypeRef`, `body: Option<BodyId>`
 - `pub struct StaticItem` — `ty: TypeRef`, `body: Option<BodyId>`, `is_mut: bool`
@@ -145,8 +151,7 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct Field` — `name: Name`, `ty: TypeRef`, `span: Span`
 - `pub struct GenericParam` — `name: Name`, `kind: GenericParamKind`, `span: Span`
 - `pub enum GenericParamKind` — `Type { default: Option<TypeRef> }`, `Lifetime`, `Const { ty: TypeRef, default: Option<ConstRef> }`
-- `pub struct Variant` — `name: Name`, `fields: Vec<Field>`, `kind: StructKind`, `span: Span`
-- `pub struct Body` — `owner: LocalDefId`, `exprs: IndexVec<ExprId, Expr>`, `pats: IndexVec<PatId, Pat>`, `params: Vec<PatId>`, `span: Span`
+- `pub struct Body` — `owner: LocalDefId`, `exprs: IndexVec<ExprId, Expr>`, `pats: IndexVec<PatId, Pat>`, `params: Vec<PatId>`, `span: Span`, `expr_spans: IndexVec<ExprId, Span>`
 - `pub enum Expr` — `Missing`, `Path(Path)`, `Literal(Literal)`, `Block { stmts: Vec<ExprId>, tail: Option<ExprId> }`, `If { cond: ExprId, then_branch: ExprId, else_branch: Option<ExprId> }`, `While { cond: ExprId, body: ExprId }`, `Loop { body: ExprId }`, `For { pat: PatId, iterable: ExprId, body: ExprId }`, `Match { scrutinee: ExprId, arms: Vec<MatchArm> }`, `Call { func: ExprId, args: Vec<ExprId> }`, `MethodCall { receiver: ExprId, method: Name, args: Vec<ExprId> }`, `Field { receiver: ExprId, field: Name }`, `Index { base: ExprId, index: ExprId }`, `Unary { op: UnOp, expr: ExprId }`, `Binary { op: BinOp, lhs: ExprId, rhs: ExprId }`, `Cast { expr: ExprId, ty: TypeRef }`, `Ref { expr: ExprId, mutability: Mutability }`, `Assign { lhs: ExprId, rhs: ExprId }`, `Return { value: Option<ExprId> }`, `Break { value: Option<ExprId> }`, `Continue`, `Closure { params: Vec<PatId>, body: ExprId }`, `Array(Vec<ExprId>)`, `Tuple(Vec<ExprId>)`, `Struct { path: Path, fields: Vec<(Name, ExprId)>, spread: Option<ExprId> }`, `Range { start: Option<ExprId>, end: Option<ExprId>, inclusive: bool }`, `Err`
 - `pub struct MatchArm` — `pat: PatId`, `guard: Option<ExprId>`, `body: ExprId`
 - `pub enum Pat` — `Wild`, `Binding { name: Name, mutability: Mutability, subpattern: Option<PatId> }`, `Struct { path: Path, fields: Vec<(Name, PatId)>, rest: bool }`, `Tuple(Vec<PatId>)`, `Or(Vec<PatId>)`, `Literal(Literal)`, `Range { start: Option<Literal>, end: Option<Literal>, inclusive: bool }`, `Path(Path)`, `Err`
@@ -172,33 +177,47 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct UniverseIndex(pub u32)`
 - `pub struct Substitution` — `from_raw(index: u32, len: u16)`, `empty`, `index`, `len`, `is_empty`
 - `pub enum GenericArg` — `Ty(Ty)`, `Lifetime(Region)`, `Const(Const)`
-- `pub enum Region` — `Static`, `EarlyBound(EarlyBoundRegion)`, `LateBound(DebruijnIndex, u32, BoundRegionKind)`, `Var(RegionVid)`, `Erased`, `Error`
+- `pub enum Region` — `Static`, `EarlyBound(EarlyBoundRegion)`, `LateBound(DebruijnIndex, u32, BoundRegionKind)`, `Var(RegionVid)`, `Placeholder(PlaceholderRegion)`, `Erased`, `Error`
+- `pub struct PlaceholderRegion` — `universe: UniverseIndex`, `bound: BoundRegionKind`, `index: u32`
+- `pub struct EarlyBoundRegion` — `index: u32`, `name: Name`
+- `pub struct DebruijnIndex(pub u32)` — `INNERMOST`, `shifted_in`, `shifted_out`
+- `pub enum BoundRegionKind` — `BrAnon(u32)`, `BrNamed(Name)`, `BrEnv`
 - `pub struct FnSig` — `inputs: Substitution`, `output: Ty`, `c_variadic: bool`, `unsafety: Safety`, `abi: Abi`
 - `pub enum Predicate` — `Trait(TraitPredicate)`, `RegionOutlives(RegionOutlivesPredicate)`, `TypeOutlives(TypeOutlivesPredicate)`, `WellFormed(Ty)`, `Coerce(Ty, Ty)`
 - `pub struct TraitPredicate` — `trait_ref: TraitRef`, `polarity: ImplPolarity`
 - `pub struct TraitRef` — `def_id: TraitDefId`, `substs: Substitution`
-- `pub struct Binder<T>` — `bind`, `skip_binder`, `as_ref`; field `value: T`, `bound_vars: Box<[BoundVariableKind]>`
-- `pub struct TypeFlags` — constants: `HAS_TY_INFER`, `HAS_TY_PARAM`, `HAS_RE_INFER`, `HAS_RE_PARAM`, `HAS_CT_INFER`, `HAS_CT_PARAM`, `HAS_ERROR`, `HAS_DEPTH_OVERFLOW`
-- `pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFlags`
-- `pub trait TypeLookup` — `ty_kind(&self, Ty) -> &TyKind`, `ty_flags(&self, Ty) -> TypeFlags`, `substitution_args(&self, Substitution) -> &[GenericArg]`, `name_str(&self, Name) -> &str`, `error_ty(&self) -> Ty`
-- `pub struct PrintTy<'a, L: TypeLookup>` — `new(ty: Ty, lookup: &'a L)`
-- `pub struct DebugTy<'a, L: TypeLookup>` — wraps `PrintTy`; implements `Debug`
-- `pub struct TyCtxMut` — `new(resolver: Interner)`, `alloc_ty`, `mk_ty`, `mk_ref`, `mk_adt`, `mk_tuple`, `mk_fn_ptr`, `error_ty`, `never_ty`, `unit_ty`, `bool_ty`, `freeze`, `ty_kind`, `ty_kind_mut`, `ty_flags`, `substitution_args`, `intern_substitution`, `resolver`, `name_str`, `new_region_var`, `region_var`, `region_var_count`; implements `TypeLookup`
-- `pub struct TyCtx` — `ty_kind`, `ty_flags`, `substitution_args`, `region`, `resolver`, `name_str`, `error_ty`, `never_ty`, `unit_ty`, `bool_ty`, `ty_is_error`, `ty_has_depth_overflow`; implements `TypeLookup`
-- `pub struct ParamTy` — `index: u32`, `name: Name`
-- `pub struct BoundTy` — `var: u32`, `kind: BoundTyKind`
-- `pub enum BoundTyKind` — `Anon`, `Param(Name)`
-- `pub struct Const` — `kind: ConstKind`, `ty: Ty`
-- `pub enum ConstKind` — `Int(i128)`, `Uint(u128)`, `FloatBits(u64)`, `Bool(bool)`, `Char(char)`, `String(Name)`, `Unit`, `Infer(ConstVar)`, `Param(ParamConst)`, `Error`
-- `pub struct ParamConst` — `index: u32`, `name: Name`
-- `pub struct EarlyBoundRegion` — `index: u32`, `name: Name`
-- `pub struct DebruijnIndex(pub u32)` — `INNERMOST`, `shifted_in`, `shifted_out`
-- `pub enum BoundRegionKind` — `BrAnon(u32)`, `BrNamed(Name)`, `BrEnv`
-- `pub enum BoundVariableKind` — `Ty(BoundTyKind)`, `Region(BoundRegionKind)`, `Const`
 - `pub enum ImplPolarity` — `Positive`, `Negative`
 - `pub struct ProjectionTy` — `trait_ref: TraitRef`, `item_name: Name`
 - `pub struct RegionOutlivesPredicate` — `a: Region`, `b: Region`
 - `pub struct TypeOutlivesPredicate` — `ty: Ty`, `region: Region`
+- `pub struct Binder<T>` — `bind`, `skip_binder`, `as_ref`; field `value: T`, `bound_vars: Box<[BoundVariableKind]>`
+- `pub enum BoundVariableKind` — `Ty(BoundTyKind)`, `Region(BoundRegionKind)`, `Const`
+- `pub enum BoundTyKind` — `Anon`, `Param(Name)`
+- `pub struct ParamTy` — `index: u32`, `name: Name`
+- `pub struct Const` — `kind: ConstKind`, `ty: Ty`
+- `pub enum ConstKind` — `Int(i128)`, `Uint(u128)`, `FloatBits(u64)`, `Bool(bool)`, `Char(char)`, `String(Name)`, `Unit`, `Infer(ConstVar)`, `Param(ParamConst)`, `Error`
+- `pub struct ParamConst` — `index: u32`, `name: Name`
+- `pub struct TyCtxMut` — `new(resolver: Interner)`, `alloc_ty`, `mk_ty`, `mk_ref`, `mk_adt`, `mk_tuple`, `mk_fn_ptr`, `error_ty`, `never_ty`, `unit_ty`, `bool_ty`, `freeze`, `ty_kind`, `ty_kind_mut`, `ty_flags`, `substitution_args`, `intern_substitution`, `resolver`, `name_str`, `new_region_var`, `region_var`, `region_var_count`, `register_adt_repr`, `register_negative_impl`, `register_manual_impl`, `register_adt`, `adt_def`, `field_index`, `mark_adt_interior_mutable`; implements `TypeLookup`
+- `pub struct TyCtx` — `ty_kind`, `ty_flags`, `substitution_args`, `region`, `resolver`, `name_str`, `error_ty`, `never_ty`, `unit_ty`, `bool_ty`, `ty_is_error`, `ty_has_depth_overflow`, `is_copy`, `auto_trait_flags`, `implements_auto_trait`, `has_negative_impl`, `has_manual_impl`, `adt_repr`, `field_ty`, `adt_def`, `field_index`; implements `TypeLookup`
+- `pub struct PrintTy<'a, L: TypeLookup>` — `new(ty: Ty, lookup: &'a L)`; implements `Display`
+- `pub struct DebugTy<'a, L: TypeLookup>` — wraps `PrintTy`; implements `Debug`
+- `pub struct TypeFlags` — constants: `HAS_TY_INFER`, `HAS_TY_PARAM`, `HAS_RE_INFER`, `HAS_RE_PARAM`, `HAS_CT_INFER`, `HAS_CT_PARAM`, `HAS_ERROR`, `HAS_DEPTH_OVERFLOW`, `HAS_RE_PLACEHOLDER`, `HAS_TY_PLACEHOLDER`, `HAS_INTERIOR_MUTABILITY`
+- `pub fn compute_flags(kind: &TyKind, ctx: &dyn TypeLookup, depth: u32) -> TypeFlags`
+- `pub trait TypeLookup` — `ty_kind(&self, Ty) -> &TyKind`, `ty_flags(&self, Ty) -> TypeFlags`, `substitution_args(&self, Substitution) -> &[GenericArg]`, `name_str(&self, Name) -> &str`, `error_ty(&self) -> Ty`, `is_interior_mutable_adt(&self, AdtId) -> bool` (default implementation returns false)
+- `pub fn write_region<L: TypeLookup>(f: &mut fmt::Formatter<'_>, region: &Region, lookup: &L) -> fmt::Result`
+- **Auto traits**:
+  - `pub enum AutoTrait` — `Send`, `Sync`, `Unpin`
+  - `pub struct AutoTraitFlags` — bitflags
+  - `pub struct AdtRepr` — `field_tys: Vec<Ty>`
+  - `pub struct AutoTraitRegistry` — `new`, `register_negative_impl`, `register_manual_impl`, `has_negative_impl`, `has_manual_impl`
+  - `pub fn compute_auto_traits(ty: Ty, lookup: &dyn TypeLookup, registry: &AutoTraitRegistry, adt_reprs: &HashMap<AdtId, AdtRepr>) -> AutoTraitFlags`
+- **Object safety**:
+  - `pub enum ObjectSafetyViolation` — `SelfSized`, `GenericMethod { method: Name, span: Span }`, `StaticMethod { method: Name, span: Span }`, `ByValueSelf { method: Name, span: Span }`, `AssociatedFunction { name: Name, span: Span }`, `UnconstrainedAssociatedType { name: Name, span: Span }`
+  - `pub struct MethodSignature` — `name: Name`, `span: Span`, `self_kind: MethodSelfKind`, `has_generic_params: bool`, `returns_self: bool`
+  - `pub enum MethodSelfKind` — `ByValue`, `ByReference`, `None`
+  - `pub fn check_object_safety(requires_self_sized: bool, methods: &[MethodSignature]) -> Vec<ObjectSafetyViolation>`
+- `pub mod object_safety` (contains above)
+- Re‑exports: `auto_trait::*`, `binder::*`, `const_val::*`, `context::*`, `display::*`, `flags::*`, `fn_sig::*`, `predicate::*`, `region::*`, `substitution::*`, `ty::*`, `object_safety::*`
 
 ---
 
@@ -234,7 +253,7 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct InferenceTable` — `new()`, `new_ty_var(&mut TyCtxMut) -> TyVar`, `new_int_var(&mut TyCtxMut) -> IntVar`, `new_float_var(&mut TyCtxMut) -> FloatVar`, `new_region_var(&mut TyCtxMut) -> RegionVid`, `unify(&mut self, ctx: &mut TyCtxMut, a: Ty, b: Ty, span: Span) -> Result<Vec<Constraint>, Vec<GlyimDiagnostic>>`, `resolve_ty_shallow(&self, ctx: &dyn TypeLookup, ty: Ty) -> Ty`, `fully_resolve(&self, ctx: &dyn TypeLookup, ty: Ty) -> Result<Ty, Vec<TyVar>>`, `probe_ty_var(&self, var: TyVar) -> Option<Ty>`, `probe_int_var(&self, var: IntVar) -> Option<Ty>`, `probe_float_var(&self, var: FloatVar) -> Option<Ty>`, `universe(&self) -> UniverseIndex`, `create_universe(&mut self) -> UniverseIndex`
 - `pub trait TraitSolver` — `can_prove(&mut self, ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult`, `evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult`
 - `pub enum SolverResult` — `Proven`, `Ambiguous`, `DefiniteNo`
-- `pub struct SimpleTraitSolver<'a>` — `new(trait_ctx: &'a TraitContext)`
+- `pub struct SimpleTraitSolver<'a>` — `new(trait_ctx: &'a TraitContext)`; implements `TraitSolver`
 - `pub struct TraitContext` — `new()`, `register_trait(def: TraitDef)`, `register_impl(def: ImplDef)`, `impls_of_trait(&self, trait_id: TraitDefId) -> impl Iterator<Item = &ImplDef>`, `default`
 - `pub struct TraitDef` — `def_id: TraitDefId`, `name: Name`, `associated_types: Vec<Name>`, `predicates: Vec<Predicate>`
 - `pub struct ImplDef` — `def_id: ImplDefId`, `trait_ref: TraitRef`, `predicates: Vec<Predicate>`
@@ -245,17 +264,24 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct OverflowError` — `predicate: Predicate`, `depth: usize`
 - `pub enum Constraint` — `TypeEq { a: Ty, b: Ty }`, `RegionEq { a: Region, b: Region }`, `RegionOutlives { a: Region, b: Region }`, `TypeOutlives { ty: Ty, region: Region }`
 - `pub enum VariableKind` — `General`, `Integer`, `Float`
+- **HRTB module**:
+  - `pub struct PlaceholderInstantiation<T>` — `value: T`, `placeholders: Vec<PlaceholderRegion>`, `universe: UniverseIndex`
+  - `pub fn instantiate_binder_with_placeholders<T>(binder: &Binder<T>, infer: &mut InferenceTable, ctx: &mut TyCtxMut) -> PlaceholderInstantiation<T>` where `T: SubstituteBoundVars`
+  - `pub struct BoundVarSubstitution` — `region_map: Vec<Region>`, `has_placeholders: bool`
+  - `pub trait SubstituteBoundVars` — `fn substitute(self, sub: &BoundVarSubstitution, ctx: &mut TyCtxMut) -> Self`
+  - `pub fn check_hrtb(binder: &Binder<Predicate>, solver: &mut dyn TraitSolver, infer: &mut InferenceTable, ctx_mut: TyCtxMut) -> (SolverResult, TyCtx)`
+  - `pub fn instantiate_hrtb_predicate(binder: &Binder<Predicate>, infer: &mut InferenceTable, ctx: &mut TyCtxMut) -> PlaceholderInstantiation<Predicate>`
 
 ---
 
 ## glyim-typeck
 
 - `pub fn typeck_crate(ctx: TyCtxMut, def_map: &CrateDefMap, hir: &CrateHir, solver: &mut dyn TraitSolver) -> (TyCtx, TypeckResult)`
-- `pub struct TypeckResult` — `expr_types: IndexVec<glyim_hir::ExprId, Option<Ty>>`, `pat_types: IndexVec<glyim_hir::PatId, Option<Ty>>`, `adjustments: IndexVec<glyim_hir::ExprId, Option<Vec<Adjustment>>>`, `thir_bodies: Vec<(LocalDefId, thir::Body)>`, `diagnostics: Vec<GlyimDiagnostic>`
+- `pub struct TypeckResult` — `thir_bodies: Vec<(LocalDefId, thir::Body)>`, `diagnostics: Vec<GlyimDiagnostic>`
 - `pub struct Adjustment` — `kind: AdjustKind`, `target: Ty`
 - `pub enum AdjustKind` — `Deref`, `Borrow(Mutability)`, `NeverToAny`
-- `pub struct TypeckCtx<'a>` — `ctx: &'a mut TyCtxMut`, `infer: &'a mut InferenceTable`, `diagnostics: &'a mut Vec<GlyimDiagnostic>`, `pending_obligations: Vec<Obligation>`, `unify(&mut self, a: Ty, b: Ty, span: Span) -> bool`, `require_trait_bound(&mut self, ty: Ty, trait_pred: TraitPredicate, span: Span)`
 - `pub mod thir` — all types: `Body`, `Param`, `Stmt`, `Expr`, `ExprKind`, `Pattern`, `PatternKind`, `Literal`, `MatchArm`, `FieldPat`, `Capture`, `CaptureKind`, `LocalVarId`
+- Re‑exports: `thir::*` (public via `pub use thir::*`? Actually `thir` is a module, its contents are pub but not re‑exported at crate root. The public API includes `thir::Body`, etc.)
 
 ---
 
@@ -267,19 +293,22 @@ Any change to items listed here requires a formal Change Request.
 - `pub struct AdtDef` — `variants: Vec<AdtVariant>`, `kind: AdtKind`
 - `pub struct AdtVariant` — `fields: Vec<Ty>`
 - `pub enum AdtKind` — `Struct`, `Enum`, `Union`
-- `pub struct MonoCtx` — `new()`, `default`, `collect(&mut self, start: &[MonoItem], mir_bodies: &dyn Fn(DefId, &Substitution) -> Arc<Body>)`, `instantiate(ctx: &TyCtx, body: &Body, substs: &Substitution) -> Body`, `items(&self) -> &[MonoItemData]`, `item_count(&self) -> usize`; internal: `scan_body_for_refs`, `scan_rvalue`, `scan_operand`, `scan_const`, `scan_terminator`
-- `pub enum MonoItem` — `Fn { def_id: FnDefId, substs: Substitution }`, `Const { def_id: ConstDefId, substs: Substitution }`, `Static { def_id: StaticDefId }`
+- `pub struct MonoCtx` — `new()`, `default`, `collect(&mut self, start: &[MonoItem], mir_bodies: &dyn Fn(DefId, &Substitution) -> Arc<Body>, drop_glue_body: &dyn Fn(Ty) -> Arc<Body>)`, `items(&self) -> &[MonoItemData]`, `item_count(&self) -> usize`, `cache_len(&self) -> usize`, `lookup(&self, item: &MonoItem) -> Option<MonoItemId>`
+- `pub enum MonoItem` — `Fn { def_id: FnDefId, substs: Substitution }`, `Const { def_id: ConstDefId, substs: Substitution }`, `Static { def_id: StaticDefId }`, `DropGlue { ty: Ty }`
 - `pub struct MonoItemId` — `from_raw`, `to_raw`
-- `pub struct MonoItemData` — `item: MonoItem`, `body: Arc<Body>`, `symbol: String`
+- `pub struct MonoItemData` — `item: MonoItem`, `body: Arc<Body>`, `symbol: String`, `source_module: u32`
 - `pub mod discovery` — `pub fn discover_mono_roots(root: &SyntaxNode, hir: &CrateHir, ctx: &mut TyCtxMut) -> (Vec<MonoItem>, Vec<GlyimDiagnostic>)`
+- `pub mod partition` — `pub fn partition(items: &[MonoItemData], max_cgus: usize) -> Vec<Vec<usize>>`
+- `pub mod polymorphize` — `pub fn analyze_used_params(body: &Body, ctx: &dyn TypeLookup, substs: Substitution) -> Vec<bool>`, `pub fn polymorphize_substs(ctx: &mut TyCtxMut, substs: Substitution, used: &[bool]) -> Substitution`, `pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &Body) -> MonoItem`, `pub fn deduplicate(ctx: &mut TyCtxMut, items: &[MonoItemData]) -> Vec<MonoItemData>`
+- `pub mod post_mono_checks` — (functions are crate‑internal, not pub)
 
 ---
 
 ## glyim-borrowck
 
-- `pub trait BorrowckCtx` — `ty_ctx(&self) -> &TyCtx`, `local_decl(&self, local: LocalIdx) -> &LocalDecl`, `is_copy(&self, ty: Ty) -> bool`
-- `pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult`
 - `pub struct BorrowckResult` — `errors: Vec<GlyimDiagnostic>`
+- `pub trait BorrowckCtx` — `ty_ctx(&self) -> &TyCtx`, `local_decl(&self, local: LocalIdx) -> &LocalDecl`, `is_copy(&self, ty: Ty) -> bool` (default impl), `local_name(&self, local: LocalIdx) -> String`
+- `pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult`
 
 ---
 
@@ -293,18 +322,19 @@ Any change to items listed here requires a formal Change Request.
 ## glyim-layout
 
 - `pub trait LayoutComputer` — `layout_of(&self, ty: Ty) -> Result<Layout, LayoutError>`, `fn_abi_of(&self, sig: &FnSig) -> Result<FnAbi, LayoutError>`, `ptr_size(&self) -> Size`, `ptr_align(&self) -> Align`, `target_info(&self) -> &TargetInfo`
-- `pub struct SimpleLayoutComputer<'a>` — `new(ctx: &'a TyCtx, target: TargetInfo)`
+- `pub struct SimpleLayoutComputer<'a>` — `new(ctx: &'a TyCtx, target: TargetInfo)`; implements `LayoutComputer`
 - `pub struct Layout` — `size: Size`, `align: Align`, `fields: FieldsShape`, `variants: VariantsShape`, `is_unsized: bool`, `scalar(size: Size, align: Align) -> Self`, `unit() -> Self`
 - `pub struct Size(pub u64)` — `ZERO`, `bytes(b: u64) -> Self`, `bits(&self) -> u64`, `align_to(&self, align: Align) -> Self`; implements `Add`
 - `pub struct Align(pub u64)` — `ONE`, `EIGHT`, `from_bytes(bytes: u64) -> Self`, `max(self, other: Self) -> Self`
 - `pub enum LayoutError` — `UnknownType(Ty)`, `SizeOverflow(Ty)`, `Unsized(Ty)`, `Cycle(Ty)`, `AlignmentExceedsRuntime { ty: Ty, align: u64, max: u64 }`
 - `pub struct FnAbi` — `args: Vec<ArgAbi>`, `ret: ArgAbi`, `conv: CallConvention`, `c_variadic: bool`
 - `pub struct ArgAbi` — `ty: Ty`, `layout: Layout`, `mode: PassMode`
-- `pub enum PassMode` — `Direct`, `Indirect { meta_attrs: bool }`, `Ignore`
+- `pub enum PassMode` — `Direct`, `Indirect { meta_attrs: bool }`, `Ignore`, `Cast { to: Ty, cast_int: bool }`, `HomogeneousAggregate { element_ty: Ty, count: u32 }`, `Split { pieces: Vec<PassMode> }`
 - `pub enum CallConvention` — `Glyim`, `C`, `System`; implements `From<Abi>`
 - `pub enum FieldsShape` — `Primitive`, `Array { stride: Size, count: u64 }`, `Arbitrary { offsets: IndexVec<FieldIdx, Size> }`
 - `pub enum VariantsShape` — `Single { index: u32 }`, `Multiple { tag: Ty, tag_field: u32, tag_encoding: TagEncoding, variants: Vec<Layout> }`
 - `pub enum TagEncoding` — `Direct`, `Niche { untagged_variant: u32, niche_variants: std::ops::RangeInclusive<u32>, niche_start: u128 }`
+- `pub mod vtable` — `pub struct VTableEntry`, `pub struct VTableLayout`, `pub struct VTableSize`, `pub trait VTableComputer`
 
 ---
 
@@ -312,21 +342,20 @@ Any change to items listed here requires a formal Change Request.
 
 - `pub trait CodegenBackend` — `name(&self) -> &'static str`, `generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()>`, `generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>>`
 - `pub struct BytecodeBackend` — `new`, `default`; implements `CodegenBackend`
+- `pub mod vtable` — `pub const VTABLE_DROP_FN_INDEX: usize`, `VTABLE_SIZE_INDEX: usize`, `VTABLE_ALIGN_INDEX: usize`, `VTABLE_METHODS_START: usize`, `pub const fn method_index(i: usize) -> usize`
 
 ---
 
 ## glyim-codegen-llvm
 
-- `pub struct LlvmBackend` — `new()`, `with_target(target_triple: impl Into<String>)`, `default`; implements `CodegenBackend`
+- `pub struct LlvmBackend` — `new()`, `with_target(target_triple: impl Into<String>)`, `with_ty_ctx(ctx: TyCtx)`, `with_debug_info(enable: bool)`, `with_source_map(map: HashMap<FileId, (String, String)>)`, `default`; implements `CodegenBackend`
 
 ---
 
 ## glyim-db
 
-- `pub struct Database` — `new(config: CrateConfig)`, `interner(&self) -> &Interner`, `vfs(&self) -> &Vfs`, `krate(&self) -> CrateId`, `set_ty_ctx(&self, ctx: TyCtx)`, `ty_ctx(&self) -> parking_lot::RwLockReadGuard<'_, Option<TyCtx>>`, `intern_mut(&mut self) -> &mut Interner`, `default`
+- `pub struct Database` — `new(config: CrateConfig)`, `interner(&self) -> &Interner`, `vfs(&self) -> &Vfs`, `krate(&self) -> CrateId`, `set_ty_ctx(&self, ctx: TyCtx)`, `ty_ctx(&self) -> parking_lot::RwLockReadGuard<'_, Option<TyCtx>>`, `intern_mut(&mut self) -> &mut Interner`, `set_mono_cache(&self, items: Vec<String>)`, `mono_cache(&self) -> parking_lot::RwLockReadGuard<'_, Option<Vec<String>>>`, `default`
 - `pub struct CrateConfig` — `name: String`, `target_triple: String`, `opt_level: u8`
-
-> **Change from previous contract:** Removed `trait_ctx()` (no longer present) and `db_helpers` module (functionality moved to `Database::intern_mut`). Internal field `_ty_ctx` (renamed from `ty_ctx`) and `_config` (renamed from `config`) are not part of the public API.
 
 ---
 
@@ -338,17 +367,17 @@ Any change to items listed here requires a formal Change Request.
 
 ## glyim-cli
 
-- `pub struct CliArgs` — `input: PathBuf`, `output: Option<PathBuf>`, `opt_level: u8`, `target: Option<String>`, `backend: String` (fields are public via `clap` derive)
+- `pub struct CliArgs` — `input: PathBuf`, `output: Option<PathBuf>`, `emit: String`, `opt_level: u8`, `target: Option<String>`, `backend: String` (fields are public via `clap` derive)
 - `pub fn run() -> Result<(), Vec<GlyimDiagnostic>>`
 
 ---
 
 ## glyim-lsp
 
-- `pub struct LspState` — `new(db: Database)`, `did_open(&mut self, path: PathBuf, content: String, version: i32)`, `did_change(&mut self, path: PathBuf, content: String, version: i32)`, `did_close(&mut self, path: &PathBuf)`, `file_content(&self, path: &PathBuf) -> Option<String>`, `diagnostics_for_file(&self, path: &PathBuf) -> Vec<GlyimDiagnostic>`, `file_id(&self, path: &PathBuf) -> Option<FileId>`
+- `pub struct LspState` — `new(db: Database)`, `start_driver(&mut self, cache_dir: PathBuf)`, `did_open(&mut self, path: PathBuf, content: String, version: i32)`, `did_change(&mut self, path: PathBuf, content: String, version: i32)`, `did_close(&mut self, path: &PathBuf)`, `file_content(&self, path: &PathBuf) -> Option<String>`, `diagnostics_for_file(&self, path: &PathBuf) -> Vec<GlyimDiagnostic>`, `file_id(&self, path: &PathBuf) -> Option<FileId>`
 - `pub mod uri` — `pub fn path_to_uri(path: &Path) -> Result<String, String>`, `pub fn uri_to_file_path(uri: &str) -> Result<PathBuf, String>`, `pub fn offset_to_position(text: &str, offset: usize) -> Result<(usize, usize), String>`
-
-> **Change from previous contract:** Previously declared as an empty crate stub. Now provides full LSP state and URI helpers.
+- `pub struct AnalysisDatabase` — `new`, `touch`, `evict_stale` (fields are crate‑internal)
+- `pub struct ReferenceGraph`, `Reference`, `ReferenceKind`, `SymbolIndex`, `SymbolInfo`, `SymbolKind`, `DefinitionLocation`, `TypeSignature` (public via re‑export)
 
 ---
 
@@ -359,14 +388,13 @@ Any change to items listed here requires a formal Change Request.
 - `pub enum InterpValue` — `Int(i128)`, `Bool(bool)`, `Unit`, `Aggregate(Vec<InterpValue>)`, `Ref(usize)`; implements `PartialEq`
 - `pub type InterpResult<T> = Result<T, InterpError>`
 
-> **Change from previous contract:** `InterpValue` now includes `Aggregate(Vec<InterpValue>)` and `Ref(usize)` variants. `InterpError` now implements `Display` and `Error`.
-
 ---
 
 ## glyim-runtime
 
 - `pub unsafe extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8`
 - `pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize)`
+- `pub extern "C" fn glyim_drop_in_place(ptr: *mut u8)`
 - `pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> !`
 - `pub use ALIGN_MAX`
 
@@ -387,8 +415,52 @@ Any change to items listed here requires a formal Change Request.
 - `pub fn test_ty_ctx() -> TyCtxMut`
 - `pub fn test_frozen_ty_ctx() -> TyCtx`
 - `pub fn with_fresh_ty_ctx<F, R>(f: F) -> (TyCtx, R)`
-- Re-exports from sub-modules: assertion helpers, fixture builders, mock types, phase testers, property checker, snapshot functions, error types
+- Re‑exports from sub‑modules: assertion helpers, fixture builders, mock types, phase testers, property checker, snapshot functions, error types
 
 ---
 
-**Note:** This contract reflects the exact public API as of the provided codebase. Any addition, removal, or modification of these items requires a formal Change Request before being merged.
+## glyim-lang-core
+
+- `pub fn core_source(name: &str) -> Option<&'static str>`
+- `pub fn core_modules() -> &'static [&'static str]`
+- `pub fn core_source_all() -> String`
+
+---
+
+## glyim-lang-std
+
+- `pub fn std_source(name: &str) -> Option<&'static str>`
+- `pub fn std_modules() -> &'static [&'static str]`
+- `pub fn std_source_all() -> String`
+- `pub fn std_module_count() -> usize`
+
+---
+
+## glyim-lang-alloc
+
+- `pub fn alloc_source(name: &str) -> Option<&'static str>`
+- `pub fn alloc_modules() -> &'static [&'static str]`
+- `pub fn alloc_source_all() -> String`
+
+---
+
+## glyip (build tool)
+
+- `pub mod cache` — `Cache::new`, `target_dir`, `debug_dir`, `release_dir`, `output_dir`, `dep_dir`, `global_cache_dir`, `needs_recompile`, `needs_rebuild`, `mark_built`, `clean`, `output_binary`, `store_artifact`, `get_artifact`
+- `pub mod commands` — `cmd_new`, `cmd_build`, `cmd_test`, `cmd_run`; result types `NewResult`, `BuildResult`, `TestResult`, `RunResult`
+- `pub mod config` — `GlyipToml`, `PackageConfig`, `BinTarget`, `LibTarget`, `Dependency`, `DependencyDetail`, `NewOptions`, `BuildOptions`, `TestOptions`, `RunOptions`
+- `pub mod dep` — `CrateIndex`, `DependencyResolver`, `IndexEntry`
+- `pub mod error` — `GlyipError`, `GlyipResult`
+- `pub mod fingerprint` — `Fingerprint`, `FingerprintStore`
+- `pub mod lockfile` — `Lockfile`, `LockedCrate`, `CrateSource`
+- Re‑exports of all public types from sub‑modules
+
+---
+
+## glyim-pilot (tools)
+
+This crate is not part of the compiler’s public API. It is a development tool and its public interface is not locked.
+
+---
+
+**Note:** This contract reflects the exact public API as of the provided codebase (2026-05-17). Any addition, removal, or modification of these items requires a formal Change Request before being merged.
