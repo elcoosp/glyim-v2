@@ -24,6 +24,7 @@
 
 mod liveness;
 mod move_analysis;
+mod twophase;
 mod visitor;
 
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, MultiSpan, SubDiagnostic};
@@ -111,51 +112,17 @@ fn is_two_phase(kind: &BorrowKind) -> bool {
 }
 
 /// Determine whether a two-phase loan is still in its reservation phase
-/// at the given statement.
-///
-/// A two-phase mutable borrow is in reservation from its creation point
-/// up to (but not including) the first statement that *reads* its
-/// `dest_local`. Once `dest_local` is read, the borrow is "activated"
-/// and behaves as a full mutable borrow.
-///
-/// For loans created in a different basic block, we conservatively
-/// consider them already activated (cross-block two-phase analysis is
-/// not supported in this implementation).
+/// using precomputed cross-block analysis.
 fn loan_is_in_reservation(
     loan: &Loan,
     current_block: BasicBlockIdx,
     current_stmt_idx: usize,
-    block_data: &BasicBlockData,
+    activation: &twophase::ReservationAnalysis,
 ) -> bool {
     if !is_two_phase(&loan.kind) {
         return false;
     }
-
-    let (loan_block, loan_stmt) = loan.creation_point;
-
-    // Cross-block: conservatively consider activated
-    if loan_block != current_block {
-        trace!("two-phase loan crosses block — considered activated");
-        return false;
-    }
-
-    // Scan from the statement after creation up to (but NOT including)
-    // the current statement. If any intermediate statement reads
-    // dest_local, the loan is already activated.
-    for i in loan_stmt + 1..current_stmt_idx {
-        let mut checker = LocalReadChecker::new(loan.dest_local);
-        let stmt = &block_data.statements[i];
-        if let StatementKind::Assign(_, rvalue) = &stmt.kind {
-            walk_rvalue_reads(rvalue, &mut checker);
-        }
-        if checker.found() {
-            trace!(stmt = i, "two-phase loan activated");
-            return false;
-        }
-    }
-
-    trace!("two-phase loan in reservation");
-    true
+    activation.is_reservation(current_block, current_stmt_idx)
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +166,7 @@ impl ReadVisitor for PlaceCollector<'_> {
 /// program point, meaning the reference is still in use and the borrow
 /// is still active.
 fn check_stmt_conflicts(
+    activation_cache: &std::collections::HashMap<usize, twophase::ReservationAnalysis>,
     ctx: &dyn BorrowckCtx,
     stmt: &glyim_mir::Statement,
     active_loans: &[&Loan],
@@ -213,14 +181,14 @@ fn check_stmt_conflicts(
                 Rvalue::Ref(borrowed, kind) => {
                     // Creating a new borrow — check if it conflicts with
                     // any *already active* loan on the same place.
-                    for loan in active_loans {
+                    for (loan_idx, loan) in active_loans.iter().enumerate() {
                         if places_conflict(borrowed, &loan.borrowed_place) {
-                            let in_reservation = loan_is_in_reservation(
-                                loan,
-                                current_block,
-                                current_stmt_idx,
-                                block_data,
-                            );
+                            let activation = activation_cache.get(&loan_idx);
+                            let in_reservation = if let Some(act) = activation {
+                                loan_is_in_reservation(loan, current_block, current_stmt_idx, act)
+                            } else {
+                                false
+                            };
                             let conflict = conflicts_with_active(&loan.kind, kind, in_reservation);
                             if conflict {
                                 let name = ctx.local_name(borrowed.local);
@@ -259,14 +227,19 @@ fn check_stmt_conflicts(
                     }
 
                     for place in &read_places {
-                        for loan in active_loans {
+                        for (loan_idx, loan) in active_loans.iter().enumerate() {
                             if places_conflict(place, &loan.borrowed_place) {
-                                let in_reservation = loan_is_in_reservation(
-                                    loan,
-                                    current_block,
-                                    current_stmt_idx,
-                                    block_data,
-                                );
+                                let activation = activation_cache.get(&loan_idx);
+                                let in_reservation = if let Some(act) = activation {
+                                    loan_is_in_reservation(
+                                        loan,
+                                        current_block,
+                                        current_stmt_idx,
+                                        act,
+                                    )
+                                } else {
+                                    false
+                                };
                                 if matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
                                     && !in_reservation
                                 {
@@ -297,8 +270,14 @@ fn check_stmt_conflicts(
                     // to the borrowed local; it uses method calls and `&mut` derived from
                     // `&UnsafeCell`. Therefore, any active loan (Shared, Mut, or Unique)
                     // conflicts with a write to an overlapping place.
-                    for loan in active_loans {
+                    for (loan_idx, loan) in active_loans.iter().enumerate() {
                         if places_conflict(dest, &loan.borrowed_place) {
+                            let activation = activation_cache.get(&loan_idx);
+                            let _in_reservation = if let Some(act) = activation {
+                                loan_is_in_reservation(loan, current_block, current_stmt_idx, act)
+                            } else {
+                                false
+                            };
                             let name = ctx.local_name(dest.local);
                             let msg = format!("cannot assign to `{name}` because it is borrowed",);
                             let mut diag =
@@ -341,6 +320,20 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
     trace!("starting borrow checking");
     let loans = collect_loans(body);
     let liveness_result = liveness::compute_liveness(body);
+    // Precompute two‑phase activation analysis for all loans
+    let mut activation_cache: std::collections::HashMap<usize, twophase::ReservationAnalysis> =
+        std::collections::HashMap::new();
+    for (loan_idx, loan) in loans.iter().enumerate() {
+        if is_two_phase(&loan.kind) {
+            let activation = twophase::ReservationAnalysis::compute(
+                body,
+                loan.creation_point.0,
+                loan.creation_point.1,
+                loan.dest_local,
+            );
+            activation_cache.insert(loan_idx, activation);
+        }
+    }
     let mut errors = Vec::new();
 
     // Precompute index: local -> loans that have this local as dest.
@@ -368,6 +361,7 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
             }
 
             check_stmt_conflicts(
+                &activation_cache,
                 ctx,
                 stmt,
                 &active_loans,

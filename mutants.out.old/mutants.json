@@ -20288,7 +20288,7 @@
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ replace process_turn_dispatch -> Result<OrchestratorAction, PilotError> with Ok(Default::default())\n@@ -34,37 +34,17 @@\n     pub persistence: Arc<StatePersistence>,\n     pub processing: Arc<Mutex<HashSet<String>>>,\n     pub turn: u32,\n     pub trace_id: String,\n     pub metrics: Arc<dyn Metrics>,\n }\n \n pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n-    let span = tracing::info_span!(\"process_turn\", stream_id = %ctx.stream_id, turn = ctx.turn, trace_id = %ctx.trace_id);\n-    let _enter = span.enter();\n-\n-    let stream_id = ctx.stream_id.clone();\n-    let processing = ctx.processing.clone();\n-    {\n-        let mut guard = processing.lock().await;\n-        if !guard.insert(stream_id.clone()) {\n-            tracing::warn!(\"already processing, skipping duplicate\");\n-            return Ok(OrchestratorAction::WaitForResponse { session_id: ctx.session_id.clone(), trace_id: Some(ctx.trace_id.clone()) });\n-        }\n-    }\n-\n-    let result = process_turn_inner(ctx).await;\n-\n-    {\n-        let mut guard = processing.lock().await;\n-        guard.remove(&stream_id);\n-    }\n-\n-    result\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n     let ops = parse_ops_block(&ctx.ops_block)?;\n     tracing::info!(ops_count = ops.ops.len(), \"parsed ops block\");\n \n     if !ops.ops.is_empty() {\n         let results = apply_ops_async(ctx.worktree_dir.clone(), ops.ops.clone(), ctx.config.limits.clone()).await?;\n",
+    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ replace process_turn_dispatch -> Result<OrchestratorAction, PilotError> with Ok(Default::default())\n@@ -56,40 +56,17 @@\n     pub persistence: Arc<StatePersistence>,\n     pub processing: Arc<Mutex<HashSet<String>>>,\n     pub turn: u32,\n     pub trace_id: String,\n     pub metrics: Arc<dyn Metrics>,\n }\n \n pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n-    let span = tracing::info_span!(\"process_turn\", stream_id = %ctx.stream_id, turn = ctx.turn, trace_id = %ctx.trace_id);\n-    let _enter = span.enter();\n-\n-    let stream_id = ctx.stream_id.clone();\n-    let processing = ctx.processing.clone();\n-    {\n-        let mut guard = processing.lock().await;\n-        if !guard.insert(stream_id.clone()) {\n-            tracing::warn!(\"already processing, skipping duplicate\");\n-            return Ok(OrchestratorAction::WaitForResponse {\n-                session_id: ctx.session_id.clone(),\n-                trace_id: Some(ctx.trace_id.clone()),\n-            });\n-        }\n-    }\n-\n-    let result = process_turn_inner(ctx).await;\n-\n-    {\n-        let mut guard = processing.lock().await;\n-        guard.remove(&stream_id);\n-    }\n-\n-    result\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n     let ops = parse_ops_block(&ctx.ops_block)?;\n     tracing::info!(ops_count = ops.ops.len(), \"parsed ops block\");\n \n     if !ops.ops.is_empty() {\n         let results = apply_ops_async(\n",
     "file": "tools/glyim-pilot/src/orchestrator/turn.rs",
     "function": {
       "function_name": "process_turn_dispatch",
@@ -20296,31 +20296,31 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 63
+          "line": 88
         },
         "start": {
           "column": 1,
-          "line": 41
+          "line": 63
         }
       }
     },
     "genre": "FnValue",
-    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:42:5: replace process_turn_dispatch -> Result<OrchestratorAction, PilotError> with Ok(Default::default())",
+    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:64:5: replace process_turn_dispatch -> Result<OrchestratorAction, PilotError> with Ok(Default::default())",
     "package": "glyim-pilot",
     "replacement": "Ok(Default::default())",
     "span": {
       "end": {
         "column": 11,
-        "line": 62
+        "line": 87
       },
       "start": {
         "column": 5,
-        "line": 42
+        "line": 64
       }
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_dispatch\n@@ -41,17 +41,17 @@\n pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n     let span = tracing::info_span!(\"process_turn\", stream_id = %ctx.stream_id, turn = ctx.turn, trace_id = %ctx.trace_id);\n     let _enter = span.enter();\n \n     let stream_id = ctx.stream_id.clone();\n     let processing = ctx.processing.clone();\n     {\n         let mut guard = processing.lock().await;\n-        if !guard.insert(stream_id.clone()) {\n+        if  /* ~ changed by cargo-mutants ~ */guard.insert(stream_id.clone()) {\n             tracing::warn!(\"already processing, skipping duplicate\");\n             return Ok(OrchestratorAction::WaitForResponse { session_id: ctx.session_id.clone(), trace_id: Some(ctx.trace_id.clone()) });\n         }\n     }\n \n     let result = process_turn_inner(ctx).await;\n \n     {\n",
+    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_dispatch\n@@ -63,17 +63,17 @@\n pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n     let span = tracing::info_span!(\"process_turn\", stream_id = %ctx.stream_id, turn = ctx.turn, trace_id = %ctx.trace_id);\n     let _enter = span.enter();\n \n     let stream_id = ctx.stream_id.clone();\n     let processing = ctx.processing.clone();\n     {\n         let mut guard = processing.lock().await;\n-        if !guard.insert(stream_id.clone()) {\n+        if  /* ~ changed by cargo-mutants ~ */guard.insert(stream_id.clone()) {\n             tracing::warn!(\"already processing, skipping duplicate\");\n             return Ok(OrchestratorAction::WaitForResponse {\n                 session_id: ctx.session_id.clone(),\n                 trace_id: Some(ctx.trace_id.clone()),\n             });\n         }\n     }\n \n",
     "file": "tools/glyim-pilot/src/orchestrator/turn.rs",
     "function": {
       "function_name": "process_turn_dispatch",
@@ -20328,31 +20328,31 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 63
+          "line": 88
         },
         "start": {
           "column": 1,
-          "line": 41
+          "line": 63
         }
       }
     },
     "genre": "UnaryOperator",
-    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:49:12: delete ! in process_turn_dispatch",
+    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:71:12: delete ! in process_turn_dispatch",
     "package": "glyim-pilot",
     "replacement": "",
     "span": {
       "end": {
         "column": 13,
-        "line": 49
+        "line": 71
       },
       "start": {
         "column": 12,
-        "line": 49
+        "line": 71
       }
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ replace process_turn_inner -> Result<OrchestratorAction, PilotError> with Ok(Default::default())\n@@ -58,75 +58,10 @@\n         let mut guard = processing.lock().await;\n         guard.remove(&stream_id);\n     }\n \n     result\n }\n \n async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n-    let ops = parse_ops_block(&ctx.ops_block)?;\n-    tracing::info!(ops_count = ops.ops.len(), \"parsed ops block\");\n-\n-    if !ops.ops.is_empty() {\n-        let results = apply_ops_async(ctx.worktree_dir.clone(), ops.ops.clone(), ctx.config.limits.clone()).await?;\n-        tracing::info!(applied = results.len(), \"file operations applied\");\n-    }\n-\n-    let trace_id_some = Some(ctx.trace_id.clone());\n-\n-    if ops.approved {\n-        push_branch(&ctx.worktree_dir, &ctx.stream_id, &ctx.config.execution.branch_version, ctx.config.execution.command_timeout).await?;\n-        let title = format!(\"stream-{}: implementation\", ctx.stream_id);\n-        let body = format!(\"Automated implementation for stream {}\", ctx.stream_id);\n-        let pr_url = create_pr(&ctx.worktree_dir, &ctx.stream_id, &ctx.config.execution.default_branch, &ctx.config.execution.branch_version, &title, &body, ctx.config.execution.command_timeout).await?;\n-        return Ok(OrchestratorAction::StreamComplete { session_id: ctx.session_id.clone(), pr_url, trace_id: trace_id_some });\n-    }\n-\n-    if ops.done {\n-        let resolved = ctx.config.gates.done.resolve(ctx.config.gates.level);\n-        let changed_files = diff_name_only(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await.unwrap_or_default()\n-            .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();\n-        let gate_ctx = crate::gates::types::GateContext::new(\n-            ctx.worktree_dir.clone(), ctx.project_root.clone(),\n-            ctx.config.execution.default_branch.clone(), ctx.config.execution.branch_version.clone(),\n-            ctx.config.execution.command_timeout, changed_files,\n-        );\n-        let result = done_pipeline::run_done_pipeline(&gate_ctx, &resolved).await?;\n-        if result.passed {\n-            let diff = diff_main(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await?;\n-            let log = log_oneline(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await?;\n-            Ok(OrchestratorAction::SelfReview { session_id: ctx.session_id.clone(), prompt: build_review_prompt(&diff, &log), trace_id: trace_id_some })\n-        } else {\n-            Ok(OrchestratorAction::Feedback { session_id: ctx.session_id.clone(), message: format!(\"Done gate failed:\\n{}\", result.failure_message()), trace_id: trace_id_some })\n-        }\n-    } else if ops.incomplete {\n-        Ok(OrchestratorAction::Continue { session_id: ctx.session_id.clone(), trace_id: trace_id_some })\n-    } else if let Some(msg) = ops.commit_message {\n-        let current_fix_round = ctx.persistence.get_fix_round(&ctx.stream_id).await;\n-        let resolved = ctx.config.gates.commit.resolve(\n-            ctx.config.gates.level, ctx.config.execution.default_branch.clone(), ctx.config.execution.branch_version.clone(),\n-        );\n-        let changed_files = diff_name_only(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await.unwrap_or_default()\n-            .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();\n-        let engine = CommitEngine::new(resolved, ctx.config.execution.max_fix_rounds, ctx.config.gates.banned_patterns.clone(), ctx.config.gates.architecture_rules.clone());\n-        let commit_ctx = CommitContext {\n-            worktree_dir: ctx.worktree_dir.clone(),\n-            project_root: ctx.project_root.clone(),\n-            stream_id: ctx.stream_id.clone(),\n-            commit_message: msg,\n-            current_fix_round,\n-            timeout_secs: ctx.config.execution.command_timeout,\n-            default_branch: ctx.config.execution.default_branch.clone(),\n-            branch_version: ctx.config.execution.branch_version.clone(),\n-            changed_files,\n-        };\n-        let decision = engine.evaluate_commit(&commit_ctx).await?;\n-        match decision {\n-            CommitDecision::Committed { message, .. } => Ok(OrchestratorAction::Feedback { session_id: ctx.session_id.clone(), message: format!(\"✅ Committed: {}\", message), trace_id: trace_id_some }),\n-            CommitDecision::GateFailed { feedback, .. } => Ok(OrchestratorAction::Feedback { session_id: ctx.session_id.clone(), message: format!(\"❌ Commit gate failed:\\n\\n{}\", feedback), trace_id: trace_id_some }),\n-            CommitDecision::Escalated { feedback, .. } => Ok(OrchestratorAction::Escalate { session_id: ctx.session_id.clone(), reason: format!(\"Fix rounds exceeded.\\n\\n{}\", feedback), trace_id: trace_id_some }),\n-        }\n-    } else {\n-        ctx.persistence.try_update_session(&ctx.stream_id, |s| { s.record_turn(); Ok(()) }).await?;\n-        Ok(OrchestratorAction::WaitForResponse { session_id: ctx.session_id.clone(), trace_id: trace_id_some })\n-    }\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n",
+    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ replace process_turn_inner -> Result<OrchestratorAction, PilotError> with Ok(Default::default())\n@@ -83,168 +83,10 @@\n         let mut guard = processing.lock().await;\n         guard.remove(&stream_id);\n     }\n \n     result\n }\n \n async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n-    let ops = parse_ops_block(&ctx.ops_block)?;\n-    tracing::info!(ops_count = ops.ops.len(), \"parsed ops block\");\n-\n-    if !ops.ops.is_empty() {\n-        let results = apply_ops_async(\n-            ctx.worktree_dir.clone(),\n-            ops.ops.clone(),\n-            ctx.config.limits.clone(),\n-        )\n-        .await?;\n-        tracing::info!(applied = results.len(), \"file operations applied\");\n-    }\n-\n-    let trace_id_some = Some(ctx.trace_id.clone());\n-\n-    if ops.approved {\n-        push_branch(\n-            &ctx.worktree_dir,\n-            &ctx.stream_id,\n-            &ctx.config.execution.branch_version,\n-            ctx.config.execution.command_timeout,\n-        )\n-        .await?;\n-        let title = format!(\"stream-{}: implementation\", ctx.stream_id);\n-        let body = format!(\"Automated implementation for stream {}\", ctx.stream_id);\n-        let pr_url = create_pr(\n-            &ctx.worktree_dir,\n-            &ctx.stream_id,\n-            &ctx.config.execution.default_branch,\n-            &ctx.config.execution.branch_version,\n-            &title,\n-            &body,\n-            ctx.config.execution.command_timeout,\n-        )\n-        .await?;\n-        return Ok(OrchestratorAction::StreamComplete {\n-            session_id: ctx.session_id.clone(),\n-            pr_url,\n-            trace_id: trace_id_some,\n-        });\n-    }\n-\n-    if ops.done {\n-        let resolved = ctx.config.gates.done.resolve(ctx.config.gates.level);\n-        let changed_files = diff_name_only(\n-            &ctx.worktree_dir,\n-            &ctx.config.execution.default_branch,\n-            ctx.config.execution.command_timeout,\n-        )\n-        .await\n-        .unwrap_or_default()\n-        .lines()\n-        .map(|l| l.to_string())\n-        .filter(|l| !l.is_empty())\n-        .collect();\n-        let gate_ctx = crate::gates::types::GateContext::new(\n-            ctx.worktree_dir.clone(),\n-            ctx.project_root.clone(),\n-            ctx.config.execution.default_branch.clone(),\n-            ctx.config.execution.branch_version.clone(),\n-            ctx.config.execution.command_timeout,\n-            changed_files,\n-        );\n-        let result = done_pipeline::run_done_pipeline(&gate_ctx, &resolved).await?;\n-        if result.passed {\n-            let diff = diff_main(\n-                &ctx.worktree_dir,\n-                &ctx.config.execution.default_branch,\n-                ctx.config.execution.command_timeout,\n-            )\n-            .await?;\n-            let log = log_oneline(\n-                &ctx.worktree_dir,\n-                &ctx.config.execution.default_branch,\n-                ctx.config.execution.command_timeout,\n-            )\n-            .await?;\n-            Ok(OrchestratorAction::SelfReview {\n-                session_id: ctx.session_id.clone(),\n-                prompt: build_review_prompt(&diff, &log),\n-                trace_id: trace_id_some,\n-            })\n-        } else {\n-            Ok(OrchestratorAction::Feedback {\n-                session_id: ctx.session_id.clone(),\n-                message: format!(\"Done gate failed:\\n{}\", result.failure_message()),\n-                trace_id: trace_id_some,\n-            })\n-        }\n-    } else if ops.incomplete {\n-        Ok(OrchestratorAction::Continue {\n-            session_id: ctx.session_id.clone(),\n-            trace_id: trace_id_some,\n-        })\n-    } else if let Some(msg) = ops.commit_message {\n-        let current_fix_round = ctx.persistence.get_fix_round(&ctx.stream_id).await;\n-        let resolved = ctx.config.gates.commit.resolve(\n-            ctx.config.gates.level,\n-            ctx.config.execution.default_branch.clone(),\n-            ctx.config.execution.branch_version.clone(),\n-        );\n-        let changed_files = diff_name_only(\n-            &ctx.worktree_dir,\n-            &ctx.config.execution.default_branch,\n-            ctx.config.execution.command_timeout,\n-        )\n-        .await\n-        .unwrap_or_default()\n-        .lines()\n-        .map(|l| l.to_string())\n-        .filter(|l| !l.is_empty())\n-        .collect();\n-        let engine = CommitEngine::new(\n-            resolved,\n-            ctx.config.execution.max_fix_rounds,\n-            ctx.config.gates.banned_patterns.clone(),\n-            ctx.config.gates.architecture_rules.clone(),\n-        );\n-        let commit_ctx = CommitContext {\n-            worktree_dir: ctx.worktree_dir.clone(),\n-            project_root: ctx.project_root.clone(),\n-            stream_id: ctx.stream_id.clone(),\n-            commit_message: msg,\n-            current_fix_round,\n-            timeout_secs: ctx.config.execution.command_timeout,\n-            default_branch: ctx.config.execution.default_branch.clone(),\n-            branch_version: ctx.config.execution.branch_version.clone(),\n-            changed_files,\n-        };\n-        let decision = engine.evaluate_commit(&commit_ctx).await?;\n-        match decision {\n-            CommitDecision::Committed { message, .. } => Ok(OrchestratorAction::Feedback {\n-                session_id: ctx.session_id.clone(),\n-                message: format!(\"✅ Committed: {}\", message),\n-                trace_id: trace_id_some,\n-            }),\n-            CommitDecision::GateFailed { feedback, .. } => Ok(OrchestratorAction::Feedback {\n-                session_id: ctx.session_id.clone(),\n-                message: format!(\"❌ Commit gate failed:\\n\\n{}\", feedback),\n-                trace_id: trace_id_some,\n-            }),\n-            CommitDecision::Escalated { feedback, .. } => Ok(OrchestratorAction::Escalate {\n-                session_id: ctx.session_id.clone(),\n-                reason: format!(\"Fix rounds exceeded.\\n\\n{}\", feedback),\n-                trace_id: trace_id_some,\n-            }),\n-        }\n-    } else {\n-        ctx.persistence\n-            .try_update_session(&ctx.stream_id, |s| {\n-                s.record_turn();\n-                Ok(())\n-            })\n-            .await?;\n-        Ok(OrchestratorAction::WaitForResponse {\n-            session_id: ctx.session_id.clone(),\n-            trace_id: trace_id_some,\n-        })\n-    }\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n",
     "file": "tools/glyim-pilot/src/orchestrator/turn.rs",
     "function": {
       "function_name": "process_turn_inner",
@@ -20360,31 +20360,31 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 132
+          "line": 250
         },
         "start": {
           "column": 1,
-          "line": 65
+          "line": 90
         }
       }
     },
     "genre": "FnValue",
-    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:66:5: replace process_turn_inner -> Result<OrchestratorAction, PilotError> with Ok(Default::default())",
+    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:91:5: replace process_turn_inner -> Result<OrchestratorAction, PilotError> with Ok(Default::default())",
     "package": "glyim-pilot",
     "replacement": "Ok(Default::default())",
     "span": {
       "end": {
         "column": 6,
-        "line": 131
+        "line": 249
       },
       "start": {
         "column": 5,
-        "line": 66
+        "line": 91
       }
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_inner\n@@ -61,17 +61,17 @@\n \n     result\n }\n \n async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n     let ops = parse_ops_block(&ctx.ops_block)?;\n     tracing::info!(ops_count = ops.ops.len(), \"parsed ops block\");\n \n-    if !ops.ops.is_empty() {\n+    if  /* ~ changed by cargo-mutants ~ */ops.ops.is_empty() {\n         let results = apply_ops_async(ctx.worktree_dir.clone(), ops.ops.clone(), ctx.config.limits.clone()).await?;\n         tracing::info!(applied = results.len(), \"file operations applied\");\n     }\n \n     let trace_id_some = Some(ctx.trace_id.clone());\n \n     if ops.approved {\n         push_branch(&ctx.worktree_dir, &ctx.stream_id, &ctx.config.execution.branch_version, ctx.config.execution.command_timeout).await?;\n",
+    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_inner\n@@ -86,17 +86,17 @@\n \n     result\n }\n \n async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {\n     let ops = parse_ops_block(&ctx.ops_block)?;\n     tracing::info!(ops_count = ops.ops.len(), \"parsed ops block\");\n \n-    if !ops.ops.is_empty() {\n+    if  /* ~ changed by cargo-mutants ~ */ops.ops.is_empty() {\n         let results = apply_ops_async(\n             ctx.worktree_dir.clone(),\n             ops.ops.clone(),\n             ctx.config.limits.clone(),\n         )\n         .await?;\n         tracing::info!(applied = results.len(), \"file operations applied\");\n     }\n",
     "file": "tools/glyim-pilot/src/orchestrator/turn.rs",
     "function": {
       "function_name": "process_turn_inner",
@@ -20392,31 +20392,31 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 132
+          "line": 250
         },
         "start": {
           "column": 1,
-          "line": 65
+          "line": 90
         }
       }
     },
     "genre": "UnaryOperator",
-    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:69:8: delete ! in process_turn_inner",
+    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:94:8: delete ! in process_turn_inner",
     "package": "glyim-pilot",
     "replacement": "",
     "span": {
       "end": {
         "column": 9,
-        "line": 69
+        "line": 94
       },
       "start": {
         "column": 8,
-        "line": 69
+        "line": 94
       }
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_inner\n@@ -79,17 +79,17 @@\n         let body = format!(\"Automated implementation for stream {}\", ctx.stream_id);\n         let pr_url = create_pr(&ctx.worktree_dir, &ctx.stream_id, &ctx.config.execution.default_branch, &ctx.config.execution.branch_version, &title, &body, ctx.config.execution.command_timeout).await?;\n         return Ok(OrchestratorAction::StreamComplete { session_id: ctx.session_id.clone(), pr_url, trace_id: trace_id_some });\n     }\n \n     if ops.done {\n         let resolved = ctx.config.gates.done.resolve(ctx.config.gates.level);\n         let changed_files = diff_name_only(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await.unwrap_or_default()\n-            .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();\n+            .lines().map(|l| l.to_string()).filter(|l|  /* ~ changed by cargo-mutants ~ */l.is_empty()).collect();\n         let gate_ctx = crate::gates::types::GateContext::new(\n             ctx.worktree_dir.clone(), ctx.project_root.clone(),\n             ctx.config.execution.default_branch.clone(), ctx.config.execution.branch_version.clone(),\n             ctx.config.execution.command_timeout, changed_files,\n         );\n         let result = done_pipeline::run_done_pipeline(&gate_ctx, &resolved).await?;\n         if result.passed {\n             let diff = diff_main(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await?;\n",
+    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_inner\n@@ -136,17 +136,17 @@\n             &ctx.worktree_dir,\n             &ctx.config.execution.default_branch,\n             ctx.config.execution.command_timeout,\n         )\n         .await\n         .unwrap_or_default()\n         .lines()\n         .map(|l| l.to_string())\n-        .filter(|l| !l.is_empty())\n+        .filter(|l|  /* ~ changed by cargo-mutants ~ */l.is_empty())\n         .collect();\n         let gate_ctx = crate::gates::types::GateContext::new(\n             ctx.worktree_dir.clone(),\n             ctx.project_root.clone(),\n             ctx.config.execution.default_branch.clone(),\n             ctx.config.execution.branch_version.clone(),\n             ctx.config.execution.command_timeout,\n             changed_files,\n",
     "file": "tools/glyim-pilot/src/orchestrator/turn.rs",
     "function": {
       "function_name": "process_turn_inner",
@@ -20424,31 +20424,31 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 132
+          "line": 250
         },
         "start": {
           "column": 1,
-          "line": 65
+          "line": 90
         }
       }
     },
     "genre": "UnaryOperator",
-    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:87:56: delete ! in process_turn_inner",
+    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:144:21: delete ! in process_turn_inner",
     "package": "glyim-pilot",
     "replacement": "",
     "span": {
       "end": {
-        "column": 57,
-        "line": 87
+        "column": 22,
+        "line": 144
       },
       "start": {
-        "column": 56,
-        "line": 87
+        "column": 21,
+        "line": 144
       }
     }
   },
   {
-    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_inner\n@@ -101,17 +101,17 @@\n     } else if ops.incomplete {\n         Ok(OrchestratorAction::Continue { session_id: ctx.session_id.clone(), trace_id: trace_id_some })\n     } else if let Some(msg) = ops.commit_message {\n         let current_fix_round = ctx.persistence.get_fix_round(&ctx.stream_id).await;\n         let resolved = ctx.config.gates.commit.resolve(\n             ctx.config.gates.level, ctx.config.execution.default_branch.clone(), ctx.config.execution.branch_version.clone(),\n         );\n         let changed_files = diff_name_only(&ctx.worktree_dir, &ctx.config.execution.default_branch, ctx.config.execution.command_timeout).await.unwrap_or_default()\n-            .lines().map(|l| l.to_string()).filter(|l| !l.is_empty()).collect();\n+            .lines().map(|l| l.to_string()).filter(|l|  /* ~ changed by cargo-mutants ~ */l.is_empty()).collect();\n         let engine = CommitEngine::new(resolved, ctx.config.execution.max_fix_rounds, ctx.config.gates.banned_patterns.clone(), ctx.config.gates.architecture_rules.clone());\n         let commit_ctx = CommitContext {\n             worktree_dir: ctx.worktree_dir.clone(),\n             project_root: ctx.project_root.clone(),\n             stream_id: ctx.stream_id.clone(),\n             commit_message: msg,\n             current_fix_round,\n             timeout_secs: ctx.config.execution.command_timeout,\n",
+    "diff": "--- tools/glyim-pilot/src/orchestrator/turn.rs\n+++ delete ! in process_turn_inner\n@@ -193,17 +193,17 @@\n             &ctx.worktree_dir,\n             &ctx.config.execution.default_branch,\n             ctx.config.execution.command_timeout,\n         )\n         .await\n         .unwrap_or_default()\n         .lines()\n         .map(|l| l.to_string())\n-        .filter(|l| !l.is_empty())\n+        .filter(|l|  /* ~ changed by cargo-mutants ~ */l.is_empty())\n         .collect();\n         let engine = CommitEngine::new(\n             resolved,\n             ctx.config.execution.max_fix_rounds,\n             ctx.config.gates.banned_patterns.clone(),\n             ctx.config.gates.architecture_rules.clone(),\n         );\n         let commit_ctx = CommitContext {\n",
     "file": "tools/glyim-pilot/src/orchestrator/turn.rs",
     "function": {
       "function_name": "process_turn_inner",
@@ -20456,26 +20456,26 @@
       "span": {
         "end": {
           "column": 2,
-          "line": 132
+          "line": 250
         },
         "start": {
           "column": 1,
-          "line": 65
+          "line": 90
         }
       }
     },
     "genre": "UnaryOperator",
-    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:109:56: delete ! in process_turn_inner",
+    "name": "tools/glyim-pilot/src/orchestrator/turn.rs:201:21: delete ! in process_turn_inner",
     "package": "glyim-pilot",
     "replacement": "",
     "span": {
       "end": {
-        "column": 57,
-        "line": 109
+        "column": 22,
+        "line": 201
       },
       "start": {
-        "column": 56,
-        "line": 109
+        "column": 21,
+        "line": 201
       }
     }
   },

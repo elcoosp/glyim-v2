@@ -1,23 +1,8 @@
-//! Glyim Alloc Library
+//! Glyim Alloc Library – source access only.
 //!
-//! This crate contains the standard library source files for dynamic allocation
-//! and collections in the Glyim language. The actual library code is in `.g`
-//! files under `lib/`, written in Glyim syntax. This Rust crate provides access
-//! to those source files and testing infrastructure.
-
-pub mod alloc;
-pub mod boxed;
-pub mod raw_vec;
-pub mod rc;
-pub mod string;
-pub mod vec;
-
-pub use alloc::GlobalAlloc;
-pub use boxed::Box;
-pub use raw_vec::RawVec;
-pub use rc::Rc;
-pub use string::String;
-pub use vec::Vec;
+//! This crate provides access to the source code of the alloc library
+//! written in Glyim. It does not contain Rust implementations of the
+//! types; those are defined in the `.g` files.
 
 /// Returns the source code of an alloc library module by name.
 pub fn alloc_source(name: &str) -> Option<&'static str> {
@@ -38,8 +23,8 @@ pub fn alloc_modules() -> &'static [&'static str] {
 }
 
 /// Returns the combined source of all alloc library modules.
-pub fn alloc_source_all() -> std::string::String {
-    let mut out = std::string::String::new();
+pub fn alloc_source_all() -> String {
+    let mut out = String::new();
     for name in alloc_modules() {
         if let Some(src) = alloc_source(name) {
             out.push_str(&format!("// === module: {} ===\n", name));
@@ -49,6 +34,3 @@ pub fn alloc_source_all() -> std::string::String {
     }
     out
 }
-
-#[cfg(test)]
-mod tests;
