@@ -82,7 +82,7 @@ git diff main..HEAD --stat > /tmp/sXX_stats.txt
 This PR implements [core functionality] for the Glyim compiler.
 
 ### Related Issues
-- Stream SXX: [Stream Name]
+- Stream XX: [Stream Name]
 - Required for downstream streams: [list]
 
 ### Changes Overview

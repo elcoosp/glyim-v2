@@ -1,4 +1,4 @@
-# Stream S{ID}: {NAME}
+# Stream {ID}: {NAME}
 
 ## Mission
 Implement {SCOPE_SUMMARY} for the Glyim compiler.
