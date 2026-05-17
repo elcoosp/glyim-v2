@@ -9,6 +9,6 @@ glyim-syntax = { workspace = true }
 glyim-core = { workspace = true }
 glyim-span = { workspace = true }
 
+
 [dev-dependencies]
-glyim-frontend = { workspace = true }
 glyim-test = { workspace = true }
