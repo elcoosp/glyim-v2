@@ -190,5 +190,225 @@
       "U07"
     ],
     "downstream": []
+  },
+  {
+    "id": "M01",
+    "name": "Split LLVM Backend (glyim-codegen-llvm)",
+    "crate": "glyim-codegen-llvm",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-codegen-llvm/src/lib.rs` (1300+ lines) into submodules: `lower/` (MIR→LLVM lowering), `types/` (type mapping), `passes/` (optimisation pipeline), `debug/` (DWARF generation). Keep public API unchanged. Ensure all tests pass.",
+    "owned_crates": [
+      "glyim-codegen-llvm"
+    ],
+    "locked_interfaces": [
+      "glyim_codegen_llvm::LlvmBackend",
+      "glyim_codegen::CodegenBackend for LlvmBackend"
+    ],
+    "tests": {
+      "M01-T01": "Existing LLVM codegen tests continue to pass (run `cargo test -p glyim-codegen-llvm`)",
+      "M01-T02": "Public API unchanged – downstream crates compile without modification",
+      "M01-T03": "No new compiler warnings or dead code after split"
+    },
+    "mocking": "No mocking – pure refactoring. Use existing test suite to verify correctness.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M02",
+    "name": "Split Frontend Parser (glyim-frontend)",
+    "crate": "glyim-frontend",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-frontend/src/parser.rs` (1500+ lines) into `parser/expr.rs`, `parser/stmt.rs`, `parser/item.rs`, `parser/ty.rs`, `parser/pat.rs`. Re‑export all parsing functions from `parser/mod.rs` to keep external API identical.",
+    "owned_crates": [
+      "glyim-frontend"
+    ],
+    "locked_interfaces": [
+      "glyim_frontend::parse_to_syntax",
+      "glyim_frontend::ParseResult"
+    ],
+    "tests": {
+      "M02-T01": "All existing parser unit tests pass",
+      "M02-T02": "Snapshots of CST for all test cases unchanged",
+      "M02-T03": "Parser error recovery remains consistent"
+    },
+    "mocking": "No mocking – rely on existing test suite and snapshot tests.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M03",
+    "name": "Split HIR Lowering (glyim-hir)",
+    "crate": "glyim-hir",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-hir/src/lower.rs` (800+ lines) into `lower_item.rs`, `lower_expr.rs`, `lower_pat.rs`, `lower_type.rs`. Each file handles one category of AST → HIR conversion. Keep `lower_crate` public entry point unchanged.",
+    "owned_crates": [
+      "glyim-hir"
+    ],
+    "locked_interfaces": [
+      "glyim_hir::lower_crate_for_pipeline"
+    ],
+    "tests": {
+      "M03-T01": "All HIR building tests pass (run `cargo test -p glyim-hir`)",
+      "M03-T02": "Snapshot of HIR structures for sample programs unchanged"
+    },
+    "mocking": "Use existing HIR unit tests; no mocking required.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M04",
+    "name": "Split Type Context (glyim-type)",
+    "crate": "glyim-type",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-type/src/context.rs` (600+ lines) into `ty_ctx_mut.rs`, `ty_ctx.rs`, `adt_def.rs`. Separate mutable building API from frozen query API. Keep all public methods on `TyCtxMut` and `TyCtx`.",
+    "owned_crates": [
+      "glyim-type"
+    ],
+    "locked_interfaces": [
+      "glyim_type::TyCtx",
+      "glyim_type::TyCtxMut",
+      "glyim_type::AdtDef"
+    ],
+    "tests": {
+      "M04-T01": "All type‑system tests pass (`cargo test -p glyim-type`)",
+      "M04-T02": "Auto‑trait computation unchanged",
+      "M04-T03": "Layout queries unchanged"
+    },
+    "mocking": "No mocking – run existing test suite.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M05",
+    "name": "Split Type Checker Body (glyim-typeck)",
+    "crate": "glyim-typeck",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-typeck/src/check_body.rs` (900+ lines) into `check_expr.rs`, `check_stmt.rs`, `check_pat.rs`, `unify.rs`. Each file handles one aspect of `FnCtxt`. Keep `FnCtxt::check` public.",
+    "owned_crates": [
+      "glyim-typeck"
+    ],
+    "locked_interfaces": [
+      "glyim_typeck::typeck_crate",
+      "glyim_typeck::thir::Body"
+    ],
+    "tests": {
+      "M05-T01": "All type‑checking tests pass (`cargo test -p glyim-typeck`)",
+      "M05-T02": "THIR output for sample functions unchanged",
+      "M05-T03": "Diagnostic messages unchanged"
+    },
+    "mocking": "Use `glyim_test::phase::MirGenTester` to verify type‑checked output.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M06",
+    "name": "Split MIR Builder (glyim-lower/lower.rs)",
+    "crate": "glyim-lower",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-lower/src/lower.rs` (600+ lines) into `builder.rs`, `lower_rvalue.rs`, `lower_terminator.rs`. Keep `MirBuilder` and `lower_body` public.",
+    "owned_crates": [
+      "glyim-lower"
+    ],
+    "locked_interfaces": [
+      "glyim_lower::lower_body",
+      "glyim_lower::LowerCtx"
+    ],
+    "tests": {
+      "M06-T01": "All MIR lowering tests pass (`cargo test -p glyim-lower`)",
+      "M06-T02": "Snapshot of MIR for test programs unchanged"
+    },
+    "mocking": "Use `MockLowerCtx` from `glyim-test` to verify builder behaviour.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M07",
+    "name": "Split Polymorphization (glyim-lower/polymorphize.rs)",
+    "crate": "glyim-lower",
+    "wave": 0,
+    "scope_summary": "Split `crates/glyim-lower/src/polymorphize.rs` (550+ lines) into `analyze.rs`, `substitute.rs`, `dedup.rs`. Keep `polymorphize_substs`, `compute_poly_item`, and `deduplicate` public.",
+    "owned_crates": [
+      "glyim-lower"
+    ],
+    "locked_interfaces": [
+      "glyim_lower::polymorphize::analyze_used_params",
+      "glyim_lower::polymorphize::deduplicate"
+    ],
+    "tests": {
+      "M07-T01": "All polymorphization unit tests pass",
+      "M07-T02": "Mono item counts unchanged after deduplication"
+    },
+    "mocking": "Use `glyim_test::mock::MockLowerCtx`; run existing tests.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M08",
+    "name": "Move Integration Tests out of glyim-test/lib.rs",
+    "crate": "glyim-test",
+    "wave": 0,
+    "scope_summary": "Move the large `tests` module (1400+ lines) from `crates/glyim-test/src/lib.rs` into separate test files under `tests/` directory. Keep `lib.rs` only for public API and helper modules. Ensure all integration tests still run via `cargo test -p glyim-test`.",
+    "owned_crates": [
+      "glyim-test"
+    ],
+    "locked_interfaces": [
+      "glyim_test::assert_ty",
+      "glyim_test::snapshot_cst",
+      "glyim_test::TestRunner"
+    ],
+    "tests": {
+      "M08-T01": "All existing tests continue to pass after move",
+      "M08-T02": "No duplicate test execution",
+      "M08-T03": "Compile time of test crate improves (optional)"
+    },
+    "mocking": "No mocking – the tests themselves are the verification.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M09",
+    "name": "Split LSP Core (glyim-lsp)",
+    "crate": "glyim-lsp",
+    "wave": 0,
+    "scope_summary": "Split `glyim-lsp/src/lib.rs` and related large files into feature modules: `symbol_index.rs`, `reference_graph.rs`, `completion.rs`, `goto_definition.rs`, `hover.rs`, `diagnostics.rs`. Each module handles one LSP capability. Keep `LspState` and `AnalysisDatabase` unchanged.",
+    "owned_crates": [
+      "glyim-lsp"
+    ],
+    "locked_interfaces": [
+      "glyim_lsp::LspState",
+      "glyim_lsp::AnalysisDatabase"
+    ],
+    "tests": {
+      "M09-T01": "All LSP server tests pass (`cargo test -p glyim-lsp`)",
+      "M09-T02": "LSP responses for sample documents unchanged"
+    },
+    "mocking": "Use `glyim_test::mock::TestDbBuilder` to create analysis databases for testing.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "M10",
+    "name": "Split LSP Advanced Features (glyim-lsp)",
+    "crate": "glyim-lsp",
+    "wave": 0,
+    "scope_summary": "Complete and split remaining LSP stubs: `code_action.rs`, `folding.rs`, `formatting.rs`, `rename.rs`. Implement full logic for code actions, folding ranges, document formatting, and rename refactoring.",
+    "owned_crates": [
+      "glyim-lsp"
+    ],
+    "locked_interfaces": [
+      "glyim_lsp::code_action::provide_code_actions",
+      "glyim_lsp::formatting::format_document"
+    ],
+    "tests": {
+      "M10-T01": "Code action suggests removing unused import (LSP test)",
+      "M10-T02": "Folding ranges are generated for braces (LSP test)",
+      "M10-T03": "Format document runs `cargo fmt` and returns edits (LSP test)",
+      "M10-T04": "Rename updates all references (LSP test)"
+    },
+    "mocking": "Same as M09 – use `TestDbBuilder` to simulate LSP requests.",
+    "upstream": [
+      "M09"
+    ],
+    "downstream": []
   }
 ]
