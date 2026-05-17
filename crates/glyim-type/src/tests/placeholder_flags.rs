@@ -1,6 +1,6 @@
 //! Tests for HAS_RE_PLACEHOLDER and HAS_TY_PLACEHOLDER flags
 
-use crate::context::TyCtxMut;
+use crate::*;
 use crate::display::TypeLookup;
 use crate::{
     BoundRegionKind, BoundTy, BoundTyKind, PlaceholderRegion, Region, TyKind, TypeFlags,
