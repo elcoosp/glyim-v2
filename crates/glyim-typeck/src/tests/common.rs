@@ -1,82 +1,47 @@
-use crate::thir;
-use glyim_core::arena::IndexVec;
-use glyim_core::def_id::LocalDefId;
+//! Common utilities for typeck tests.
+
+use glyim_core::def_id::DefId;
 use glyim_core::interner::Name;
-use glyim_core::primitives::*;
 use glyim_hir::*;
-use glyim_solve::InferenceTable;
+use glyim_solve::{InferenceTable, Obligation};
 use glyim_span::Span;
-use glyim_type::*;
+use glyim_type::{Ty, TyCtxMut};
+use std::collections::HashMap;
 
-/// Helper: create a minimal CrateHir with one function body containing the given expressions.
-/// Returns the CrateHir and the BodyId of that function.
-pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, glyim_hir::BodyId) {
-    let mut hir = CrateHir {
-        items: glyim_core::arena::IndexVec::new(),
-        bodies: glyim_core::arena::IndexVec::new(),
-        body_owners: glyim_core::arena::IndexVec::new(),
-    };
+use crate::check_body::FnCtxt;
+use crate::env::LocalEnv;
+use crate::thir;
 
-    // Create body with given expressions
-    let mut body_exprs = glyim_core::arena::IndexVec::new();
-    for expr in exprs {
-        body_exprs.push(expr);
-    }
-    let body = Body {
-        owner: LocalDefId::from_raw(0),
-        exprs: body_exprs.clone(),
-        pats: glyim_core::arena::IndexVec::new(),
-        params: Vec::new(),
-        span: glyim_span::Span::DUMMY,
-        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; body_exprs.len()]),
-    };
-    let body_id = hir.bodies.push(body);
-    hir.body_owners.push(LocalDefId::from_raw(0));
-
-    // Create a function item that owns this body
-    let fn_item = Item {
-        id: ItemId::from_raw(0),
-        name: name("test_fn"),
-        kind: ItemKind::Fn(FnItem {
-            params: Vec::new(),
-            return_ty: None,
-            body: Some(body_id),
-            is_unsafe: false,
-            is_async: false,
-            generic_params: Vec::new(),
-            where_clauses: Vec::new(),
-        }),
-        visibility: Visibility::Public,
-        span: glyim_span::Span::DUMMY,
-    };
-    hir.items.push(fn_item);
-
-    (hir, body_id)
-}
-
-/// Run check_function_body with a fresh context and return the THIR body.
-pub fn typeck_single_body(hir: &CrateHir, body_id: BodyId) -> thir::Body {
-    let interner = glyim_core::interner::Interner::new();
-    let mut ctx = TyCtxMut::new(interner);
-    let mut infer = InferenceTable::new();
+/// Test helper: constructs FnCtxt and runs the check.
+pub fn check_function_body(
+    ctx: &mut TyCtxMut,
+    infer: &mut InferenceTable,
+    def_map: &glyim_def_map::CrateDefMap,
+    hir: &CrateHir,
+    body_id: BodyId,
+    owner: DefId,
+    return_ty: Ty,
+    params: &[(Name, Ty, Span)],
+) -> (thir::Body, Vec<GlyimDiagnostic>) {
+    let body = &hir.bodies[body_id];
     let mut diagnostics = Vec::new();
     let mut obligations = Vec::new();
+    let env = LocalEnv::new();
 
-    crate::check_body::check_function_body(
-        &mut ctx,
-        &mut infer,
-        &mut diagnostics,
-        &mut obligations,
-        body_id,
+    let fn_ctxt = FnCtxt {
+        ctx,
+        infer,
+        diagnostics: &mut diagnostics,
+        pending_obligations: &mut obligations,
         hir,
-        LocalDefId::from_raw(0),
-        Ty::UNIT,
-        &[],
-    )
-}
+        body,
+        env,
+        return_ty,
+        owner,
+        expr_cache: HashMap::new(),
+        def_map,
+    };
 
-/// Create a simple Name from a static string.
-pub fn name(s: &str) -> Name {
-    let interner = glyim_core::interner::Interner::new();
-    interner.intern(s)
+    let thir_body = fn_ctxt.check(params);
+    (thir_body, diagnostics)
 }

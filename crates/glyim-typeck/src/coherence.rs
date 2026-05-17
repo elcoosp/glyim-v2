@@ -65,7 +65,10 @@ impl<'a> CoherenceChecker<'a> {
         Ok(())
     }
 
-    fn check_orphan_rule(&self, header: &ResolvedImplHeader) -> Result<(), Vec<GlyimDiagnostic>> {
+    pub fn check_orphan_rule(
+        &self,
+        header: &ResolvedImplHeader,
+    ) -> Result<(), Vec<GlyimDiagnostic>> {
         let trait_is_local = header
             .trait_name
             .and_then(|n| self.def_map.modules[self.def_map.root].scope.resolve(n))
@@ -148,6 +151,18 @@ impl<'a> CoherenceChecker<'a> {
             span: Some(old.span.into()),
         });
         vec![diag]
+    }
+
+    /// Compatibility helper for tests.
+    #[allow(dead_code)]
+    #[allow(dead_code)]
+    pub(crate) fn check_and_register_impl_compat(
+        &mut self,
+        header: &ResolvedImplHeader,
+        _polarity: ImplPolarity,
+        ctx: &TyCtxMut,
+    ) -> Result<(), Vec<GlyimDiagnostic>> {
+        self.check_and_register(header.clone(), ctx)
     }
 
     fn register(&mut self, header: ResolvedImplHeader) {

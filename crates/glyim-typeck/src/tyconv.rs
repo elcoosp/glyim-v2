@@ -98,6 +98,7 @@ pub struct FnSig {
     pub return_ty: Ty,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_fn_sig(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,

@@ -1,10 +1,14 @@
 //! Type checker: HIR → THIR with full inference and trait solving.
 
 mod check_body;
+mod check_expr;
+mod check_pat;
+mod check_stmt;
 mod coherence;
 mod env;
 pub mod thir;
 mod tyconv;
+mod unify;
 
 use glyim_core::def_id::{DefId, LocalDefId, TraitDefId};
 use glyim_core::interner::Name;
@@ -231,6 +235,7 @@ pub fn typeck_crate(
     (frozen_ctx, result)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_body(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -266,6 +271,7 @@ fn check_body(
     thir_bodies.push((local_def_id, thir_body));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_where_clauses(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
