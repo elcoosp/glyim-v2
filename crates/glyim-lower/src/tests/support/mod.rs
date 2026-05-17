@@ -1,6 +1,5 @@
-//! Mock implementation of LowerCtx for testing.
+use crate::{AdtDef, AdtKind, LowerCtx};
 use glyim_core::def_id::AdtId;
-use glyim_lower::{AdtDef, AdtKind, LowerCtx};
 use glyim_span::Span;
 use glyim_type::TyCtx;
 use std::cell::RefCell;
@@ -8,12 +7,6 @@ use std::cell::RefCell;
 pub struct MockLowerCtx<'a> {
     ty_ctx: &'a TyCtx,
     span_stack: RefCell<Vec<Span>>,
-}
-
-/// Operations for span testing.
-pub enum SpanOp {
-    Push(Span),
-    Pop,
 }
 
 impl<'a> MockLowerCtx<'a> {
@@ -31,7 +24,6 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
     }
 
     fn adt_def(&self, _id: AdtId) -> AdtDef {
-        // Provide dummy ADT definition for testing
         AdtDef {
             variants: vec![],
             kind: AdtKind::Struct,

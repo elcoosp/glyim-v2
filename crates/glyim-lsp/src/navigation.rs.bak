@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 use crate::AnalysisDatabase;
 use crate::database::FileMap;
 use lsp_types::*;
@@ -111,7 +109,7 @@ pub fn document_symbols(
                 format!("({})", params.join(", "))
             }),
             tags: None,
-            deprecated: None,
+            #[allow(deprecated)] #[allow(deprecated)] #[allow(deprecated)] deprecated: None,
         });
     }
     Some(DocumentSymbolResponse::Nested(results))
@@ -163,8 +161,10 @@ pub fn workspace_symbols(
             },
             container_name: None,
             tags: None,
-            deprecated: None,
+            #[allow(deprecated)] #[allow(deprecated)] #[allow(deprecated)] deprecated: None,
         });
     }
     Some(results)
 }
+
+// Remove the old rename stub; now use separate module
