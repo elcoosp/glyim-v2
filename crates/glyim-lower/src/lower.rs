@@ -489,7 +489,7 @@ impl<'a> MirBuilder<'a> {
                 // Assume first variant (for structs) or lookup variant by discriminant.
                 let variant = &adt_def.variants[0];
                 let field_idx = variant.fields.iter().enumerate()
-                    .find(|(_, ty)| {
+                    .find(|(_, _ty)| {
                         // We don't have field names in AdtVariant, only types. So we cannot resolve by name.
                         // This is a limitation; we'll need to store field names in AdtDef.
                         // For now, we'll assume the field index is 0 and emit a warning.
