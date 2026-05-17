@@ -36,6 +36,9 @@ impl<'a> crate::BorrowckCtx for TestCtx<'a> {
     fn local_decl(&self, local: LocalIdx) -> &MirLocalDecl {
         &self.locals[local]
     }
+    fn local_name(&self, idx: LocalIdx) -> String {
+        format!("_{}", idx.to_raw())
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -166,4 +166,7 @@ impl<'a> crate::BorrowckCtx for TestBorrowckCtx<'a> {
     fn is_copy(&self, _ty: glyim_type::Ty) -> bool {
         false
     }
+    fn local_name(&self, idx: LocalIdx) -> String {
+        format!("_{}", idx.to_raw())
+    }
 }

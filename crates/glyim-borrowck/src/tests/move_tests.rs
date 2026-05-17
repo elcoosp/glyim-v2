@@ -38,6 +38,9 @@ impl BorrowckCtx for MoveMockCtx {
     fn is_copy(&self, ty: Ty) -> bool {
         self.copy_types.contains(&ty)
     }
+    fn local_name(&self, idx: LocalIdx) -> String {
+        format!("_{}", idx.to_raw())
+    }
 }
 
 fn local_decl(ty: Ty) -> LocalDecl {

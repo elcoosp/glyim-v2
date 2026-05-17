@@ -35,6 +35,9 @@ impl BorrowckCtx for LocalMockBorrowckCtx {
     fn is_copy(&self, _ty: Ty) -> bool {
         false
     }
+    fn local_name(&self, idx: LocalIdx) -> String {
+        format!("_{}", idx.to_raw())
+    }
 }
 
 fn local_decl(ty: Ty) -> LocalDecl {
