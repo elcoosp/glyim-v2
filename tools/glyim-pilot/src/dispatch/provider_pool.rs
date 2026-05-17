@@ -1,5 +1,5 @@
 use crate::config::types::ProviderConfig;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -36,5 +36,17 @@ impl ProviderPool {
             .filter(|(_, s)| s.active_slots < s.config.max_concurrent)
             .max_by_key(|(_, s)| s.config.max_concurrent - s.active_slots)
             .map(|(id, s)| (id.clone(), s.config.max_concurrent - s.active_slots))
+    }
+}
+
+impl ProviderPool {
+    pub fn get_config(&self, provider_id: &str) -> Option<Arc<ProviderConfig>> {
+        self.providers.get(provider_id).map(|s| s.config.clone())
+    }
+
+    pub fn cooldown(&mut self, provider_id: &str, duration_secs: u64) {
+        if let Some(state) = self.providers.get_mut(provider_id) {
+            state.cooldown_until = Some(Utc::now() + Duration::seconds(duration_secs as i64));
+        }
     }
 }

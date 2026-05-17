@@ -3,7 +3,6 @@ use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
 use crate::git_ops::diff_main;
 use async_trait::async_trait;
-use std::path::Path;
 
 pub struct ContractGate;
 
