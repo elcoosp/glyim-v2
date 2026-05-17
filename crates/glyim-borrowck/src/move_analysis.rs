@@ -111,14 +111,12 @@ impl MovePathArena {
             let mut found = None;
             for &child_idx in &current.children {
                 let child = self.get(child_idx);
-                if let Some(ProjectionElem::Field(f)) = child.place.projection.last() {
-                    if let ProjectionElem::Field(g) = proj_elem {
-                        if f == g {
+                if let Some(ProjectionElem::Field(f)) = child.place.projection.last()
+                    && let ProjectionElem::Field(g) = proj_elem
+                        && f == g {
                             found = Some(child_idx);
                             break;
                         }
-                    }
-                }
             }
             match found {
                 Some(idx) => current_idx = idx,
@@ -417,11 +415,10 @@ fn collect_operand_move(
     match operand {
         Operand::Move(place) => {
             let place_ty = place.ty(ctx.ty_ctx(), local_decls);
-            if !ctx.is_copy(place_ty) {
-                if let Some(mp_idx) = move_paths.find(place) {
+            if !ctx.is_copy(place_ty)
+                && let Some(mp_idx) = move_paths.find(place) {
                     record_move(move_paths, mp_idx, moves);
                 }
-            }
         }
         Operand::Copy(_) | Operand::Constant(_) => {}
     }
@@ -654,8 +651,8 @@ fn check_place_use_after_move(
     // Check use-after-dead FIRST — this applies regardless of Copy status.
     // StorageDead means the local's storage is deallocated; any subsequent
     // use is undefined behaviour, even for Copy types.
-    if let Some(mp_idx) = move_paths.find(place) {
-        if dead.contains(mp_idx.to_raw() as usize) {
+    if let Some(mp_idx) = move_paths.find(place)
+        && dead.contains(mp_idx.to_raw() as usize) {
             let name = ctx.local_name(place.local);
             let msg = if place.projection.is_empty() {
                 format!("use of dead local `{name}`")
@@ -665,10 +662,9 @@ fn check_place_use_after_move(
             errors.push(GlyimDiagnostic::borrow_error(stmt.source_info.span, msg));
             return;
         }
-    }
     // For a bare local, also check if any field has been dead'd
-    if place.projection.is_empty() {
-        if let Some(root_idx) = move_paths.find_root(place.local) {
+    if place.projection.is_empty()
+        && let Some(root_idx) = move_paths.find_root(place.local) {
             let any_child_dead = move_paths
                 .get(root_idx)
                 .children
@@ -681,7 +677,6 @@ fn check_place_use_after_move(
                 return;
             }
         }
-    }
 
     // Check use-after-move — only for non-Copy types.
     if let UsedPlace::Operand(p) = used_place {
@@ -691,8 +686,8 @@ fn check_place_use_after_move(
         }
     }
 
-    if let Some(mp_idx) = move_paths.find(place) {
-        if moved.contains(mp_idx.to_raw() as usize) {
+    if let Some(mp_idx) = move_paths.find(place)
+        && moved.contains(mp_idx.to_raw() as usize) {
             let name = ctx.local_name(place.local);
             let msg = if place.projection.is_empty() {
                 format!("use of moved value: `{name}`")
@@ -702,10 +697,9 @@ fn check_place_use_after_move(
             errors.push(GlyimDiagnostic::borrow_error(stmt.source_info.span, msg));
             return;
         }
-    }
 
-    if place.projection.is_empty() {
-        if let Some(root_idx) = move_paths.find_root(place.local) {
+    if place.projection.is_empty()
+        && let Some(root_idx) = move_paths.find_root(place.local) {
             let any_child_moved = move_paths
                 .get(root_idx)
                 .children
@@ -717,7 +711,6 @@ fn check_place_use_after_move(
                 errors.push(GlyimDiagnostic::borrow_error(stmt.source_info.span, msg));
             }
         }
-    }
 }
 #[allow(dead_code)]
 fn describe_projection(projection: &[ProjectionElem]) -> String {

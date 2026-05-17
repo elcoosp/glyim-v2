@@ -97,11 +97,13 @@ impl Default for ExecutionConfig { fn default() -> Self { Self { worktree_base: 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum GateLevel { Relaxed, Normal, Strict, Production }
-impl Default for GateLevel { fn default() -> Self { Self::Normal } }
+#[derive(Default)]
+pub enum GateLevel { Relaxed, #[default]
+Normal, Strict, Production }
 impl std::fmt::Display for GateLevel { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { match self { Self::Relaxed => write!(f, "relaxed"), Self::Normal => write!(f, "normal"), Self::Strict => write!(f, "strict"), Self::Production => write!(f, "production") } } }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Default)]
 pub struct GatesConfig {
     #[serde(default)] pub level: GateLevel,
     #[serde(default)] pub commit: CommitGatesConfig,
@@ -109,15 +111,14 @@ pub struct GatesConfig {
     #[serde(default)] pub banned_patterns: Vec<BannedPattern>,
     #[serde(default)] pub architecture_rules: Vec<DependencyRule>,
 }
-impl Default for GatesConfig { fn default() -> Self { Self { level: GateLevel::default(), commit: CommitGatesConfig::default(), done: DoneGatesConfig::default(), banned_patterns: Vec::new(), architecture_rules: Vec::new() } } }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Default)]
 pub struct CommitGatesConfig {
     pub fmt: Option<bool>, pub check: Option<bool>, pub clippy: Option<bool>,
     pub test: Option<bool>, pub banned_patterns: Option<bool>,
     pub architecture: Option<bool>, pub contracts: Option<bool>,
 }
-impl Default for CommitGatesConfig { fn default() -> Self { Self { fmt: None, check: None, clippy: None, test: None, banned_patterns: None, architecture: None, contracts: None } } }
 
 impl CommitGatesConfig {
     pub fn resolve(&self, level: GateLevel, default_branch: String, branch_version: String) -> ResolvedCommitGates {

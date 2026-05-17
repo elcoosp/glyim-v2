@@ -95,7 +95,7 @@ fn read_until_end<'a>(
     let mut content_lines = Vec::new();
     for (_, line) in lines {
         if line.trim() == "::END" {
-            while content_lines.last().map_or(false, |l: &String| l.trim().is_empty()) {
+            while content_lines.last().is_some_and(|l: &String| l.trim().is_empty()) {
                 content_lines.pop();
             }
             return Ok(content_lines.join("\n"));
@@ -119,8 +119,8 @@ fn read_find_replace<'a>(
             "---FIND---" => { in_find = true; in_replace = false; }
             "---REPLACE---" => { in_find = false; in_replace = true; }
             "::END" => {
-                while find_lines.last().map_or(false, |l: &String| l.trim().is_empty()) { find_lines.pop(); }
-                while replace_lines.last().map_or(false, |l: &String| l.trim().is_empty()) { replace_lines.pop(); }
+                while find_lines.last().is_some_and(|l: &String| l.trim().is_empty()) { find_lines.pop(); }
+                while replace_lines.last().is_some_and(|l: &String| l.trim().is_empty()) { replace_lines.pop(); }
                 return Ok((find_lines.join("\n"), replace_lines.join("\n")));
             }
             _ => {

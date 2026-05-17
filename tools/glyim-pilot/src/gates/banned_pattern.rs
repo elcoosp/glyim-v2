@@ -62,7 +62,7 @@ impl Gate for BannedPatternGate {
                 let walker = ignore::WalkBuilder::new(&dir).hidden(false).build();
                 for entry in walker.flatten() {
                     let path = entry.path();
-                    if path.extension().map_or(false, |e| e == "rs") {
+                    if path.extension().is_some_and(|e| e == "rs") {
                         let path_str = path.to_string_lossy();
                         if path_str.contains("/tests/") || path_str.contains("\\tests\\") {
                             continue;

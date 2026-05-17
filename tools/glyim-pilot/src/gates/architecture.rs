@@ -60,7 +60,7 @@ impl Gate for ArchitectureGate {
                 let walker = ignore::WalkBuilder::new(&dir).hidden(false).build();
                 for entry in walker.flatten() {
                     let path = entry.path();
-                    if path.file_name().map_or(false, |n| n == "Cargo.toml") {
+                    if path.file_name().is_some_and(|n| n == "Cargo.toml") {
                         let rel = path.strip_prefix(&dir).unwrap_or(path);
                         let rel_str = rel.to_string_lossy();
                         if let Ok(content) = std::fs::read_to_string(path) {

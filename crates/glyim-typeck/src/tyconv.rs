@@ -51,7 +51,7 @@ pub fn resolve_type_ref(
             if tys.is_empty() {
                 return Ty::UNIT;
             }
-            if tys.iter().any(|t| *t == Ty::ERROR) {
+            if tys.contains(&Ty::ERROR) {
                 return Ty::ERROR;
             }
             let substs = ctx.intern_substitution(tys.into_iter().map(GenericArg::Ty).collect());

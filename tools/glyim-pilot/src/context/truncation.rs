@@ -87,7 +87,7 @@ fn count_braces(s: &str) -> (usize, usize) {
         if c == '/' && chars.peek() == Some(&'*') {
             chars.next();
             let mut prev_star = false;
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if prev_star && next == '/' {
                     break;
                 }

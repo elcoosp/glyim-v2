@@ -55,11 +55,10 @@ impl<'a> CoherenceChecker<'a> {
             self.check_orphan_rule(&header)?;
         }
 
-        if let Some(trait_def_id) = header.trait_def_id {
-            if let Some(errors) = self.check_overlap(trait_def_id, &header, ctx) {
+        if let Some(trait_def_id) = header.trait_def_id
+            && let Some(errors) = self.check_overlap(trait_def_id, &header, ctx) {
                 return Err(errors);
             }
-        }
 
         self.register(header);
         Ok(())

@@ -103,11 +103,11 @@ fn extract_pub_name(line: &str) -> Option<String> {
     match after_pub.0 {
         "fn" => after_pub.1.split('(').next().map(|s| s.trim().to_string()),
         "struct" | "enum" => after_pub.1
-            .split(|c: char| c == '<' || c == '{' || c == ' ' || c == ';')
+            .split(['<', '{', ' ', ';'])
             .next()
             .map(|s| s.trim().to_string()),
         "trait" => after_pub.1
-            .split(|c: char| c == '<' || c == '{' || c == ':')
+            .split(['<', '{', ':'])
             .next()
             .map(|s| s.trim().to_string()),
         _ => None,
