@@ -181,6 +181,7 @@ pub struct ResolvedDoneGates {
     pub workspace_check: bool, pub audit: bool, pub self_review: bool,
 }
 
+#[allow(dead_code)]
 struct DoneDefaults { dead_code: bool, coverage: bool, coverage_min: f64, mutation: bool, mutation_kill_rate: f64, workspace_check: bool, audit: bool, self_review: bool }
 impl GateLevel {
     fn done_defaults(self) -> DoneDefaults {

@@ -22,7 +22,7 @@ impl ContextAssembler {
     }
     pub async fn assemble(
         &self, _stream_id: &str, owned_files: &[String],
-        _dependency_interfaces: &[String], test_files: &[String], provider_id: &str,
+        _dependency_interfaces: &[String], ___test_files: &[String], provider_id: &str,
     ) -> Result<AssembledContext, PilotError> {
         let max_tokens = self.config.context.providers.get(provider_id)
             .map(|c| c.max_context_tokens)

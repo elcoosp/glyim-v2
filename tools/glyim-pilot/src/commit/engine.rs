@@ -100,7 +100,7 @@ impl CommitEngine {
     }
 
     fn escalate_or_retry(
-        &self, ctx: &CommitContext, new_fix_round: u32, feedback: &str,
+        &self, _ctx: &CommitContext, new_fix_round: u32, feedback: &str,
     ) -> Result<CommitDecision, PilotError> {
         if new_fix_round > self.max_fix_rounds {
             Ok(CommitDecision::Escalated { new_fix_round, feedback: feedback.to_string() })

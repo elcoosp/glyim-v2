@@ -43,8 +43,10 @@ impl SessionState {
         self.updated_at = now;
         self.last_activity = now;
     }
+    #[allow(dead_code)]
     pub(crate) fn record_commit(&mut self) { self.commits += 1; self.fix_round = 0; self.last_activity = Utc::now(); }
     pub(crate) fn record_turn(&mut self) { self.turn += 1; self.last_activity = Utc::now(); }
+    #[allow(dead_code)]
     pub(crate) fn set_provider_cooldown(&mut self, until: DateTime<Utc>) { self.provider_cooldown_until = Some(until); }
     pub fn is_provider_in_cooldown(&self) -> bool { self.provider_cooldown_until.map_or(false, |until| Utc::now() < until) }
 }
