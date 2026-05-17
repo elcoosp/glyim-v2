@@ -182,8 +182,6 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
     fn get_file(&self, file_id: FileId) -> DIFile<'ctx> {
         self.files.get(&file_id).copied().unwrap_or_else(|| {
-            // Return any available file, or create a dummy file if map is empty.
-            // In practice, files is always populated when enabled, but we guard for safety.
             self.files
                 .values()
                 .next()
