@@ -125,6 +125,6 @@ impl<'a> BorrowckCtx for PipelineBorrowckCtx<'a> {
         &self.body.locals[idx]
     }
     fn local_name(&self, idx: LocalIdx) -> String {
-        format!("_{}", idx.to_raw())
+        format!("local_{}", idx.to_raw())
     }
 }
