@@ -47,4 +47,3 @@ where
     let result = f(&mut ctx_mut);
     (ctx_mut.freeze(), result)
 }
-pub use mock::lower_ctx::MockLowerCtx;
