@@ -180,3 +180,12 @@ impl Pipeline {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod tests;
