@@ -1,9 +1,9 @@
 use crate::lower_body;
 use crate::tests::support::MockLowerCtx;
+use glyim_core::def_id::{CrateId, DefId, LocalDefId};
+use glyim_span::Span;
 use glyim_test::test_frozen_ty_ctx;
 use glyim_typeck::thir;
-use glyim_span::Span;
-use glyim_core::def_id::{CrateId, LocalDefId, DefId};
 
 #[test]
 fn unsupported_literal_works() {

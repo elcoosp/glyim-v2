@@ -1,6 +1,6 @@
+use crate::AnalysisDatabase;
 use crate::code_action::provide_code_actions;
 use crate::database::SourceMap;
-use crate::AnalysisDatabase;
 use lsp_types::*;
 
 fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {

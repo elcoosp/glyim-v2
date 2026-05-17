@@ -1,12 +1,14 @@
+use crate::AnalysisDatabase;
 use crate::database::{FileMap, SourceMap};
 use crate::formatting::format_document;
-use crate::AnalysisDatabase;
 use lsp_types::*;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
-fn setup_analysis_with_temp_file(content: &str) -> (AnalysisDatabase, FileMap, PathBuf, NamedTempFile) {
+fn setup_analysis_with_temp_file(
+    content: &str,
+) -> (AnalysisDatabase, FileMap, PathBuf, NamedTempFile) {
     let temp_file = NamedTempFile::new().unwrap();
     let path = temp_file.path().to_path_buf();
     fs::write(&path, content).unwrap();

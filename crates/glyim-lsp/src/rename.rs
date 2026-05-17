@@ -12,8 +12,14 @@ fn find_all_occurrences(source: &str, target: &str) -> Vec<Range> {
             let absolute_pos = search_start + pos;
             let end_pos = absolute_pos + target.len();
             ranges.push(Range {
-                start: Position { line: line_idx as u32, character: absolute_pos as u32 },
-                end: Position { line: line_idx as u32, character: end_pos as u32 },
+                start: Position {
+                    line: line_idx as u32,
+                    character: absolute_pos as u32,
+                },
+                end: Position {
+                    line: line_idx as u32,
+                    character: end_pos as u32,
+                },
             });
             search_start = absolute_pos + 1;
         }
@@ -38,8 +44,12 @@ pub fn rename_symbol(
     let chars: Vec<char> = source.chars().collect();
     let mut start = offset;
     let mut end = offset;
-    while start > 0 && (chars[start-1].is_alphabetic() || chars[start-1] == '_') { start -= 1; }
-    while end < chars.len() && (chars[end].is_alphabetic() || chars[end] == '_') { end += 1; }
+    while start > 0 && (chars[start - 1].is_alphabetic() || chars[start - 1] == '_') {
+        start -= 1;
+    }
+    while end < chars.len() && (chars[end].is_alphabetic() || chars[end] == '_') {
+        end += 1;
+    }
     let old_name = &source[start..end];
     if old_name.is_empty() {
         return None;

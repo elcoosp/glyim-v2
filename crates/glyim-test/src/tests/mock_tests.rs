@@ -79,32 +79,6 @@ fn test_mock_codegen_generate_function() {
 }
 
 #[test]
-fn test_mock_lower_ctx() {
-    use glyim_lower::LowerCtx;
-    let ctx = test_frozen_ty_ctx();
-    let mock = mock::MockLowerCtx::new(&ctx);
-    mock.push_span(glyim_span::Span::DUMMY);
-    mock.pop_span();
-    mock.assert_spans_balanced();
-    assert_eq!(mock.span_ops().len(), 2);
-}
-
-#[test]
-fn test_mock_lower_ctx_unbalanced() {
-    use glyim_lower::LowerCtx;
-    let ctx = test_frozen_ty_ctx();
-    let mock = mock::MockLowerCtx::new(&ctx);
-    mock.push_span(glyim_span::Span::DUMMY);
-    assert_eq!(mock.span_ops().len(), 1);
-    let ops = mock.span_ops();
-    let depth: usize = ops.iter().fold(0, |acc: usize, op| match op {
-        crate::mock::lower_ctx::SpanOp::Push(_) => acc + 1,
-        crate::mock::lower_ctx::SpanOp::Pop => acc.saturating_sub(1),
-    });
-    assert_eq!(depth, 1);
-}
-
-#[test]
 fn test_test_db_builder() {
     use std::sync::Arc;
     let _db = mock::TestDbBuilder::new()

@@ -12,12 +12,22 @@ fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
         let trimmed = line.trim_start();
         if trimmed.starts_with("use ") {
             let import_line = trimmed.trim_start_matches("use ").trim_end_matches(';');
-            let import_name = import_line.split("::").last().unwrap_or(import_line).to_string();
+            let import_name = import_line
+                .split("::")
+                .last()
+                .unwrap_or(import_line)
+                .to_string();
             let start_col = line.len() - trimmed.len();
             let end_col = line.len();
             let range = Range {
-                start: Position { line: line_idx as u32, character: start_col as u32 },
-                end: Position { line: line_idx as u32, character: end_col as u32 },
+                start: Position {
+                    line: line_idx as u32,
+                    character: start_col as u32,
+                },
+                end: Position {
+                    line: line_idx as u32,
+                    character: end_col as u32,
+                },
             };
             imports.push((import_name, range));
         }
@@ -27,7 +37,8 @@ fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
         if line.trim_start().starts_with("use ") {
             continue;
         }
-        let words: Vec<&str> = line.split_whitespace()
+        let words: Vec<&str> = line
+            .split_whitespace()
             .flat_map(|w| w.split(|c: char| !c.is_alphabetic() && c != '_'))
             .filter(|w| !w.is_empty())
             .collect();
@@ -36,7 +47,8 @@ fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
         }
     }
 
-    imports.into_iter()
+    imports
+        .into_iter()
         .filter(|(name, _)| !used_names.contains(name))
         .collect()
 }

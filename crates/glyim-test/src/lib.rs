@@ -12,14 +12,14 @@ pub mod snapshot;
 pub use error::{AssertionFailure, FailureReason, TestDiscoveryError, TimeoutError};
 
 pub use assertions::{
-    assert_diag_code, assert_diag_contains, assert_error_count, assert_has_errors,
-    assert_has_severity, assert_layout, assert_mir, assert_no_errors, assert_ty, check_ty,
-    MirAssert, TyAssert, TyCheck,
+    MirAssert, TyAssert, TyCheck, assert_diag_code, assert_diag_contains, assert_error_count,
+    assert_has_errors, assert_has_severity, assert_layout, assert_mir, assert_no_errors, assert_ty,
+    check_ty,
 };
 pub use fixtures::{SourceBuilder, TyCtxBuilder, TyFactory};
 pub use harness::{
-    runner::{OutputCheck, ProgramRunner, RunResult},
     TestMode, TestPlan, TestRunner,
+    runner::{OutputCheck, ProgramRunner, RunResult},
 };
 pub use mock::{MockBorrowckCtx, MockCodegen, MockLowerCtx, MockSolver, TestDbBuilder};
 pub use phase::{AnalysisTester, CodegenTester, CompilationTrace, FrontendTester, MirGenTester};

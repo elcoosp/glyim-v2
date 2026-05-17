@@ -1,6 +1,6 @@
-mod pattern_destructure;
 mod expr_stmt;
-mod unsupported_literal;
 mod match_guard;
-mod tuple_pattern;
+mod pattern_destructure;
 pub mod support;
+mod tuple_pattern;
+mod unsupported_literal;

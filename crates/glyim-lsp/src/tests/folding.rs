@@ -1,6 +1,6 @@
+use crate::AnalysisDatabase;
 use crate::database::SourceMap;
 use crate::folding::provide_folding_ranges;
-use crate::AnalysisDatabase;
 use lsp_types::*;
 
 fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {

@@ -21,7 +21,7 @@ fn format_code(source: &str) -> String {
                 result.push_str(&"    ".repeat(indent_level));
                 result.push('}');
                 result.push('\n');
-                if i + 1 < chars.len() && chars[i+1] != '}' {
+                if i + 1 < chars.len() && chars[i + 1] != '}' {
                     result.push_str(&"    ".repeat(indent_level));
                 }
             }
@@ -31,7 +31,7 @@ fn format_code(source: &str) -> String {
             }
             ';' => {
                 result.push(';');
-                if i + 1 < chars.len() && chars[i+1] != '}' && chars[i+1] != '\n' {
+                if i + 1 < chars.len() && chars[i + 1] != '}' && chars[i + 1] != '\n' {
                     result.push('\n');
                     result.push_str(&"    ".repeat(indent_level));
                 }
@@ -72,8 +72,14 @@ pub fn format_document(
     }
     let line_count = content.lines().count() as u32;
     let full_range = Range {
-        start: Position { line: 0, character: 0 },
-        end: Position { line: line_count, character: 0 },
+        start: Position {
+            line: 0,
+            character: 0,
+        },
+        end: Position {
+            line: line_count,
+            character: 0,
+        },
     };
     Some(vec![TextEdit {
         range: full_range,

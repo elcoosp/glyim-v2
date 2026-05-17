@@ -1,13 +1,13 @@
+use glyim_core::IndexVec;
+use glyim_core::Name;
+use glyim_core::def_id::AdtId;
+use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
+use glyim_mir::{BasicBlockIdx, CastKind, LocalIdx, ProjectionElem};
 use glyim_span::Span;
 use glyim_type::*;
 use glyim_typeck::thir;
-use glyim_core::IndexVec;
-use glyim_core::Name;
-use glyim_core::primitives::Mutability;
-use glyim_mir::{BasicBlockIdx, LocalIdx, ProjectionElem, CastKind};
 use std::collections::HashMap;
-use glyim_core::def_id::AdtId;
 
 #[derive(Clone, Debug)]
 pub struct LowerResult {
@@ -231,7 +231,10 @@ impl<'a> MirBuilder<'a> {
                 let op_val = self.lower_expr_to_operand(operand);
                 glyim_mir::Rvalue::UnaryOp(*op, op_val)
             }
-            thir::ExprKind::Ref { mutability, operand } => {
+            thir::ExprKind::Ref {
+                mutability,
+                operand,
+            } => {
                 let place = self.lower_expr_to_place(operand);
                 let borrow_kind = match mutability {
                     Mutability::Mut => glyim_mir::BorrowKind::Mut {
@@ -266,7 +269,11 @@ impl<'a> MirBuilder<'a> {
                 self.current_block = Some(next_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
-            thir::ExprKind::If { cond, then_branch, else_branch } => {
+            thir::ExprKind::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 let cond_op = self.lower_expr_to_operand(cond);
 
                 let then_bb = self.new_block();
@@ -402,10 +409,7 @@ impl<'a> MirBuilder<'a> {
 
                 self.current_block = Some(header_bb);
                 let cond_op = self.lower_expr_to_operand(cond);
-                let targets = glyim_mir::SwitchTargets::new(
-                    Box::new([(1, body_bb)]),
-                    exit_bb,
-                );
+                let targets = glyim_mir::SwitchTargets::new(Box::new([(1, body_bb)]), exit_bb);
                 self.terminate(
                     glyim_mir::TerminatorKind::SwitchInt {
                         discr: cond_op,
@@ -450,7 +454,11 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-            thir::ExprKind::Field { receiver, field, ty: field_ty } => {
+            thir::ExprKind::Field {
+                receiver,
+                field,
+                ty: field_ty,
+            } => {
                 let base_place = self.lower_expr_to_place(receiver);
                 let adt_id = match self._ctx.ty_ctx().ty_kind(receiver.ty) {
                     TyKind::Adt(adt_id, _) => *adt_id,
@@ -471,19 +479,26 @@ impl<'a> MirBuilder<'a> {
                 };
                 let adt_def = self._ctx.adt_def(adt_id);
                 let variant = &adt_def.variants[0];
-                let field_idx = variant.fields.iter().enumerate()
+                let field_idx = variant
+                    .fields
+                    .iter()
+                    .enumerate()
                     .find(|(_, _ty)| false)
                     .map(|(idx, _)| idx);
                 let field_idx = match field_idx {
                     Some(idx) => idx,
                     None => {
-                        tracing::warn!("STUB: field name resolution not available, using field index 0");
+                        tracing::warn!(
+                            "STUB: field name resolution not available, using field index 0"
+                        );
                         0
                     }
                 };
                 let projection = {
                     let mut proj = base_place.projection.to_vec();
-                    proj.push(glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(field_idx as u32)));
+                    proj.push(glyim_mir::ProjectionElem::Field(
+                        glyim_type::FieldIdx::from_raw(field_idx as u32),
+                    ));
                     proj.into_boxed_slice()
                 };
                 let place = glyim_mir::Place {
@@ -588,13 +603,19 @@ impl<'a> MirBuilder<'a> {
 
     fn bind_pattern(&mut self, pat: &thir::Pattern, init_local: Option<LocalIdx>, span: Span) {
         match &pat.kind {
-            thir::PatternKind::Binding { name, mutability, subpattern } => {
+            thir::PatternKind::Binding {
+                name,
+                mutability,
+                subpattern,
+            } => {
                 let local = self.alloc_local(pat.ty, *mutability, span);
                 self.var_map.insert(*name, local);
                 self.push_stmt(glyim_mir::StatementKind::StorageLive(local), span);
                 if let Some(init) = init_local {
                     let place = glyim_mir::Place::new(local);
-                    let rvalue = glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(glyim_mir::Place::new(init)));
+                    let rvalue = glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(
+                        glyim_mir::Place::new(init),
+                    ));
                     self.push_stmt(glyim_mir::StatementKind::Assign(place, rvalue), span);
                 }
                 if let Some(sub) = subpattern {
@@ -611,7 +632,9 @@ impl<'a> MirBuilder<'a> {
                     for (idx, field_pat) in fields.iter().enumerate() {
                         let field_proj = {
                             let mut proj = init_place.projection.to_vec();
-                            proj.push(glyim_mir::ProjectionElem::Field(glyim_type::FieldIdx::from_raw(idx as u32)));
+                            proj.push(glyim_mir::ProjectionElem::Field(
+                                glyim_type::FieldIdx::from_raw(idx as u32),
+                            ));
                             proj.into_boxed_slice()
                         };
                         let field_place = glyim_mir::Place {
@@ -634,7 +657,10 @@ impl<'a> MirBuilder<'a> {
                 }
             }
             _ => {
-                tracing::warn!("STUB: pattern destructuring for non-binding pattern not implemented: {:?}", pat.kind);
+                tracing::warn!(
+                    "STUB: pattern destructuring for non-binding pattern not implemented: {:?}",
+                    pat.kind
+                );
             }
         }
     }

@@ -1,6 +1,4 @@
 use glyim_codegen::CodegenBackend;
-#[cfg(test)]
-mod tests;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoCtx;
@@ -180,12 +178,6 @@ impl Pipeline {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-mod tests;
 
 #[cfg(test)]
 mod tests;

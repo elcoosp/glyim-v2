@@ -1,6 +1,6 @@
+use crate::AnalysisDatabase;
 use crate::database::SourceMap;
 use crate::rename::rename_symbol;
-use crate::AnalysisDatabase;
 use lsp_types::*;
 
 fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {
@@ -23,7 +23,10 @@ fn test_rename_updates_all_references() {
     let params = RenameParams {
         text_document_position: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
-            position: Position { line: 0, character: 3 },
+            position: Position {
+                line: 0,
+                character: 3,
+            },
         },
         new_name: "bar".to_string(),
         work_done_progress_params: WorkDoneProgressParams::default(),
