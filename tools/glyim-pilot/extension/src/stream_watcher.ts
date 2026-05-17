@@ -1,0 +1,67 @@
+import type { ProviderAdapter } from './providers/adapter';
+import { extractGlyimOpsBlocks, isBlockComplete } from './code_extractor';
+import { containsDangerousPattern, normalizeLineEndings } from './types';
+
+export class StreamWatcher {
+  private observer: MutationObserver | null = null;
+  private turn = 0;
+  private previousResponseText = '';
+  private sentHashes = new Set<string>();
+  private isWatching = false;
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
+  private lastStreaming = false;
+  private pendingCheck: Promise<void> = Promise.resolve();
+
+  constructor(
+    private adapter: ProviderAdapter,
+    private sessionId: string,
+    private onOpsReady: (content: string, turn: number) => void,
+    private onStreamComplete: (fullResponse: string, turn: number) => void,
+    private onDangerousPattern: (content: string, pattern: string) => void,
+  ) {}
+
+  start(): void {
+    if (this.isWatching) return;
+    this.isWatching = true;
+    const container = document.querySelector('[role="main"]') ?? document.querySelector(this.adapter.assistantSelector)?.parentElement ?? document.body;
+    this.observer = new MutationObserver(() => { if (!this.adapter.isStreaming()) void this.serializedCheck(); });
+    this.observer.observe(container, { childList: true, subtree: true, characterData: true });
+    this.pollingTimer = setInterval(() => {
+      if (!this.isWatching) return;
+      const streaming = this.adapter.isStreaming();
+      if (this.lastStreaming && !streaming) { void this.serializedCheck(); this.handleStreamComplete(); }
+      this.lastStreaming = streaming;
+    }, 500);
+  }
+
+  stop(): void { this.isWatching = false; this.observer?.disconnect(); this.observer = null; if (this.pollingTimer) clearInterval(this.pollingTimer); this.pollingTimer = null; }
+  resetForNewTurn(): void { this.turn++; this.previousResponseText = ''; }
+
+  private async serializedCheck(): Promise<void> { this.pendingCheck = this.pendingCheck.then(() => this.checkForCompleteBlocks()); await this.pendingCheck; }
+
+  private async checkForCompleteBlocks(): Promise<void> {
+    try {
+      const text = this.adapter.getAssistantText();
+      if (!text || text === this.previousResponseText) return;
+      this.previousResponseText = text;
+      const blocks = extractGlyimOpsBlocks(normalizeLineEndings(text));
+      for (const block of blocks) {
+        const hash = await this.hash(block);
+        if (this.sentHashes.has(hash)) continue;
+        if (!isBlockComplete(block)) continue;
+        const dangerous = containsDangerousPattern(block);
+        if (dangerous) { this.onDangerousPattern(block, dangerous); this.sentHashes.add(hash); continue; }
+        this.sentHashes.add(hash);
+        this.onOpsReady(block, this.turn);
+      }
+    } catch (e) { console.warn('glyim-pilot: stream watcher check failed:', e); }
+  }
+
+  private handleStreamComplete(): void { const full = this.adapter.getAssistantText(); if (full) this.onStreamComplete(full, this.turn); this.sentHashes.clear(); }
+
+  private async hash(content: string): Promise<string> {
+    const data = new TextEncoder().encode(content);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "glyim-pilot-extension",
+  "version": "0.3.0",
+  "description": "Browser extension for Glyim Pilot AI agent dispatch",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "typescript": "^5.7.2"
+  }
+}

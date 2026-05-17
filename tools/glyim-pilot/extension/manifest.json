@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Glyim Pilot",
+  "version": "0.3.0",
+  "description": "AI agent dispatch for Glyim compiler development",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Glyim Pilot"
+  }
+}
