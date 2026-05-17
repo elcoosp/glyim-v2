@@ -23,7 +23,7 @@ pub(crate) fn first_ident_text(node: &SyntaxNode) -> Option<String> {
     None
 }
 
-fn is_type_node(node: &SyntaxNode) -> bool {
+pub(crate) fn is_type_node(node: &SyntaxNode) -> bool {
     matches!(
         node.kind(),
         SyntaxKind::PathType
@@ -38,7 +38,7 @@ fn is_type_node(node: &SyntaxNode) -> bool {
     )
 }
 
-fn is_expr_node(node: &SyntaxNode) -> bool {
+pub(crate) fn is_expr_node(node: &SyntaxNode) -> bool {
     matches!(
         node.kind(),
         SyntaxKind::Block
@@ -445,7 +445,7 @@ fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Option<Variant> 
 
 // ---------- types ----------
 
-fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef> {
+pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef> {
     match node.kind() {
         SyntaxKind::PathType => {
             let path = lower_path_from_type(node, interner)?;
@@ -471,13 +471,13 @@ fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef>
                     after_arrow = true;
                     continue;
                 }
-                if is_type_node(&child)
-                    && let Some(ty) = lower_type_ref(&child, interner)
-                {
-                    if after_arrow {
-                        ret = Some(Box::new(ty));
-                    } else {
-                        params.push(ty);
+                if is_type_node(&child) {
+                    if let Some(ty) = lower_type_ref(&child, interner) {
+                        if after_arrow {
+                            ret = Some(Box::new(ty));
+                        } else {
+                            params.push(ty);
+                        }
                     }
                 }
             }
@@ -520,9 +520,13 @@ fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Option<TypeRef>
         SyntaxKind::NeverType => Some(TypeRef::Never),
         SyntaxKind::InferType => Some(TypeRef::Infer),
         SyntaxKind::DynType => {
-            // For now, lower as a PathType containing the trait name
-            let path = lower_path_from_type(node, interner)?;
-            Some(TypeRef::Path(path))
+            let inner = node.children().find(|c| is_type_node(c));
+            if let Some(ty_node) = inner {
+                lower_type_ref(&ty_node, interner)
+            } else {
+                let path = lower_path_from_type(node, interner)?;
+                Some(TypeRef::Path(path))
+            }
         }
         _ => {
             tracing::warn!("STUB: unhandled type node {:?}", node.kind());
@@ -703,7 +707,7 @@ fn lower_field_or_method_with_receiver(
     }
 }
 
-fn lower_expr(
+pub(crate) fn lower_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     exprs: &mut IndexVec<ExprId, Expr>,
@@ -742,15 +746,105 @@ fn lower_expr(
         SyntaxKind::RangeExpr => lower_range_expr(node, interner, exprs, pats, expr_spans),
         SyntaxKind::ReturnExpr => lower_return_expr(node, interner, exprs, pats, expr_spans),
         SyntaxKind::ClosureExpr => {
-            // Stub for now: produce Missing
-            let expr = Expr::Missing;
+            let mut params = Vec::new();
+            let mut body = None;
+            for child in node.children() {
+                match child.kind() {
+                    SyntaxKind::ParamList => {
+                        for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param)
+                        {
+                            let (_, pat_id) = lower_param(&param_node, interner, pats);
+                            params.push(pat_id);
+                        }
+                    }
+                    _ if is_expr_node(&child) || child.kind() == SyntaxKind::Block => {
+                        if body.is_none() {
+                            body = lower_expr(&child, interner, exprs, pats, expr_spans);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let body_id = body.unwrap_or_else(|| {
+                let missing = Expr::Missing;
+                exprs.push(missing)
+            });
+            let expr = Expr::Closure {
+                params,
+                body: body_id,
+            };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             Some(eid)
         }
         SyntaxKind::StructExpr => {
-            // Stub
-            let expr = Expr::Missing;
+            let mut path = None;
+            let mut fields = Vec::new();
+            let mut spread = None;
+            let mut in_braces = false;
+            for child in node.children() {
+                if child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath {
+                    if path.is_none() {
+                        path = lower_path_expr(&child, interner, exprs, expr_spans);
+                    }
+                } else if child.kind() == SyntaxKind::LBrace {
+                    in_braces = true;
+                } else if child.kind() == SyntaxKind::RBrace {
+                    in_braces = false;
+                } else if in_braces {
+                    if child.kind() == SyntaxKind::DotDot && spread.is_none() {
+                        let mut found_expr = false;
+                        for next in node.children() {
+                            if found_expr {
+                                if let Some(spread_id) =
+                                    lower_expr(&next, interner, exprs, pats, expr_spans)
+                                {
+                                    spread = Some(spread_id);
+                                }
+                                break;
+                            }
+                            if next == child {
+                                found_expr = true;
+                            }
+                        }
+                    } else if child.kind() == SyntaxKind::StructField {
+                        let field_name = first_ident_text(&child).unwrap_or_default();
+                        let name = interner.intern(&field_name);
+                        let expr_node = child
+                            .children()
+                            .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
+                        if let Some(expr_id) = expr_node
+                            .and_then(|n| lower_expr(&n, interner, exprs, pats, expr_spans))
+                        {
+                            fields.push((name, expr_id));
+                        }
+                    } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
+                        // shorthand field name (e.g., "x" without colon)
+                        let name = interner.intern(&child.text().to_string().trim());
+                        let expr_id = lower_expr(&child, interner, exprs, pats, expr_spans);
+                        if let Some(eid) = expr_id {
+                            fields.push((name, eid));
+                        }
+                    }
+                }
+            }
+            let path_id = path.unwrap_or_else(|| {
+                let missing = Expr::Missing;
+                exprs.push(missing)
+            });
+            let path_struct = if let Expr::Path(p) = &exprs[path_id] {
+                p.clone()
+            } else {
+                HirPath {
+                    segments: vec![],
+                    kind: glyim_core::path::PathKind::Plain,
+                }
+            };
+            let expr = Expr::Struct {
+                path: path_struct,
+                fields,
+                spread,
+            };
             let eid = exprs.push(expr);
             expr_spans.push(node_span(node));
             Some(eid)
@@ -974,7 +1068,7 @@ fn lower_lit_expr(
     Some(eid)
 }
 
-fn lower_literal(token: &SyntaxToken) -> Literal {
+pub(crate) fn lower_literal(token: &SyntaxToken) -> Literal {
     let text = token.text().to_string();
     match token.kind() {
         SyntaxKind::IntLit => {
@@ -1034,29 +1128,43 @@ fn lower_literal(token: &SyntaxToken) -> Literal {
 
 // Helper functions (to be added above)
 fn split_int_literal(s: &str) -> (String, Option<String>) {
-    let mut digits_end = s.len();
-    for (i, ch) in s.char_indices() {
-        if !(ch.is_ascii_digit()
-            || ch == '_'
-            || ch == '-'
-            || ch == '+'
-            || ch == 'x'
-            || ch == 'X'
-            || ch == 'o'
-            || ch == 'O'
-            || ch == 'b'
-            || ch == 'B')
-        {
-            digits_end = i;
-            break;
+    // Find where the literal part ends (digits, hex, oct, bin) and suffix begins
+    let mut i = 0;
+    let chars: Vec<char> = s.chars().collect();
+    // Skip leading '+' or '-'
+    if i < chars.len() && (chars[i] == '+' || chars[i] == '-') {
+        i += 1;
+    }
+    // Check for 0x, 0o, 0b
+    if i + 1 < chars.len() && chars[i] == '0' {
+        let prefix = chars[i + 1];
+        if prefix == 'x' || prefix == 'X' {
+            i += 2;
+            while i < chars.len() && (chars[i].is_ascii_hexdigit() || chars[i] == '_') {
+                i += 1;
+            }
+        } else if prefix == 'o' || prefix == 'O' {
+            i += 2;
+            while i < chars.len() && (('0' <= chars[i] && chars[i] <= '7') || chars[i] == '_') {
+                i += 1;
+            }
+        } else if prefix == 'b' || prefix == 'B' {
+            i += 2;
+            while i < chars.len() && (chars[i] == '0' || chars[i] == '1' || chars[i] == '_') {
+                i += 1;
+            }
+        } else {
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '_') {
+                i += 1;
+            }
+        }
+    } else {
+        while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '_') {
+            i += 1;
         }
     }
-    let num_part = &s[..digits_end];
-    let suffix = if digits_end < s.len() {
-        Some(&s[digits_end..])
-    } else {
-        None
-    };
+    let num_part = &s[..i];
+    let suffix = if i < s.len() { Some(&s[i..]) } else { None };
     (num_part.replace('_', ""), suffix.map(|s| s.to_string()))
 }
 
@@ -1783,7 +1891,7 @@ pub(crate) fn lower_pat(
         }
         _ => {
             tracing::warn!("STUB: unknown pattern kind {:?}", node.kind());
-            None
+            Some(pats.push(Pat::Err))
         }
     }
 }

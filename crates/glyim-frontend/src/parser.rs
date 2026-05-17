@@ -1206,16 +1206,35 @@ impl<'a> Parser<'a> {
                 }
                 SyntaxKind::LBrace if self.last_was_path && !self.suppress_struct_lit => {
                     self.start_node_at(cp, SyntaxKind::StructExpr);
-                    self.bump();
+                    self.bump(); // {
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
                         if self.current_kind() == SyntaxKind::Ident {
-                            self.bump();
+                            let field_cp = self.checkpoint();
+                            let field_name_token = self.current().unwrap().clone();
+                            self.bump(); // field name
                             if self.current_kind() == SyntaxKind::Colon {
-                                self.bump();
-                                self.parse_expr();
+                                // Explicit field: name: expr
+                                self.bump(); // colon
+                                self.start_node_at(field_cp, SyntaxKind::StructField);
+                                // The field name token is already emitted.
+                                self.finish_node();
+                                self.parse_expr(); // expression value
+                            } else {
+                                // Shorthand field: name (same as expression)
+                                self.start_node_at(field_cp, SyntaxKind::StructField);
+                                // Emit the field name as a PathExpr for the value
+                                self.start_node(SyntaxKind::PathExpr);
+                                self.start_node(SyntaxKind::UsePath);
+                                self.builder.token(
+                                    GlyimLang::kind_to_raw(field_name_token.kind),
+                                    field_name_token.text.as_str(),
+                                );
+                                self.finish_node(); // UsePath
+                                self.finish_node(); // PathExpr
+                                self.finish_node(); // StructField
                             }
                         } else if self.current_kind() == SyntaxKind::DotDot {
-                            self.bump();
+                            self.bump(); // ..
                             if self.current_kind() != SyntaxKind::RBrace {
                                 self.parse_expr();
                             }
@@ -1230,7 +1249,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(SyntaxKind::RBrace);
-                    self.finish_node();
+                    self.finish_node(); // StructExpr
                 }
                 _ => break,
             }
@@ -1525,24 +1544,22 @@ impl<'a> Parser<'a> {
         if self.current_kind() == SyntaxKind::KwMove {
             self.bump(); // move
         }
-        if self.current_kind() == SyntaxKind::Or {
-            self.bump(); // first |
-            if self.current_kind() == SyntaxKind::Or {
-                self.bump(); // second |
-            } else {
-                while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
-                    self.parse_pat_single();
-                    if self.current_kind() == SyntaxKind::Colon {
-                        self.bump();
-                        self.parse_type();
-                    }
-                    if self.current_kind() == SyntaxKind::Comma {
-                        self.bump();
-                    }
-                }
-                self.expect(SyntaxKind::Or);
+        self.expect(SyntaxKind::Or);
+        self.start_node(SyntaxKind::ParamList);
+        while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
+            self.start_node(SyntaxKind::Param);
+            self.parse_pat_single();
+            if self.current_kind() == SyntaxKind::Colon {
+                self.bump();
+                self.parse_type();
+            }
+            self.finish_node(); // Param
+            if self.current_kind() == SyntaxKind::Comma {
+                self.bump();
             }
         }
+        self.finish_node(); // ParamList
+        self.expect(SyntaxKind::Or);
         if self.current_kind() == SyntaxKind::Arrow {
             self.bump();
             self.parse_type();
@@ -1552,7 +1569,7 @@ impl<'a> Parser<'a> {
         } else {
             self.parse_expr();
         }
-        self.finish_node();
+        self.finish_node(); // ClosureExpr
     }
 
     fn parse_match_arm(&mut self) {
@@ -1780,15 +1797,22 @@ impl<'a> Parser<'a> {
                 self.parse_type();
             }
             SyntaxKind::LBracket => {
-                self.start_node(SyntaxKind::ArrayType);
+                let cp = self.checkpoint();
                 self.bump(); // [
-                self.parse_type();
+                self.parse_type(); // inner type
                 if self.current_kind() == SyntaxKind::Semicolon {
+                    // Array type: [T; N]
+                    self.start_node_at(cp, SyntaxKind::ArrayType);
                     self.bump(); // ;
-                    self.parse_expr();
+                    self.parse_expr(); // length
+                    self.expect(SyntaxKind::RBracket);
+                    self.finish_node();
+                } else {
+                    // Slice type: [T]
+                    self.start_node_at(cp, SyntaxKind::SliceType);
+                    self.expect(SyntaxKind::RBracket);
+                    self.finish_node();
                 }
-                self.expect(SyntaxKind::RBracket);
-                self.finish_node();
             }
             SyntaxKind::LParen => {
                 self.start_node(SyntaxKind::TupleType);
@@ -1837,6 +1861,7 @@ impl<'a> Parser<'a> {
                 }
             }
             SyntaxKind::KwFn => {
+                self.start_node(SyntaxKind::FnType);
                 self.bump(); // fn
                 self.expect(SyntaxKind::LParen);
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
@@ -1850,6 +1875,7 @@ impl<'a> Parser<'a> {
                     self.bump();
                     self.parse_type();
                 }
+                self.finish_node();
             }
             SyntaxKind::Ident | SyntaxKind::KwSelf | SyntaxKind::KwSuper | SyntaxKind::KwCrate => {
                 self.start_node(SyntaxKind::PathType);

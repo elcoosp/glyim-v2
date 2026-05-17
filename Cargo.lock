@@ -817,6 +817,7 @@ dependencies = [
  "glyim-span",
  "glyim-syntax",
  "glyim-test",
+ "rowan",
  "tracing",
 ]
 
