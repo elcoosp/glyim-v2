@@ -235,6 +235,7 @@ pub fn typeck_crate(
     (frozen_ctx, result)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_body(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -270,6 +271,7 @@ fn check_body(
     thir_bodies.push((local_def_id, thir_body));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_where_clauses(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,

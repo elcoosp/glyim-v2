@@ -151,6 +151,8 @@ impl<'a> CoherenceChecker<'a> {
     }
 
     /// Compatibility helper for tests.
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub(crate) fn check_and_register_impl_compat(
         &mut self,
         header: &ResolvedImplHeader,

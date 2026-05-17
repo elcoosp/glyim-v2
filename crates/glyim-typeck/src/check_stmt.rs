@@ -58,10 +58,8 @@ impl<'a> FnCtxt<'a> {
                 }
                 _ => {
                     let (thir_expr, ty) = self.check_expr(expr_id);
-                    if is_tail {
-                        if self.return_ty != Ty::UNIT {
-                            self.unify(ty, self.return_ty, span);
-                        }
+                    if is_tail && self.return_ty != Ty::UNIT {
+                        self.unify(ty, self.return_ty, span);
                     }
                     stmts.push(thir::Stmt::Expr { expr: thir_expr });
                 }
