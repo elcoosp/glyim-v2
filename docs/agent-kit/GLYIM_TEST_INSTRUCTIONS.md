@@ -30,8 +30,90 @@ In `crates/glyim-type/src/lib.rs`, add:
 mod tests;
 ```
 
-In `crates/glyim-type/src/tests/mod.rs`, you declare each test module as a Rust submodule.  
-**This file is cumulative — it is shared across multiple work sessions. Before writing to it, always read the existing file first.** Then **append** any new `mod` declarations you need. **Never overwrite or replace** the whole file.
+In `crates/glyim-type/src/tests/mod.rs`, you declare each test module as a Rust submodule.
+**This file is cumulative — it is shared across multiple streams and work sessions.**
+
+### ⚠️ NON‑NEGOTIABLE: NEVER overwrite tests/mod.rs
+
+**This is the #1 cause of test suite destruction.** If you use `cat >` to write `mod.rs`, you will delete other streams' test module registrations. Those tests silently disappear — they won't fail, they just won't compile or run. You will not notice until someone runs the full suite manually.
+
+**ALWAYS use the safe‑append pattern:**
+
+```bash
+echo "Safely appending modules to /path/to/src/tests/mod.rs"
+python3 - "/path/to/src/tests/mod.rs" << 'SAFE_APPEND_PYEOF'
+import sys
+path = sys.argv[1]
+new_mods = ["mod my_new_module;"]
+try:
+    with open(path, 'r') as f:
+        existing = f.read()
+except FileNotFoundError:
+    existing = ""
+existing_lines = {line.strip() for line in existing.splitlines() if line.strip() and not line.strip().startswith('//')}
+with open(path, 'w') as f:
+    if existing:
+        f.write(existing)
+        if not existing.endswith('\n'):
+            f.write('\n')
+    for mod_line in new_mods:
+        if mod_line not in existing_lines:
+            f.write(mod_line + '\n')
+SAFE_APPEND_PYEOF
+```
+
+**❌ NEVER do this:**
+```bash
+cat > crates/glyim-type/src/tests/mod.rs << 'DELIM'
+mod my_module;
+DELIM
+```
+
+**✅ ALWAYS do this:**
+```bash
+python3 - crates/glyim-type/src/tests/mod.rs << 'SAFE_APPEND_PYEOF'
+import sys
+path = sys.argv[1]
+new_mods = ["mod my_module;"]
+try:
+    with open(path, 'r') as f:
+        existing = f.read()
+except FileNotFoundError:
+    existing = ""
+existing_lines = {line.strip() for line in existing.splitlines() if line.strip() and not line.strip().startswith('//')}
+with open(path, 'w') as f:
+    if existing:
+        f.write(existing)
+        if not existing.endswith('\n'):
+            f.write('\n')
+    for mod_line in new_mods:
+        if mod_line not in existing_lines:
+            f.write(mod_line + '\n')
+SAFE_APPEND_PYEOF
+```
+
+### Adding `#[cfg(test)] mod tests;` to lib.rs
+
+This is also idempotent — use the same read‑first approach:
+
+```bash
+echo "Ensuring #[cfg(test)] mod tests; exists in lib.rs"
+python3 - crates/glyim-type/src/lib.rs << 'LIB_MOD_PYEOF'
+import sys
+path = sys.argv[1]
+with open(path, 'r') as f:
+    content = f.read()
+if 'mod tests' not in content:
+    if not content.endswith('\n'):
+        content += '\n'
+    content += '\n#[cfg(test)]\nmod tests;\n'
+    with open(path, 'w') as f:
+        f.write(content)
+    print("Added #[cfg(test)] mod tests; to lib.rs")
+else:
+    print("mod tests already present in lib.rs, skipping")
+LIB_MOD_PYEOF
+```
 
 For example, a `mod.rs` that already contains tests might look like this after you add a new `solving` module:
 
@@ -426,7 +508,7 @@ tests/
 ## TDD Workflow for Agents
 
 1. **Check existing `mod.rs`** – Read `src/tests/mod.rs` first. Note which modules are already declared.
-2. **Create test module structure** in `src/tests/` — only add your new test file(s) and append the corresponding `mod` declaration to `mod.rs`. Never delete or rewrite the existing lines.
+2. **Create test module structure** in `src/tests/` — create your new test file(s) and **safe‑append** the corresponding `mod` declaration to `mod.rs` using the Python pattern above. Never delete or rewrite existing lines in `mod.rs`.
 3. **Write ALL test cases** from your stream brief BEFORE implementing.
 4. **Verify tests compile** with `cargo check -p <crate>` (they will fail at runtime).
 5. **Implement** until all tests pass.
@@ -450,4 +532,6 @@ tests/
 | Stringly-typed errors | `GlyimDiagnostic` constructors |
 | Writing tests after implementation | Write ALL tests first (TDD) |
 | `InferenceTable::new_ty_var()` without `&mut TyCtxMut` | Always pass `&mut TyCtxMut` |
-| Overwriting `tests/mod.rs` or assuming it’s empty | Read the file first, then only append your new `mod` line |
+| Overwriting `tests/mod.rs` or assuming it's empty | Read the file first, then safe‑append your new `mod` line |
+| Using `cat >` for `tests/mod.rs` | Use the Python safe‑append pattern |
+| Running only your test module (`cargo test mod_name`) | Run the full crate suite (`cargo test -p <crate>`) |

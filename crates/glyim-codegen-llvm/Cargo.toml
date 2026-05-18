@@ -16,3 +16,4 @@ inkwell = { workspace = true, features = ["llvm22-1"] }
 
 [dev-dependencies]
 glyim-test = { workspace = true }
+tempfile = {workspace=true}

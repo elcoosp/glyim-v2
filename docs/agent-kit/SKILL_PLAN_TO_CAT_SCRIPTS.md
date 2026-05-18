@@ -15,6 +15,9 @@ When users paste error logs, the LLM switches to surgical fix mode, producing a 
 - Failures from sed, Python, or other commands are logged but do not halt the script. A compile check runs after all patches; if it fails, the failure is logged but the script continues to the end, skipping only the commit, and exits with non-zero to signal the file-watcher.
 - Never use head or tail to arbitrarily split file content across scripts. Splitting must be done only by writing complete, syntactically coherent chunks (e.g., entire functions, modules, or at logical blank lines) -- never by line count.
 - Every file written or patched must be syntactically valid (as a whole) whenever the script marks it as complete. The compile check (cargo check) serves as the final safety net, but the LLM must strive to avoid introducing bracket/delimiter mismatches in the first place.
+- NEVER use `cat >` to overwrite `src/tests/mod.rs` — always use the safe-append pattern (section 1.5). This file is shared across streams; overwriting it silently deletes other agents' test registrations.
+- ALWAYS run the full crate test suite (`cargo test -p <crate>`), not just your own test module. Your changes must not break existing tests from other streams.
+- ALWAYS check for orphaned test files before committing — .rs files in src/tests/ that are not declared in mod.rs indicate a previous overwrite.
 
 ---
 
@@ -90,6 +93,72 @@ This ensures:
     SAFE_UNIQUE_DELIM
 
 Rule: The delimiter must be chosen by the LLM so that it does not appear as an entire line in the file content.
+
+1.5 Append to a shared registry file (NON‑NEGOTIABLE for tests/mod.rs)
+
+Some files are shared across streams — most critically `src/tests/mod.rs`.
+NEVER use `cat >` (overwrite) on these files. ALWAYS use the safe‑append pattern.
+
+Pattern for tests/mod.rs — adds new `mod` declarations only if not already present:
+
+    echo "Safely appending modules to /path/to/src/tests/mod.rs"
+    python3 - "/path/to/src/tests/mod.rs" << 'SAFE_APPEND_PYEOF'
+    import sys
+    path = sys.argv[1]
+    new_mods = ["mod my_new_module;"]
+    try:
+        with open(path, 'r') as f:
+            existing = f.read()
+    except FileNotFoundError:
+        existing = ""
+    existing_lines = {line.strip() for line in existing.splitlines() if line.strip() and not line.strip().startswith('//')}
+    with open(path, 'w') as f:
+        if existing:
+            f.write(existing)
+            if not existing.endswith('\n'):
+                f.write('\n')
+        for mod_line in new_mods:
+            if mod_line not in existing_lines:
+                f.write(mod_line + '\n')
+    SAFE_APPEND_PYEOF
+
+Pattern for adding `#[cfg(test)] mod tests;` to lib.rs (idempotent — skips if already present):
+
+    echo "Ensuring #[cfg(test)] mod tests; exists in lib.rs"
+    LIB_RS="/path/to/src/lib.rs"
+    python3 - "$LIB_RS" << 'LIB_MOD_PYEOF'
+    import sys
+    path = sys.argv[1]
+    with open(path, 'r') as f:
+        content = f.read()
+    if 'mod tests' not in content:
+        if not content.endswith('\n'):
+            content += '\n'
+        content += '\n#[cfg(test)]\nmod tests;\n'
+        with open(path, 'w') as f:
+            f.write(content)
+        print("Added #[cfg(test)] mod tests; to lib.rs")
+    else:
+        print("mod tests already present in lib.rs, skipping")
+    LIB_MOD_PYEOF
+
+Orphaned‑test check (run before commit):
+
+    echo "Checking for orphaned test files"
+    for crate_dir in crates/*/; do
+      mod_file="${crate_dir}src/tests/mod.rs"
+      if [ -f "$mod_file" ]; then
+        for test_file in "${crate_dir}src/tests/"*.rs; do
+          [ -f "$test_file" ] || continue
+          module_name=$(basename "$test_file" .rs)
+          [ "$module_name" = "mod" ] && continue
+          if ! grep -q "mod ${module_name}" "$mod_file"; then
+            echo "WARNING: orphaned test file $test_file not declared in mod.rs!"
+            COMPILE_OK=false
+          fi
+        done
+      fi
+    done
 
 2. Start a huge file (if needed) -- with a meaningful chunk, never an arbitrary line cut.
 

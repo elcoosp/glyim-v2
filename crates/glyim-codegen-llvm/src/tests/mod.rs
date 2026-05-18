@@ -19,12 +19,15 @@ mod edge_cases;
 mod float_arith;
 mod helpers;
 mod integer_arith;
+mod llvm_backend_tests; // added
+mod llvm_module; // added
 mod logical_ops;
+mod object_format_tests; // added
+mod optimisation;
 mod overflow_checks;
 mod rvalue_aggregate;
+mod stress_tests; // added
 mod switch_edge_cases;
 mod switch_int;
 mod unary_ops;
 mod unsigned_cmp;
-
-mod optimisation;

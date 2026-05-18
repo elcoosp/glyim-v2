@@ -13,6 +13,7 @@ You are implementing one stream of work within this project.
 5. **All stubs must be visible.** Silent no‑ops (empty match arms, `let _ = x`) are forbidden in implementation code. Every stub must emit a warning on first execution.
 6. **Tracing convention:** `trace` for hot paths, `debug` for inference, `info` for phases. Always `skip(self, ctx)`.
 7. **Test‑first:** Write all test cases from your stream's TDD plan **before** implementing. Tests must compile before implementation begins.
+8. **Shared files are append‑only.** Files that multiple streams may modify — especially `src/tests/mod.rs` and `src/lib.rs` — MUST be modified using the safe‑append pattern (Python script that reads existing content and only adds new lines if absent). NEVER use `cat >` (overwrite) on these files. Overwriting `tests/mod.rs` silently deletes other streams' test registrations, which is an unrecoverable data loss.
 
 ---
 
@@ -132,6 +133,19 @@ When implementing a feature or fixing a bug, follow this order:
 2. **Test** — write the tests per the TDD plan. They must compile (but can fail) before step 3.
 3. **Implement** — write the minimum correct implementation that makes the tests pass. Apply all six dimensions above.
 4. **Refactor** — clean up: rename, extract helpers, add doc comments, add `debug_assert!`s, add tracing spans.
+4.5 **Integrity check** — Before committing, verify no test modules were lost:
+   ```bash
+   for crate_dir in crates/*/; do
+     mod_file="${crate_dir}src/tests/mod.rs"
+     [ -f "$mod_file" ] || continue
+     for test_file in "${crate_dir}src/tests/"*.rs; do
+       [ -f "$test_file" ] || continue
+       module_name=$(basename "$test_file" .rs)
+       [ "$module_name" = "mod" ] && continue
+       grep -q "mod ${module_name}" "$mod_file" || echo "ORPHANED: $test_file not in mod.rs!"
+     done
+   done
+   ```
 5. **Verify** — `cargo clippy -- -D warnings` and `cargo test --all` must both pass clean.
 6. **Review yourself** — read the diff as if you are a merciless senior reviewer. Would you approve it? If not, fix it before committing.
 
@@ -299,11 +313,14 @@ You **MUST** follow the `plan-to-cat-scripts` skill. Key requirements:
 - The first script creates branch `stream-XX/v0.1.0` from `main`.
 - Every action is logged with `echo` – **no hash‑comment lines**.
 - Write complete files via heredoc with **unique delimiters**.
-- Patch trivial single‑line changes with `sed`; all other patches use Python with temp files.
+- Patch trivial single-line changes with `sed`; all other patches use Python with temp files.
 - **Never truncate files.** Set `INCOMPLETE=true` and continue in the next script.
 - Compile check runs at the end; failure blocks commit but never halts the script.
 - Commit messages are prefixed with `stream-XX:`.
 - When the user pastes an error log, respond with a single surgical fix script.
+- **NEVER use `cat >` to overwrite `src/tests/mod.rs`** — always use the safe-append pattern from the skill's section 1.5. This file is shared across streams; overwriting it silently deletes other agents' test registrations.
+- **ALWAYS run the full crate test suite** (`cargo test -p <crate>`), not just your own test module.
+- **ALWAYS check for orphaned test files** before committing — `.rs` files in `src/tests/` that are not declared in `mod.rs` indicate a previous overwrite.
 
 ## Parallel Worktree Workflow (MANDATORY)
 
