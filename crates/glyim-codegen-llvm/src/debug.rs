@@ -9,6 +9,7 @@ use inkwell::debug_info::{
 use inkwell::values::FunctionValue;
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 pub(crate) struct DebugInfoCtx<'ctx> {
     pub(crate) builder: DebugInfoBuilder<'ctx>,
     pub(crate) compile_unit_scope: DIScope<'ctx>,
@@ -18,6 +19,7 @@ pub(crate) struct DebugInfoCtx<'ctx> {
     pub(crate) enabled: bool,
 }
 
+#[allow(dead_code)]
 impl<'ctx> DebugInfoCtx<'ctx> {
     pub(crate) fn new(
         _context: &'ctx Context,

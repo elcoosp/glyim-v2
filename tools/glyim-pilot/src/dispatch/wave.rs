@@ -81,7 +81,7 @@ pub fn dispatch_wave(
             while let Some(id) = unassigned.pop_front() {
                 let mut providers = pool.provider_ids();
                 // Sort by available slots descending (most free first)
-                providers.sort_by(|a, b| pool.available_slots(b).cmp(&pool.available_slots(a)));
+                providers.sort_by_key(|b| std::cmp::Reverse(pool.available_slots(b)));
                 let mut assigned = false;
                 for pid in providers {
                     if pool.allocate(&pid).is_ok() {

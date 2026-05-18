@@ -13,7 +13,7 @@ pub fn extract_ops_blocks(response: &str) -> Vec<String> {
             let mut end_line = None;
             let mut inside_write_or_replace = false;
 
-            for j in (i + 1)..lines.len() {
+            for (j, _line) in lines.iter().enumerate().skip(i + 1) {
                 let t = lines[j].trim();
                 if t.starts_with("::WRITE ") || t.starts_with("::REPLACE ") {
                     inside_write_or_replace = true;

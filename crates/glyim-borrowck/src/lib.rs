@@ -163,6 +163,7 @@ impl ReadVisitor for PlaceCollector<'_> {
 /// `active_loans` contains all loans whose `dest_local` is live at this
 /// program point, meaning the reference is still in use and the borrow
 /// is still active.
+#[allow(clippy::too_many_arguments)]
 fn check_stmt_conflicts(
     activation_cache: &std::collections::HashMap<usize, twophase::ReservationAnalysis>,
     ctx: &dyn BorrowckCtx,

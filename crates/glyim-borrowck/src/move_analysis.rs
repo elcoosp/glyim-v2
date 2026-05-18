@@ -335,6 +335,7 @@ fn compute_move_dataflow(
         move_paths,
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn collect_stmt_move_effects(
     stmt: &glyim_mir::Statement,
     move_paths: &MovePathArena,
@@ -634,6 +635,7 @@ fn collect_rvalue_used_places<'a>(rvalue: &'a Rvalue, places: &mut SmallVec<[Use
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_place_use_after_move(
     used_place: &UsedPlace<'_>,
     stmt: &glyim_mir::Statement,

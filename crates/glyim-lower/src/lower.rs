@@ -52,6 +52,7 @@ struct MirBuilder<'a> {
     current_block: Option<BasicBlockIdx>,
 }
 
+#[allow(dead_code)]
 impl<'a> MirBuilder<'a> {
     fn new(ctx: &'a dyn LowerCtx, thir: &thir::Body) -> Self {
         let mut locals = IndexVec::new();
