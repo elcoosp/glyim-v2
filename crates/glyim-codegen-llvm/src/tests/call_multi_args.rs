@@ -28,14 +28,16 @@ fn make_multi_arg_call_body(ctx: &mut TyCtxMut) -> Body {
     let fn_ptr_ty = ctx.mk_ty(TyKind::FnPtr(fn_sig.clone()));
 
     let return_ty = i32_ty;
-    let arg_count = 6;
+    let arg_count = 4; // the function takes 4 arguments
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    // local 0: return place
     locals.push(LocalDecl {
         ty: return_ty,
-        mutability: Mutability::Not,
+        mutability: Mutability::Mut,
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     });
+    // local 1..4: parameters
     locals.push(LocalDecl {
         ty: i32_ty,
         mutability: Mutability::Not,
@@ -56,6 +58,7 @@ fn make_multi_arg_call_body(ctx: &mut TyCtxMut) -> Body {
         mutability: Mutability::Not,
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     });
+    // local 5: function pointer (not a parameter)
     locals.push(LocalDecl {
         ty: fn_ptr_ty,
         mutability: Mutability::Not,

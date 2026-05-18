@@ -315,7 +315,7 @@ fn test_o2_mem2reg_debug() {
 
     // Print the MIR body
     println!(
-        "MIR Body: owner={}, return_ty={:?}",
+        "MIR Body: owner={:?}, return_ty={:?}",
         body.owner, body.return_ty
     );
     for (i, local) in body.locals.iter_enumerated() {
@@ -333,11 +333,28 @@ fn test_o2_mem2reg_debug() {
         .lower_bodies_to_module(&context, &[body])
         .expect("lowering failed");
 
-    // Dump the module before optimization (should be after lowering but before passes)
-    dump_ir(&module, "Before passes");
+    // Dump before passes
+    println!("--- Before passes ---");
+    println!("{}", module.print_to_string());
 
-    // Run passes manually? The backend runs passes internally.
-    // We can also run the passes again for verification.
+    // Run passes manually
+    let target_triple = inkwell::targets::TargetTriple::create("x86_64-unknown-linux-gnu");
+    let target = inkwell::targets::Target::from_triple(&target_triple).unwrap();
+    let target_machine = target
+        .create_target_machine(
+            &target_triple,
+            "generic",
+            "",
+            inkwell::OptimizationLevel::Aggressive,
+            inkwell::targets::RelocMode::Default,
+            inkwell::targets::CodeModel::Default,
+        )
+        .unwrap();
+    crate::passes::run_llvm_passes(&module, &target_machine, 2, false).expect("passes failed");
+
+    // Dump after passes
+    println!("--- After passes ---");
+    println!("{}", module.print_to_string());
 
     assert_eq!(
         count_allocas(&module),

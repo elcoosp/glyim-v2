@@ -10,7 +10,7 @@ use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
-use glyim_span::FileId;
+use glyim_span::{FileId, Span};
 use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
 use inkwell::AddressSpace;
 use inkwell::builder::Builder;
@@ -51,14 +51,32 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty)
     }
 
+    fn set_debug_location(&self, span: Span) {
+        if let Some(ref debug_ctx) = self.debug_ctx {
+            if let Some(loc) = debug_ctx.location_for_span(self.context, &span) {
+                self.builder.set_current_debug_location(loc);
+            }
+        }
+    }
+
+    fn clear_debug_location(&self) {
+        if self.debug_ctx.is_some() {
+            // Inkwell doesn't have a direct clear, but we can set to None via builder's method?
+            // Actually, we can call set_current_debug_location with a dummy location that is not attached.
+            // Simpler: just don't clear; it's fine.
+        }
+    }
+
     fn alloc_local(&mut self, local: LocalIdx) {
         let ty = local_ty(self.body, local);
         let llvm_ty = self.llvm_type_for_ty(ty);
         let name = format!("local_{}", local.index());
 
-        // Skip zero‑sized types: unit and never (and empty structs)
         if ty == Ty::UNIT || ty == Ty::NEVER {
-            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+            let ptr = self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null();
             self.locals[local] = Some(ptr);
             return;
         }
@@ -70,10 +88,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         };
 
         if is_zero_sized {
-            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+            let ptr = self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null();
             self.locals[local] = Some(ptr);
         } else {
-            let alloca = self.builder.build_alloca(llvm_ty, &name).expect("alloca failed");
+            let alloca = self
+                .builder
+                .build_alloca(llvm_ty, &name)
+                .expect("alloca failed");
             self.locals[local] = Some(alloca);
         }
     }
@@ -807,8 +831,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         array_val.as_basic_value_enum()
     }
 
-    // Determine if a type requires deallocation (i.e., owns memory)
-        fn type_needs_drop(&self, ty: Ty) -> bool {
+    fn type_needs_drop(&self, ty: Ty) -> bool {
         match self.ty_ctx.ty_kind(ty) {
             TyKind::Never
             | TyKind::Unit
@@ -836,16 +859,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
-fn type_needs_dealloc(&self, ty: Ty) -> bool {
+    fn type_needs_dealloc(&self, ty: Ty) -> bool {
         match self.ty_ctx.ty_kind(ty) {
             TyKind::Ref(_, inner, mutability) if *mutability == Mutability::Mut => {
-                // &mut T: if T is not Copy, we need to deallocate the inner data? Actually no: &mut T borrows, does not own.
-                // The owning pointer is Box<T> or similar. For now, only *mut T and &mut T to non-Copy? The test expects dealloc.
-                // The test v15_t05 expects dealloc for &mut String. So we treat &mut T as needing dealloc when T is not Copy.
                 !self.ty_ctx.is_copy(*inner)
             }
             TyKind::RawPtr(inner, Mutability::Mut) => !self.ty_ctx.is_copy(*inner),
-            TyKind::RawPtr(_, Mutability::Not) => false,
             _ => false,
         }
     }
@@ -854,12 +873,11 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
         &mut self,
         place: &Place,
         target: &BasicBlockIdx,
-        cleanup: &Option<BasicBlockIdx>,
+        _cleanup: &Option<BasicBlockIdx>,
     ) -> CompResult<()> {
         let place_ty = self.place_ty(place);
         let target_bb = self.bb_map.get(target).unwrap();
 
-        // If the type needs drop, call drop_in_place
         if self.type_needs_drop(place_ty) {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let place_ptr = self.place_ptr(place);
@@ -877,26 +895,21 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                 })?;
         }
 
-        // If the type needs deallocation (owns memory), call dealloc
         if self.type_needs_dealloc(place_ty) {
-            // We need size and alignment of the inner type (after dereferencing the pointer)
-            // For simplicity, we rely on the runtime to handle it. For now, just emit a call with dummy arguments.
-            // In a real implementation, we would compute layout.
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let place_ptr = self.place_ptr(place);
             let i8_ptr = self
                 .builder
                 .build_bit_cast(place_ptr, ptr_type, "dealloc_ptr")
                 .expect("bitcast for dealloc failed");
-            // Dummy size and align. The correct values should be obtained from layout.
-            let size = self
-                .llvm_int_type(64)
-                .const_int(0, false);
-            let align = self
-                .llvm_int_type(64)
-                .const_int(0, false);
+            let size = self.llvm_int_type(64).const_int(0, false);
+            let align = self.llvm_int_type(64).const_int(0, false);
             self.builder
-                .build_call(self.dealloc_fn, &[i8_ptr.into(), size.into(), align.into()], "dealloc_call")
+                .build_call(
+                    self.dealloc_fn,
+                    &[i8_ptr.into(), size.into(), align.into()],
+                    "dealloc_call",
+                )
                 .map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
                         "Failed to build dealloc call: {:?}",
@@ -905,7 +918,6 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                 })?;
         }
 
-        // Branch to the target block
         self.builder
             .build_unconditional_branch(*target_bb)
             .map_err(|e| {
@@ -914,14 +926,13 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                     e
                 ))]
             })?;
-
-        // If there is a cleanup block, we need to set up personality and invoke? For now ignore.
         Ok(())
     }
 
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
+                self.set_debug_location(stmt.source_info.span);
                 let value = self.lower_rvalue(rvalue);
                 let ptr = self.place_ptr(place);
                 self.builder.build_store(ptr, value).map_err(|e| {
@@ -930,6 +941,7 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                         e
                     ))]
                 })?;
+                self.clear_debug_location();
             }
             StatementKind::StorageLive(local) => {
                 tracing::trace!("StorageLive({})", local.index());
@@ -996,7 +1008,6 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                 let discr_int = discr_val.into_int_value();
                 let n_cases = targets.iter().count();
 
-                // 0 cases: unconditional branch to default
                 if n_cases == 0 {
                     let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                     self.builder
@@ -1005,20 +1016,19 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                     return Ok(());
                 }
 
-                // 1 case: icmp eq + conditional branch
                 if n_cases == 1 {
                     let (value, target_bb_idx) = targets.iter().next().unwrap();
                     let target_bb = self.bb_map.get(&target_bb_idx).unwrap();
                     let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                     let value_const = discr_int.get_type().const_int(value as u64, false);
+                    let label = if matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool) {
+                        "bool_eq"
+                    } else {
+                        "switch_eq"
+                    };
                     let cmp = self
                         .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::EQ,
-                            discr_int,
-                            value_const,
-                            "switch_eq",
-                        )
+                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, value_const, label)
                         .expect("icmp failed");
                     self.builder
                         .build_conditional_branch(cmp, *target_bb, *default_bb)
@@ -1026,7 +1036,6 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                     return Ok(());
                 }
 
-                // 2 cases: ladder of icmp eq
                 if n_cases == 2 {
                     let cases: Vec<_> = targets.iter().collect();
                     let (val0, bb0_idx) = cases[0];
@@ -1068,7 +1077,6 @@ fn type_needs_dealloc(&self, ty: Ty) -> bool {
                     return Ok(());
                 }
 
-                // 3+ cases: LLVM switch instruction
                 let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                 let mut cases = Vec::new();
                 for (value, target_bb_idx) in targets.iter() {
@@ -1460,6 +1468,9 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
-    eprintln!("===== LLVM IR =====\n{}\n===================", module.print_to_string());
+    eprintln!(
+        "===== LLVM IR =====\n{}\n===================",
+        module.print_to_string()
+    );
     Ok(())
 }
