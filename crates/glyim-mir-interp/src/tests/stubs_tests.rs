@@ -47,7 +47,7 @@ fn set_terminator(body: &mut Body, bb: BasicBlockIdx, kind: TerminatorKind) {
     body.basic_blocks[bb].terminator.kind = kind;
 }
 
-fn const_int(_tcx: fn const_int(tcx: &mut TyCtxMut, val: i128, ty: Ty) -> Operand {mut TyCtxMut, val: i128, ty: Ty) -> Operand {
+fn const_int(_tcx: &mut TyCtxMut, val: i128, ty: Ty) -> Operand {
     Operand::Constant(MirConst {
         kind: MirConstKind::Int(val),
         ty,
@@ -186,7 +186,7 @@ fn len_of_array() {
 
 #[test]
 fn fn_constant_used_as_operand() {
-    let mut tcx = glyim_test::test_ty_ctx();
+    let tcx = glyim_test::test_ty_ctx();
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(100);
     let dummy_ty = Ty::UNIT;
     let mut body = empty_body(Ty::UNIT);
