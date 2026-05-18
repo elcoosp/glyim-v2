@@ -1,0 +1,27 @@
+mod advanced;
+mod aggregate;
+mod allocation;
+mod arithmetic;
+mod boundaries;
+mod branching;
+mod calls;
+mod cast;
+mod common;
+mod comprehensive;
+mod discriminant;
+mod edge_cases;
+mod helpers;
+mod len_test;
+mod limits;
+mod r#loop;
+mod more_edges;
+mod nested_calls;
+mod nested_projections;
+mod ref_test;
+mod repeat;
+mod stress;
+mod stub_coverage;
+mod terminator;
+mod terminators;
+
+mod stubs_tests;

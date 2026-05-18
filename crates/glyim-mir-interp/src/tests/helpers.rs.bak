@@ -83,10 +83,3 @@ pub(crate) fn mk_array_ty(ctx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     };
     ctx.mk_ty(TyKind::Array(elem_ty, len_const))
 }
-pub fn mir_const_usize(val: u64) -> MirConst {
-    MirConst {
-        kind: MirConstKind::Uint(val as u128),
-        ty: Ty::USIZE,
-        span: Span::DUMMY,
-    }
-}
