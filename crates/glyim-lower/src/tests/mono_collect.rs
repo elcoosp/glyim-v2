@@ -23,7 +23,12 @@ use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::*;
 use std::sync::Arc;
-
+fn dummy_body() -> Arc<Body> {
+    Arc::new(Body::dummy(DefId::new(
+        CrateId::from_raw(0),
+        LocalDefId::from_raw(0),
+    )))
+}
 /// Helper: create a simple MIR body with a Call terminator to a function.
 fn make_call_body(
     caller_def_id: FnDefId,
@@ -683,7 +688,11 @@ fn different_substitutions_both_collected() {
 #[test]
 fn empty_start_nothing_collected() {
     let mut ctx = MonoCtx::new();
-    ctx.collect(&[], &|def_id, _substs| Arc::new(Body::dummy(def_id)));
+    ctx.collect(
+        &[],
+        &|def_id, _substs| Arc::new(Body::dummy(def_id)),
+        &|_ty| dummy_body(),
+    );
     assert_eq!(
         ctx.item_count(),
         0,
