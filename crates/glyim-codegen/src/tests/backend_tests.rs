@@ -31,7 +31,6 @@ fn check_opcode(bytecode: &[u8], expected_op: u8) -> bool {
     bytecode.iter().any(|&b| b == expected_op)
 }
 
-// U04-T01: Assign with field projection
 #[test]
 fn test_assign_field_projection() {
     let backend = BytecodeBackend::new();
@@ -77,7 +76,6 @@ fn test_assign_field_projection() {
     assert!(check_opcode(&bytecode, crate::OP_STORE_FIELD));
 }
 
-// U04-T02: Ref creates pointer
 #[test]
 fn test_ref_creates_pointer() {
     let backend = BytecodeBackend::new();
@@ -114,7 +112,6 @@ fn test_ref_creates_pointer() {
     assert!(check_opcode(&bytecode, crate::OP_LOAD_LOCAL_ADDR));
 }
 
-// U04-T03: Deref loads from pointer
 #[test]
 fn test_deref_loads() {
     let backend = BytecodeBackend::new();
@@ -150,7 +147,6 @@ fn test_deref_loads() {
     assert!(check_opcode(&bytecode, crate::OP_DEREF));
 }
 
-// U04-T04: Drop calls glyim_drop_in_place
 #[test]
 fn test_drop_calls_drop_in_place() {
     let backend = BytecodeBackend::new();
@@ -189,7 +185,6 @@ fn test_drop_calls_drop_in_place() {
     assert!(check_opcode(&bytecode, crate::OP_JUMP));
 }
 
-// U04-T05: Repeat builds array constant
 #[test]
 fn test_repeat_array_constant() {
     let backend = BytecodeBackend::new();
@@ -234,7 +229,6 @@ fn test_repeat_array_constant() {
     assert!(check_opcode(&bytecode, crate::OP_REPEAT));
 }
 
-// U04-T06: Float constant emits correctly
 #[test]
 fn test_float_constant_emits() {
     let backend = BytecodeBackend::new();
@@ -271,13 +265,12 @@ fn test_float_constant_emits() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    // Find OP_LOAD_CONST (0x01) and verify the next 8 bytes are the float bits
     let bits = 3.14159_f64.to_bits();
     let expected_bytes = bits.to_le_bytes();
     let mut found = false;
     for i in 0..bytecode.len().saturating_sub(8) {
         if bytecode[i] == crate::OP_LOAD_CONST {
-            if &bytecode[i + 1..i + 9] == expected_bytes {
+            if &bytecode[i+1..i+9] == expected_bytes {
                 found = true;
                 break;
             }
