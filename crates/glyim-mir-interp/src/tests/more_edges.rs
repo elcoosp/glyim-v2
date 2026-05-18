@@ -23,43 +23,6 @@ fn empty_body(ret_ty: Ty) -> Body {
     body
 }
 
-fn add_local(body: &mut Body, ty: Ty, mutability: Mutability) -> LocalIdx {
-    let idx = LocalIdx::from_raw(body.locals.len() as u32);
-    body.locals.push(local_decl(ty, mutability));
-    idx
-}
-
-fn add_statement(body: &mut Body, bb: BasicBlockIdx, stmt: StatementKind) {
-    while body.basic_blocks.len() <= bb.index() {
-        body.basic_blocks.push(BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Unreachable,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        });
-    }
-    body.basic_blocks[bb].statements.push(Statement {
-        kind: stmt,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-}
-
-fn set_terminator(body: &mut Body, bb: BasicBlockIdx, kind: TerminatorKind) {
-    while body.basic_blocks.len() <= bb.index() {
-        body.basic_blocks.push(BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Unreachable,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        });
-    }
-    body.basic_blocks[bb].terminator.kind = kind;
-}
-
 #[test]
 fn fn_ptr_to_ptr_cast_returns_success() {
     let mut tcx = test_ty_ctx();

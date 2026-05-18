@@ -7,7 +7,6 @@ pub(crate) mod lower_type;
 #[cfg(test)]
 pub(crate) use lower_expr::{lower_expr, lower_literal};
 #[cfg(test)]
-pub(crate) use lower_item::{};
 #[cfg(test)]
 pub(crate) use lower_pat::lower_pat;
 #[cfg(test)]

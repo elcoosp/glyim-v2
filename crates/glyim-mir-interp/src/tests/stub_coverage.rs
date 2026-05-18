@@ -22,51 +22,6 @@ fn empty_body(ret_ty: Ty) -> Body {
     body
 }
 
-fn add_local(body: &mut Body, ty: Ty, mutability: Mutability) -> LocalIdx {
-    let idx = LocalIdx::from_raw(body.locals.len() as u32);
-    body.locals.push(local_decl(ty, mutability));
-    idx
-}
-
-fn add_statement(body: &mut Body, bb: BasicBlockIdx, stmt: StatementKind) {
-    while body.basic_blocks.len() <= bb.index() {
-        body.basic_blocks.push(BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Unreachable,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        });
-    }
-    body.basic_blocks[bb].statements.push(Statement {
-        kind: stmt,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-}
-
-fn set_terminator(body: &mut Body, bb: BasicBlockIdx, kind: TerminatorKind) {
-    while body.basic_blocks.len() <= bb.index() {
-        body.basic_blocks.push(BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Unreachable,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        });
-    }
-    body.basic_blocks[bb].terminator.kind = kind;
-}
-
-fn const_int(_tcx: &mut TyCtxMut, val: i128, ty: Ty) -> Operand {
-    Operand::Constant(MirConst {
-        kind: MirConstKind::Int(val),
-        ty,
-        span: Span::DUMMY,
-    })
-}
-
 fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
     let const_len = Const {

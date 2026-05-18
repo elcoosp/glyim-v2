@@ -1,6 +1,5 @@
 use crate::*;
 use glyim_core::{CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability, UintTy};
-use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Const, ConstKind, Ty, TyCtxMut, TyKind};
 
