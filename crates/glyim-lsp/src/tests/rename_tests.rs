@@ -15,7 +15,10 @@ fn test_rename_symbol() {
     let params = RenameParams {
         text_document_position: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
-            position: Position { line: line as u32, character: col as u32 },
+            position: Position {
+                line: line as u32,
+                character: col as u32,
+            },
         },
         new_name: "y".to_string(),
         work_done_progress_params: Default::default(),
