@@ -10,7 +10,6 @@ use glyim_core::{
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{FieldIdx, Ty};
-use std::path::Path;
 use std::sync::Arc;
 
 /// Helper: create a minimal Body with given basic blocks.
