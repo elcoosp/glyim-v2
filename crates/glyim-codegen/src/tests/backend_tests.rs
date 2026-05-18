@@ -1,11 +1,11 @@
 use crate::{
-    BytecodeBackend, CodegenBackend, OP_ADD, OP_JUMP, OP_JUMP_IF, OP_LOAD_CONST, OP_LOAD_LOCAL,
-    OP_RETURN, OP_STORE_LOCAL, OP_LOAD_LOCAL_ADDR, OP_STORE_FIELD, OP_DEREF, OP_DROP, OP_REPEAT,
+    BytecodeBackend, CodegenBackend, OP_ADD, OP_DEREF, OP_DROP, OP_JUMP, OP_JUMP_IF, OP_LOAD_CONST,
+    OP_LOAD_LOCAL, OP_LOAD_LOCAL_ADDR, OP_REPEAT, OP_RETURN, OP_STORE_FIELD, OP_STORE_LOCAL,
 };
 use glyim_core::{
-    primitives::*,
     IndexVec,
     def_id::{CrateId, DefId, LocalDefId},
+    primitives::*,
 };
 use glyim_mir::*;
 use glyim_span::Span;
@@ -120,7 +120,11 @@ fn t02_integer_constants_and_add_yields_loadconst_add_return() {
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -128,7 +132,10 @@ fn t02_integer_constants_and_add_yields_loadconst_add_return() {
     assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
     let bytecode = result.unwrap();
     assert!(!bytecode.is_empty(), "Bytecode should not be empty");
-    assert!(bytecode.len() > 2, "Expected more than 2 bytes for multiple operations");
+    assert!(
+        bytecode.len() > 2,
+        "Expected more than 2 bytes for multiple operations"
+    );
 }
 
 // ============================================================================
@@ -216,7 +223,10 @@ fn t05_generate_returns_non_empty_vec_u8() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(!bytecode.is_empty(), "generate_function should return non-empty Vec<u8>");
+    assert!(
+        !bytecode.is_empty(),
+        "generate_function should return non-empty Vec<u8>"
+    );
 }
 
 // ============================================================================
@@ -237,7 +247,9 @@ fn t07_goto_emits_jump() {
         vec![
             block(
                 vec![],
-                term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) }),
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
             ),
             block(vec![], term(TerminatorKind::Return)),
         ],
@@ -258,7 +270,11 @@ fn t07_goto_emits_jump() {
 // ============================================================================
 #[test]
 fn t08_unreachable_emits_nothing() {
-    let body = make_body(vec![block(vec![], term(TerminatorKind::Unreachable))], vec![], 0);
+    let body = make_body(
+        vec![block(vec![], term(TerminatorKind::Unreachable))],
+        vec![],
+        0,
+    );
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
@@ -507,7 +523,11 @@ fn t18_arithmetic_stubs_do_not_crash() {
                 ],
                 term(TerminatorKind::Return),
             )],
-            vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+            vec![
+                local_decl(Ty::UNIT),
+                local_decl(Ty::UNIT),
+                local_decl(Ty::UNIT),
+            ],
             0,
         );
         let backend = BytecodeBackend::new();
@@ -629,7 +649,9 @@ fn t22_multiple_blocks_all_processed() {
                         span: Span::DUMMY,
                     })),
                 ))],
-                term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) }),
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
             ),
             block(vec![], term(TerminatorKind::Return)),
         ],
@@ -867,7 +889,11 @@ fn t31_operand_with_projection_stub_does_not_crash() {
             ))],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -1140,7 +1166,11 @@ fn t41_add_exact_bytecode_sequence() {
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -1239,7 +1269,11 @@ fn t45_function_with_args() {
             ))],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         2,
     );
     let backend = BytecodeBackend::new();
@@ -1335,7 +1369,15 @@ fn t48_float_bits_constant() {
 // ============================================================================
 #[test]
 fn t49_opcodes_unique() {
-    let opcodes = [OP_LOAD_CONST, OP_ADD, OP_LOAD_LOCAL, OP_STORE_LOCAL, OP_RETURN, OP_JUMP_IF, OP_JUMP];
+    let opcodes = [
+        OP_LOAD_CONST,
+        OP_ADD,
+        OP_LOAD_LOCAL,
+        OP_STORE_LOCAL,
+        OP_RETURN,
+        OP_JUMP_IF,
+        OP_JUMP,
+    ];
     for i in 0..opcodes.len() {
         for j in i + 1..opcodes.len() {
             assert_ne!(opcodes[i], opcodes[j]);
@@ -1374,7 +1416,12 @@ fn t51_mixed_stub_rvalues() {
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -1536,7 +1583,11 @@ fn t56_complex_branch_three_targets() {
                 term(TerminatorKind::Return),
             ),
         ],
-        vec![local_decl(Ty::BOOL), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::BOOL),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -1570,7 +1621,9 @@ fn t58_loadlocal_midrange_index() {
             ],
             term(TerminatorKind::Return),
         )],
-        (0..=(idx + 1) as usize).map(|_| local_decl(Ty::UNIT)).collect(),
+        (0..=(idx + 1) as usize)
+            .map(|_| local_decl(Ty::UNIT))
+            .collect(),
         0,
     );
     let backend = BytecodeBackend::new();
@@ -1635,7 +1688,13 @@ fn t59_nested_binaryop_does_not_crash() {
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -1864,7 +1923,11 @@ fn t68_many_locals_stress_test() {
 // ============================================================================
 #[test]
 fn t69_unreachable_block_yields_empty() {
-    let body = make_body(vec![block(vec![], term(TerminatorKind::Unreachable))], vec![], 0);
+    let body = make_body(
+        vec![block(vec![], term(TerminatorKind::Unreachable))],
+        vec![],
+        0,
+    );
     let backend = BytecodeBackend::new();
     let bc = backend.generate_function(&body).unwrap();
     assert!(bc.is_empty());
@@ -1877,8 +1940,18 @@ fn t69_unreachable_block_yields_empty() {
 fn t70_goto_loop_emits_two_jumps() {
     let body = make_body(
         vec![
-            block(vec![], term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) })),
-            block(vec![], term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(0) })),
+            block(
+                vec![],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
+            ),
+            block(
+                vec![],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(0),
+                }),
+            ),
         ],
         vec![],
         0,
@@ -1928,7 +2001,11 @@ fn t71_comparison_ops_do_not_crash() {
                 ],
                 term(TerminatorKind::Return),
             )],
-            vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+            vec![
+                local_decl(Ty::UNIT),
+                local_decl(Ty::UNIT),
+                local_decl(Ty::UNIT),
+            ],
             0,
         );
         let backend = BytecodeBackend::new();
@@ -1942,7 +2019,13 @@ fn t71_comparison_ops_do_not_crash() {
 // ============================================================================
 #[test]
 fn t72_bitwise_shift_ops_do_not_crash() {
-    for op in &[BinOp::BitAnd, BinOp::BitOr, BinOp::BitXor, BinOp::Shl, BinOp::Shr] {
+    for op in &[
+        BinOp::BitAnd,
+        BinOp::BitOr,
+        BinOp::BitXor,
+        BinOp::Shl,
+        BinOp::Shr,
+    ] {
         let body = make_body(
             vec![block(
                 vec![
@@ -1975,7 +2058,11 @@ fn t72_bitwise_shift_ops_do_not_crash() {
                 ],
                 term(TerminatorKind::Return),
             )],
-            vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+            vec![
+                local_decl(Ty::UNIT),
+                local_decl(Ty::UNIT),
+                local_decl(Ty::UNIT),
+            ],
             0,
         );
         let backend = BytecodeBackend::new();
@@ -2011,7 +2098,11 @@ fn t73_double_assignment_chain() {
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -2063,8 +2154,18 @@ fn t74_switchint_true_targets_otherwise() {
 fn t75_goto_chain_three_blocks() {
     let body = make_body(
         vec![
-            block(vec![], term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) })),
-            block(vec![], term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(2) })),
+            block(
+                vec![],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
+            ),
+            block(
+                vec![],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(2),
+                }),
+            ),
             block(vec![], term(TerminatorKind::Return)),
         ],
         vec![],
@@ -2139,7 +2240,11 @@ fn t77_same_constant_repeated_correct() {
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let backend = BytecodeBackend::new();
@@ -2167,7 +2272,11 @@ fn t78_generate_mixed_empty_and_nonempty() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let empty_body = make_body(vec![block(vec![], term(TerminatorKind::Unreachable))], vec![], 0);
+    let empty_body = make_body(
+        vec![block(vec![], term(TerminatorKind::Unreachable))],
+        vec![],
+        0,
+    );
     let backend = BytecodeBackend::new();
     let bc_empty = backend.generate_function(&empty_body).unwrap();
     let bc_nonempty = backend.generate_function(&body_nonempty).unwrap();
@@ -2183,7 +2292,9 @@ fn t79_no_errors_for_any_supported_terminator() {
     let terminators: Vec<TerminatorKind> = vec![
         TerminatorKind::Return,
         TerminatorKind::Unreachable,
-        TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) },
+        TerminatorKind::Goto {
+            target: BasicBlockIdx::from_raw(1),
+        },
         TerminatorKind::SwitchInt {
             discr: Operand::Copy(Place::new(LocalIdx::from_raw(0))),
             switch_ty: Ty::BOOL,
@@ -2194,7 +2305,10 @@ fn t79_no_errors_for_any_supported_terminator() {
         },
     ];
     for term_kind in terminators {
-        let blocks = if matches!(term_kind, TerminatorKind::Goto { .. } | TerminatorKind::SwitchInt { .. }) {
+        let blocks = if matches!(
+            term_kind,
+            TerminatorKind::Goto { .. } | TerminatorKind::SwitchInt { .. }
+        ) {
             vec![
                 block(
                     vec![stmt(StatementKind::Assign(
@@ -2243,15 +2357,22 @@ fn t80_all_opcodes_emitted_somewhere() {
                 )),
                 stmt(StatementKind::Assign(
                     Place::new(LocalIdx::from_raw(2)),
-                    Rvalue::BinaryOp(BinOp::Add, Box::new((
-                        Operand::Copy(Place::new(LocalIdx::from_raw(0))),
-                        Operand::Copy(Place::new(LocalIdx::from_raw(1))),
-                    ))),
+                    Rvalue::BinaryOp(
+                        BinOp::Add,
+                        Box::new((
+                            Operand::Copy(Place::new(LocalIdx::from_raw(0))),
+                            Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+                        )),
+                    ),
                 )),
             ],
             term(TerminatorKind::Return),
         )],
-        vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
+        vec![
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+            local_decl(Ty::UNIT),
+        ],
         0,
     );
     let bc1 = backend.generate_function(&body1).unwrap();
@@ -2262,7 +2383,12 @@ fn t80_all_opcodes_emitted_somewhere() {
     assert!(bc1.contains(&OP_RETURN));
     let body2 = make_body(
         vec![
-            block(vec![], term(TerminatorKind::Goto { target: BasicBlockIdx::from_raw(1) })),
+            block(
+                vec![],
+                term(TerminatorKind::Goto {
+                    target: BasicBlockIdx::from_raw(1),
+                }),
+            ),
             block(vec![], term(TerminatorKind::Return)),
         ],
         vec![],
@@ -2310,7 +2436,10 @@ fn test_assign_field_projection() {
     let local = LocalIdx::from_raw(0);
     let field_idx = FieldIdx::from_raw(1);
     let proj = vec![ProjectionElem::Field(field_idx)];
-    let place = Place { local, projection: proj.into_boxed_slice() };
+    let place = Place {
+        local,
+        projection: proj.into_boxed_slice(),
+    };
     let rvalue = Rvalue::Use(Operand::Constant(MirConst {
         kind: MirConstKind::Int(42),
         ty: Ty::UNIT,
@@ -2538,7 +2667,7 @@ fn test_float_constant_emits() {
     let expected_bytes = bits.to_le_bytes();
     let mut found = false;
     for i in 0..bytecode.len().saturating_sub(8) {
-        if bytecode[i] == OP_LOAD_CONST && &bytecode[i+1..i+9] == expected_bytes {
+        if bytecode[i] == OP_LOAD_CONST && &bytecode[i + 1..i + 9] == expected_bytes {
             found = true;
             break;
         }

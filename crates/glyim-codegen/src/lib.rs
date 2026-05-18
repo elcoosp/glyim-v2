@@ -232,7 +232,9 @@ fn emit_operand(bc: &mut Vec<u8>, operand: &Operand) -> CompResult<()> {
                 bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
                 Ok(())
             } else {
-                tracing::warn!("STUB: operand with non-empty projection, falling back to load local");
+                tracing::warn!(
+                    "STUB: operand with non-empty projection, falling back to load local"
+                );
                 bc.push(OP_LOAD_LOCAL);
                 bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
                 Ok(())
