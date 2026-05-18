@@ -1,4 +1,4 @@
-use crate::{Interpreter, InterpValue};
+use crate::Interpreter;
 use glyim_core::{CrateId, DefId, LocalDefId, IntTy, Mutability, IndexVec};
 use glyim_mir::*;
 use glyim_span::Span;

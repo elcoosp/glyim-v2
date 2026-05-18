@@ -2,6 +2,7 @@ use crate::*;
 use glyim_core::{CrateId, DefId, LocalDefId, IntTy, FloatTy, UintTy, Mutability, IndexVec};
 use glyim_span::Span;
 use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut};
+use glyim_test::test_ty_ctx;
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
