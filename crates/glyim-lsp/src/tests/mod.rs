@@ -19,3 +19,6 @@ mod code_action;
 mod folding;
 mod formatting;
 mod rename;
+mod symbol_index_tests;
+mod reference_graph_tests;
+mod lsp_integration_tests;

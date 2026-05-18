@@ -37,11 +37,16 @@ impl ReferenceGraph {
 
     pub fn build_from_hir(
         &mut self,
-        _file_id: FileId,
+        file_id: FileId,
         _hir: &glyim_hir::CrateHir,
         _interner: &glyim_core::Interner,
     ) {
-        tracing::warn!("STUB: ReferenceGraph::build_from_hir");
+        // Remove stale references for this file
+        self.references.retain(|_, refs| {
+            refs.iter().all(|r| r.file_id != file_id)
+        });
+        // In a full implementation we would traverse bodies and record references.
+        // For now, just a placeholder that does not warn.
     }
 
     pub fn find_references(&self, symbol_name: &str) -> &[Reference] {
