@@ -13,20 +13,18 @@ pub fn const_int(val: i128) -> Operand {
 pub fn const_uint(val: u128) -> Operand {
     Operand::Constant(MirConst {
         kind: MirConstKind::Uint(val),
-        ty: tcx.mk_ty(TyKind::Uint(UintTy::Usize)),
+        ty: Ty::USIZE,
         span: Span::DUMMY,
     })
 }
 
-
-pub fn mir_const_usize(tcx: &mut glyim_type::TyCtxMut, val: u64) -> MirConst {
+pub fn mir_const_usize(val: u64) -> MirConst {
     MirConst {
         kind: MirConstKind::Uint(val as u128),
-        ty: tcx.mk_ty(glyim_type::TyKind::Uint(glyim_core::UintTy::Usize)),
+        ty: Ty::USIZE,
         span: Span::DUMMY,
     }
 }
-
 use glyim_type::{Ty, TyKind, UintTy, Const, ConstKind, TyCtxMut};
 
 pub fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {

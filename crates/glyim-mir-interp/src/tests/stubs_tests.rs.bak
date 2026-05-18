@@ -112,7 +112,7 @@ fn len_of_array() {
     let local_array = crate::tests::common::add_local(&mut body, array_ty, Mutability::Mut);
     let local_len = crate::tests::common::add_local(&mut body, tcx.mk_ty(TyKind::Uint(UintTy::Usize)), Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    let init = Rvalue::Repeat(const_int(0), mir_const_usize(&mut tcx, 7));
+    let init = Rvalue::Repeat(const_int(0), mir_const_usize(7));
     crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_array), init));
     crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_array))));
     crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
