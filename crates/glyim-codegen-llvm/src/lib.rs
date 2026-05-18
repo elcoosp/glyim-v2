@@ -51,7 +51,34 @@ impl LlvmBackend {
             opt_for_size: false,
         }
     }
+    /// Lower multiple MIR bodies into a single LLVM module.
+    pub fn lower_bodies_to_module<'ctx>(
+        &self,
+        context: &'ctx Context,
+        bodies: &[std::sync::Arc<Body>],
+    ) -> CompResult<inkwell::module::Module<'ctx>> {
+        let module = context.create_module("glyim_module");
+        let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
+        module.set_triple(&triple);
 
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+
+        for body in bodies {
+            crate::lower::lower_body(
+                context,
+                &module,
+                body,
+                self.target_info.clone(),
+                ty_ctx,
+                self.debug_info,
+                self.source_map.clone(),
+            )?;
+        }
+        Ok(module)
+    }
     pub fn with_target(target_triple: impl Into<String>) -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let default_ctx = TyCtxMut::new(Interner::default()).freeze();
@@ -83,7 +110,15 @@ impl LlvmBackend {
         self.source_map = map;
         self
     }
+    pub fn with_opt_level(mut self, level: u8) -> Self {
+        self.opt_level = level;
+        self
+    }
 
+    pub fn with_opt_for_size(mut self, size: bool) -> Self {
+        self.opt_for_size = size;
+        self
+    }
     pub(crate) fn run_passes_on_module<'ctx>(
         &self,
         module: &inkwell::module::Module<'ctx>,
