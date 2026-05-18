@@ -32,8 +32,8 @@ pub fn trim_errors_and_warnings(output: &str) -> String {
         if trimmed.starts_with("error") || trimmed.starts_with("warning") {
             let start = i.saturating_sub(2);
             let end = (i + 5).min(lines.len());
-            for j in start..end {
-                relevant.push(lines[j]);
+            for &line in lines.iter().take(end).skip(start) {
+                relevant.push(line);
             }
             relevant.push("...");
         }
