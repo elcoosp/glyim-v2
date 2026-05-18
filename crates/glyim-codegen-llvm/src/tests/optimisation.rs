@@ -1,6 +1,8 @@
 use crate::LlvmBackend;
+use glyim_core::IndexVec;
 use glyim_core::primitives::IntTy;
 use glyim_core::{CrateId, DefId, Interner, LocalDefId, Mutability};
+use glyim_mir::BasicBlockData;
 use glyim_mir::{
     Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue, SourceInfo,
     Statement, StatementKind, Terminator, TerminatorKind,
@@ -18,8 +20,18 @@ fn make_ty_ctx() -> (glyim_type::TyCtx, Ty) {
 
 fn simple_body_with_local(ty: Ty) -> Body {
     let owner = DefId::new(CrateId::from_raw(1), LocalDefId::from_raw(1));
-    let mut body = Body::dummy(owner);
-    let local_idx = LocalIdx::from_raw(0);
+    // Build fresh IndexVecs
+    let mut basic_blocks = IndexVec::new();
+    let mut locals = IndexVec::new();
+
+    // Local 0 is the return place
+    let ret_local = LocalIdx::from_raw(0);
+    locals.push(LocalDecl {
+        ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
     let const_val = MirConst {
         kind: MirConstKind::Int(42),
         ty,
@@ -27,25 +39,31 @@ fn simple_body_with_local(ty: Ty) -> Body {
     };
     let assign = Statement {
         kind: StatementKind::Assign(
-            Place::new(local_idx),
+            Place::new(ret_local),
             Rvalue::Use(Operand::Constant(const_val)),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let mut bb = glyim_mir::BasicBlockData::new(Terminator {
+    let term = Terminator {
         kind: TerminatorKind::Return,
         source_info: SourceInfo::new(Span::DUMMY),
-    });
-    bb.statements.push(assign);
-    body.basic_blocks.push(bb);
-    body.locals.push(LocalDecl {
-        ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-    body.arg_count = 0;
-    body.return_ty = ty;
-    body
+    };
+    let bb = BasicBlockData {
+        statements: vec![assign],
+        terminator: term,
+        is_cleanup: false,
+    };
+    basic_blocks.push(bb);
+
+    Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: ty,
+        span: Span::DUMMY,
+        var_debug_info: Vec::new(),
+    }
 }
 
 fn count_allocas(module: &inkwell::module::Module) -> usize {
@@ -86,6 +104,22 @@ fn test_o2_mem2reg() {
     let module = backend
         .lower_bodies_to_module(&context, &[body])
         .expect("lowering failed");
+
+    // Run optimization passes manually (lower_bodies_to_module does not run passes)
+    let target_triple = inkwell::targets::TargetTriple::create("x86_64-unknown-linux-gnu");
+    let target = inkwell::targets::Target::from_triple(&target_triple).unwrap();
+    let target_machine = target
+        .create_target_machine(
+            &target_triple,
+            "generic",
+            "",
+            inkwell::OptimizationLevel::Aggressive,
+            inkwell::targets::RelocMode::Default,
+            inkwell::targets::CodeModel::Default,
+        )
+        .unwrap();
+    crate::passes::run_llvm_passes(&module, &target_machine, 2, false).expect("passes failed");
+
     assert_eq!(
         count_allocas(&module),
         0,
@@ -264,4 +298,50 @@ fn test_verify_module_after_optimization() {
     if let Err(msg) = module.verify() {
         panic!("Module verification failed after passes: {}", msg);
     }
+}
+
+// Helper to dump IR at various stages
+fn dump_ir(module: &inkwell::module::Module, label: &str) {
+    println!("--- {} ---", label);
+    println!("{}", module.print_to_string());
+}
+
+// Replace the test with a more verbose version
+#[test]
+fn test_o2_mem2reg_debug() {
+    let (ctx, int_ty) = make_ty_ctx();
+    let backend = LlvmBackend::new().with_ty_ctx(ctx).with_opt_level(2);
+    let body = Arc::new(simple_body_with_local(int_ty));
+
+    // Print the MIR body
+    println!(
+        "MIR Body: owner={}, return_ty={:?}",
+        body.owner, body.return_ty
+    );
+    for (i, local) in body.locals.iter_enumerated() {
+        println!("  local {}: ty={:?}", i.to_raw(), local.ty);
+    }
+    for (i, block) in body.basic_blocks.iter_enumerated() {
+        println!("  bb{}: terminator={:?}", i.to_raw(), block.terminator.kind);
+        for stmt in &block.statements {
+            println!("    stmt: {:?}", stmt.kind);
+        }
+    }
+
+    let context = Context::create();
+    let module = backend
+        .lower_bodies_to_module(&context, &[body])
+        .expect("lowering failed");
+
+    // Dump the module before optimization (should be after lowering but before passes)
+    dump_ir(&module, "Before passes");
+
+    // Run passes manually? The backend runs passes internally.
+    // We can also run the passes again for verification.
+
+    assert_eq!(
+        count_allocas(&module),
+        0,
+        "Expected no alloca instructions after O2 mem2reg"
+    );
 }

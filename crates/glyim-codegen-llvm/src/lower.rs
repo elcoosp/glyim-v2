@@ -57,7 +57,14 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let llvm_ty = self.llvm_type_for_ty(ty);
         let name = format!("local_{}", local.index());
 
-        // Skip zero‑sized types (empty structs, unit type) – they don't need allocation.
+        // Skip zero‑sized types: unit and never (and empty structs)
+        if ty == Ty::UNIT || ty == Ty::NEVER {
+            // Store a dummy null pointer, but never allocate.
+            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+            self.locals[local] = Some(ptr);
+            return;
+        }
+
         let is_zero_sized = if let inkwell::types::BasicTypeEnum::StructType(st) = llvm_ty {
             st.get_field_types().is_empty()
         } else {
@@ -65,17 +72,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         };
 
         if is_zero_sized {
-            // Store a dummy null pointer, but never allocate.
-            let ptr = self
-                .context
-                .ptr_type(inkwell::AddressSpace::default())
-                .const_null();
+            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
             self.locals[local] = Some(ptr);
         } else {
-            let alloca = self
-                .builder
-                .build_alloca(llvm_ty, &name)
-                .expect("alloca failed");
+            let alloca = self.builder.build_alloca(llvm_ty, &name).expect("alloca failed");
             self.locals[local] = Some(alloca);
         }
     }
@@ -895,6 +895,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     fn lower_terminator(&mut self, terminator: &Terminator) -> CompResult<()> {
         match &terminator.kind {
             TerminatorKind::Goto { target } => {
@@ -980,7 +981,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
                 // 2 cases: ladder of icmp eq
                 if n_cases == 2 {
-                    let mut cases: Vec<_> = targets.iter().collect();
+                    let cases: Vec<_> = targets.iter().collect();
                     let (val0, bb0_idx) = cases[0];
                     let (val1, bb1_idx) = cases[1];
                     let target0 = self.bb_map.get(&bb0_idx).unwrap();
@@ -1412,5 +1413,6 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
+    eprintln!("===== LLVM IR =====\n{}\n===================", module.print_to_string());
     Ok(())
 }
