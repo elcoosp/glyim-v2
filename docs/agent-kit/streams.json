@@ -1,311 +1,553 @@
 [
   {
-    "id": "U01",
-    "name": "HIR Lowering – Expressions & Types",
-    "crate": "glyim-hir",
+    "id": "S01",
+    "name": "Soft-Stub Migration and Diagnostics",
+    "crate": "glyim-diag",
     "wave": 0,
-    "scope_summary": "Remove stubs in `glyim-hir/src/lower.rs` for `lower_type_ref`, `lower_expr`, `lower_bin_op_token`, and `lower_pat`. Implement all missing type kinds (Array, Dyn, Slice, FnPtr) and expression kinds (Closure, Struct, Range, Index, Cast). Also implement number suffix parsing and unknown pattern handling.",
+    "scope_summary": "Modify the `stub!` macro in `glyim_diag/src/lib.rs` to expand to `unimplemented!()` instead of `compile_error!()`, and add a companion `stub_impl!` macro that also expands to `unimplemented!()`. Implement all `GlyimDiagnostic` constructors (`lex_error`, `parse_error`, `type_error`, `borrow_error`, `internal_error`), `with_source_code`, `with_sub`, `with_suggestion`, `DiagSink` methods (`emit`, `has_errors`, `into_diagnostics`), and `Display`/`Error` implementations. Remove all `stub!()` and `stub_impl!()` calls within `glyim-diag`, replacing them with functional diagnostic creation and reporting logic.",
     "owned_crates": [
-      "glyim-hir"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U01-T01": "lower_type_ref parses Array, Dyn, Slice, FnPtr correctly (unit test)",
-      "U01-T02": "lower_expr handles Closure, Struct, Range, Index, Cast (unit test)",
-      "U01-T03": "Number suffix parsing works for i32, u64, f64, etc. (unit test)",
-      "U01-T04": "Unknown pattern kind falls back to error (unit test)"
-    },
-    "mocking": "No mocking. Use `glyim_test::assert_ty` and `glyim_test::snapshot_cst` to verify HIR output.",
-    "upstream": [],
-    "downstream": [
-      "U02",
-      "U03"
-    ]
-  },
-  {
-    "id": "U02",
-    "name": "MIR Lowering & Monomorphization",
-    "crate": "glyim-lower",
-    "wave": 0,
-    "scope_summary": "Remove stubs in `glyim-lower/src/lower.rs` (pattern destructuring, expr stmt dropped, unsupported literal, FnRef fallback, match guards, unhandled expr/place) and `glyim-pipeline/src/mono_cache.rs` (generic instantiation, drop glue generation, missing MIR body fallback). Also fix ADT field type resolution in `pipeline_context.rs`.",
-    "owned_crates": [
-      "glyim-lower",
-      "glyim-pipeline"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U02-T01": "Let binding with tuple pattern destructures correctly (unit test)",
-      "U02-T02": "Expr statement with side effects is not dropped (unit test)",
-      "U02-T03": "Unsupported literal falls back to error constant (unit test)",
-      "U02-T04": "Match guard expression is correctly lowered (unit test)",
-      "U02-T05": "Generic function instantiation works (run-pass via pipeline)",
-      "U02-T06": "Drop glue generated for struct with Box field (run-pass)"
-    },
-    "mocking": "Use `glyim_test::mock::MockLowerCtx` and `glyim_test::assert_mir`.",
-    "upstream": [
-      "U01"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "U03",
-    "name": "MIR Interpreter Stubs",
-    "crate": "glyim-mir-interp",
-    "wave": 0,
-    "scope_summary": "Remove all stubs in `glyim-mir-interp/src/lib.rs`: implement `Discriminant` for aggregates, all `CastKind` variants, `Repeat` rvalue, support for `FloatBits`, `String`, `Fn`, `ConstRef` constants, and `Len` for non‑constant array lengths.",
-    "owned_crates": [
-      "glyim-mir-interp"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U03-T01": "Discriminant of enum returns correct tag (unit test)",
-      "U03-T02": "Cast IntToFloat produces float value (unit test)",
-      "U03-T03": "Cast FloatToInt truncates correctly (unit test)",
-      "U03-T04": "Repeat rvalue builds array constant (unit test)",
-      "U03-T05": "Len of array with const generic works (unit test)",
-      "U03-T06": "Fn constant used as operand is handled (unit test)"
-    },
-    "mocking": "Use `glyim_test::phase::MirGenTester` to obtain MIR bodies, then run interpreter.",
-    "upstream": [
-      "U02"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "U04",
-    "name": "Bytecode Backend Stubs",
-    "crate": "glyim-codegen",
-    "wave": 0,
-    "scope_summary": "Remove stubs in `glyim-codegen/src/lib.rs`: implement `Assign` with projections, `Rvalue::Ref`, `UnaryOp::Deref`, `TerminatorKind::Drop`, and support all `MirConstKind` variants (float, char, string). Implement `Repeat` rvalue correctly.",
-    "owned_crates": [
-      "glyim-codegen"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U04-T01": "Assign with field projection writes to correct offset (run-pass via bytecode interpreter)",
-      "U04-T02": "Ref creates pointer (run-pass)",
-      "U04-T03": "Deref loads from pointer (run-pass)",
-      "U04-T04": "Drop calls `glyim_drop_in_place` (run-pass)",
-      "U04-T05": "Repeat builds array constant (run-pass)",
-      "U04-T06": "Float constant emits correctly (run-pass)"
-    },
-    "mocking": "Bytecode backend is self‑contained; test via `glyim_codegen::BytecodeBackend::generate_function`.",
-    "upstream": [
-      "U02"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "U05",
-    "name": "LLVM Backend – Core Types & Aggregates",
-    "crate": "glyim-codegen-llvm",
-    "wave": 0,
-    "scope_summary": "Remove stubs for type lowering: map all TyKinds to proper LLVM types (error → i64, floats → f32/f64, aggregates → structs/arrays). Implement `lower_aggregate` for ADTs and closures, `lower_len`, `lower_repeat`, and fix unknown TyKind fallback.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U05-T01": "Struct type lowered to LLVM struct (run-pass via lli)",
-      "U05-T02": "Array literal lowered to LLVM constant array (run-pass)",
-      "U05-T03": "Len of array returns correct length (run-pass)",
-      "U05-T04": "Repeat rvalue builds array with repeated element (run-pass)",
-      "U05-T05": "Float type uses f32/f64, not i64 (run-pass)"
-    },
-    "mocking": "Use real MIR from pipeline, compile to LLVM IR, run with `lli` to verify.",
-    "upstream": [
-      "U02"
-    ],
-    "downstream": [
-      "U06"
-    ]
-  },
-  {
-    "id": "U06",
-    "name": "LLVM Backend – Operators & Casts",
-    "crate": "glyim-codegen-llvm",
-    "wave": 0,
-    "scope_summary": "Remove stubs for binary and unary ops on floats, `Not` on float, `Deref` on float, and `Cast` kinds (IntToFloat, FloatToInt, PtrToPtr). Implement all missing float arithmetic and comparisons.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U06-T01": "Float addition (fadd) works (run-pass via lli)",
-      "U06-T02": "Float comparison (oeq) works (run-pass)",
-      "U06-T03": "IntToFloat cast (i32 -> f64) works (run-pass)",
-      "U06-T04": "FloatToInt cast (f64 -> i32) truncates (run-pass)",
-      "U06-T05": "Logical `!` on float is rejected (compile-fail)"
-    },
-    "mocking": "Same as U05; test with `lli`.",
-    "upstream": [
-      "U05"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "U07",
-    "name": "LSP Server – Core Features",
-    "crate": "glyim-lsp",
-    "wave": 0,
-    "scope_summary": "Implement `SymbolIndex::build_from_hir` and `ReferenceGraph::build_from_hir` to populate symbol and reference databases. Also implement `provide_completions`, `goto_definition`, `hover`, `document_symbols`, `workspace_symbols` (already stubbed, need full logic).",
-    "owned_crates": [
-      "glyim-lsp"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U07-T01": "SymbolIndex built from HIR contains all definitions (unit test)",
-      "U07-T02": "Goto definition returns correct location (LSP test)",
-      "U07-T03": "Hover shows type signature (LSP test)",
-      "U07-T04": "Completions include local variables and functions (LSP test)",
-      "U07-T05": "Workspace symbol search fuzzy matches (LSP test)"
-    },
-    "mocking": "Use `glyim_test::mock::TestDbBuilder` to create a database, then call LSP methods.",
-    "upstream": [
-      "U01",
-      "U02"
-    ],
-    "downstream": [
-      "U08"
-    ]
-  },
-  {
-    "id": "U08",
-    "name": "LSP Server – Advanced Features",
-    "crate": "glyim-lsp",
-    "wave": 0,
-    "scope_summary": "Implement remaining LSP stubs: `code_action`, `folding_ranges`, `format_document`, `rename`. Also implement `provide_folding_ranges` and `provide_code_actions` (quick fixes).",
-    "owned_crates": [
-      "glyim-lsp"
-    ],
-    "locked_interfaces": [],
-    "tests": {
-      "U08-T01": "Code action suggests removing unused import (LSP test)",
-      "U08-T02": "Folding ranges are generated for braces (LSP test)",
-      "U08-T03": "Format document runs `cargo fmt` and returns edits (LSP test)",
-      "U08-T04": "Rename updates all references (LSP test)"
-    },
-    "mocking": "Same as U07.",
-    "upstream": [
-      "U07"
-    ],
-    "downstream": []
-  },
-  {
-    "id": "M01",
-    "name": "Split LLVM Backend (glyim-codegen-llvm)",
-    "crate": "glyim-codegen-llvm",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-codegen-llvm/src/lib.rs` (1300+ lines) into submodules: `lower/` (MIR→LLVM lowering), `types/` (type mapping), `passes/` (optimisation pipeline), `debug/` (DWARF generation). Keep public API unchanged. Ensure all tests pass.",
-    "owned_crates": [
-      "glyim-codegen-llvm"
+      "glyim-diag"
     ],
     "locked_interfaces": [
-      "glyim_codegen_llvm::LlvmBackend",
-      "glyim_codegen::CodegenBackend for LlvmBackend"
+      "glyim_diag::stub!",
+      "glyim_diag::GlyimDiagnostic",
+      "glyim_diag::DiagSink"
     ],
     "tests": {
-      "M01-T01": "Existing LLVM codegen tests continue to pass (run `cargo test -p glyim-codegen-llvm`)",
-      "M01-T02": "Public API unchanged – downstream crates compile without modification",
-      "M01-T03": "No new compiler warnings or dead code after split"
+      "S01-T01": "Workspace compiles successfully after macro change",
+      "S01-T02": "Count of stub!() calls remains unchanged across workspace",
+      "S01-T03": "Calling a stubbed function at runtime panics with unimplemented!",
+      "S01-T04": "GlyimDiagnostic builders create correct severity and code",
+      "S01-T05": "DiagSink respects error limit and calls on_emit callback"
     },
-    "mocking": "No mocking – pure refactoring. Use existing test suite to verify correctness.",
+    "mocking": "No mocking. Direct macro definition change and structural testing.",
+    "upstream": [],
+    "downstream": [
+      "S04",
+      "S05",
+      "S06",
+      "S08"
+    ]
+  },
+  {
+    "id": "S02",
+    "name": "Foundation Core Unstubbing",
+    "crate": "glyim-core",
+    "wave": 0,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-core`. Implement `Interner::intern/resolve/lookup`, `Idx<T>` conversions, `define_idx` macro internals, `Path::from_single/as_name`, `validate_alignment`, and `TargetInfo` constructors. Ensure all primitive types, def-id structures, and arena allocations are fully operational.",
+    "owned_crates": [
+      "glyim-core"
+    ],
+    "locked_interfaces": [
+      "glyim_core::Interner",
+      "glyim_core::Idx",
+      "glyim_core::Path"
+    ],
+    "tests": {
+      "S02-T01": "Interner correctly interns and resolves symbols",
+      "S02-T02": "define_idx macro generates valid IdxLike implementations",
+      "S02-T03": "Path::from_single and as_name work correctly",
+      "S02-T04": "validate_alignment accepts valid and rejects invalid alignments"
+    },
+    "mocking": "No mocking. Direct unit testing of core data structures.",
+    "upstream": [],
+    "downstream": [
+      "S04",
+      "S05",
+      "S06",
+      "S08",
+      "S09",
+      "S10"
+    ]
+  },
+  {
+    "id": "S03",
+    "name": "Language Library Verification",
+    "crate": "glyim-lang-core",
+    "wave": 0,
+    "scope_summary": "Verify and unstub `glyim-lang-core`, `glyim-lang-std`, and `glyim-lang-alloc`. Ensure `core_source()`, `core_modules()`, `core_source_all()` (and std/alloc equivalents) are fully implemented and return valid Glyim source strings for the compiler's core library injection. Replace any `stub!()` calls with static string returns.",
+    "owned_crates": [
+      "glyim-lang-core",
+      "glyim-lang-std",
+      "glyim-lang-alloc"
+    ],
+    "locked_interfaces": [
+      "glyim_lang_core::core_source",
+      "glyim_lang_std::std_source",
+      "glyim_lang_alloc::alloc_source"
+    ],
+    "tests": {
+      "S03-T01": "core_source returns valid source for known modules",
+      "S03-T02": "std_source_all concatenates all std modules correctly",
+      "S03-T03": "alloc_modules lists expected modules"
+    },
+    "mocking": "No mocking. String literal verification.",
     "upstream": [],
     "downstream": []
   },
   {
-    "id": "M02",
-    "name": "Split Frontend Parser (glyim-frontend)",
+    "id": "S04",
+    "name": "Span & Hygiene Unstubbing",
+    "crate": "glyim-span",
+    "wave": 1,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-span`. Implement `SyntaxContext` operations, `ExpnId` logic, `HygieneCtx::push_expansion/apply_mark/remove_mark/adjust`, and `Span` methods (`is_dummy`, `range`, `sans_ctx`). Ensure `ByteIdx` and `FileId` conversions are fully functional and `From<Span> for miette::SourceSpan` works.",
+    "owned_crates": [
+      "glyim-span"
+    ],
+    "locked_interfaces": [
+      "glyim_span::Span",
+      "glyim_span::HygieneCtx"
+    ],
+    "tests": {
+      "S04-T01": "Span::new creates valid span, is_dummy checks work",
+      "S04-T02": "HygieneCtx apply_mark/remove_mark roundtrip correctly",
+      "S04-T03": "ExpnId::ROOT and SyntaxContext::ROOT are valid defaults"
+    },
+    "mocking": "No mocking. Direct structural testing.",
+    "upstream": [
+      "S02"
+    ],
+    "downstream": [
+      "S07",
+      "S09",
+      "S10",
+      "S11"
+    ]
+  },
+  {
+    "id": "S05",
+    "name": "Syntax & AST Unstubbing",
+    "crate": "glyim-syntax",
+    "wave": 1,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-syntax`. Fully implement the exhaustive `SyntaxKind` enum and `try_from_raw`, `GlyimLang` rowan implementation, `AstNode` for all node types (`SourceFile`, `FnDef`, `StructDef`, etc.), and `child_of_kind` utility.",
+    "owned_crates": [
+      "glyim-syntax"
+    ],
+    "locked_interfaces": [
+      "glyim_syntax::SyntaxKind",
+      "glyim_syntax::AstNode"
+    ],
+    "tests": {
+      "S05-T01": "SyntaxKind try_from_raw maps all raw kinds correctly",
+      "S05-T02": "AstNode::cast and can_cast work for all definitions",
+      "S05-T03": "GlyimLang kind_from_raw/kind_to_raw roundtrip without panic"
+    },
+    "mocking": "No mocking. Rowan tree construction testing.",
+    "upstream": [
+      "S02"
+    ],
+    "downstream": [
+      "S07",
+      "S09",
+      "S10",
+      "S11"
+    ]
+  },
+  {
+    "id": "S06",
+    "name": "Runtime FFI Verification",
+    "crate": "glyim-runtime",
+    "wave": 1,
+    "scope_summary": "Verify and unstub `glyim-runtime`. Ensure `glyim_alloc`, `glyim_dealloc`, `glyim_drop_in_place`, and `glyim_panic` are correctly implemented unsafe FFI functions. Verify alignment handling in alloc/dealloc.",
+    "owned_crates": [
+      "glyim-runtime"
+    ],
+    "locked_interfaces": [
+      "glyim_runtime::glyim_alloc",
+      "glyim_runtime::glyim_dealloc"
+    ],
+    "tests": {
+      "S06-T01": "glyim_alloc returns non-null aligned pointer",
+      "S06-T02": "glyim_dealloc frees memory without crash",
+      "S06-T03": "glyim_panic aborts execution"
+    },
+    "mocking": "No mocking. Integration tests via Mir interpreter.",
+    "upstream": [
+      "S02"
+    ],
+    "downstream": [
+      "S19",
+      "S21"
+    ]
+  },
+  {
+    "id": "S07",
+    "name": "Virtual File System Unstubbing",
+    "crate": "glyim-vfs",
+    "wave": 2,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-vfs`. Implement `add_file_from_disk`, `add_file_content`, `set_file_content`, `file_content_ref`, and `file_id` lookups in the `Vfs` struct.",
+    "owned_crates": [
+      "glyim-vfs"
+    ],
+    "locked_interfaces": [
+      "glyim_vfs::Vfs"
+    ],
+    "tests": {
+      "S07-T01": "Vfs add_file_content and file_content_ref roundtrip",
+      "S07-T02": "Vfs file_id returns correct FileId for known paths",
+      "S07-T03": "set_file_content updates existing file content"
+    },
+    "mocking": "No mocking. Standard IO testing for VFS.",
+    "upstream": [
+      "S04"
+    ],
+    "downstream": [
+      "S22",
+      "S24"
+    ]
+  },
+  {
+    "id": "S08",
+    "name": "Frontend Lexer & Parser Unstubbing",
     "crate": "glyim-frontend",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-frontend/src/parser.rs` (1500+ lines) into `parser/expr.rs`, `parser/stmt.rs`, `parser/item.rs`, `parser/ty.rs`, `parser/pat.rs`. Re‑export all parsing functions from `parser/mod.rs` to keep external API identical.",
+    "wave": 3,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-frontend`. Implement full `lex()` logic producing `Token` streams. Implement all sub-parsers (`parse_expr`, `parse_item`, `parse_pat`, `parse_stmt`, `parse_ty`) with error recovery, building valid Rowan `GreenNode` trees for `ParseResult`.",
     "owned_crates": [
       "glyim-frontend"
     ],
     "locked_interfaces": [
-      "glyim_frontend::parse_to_syntax",
-      "glyim_frontend::ParseResult"
+      "glyim_frontend::lex",
+      "glyim_frontend::parse_to_syntax"
     ],
     "tests": {
-      "M02-T01": "All existing parser unit tests pass",
-      "M02-T02": "Snapshots of CST for all test cases unchanged",
-      "M02-T03": "Parser error recovery remains consistent"
+      "S08-T01": "Lexer tokenizes complex programs without panic",
+      "S08-T02": "Parser constructs valid CST for fn definitions and expressions",
+      "S08-T03": "Parser error recovery inserts Error nodes and continues",
+      "S08-T04": "Snapshots of CST for test programs remain stable"
     },
-    "mocking": "No mocking – rely on existing test suite and snapshot tests.",
-    "upstream": [],
-    "downstream": []
+    "mocking": "No mocking. Snapshot testing via `glyim_test::snapshot_cst`.",
+    "upstream": [
+      "S05",
+      "S01"
+    ],
+    "downstream": [
+      "S11",
+      "S24"
+    ]
   },
   {
-    "id": "M03",
-    "name": "Split HIR Lowering (glyim-hir)",
+    "id": "S09",
+    "name": "HIR Lowering Unstubbing",
     "crate": "glyim-hir",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-hir/src/lower.rs` (800+ lines) into `lower_item.rs`, `lower_expr.rs`, `lower_pat.rs`, `lower_type.rs`. Each file handles one category of AST → HIR conversion. Keep `lower_crate` public entry point unchanged.",
+    "wave": 3,
+    "scope_summary": "Exhaustively match all `Expr`, `BinOp`, `Pat`, and `TypeRef` variants in the HIR lower module, removing all catch-all match arms that produce `Pat::Err` or `Expr::Err`. Implement field name resolution using struct definition order. Support bodyless FnDef for foreign functions instead of panicking. Change the `lower_crate_for_pipeline` signature to return `(CrateHir, Vec<GlyimDiagnostic>)` instead of just `CrateHir` to capture diagnostics during lowering.",
     "owned_crates": [
       "glyim-hir"
     ],
     "locked_interfaces": [
-      "glyim_hir::lower_crate_for_pipeline"
+      "glyim_hir::lower_crate_for_pipeline",
+      "glyim_hir::Expr",
+      "glyim_hir::Pat"
     ],
     "tests": {
-      "M03-T01": "All HIR building tests pass (run `cargo test -p glyim-hir`)",
-      "M03-T02": "Snapshot of HIR structures for sample programs unchanged"
+      "S09-T01": "lower_expr handles all Expr variants without panic",
+      "S09-T02": "lower_pat handles Struct, Tuple, Or patterns",
+      "S09-T03": "Foreign fn without body lowers to FnItem with body: None",
+      "S09-T04": "Field names are correctly preserved in HIR struct expressions"
     },
-    "mocking": "Use existing HIR unit tests; no mocking required.",
-    "upstream": [],
-    "downstream": []
+    "mocking": "Use `glyim_test::snapshot_cst` and `assert_ty` to verify HIR output.",
+    "upstream": [
+      "S04",
+      "S01"
+    ],
+    "downstream": [
+      "S13",
+      "S20",
+      "S25"
+    ]
   },
   {
-    "id": "M04",
-    "name": "Split Type Context (glyim-type)",
+    "id": "S10",
+    "name": "Def-Map & Name Resolution Unstubbing",
+    "crate": "glyim-def-map",
+    "wave": 3,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-def-map`. Implement `build_def_map` to walk AST, build `ModuleData` tree, `ItemScope::declare`, `Resolver::resolve_path`, visibility checking, and `ModuleOrigin` tracking. Change the `build_def_map` signature to accept an `&Interner` parameter for symbol resolution.",
+    "owned_crates": [
+      "glyim-def-map"
+    ],
+    "locked_interfaces": [
+      "glyim_def_map::build_def_map",
+      "glyim_def_map::CrateDefMap",
+      "glyim_def_map::Resolver"
+    ],
+    "tests": {
+      "S10-T01": "build_def_map constructs correct module hierarchy",
+      "S10-T02": "Resolver::resolve_path finds items in parent modules",
+      "S10-T03": "Visibility checks prevent access to private items"
+    },
+    "mocking": "Use `glyim_test::snapshot_def_map`.",
+    "upstream": [
+      "S05",
+      "S02"
+    ],
+    "downstream": [
+      "S16"
+    ]
+  },
+  {
+    "id": "S11",
+    "name": "Macro Expansion Unstubbing",
+    "crate": "glyim-meta",
+    "wave": 3,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-meta`. Implement `Expander::new`, `register_macro`, `expand`, and `expand_crate`. Build the declarative macro matcher, substitution engine, and token tree manipulation. Implement built-in macro handlers (`file!`, `line!`, `column!`, `include!`, `env!`).",
+    "owned_crates": [
+      "glyim-meta"
+    ],
+    "locked_interfaces": [
+      "glyim_meta::Expander",
+      "glyim_meta::ExpansionResult"
+    ],
+    "tests": {
+      "S11-T01": "Declarative macro matches and substitutes correctly",
+      "S11-T02": "Built-in file! and line! macros expand to correct values",
+      "S11-T03": "expand_crate processes multiple macro calls in sequence"
+    },
+    "mocking": "Use `glyim_test::phase::FrontendTester`.",
+    "upstream": [
+      "S05",
+      "S04",
+      "S08"
+    ],
+    "downstream": [
+      "S24"
+    ]
+  },
+  {
+    "id": "S12",
+    "name": "Type System Core & Extensions",
     "crate": "glyim-type",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-type/src/context.rs` (600+ lines) into `ty_ctx_mut.rs`, `ty_ctx.rs`, `adt_def.rs`. Separate mutable building API from frozen query API. Keep all public methods on `TyCtxMut` and `TyCtx`.",
+    "wave": 3,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-type`. Implement all `TyCtxMut`/`TyCtx` methods (`alloc_ty`, `mk_ty`, `mk_ref`, `mk_adt`, `intern_substitution`, `register_adt`, `adt_def`, etc.). Implement `compute_flags`, `PrintTy`/`DebugTy`, `Binder` operations, auto-trait computation, and object safety checking. Add `register_fn_sig`, `fn_sig`, `register_closure_sig`, `closure_sig`, `register_body_ty`, and `body_ty` methods to `TyCtxMut`/`TyCtx`. Extend the `TypeLookup` trait with `adt_def` and `field_ty` methods containing default implementations returning `None` or `error_ty` so existing trait implementors do not break.",
     "owned_crates": [
       "glyim-type"
     ],
     "locked_interfaces": [
-      "glyim_type::TyCtx",
       "glyim_type::TyCtxMut",
-      "glyim_type::AdtDef"
+      "glyim_type::TyCtx",
+      "glyim_type::TypeLookup"
     ],
     "tests": {
-      "M04-T01": "All type‑system tests pass (`cargo test -p glyim-type`)",
-      "M04-T02": "Auto‑trait computation unchanged",
-      "M04-T03": "Layout queries unchanged"
+      "S12-T01": "TyCtxMut creates and interns types correctly",
+      "S12-T02": "TypeLookup::field_ty resolves ADT fields via default impl",
+      "S12-T03": "Auto trait computation identifies Send/Sync correctly",
+      "S12-T04": "Object safety checks reject self-types correctly"
     },
-    "mocking": "No mocking – run existing test suite.",
-    "upstream": [],
-    "downstream": []
+    "mocking": "Use `glyim_test::test_ty_ctx()`.",
+    "upstream": [
+      "S01",
+      "S02"
+    ],
+    "downstream": [
+      "S13",
+      "S14",
+      "S15",
+      "S16"
+    ]
   },
   {
-    "id": "M05",
-    "name": "Split Type Checker Body (glyim-typeck)",
+    "id": "S13",
+    "name": "MIR Definitions & Place Typing",
+    "crate": "glyim-mir",
+    "wave": 4,
+    "scope_summary": "Remove all `unimplemented!()` panics in `glyim-mir`, specifically in `Place::ty`. Implement `Place::ty` for ADT field projection, downcasts, derefs, and indexing using the `TypeLookup::field_ty` and `TypeLookup::adt_def` methods. Ensure `Body::dummy`, `Place::new`, `BasicBlockData::new`, `SwitchTargets`, and `from_raw`/`to_raw` conversions are fully unstubbed and functional.",
+    "owned_crates": [
+      "glyim-mir"
+    ],
+    "locked_interfaces": [
+      "glyim_mir::Body",
+      "glyim_mir::Place"
+    ],
+    "tests": {
+      "S13-T01": "Place::ty resolves through Deref and Field projections",
+      "S13-T02": "Place::ty resolves Downcast to correct variant type",
+      "S13-T03": "Body::dummy creates valid empty body",
+      "S13-T04": "SwitchTargets::iter yields correct branches"
+    },
+    "mocking": "Use `glyim_test::assert_mir`.",
+    "upstream": [
+      "S12"
+    ],
+    "downstream": [
+      "S17",
+      "S18",
+      "S19",
+      "S20",
+      "S21"
+    ]
+  },
+  {
+    "id": "S14",
+    "name": "Trait Solver & Inference Unstubbing",
+    "crate": "glyim-solve",
+    "wave": 4,
+    "scope_summary": "Remove all stubs in `glyim-solve`. Implement depth limit cycle detection in `resolve_ty_shallow_depth` emitting a diagnostic on infinite type cycles instead of returning the original type. Implement `Coerce` predicate evaluation for subtyping and unsizing instead of returning `Ambiguous`. Add `InferenceSnapshot` struct and `snapshot`, `rollback_to`, and `commit` methods to `InferenceTable` for speculative unification. Fully implement `SimpleTraitSolver` and `FulfillmentCtx`.",
+    "owned_crates": [
+      "glyim-solve"
+    ],
+    "locked_interfaces": [
+      "glyim_solve::InferenceTable",
+      "glyim_solve::TraitSolver",
+      "glyim_solve::FulfillmentCtx"
+    ],
+    "tests": {
+      "S14-T01": "InferenceSnapshot rollback reverts unification state",
+      "S14-T02": "resolve_ty_shallow_depth emits diagnostic on infinite type cycle",
+      "S14-T03": "Coerce predicate evaluates to Proven for unsizing",
+      "S14-T04": "FulfillmentCtx processes trait obligations to completion"
+    },
+    "mocking": "Use `glyim_test::mock::MockSolver`.",
+    "upstream": [
+      "S12"
+    ],
+    "downstream": [
+      "S16"
+    ]
+  },
+  {
+    "id": "S15",
+    "name": "Layout Computation Unstubbing",
+    "crate": "glyim-layout",
+    "wave": 4,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-layout`. Implement `SimpleLayoutComputer::layout_of/fn_abi_of`, `Layout::scalar/unit`, `Size`/`Align` arithmetic, `FieldsShape`/`VariantsShape`/`TagEncoding` computation, and VTable layout with `VTableComputer` trait.",
+    "owned_crates": [
+      "glyim-layout"
+    ],
+    "locked_interfaces": [
+      "glyim_layout::LayoutComputer",
+      "glyim_layout::SimpleLayoutComputer"
+    ],
+    "tests": {
+      "S15-T01": "layout_of computes correct size/align for structs",
+      "S15-T02": "layout_of computes niche encoding for enums",
+      "S15-T03": "fn_abi_of respects SystemV and AAPCS calling conventions"
+    },
+    "mocking": "Use `glyim_test::assert_layout`.",
+    "upstream": [
+      "S12"
+    ],
+    "downstream": [
+      "S22"
+    ]
+  },
+  {
+    "id": "S16",
+    "name": "Type Checker Unstubbing",
     "crate": "glyim-typeck",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-typeck/src/check_body.rs` (900+ lines) into `check_expr.rs`, `check_stmt.rs`, `check_pat.rs`, `unify.rs`. Each file handles one aspect of `FnCtxt`. Keep `FnCtxt::check` public.",
+    "wave": 5,
+    "scope_summary": "Remove all `STUB:` warnings and catch-all arms in `glyim-typeck`. Implement `MethodCall` resolution via trait/impl lookup. Exhaustively handle all pattern kinds and type annotations, removing catch-all match arms. Implement multi-segment type paths via `Resolver`. Implement fn signature instantiation by replacing bound vars with inference variables instead of returning a fresh inference variable. Add `expr_ty`, `pat_ty`, and `adjustments` accessors to `TypeckResult`.",
     "owned_crates": [
       "glyim-typeck"
     ],
     "locked_interfaces": [
       "glyim_typeck::typeck_crate",
+      "glyim_typeck::TypeckResult",
       "glyim_typeck::thir::Body"
     ],
     "tests": {
-      "M05-T01": "All type‑checking tests pass (`cargo test -p glyim-typeck`)",
-      "M05-T02": "THIR output for sample functions unchanged",
-      "M05-T03": "Diagnostic messages unchanged"
+      "S16-T01": "Method calls resolve to trait impls correctly",
+      "S16-T02": "Multi-segment paths resolve across module boundaries",
+      "S16-T03": "Fn signature instantiation substitutes bound regions",
+      "S16-T04": "TypeckResult::expr_ty returns correct inferred types",
+      "S16-T05": "Exhaustive pattern/type matching eliminates catch-all panics"
     },
-    "mocking": "Use `glyim_test::phase::MirGenTester` to verify type‑checked output.",
-    "upstream": [],
-    "downstream": []
+    "mocking": "Use `glyim_test::phase::AnalysisTester`.",
+    "upstream": [
+      "S10",
+      "S12",
+      "S14"
+    ],
+    "downstream": [
+      "S20",
+      "S24"
+    ]
   },
   {
-    "id": "M06",
-    "name": "Split MIR Builder (glyim-lower/lower.rs)",
+    "id": "S17",
+    "name": "Borrow Checker Unstubbing",
+    "crate": "glyim-borrowck",
+    "wave": 5,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-borrowck`. Complete `check_borrows` implementation: liveness analysis, move analysis, two-phase borrow analysis (reservation vs. activated), conflict detection, and move-error reporting.",
+    "owned_crates": [
+      "glyim-borrowck"
+    ],
+    "locked_interfaces": [
+      "glyim_borrowck::check_borrows",
+      "glyim_borrowck::BorrowckResult"
+    ],
+    "tests": {
+      "S17-T01": "Detects double mutable borrow error",
+      "S17-T02": "Allows shared borrows in two-phase reservation",
+      "S17-T03": "Detects use-after-move errors",
+      "S17-T04": "Allows disjoint partial moves of struct fields"
+    },
+    "mocking": "Use `glyim_test::mock::MockBorrowckCtx`.",
+    "upstream": [
+      "S13"
+    ],
+    "downstream": [
+      "S24"
+    ]
+  },
+  {
+    "id": "S18",
+    "name": "MIR Optimizer Unstubbing",
+    "crate": "glyim-opt",
+    "wave": 5,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-opt`. Implement `optimize`: CFG simplification (merging blocks), constant propagation, dead code elimination (removing unused assignments), and unreachable block elimination.",
+    "owned_crates": [
+      "glyim-opt"
+    ],
+    "locked_interfaces": [
+      "glyim_opt::optimize",
+      "glyim_opt::Optimized"
+    ],
+    "tests": {
+      "S18-T01": "Constant propagation folds arithmetic",
+      "S18-T02": "DCE removes dead stores",
+      "S18-T03": "CFG simplify merges single-pred/single-succ blocks"
+    },
+    "mocking": "Use `glyim_test::assert_mir` to inspect optimized output.",
+    "upstream": [
+      "S13"
+    ],
+    "downstream": [
+      "S24"
+    ]
+  },
+  {
+    "id": "S19",
+    "name": "MIR Interpreter Unstubbing",
+    "crate": "glyim-mir-interp",
+    "wave": 5,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-mir-interp`. Implement discriminant evaluation extracting enum tags and handling niche encoding instead of returning 0. Implement `Len` evaluation for arrays/slices instead of erroring on non-integer lengths. Complete all missing `BinOp` variants (`BitAnd`, `Or`, `Xor`, `Shl`, `Shr` for ints, `And`, `Or` for bools, comparisons for all). Implement recursive projection chain for nested place writes (Deref+Field).",
+    "owned_crates": [
+      "glyim-mir-interp"
+    ],
+    "locked_interfaces": [
+      "glyim_mir_interp::Interpreter",
+      "glyim_mir_interp::InterpValue"
+    ],
+    "tests": {
+      "S19-T01": "Discriminant of enum returns correct variant index",
+      "S19-T02": "Len evaluates array length from const generic",
+      "S19-T03": "Binary bitwise ops execute correctly on integers",
+      "S19-T04": "Write through Deref+Field projection updates nested value"
+    },
+    "mocking": "Use `glyim_test::phase::MirGenTester` to provide bodies.",
+    "upstream": [
+      "S13"
+    ],
+    "downstream": [
+      "S24",
+      "S22"
+    ]
+  },
+  {
+    "id": "S20",
+    "name": "THIR to MIR Lowering Unstubbing",
     "crate": "glyim-lower",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-lower/src/lower.rs` (600+ lines) into `builder.rs`, `lower_rvalue.rs`, `lower_terminator.rs`. Keep `MirBuilder` and `lower_body` public.",
+    "wave": 6,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-lower`. Exhaustively handle all `ExprKind` variants removing catch-all arms. Implement field name resolution by extending the `LowerCtx` trait with `field_index_by_name` and `variant_index_by_name` methods. Implement tuple, struct, and or-pattern destructuring with `Deinit`. Implement expression side-effects evaluation, string and char literal lowering, closure and fnref handling, match guard evaluation, and all place expression kinds. Extend the `LowerCtx` trait with `fn_sig` and `const_value` methods.",
     "owned_crates": [
       "glyim-lower"
     ],
@@ -314,40 +556,202 @@
       "glyim_lower::LowerCtx"
     ],
     "tests": {
-      "M06-T01": "All MIR lowering tests pass (`cargo test -p glyim-lower`)",
-      "M06-T02": "Snapshot of MIR for test programs unchanged"
+      "S20-T01": "Field access lowers to correct FieldIdx projection",
+      "S20-T02": "Let-stmt with struct pattern destructures correctly",
+      "S20-T03": "Match guard evaluates before arm body",
+      "S20-T04": "String literal creates valid MirConst::String",
+      "S20-T05": "Closure reference lowers to Operand::Constant",
+      "S20-T06": "Place expressions generate valid projection chains"
     },
-    "mocking": "Use `MockLowerCtx` from `glyim-test` to verify builder behaviour.",
-    "upstream": [],
-    "downstream": []
+    "mocking": "Use `glyim_test::mock::MockLowerCtx`.",
+    "upstream": [
+      "S09",
+      "S13",
+      "S16"
+    ],
+    "downstream": [
+      "S21",
+      "S22",
+      "S24"
+    ]
   },
   {
-    "id": "M07",
-    "name": "Split Polymorphization (glyim-lower/polymorphize.rs)",
-    "crate": "glyim-lower",
-    "wave": 0,
-    "scope_summary": "Split `crates/glyim-lower/src/polymorphize.rs` (550+ lines) into `analyze.rs`, `substitute.rs`, `dedup.rs`. Keep `polymorphize_substs`, `compute_poly_item`, and `deduplicate` public.",
+    "id": "S21",
+    "name": "Bytecode Backend Unstubbing",
+    "crate": "glyim-codegen",
+    "wave": 6,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-codegen`. Implement `Assign` with projections by computing target address offset. Implement `Rvalue::Ref` with projection and projected Operands. Support `String`, `Fn`, and `ConstRef` constant kinds via allocation tables. Implement `Assert` terminator with conditional branching to cleanup/panic, and `Drop` terminator with projection via drop glue lookup.",
     "owned_crates": [
-      "glyim-lower"
+      "glyim-codegen"
     ],
     "locked_interfaces": [
-      "glyim_lower::polymorphize::analyze_used_params",
-      "glyim_lower::polymorphize::deduplicate"
+      "glyim_codegen::BytecodeBackend",
+      "glyim_codegen::CodegenBackend"
     ],
     "tests": {
-      "M07-T01": "All polymorphization unit tests pass",
-      "M07-T02": "Mono item counts unchanged after deduplication"
+      "S21-T01": "Assign with field projection writes to correct offset",
+      "S21-T02": "Ref creates pointer with projection",
+      "S21-T03": "Drop calls glyim_drop_in_place via computed place",
+      "S21-T04": "Assert branches to panic on failure",
+      "S21-T05": "String constant emits to string table",
+      "S21-T06": "Fn constant emits to function pointer"
     },
-    "mocking": "Use `glyim_test::mock::MockLowerCtx`; run existing tests.",
-    "upstream": [],
+    "mocking": "Bytecode backend is self-contained; test via `glyim_codegen::BytecodeBackend::generate_function`.",
+    "upstream": [
+      "S13",
+      "S06"
+    ],
+    "downstream": [
+      "S24"
+    ]
+  },
+  {
+    "id": "S22",
+    "name": "LLVM Backend Unstubbing",
+    "crate": "glyim-codegen-llvm",
+    "wave": 7,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-codegen-llvm`. Map all `TyKinds` to proper LLVM types (error->i64, floats->f32/f64, aggregates->structs/arrays). Implement `lower_aggregate` for ADTs/closures, `lower_len`, `lower_repeat`. Implement string constant lowering via global string pointer, function constant lowering via function pointer, and const ref lowering via global address. Implement `Deref` on non-pointer, `Field` projection on non-aggregate using `adt_def`, `Index` projection on non-array/slice, `Len` with non-integer count, logical `Not` on float (emit trap), `Deref` on float (emit trap), `Repeat` with non-integer count, `Assert` terminator, and unhandled `PassMode` arguments (`Indirect`, `Cast`, `HomogeneousAggregate`, `Split`, `Ignore`) per ABI rules.",
+    "owned_crates": [
+      "glyim-codegen-llvm"
+    ],
+    "locked_interfaces": [
+      "glyim_codegen_llvm::LlvmBackend",
+      "glyim_codegen::CodegenBackend for LlvmBackend"
+    ],
+    "tests": {
+      "S22-T01": "Struct type lowered to LLVM struct",
+      "S22-T02": "String constant lowered to global string pointer",
+      "S22-T03": "Field projection on struct computes correct GEP",
+      "S22-T04": "Assert terminator emits comparison and conditional branch",
+      "S22-T05": "Unhandled PassMode arguments are passed correctly per ABI"
+    },
+    "mocking": "Use real MIR from pipeline, compile to LLVM IR, run with lli to verify.",
+    "upstream": [
+      "S20",
+      "S15",
+      "S19"
+    ],
+    "downstream": [
+      "S24"
+    ]
+  },
+  {
+    "id": "S23",
+    "name": "Compiler Database Unstubbing",
+    "crate": "glyim-db",
+    "wave": 7,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-db`. Implement `Database::new`, `interner`, `vfs`, `set_ty_ctx`, `ty_ctx`, `intern_mut`, `set_mono_cache`, `mono_cache` using `parking_lot::RwLock` interior mutability.",
+    "owned_crates": [
+      "glyim-db"
+    ],
+    "locked_interfaces": [
+      "glyim_db::Database"
+    ],
+    "tests": {
+      "S23-T01": "Database stores and retrieves TyCtx correctly",
+      "S23-T02": "Database stores and retrieves Interner mutably",
+      "S23-T03": "Database Vfs returns correct file contents"
+    },
+    "mocking": "No mocking. Direct structural testing.",
+    "upstream": [
+      "S07",
+      "S12"
+    ],
+    "downstream": [
+      "S24",
+      "S25"
+    ]
+  },
+  {
+    "id": "S24",
+    "name": "Compilation Pipeline Unstubbing",
+    "crate": "glyim-pipeline",
+    "wave": 8,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-pipeline`. Implement generic instantiation by cloning MIR body and replacing `ParamTy`/`ParamConst`/`EarlyBoundRegion` with concrete args from `Substitution`. Change missing MIR body fallback to return a compilation error instead of a dummy body. Implement drop glue generation by walking type fields and emitting `Drop` terminators; add a `DropGlueProvider` trait and implement it. Fix ADT field type resolution in `pipeline_context` to use `TyCtx::adt_def` instead of error types.",
+    "owned_crates": [
+      "glyim-pipeline"
+    ],
+    "locked_interfaces": [
+      "glyim_pipeline::Pipeline"
+    ],
+    "tests": {
+      "S24-T01": "Generic function instantiation substitutes type parameters",
+      "S24-T02": "Missing MIR body emits internal error diagnostic",
+      "S24-T03": "Drop glue generated for struct with Drop field",
+      "S24-T04": "ADT field types resolve correctly instead of erroring"
+    },
+    "mocking": "Use `glyim_test::phase::CompilationTrace`.",
+    "upstream": [
+      "S23",
+      "S08",
+      "S11",
+      "S16",
+      "S17",
+      "S18",
+      "S20",
+      "S21",
+      "S22"
+    ],
+    "downstream": [
+      "S25"
+    ]
+  },
+  {
+    "id": "S25",
+    "name": "CLI Unstubbing",
+    "crate": "glyim-cli",
+    "wave": 9,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-cli`. Implement `CliArgs` parsing via clap and the `run()` function to invoke pipeline with correct backend, emit flags, and target selection.",
+    "owned_crates": [
+      "glyim-cli"
+    ],
+    "locked_interfaces": [
+      "glyim_cli::CliArgs",
+      "glyim_cli::run"
+    ],
+    "tests": {
+      "S25-T01": "CLI parses build command with target and opt level",
+      "S25-T02": "CLI invokes pipeline and produces output binary",
+      "S25-T03": "CLI reports compilation errors to stderr"
+    },
+    "mocking": "No mocking. Integration testing via shell execution.",
+    "upstream": [
+      "S24"
+    ],
     "downstream": []
   },
   {
-    "id": "M08",
-    "name": "Move Integration Tests out of glyim-test/lib.rs",
+    "id": "S26",
+    "name": "LSP Server Unstubbing",
+    "crate": "glyim-lsp",
+    "wave": 9,
+    "scope_summary": "Remove all `STUB:` warnings in `glyim-lsp`. Register all LSP message handlers in `build_router` (initialize, shutdown, textDocument/didOpen, etc.) instead of returning an empty router. Implement `find_references` using `ReferenceGraph`. Implement `build_from_hir` in `ReferenceGraph` to walk HIR and record name references instead of being empty. Wire `run_server` to the populated router.",
+    "owned_crates": [
+      "glyim-lsp"
+    ],
+    "locked_interfaces": [
+      "glyim_lsp::LspState",
+      "glyim_lsp::AnalysisDatabase"
+    ],
+    "tests": {
+      "S26-T01": "build_router registers handlers for core LSP messages",
+      "S26-T02": "find_references returns locations of symbol usage",
+      "S26-T03": "build_from_hir records definition and reference locations",
+      "S26-T04": "run_server initializes and responds to requests"
+    },
+    "mocking": "Use `glyim_test::mock::TestDbBuilder` to create a database, then call LSP methods.",
+    "upstream": [
+      "S23",
+      "S09"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "S27",
+    "name": "Test Infrastructure Unstubbing",
     "crate": "glyim-test",
-    "wave": 0,
-    "scope_summary": "Move the large `tests` module (1400+ lines) from `crates/glyim-test/src/lib.rs` into separate test files under `tests/` directory. Keep `lib.rs` only for public API and helper modules. Ensure all integration tests still run via `cargo test -p glyim-test`.",
+    "wave": 10,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyim-test`. Update all mock types (`MockLowerCtx`, `MockSolver`, `MockBorrowckCtx`, `MockCodegen`) to match the extended traits (`field_index_by_name`, `variant_index_by_name`, `fn_sig`, `const_value`, `InferenceSnapshot` methods, etc.). Update phase testers to use new APIs.",
     "owned_crates": [
       "glyim-test"
     ],
@@ -357,57 +761,62 @@
       "glyim_test::TestRunner"
     ],
     "tests": {
-      "M08-T01": "All existing tests continue to pass after move",
-      "M08-T02": "No duplicate test execution",
-      "M08-T03": "Compile time of test crate improves (optional)"
+      "S27-T01": "MockLowerCtx implements field_index_by_name",
+      "S27-T02": "MockSolver implements InferenceSnapshot rollback",
+      "S27-T03": "Phase testers compile and run with updated APIs",
+      "S27-T04": "Existing snapshot tests pass"
     },
-    "mocking": "No mocking – the tests themselves are the verification.",
-    "upstream": [],
-    "downstream": []
-  },
-  {
-    "id": "M09",
-    "name": "Split LSP Core (glyim-lsp)",
-    "crate": "glyim-lsp",
-    "wave": 0,
-    "scope_summary": "Split `glyim-lsp/src/lib.rs` and related large files into feature modules: `symbol_index.rs`, `reference_graph.rs`, `completion.rs`, `goto_definition.rs`, `hover.rs`, `diagnostics.rs`. Each module handles one LSP capability. Keep `LspState` and `AnalysisDatabase` unchanged.",
-    "owned_crates": [
-      "glyim-lsp"
-    ],
-    "locked_interfaces": [
-      "glyim_lsp::LspState",
-      "glyim_lsp::AnalysisDatabase"
-    ],
-    "tests": {
-      "M09-T01": "All LSP server tests pass (`cargo test -p glyim-lsp`)",
-      "M09-T02": "LSP responses for sample documents unchanged"
-    },
-    "mocking": "Use `glyim_test::mock::TestDbBuilder` to create analysis databases for testing.",
-    "upstream": [],
-    "downstream": []
-  },
-  {
-    "id": "M10",
-    "name": "Split LSP Advanced Features (glyim-lsp)",
-    "crate": "glyim-lsp",
-    "wave": 0,
-    "scope_summary": "Complete and split remaining LSP stubs: `code_action.rs`, `folding.rs`, `formatting.rs`, `rename.rs`. Implement full logic for code actions, folding ranges, document formatting, and rename refactoring.",
-    "owned_crates": [
-      "glyim-lsp"
-    ],
-    "locked_interfaces": [
-      "glyim_lsp::code_action::provide_code_actions",
-      "glyim_lsp::formatting::format_document"
-    ],
-    "tests": {
-      "M10-T01": "Code action suggests removing unused import (LSP test)",
-      "M10-T02": "Folding ranges are generated for braces (LSP test)",
-      "M10-T03": "Format document runs `cargo fmt` and returns edits (LSP test)",
-      "M10-T04": "Rename updates all references (LSP test)"
-    },
-    "mocking": "Same as M09 – use `TestDbBuilder` to simulate LSP requests.",
+    "mocking": "No mocking. The tests themselves are the verification.",
     "upstream": [
-      "M09"
+      "S14",
+      "S16",
+      "S20"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "S28",
+    "name": "Build Tool Unstubbing",
+    "crate": "glyip",
+    "wave": 10,
+    "scope_summary": "Remove all `stub!()` and `stub_impl!()` calls in `glyip`. Implement `cmd_new/build/test/run`, `Cache` operations, `GlyipToml` parsing, `DependencyResolver`, `FingerprintStore`, and `Lockfile` generation.",
+    "owned_crates": [
+      "glyip"
+    ],
+    "locked_interfaces": [
+      "glyip::commands::cmd_build",
+      "glyip::cache::Cache"
+    ],
+    "tests": {
+      "S28-T01": "cmd_new creates a valid project structure",
+      "S28-T02": "cmd_build invokes the compiler pipeline",
+      "S28-T03": "Cache detects stale artifacts via fingerprinting",
+      "S28-T04": "DependencyResolver builds a valid lockfile"
+    },
+    "mocking": "Use temp directories for filesystem mocking.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "S29",
+    "name": "Dev Tools Unstubbing",
+    "crate": "glyim-pilot",
+    "wave": 11,
+    "scope_summary": "Remove all `stub!()`, `stub_impl!()`, and `STUB:` warnings in `glyim-pilot`. Complete all internal modules: server, orchestrator, dispatch, gates, commit, session, context, git_ops, protocol, config, and CLI. This crate is not locked and can be freely structured.",
+    "owned_crates": [
+      "glyim-pilot"
+    ],
+    "locked_interfaces": [],
+    "tests": {
+      "S29-T01": "Server starts and accepts WebSocket connections",
+      "S29-T02": "Orchestrator dispatches waves to agents",
+      "S29-T03": "Gates check architecture and contracts successfully",
+      "S29-T04": "Commit engine stages and commits changes"
+    },
+    "mocking": "Use mock agent providers for dispatch and orchestration testing.",
+    "upstream": [
+      "S24",
+      "S25"
     ],
     "downstream": []
   }
