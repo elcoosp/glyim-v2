@@ -23,3 +23,6 @@ mod lsp_integration_tests;
 mod reference_graph_tests;
 mod rename;
 mod symbol_index_tests;
+mod test_utils;
+mod code_action_tests;
+mod rename_tests;
