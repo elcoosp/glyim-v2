@@ -1,9 +1,68 @@
-use super::helpers::*;
 use crate::Interpreter;
-use glyim_core::{CrateId, DefId, LocalDefId, IntTy, FloatTy, UintTy};
+use crate::InterpValue;
+use glyim_core::{CrateId, DefId, LocalDefId, IntTy, FloatTy, UintTy, Mutability, IndexVec};
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut, GenericArg};
+
+fn dummy_def_id() -> DefId {
+    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
+}
+
+fn local_decl(ty: Ty, mutability: Mutability) -> LocalDecl {
+    LocalDecl { ty, mutability, source_info: SourceInfo::new(Span::DUMMY) }
+}
+
+fn empty_body(ret_ty: Ty) -> Body {
+    let mut body = Body::dummy(dummy_def_id());
+    body.locals = IndexVec::from_raw(vec![local_decl(ret_ty, Mutability::Mut)]);
+    body
+}
+
+fn add_local(body: &mut Body, ty: Ty, mutability: Mutability) -> LocalIdx {
+    let idx = LocalIdx::from_raw(body.locals.len() as u32);
+    body.locals.push(local_decl(ty, mutability));
+    idx
+}
+
+fn add_statement(body: &mut Body, bb: BasicBlockIdx, stmt: StatementKind) {
+    while body.basic_blocks.len() <= bb.index() {
+        body.basic_blocks.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator { kind: TerminatorKind::Unreachable, source_info: SourceInfo::new(Span::DUMMY) },
+            is_cleanup: false,
+        });
+    }
+    body.basic_blocks[bb].statements.push(Statement { kind: stmt, source_info: SourceInfo::new(Span::DUMMY) });
+}
+
+fn set_terminator(body: &mut Body, bb: BasicBlockIdx, kind: TerminatorKind) {
+    while body.basic_blocks.len() <= bb.index() {
+        body.basic_blocks.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator { kind: TerminatorKind::Unreachable, source_info: SourceInfo::new(Span::DUMMY) },
+            is_cleanup: false,
+        });
+    }
+    body.basic_blocks[bb].terminator.kind = kind;
+}
+
+fn const_int(tcx: &mut TyCtxMut, val: i128, ty: Ty) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::Int(val),
+        ty,
+        span: Span::DUMMY,
+    })
+}
+
+fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
+    let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
+    let const_len = Const {
+        kind: ConstKind::Uint(len.into()),
+        ty: usize_ty,
+    };
+    tcx.mk_ty(TyKind::Array(elem_ty, const_len))
+}
 
 #[test]
 fn discriminant_returns_tag() {
@@ -15,7 +74,10 @@ fn discriminant_returns_tag() {
     let local_enum = add_local(&mut body, tuple_ty, Mutability::Mut);
     let local_result = add_local(&mut body, int_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    let agg = Rvalue::Aggregate(AggregateKind::Tuple, vec![const_int(42), const_int(0)]);
+    let agg = Rvalue::Aggregate(AggregateKind::Tuple, vec![
+        const_int(&mut tcx, 42, int_ty),
+        const_int(&mut tcx, 0, int_ty),
+    ]);
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_enum), agg));
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_result), Rvalue::Discriminant(Place::new(local_enum))));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
@@ -31,11 +93,12 @@ fn discriminant_returns_tag() {
 #[test]
 fn cast_int_to_float() {
     let mut tcx = glyim_test::test_ty_ctx();
+    let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let float_ty = tcx.mk_ty(TyKind::Float(FloatTy::F64));
     let mut body = empty_body(Ty::UNIT);
     let local = add_local(&mut body, float_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::IntToFloat, const_int(42), float_ty)));
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::IntToFloat, const_int(&mut tcx, 42, int_ty), float_ty)));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
@@ -50,12 +113,13 @@ fn cast_int_to_float() {
 fn cast_float_to_int() {
     let mut tcx = glyim_test::test_ty_ctx();
     let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+    let float_ty = tcx.mk_ty(TyKind::Float(FloatTy::F64));
     let mut body = empty_body(Ty::UNIT);
     let local = add_local(&mut body, int_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let float_const = MirConst {
         kind: MirConstKind::FloatBits(123.456_f64.to_bits()),
-        ty: tcx.mk_ty(TyKind::Float(FloatTy::F64)),
+        ty: float_ty,
         span: Span::DUMMY,
     };
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::FloatToInt, Operand::Constant(float_const), int_ty)));
@@ -72,12 +136,16 @@ fn cast_float_to_int() {
 #[test]
 fn repeat_creates_array() {
     let mut tcx = glyim_test::test_ty_ctx();
-    let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    let array_ty = mk_array_ty(&mut tcx, elem_ty, 5);
+    let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+    let array_ty = mk_array_ty(&mut tcx, int_ty, 5);
     let mut body = empty_body(Ty::UNIT);
     let local = add_local(&mut body, array_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    let repeat = Rvalue::Repeat(const_int(42), mir_const_usize(&mut tcx, 5));
+    let repeat = Rvalue::Repeat(const_int(&mut tcx, 42, int_ty), MirConst {
+        kind: MirConstKind::Uint(5),
+        ty: tcx.mk_ty(TyKind::Uint(UintTy::Usize)),
+        span: Span::DUMMY,
+    });
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), repeat));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
@@ -93,13 +161,17 @@ fn repeat_creates_array() {
 #[test]
 fn len_of_array() {
     let mut tcx = glyim_test::test_ty_ctx();
-    let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    let array_ty = mk_array_ty(&mut tcx, elem_ty, 7);
+    let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+    let array_ty = mk_array_ty(&mut tcx, int_ty, 7);
     let mut body = empty_body(Ty::UNIT);
     let local_array = add_local(&mut body, array_ty, Mutability::Mut);
     let local_len = add_local(&mut body, tcx.mk_ty(TyKind::Uint(UintTy::Usize)), Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    let init = Rvalue::Repeat(const_int(0), mir_const_usize(&mut tcx, 7));
+    let init = Rvalue::Repeat(const_int(&mut tcx, 0, int_ty), MirConst {
+        kind: MirConstKind::Uint(7),
+        ty: tcx.mk_ty(TyKind::Uint(UintTy::Usize)),
+        span: Span::DUMMY,
+    });
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_array), init));
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_array))));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
