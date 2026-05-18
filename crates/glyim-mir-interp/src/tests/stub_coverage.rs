@@ -9,6 +9,8 @@ use glyim_mir::*;
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
 use glyim_type::{Ty, TyKind};
+use glyim_type::Const;
+use glyim_core::UintTy;
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
