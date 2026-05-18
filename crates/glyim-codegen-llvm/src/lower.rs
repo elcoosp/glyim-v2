@@ -967,13 +967,28 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let return_place = Place::new(LocalIdx::from_raw(0));
                 let ret_place_ptr = self.place_ptr(&return_place);
                 if let Some(ret_type) = self.function.get_type().get_return_type() {
-                    let ret_val = self.builder.build_load(ret_type, ret_place_ptr, "ret_val")
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("load ret: {:?}", e))])?;
-                    self.builder.build_return(Some(&ret_val))
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("return failed: {:?}", e))])?;
+                    let ret_val = self
+                        .builder
+                        .build_load(ret_type, ret_place_ptr, "ret_val")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "load ret: {:?}",
+                                e
+                            ))]
+                        })?;
+                    self.builder.build_return(Some(&ret_val)).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "return failed: {:?}",
+                            e
+                        ))]
+                    })?;
                 } else {
-                    self.builder.build_return(None)
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("return failed: {:?}", e))])?;
+                    self.builder.build_return(None).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "return failed: {:?}",
+                            e
+                        ))]
+                    })?;
                 }
             }
             TerminatorKind::Unreachable => {
