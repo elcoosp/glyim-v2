@@ -9,7 +9,7 @@ fn test_rename_symbol() {
     println!("{}", x);
 }
 "#;
-    let (db, file_map, uri, file_id) = setup_test_db(source, "/test/main.g");
+    let (db, file_map, uri, _file_id) = setup_test_db(source, "/test/main.g");
     // Find position of "x" in "let x = 5;"
     let (line, col) = (1, 8);
     let params = RenameParams {
