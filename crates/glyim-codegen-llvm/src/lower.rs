@@ -10,7 +10,7 @@ use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
-use glyim_span::FileId;
+use glyim_span::{FileId, Span};
 use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
 use inkwell::AddressSpace;
 use inkwell::builder::Builder;
@@ -28,10 +28,8 @@ fn local_ty(body: &Body, local: LocalIdx) -> Ty {
 struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
-    #[allow(dead_code)]
     function: inkwell::values::FunctionValue<'ctx>,
     drop_fn: inkwell::values::FunctionValue<'ctx>,
-    #[allow(dead_code)]
     dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
     target_info: TargetInfo,
@@ -52,27 +50,37 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty)
     }
 
+    fn set_debug_location(&self, span: Span) {
+        if span.is_dummy() {
+            return;
+        }
+        if let Some(ref debug_ctx) = self.debug_ctx {
+            if let Some(loc) = debug_ctx.location_for_span(self.context, &span) {
+                self.builder.set_current_debug_location(loc);
+            }
+        }
+    }
+
+    fn clear_debug_location(&self) {
+        if self.debug_ctx.is_some() {
+            // No direct clear, but setting to a dummy location is not needed.
+            // Leave as is; the next set_debug_location will overwrite.
+        }
+    }
+
     fn alloc_local(&mut self, local: LocalIdx) {
         let ty = local_ty(self.body, local);
         let llvm_ty = self.llvm_type_for_ty(ty);
         let name = format!("local_{}", local.index());
 
-        // Skip zero‑sized types: unit and never (and empty structs)
-        if ty == Ty::UNIT || ty == Ty::NEVER {
-            // Store a dummy null pointer, but never allocate.
-            let ptr = self
-                .context
-                .ptr_type(inkwell::AddressSpace::default())
-                .const_null();
-            self.locals[local] = Some(ptr);
-            return;
-        }
-
-        let is_zero_sized = if let inkwell::types::BasicTypeEnum::StructType(st) = llvm_ty {
-            st.get_field_types().is_empty()
-        } else {
-            false
-        };
+        // Zero-sized types (unit, never, empty struct) get a null pointer
+        let is_zero_sized = ty == Ty::UNIT
+            || ty == Ty::NEVER
+            || (if let inkwell::types::BasicTypeEnum::StructType(st) = llvm_ty {
+                st.get_field_types().is_empty()
+            } else {
+                false
+            });
 
         if is_zero_sized {
             let ptr = self
@@ -846,6 +854,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
+    fn type_needs_dealloc(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            TyKind::Ref(_, inner, mutability) if *mutability == Mutability::Mut => {
+                !self.ty_ctx.is_copy(*inner)
+            }
+            TyKind::RawPtr(inner, Mutability::Mut) => !self.ty_ctx.is_copy(*inner),
+            _ => false,
+        }
+    }
+
     fn lower_drop(
         &mut self,
         place: &Place,
@@ -853,6 +871,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         _cleanup: &Option<BasicBlockIdx>,
     ) -> CompResult<()> {
         let place_ty = self.place_ty(place);
+        let target_bb = self.bb_map.get(target).unwrap();
+
         if self.type_needs_drop(place_ty) {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let place_ptr = self.place_ptr(place);
@@ -869,7 +889,30 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ))]
                 })?;
         }
-        let target_bb = self.bb_map.get(target).unwrap();
+
+        if self.type_needs_dealloc(place_ty) {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let place_ptr = self.place_ptr(place);
+            let i8_ptr = self
+                .builder
+                .build_bit_cast(place_ptr, ptr_type, "dealloc_ptr")
+                .expect("bitcast for dealloc failed");
+            let size = self.llvm_int_type(64).const_int(0, false);
+            let align = self.llvm_int_type(64).const_int(0, false);
+            self.builder
+                .build_call(
+                    self.dealloc_fn,
+                    &[i8_ptr.into(), size.into(), align.into()],
+                    "dealloc_call",
+                )
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build dealloc call: {:?}",
+                        e
+                    ))]
+                })?;
+        }
+
         self.builder
             .build_unconditional_branch(*target_bb)
             .map_err(|e| {
@@ -884,6 +927,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
+                self.set_debug_location(stmt.source_info.span);
                 let value = self.lower_rvalue(rvalue);
                 let ptr = self.place_ptr(place);
                 self.builder.build_store(ptr, value).map_err(|e| {
@@ -892,6 +936,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         e
                     ))]
                 })?;
+                self.clear_debug_location();
             }
             StatementKind::StorageLive(local) => {
                 tracing::trace!("StorageLive({})", local.index());
@@ -958,7 +1003,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let discr_int = discr_val.into_int_value();
                 let n_cases = targets.iter().count();
 
-                // 0 cases: unconditional branch to default
                 if n_cases == 0 {
                     let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                     self.builder
@@ -967,20 +1011,19 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     return Ok(());
                 }
 
-                // 1 case: icmp eq + conditional branch
                 if n_cases == 1 {
                     let (value, target_bb_idx) = targets.iter().next().unwrap();
                     let target_bb = self.bb_map.get(&target_bb_idx).unwrap();
                     let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                     let value_const = discr_int.get_type().const_int(value as u64, false);
+                    let label = if matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool) {
+                        "bool_eq"
+                    } else {
+                        "switch_eq"
+                    };
                     let cmp = self
                         .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::EQ,
-                            discr_int,
-                            value_const,
-                            "switch_eq",
-                        )
+                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, value_const, label)
                         .expect("icmp failed");
                     self.builder
                         .build_conditional_branch(cmp, *target_bb, *default_bb)
@@ -988,7 +1031,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     return Ok(());
                 }
 
-                // 2 cases: ladder of icmp eq
                 if n_cases == 2 {
                     let cases: Vec<_> = targets.iter().collect();
                     let (val0, bb0_idx) = cases[0];
@@ -1030,7 +1072,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     return Ok(());
                 }
 
-                // 3+ cases: LLVM switch instruction
                 let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                 let mut cases = Vec::new();
                 for (value, target_bb_idx) in targets.iter() {
@@ -1334,6 +1375,18 @@ pub(crate) fn lower_body<'ctx>(
     };
 
     let function = module.add_function(&fn_name, fn_type, None);
+
+    let mut debug_ctx = if debug_info {
+        Some(DebugInfoCtx::new(context, module, source_map, true))
+    } else {
+        None
+    };
+
+    // Attach subprogram if debug info is enabled
+    if let Some(ref mut di) = debug_ctx {
+        di.set_function(context, &function, &fn_name, FileId::from_raw(0), 1);
+    }
+
     let entry_block = context.append_basic_block(function, "entry");
     let builder = context.create_builder();
     builder.position_at_end(entry_block);
@@ -1378,12 +1431,6 @@ pub(crate) fn lower_body<'ctx>(
         let personality_fn = module.add_function("__glyim_personality", personality_fn_type, None);
         function.set_personality_function(personality_fn);
         Some(personality_fn)
-    } else {
-        None
-    };
-
-    let debug_ctx = if debug_info {
-        Some(DebugInfoCtx::new(context, module, source_map, true))
     } else {
         None
     };
