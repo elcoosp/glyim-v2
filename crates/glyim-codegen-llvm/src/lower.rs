@@ -21,6 +21,16 @@ use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntVal
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
+#[inline]
+fn local_ty(body: &Body, local: LocalIdx) -> Ty {
+    if local.index() < body.locals.len() {
+        local_ty(body, local)
+    } else {
+        panic!("Invalid local index: {} (max {})", local.index(), body.locals.len());
+    }
+}
+
+
 struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
@@ -49,7 +59,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn alloc_local(&mut self, local: LocalIdx) {
-        let ty = self.body.locals[local].ty;
+        let ty = self.local_ty(body, local);
         let llvm_ty = self.llvm_type_for_ty(ty);
         let name = format!("local_{}", local.index());
         let alloca = self
@@ -128,7 +138,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             return base;
         }
         let mut ptr = base;
-        let mut current_ty = self.body.locals[place.local].ty;
+        let mut current_ty = self.local_ty(body, place.local);
         for elem in place.projection.iter() {
             match elem {
                 ProjectionElem::Deref => {
@@ -246,7 +256,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn place_ty(&self, place: &Place) -> Ty {
-        self.body.locals[place.local].ty
+        self.local_ty(body, place.local)
     }
 
     fn emit_landingpad(&self) -> CompResult<()> {
@@ -962,9 +972,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     })?;
             }
             TerminatorKind::Return => {
-                self.builder.build_return(None).map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "ret failed: {:?}",
+    // If return type is unit, ignore any stored value (MIR may have a value but we discard it)
+    if ctx.fn_return_type.is_void() {
+        // Nothing to store, just return.
+        builder.build_return(None);
+    } else {
+        // Load from return place and return.
+        let ret_val = builder.build_load(ret_place, "ret_val");
+        builder.build_return(Some(&ret_val));
+    }
+    }",
                         e
                     ))]
                 })?;

@@ -8,7 +8,13 @@
       "phase_results": [
         {
           "phase": "Build",
+<<<<<<< HEAD
           "duration": 18.27355175,
+||||||| parent of 1ade47b (fix(codegen-llvm): skip optimisation passes on invalid module)
+          "duration": 21.511923416,
+=======
+          "duration": 22.195400167,
+>>>>>>> 1ade47b (fix(codegen-llvm): skip optimisation passes on invalid module)
           "process_status": "Success",
           "argv": [
             "/Users/adm/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
@@ -20,7 +26,13 @@
         },
         {
           "phase": "Test",
+<<<<<<< HEAD
           "duration": 11.819901667,
+||||||| parent of 1ade47b (fix(codegen-llvm): skip optimisation passes on invalid module)
+          "duration": 12.759663791,
+=======
+          "duration": 11.318487167,
+>>>>>>> 1ade47b (fix(codegen-llvm): skip optimisation passes on invalid module)
           "process_status": "Success",
           "argv": [
             "/Users/adm/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
@@ -38,7 +50,13 @@
   "timeout": 0,
   "unviable": 0,
   "success": 0,
+<<<<<<< HEAD
   "start_time": "2026-05-18T09:46:12.637685Z",
+||||||| parent of 1ade47b (fix(codegen-llvm): skip optimisation passes on invalid module)
+  "start_time": "2026-05-17T21:22:30.853826Z",
+=======
+  "start_time": "2026-05-18T11:24:04.718042Z",
+>>>>>>> 1ade47b (fix(codegen-llvm): skip optimisation passes on invalid module)
   "end_time": null,
   "cargo_mutants_version": "27.0.0"
 }
