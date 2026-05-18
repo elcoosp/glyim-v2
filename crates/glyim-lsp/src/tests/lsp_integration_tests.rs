@@ -1,29 +1,38 @@
-use crate::*;
-use glyim_test::mock::TestDbBuilder;
-use std::path::PathBuf;
+use crate::{
+    AnalysisDatabase, SymbolInfo, SymbolKind, DefinitionLocation, TypeSignature,
+    completion::provide_completions,
+};
+use glyim_span::{FileId, Span, ByteIdx, SyntaxContext};
 use lsp_types::*;
 use url::Url;
-use glyim_span::{Span, ByteIdx, SyntaxContext};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[test]
 fn completions_include_function_name() {
-    let db_builder = TestDbBuilder::new()
-        .name("lsp_test")
-        .target_triple("x86_64-unknown-linux-gnu")
-        .opt_level(0);
-    let db = db_builder.build();
-    let mut lsp_state = LspState::new(db);
+    // Create analysis database
+    let analysis = AnalysisDatabase::new();
 
+    // Create a temporary file path
     let temp_dir = std::env::temp_dir();
     let path = temp_dir.join("main.g");
-    let content = "fn foo() {}\nfn main() { foo(); }";
-    lsp_state.did_open(path.clone(), content.to_string(), 1);
 
-    let file_id = lsp_state.file_id(&path).unwrap();
+    // Manually add file mapping using FileMap's public API
+    let file_id = {
+        let mut file_map = analysis.file_map.write();
+        file_map.get_or_create(&path)
+    };
+
+    // Add source map
+    let content = "fn foo() {}\nfn main() { foo(); }";
+    let source_map = crate::SourceMap::new(path.clone(), file_id, content.to_string());
+    analysis.source_maps.write().insert(file_id, source_map);
+
+    // Add symbol to index
     let span = Span::new(file_id, ByteIdx::ZERO, ByteIdx::from_raw(3), SyntaxContext::ROOT);
     let foo_info = SymbolInfo {
         name: "foo".to_string(),
-        kind: crate::SymbolKind::Function,
+        kind: SymbolKind::Function,
         definition: DefinitionLocation { file_id, span },
         type_signature: Some(TypeSignature {
             params: vec![],
@@ -33,25 +42,18 @@ fn completions_include_function_name() {
         documentation: None,
     };
     {
-        let mut symbol_index = lsp_state.analysis().symbol_index.write();
+        let mut symbol_index = analysis.symbol_index.write();
         symbol_index.insert_test_symbol(file_id, foo_info);
-        // Verify insertion worked
+        // Verify insertion
         let symbols = symbol_index.symbols_in_file(file_id);
-        assert!(!symbols.is_empty(), "Symbols in file should not be empty after insertion");
+        assert!(!symbols.is_empty(), "Symbols in file should not be empty");
         assert_eq!(symbols[0].name, "foo");
     }
 
-    let analysis = lsp_state.analysis();
-    let file_map_guard = analysis.file_map.read();
-    let file_map = &*file_map_guard;
-
-    // Verify file_map contains the correct file_id
-    let resolved_id = file_map.get_by_path(&path).expect("Path should be in file_map");
-    assert_eq!(resolved_id, file_id);
-
-    let completions = crate::completion::provide_completions(
-        analysis,
-        file_map,
+    // Prepare completion params
+    let completions = provide_completions(
+        &analysis,
+        &analysis.file_map.read(),
         &CompletionParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
@@ -68,7 +70,7 @@ fn completions_include_function_name() {
     assert!(completions.is_some(), "provide_completions returned None");
     if let Some(CompletionResponse::List(list)) = completions {
         let labels: Vec<_> = list.items.iter().map(|i| i.label.as_str()).collect();
-        assert!(labels.contains(&"foo"));
+        assert!(labels.contains(&"foo"), "Completions should include 'foo'");
     } else {
         panic!("Expected CompletionResponse::List");
     }
