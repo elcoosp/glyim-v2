@@ -1,0 +1,61 @@
+   Compiling glyim-lsp v0.1.0 (/Users/adm/Documents/Repos/glyim-worktrees/stream-U08/crates/glyim-lsp)
+warning: unused variable: `file_id`
+  --> crates/glyim-lsp/src/tests/rename_tests.rs:12:29
+   |
+12 |     let (db, file_map, uri, file_id) = setup_test_db(source, "/test/main.g");
+   |                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_file_id`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `glyim-lsp` (lib test) generated 1 warning (run `cargo fix --lib -p glyim-lsp --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.89s
+     Running unittests src/lib.rs (target/debug/deps/glyim_lsp-95c0797b6a0c8364)
+
+running 38 tests
+test tests::completion::test_provide_completions ... ok
+test tests::document_symbol_tests::document_symbols_returns_hierarchy ... ok
+test tests::completion_tests::completion_provides_struct_fields ... ok
+test tests::folding::test_folding_ranges_for_braces ... ok
+test tests::diagnostics::test_convert_diagnostics ... ok
+test tests::folding_tests::test_folding_ranges_for_braces ... ok
+test tests::goto_definition::goto_definition_cross_file ... ignored
+test tests::code_action_tests::test_code_action_removes_unused_import ... ok
+test tests::code_action::test_remove_unused_import_code_action ... ok
+test tests::formatting_tests::test_format_document ... ok
+test tests::formatting::test_format_document ... ok
+test tests::hover_tests::hover_shows_type_signature_and_doc ... ignored
+test tests::goto_definition::goto_definition_returns_location ... ok
+test tests::hover::test_provide_hover ... ok
+test tests::lsp_integration_tests::completions_include_function_name ... ok
+test tests::navigation_tests::goto_definition_returns_location ... ok
+test tests::lsp_state_tests::did_close_removes_file ... ok
+test tests::lsp_state_tests::did_open_registers_file ... ok
+test tests::lsp_state_tests::did_open_with_content_returns_same ... ok
+test tests::reference_graph::test_empty_graph ... ok
+test tests::reference_graph::test_insert_and_find ... ok
+test tests::reference_graph_tests::build_from_hir_populates_references ... ok
+test tests::reference_graph_tests::build_references_from_hir ... ok
+test tests::rename_tests::test_rename_symbol ... ok
+test tests::symbol_index::test_clear_file ... ok
+test tests::symbol_index::test_insert_and_lookup ... ok
+test tests::symbol_index_tests::query_prefix_and_contains ... ignored
+test tests::symbol_index_tests::multi_file_symbols ... ok
+test tests::symbol_index_tests::build_from_hir_adds_function_symbol ... ok
+test tests::rename::test_rename_updates_all_references ... ok
+test tests::uri_tests::offset_to_position_basic ... ok
+test tests::uri_tests::no_scheme_is_error ... ok
+test tests::uri_tests::offset_to_position_out_of_bounds ... ok
+test tests::uri_tests::path_to_uri_and_back ... ok
+test tests::workspace_symbol_tests::workspace_symbols_fuzzy_matching_limit ... ignored
+test tests::workspace_symbol_tests::workspace_symbols_fuzzy_search ... ignored
+test tests::uri_tests::unix_roundtrip ... ok
+test tests::diagnostics_tests::diagnostics_are_emitted_on_change ... ok
+
+test result: ok. 33 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+   Doc-tests glyim_lsp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

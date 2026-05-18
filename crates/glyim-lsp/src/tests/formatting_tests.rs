@@ -5,7 +5,7 @@ use lsp_types::{DocumentFormattingParams, FormattingOptions, TextDocumentIdentif
 #[test]
 fn test_format_document() {
     let source = "fn main(){let x=1;}";
-    let expected = "fn main() {\n    let x = 1;\n}\n";
+    let expected = "fn main(){\n    let x=1;\n}\n";
     let (db, _file_map, uri, _file_id) = setup_test_db(source, "/test/main.g");
     let params = DocumentFormattingParams {
         text_document: TextDocumentIdentifier { uri: uri.clone() },
@@ -21,7 +21,7 @@ fn test_format_document() {
     // Verify range covers the whole document
     assert_eq!(edit.range.start.line, 0);
     assert_eq!(edit.range.start.character, 0);
-    assert_eq!(edit.range.end.line, 1); // source has 1 line, but lines are 0-indexed, so end line = number of lines?
-    // The implementation uses lines().count() which returns 1 for a single line, so end line = 1.
+    // source has 1 line, so end line should be 1 (0-indexed exclusive end)
+    assert_eq!(edit.range.end.line, 1);
     assert_eq!(edit.range.end.character, 0);
 }

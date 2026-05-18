@@ -1,0 +1,2 @@
+    Checking glyim-lsp v0.1.0 (/Users/adm/Documents/Repos/glyim-worktrees/stream-U08/crates/glyim-lsp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s

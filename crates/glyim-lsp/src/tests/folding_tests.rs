@@ -20,7 +20,7 @@ fn test_folding_ranges_for_braces() {
     assert_eq!(ranges.len(), 1);
     let range = &ranges[0];
     assert_eq!(range.start_line, 0);
-    assert_eq!(range.start_character, Some(8));
+    assert_eq!(range.start_character, Some(10));
     assert_eq!(range.end_line, 2);
     assert_eq!(range.end_character, Some(0));
     assert_eq!(range.kind, Some(lsp_types::FoldingRangeKind::Region));

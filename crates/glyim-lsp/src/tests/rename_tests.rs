@@ -11,8 +11,6 @@ fn test_rename_symbol() {
 "#;
     let (db, file_map, uri, file_id) = setup_test_db(source, "/test/main.g");
     // Find position of "x" in "let x = 5;"
-    let sm = db.source_maps.read().get(&file_id).unwrap().clone();
-    let offset = sm.line_col_to_offset(1, 8).unwrap(); // line 1, col 8 (after "let ")
     let (line, col) = (1, 8);
     let params = RenameParams {
         text_document_position: TextDocumentPositionParams {

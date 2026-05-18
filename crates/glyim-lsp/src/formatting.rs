@@ -60,13 +60,18 @@ fn format_code(source: &str) -> String {
 }
 
 pub fn format_document(
-    _db: &AnalysisDatabase,
+    db: &AnalysisDatabase,
     params: &DocumentFormattingParams,
 ) -> Option<Vec<TextEdit>> {
     let uri = &params.text_document.uri;
     let path = uri.to_file_path().ok()?;
-    let content = std::fs::read_to_string(&path).ok()?;
-    let formatted = format_code(&content);
+    let file_map = db.file_map.read();
+    let file_id = file_map.get_by_path(&path)?;
+    drop(file_map);
+    let source_maps = db.source_maps.read();
+    let sm = source_maps.get(&file_id)?;
+    let content = sm.source();
+    let formatted = format_code(content);
     if formatted == content {
         return None;
     }
