@@ -1,22 +1,9 @@
 use super::helpers::*;
-use crate::InterpValue;
 use crate::Interpreter;
 use glyim_core::{CrateId, DefId, LocalDefId, IntTy, FloatTy, UintTy};
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut, GenericArg};
-
-// Reuse dummy_def_id from common
-use super::common::dummy_def_id;
-
-fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
-    let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
-    let const_len = Const {
-        kind: ConstKind::Uint(len as u128),
-        ty: usize_ty,
-    };
-    tcx.mk_ty(TyKind::Array(elem_ty, const_len))
-}
 
 #[test]
 fn discriminant_returns_tag() {
@@ -24,14 +11,14 @@ fn discriminant_returns_tag() {
     let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let tuple_substs = tcx.intern_substitution(vec![GenericArg::Ty(int_ty), GenericArg::Ty(int_ty)]);
     let tuple_ty = tcx.mk_ty(TyKind::Tuple(tuple_substs));
-    let mut body = crate::tests::common::empty_body(Ty::UNIT);
-    let local_enum = crate::tests::common::add_local(&mut body, tuple_ty, Mutability::Mut);
-    let local_result = crate::tests::common::add_local(&mut body, int_ty, Mutability::Mut);
+    let mut body = empty_body(Ty::UNIT);
+    let local_enum = add_local(&mut body, tuple_ty, Mutability::Mut);
+    let local_result = add_local(&mut body, int_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let agg = Rvalue::Aggregate(AggregateKind::Tuple, vec![const_int(42), const_int(0)]);
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_enum), agg));
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_result), Rvalue::Discriminant(Place::new(local_enum))));
-    crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_enum), agg));
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_result), Rvalue::Discriminant(Place::new(local_enum))));
+    set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.add_function(dummy_def_id(), body);
@@ -45,11 +32,11 @@ fn discriminant_returns_tag() {
 fn cast_int_to_float() {
     let mut tcx = glyim_test::test_ty_ctx();
     let float_ty = tcx.mk_ty(TyKind::Float(FloatTy::F64));
-    let mut body = crate::tests::common::empty_body(Ty::UNIT);
-    let local = crate::tests::common::add_local(&mut body, float_ty, Mutability::Mut);
+    let mut body = empty_body(Ty::UNIT);
+    let local = add_local(&mut body, float_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::IntToFloat, const_int(42), float_ty)));
-    crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::IntToFloat, const_int(42), float_ty)));
+    set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.add_function(dummy_def_id(), body);
@@ -63,16 +50,16 @@ fn cast_int_to_float() {
 fn cast_float_to_int() {
     let mut tcx = glyim_test::test_ty_ctx();
     let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    let mut body = crate::tests::common::empty_body(Ty::UNIT);
-    let local = crate::tests::common::add_local(&mut body, int_ty, Mutability::Mut);
+    let mut body = empty_body(Ty::UNIT);
+    let local = add_local(&mut body, int_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let float_const = MirConst {
         kind: MirConstKind::FloatBits(123.456_f64.to_bits()),
         ty: tcx.mk_ty(TyKind::Float(FloatTy::F64)),
         span: Span::DUMMY,
     };
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::FloatToInt, Operand::Constant(float_const), int_ty)));
-    crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Cast(CastKind::FloatToInt, Operand::Constant(float_const), int_ty)));
+    set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.add_function(dummy_def_id(), body);
@@ -87,12 +74,12 @@ fn repeat_creates_array() {
     let mut tcx = glyim_test::test_ty_ctx();
     let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let array_ty = mk_array_ty(&mut tcx, elem_ty, 5);
-    let mut body = crate::tests::common::empty_body(Ty::UNIT);
-    let local = crate::tests::common::add_local(&mut body, array_ty, Mutability::Mut);
+    let mut body = empty_body(Ty::UNIT);
+    let local = add_local(&mut body, array_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let repeat = Rvalue::Repeat(const_int(42), mir_const_usize(&mut tcx, 5));
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), repeat));
-    crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), repeat));
+    set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.add_function(dummy_def_id(), body);
@@ -108,14 +95,14 @@ fn len_of_array() {
     let mut tcx = glyim_test::test_ty_ctx();
     let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let array_ty = mk_array_ty(&mut tcx, elem_ty, 7);
-    let mut body = crate::tests::common::empty_body(Ty::UNIT);
-    let local_array = crate::tests::common::add_local(&mut body, array_ty, Mutability::Mut);
-    let local_len = crate::tests::common::add_local(&mut body, tcx.mk_ty(TyKind::Uint(UintTy::Usize)), Mutability::Mut);
+    let mut body = empty_body(Ty::UNIT);
+    let local_array = add_local(&mut body, array_ty, Mutability::Mut);
+    let local_len = add_local(&mut body, tcx.mk_ty(TyKind::Uint(UintTy::Usize)), Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let init = Rvalue::Repeat(const_int(0), mir_const_usize(&mut tcx, 7));
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_array), init));
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_array))));
-    crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_array), init));
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_array))));
+    set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.add_function(dummy_def_id(), body);
@@ -130,16 +117,16 @@ fn fn_constant_used_as_operand() {
     let mut tcx = glyim_test::test_ty_ctx();
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(100);
     let fn_ty = tcx.mk_ty(TyKind::FnDef(fn_def_id, glyim_type::Substitution::empty()));
-    let mut body = crate::tests::common::empty_body(Ty::UNIT);
-    let local = crate::tests::common::add_local(&mut body, fn_ty, Mutability::Mut);
+    let mut body = empty_body(Ty::UNIT);
+    let local = add_local(&mut body, fn_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let const_val = MirConst {
         kind: MirConstKind::Fn(fn_def_id, glyim_type::Substitution::empty()),
         ty: fn_ty,
         span: Span::DUMMY,
     };
-    crate::tests::common::add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Use(Operand::Constant(const_val))));
-    crate::tests::common::set_terminator(&mut body, bb0, TerminatorKind::Return);
+    add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Use(Operand::Constant(const_val))));
+    set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.add_function(dummy_def_id(), body);
