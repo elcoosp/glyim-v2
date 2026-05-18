@@ -1,4 +1,5 @@
 mod abi_classify;
+mod aggregate_lowering;
 mod bitwise_ops;
 mod call_abi;
 mod call_c_abi;
@@ -13,21 +14,26 @@ mod call_struct_args;
 mod call_void_return;
 mod cast_ops;
 mod comparisons;
+mod compliance_tests;
 mod debug_info;
 mod drop_dealloc;
 mod edge_cases;
 mod float_arith;
+mod float_lowering;
 mod helpers;
 mod integer_arith;
-mod llvm_backend_tests; // added
-mod llvm_module; // added
+mod len_lowering;
+mod llvm_backend_tests;
+mod llvm_module;
 mod logical_ops;
-mod object_format_tests; // added
+mod object_format_tests;
 mod optimisation;
 mod overflow_checks;
+mod repeat_lowering;
 mod rvalue_aggregate;
-mod stress_tests; // added
+mod stress_tests;
 mod switch_edge_cases;
 mod switch_int;
+mod type_lowering;
 mod unary_ops;
 mod unsigned_cmp;
