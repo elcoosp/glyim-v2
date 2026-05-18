@@ -26,10 +26,7 @@ fn test_ref_succeeds() {
 
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&Arc::new(body));
-    assert!(
-        result.is_ok(),
-        "Rvalue::Ref should succeed (implemented)"
-    );
+    assert!(result.is_ok(), "Rvalue::Ref should succeed (implemented)");
 }
 
 #[test]
@@ -93,7 +90,10 @@ fn test_projection_succeeds() {
 
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&Arc::new(body));
-    assert!(result.is_ok(), "Projection should succeed (handled via fallback)");
+    assert!(
+        result.is_ok(),
+        "Projection should succeed (handled via fallback)"
+    );
 }
 
 #[test]
