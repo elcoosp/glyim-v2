@@ -12,12 +12,12 @@ use glyim_type::{Ty, TyKind};
 use glyim_type::Const;
 use glyim_core::UintTy;
 use glyim_core::FloatTy;
-use glyim_type::{Const, ConstKind};
+use glyim_type::ConstKind;
 
 fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
     let const_len = Const {
-        kind: ConstKind::Uint(len),
+        kind: ConstKind::Uint(len.into()),
         ty: usize_ty,
     };
     tcx.mk_ty(TyKind::Array(elem_ty, const_len))
