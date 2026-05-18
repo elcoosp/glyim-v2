@@ -11,6 +11,18 @@ use glyim_test::test_ty_ctx;
 use glyim_type::{Ty, TyKind};
 use glyim_type::Const;
 use glyim_core::UintTy;
+use glyim_core::FloatTy;
+use glyim_type::{Const, ConstKind};
+
+fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
+    let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
+    let const_len = Const {
+        kind: ConstKind::Uint(len),
+        ty: usize_ty,
+    };
+    tcx.mk_ty(TyKind::Array(elem_ty, const_len))
+}
+
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
@@ -449,7 +461,7 @@ fn aggregate_tuple_returns_first_element() {
 fn repeat_rvalue_returns_array() {
     let mut tcx = test_ty_ctx();
     let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    let array_ty = tcx.mk_ty(TyKind::Array(elem_ty, Const::from(3)));
+    let array_ty = mk_array_ty(&mut tcx, elem_ty, 3);
     let const_val = MirConst {
         kind: MirConstKind::Int(7),
         ty: elem_ty,
