@@ -54,11 +54,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         if span.is_dummy() {
             return;
         }
-        if let Some(ref debug_ctx) = self.debug_ctx {
-            if let Some(loc) = debug_ctx.location_for_span(self.context, &span) {
+        if let Some(ref debug_ctx) = self.debug_ctx
+            && let Some(loc) = debug_ctx.location_for_span(self.context, &span) {
                 self.builder.set_current_debug_location(loc);
             }
-        }
     }
 
     fn clear_debug_location(&self) {
