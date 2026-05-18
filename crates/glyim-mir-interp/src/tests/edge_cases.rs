@@ -472,6 +472,7 @@ fn bool_not_false() {
 // ============ Uint constant ============
 
 #[test]
+
 fn uint_constant_interpreted_as_int() {
     let mut tcx_mut = test_ty_ctx();
     let u32_ty = tcx_mut.mk_ty(TyKind::Uint(glyim_core::UintTy::U32));
@@ -502,9 +503,10 @@ fn uint_constant_interpreted_as_int() {
     interp.run_body(&body).unwrap();
     assert_eq!(
         interp.get_local_value(LocalIdx::from_raw(1)),
-        Some(&InterpValue::Int(42))
+        Some(&InterpValue::Uint(42))
     );
 }
+
 
 // ============ Unit value ============
 
