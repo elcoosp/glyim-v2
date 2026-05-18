@@ -174,7 +174,9 @@ mod tests {
             typed.write(12345u64);
         }
         // glyim_drop_in_place is a stub; it should not crash
-        unsafe { glyim_drop_in_place(ptr); }
+        unsafe {
+            glyim_drop_in_place(ptr);
+        }
         // After drop_in_place, memory is logically invalid but still accessible
         // in this stub implementation. Dealloc to clean up.
         unsafe {
@@ -185,7 +187,9 @@ mod tests {
     #[test]
     fn test_drop_in_place_null_pointer() {
         // Should not crash even with null
-        unsafe { glyim_drop_in_place(std::ptr::null_mut()); }
+        unsafe {
+            glyim_drop_in_place(std::ptr::null_mut());
+        }
     }
 
     #[test]
@@ -236,7 +240,9 @@ mod tests {
             unsafe {
                 std::ptr::write_bytes(ptr, i as u8, 16);
             }
-            unsafe { glyim_drop_in_place(ptr); }
+            unsafe {
+                glyim_drop_in_place(ptr);
+            }
             unsafe {
                 glyim_dealloc(ptr, 16, 8);
             }
@@ -252,7 +258,9 @@ mod tests {
             unsafe {
                 std::ptr::write_bytes(ptr, 0xFF, 32);
             }
-            unsafe { glyim_drop_in_place(ptr); }
+            unsafe {
+                glyim_drop_in_place(ptr);
+            }
             unsafe {
                 glyim_dealloc(ptr, 32, 8);
             }
@@ -270,7 +278,9 @@ mod tests {
             unsafe {
                 std::ptr::write_bytes(ptr, 0x42, size);
             }
-            unsafe { glyim_drop_in_place(ptr); }
+            unsafe {
+                glyim_drop_in_place(ptr);
+            }
             unsafe {
                 glyim_dealloc(ptr, size, 8);
             }
@@ -285,7 +295,9 @@ mod tests {
             if i % 3 == 0 && !live.is_empty() {
                 // Deallocate the oldest
                 let (ptr, size) = live.remove(0);
-                unsafe { glyim_drop_in_place(ptr); }
+                unsafe {
+                    glyim_drop_in_place(ptr);
+                }
                 unsafe {
                     glyim_dealloc(ptr, size, 8);
                 }
@@ -301,7 +313,9 @@ mod tests {
         }
         // Clean up remaining
         for (ptr, size) in live {
-            unsafe { glyim_drop_in_place(ptr); }
+            unsafe {
+                glyim_drop_in_place(ptr);
+            }
             unsafe {
                 glyim_dealloc(ptr, size, 8);
             }

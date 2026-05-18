@@ -12,16 +12,17 @@ fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
             if ch == '{' {
                 brace_stack.push((line_idx, col));
             } else if ch == '}'
-                && let Some((start_line, start_col)) = brace_stack.pop() {
-                    ranges.push(FoldingRange {
-                        start_line: start_line as u32,
-                        start_character: Some(start_col as u32),
-                        end_line: line_idx as u32,
-                        end_character: Some(col as u32),
-                        kind: Some(FoldingRangeKind::Region),
-                        collapsed_text: None,
-                    });
-                }
+                && let Some((start_line, start_col)) = brace_stack.pop()
+            {
+                ranges.push(FoldingRange {
+                    start_line: start_line as u32,
+                    start_character: Some(start_col as u32),
+                    end_line: line_idx as u32,
+                    end_character: Some(col as u32),
+                    kind: Some(FoldingRangeKind::Region),
+                    collapsed_text: None,
+                });
+            }
             col += 1;
         }
     }
