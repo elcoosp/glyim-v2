@@ -163,53 +163,40 @@ fn call_with_bool_callee_panics() {
 
 // ============ FnPtrToPtr cast stub ============
 #[test]
-fn fn_ptr_to_ptr_cast_returns_error() {
-    let mut tcx_mut = test_ty_ctx();
-    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
-    let i64_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I64));
+fn fn_ptr_to_ptr_cast_returns_success() {
+    let mut tcx = test_ty_ctx();
+    let ptr_ty = tcx.mk_ty(TyKind::RawPtr(tcx.unit_ty(), Mutability::Not));
+    let const_val = MirConst {
+        kind: MirConstKind::Int(123),
+        ty: tcx.mk_ty(TyKind::Int(IntTy::I32)),
+        span: Span::DUMMY,
+    };
+    let operand = Operand::Constant(const_val);
+    let cast_rvalue = Rvalue::Cast(CastKind::PtrToPtr, operand, ptr_ty);
+    let assign_stmt = Statement {
+        kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), cast_rvalue),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
     let mut body = Body::dummy(dummy_def_id());
-    body.locals = IndexVec::from_raw(vec![
-        local_decl(Ty::UNIT, Mutability::Mut),
-        local_decl(i32_ty, Mutability::Mut),
-        local_decl(i64_ty, Mutability::Mut),
-    ]);
-    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
-        statements: vec![
-            Statement {
-                kind: StatementKind::Assign(
-                    Place::new(LocalIdx::from_raw(1)),
-                    Rvalue::Use(Operand::Constant(MirConst {
-                        kind: MirConstKind::Int(42),
-                        ty: i32_ty,
-                        span: Span::DUMMY,
-                    })),
-                ),
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            Statement {
-                kind: StatementKind::Assign(
-                    Place::new(LocalIdx::from_raw(2)),
-                    Rvalue::Cast(
-                        CastKind::FnPtrToPtr,
-                        Operand::Copy(Place::new(LocalIdx::from_raw(1))),
-                        i64_ty,
-                    ),
-                ),
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-        ],
+    body.locals = IndexVec::from_raw(vec![local_decl(ptr_ty, Mutability::Mut)]);
+    let bb_data = BasicBlockData {
+        statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    }]);
-    let tcx = tcx_mut.freeze();
-    let mut interp = Interpreter::new(&tcx);
+    };
+    body.basic_blocks.push(bb_data);
+    let tcx_frozen = tcx.freeze();
+    let mut interp = Interpreter::new(&tcx_frozen);
+    interp.locals.resize(body.locals.len(), None);
     let res = interp.run_body(&body);
-    assert!(res.is_err());
-    assert!(format!("{:?}", res).contains("Cast"));
+    assert!(res.is_ok());
+    let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
+    assert_eq!(ret_val, InterpValue::Int(123));
 }
+
 
 // ============ Multiple return paths through branching ============
 #[test]
