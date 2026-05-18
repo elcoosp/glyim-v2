@@ -83,10 +83,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             });
 
         if is_zero_sized {
-            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+            let ptr = self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null();
             self.locals[local] = Some(ptr);
         } else {
-            let alloca = self.builder.build_alloca(llvm_ty, &name).expect("alloca failed");
+            let alloca = self
+                .builder
+                .build_alloca(llvm_ty, &name)
+                .expect("alloca failed");
             self.locals[local] = Some(alloca);
         }
     }
@@ -894,7 +900,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             let size = self.llvm_int_type(64).const_int(0, false);
             let align = self.llvm_int_type(64).const_int(0, false);
             self.builder
-                .build_call(self.dealloc_fn, &[i8_ptr.into(), size.into(), align.into()], "dealloc_call")
+                .build_call(
+                    self.dealloc_fn,
+                    &[i8_ptr.into(), size.into(), align.into()],
+                    "dealloc_call",
+                )
                 .map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
                         "Failed to build dealloc call: {:?}",
@@ -921,7 +931,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let value = self.lower_rvalue(rvalue);
                 let ptr = self.place_ptr(place);
                 self.builder.build_store(ptr, value).map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!("Failed to build store: {:?}", e))]
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build store: {:?}",
+                        e
+                    ))]
                 })?;
                 self.clear_debug_location();
             }
@@ -1029,9 +1042,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let val0_const = discr_int.get_type().const_int(val0 as u64, false);
                     let cmp0 = self
                         .builder
-                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, val0_const, "switch_eq_0")
+                        .build_int_compare(
+                            inkwell::IntPredicate::EQ,
+                            discr_int,
+                            val0_const,
+                            "switch_eq_0",
+                        )
                         .expect("icmp0 failed");
-                    let next_bb = self.context.append_basic_block(self.function, "switch_next");
+                    let next_bb = self
+                        .context
+                        .append_basic_block(self.function, "switch_next");
                     self.builder
                         .build_conditional_branch(cmp0, *target0, next_bb)
                         .expect("conditional branch0 failed");
@@ -1039,7 +1059,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let val1_const = discr_int.get_type().const_int(val1 as u64, false);
                     let cmp1 = self
                         .builder
-                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, val1_const, "switch_eq_1")
+                        .build_int_compare(
+                            inkwell::IntPredicate::EQ,
+                            discr_int,
+                            val1_const,
+                            "switch_eq_1",
+                        )
                         .expect("icmp1 failed");
                     self.builder
                         .build_conditional_branch(cmp1, *target1, *default_bb)
@@ -1446,6 +1471,9 @@ pub(crate) fn lower_body<'ctx>(
     }
 
     // Optional IR dump for debugging (only visible when running with --nocapture)
-    eprintln!("===== LLVM IR =====\n{}\n===================", module.print_to_string());
+    eprintln!(
+        "===== LLVM IR =====\n{}\n===================",
+        module.print_to_string()
+    );
     Ok(())
 }
