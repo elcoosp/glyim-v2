@@ -294,9 +294,7 @@ impl<'tcx> Interpreter<'tcx> {
                             Ok(fields[0].clone())
                         }
                     }
-                    _ => {
-                        Err(InterpError::Panic("Discriminant on non-aggregate".into()))
-                    }
+                    _ => Err(InterpError::Panic("Discriminant on non-aggregate".into())),
                 }
             }
             Rvalue::Len(place) => {
@@ -308,24 +306,20 @@ impl<'tcx> Interpreter<'tcx> {
                 let val = self.eval_operand(operand)?;
                 match kind {
                     CastKind::IntToInt => Ok(val),
-                    CastKind::IntToFloat => {
-                        match val {
-                            InterpValue::Int(i) => {
-                                let f = i as f64;
-                                Ok(InterpValue::Float(f))
-                            }
-                            _ => Err(InterpError::Panic("expected int for IntToFloat".into())),
+                    CastKind::IntToFloat => match val {
+                        InterpValue::Int(i) => {
+                            let f = i as f64;
+                            Ok(InterpValue::Float(f))
                         }
-                    }
-                    CastKind::FloatToInt => {
-                        match val {
-                            InterpValue::Float(f) => {
-                                let i = f as i128;
-                                Ok(InterpValue::Int(i))
-                            }
-                            _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
+                        _ => Err(InterpError::Panic("expected int for IntToFloat".into())),
+                    },
+                    CastKind::FloatToInt => match val {
+                        InterpValue::Float(f) => {
+                            let i = f as i128;
+                            Ok(InterpValue::Int(i))
                         }
-                    }
+                        _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
+                    },
                     CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
                         // Keep value unchanged, only type changes
                         Ok(val)
