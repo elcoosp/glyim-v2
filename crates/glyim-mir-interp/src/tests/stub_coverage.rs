@@ -137,7 +137,7 @@ fn repeat_rvalue_returns_array() {
     }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.add_function(dummy_def_id(), body);
+    interp.add_function(dummy_def_id(), body.clone());
     interp.run_body(&body).unwrap();
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     let expected = InterpValue::Aggregate(vec![InterpValue::Int(7); 3]);
