@@ -13,6 +13,7 @@ use glyim_type::Const;
 use glyim_core::UintTy;
 use glyim_core::FloatTy;
 use glyim_type::ConstKind;
+use glyim_type::TyCtxMut;
 
 fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
