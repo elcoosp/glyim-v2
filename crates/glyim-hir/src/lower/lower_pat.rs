@@ -76,7 +76,7 @@ pub(crate) fn lower_pat(
                                 || t.kind() == SyntaxKind::KwTrue
                                 || t.kind() == SyntaxKind::KwFalse =>
                         {
-                            let lit = lower_literal(&t);
+                            let lit = lower_literal(&t); // t is &&SyntaxToken, need the deref
                             if before_dot {
                                 start = Some(lit);
                             } else {
@@ -351,7 +351,7 @@ pub(crate) fn lower_pat(
                 match &children[i] {
                     glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatIdent => {
                         // Field: either shorthand (no colon) or with subpattern after colon
-                        let field_name_text = first_ident_text(&n).unwrap_or_default();
+                        let field_name_text = first_ident_text(n).unwrap_or_default();
                         let name = interner.intern(&field_name_text);
                         // Check next non-trivia token for colon
                         let mut j = i + 1;

@@ -3,6 +3,12 @@ pub(crate) mod lower_item;
 pub(crate) mod lower_pat;
 pub(crate) mod lower_type;
 
+// Re-exports for test access — these keep existing test imports working
+pub(crate) use lower_expr::{lower_block_to_expr, lower_expr, lower_literal};
+pub(crate) use lower_item::{lower_fn_def, lower_param, lower_struct_def, lower_enum_def, lower_variant};
+pub(crate) use lower_pat::lower_pat;
+pub(crate) use lower_type::{lower_path_from_type, lower_type_ref};
+
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
