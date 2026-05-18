@@ -56,14 +56,57 @@ impl SymbolIndex {
         }
     }
 
-    // Stub - real HIR building not needed for tests
     pub fn build_from_hir(
         &mut self,
-        _file_id: FileId,
-        _hir: &glyim_hir::CrateHir,
-        _interner: &glyim_core::Interner,
+        file_id: FileId,
+        hir: &glyim_hir::CrateHir,
+        interner: &glyim_core::Interner,
     ) {
-        tracing::warn!("STUB: SymbolIndex::build_from_hir not implemented");
+        self.clear_file(file_id);
+        for item in hir.items.iter() {
+            let name = interner.resolve(item.name).to_string();
+            let kind = match item.kind {
+                glyim_hir::ItemKind::Fn(_) => SymbolKind::Function,
+                glyim_hir::ItemKind::Struct(_) => SymbolKind::Struct,
+                glyim_hir::ItemKind::Enum(_) => SymbolKind::Enum,
+                _ => continue,
+            };
+            let span = item.span;
+            let def_loc = DefinitionLocation { file_id, span };
+            let type_sig = match &item.kind {
+                glyim_hir::ItemKind::Fn(fn_item) => {
+                    let params: Vec<(String, String)> = fn_item
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let ty_str =
+                                p.ty.as_ref()
+                                    .map(|t| format!("{:?}", t))
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            (interner.resolve(p.name).to_string(), ty_str)
+                        })
+                        .collect();
+                    let return_ty = fn_item.return_ty.as_ref().map(|t| format!("{:?}", t));
+                    Some(TypeSignature {
+                        params,
+                        return_type: return_ty,
+                    })
+                }
+                _ => None,
+            };
+            let info = SymbolInfo {
+                name: name.clone(),
+                kind,
+                definition: def_loc,
+                type_signature: type_sig,
+                is_pub: matches!(item.visibility, glyim_core::Visibility::Public),
+                documentation: None,
+            };
+            self.by_name.entry(name).or_default().push(info.clone());
+            self.by_file.entry(file_id).or_default().push(info.clone());
+            self.by_location
+                .insert((file_id.to_raw(), span.lo.to_usize()), info);
+        }
     }
 
     pub fn lookup_by_name(&self, name: &str) -> Vec<&SymbolInfo> {

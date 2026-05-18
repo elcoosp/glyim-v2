@@ -1469,8 +1469,6 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
-
-    // Optional IR dump for debugging (only visible when running with --nocapture)
     eprintln!(
         "===== LLVM IR =====\n{}\n===================",
         module.print_to_string()
