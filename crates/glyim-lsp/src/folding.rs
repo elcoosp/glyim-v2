@@ -7,8 +7,7 @@ fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
     let mut brace_stack: Vec<(usize, usize)> = Vec::new();
 
     for (line_idx, line) in lines.iter().enumerate() {
-        let mut col = 0;
-        for ch in line.chars() {
+        for (col, ch) in line.chars().enumerate() {
             if ch == '{' {
                 brace_stack.push((line_idx, col));
             } else if ch == '}'
@@ -23,7 +22,6 @@ fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
                     collapsed_text: None,
                 });
             }
-            col += 1;
         }
     }
     ranges
