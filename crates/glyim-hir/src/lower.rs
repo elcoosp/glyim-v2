@@ -757,10 +757,10 @@ pub(crate) fn lower_expr(
                             params.push(pat_id);
                         }
                     }
-                    _ if is_expr_node(&child) || child.kind() == SyntaxKind::Block => {
-                        if body.is_none() {
-                            body = lower_expr(&child, interner, exprs, pats, expr_spans);
-                        }
+                    _ if (is_expr_node(&child) || child.kind() == SyntaxKind::Block)
+                        && body.is_none() =>
+                    {
+                        body = lower_expr(&child, interner, exprs, pats, expr_spans);
                     }
                     _ => {}
                 }
