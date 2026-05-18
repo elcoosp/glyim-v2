@@ -6,7 +6,7 @@ use glyim_pilot::protocol::types::PROTOCOL_VERSION;
 use glyim_pilot::server::{CliMessage, ExtensionMessage, ServerEvent, WsServer};
 use glyim_pilot::session::persistence::StatePersistence;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
