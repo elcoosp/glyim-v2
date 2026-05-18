@@ -145,6 +145,7 @@ fn discriminant_rvalue_returns_success() {
 }
 // ============ Cast (unsupported kind) ============
 
+
 #[test]
 fn cast_ptr_to_ptr_returns_value() {
     let mut tcx = test_ty_ctx();
@@ -181,7 +182,9 @@ fn cast_ptr_to_ptr_returns_value() {
     assert_eq!(ret_val, InterpValue::Int(42));
 }
 
+
 // ============ FloatBits const ============
+
 
 #[test]
 fn float_const_returns_value() {
@@ -218,7 +221,9 @@ fn float_const_returns_value() {
     assert_eq!(ret_val, InterpValue::Float(42.0));
 }
 
+
 // ============ String const ============
+
 
 #[test]
 fn string_const_returns_value() {
@@ -255,6 +260,7 @@ fn string_const_returns_value() {
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::String("hello".to_string()));
 }
+
 
 // ============ Error const ============
 #[test]
@@ -458,11 +464,12 @@ fn aggregate_tuple_returns_first_element() {
 
 // ============ Repeat rvalue ============
 
+
 #[test]
 fn repeat_rvalue_returns_array() {
     let mut tcx = test_ty_ctx();
     let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    let array_ty = mk_array_ty(&mut tcx, elem_ty, 3);
+    let array_ty = tcx.mk_ty(TyKind::Array(elem_ty, Const::from(3)));
     let const_val = MirConst {
         kind: MirConstKind::Int(7),
         ty: elem_ty,
@@ -497,6 +504,7 @@ fn repeat_rvalue_returns_array() {
     let expected = InterpValue::Aggregate(vec![InterpValue::Int(7); 3]);
     assert_eq!(ret_val, expected);
 }
+
 
 
 // ============ IntToInt cast (implemented) ============

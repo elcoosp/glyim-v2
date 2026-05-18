@@ -163,6 +163,7 @@ fn call_with_bool_callee_panics() {
 
 // ============ FnPtrToPtr cast stub ============
 
+
 #[test]
 fn fn_ptr_to_ptr_cast_returns_success() {
     let mut tcx = test_ty_ctx();
@@ -196,6 +197,7 @@ fn fn_ptr_to_ptr_cast_returns_success() {
     let res = interp.run_body(&body);
     assert!(res.is_ok());
 }
+
 
 
 // ============ Multiple return paths through branching ============
