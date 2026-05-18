@@ -7,8 +7,8 @@ use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::{Expr, ExprId, Literal, MatchArm, Pat, PatId, Path as HirPath, PathSegment, Span};
 
 use super::{
-    first_ident_text, is_expr_node, is_type_node, lower_item::lower_param,
-    lower_pat::lower_pat, lower_type::lower_type_ref, node_span,
+    first_ident_text, is_expr_node, is_type_node, lower_item::lower_param, lower_pat::lower_pat,
+    lower_type::lower_type_ref, node_span,
 };
 
 pub(crate) fn lower_block_to_expr(

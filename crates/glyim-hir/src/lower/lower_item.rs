@@ -4,11 +4,14 @@ use glyim_core::interner::Interner;
 use glyim_core::primitives::*;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::{Body, BodyId, EnumItem, Field, FnItem, Item, ItemId, ItemKind, Param, Pat, PatId, StructItem, Variant, Visibility};
+use crate::{
+    Body, BodyId, EnumItem, Field, FnItem, Item, ItemId, ItemKind, Param, Pat, PatId, StructItem,
+    Variant, Visibility,
+};
 
 use super::{
-    first_ident_text, is_type_node, lower_expr::lower_block_to_expr,
-    lower_type::lower_type_ref, next_local_def_id, node_span,
+    first_ident_text, is_type_node, lower_expr::lower_block_to_expr, lower_type::lower_type_ref,
+    next_local_def_id, node_span,
 };
 
 pub(crate) fn lower_fn_def(
@@ -151,7 +154,7 @@ pub(crate) fn lower_struct_def(
             && let glyim_syntax::SyntaxElement::Token(col) = &tokens[i + 1]
             && col.kind() == SyntaxKind::Colon
             && let glyim_syntax::SyntaxElement::Node(ty) = &tokens[i + 2]
-            && is_type_node(&ty)
+            && is_type_node(ty)
         {
             let fname = interner.intern(t.text());
             let fty = lower_type_ref(ty, interner)?;

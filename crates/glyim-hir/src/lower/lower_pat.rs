@@ -76,7 +76,7 @@ pub(crate) fn lower_pat(
                                 || t.kind() == SyntaxKind::KwTrue
                                 || t.kind() == SyntaxKind::KwFalse =>
                         {
-                            let lit = lower_literal(&t); // t is &&SyntaxToken, need the deref
+                            let lit = lower_literal(t);
                             if before_dot {
                                 start = Some(lit);
                             } else {
