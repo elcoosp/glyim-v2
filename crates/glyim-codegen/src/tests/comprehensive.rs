@@ -595,7 +595,7 @@ fn switch_int_bool() {
 // ─── Unary Deref Error ───
 
 #[test]
-fn unary_deref_returns_error() {
+fn unary_deref_succeeds() {
     let mut body = dummy_body();
     let dest = LocalIdx::from_raw(1);
     body.locals.push(LocalDecl {
@@ -617,7 +617,7 @@ fn unary_deref_returns_error() {
         });
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&Arc::new(body));
-    assert!(result.is_err(), "Deref should return error");
+    assert!(result.is_ok(), "Deref should succeed (implemented)");
 }
 
 // ─── Assert with False Expected ───

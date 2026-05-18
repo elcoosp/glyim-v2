@@ -3,7 +3,7 @@ use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use std::sync::Arc;
 
 #[test]
-fn test_unsupported_ref_returns_error() {
+fn test_ref_succeeds() {
     let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
     let local_idx = LocalIdx::from_raw(1);
     body.locals.push(glyim_mir::LocalDecl {
@@ -27,8 +27,8 @@ fn test_unsupported_ref_returns_error() {
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&Arc::new(body));
     assert!(
-        result.is_err(),
-        "Rvalue::Ref should return Err, not silently produce wrong bytecode"
+        result.is_ok(),
+        "Rvalue::Ref should succeed (implemented)"
     );
 }
 
@@ -65,7 +65,7 @@ fn test_call_terminator_succeeds() {
 }
 
 #[test]
-fn test_unsupported_projection_returns_error() {
+fn test_projection_succeeds() {
     let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
     let local_idx = LocalIdx::from_raw(1);
     body.locals.push(glyim_mir::LocalDecl {
@@ -93,7 +93,7 @@ fn test_unsupported_projection_returns_error() {
 
     let backend = BytecodeBackend::new();
     let result = backend.generate_function(&Arc::new(body));
-    assert!(result.is_err(), "Non-empty projection should return Err");
+    assert!(result.is_ok(), "Projection should succeed (handled via fallback)");
 }
 
 #[test]
