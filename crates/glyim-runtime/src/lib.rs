@@ -52,7 +52,7 @@ pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) 
 /// - The value will be dropped and its memory potentially deallocated.
 /// - `ptr` must not be used after this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn glyim_drop_in_place(ptr: *mut u8) {
+pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8) {
     if !ptr.is_null() {
         // In a full implementation, we would call the type‑specific destructor.
         // For now, just log that drop occurred.
