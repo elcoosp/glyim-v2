@@ -28,7 +28,6 @@ fn local_ty(body: &Body, local: LocalIdx) -> Ty {
 struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
-    #[allow(dead_code)]
     function: inkwell::values::FunctionValue<'ctx>,
     drop_fn: inkwell::values::FunctionValue<'ctx>,
     dealloc_fn: inkwell::values::FunctionValue<'ctx>,
@@ -52,6 +51,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn set_debug_location(&self, span: Span) {
+        if span.is_dummy() {
+            return;
+        }
         if let Some(ref debug_ctx) = self.debug_ctx {
             if let Some(loc) = debug_ctx.location_for_span(self.context, &span) {
                 self.builder.set_current_debug_location(loc);
@@ -61,9 +63,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
     fn clear_debug_location(&self) {
         if self.debug_ctx.is_some() {
-            // Inkwell doesn't have a direct clear, but we can set to None via builder's method?
-            // Actually, we can call set_current_debug_location with a dummy location that is not attached.
-            // Simpler: just don't clear; it's fine.
+            // No direct clear, but setting to a dummy location is not needed.
+            // Leave as is; the next set_debug_location will overwrite.
         }
     }
 
@@ -72,32 +73,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let llvm_ty = self.llvm_type_for_ty(ty);
         let name = format!("local_{}", local.index());
 
-        if ty == Ty::UNIT || ty == Ty::NEVER {
-            let ptr = self
-                .context
-                .ptr_type(inkwell::AddressSpace::default())
-                .const_null();
-            self.locals[local] = Some(ptr);
-            return;
-        }
-
-        let is_zero_sized = if let inkwell::types::BasicTypeEnum::StructType(st) = llvm_ty {
-            st.get_field_types().is_empty()
-        } else {
-            false
-        };
+        // Zero-sized types (unit, never, empty struct) get a null pointer
+        let is_zero_sized = ty == Ty::UNIT
+            || ty == Ty::NEVER
+            || (if let inkwell::types::BasicTypeEnum::StructType(st) = llvm_ty {
+                st.get_field_types().is_empty()
+            } else {
+                false
+            });
 
         if is_zero_sized {
-            let ptr = self
-                .context
-                .ptr_type(inkwell::AddressSpace::default())
-                .const_null();
+            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
             self.locals[local] = Some(ptr);
         } else {
-            let alloca = self
-                .builder
-                .build_alloca(llvm_ty, &name)
-                .expect("alloca failed");
+            let alloca = self.builder.build_alloca(llvm_ty, &name).expect("alloca failed");
             self.locals[local] = Some(alloca);
         }
     }
@@ -905,11 +894,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             let size = self.llvm_int_type(64).const_int(0, false);
             let align = self.llvm_int_type(64).const_int(0, false);
             self.builder
-                .build_call(
-                    self.dealloc_fn,
-                    &[i8_ptr.into(), size.into(), align.into()],
-                    "dealloc_call",
-                )
+                .build_call(self.dealloc_fn, &[i8_ptr.into(), size.into(), align.into()], "dealloc_call")
                 .map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
                         "Failed to build dealloc call: {:?}",
@@ -936,10 +921,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let value = self.lower_rvalue(rvalue);
                 let ptr = self.place_ptr(place);
                 self.builder.build_store(ptr, value).map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build store: {:?}",
-                        e
-                    ))]
+                    vec![GlyimDiagnostic::internal_error(format!("Failed to build store: {:?}", e))]
                 })?;
                 self.clear_debug_location();
             }
@@ -1047,16 +1029,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let val0_const = discr_int.get_type().const_int(val0 as u64, false);
                     let cmp0 = self
                         .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::EQ,
-                            discr_int,
-                            val0_const,
-                            "switch_eq_0",
-                        )
+                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, val0_const, "switch_eq_0")
                         .expect("icmp0 failed");
-                    let next_bb = self
-                        .context
-                        .append_basic_block(self.function, "switch_next");
+                    let next_bb = self.context.append_basic_block(self.function, "switch_next");
                     self.builder
                         .build_conditional_branch(cmp0, *target0, next_bb)
                         .expect("conditional branch0 failed");
@@ -1064,12 +1039,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let val1_const = discr_int.get_type().const_int(val1 as u64, false);
                     let cmp1 = self
                         .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::EQ,
-                            discr_int,
-                            val1_const,
-                            "switch_eq_1",
-                        )
+                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, val1_const, "switch_eq_1")
                         .expect("icmp1 failed");
                     self.builder
                         .build_conditional_branch(cmp1, *target1, *default_bb)
@@ -1380,6 +1350,18 @@ pub(crate) fn lower_body<'ctx>(
     };
 
     let function = module.add_function(&fn_name, fn_type, None);
+
+    let mut debug_ctx = if debug_info {
+        Some(DebugInfoCtx::new(context, module, source_map, true))
+    } else {
+        None
+    };
+
+    // Attach subprogram if debug info is enabled
+    if let Some(ref mut di) = debug_ctx {
+        di.set_function(context, &function, &fn_name, FileId::from_raw(0), 1);
+    }
+
     let entry_block = context.append_basic_block(function, "entry");
     let builder = context.create_builder();
     builder.position_at_end(entry_block);
@@ -1428,12 +1410,6 @@ pub(crate) fn lower_body<'ctx>(
         None
     };
 
-    let debug_ctx = if debug_info {
-        Some(DebugInfoCtx::new(context, module, source_map, true))
-    } else {
-        None
-    };
-
     let mut lowering_ctx = LoweringCtx {
         context,
         builder,
@@ -1468,9 +1444,8 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
-    eprintln!(
-        "===== LLVM IR =====\n{}\n===================",
-        module.print_to_string()
-    );
+
+    // Optional IR dump for debugging (only visible when running with --nocapture)
+    eprintln!("===== LLVM IR =====\n{}\n===================", module.print_to_string());
     Ok(())
 }

@@ -300,12 +300,6 @@ fn test_verify_module_after_optimization() {
     }
 }
 
-// Helper to dump IR at various stages
-fn dump_ir(module: &inkwell::module::Module, label: &str) {
-    println!("--- {} ---", label);
-    println!("{}", module.print_to_string());
-}
-
 // Replace the test with a more verbose version
 #[test]
 fn test_o2_mem2reg_debug() {
