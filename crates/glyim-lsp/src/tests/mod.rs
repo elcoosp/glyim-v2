@@ -16,10 +16,13 @@ mod uri_tests;
 mod workspace_symbol_tests;
 // New test modules for M10
 mod code_action;
+mod code_action_tests;
 mod document_symbol_tests;
 mod folding;
 mod formatting;
 mod lsp_integration_tests;
 mod reference_graph_tests;
 mod rename;
+mod rename_tests;
 mod symbol_index_tests;
+mod test_utils;
