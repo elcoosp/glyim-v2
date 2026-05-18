@@ -75,7 +75,7 @@ fn fn_ptr_to_ptr_cast_returns_success() {
     }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.add_function(dummy_def_id(), body);
-    let res = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    interp.add_function(dummy_def_id(), body.clone());
+    let res = interp.run_body(&body);
     assert!(res.is_ok());
 }

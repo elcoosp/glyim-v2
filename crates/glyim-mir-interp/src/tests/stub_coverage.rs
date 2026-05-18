@@ -1,6 +1,5 @@
 use crate::*;
 use glyim_core::{CrateId, DefId, LocalDefId, IntTy, FloatTy, UintTy, Mutability, IndexVec};
-use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut};
 
@@ -76,8 +75,8 @@ fn cast_ptr_to_ptr_returns_value() {
     }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.add_function(dummy_def_id(), body);
-    let res = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    interp.add_function(dummy_def_id(), body.clone());
+    let res = interp.run_body(&body);
     assert!(res.is_ok());
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::Int(42));
@@ -105,8 +104,8 @@ fn float_const_returns_value() {
     }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.add_function(dummy_def_id(), body);
-    let res = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    interp.add_function(dummy_def_id(), body.clone());
+    let res = interp.run_body(&body);
     assert!(res.is_ok());
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::Float(42.0));
@@ -163,8 +162,8 @@ fn string_const_returns_value() {
     }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.add_function(dummy_def_id(), body);
-    let res = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    interp.add_function(dummy_def_id(), body.clone());
+    let res = interp.run_body(&body);
     assert!(res.is_ok());
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::String("hello".to_string()));
