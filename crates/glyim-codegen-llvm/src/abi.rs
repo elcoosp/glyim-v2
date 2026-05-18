@@ -1,9 +1,9 @@
-use glyim_core::TargetInfo;
+use glyim_core::primitives::TargetInfo;
 use glyim_layout::{
     Align, ArgAbi, CallConvention, FieldsShape, FnAbi, Layout, LayoutComputer, LayoutError,
     PassMode, SimpleLayoutComputer, Size, VariantsShape,
 };
-use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
+use glyim_type::{Ty, TyCtx, TyKind};
 
 pub(crate) struct FullLayoutComputer<'a> {
     simple: SimpleLayoutComputer<'a>,
@@ -58,13 +58,13 @@ impl LayoutComputer for FullLayoutComputer<'_> {
             TyKind::Array(elem, count) => {
                 let elem_ty = *elem;
                 let count = match &count.kind {
-                    ConstKind::Uint(n) => *n as u64,
-                    ConstKind::Int(n) => *n as u64,
+                    glyim_type::ConstKind::Uint(n) => *n as u64,
+                    glyim_type::ConstKind::Int(n) => *n as u64,
                     _ => return Err(LayoutError::UnknownType(ty)),
                 };
                 let elem_layout = self.layout_of(elem_ty)?;
                 let stride = elem_layout.size.align_to(elem_layout.align);
-                let size = Size(stride.0 * count);
+                let size = Size(stride.0.saturating_mul(count));
                 Ok(Layout {
                     size,
                     align: elem_layout.align,
@@ -79,9 +79,8 @@ impl LayoutComputer for FullLayoutComputer<'_> {
 
     fn fn_abi_of(&self, sig: &glyim_type::FnSig) -> Result<FnAbi, LayoutError> {
         let ptr_size = self.ptr_size();
-        let large_threshold = ptr_size.0 * 2; // > 2*ptr_size -> indirect
+        let large_threshold = ptr_size.0.saturating_mul(2);
 
-        // Classify return type
         let ret_layout = self.layout_of(sig.output)?;
         let ret_mode = if ret_layout.size.0 == 0 {
             PassMode::Ignore
@@ -91,9 +90,8 @@ impl LayoutComputer for FullLayoutComputer<'_> {
             PassMode::Direct
         };
 
-        // Classify arguments
         let args = self.ctx.substitution_args(sig.inputs);
-        let mut arg_abis = Vec::new();
+        let mut arg_abis = Vec::with_capacity(args.len());
         for arg in args {
             if let glyim_type::GenericArg::Ty(t) = arg {
                 let layout = self.layout_of(*t)?;

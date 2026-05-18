@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use glyim_codegen::CodegenBackend;
 use glyim_core::Interner;
 use glyim_core::TargetInfo;
@@ -40,7 +39,7 @@ impl LlvmBackend {
     pub fn new() -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let default_ctx = TyCtxMut::new(Interner::default()).freeze();
-        let target_info = TargetInfo::default(); // x86_64
+        let target_info = TargetInfo::default();
         Self {
             context: Context::create(),
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
@@ -85,18 +84,6 @@ impl LlvmBackend {
         self
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn with_opt_level(mut self, level: u8) -> Self {
-        self.opt_level = level;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn with_opt_for_size(mut self, size: bool) -> Self {
-        self.opt_for_size = size;
-        self
-    }
-
     pub(crate) fn run_passes_on_module<'ctx>(
         &self,
         module: &inkwell::module::Module<'ctx>,
@@ -105,72 +92,39 @@ impl LlvmBackend {
         crate::passes::run_llvm_passes(module, target_machine, self.opt_level, self.opt_for_size)
     }
 
-    pub(crate) fn lower_body<'ctx>(
-        &self,
-        context: &'ctx Context,
-        module: &inkwell::module::Module<'ctx>,
-        body: &Body,
-    ) -> CompResult<()> {
-        let ty_ctx = self.ty_ctx.as_ref().unwrap();
-        crate::lower::lower_body(
-            context,
-            module,
-            body,
-            self.target_info.clone(),
-            ty_ctx,
-            self.debug_info,
-            self.source_map.clone(),
-        )
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn lower_bodies_to_module<'ctx>(
-        &'ctx self,
-        context: &'ctx Context,
-        bodies: &[Arc<Body>],
-    ) -> CompResult<inkwell::module::Module<'ctx>> {
-        let module = context.create_module("glyim_module");
-        let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
-        module.set_triple(&triple);
-        for body in bodies {
-            self.lower_body(context, &module, body)?;
-        }
-        let target = inkwell::targets::Target::from_triple(&triple).map_err(|e| {
-            vec![GlyimDiagnostic::internal_error(format!(
-                "Target error: {}",
-                e
-            ))]
-        })?;
-        let target_machine = target
-            .create_target_machine(
-                &triple,
-                "generic",
-                "",
-                inkwell::OptimizationLevel::Default,
-                inkwell::targets::RelocMode::Default,
-                inkwell::targets::CodeModel::Default,
-            )
-            .ok_or_else(|| {
-                vec![GlyimDiagnostic::internal_error(
-                    "Failed to create target machine",
-                )]
-            })?;
-        self.run_passes_on_module(&module, &target_machine)
-            .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
-        Ok(module)
-    }
-
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub(crate) fn lower_body_to_module<'ctx>(
-        &'ctx self,
+        &self,
         context: &'ctx Context,
         body: &Body,
     ) -> CompResult<inkwell::module::Module<'ctx>> {
         let module = context.create_module("test_module");
         let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-        self.lower_body(context, &module, body)?;
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        crate::lower::lower_body(
+            context,
+            &module,
+            body,
+            self.target_info.clone(),
+            ty_ctx,
+            self.debug_info,
+            self.source_map.clone(),
+        )?;
         Ok(module)
+    }
+
+    /// Generate LLVM IR for a single body as a string.
+    ///
+    /// Useful for testing type lowering without needing to write object files.
+    #[allow(dead_code)] // Used in tests
+    pub(crate) fn generate_ir(&self, body: &Body) -> CompResult<String> {
+        let context = Context::create();
+        let module = self.lower_body_to_module(&context, body)?;
+        Ok(module.print_to_string().to_string())
     }
 }
 
@@ -184,6 +138,23 @@ impl CodegenBackend for LlvmBackend {
         let module = context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
+
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+
+        for body in bodies.iter() {
+            crate::lower::lower_body(
+                context,
+                &module,
+                body,
+                self.target_info.clone(),
+                ty_ctx,
+                self.debug_info,
+                self.source_map.clone(),
+            )?;
+        }
 
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
@@ -207,10 +178,6 @@ impl CodegenBackend for LlvmBackend {
                 )]
             })?;
 
-        for body in bodies.iter() {
-            self.lower_body(context, &module, body)?;
-        }
-
         self.run_passes_on_module(&module, &target_machine)
             .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
 
@@ -232,7 +199,20 @@ impl CodegenBackend for LlvmBackend {
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
 
-        self.lower_body(context, &module, body)?;
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+
+        crate::lower::lower_body(
+            context,
+            &module,
+            body,
+            self.target_info.clone(),
+            ty_ctx,
+            self.debug_info,
+            self.source_map.clone(),
+        )?;
 
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
