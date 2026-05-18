@@ -1,7 +1,7 @@
-mod lower_expr;
-mod lower_item;
-mod lower_pat;
-mod lower_type;
+pub(crate) mod lower_expr;
+pub(crate) mod lower_item;
+pub(crate) mod lower_pat;
+pub(crate) mod lower_type;
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
