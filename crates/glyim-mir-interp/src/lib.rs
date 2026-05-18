@@ -294,15 +294,12 @@ impl<'tcx> Interpreter<'tcx> {
                             Ok(fields[0].clone())
                         }
                     }
-                    _ => {
-                        tracing::warn!("STUB: Discriminant on non-aggregate, returning 0");
-                        Ok(InterpValue::Int(0))
-                    }
+                    _ => Err(InterpError::Panic("Discriminant on non-aggregate".into())),
                 }
             }
             Rvalue::Len(place) => {
-                let local_decl = &self.local_decls[place.local.index()];
-                let len = self.array_length_from_ty(&local_decl.ty)?;
+                let ty = self.local_decls[place.local.index()].ty;
+                let len = self.array_length_from_ty(&ty)?;
                 Ok(InterpValue::Int(len as i128))
             }
             Rvalue::Cast(kind, operand, _target_ty) => {
@@ -310,24 +307,35 @@ impl<'tcx> Interpreter<'tcx> {
                 match kind {
                     CastKind::IntToInt => Ok(val),
                     CastKind::IntToFloat => match val {
-                        InterpValue::Int(i) => Ok(InterpValue::Int(i)),
-                        _ => Err(InterpError::Panic(
-                            "expected int for IntToFloat cast".into(),
-                        )),
+                        InterpValue::Int(i) => {
+                            let f = i as f64;
+                            Ok(InterpValue::Float(f))
+                        }
+                        _ => Err(InterpError::Panic("expected int for IntToFloat".into())),
                     },
-                    _ => {
-                        tracing::warn!("STUB: Cast kind {:?} not implemented", kind);
-                        Err(InterpError::Panic(format!(
-                            "Cast kind {:?} not implemented",
-                            kind
-                        )))
+                    CastKind::FloatToInt => match val {
+                        InterpValue::Float(f) => {
+                            let i = f as i128;
+                            Ok(InterpValue::Int(i))
+                        }
+                        _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
+                    },
+                    CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
+                        // Keep value unchanged, only type changes
+                        Ok(val)
                     }
                 }
             }
-            Rvalue::Repeat(operand, _count) => {
+            Rvalue::Repeat(operand, count_const) => {
                 let val = self.eval_operand(operand)?;
-                tracing::warn!("STUB: Repeat rvalue - returning single value instead of array");
-                Ok(val)
+                let count_val = self.eval_mir_const(count_const)?;
+                let len = match count_val {
+                    InterpValue::Int(i) => i as usize,
+                    InterpValue::Uint(u) => u as usize,
+                    _ => return Err(InterpError::Panic("repeat count must be integer".into())),
+                };
+                let repeated = vec![val; len];
+                Ok(InterpValue::Aggregate(repeated))
             }
         }
     }
@@ -342,27 +350,30 @@ impl<'tcx> Interpreter<'tcx> {
     fn eval_mir_const(&self, c: &MirConst) -> InterpResult<InterpValue> {
         match &c.kind {
             MirConstKind::Int(v) => Ok(InterpValue::Int(*v)),
-            MirConstKind::Uint(v) => Ok(InterpValue::Int(*v as i128)),
+            MirConstKind::Uint(v) => Ok(InterpValue::Uint(*v)),
             MirConstKind::Bool(v) => Ok(InterpValue::Bool(*v)),
             MirConstKind::Unit => Ok(InterpValue::Unit),
             MirConstKind::Char(ch) => Ok(InterpValue::Int(*ch as i128)),
-            MirConstKind::FloatBits(_) => {
-                tracing::warn!("STUB: FloatBits const not implemented");
-                Err(InterpError::Panic("FloatBits const not implemented".into()))
+            MirConstKind::FloatBits(bits) => {
+                let f = f64::from_bits(*bits);
+                Ok(InterpValue::Float(f))
             }
-            MirConstKind::String(_) => {
-                tracing::warn!("STUB: String const not implemented");
-                Err(InterpError::Panic("String const not implemented".into()))
+            MirConstKind::String(name) => {
+                let s = self.tcx.name_str(*name).to_string();
+                Ok(InterpValue::String(s))
             }
-            MirConstKind::Fn(_, _) => {
-                tracing::warn!("STUB: Fn constant used as value? Not supported");
-                Err(InterpError::Panic(
-                    "Fn constant not supported as value".into(),
-                ))
+            MirConstKind::Fn(def_id, _substs) => {
+                let crate_id = CrateId::from_raw(0);
+                let local_def_id = LocalDefId::from_raw(def_id.to_raw());
+                let def_id = DefId::new(crate_id, local_def_id);
+                Ok(InterpValue::Fn(def_id))
             }
-            MirConstKind::ConstRef(_, _) => Err(InterpError::Panic(
-                "ConstRef constant not interpretable as value".into(),
-            )),
+            MirConstKind::ConstRef(def_id, _substs) => {
+                let crate_id = CrateId::from_raw(0);
+                let local_def_id = LocalDefId::from_raw(def_id.to_raw());
+                let def_id = DefId::new(crate_id, local_def_id);
+                Ok(InterpValue::ConstRef(def_id))
+            }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
         }
     }
@@ -373,8 +384,9 @@ impl<'tcx> Interpreter<'tcx> {
         left: &InterpValue,
         right: &InterpValue,
     ) -> InterpResult<InterpValue> {
+        use InterpValue::*;
         match (left, right) {
-            (InterpValue::Int(l), InterpValue::Int(r)) => {
+            (Int(l), Int(r)) => {
                 let result = match op {
                     BinOp::Add => l.wrapping_add(*r),
                     BinOp::Sub => l.wrapping_sub(*r),
@@ -396,12 +408,12 @@ impl<'tcx> Interpreter<'tcx> {
                     BinOp::BitXor => l ^ *r,
                     BinOp::Shl => l.wrapping_shl(*r as u32),
                     BinOp::Shr => l.wrapping_shr(*r as u32),
-                    BinOp::Eq => return Ok(InterpValue::Bool(l == r)),
-                    BinOp::Ne => return Ok(InterpValue::Bool(l != r)),
-                    BinOp::Lt => return Ok(InterpValue::Bool(l < r)),
-                    BinOp::Gt => return Ok(InterpValue::Bool(l > r)),
-                    BinOp::LtEq => return Ok(InterpValue::Bool(l <= r)),
-                    BinOp::GtEq => return Ok(InterpValue::Bool(l >= r)),
+                    BinOp::Eq => return Ok(Bool(l == r)),
+                    BinOp::Ne => return Ok(Bool(l != r)),
+                    BinOp::Lt => return Ok(Bool(l < r)),
+                    BinOp::Gt => return Ok(Bool(l > r)),
+                    BinOp::LtEq => return Ok(Bool(l <= r)),
+                    BinOp::GtEq => return Ok(Bool(l >= r)),
                     _ => {
                         return Err(InterpError::Panic(format!(
                             "unsupported integer binop: {:?}",
@@ -409,21 +421,84 @@ impl<'tcx> Interpreter<'tcx> {
                         )));
                     }
                 };
-                Ok(InterpValue::Int(result))
+                Ok(Int(result))
             }
-            (InterpValue::Bool(l), InterpValue::Bool(r)) => match op {
-                BinOp::Eq => Ok(InterpValue::Bool(l == r)),
-                BinOp::Ne => Ok(InterpValue::Bool(l != r)),
-                BinOp::And => Ok(InterpValue::Bool(*l && *r)),
-                BinOp::Or => Ok(InterpValue::Bool(*l || *r)),
+            (Uint(l), Uint(r)) => {
+                let result = match op {
+                    BinOp::Add => l.wrapping_add(*r),
+                    BinOp::Sub => l.wrapping_sub(*r),
+                    BinOp::Mul => l.wrapping_mul(*r),
+                    BinOp::Div => {
+                        if *r == 0 {
+                            return Err(InterpError::Panic("division by zero".into()));
+                        }
+                        l.wrapping_div(*r)
+                    }
+                    BinOp::Rem => {
+                        if *r == 0 {
+                            return Err(InterpError::Panic("remainder by zero".into()));
+                        }
+                        l.wrapping_rem(*r)
+                    }
+                    BinOp::BitAnd => l & *r,
+                    BinOp::BitOr => l | *r,
+                    BinOp::BitXor => l ^ *r,
+                    BinOp::Shl => l.wrapping_shl(*r as u32),
+                    BinOp::Shr => l.wrapping_shr(*r as u32),
+                    BinOp::Eq => return Ok(Bool(l == r)),
+                    BinOp::Ne => return Ok(Bool(l != r)),
+                    BinOp::Lt => return Ok(Bool(l < r)),
+                    BinOp::Gt => return Ok(Bool(l > r)),
+                    BinOp::LtEq => return Ok(Bool(l <= r)),
+                    BinOp::GtEq => return Ok(Bool(l >= r)),
+                    _ => {
+                        return Err(InterpError::Panic(format!(
+                            "unsupported unsigned binop: {:?}",
+                            op
+                        )));
+                    }
+                };
+                Ok(Uint(result))
+            }
+            (Bool(l), Bool(r)) => match op {
+                BinOp::Eq => Ok(Bool(l == r)),
+                BinOp::Ne => Ok(Bool(l != r)),
+                BinOp::And => Ok(Bool(*l && *r)),
+                BinOp::Or => Ok(Bool(*l || *r)),
                 _ => Err(InterpError::Panic(format!(
                     "unsupported bool binop: {:?}",
                     op
                 ))),
             },
+            (Float(l), Float(r)) => {
+                let result = match op {
+                    BinOp::Add => *l + *r,
+                    BinOp::Sub => *l - *r,
+                    BinOp::Mul => *l * *r,
+                    BinOp::Div => {
+                        if *r == 0.0 {
+                            return Err(InterpError::Panic("division by zero".into()));
+                        }
+                        *l / *r
+                    }
+                    BinOp::Eq => return Ok(Bool(l == r)),
+                    BinOp::Ne => return Ok(Bool(l != r)),
+                    BinOp::Lt => return Ok(Bool(l < r)),
+                    BinOp::Gt => return Ok(Bool(l > r)),
+                    BinOp::LtEq => return Ok(Bool(l <= r)),
+                    BinOp::GtEq => return Ok(Bool(l >= r)),
+                    _ => {
+                        return Err(InterpError::Panic(format!(
+                            "unsupported float binop: {:?}",
+                            op
+                        )));
+                    }
+                };
+                Ok(Float(result))
+            }
             _ => Err(InterpError::Panic(format!(
-                "unsupported binop types: {:?}",
-                op
+                "unsupported binop types: {:?} and {:?}",
+                left, right
             ))),
         }
     }
@@ -432,9 +507,10 @@ impl<'tcx> Interpreter<'tcx> {
         match (op, val) {
             (UnOp::Not, InterpValue::Bool(b)) => Ok(InterpValue::Bool(!b)),
             (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-i)),
+            (UnOp::Neg, InterpValue::Float(f)) => Ok(InterpValue::Float(-f)),
             _ => Err(InterpError::Panic(format!(
-                "unsupported unary op: {:?}",
-                op
+                "unsupported unary op: {:?} on {:?}",
+                op, val
             ))),
         }
     }
@@ -502,6 +578,7 @@ impl<'tcx> Interpreter<'tcx> {
                         })?;
                     let idx_u = match index_val {
                         InterpValue::Int(i) => *i as usize,
+                        InterpValue::Uint(u) => *u as usize,
                         _ => {
                             return Err(InterpError::Panic("index must be an integer".into()));
                         }
@@ -665,6 +742,7 @@ impl<'tcx> Interpreter<'tcx> {
                     })?;
                 let idx_u = match index_val {
                     InterpValue::Int(i) => *i as usize,
+                    InterpValue::Uint(u) => *u as usize,
                     _ => return Err(InterpError::Panic("index must be an integer".into())),
                 };
                 match base {
@@ -701,12 +779,13 @@ impl<'tcx> Interpreter<'tcx> {
     fn resolve_callee(&self, func: &Operand) -> InterpResult<DefId> {
         match func {
             Operand::Constant(c) => match &c.kind {
-                MirConstKind::Fn(def_id, _) => Ok(DefId::new(
-                    glyim_core::def_id::CrateId::from_raw(0),
-                    glyim_core::def_id::LocalDefId::from_raw(def_id.to_raw()),
-                )),
+                MirConstKind::Fn(def_id, _) => {
+                    let crate_id = CrateId::from_raw(0);
+                    let local_def_id = LocalDefId::from_raw(def_id.to_raw());
+                    Ok(DefId::new(crate_id, local_def_id))
+                }
                 MirConstKind::ConstRef(_, _) => Err(InterpError::Panic(
-                    "ConstRef constant not interpretable".into(),
+                    "ConstRef constant not interpretable as function".into(),
                 )),
                 MirConstKind::Int(id) => Ok(DefId::new(
                     CrateId::from_raw(0),
@@ -725,6 +804,7 @@ impl<'tcx> Interpreter<'tcx> {
     fn interp_value_to_u128(&self, val: &InterpValue) -> u128 {
         match val {
             InterpValue::Int(i) => *i as u128,
+            InterpValue::Uint(u) => *u as u128,
             InterpValue::Bool(b) => *b as u128,
             InterpValue::Unit => 0,
             InterpValue::Aggregate(fields) => {
@@ -735,6 +815,9 @@ impl<'tcx> Interpreter<'tcx> {
                 }
             }
             InterpValue::Ref(idx) => *idx as u128,
+            InterpValue::Float(f) => f.to_bits() as u128,
+            InterpValue::String(s) => s.len() as u128,
+            InterpValue::Fn(_) | InterpValue::ConstRef(_) => 0,
         }
     }
 
@@ -742,6 +825,7 @@ impl<'tcx> Interpreter<'tcx> {
         match val {
             InterpValue::Bool(b) => Ok(*b),
             InterpValue::Int(i) => Ok(*i != 0),
+            InterpValue::Uint(u) => Ok(*u != 0),
             InterpValue::Unit => Ok(false),
             InterpValue::Aggregate(fields) => {
                 if fields.is_empty() {
@@ -751,6 +835,9 @@ impl<'tcx> Interpreter<'tcx> {
                 }
             }
             InterpValue::Ref(_) => Ok(true),
+            InterpValue::Float(f) => Ok(*f != 0.0),
+            InterpValue::String(s) => Ok(!s.is_empty()),
+            InterpValue::Fn(_) | InterpValue::ConstRef(_) => Ok(true),
         }
     }
 
@@ -760,12 +847,9 @@ impl<'tcx> Interpreter<'tcx> {
             glyim_type::TyKind::Array(_, const_val) => match &const_val.kind {
                 glyim_type::ConstKind::Int(n) => Ok(*n as usize),
                 glyim_type::ConstKind::Uint(n) => Ok(*n as usize),
-                _ => {
-                    tracing::warn!("STUB: Len for non-constant array length");
-                    Err(InterpError::Panic(
-                        "Len: unsupported array length kind".into(),
-                    ))
-                }
+                _ => Err(InterpError::Panic(
+                    "Len: unsupported array length kind (non-integer)".into(),
+                )),
             },
             _ => Err(InterpError::Panic("Len: expected array type".into())),
         }

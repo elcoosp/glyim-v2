@@ -21,5 +21,6 @@ mod ref_test;
 mod repeat;
 mod stress;
 mod stub_coverage;
+mod stubs_tests;
 mod terminator;
 mod terminators;
