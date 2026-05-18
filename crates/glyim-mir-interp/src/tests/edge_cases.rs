@@ -507,7 +507,6 @@ fn uint_constant_interpreted_as_int() {
     );
 }
 
-
 // ============ Unit value ============
 
 #[test]
