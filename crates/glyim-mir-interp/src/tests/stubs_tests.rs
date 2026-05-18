@@ -3,7 +3,7 @@ use crate::Interpreter;
 use glyim_core::{CrateId, DefId, LocalDefId, IntTy, FloatTy, UintTy};
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut};
+use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut, GenericArg};
 
 fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
@@ -18,7 +18,8 @@ fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
 fn discriminant_returns_tag() {
     let mut tcx = glyim_test::test_ty_ctx();
     let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
-    let tuple_substs = tcx.intern_substitution(vec![int_ty.into(), int_ty.into()]);
+    // Correct conversion: GenericArg::Ty
+    let tuple_substs = tcx.intern_substitution(vec![GenericArg::Ty(int_ty), GenericArg::Ty(int_ty)]);
     let tuple_ty = tcx.mk_ty(TyKind::Tuple(tuple_substs));
     let mut body = empty_body(Ty::UNIT);
     let local_enum = add_local(&mut body, tuple_ty, Mutability::Mut);
@@ -86,7 +87,9 @@ fn repeat_creates_array() {
     let mut body = empty_body(Ty::UNIT);
     let local = add_local(&mut body, array_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    let repeat = Rvalue::Repeat(Operand::Constant(const_int(42)), mir_const_usize(5));
+    // const_int returns Operand, which is correct for first argument.
+    // Second argument must be MirConst (mir_const_usize returns MirConst)
+    let repeat = Rvalue::Repeat(const_int(42), mir_const_usize(5));
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), repeat));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
     let tcx_frozen = tcx.freeze();
@@ -108,7 +111,7 @@ fn len_of_array() {
     let local_array = add_local(&mut body, array_ty, Mutability::Mut);
     let local_len = add_local(&mut body, tcx.mk_ty(TyKind::Uint(UintTy::Usize)), Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    let init = Rvalue::Repeat(Operand::Constant(const_int(0)), mir_const_usize(7));
+    let init = Rvalue::Repeat(const_int(0), mir_const_usize(7));
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_array), init));
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local_len), Rvalue::Len(Place::new(local_array))));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
