@@ -1,7 +1,7 @@
 use crate::*;
-use glyim_core::{UintTy, CrateId, DefId, LocalDefId, Mutability, IntTy, FloatTy, IndexVec};
+use glyim_core::{CrateId, DefId, LocalDefId, Mutability, IntTy, UintTy, FloatTy, IndexVec};
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtxMut, TyKind, Substitution, Const, ConstKind};
+use glyim_type::{Ty, TyCtxMut, TyKind, Const, ConstKind};
 use glyim_test::test_ty_ctx;
 
 fn dummy_def_id() -> DefId {
@@ -28,41 +28,53 @@ fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     tcx.mk_ty(TyKind::Array(elem_ty, const_val))
 }
 
+// U03-T01: Discriminant returns correct tag
 #[test]
 fn discriminant_returns_tag() {
     let mut tcx = test_ty_ctx();
     let int_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+    let dummy_ty = Ty::UNIT;
     let enum_place = Place::new(LocalIdx::from_raw(1));
-    let disc_rvalue = Rvalue::Discriminant(enum_place);
-    let assign_stmt = Statement {
+    let disc_rvalue = Rvalue::Discriminant(enum_place.clone());
+    // Build an aggregate (tuple) with tag as first element
+    let agg_rvalue = Rvalue::Aggregate(
+        AggregateKind::Tuple,
+        vec![Operand::Constant(MirConst {
+            kind: MirConstKind::Int(42),
+            ty: int_ty,
+            span: Span::DUMMY,
+        })],
+    );
+    let assign_agg_stmt = Statement {
+        kind: StatementKind::Assign(enum_place.clone(), agg_rvalue),
+        source_info: SourceInfo::new(Span::DUMMY),
+    };
+    let assign_disc_stmt = Statement {
         kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), disc_rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
     };
     let mut body = Body::dummy(dummy_def_id());
     let locals_vec = vec![
         local_decl(int_ty, Mutability::Mut),
-        local_decl(tcx.unit_ty(), Mutability::Mut), // dummy enum
+        local_decl(dummy_ty, Mutability::Mut),
     ];
     body.locals = IndexVec::from_raw(locals_vec);
-    let bb_data = BasicBlockData {
-        statements: vec![assign_stmt],
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+        statements: vec![assign_agg_stmt, assign_disc_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.locals.resize(body.locals.len(), None);
-    // Set enum local to an aggregate with tag 42
-    interp.locals[1] = Some(InterpValue::Aggregate(vec![InterpValue::Int(42)]));
     interp.run_body(&body).unwrap();
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::Int(42));
 }
 
+// U03-T02: Cast IntToFloat produces float value
 #[test]
 fn cast_int_to_float() {
     let mut tcx = test_ty_ctx();
@@ -81,15 +93,14 @@ fn cast_int_to_float() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(float_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -98,6 +109,7 @@ fn cast_int_to_float() {
     assert_eq!(ret_val, InterpValue::Float(42.0));
 }
 
+// U03-T03: Cast FloatToInt truncates correctly
 #[test]
 fn cast_float_to_int() {
     let mut tcx = test_ty_ctx();
@@ -116,15 +128,14 @@ fn cast_float_to_int() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(int_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -133,6 +144,7 @@ fn cast_float_to_int() {
     assert_eq!(ret_val, InterpValue::Int(123));
 }
 
+// U03-T04: Repeat rvalue builds array constant
 #[test]
 fn repeat_creates_array() {
     let mut tcx = test_ty_ctx();
@@ -155,15 +167,14 @@ fn repeat_creates_array() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(array_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -173,13 +184,14 @@ fn repeat_creates_array() {
     assert_eq!(ret_val, expected);
 }
 
+// U03-T05: Len of array with const generic works
 #[test]
 fn len_of_array() {
     let mut tcx = test_ty_ctx();
     let elem_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
     let array_ty = mk_array_ty(&mut tcx, elem_ty, 7);
     let array_place = Place::new(LocalIdx::from_raw(1));
-    let len_rvalue = Rvalue::Len(array_place);
+    let len_rvalue = Rvalue::Len(array_place.clone());
     let assign_stmt = Statement {
         kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), len_rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
@@ -190,33 +202,50 @@ fn len_of_array() {
         local_decl(array_ty, Mutability::Mut),
     ];
     body.locals = IndexVec::from_raw(locals_vec);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
+    }]);
+    // We need to initialize local 1 with an array value of correct length.
+    // Add an initial statement to assign an aggregate array.
+    let init_array = Rvalue::Repeat(
+        Operand::Constant(MirConst {
+            kind: MirConstKind::Int(0),
+            ty: elem_ty,
+            span: Span::DUMMY,
+        }),
+        MirConst {
+            kind: MirConstKind::Uint(7),
+            ty: mk_usize_ty(&mut tcx),
+            span: Span::DUMMY,
+        },
+    );
+    let init_stmt = Statement {
+        kind: StatementKind::Assign(array_place.clone(), init_array),
+        source_info: SourceInfo::new(Span::DUMMY),
     };
-    body.basic_blocks.push(bb_data);
-    let dummy_array = InterpValue::Aggregate(vec![InterpValue::Int(0); 7]);
+    // Insert init statement before len
+    body.basic_blocks[BasicBlockIdx::from_raw(0)].statements.insert(0, init_stmt);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.locals.resize(body.locals.len(), None);
-    interp.locals[1] = Some(dummy_array);
     interp.run_body(&body).unwrap();
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::Int(7));
 }
 
+// U03-T06: Fn constant used as operand is handled
 #[test]
 fn fn_constant_used_as_operand() {
-    let mut tcx = test_ty_ctx();
+    let tcx = test_ty_ctx();
+    let dummy_ty = Ty::UNIT;
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(100);
-    let fn_ty = tcx.mk_ty(TyKind::FnDef(fn_def_id, Substitution::empty()));
     let const_val = MirConst {
-        kind: MirConstKind::Fn(fn_def_id, Substitution::empty()),
-        ty: fn_ty,
+        kind: MirConstKind::Fn(fn_def_id, glyim_type::Substitution::empty()),
+        ty: dummy_ty,
         span: Span::DUMMY,
     };
     let operand = Operand::Constant(const_val);
@@ -226,19 +255,17 @@ fn fn_constant_used_as_operand() {
         source_info: SourceInfo::new(Span::DUMMY),
     };
     let mut body = Body::dummy(dummy_def_id());
-    body.locals = IndexVec::from_raw(vec![local_decl(fn_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.locals = IndexVec::from_raw(vec![local_decl(dummy_ty, Mutability::Mut)]);
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
-    interp.locals.resize(body.locals.len(), None);
     interp.run_body(&body).unwrap();
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     let expected_def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(fn_def_id.to_raw()));
