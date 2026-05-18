@@ -5,7 +5,6 @@ use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Ty, TyKind, Const, ConstKind, TyCtxMut};
 
-// Helper to create an array type with a constant length
 fn mk_array_ty(tcx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Ty {
     let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
     let const_len = Const {
@@ -87,7 +86,6 @@ fn repeat_creates_array() {
     let mut body = empty_body(Ty::UNIT);
     let local = add_local(&mut body, array_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
-    // Rvalue::Repeat(Operand, MirConst)
     let repeat = Rvalue::Repeat(Operand::Constant(const_int(42)), mir_const_usize(5));
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), repeat));
     set_terminator(&mut body, bb0, TerminatorKind::Return);
