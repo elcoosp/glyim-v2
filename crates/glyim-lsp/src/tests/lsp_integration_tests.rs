@@ -2,33 +2,32 @@ use crate::{
     AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature,
     completion::provide_completions,
 };
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::*;
 use std::path::PathBuf;
-use std::sync::Arc;
 use url::Url;
+
+fn get_test_path(filename: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(filename);
+    path
+}
 
 #[test]
 fn completions_include_function_name() {
-    // Create analysis database
     let analysis = AnalysisDatabase::new();
-
-    // Create a temporary file path
-    let temp_dir = std::env::temp_dir();
-    let path = temp_dir.join("main.g");
-
-    // Manually add file mapping using FileMap's public API
+    let path = get_test_path("main.g");
     let file_id = {
         let mut file_map = analysis.file_map.write();
         file_map.get_or_create(&path)
     };
-
-    // Add source map
-    let content = "fn foo() {}\nfn main() { foo(); }";
-    let source_map = crate::SourceMap::new(path.clone(), file_id, content.to_string());
+    let source_map = crate::SourceMap::new(
+        path.clone(),
+        file_id,
+        "fn foo() {}\nfn main() { foo(); }".to_string(),
+    );
     analysis.source_maps.write().insert(file_id, source_map);
 
-    // Add symbol to index
     let span = Span::new(
         file_id,
         ByteIdx::ZERO,
@@ -49,16 +48,14 @@ fn completions_include_function_name() {
     {
         let mut symbol_index = analysis.symbol_index.write();
         symbol_index.insert_test_symbol(file_id, foo_info);
-        // Verify insertion
-        let symbols = symbol_index.symbols_in_file(file_id);
-        assert!(!symbols.is_empty(), "Symbols in file should not be empty");
-        assert_eq!(symbols[0].name, "foo");
     }
 
-    // Prepare completion params
+    let file_map_guard = analysis.file_map.read();
+    let file_map = &*file_map_guard;
+
     let completions = provide_completions(
         &analysis,
-        &analysis.file_map.read(),
+        file_map,
         &CompletionParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
@@ -75,11 +72,11 @@ fn completions_include_function_name() {
         },
     );
 
-    assert!(completions.is_some(), "provide_completions returned None");
+    assert!(completions.is_some());
     if let Some(CompletionResponse::List(list)) = completions {
         let labels: Vec<_> = list.items.iter().map(|i| i.label.as_str()).collect();
-        assert!(labels.contains(&"foo"), "Completions should include 'foo'");
+        assert!(labels.contains(&"foo"));
     } else {
-        panic!("Expected CompletionResponse::List");
+        panic!("Expected completion list");
     }
 }
