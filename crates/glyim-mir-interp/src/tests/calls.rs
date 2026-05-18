@@ -4,6 +4,9 @@ use glyim_span::Span;
 use glyim_test::test_ty_ctx;
 use glyim_type::{Ty, TyCtxMut, TyKind};
 
+fn dummy_def_id() -> DefId {
+    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
+}
 
 fn build_callee_body(tcx: &mut TyCtxMut, val: i128) -> Body {
     let mut body = Body::dummy(dummy_def_id());

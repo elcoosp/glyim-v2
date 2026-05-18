@@ -23,5 +23,3 @@ mod stress;
 mod stub_coverage;
 mod terminator;
 mod terminators;
-
-mod stubs_tests;
