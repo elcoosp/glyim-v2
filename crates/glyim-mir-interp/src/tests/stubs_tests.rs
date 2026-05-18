@@ -188,13 +188,14 @@ fn len_of_array() {
 fn fn_constant_used_as_operand() {
     let mut tcx = glyim_test::test_ty_ctx();
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(100);
-    let fn_ty = tcx.mk_ty(TyKind::FnDef(fn_def_id, glyim_type::Substitution::empty()));
+    // Use a dummy type for the local to avoid requiring a valid FnDef type.
+    let dummy_ty = Ty::UNIT;
     let mut body = empty_body(Ty::UNIT);
-    let local = add_local(&mut body, fn_ty, Mutability::Mut);
+    let local = add_local(&mut body, dummy_ty, Mutability::Mut);
     let bb0 = BasicBlockIdx::from_raw(0);
     let const_val = MirConst {
         kind: MirConstKind::Fn(fn_def_id, glyim_type::Substitution::empty()),
-        ty: fn_ty,
+        ty: dummy_ty,
         span: Span::DUMMY,
     };
     add_statement(&mut body, bb0, StatementKind::Assign(Place::new(local), Rvalue::Use(Operand::Constant(const_val))));
