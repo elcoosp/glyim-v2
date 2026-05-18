@@ -338,3 +338,5 @@ fn emit_terminator(bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> Com
 mod tests;
 
 pub mod vtable;
+#[cfg(test)]
+mod tests;
