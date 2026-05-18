@@ -147,13 +147,15 @@ fn discriminant_rvalue_returns_success() {
     assert!(res.is_ok());
 }
 // ============ Cast (unsupported kind) ============
+
 #[test]
 fn cast_ptr_to_ptr_returns_value() {
     let mut tcx = test_ty_ctx();
-    let ptr_ty = tcx.mk_ty(TyKind::RawPtr(tcx.unit_ty(), Mutability::Not));
+    let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+    let ptr_ty = tcx.mk_ty(TyKind::RawPtr(i32_ty, Mutability::Not));
     let const_val = MirConst {
         kind: MirConstKind::Int(42),
-        ty: tcx.mk_ty(TyKind::Int(IntTy::I32)),
+        ty: i32_ty,
         span: Span::DUMMY,
     };
     let operand = Operand::Constant(const_val);
@@ -164,15 +166,14 @@ fn cast_ptr_to_ptr_returns_value() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(ptr_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -182,7 +183,9 @@ fn cast_ptr_to_ptr_returns_value() {
     assert_eq!(ret_val, InterpValue::Int(42));
 }
 
+
 // ============ FloatBits const ============
+
 #[test]
 fn float_const_returns_value() {
     let mut tcx = test_ty_ctx();
@@ -200,15 +203,14 @@ fn float_const_returns_value() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(float_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -218,7 +220,9 @@ fn float_const_returns_value() {
     assert_eq!(ret_val, InterpValue::Float(42.0));
 }
 
+
 // ============ String const ============
+
 #[test]
 fn string_const_returns_value() {
     let mut tcx = test_ty_ctx();
@@ -237,15 +241,14 @@ fn string_const_returns_value() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(string_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -254,6 +257,7 @@ fn string_const_returns_value() {
     let ret_val = interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap();
     assert_eq!(ret_val, InterpValue::String("hello".to_string()));
 }
+
 
 // ============ Error const ============
 #[test]
@@ -456,6 +460,7 @@ fn aggregate_tuple_returns_first_element() {
 }
 
 // ============ Repeat rvalue ============
+
 #[test]
 fn repeat_rvalue_returns_array() {
     let mut tcx = test_ty_ctx();
@@ -467,8 +472,8 @@ fn repeat_rvalue_returns_array() {
         span: Span::DUMMY,
     };
     let count_const = MirConst {
-        kind: MirConstKind::Int(3),
-        ty: tcx.mk_ty(TyKind::Uint(UintTy::Usize)),
+        kind: MirConstKind::Uint(3),
+        ty: mk_usize_ty(&mut tcx),
         span: Span::DUMMY,
     };
     let repeat_rvalue = Rvalue::Repeat(Operand::Constant(const_val), count_const);
@@ -478,15 +483,14 @@ fn repeat_rvalue_returns_array() {
     };
     let mut body = Body::dummy(dummy_def_id());
     body.locals = IndexVec::from_raw(vec![local_decl(array_ty, Mutability::Mut)]);
-    let bb_data = BasicBlockData {
+    body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
         statements: vec![assign_stmt],
         terminator: Terminator {
             kind: TerminatorKind::Return,
             source_info: SourceInfo::new(Span::DUMMY),
         },
         is_cleanup: false,
-    };
-    body.basic_blocks.push(bb_data);
+    }]);
     let tcx_frozen = tcx.freeze();
     let mut interp = Interpreter::new(&tcx_frozen);
     interp.locals.resize(body.locals.len(), None);
@@ -495,6 +499,7 @@ fn repeat_rvalue_returns_array() {
     let expected = InterpValue::Aggregate(vec![InterpValue::Int(7); 3]);
     assert_eq!(ret_val, expected);
 }
+
 
 
 // ============ IntToInt cast (implemented) ============
