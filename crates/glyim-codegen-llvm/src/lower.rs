@@ -60,7 +60,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         // Skip zero‑sized types: unit and never (and empty structs)
         if ty == Ty::UNIT || ty == Ty::NEVER {
             // Store a dummy null pointer, but never allocate.
-            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+            let ptr = self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null();
             self.locals[local] = Some(ptr);
             return;
         }
@@ -72,10 +75,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         };
 
         if is_zero_sized {
-            let ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+            let ptr = self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null();
             self.locals[local] = Some(ptr);
         } else {
-            let alloca = self.builder.build_alloca(llvm_ty, &name).expect("alloca failed");
+            let alloca = self
+                .builder
+                .build_alloca(llvm_ty, &name)
+                .expect("alloca failed");
             self.locals[local] = Some(alloca);
         }
     }
@@ -1413,6 +1422,9 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
-    eprintln!("===== LLVM IR =====\n{}\n===================", module.print_to_string());
+    eprintln!(
+        "===== LLVM IR =====\n{}\n===================",
+        module.print_to_string()
+    );
     Ok(())
 }

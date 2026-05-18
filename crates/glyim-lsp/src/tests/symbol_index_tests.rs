@@ -1,7 +1,7 @@
 use crate::{SymbolIndex, SymbolKind};
 use glyim_core::{IndexVec, Interner, Name, Visibility};
 use glyim_hir::*;
-use glyim_span::{FileId, Span, ByteIdx, SyntaxContext};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 fn create_dummy_hir(interner: &Interner) -> CrateHir {
     let mut items = IndexVec::new();
@@ -20,7 +20,12 @@ fn create_dummy_hir(interner: &Interner) -> CrateHir {
             where_clauses: vec![],
         }),
         visibility: Visibility::Public,
-        span: Span::new(FileId::from_raw(1), ByteIdx::ZERO, ByteIdx::from_raw(10), SyntaxContext::ROOT),
+        span: Span::new(
+            FileId::from_raw(1),
+            ByteIdx::ZERO,
+            ByteIdx::from_raw(10),
+            SyntaxContext::ROOT,
+        ),
     };
     items.push(fn_item);
     CrateHir {

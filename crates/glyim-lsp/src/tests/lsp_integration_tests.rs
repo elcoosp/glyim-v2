@@ -1,12 +1,12 @@
 use crate::{
-    AnalysisDatabase, SymbolInfo, SymbolKind, DefinitionLocation, TypeSignature,
+    AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature,
     completion::provide_completions,
 };
-use glyim_span::{FileId, Span, ByteIdx, SyntaxContext};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use lsp_types::*;
-use url::Url;
 use std::path::PathBuf;
 use std::sync::Arc;
+use url::Url;
 
 #[test]
 fn completions_include_function_name() {
@@ -29,7 +29,12 @@ fn completions_include_function_name() {
     analysis.source_maps.write().insert(file_id, source_map);
 
     // Add symbol to index
-    let span = Span::new(file_id, ByteIdx::ZERO, ByteIdx::from_raw(3), SyntaxContext::ROOT);
+    let span = Span::new(
+        file_id,
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(3),
+        SyntaxContext::ROOT,
+    );
     let foo_info = SymbolInfo {
         name: "foo".to_string(),
         kind: SymbolKind::Function,
@@ -59,7 +64,10 @@ fn completions_include_function_name() {
                 text_document: TextDocumentIdentifier {
                     uri: Url::from_file_path(&path).unwrap(),
                 },
-                position: Position { line: 1, character: 12 },
+                position: Position {
+                    line: 1,
+                    character: 12,
+                },
             },
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),

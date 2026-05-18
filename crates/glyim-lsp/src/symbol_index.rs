@@ -75,12 +75,22 @@ impl SymbolIndex {
             let def_loc = DefinitionLocation { file_id, span };
             let type_sig = match &item.kind {
                 glyim_hir::ItemKind::Fn(fn_item) => {
-                    let params: Vec<(String, String)> = fn_item.params.iter().map(|p| {
-                        let ty_str = p.ty.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "unknown".to_string());
-                        (interner.resolve(p.name).to_string(), ty_str)
-                    }).collect();
+                    let params: Vec<(String, String)> = fn_item
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let ty_str =
+                                p.ty.as_ref()
+                                    .map(|t| format!("{:?}", t))
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            (interner.resolve(p.name).to_string(), ty_str)
+                        })
+                        .collect();
                     let return_ty = fn_item.return_ty.as_ref().map(|t| format!("{:?}", t));
-                    Some(TypeSignature { params, return_type: return_ty })
+                    Some(TypeSignature {
+                        params,
+                        return_type: return_ty,
+                    })
                 }
                 _ => None,
             };
@@ -94,7 +104,8 @@ impl SymbolIndex {
             };
             self.by_name.entry(name).or_default().push(info.clone());
             self.by_file.entry(file_id).or_default().push(info.clone());
-            self.by_location.insert((file_id.to_raw(), span.lo.to_usize()), info);
+            self.by_location
+                .insert((file_id.to_raw(), span.lo.to_usize()), info);
         }
     }
 

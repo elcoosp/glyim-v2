@@ -42,9 +42,8 @@ impl ReferenceGraph {
         _interner: &glyim_core::Interner,
     ) {
         // Remove stale references for this file
-        self.references.retain(|_, refs| {
-            refs.iter().all(|r| r.file_id != file_id)
-        });
+        self.references
+            .retain(|_, refs| refs.iter().all(|r| r.file_id != file_id));
         // In a full implementation we would traverse bodies and record references.
         // For now, just a placeholder that does not warn.
     }

@@ -18,7 +18,10 @@ pub(crate) fn run_llvm_passes<'ctx>(
         (3, true) => "default<Oz>",
         _ => "default<O2>",
     };
-    eprintln!("DEBUG: run_llvm_passes: opt_level={}, opt_for_size={}, pass_str={}", opt_level, opt_for_size, pass_str);
+    eprintln!(
+        "DEBUG: run_llvm_passes: opt_level={}, opt_for_size={}, pass_str={}",
+        opt_level, opt_for_size, pass_str
+    );
     let opts = PassBuilderOptions::create();
     module
         .run_passes(pass_str, target_machine, opts)
