@@ -20,6 +20,7 @@ mod more_interning;
 mod placeholder_flags;
 mod placeholder_region;
 mod predicate;
+mod primitives;
 mod projections;
 mod properties;
 mod region;

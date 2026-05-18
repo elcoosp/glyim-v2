@@ -1,8 +1,6 @@
 //! Tests for primitive types: IntTy, UintTy, FloatTy, Mutability, etc.
 
-use crate::*;
 use glyim_core::primitives::*;
-use super::helpers::with_fresh_ty_ctx;
 
 #[test]
 fn target_info_default() {
