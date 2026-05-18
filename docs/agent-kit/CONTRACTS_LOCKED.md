@@ -1,6 +1,6 @@
 # Locked Public Contracts — v0.2.0
 
-Generated from: actual codebase scan (2026-05-17)  
+Generated from: actual codebase scan (2026-05-18)  
 Any change to items listed here requires a formal Change Request.
 
 ---
@@ -28,7 +28,7 @@ Any change to items listed here requires a formal Change Request.
 - `pub enum Mutability` — `Not`, `Mut`; `is_mut`, `prefix_str`
 - `pub enum Safety` — `Safe`, `Unsafe`
 - `pub enum Abi` — `C`, `Glyim`, `System`; `name`
-- `pub enum BinOp` — all variants (`Add`, `Sub`, `Mul`, `Div`, `Rem`, `Eq`, `Ne`, `Lt`, `Gt`, `LtEq`, `GtEq`, `And`, `Or`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`); `is_comparison`
+- `pub enum BinOp` — `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Eq`, `Ne`, `Lt`, `Gt`, `LtEq`, `GtEq`, `And`, `Or`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`; `is_comparison`
 - `pub enum UnOp` — `Not`, `Neg`, `Deref`
 - `pub enum Visibility` — `Public`, `Module(u32)`, `Inherited`
 - `pub enum StructKind` — `Unit`, `Tuple`, `Record`
@@ -73,7 +73,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 ## glyim-syntax
 
-- `pub enum SyntaxKind` — exhaustive list including `KwFn`, `KwLet`, `KwStruct`, `KwEnum`, `KwIf`, `KwElse`, `KwReturn`, `KwMatch`, `KwMod`, `KwComptime`, `KwSelf`, `KwSuper`, `KwCrate`, `KwTrue`, `KwFalse`, `KwMut`, `KwRef`, `KwAs`, `KwWhile`, `KwFor`, `KwLoop`, `KwIn`, `KwBreak`, `KwContinue`, `KwTrait`, `KwImpl`, `KwWhere`, `KwDyn`, `KwType`, `KwPub`, `KwPriv`, `KwExtern`, `KwUnsafe`, `KwUse`, `KwConst`, `KwStatic`, `KwMove`, `KwMacroRules`, `Lifetime`, `IntLit`, `FloatLit`, `StringLit`, `CharLit`, `BoolLit`, `Ident`, all operators, punctuation, delimiters, trivia, and node kinds (e.g., `SourceFile`, `Module`, `FnDef`, … `Error`). Implements `is_trivia`, `is_keyword`, `is_literal`, `is_node`, `try_from_raw` (via `num_enum::TryFromPrimitive`)
+- `pub enum SyntaxKind` — exhaustive list including all tokens, keywords, operators, punctuation, delimiters, trivia, and node kinds (`SourceFile`, `Module`, `FnDef`, … `Error`). Implements `is_trivia`, `is_keyword`, `is_literal`, `is_node`, `try_from_raw` (via `num_enum::TryFromPrimitive`)
 - `pub enum GlyimLang` — implements `rowan::Language` (`kind_from_raw`, `kind_to_raw`)
 - `pub type SyntaxNode = rowan::SyntaxNode<GlyimLang>`
 - `pub type SyntaxToken = rowan::SyntaxToken<GlyimLang>`
@@ -217,7 +217,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
   - `pub enum MethodSelfKind` — `ByValue`, `ByReference`, `None`
   - `pub fn check_object_safety(requires_self_sized: bool, methods: &[MethodSignature]) -> Vec<ObjectSafetyViolation>`
 - `pub mod object_safety` (contains above)
-- Re‑exports: `auto_trait::*`, `binder::*`, `const_val::*`, `context::*`, `display::*`, `flags::*`, `fn_sig::*`, `predicate::*`, `region::*`, `substitution::*`, `ty::*`, `object_safety::*`
+- Re‑exports: `auto_trait::*`, `binder::*`, `const_val::*`, `display::*`, `flags::*`, `fn_sig::*`, `predicate::*`, `region::*`, `substitution::*`, `ty::*`, `object_safety::*`
 
 ---
 
@@ -280,8 +280,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 - `pub struct TypeckResult` — `thir_bodies: Vec<(LocalDefId, thir::Body)>`, `diagnostics: Vec<GlyimDiagnostic>`
 - `pub struct Adjustment` — `kind: AdjustKind`, `target: Ty`
 - `pub enum AdjustKind` — `Deref`, `Borrow(Mutability)`, `NeverToAny`
-- `pub mod thir` — all types: `Body`, `Param`, `Stmt`, `Expr`, `ExprKind`, `Pattern`, `PatternKind`, `Literal`, `MatchArm`, `FieldPat`, `Capture`, `CaptureKind`, `LocalVarId`
-- Re‑exports: `thir::*` (public via `pub use thir::*`? Actually `thir` is a module, its contents are pub but not re‑exported at crate root. The public API includes `thir::Body`, etc.)
+- `pub mod thir` — all types: `Body`, `Param`, `Stmt`, `Expr`, `ExprKind`, `Pattern`, `PatternKind`, `Literal`, `MatchArm`, `FieldPat`, `Capture`, `CaptureKind`, `LocalVarId` (publicly accessible via `glyim_typeck::thir::*`)
 
 ---
 
@@ -300,7 +299,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 - `pub mod discovery` — `pub fn discover_mono_roots(root: &SyntaxNode, hir: &CrateHir, ctx: &mut TyCtxMut) -> (Vec<MonoItem>, Vec<GlyimDiagnostic>)`
 - `pub mod partition` — `pub fn partition(items: &[MonoItemData], max_cgus: usize) -> Vec<Vec<usize>>`
 - `pub mod polymorphize` — `pub fn analyze_used_params(body: &Body, ctx: &dyn TypeLookup, substs: Substitution) -> Vec<bool>`, `pub fn polymorphize_substs(ctx: &mut TyCtxMut, substs: Substitution, used: &[bool]) -> Substitution`, `pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &Body) -> MonoItem`, `pub fn deduplicate(ctx: &mut TyCtxMut, items: &[MonoItemData]) -> Vec<MonoItemData>`
-- `pub mod post_mono_checks` — (functions are crate‑internal, not pub)
+- `pub mod post_mono_checks` — (crate‑internal; no public items)
 
 ---
 
@@ -348,7 +347,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 ## glyim-codegen-llvm
 
-- `pub struct LlvmBackend` — `new()`, `with_target(target_triple: impl Into<String>)`, `with_ty_ctx(ctx: TyCtx)`, `with_debug_info(enable: bool)`, `with_source_map(map: HashMap<FileId, (String, String)>)`, `default`; implements `CodegenBackend`
+- `pub struct LlvmBackend` — `new()`, `with_target(target_triple: impl Into<String>)`, `with_ty_ctx(ctx: TyCtx)`, `with_debug_info(enable: bool)`, `with_source_map(map: HashMap<FileId, (String, String)>)`, `with_opt_level(level: u8)`, `with_opt_for_size(size: bool)`, `default`; implements `CodegenBackend`
 
 ---
 
@@ -361,7 +360,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 ## glyim-pipeline
 
-- `pub struct Pipeline` — `compile_file(db: &mut Database, path: &Path, backend: &dyn CodegenBackend, output: &Path) -> CompResult<()>`
+- `pub struct Pipeline` — `compile_file(db: &mut Database, path: &Path, backend: &dyn CodegenBackend, output_path: &Path) -> CompResult<()>`
 
 ---
 
@@ -385,7 +384,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 - `pub struct Interpreter<'tcx>` — `new(tcx: &'tcx TyCtx)`, `with_step_limit(self, limit: usize) -> Self`, `with_recursion_limit(self, limit: usize) -> Self`, `add_function(&mut self, def_id: DefId, body: Body)`, `step_limit(&self) -> usize`, `recursion_limit(&self) -> usize`, `run_body(&mut self, body: &Body) -> InterpResult<()>`, `get_local_value(&self, local: LocalIdx) -> Option<&InterpValue>`
 - `pub enum InterpError` — `TimedOut`, `StackOverflow`, `Panic(String)`; implements `Display`, `Error`
-- `pub enum InterpValue` — `Int(i128)`, `Bool(bool)`, `Unit`, `Aggregate(Vec<InterpValue>)`, `Ref(usize)`; implements `PartialEq`
+- `pub enum InterpValue` — `Int(i128)`, `Uint(u128)`, `Bool(bool)`, `Unit`, `Aggregate(Vec<InterpValue>)`, `Ref(usize)`, `Float(f64)`, `String(String)`, `Fn(DefId)`, `ConstRef(DefId)`; implements `PartialEq`
 - `pub type InterpResult<T> = Result<T, InterpError>`
 
 ---
@@ -394,7 +393,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 - `pub unsafe extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8`
 - `pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize)`
-- `pub extern "C" fn glyim_drop_in_place(ptr: *mut u8)`
+- `pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8)`
 - `pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> !`
 - `pub use ALIGN_MAX`
 
@@ -459,8 +458,8 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 ## glyim-pilot (tools)
 
-This crate is not part of the compiler’s public API. It is a development tool and its public interface is not locked.
+This crate is a development tool and its public interface is not locked.
 
 ---
 
-**Note:** This contract reflects the exact public API as of the provided codebase (2026-05-17). Any addition, removal, or modification of these items requires a formal Change Request before being merged.
+**Note:** This contract reflects the exact public API as of the provided codebase (2026-05-18). Any addition, removal, or modification of these items requires a formal Change Request before being merged.
