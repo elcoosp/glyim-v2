@@ -11,8 +11,8 @@ fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
         for ch in line.chars() {
             if ch == '{' {
                 brace_stack.push((line_idx, col));
-            } else if ch == '}' {
-                if let Some((start_line, start_col)) = brace_stack.pop() {
+            } else if ch == '}'
+                && let Some((start_line, start_col)) = brace_stack.pop() {
                     ranges.push(FoldingRange {
                         start_line: start_line as u32,
                         start_character: Some(start_col as u32),
@@ -22,7 +22,6 @@ fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
                         collapsed_text: None,
                     });
                 }
-            }
             col += 1;
         }
     }

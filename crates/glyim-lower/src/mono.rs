@@ -166,7 +166,7 @@ impl MonoCtx {
                     self.scan_operand(arg);
                 }
             }
-            TerminatorKind::Drop { place, .. } => {
+            TerminatorKind::Drop { place: _, .. } => {
                 // In a real implementation we would get the type of the place from the body's local decls.
                 // Since we don't have access to the body here, we need to pass the type.
                 // This is a placeholder; the actual monomorphization collector will need to have

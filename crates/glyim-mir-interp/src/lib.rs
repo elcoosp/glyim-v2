@@ -804,7 +804,7 @@ impl<'tcx> Interpreter<'tcx> {
     fn interp_value_to_u128(&self, val: &InterpValue) -> u128 {
         match val {
             InterpValue::Int(i) => *i as u128,
-            InterpValue::Uint(u) => *u as u128,
+            InterpValue::Uint(u) => *u,
             InterpValue::Bool(b) => *b as u128,
             InterpValue::Unit => 0,
             InterpValue::Aggregate(fields) => {

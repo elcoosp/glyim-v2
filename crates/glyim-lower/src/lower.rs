@@ -1,6 +1,5 @@
 use glyim_core::IndexVec;
 use glyim_core::Name;
-use glyim_core::def_id::AdtId;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_mir::{BasicBlockIdx, CastKind, LocalIdx, ProjectionElem};
