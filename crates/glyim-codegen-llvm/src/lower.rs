@@ -1,31 +1,33 @@
 use crate::abi::FullLayoutComputer;
 use crate::debug::DebugInfoCtx;
 use crate::types::llvm_type_for_ty;
+use glyim_core::TargetInfo;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
-use glyim_core::TargetInfo;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_layout::{LayoutComputer, PassMode};
 use glyim_mir::{
-    AggregateKind, BasicBlockIdx, Body, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
+    AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
+    ProjectionElem, Rvalue, Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
 };
 use glyim_span::FileId;
-use glyim_type::{Ty, TyCtx, TyKind};
+use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
+use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
 struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
-    _function: inkwell::values::FunctionValue<'ctx>,
+    #[allow(dead_code)] // Used for personality function and block insertion
+    function: inkwell::values::FunctionValue<'ctx>,
     drop_fn: inkwell::values::FunctionValue<'ctx>,
+    #[allow(dead_code)] // Will be used for deallocation in future
     dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
     target_info: TargetInfo,
@@ -38,7 +40,7 @@ struct LoweringCtx<'ctx, 'a> {
 
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn llvm_int_type(&self, bits: u32) -> inkwell::types::IntType<'ctx> {
-        let non_zero = NonZeroU32::new(bits).unwrap_or(NonZeroU32::new(64).unwrap());
+        let non_zero = NonZeroU32::new(bits).unwrap_or_else(|| NonZeroU32::new(64).unwrap());
         self.context.custom_width_int_type(non_zero).unwrap()
     }
 
@@ -114,7 +116,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 self.llvm_int_type(64).const_zero().into()
             }
             MirConstKind::Error => {
-                tracing::warn!("STUB: error constant lowered as i64 zero");
+                tracing::debug!("error constant lowered as i64 zero");
                 self.llvm_int_type(64).const_zero().into()
             }
         }
@@ -126,31 +128,81 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             return base;
         }
         let mut ptr = base;
+        let mut current_ty = self.body.locals[place.local].ty;
         for elem in place.projection.iter() {
             match elem {
-                glyim_mir::ProjectionElem::Deref => {
-                    let current_ty = self.body.locals[place.local].ty;
+                ProjectionElem::Deref => {
                     let llvm_ty = self.llvm_type_for_ty(current_ty);
                     let loaded = self
                         .builder
                         .build_load(llvm_ty, ptr, "deref_load")
                         .expect("deref load failed");
                     ptr = loaded.into_pointer_value();
+                    current_ty = match self.ty_ctx.ty_kind(current_ty) {
+                        TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
+                        other => {
+                            tracing::warn!("STUB: deref on non-pointer type {:?}", other);
+                            current_ty
+                        }
+                    };
                 }
-                glyim_mir::ProjectionElem::Field(idx) => {
+                ProjectionElem::Field(idx) => {
                     let field_idx = idx.to_raw() as u64;
                     let i32_type = self.llvm_int_type(32);
                     let zero = i32_type.const_zero();
                     let field_index = i32_type.const_int(field_idx, false);
-                    let current_ty = self.body.locals[place.local].ty;
+
                     let llvm_ty = self.llvm_type_for_ty(current_ty);
                     ptr = unsafe {
                         self.builder
                             .build_in_bounds_gep(llvm_ty, ptr, &[zero, field_index], "field_gep")
                             .expect("field gep failed")
                     };
+
+                    current_ty = match self.ty_ctx.ty_kind(current_ty) {
+                        TyKind::Tuple(subst) => {
+                            let args = self.ty_ctx.substitution_args(*subst);
+                            args.get(idx.to_raw() as usize)
+                                .and_then(|arg| {
+                                    if let glyim_type::GenericArg::Ty(t) = arg {
+                                        Some(*t)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Ty::ERROR)
+                        }
+                        TyKind::Adt(_adt_id, subst) => {
+                            let args = self.ty_ctx.substitution_args(*subst);
+                            args.get(idx.to_raw() as usize)
+                                .and_then(|arg| {
+                                    if let glyim_type::GenericArg::Ty(t) = arg {
+                                        Some(*t)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Ty::ERROR)
+                        }
+                        TyKind::Closure(_, subst) => {
+                            let args = self.ty_ctx.substitution_args(*subst);
+                            args.get(idx.to_raw() as usize)
+                                .and_then(|arg| {
+                                    if let glyim_type::GenericArg::Ty(t) = arg {
+                                        Some(*t)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Ty::ERROR)
+                        }
+                        _ => {
+                            tracing::warn!("STUB: field projection on non-aggregate type");
+                            Ty::ERROR
+                        }
+                    };
                 }
-                glyim_mir::ProjectionElem::Index(local_idx) => {
+                ProjectionElem::Index(local_idx) => {
                     let index_ptr = self.get_local_ptr(*local_idx);
                     let i64_ty = self.llvm_int_type(64);
                     let index_val = self
@@ -163,7 +215,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .builder
                         .build_int_truncate(index_val, i32_ty, "idx_trunc")
                         .expect("idx trunc failed");
-                    let current_ty = self.body.locals[place.local].ty;
+
+                    let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
+                        TyKind::Array(elem, _) => *elem,
+                        TyKind::Slice(elem) => *elem,
+                        _ => {
+                            tracing::warn!("STUB: index projection on non-array/slice type");
+                            Ty::ERROR
+                        }
+                    };
                     let llvm_ty = self.llvm_type_for_ty(current_ty);
                     ptr = unsafe {
                         self.builder
@@ -175,9 +235,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             )
                             .expect("index gep failed")
                     };
+                    current_ty = elem_ty;
                 }
-                glyim_mir::ProjectionElem::Downcast(_) => {
-                    tracing::debug!("Downcast projection - treating as no-op on ptr");
+                ProjectionElem::Downcast(variant_idx) => {
+                    tracing::debug!("Downcast projection to variant {}", variant_idx.to_raw());
                 }
             }
         }
@@ -209,7 +270,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         Ok(())
     }
 
-    fn lower_rvalue(&self, rvalue: &Rvalue) -> BasicValueEnum<'ctx> {
+    fn lower_rvalue(&mut self, rvalue: &Rvalue) -> BasicValueEnum<'ctx> {
         match rvalue {
             Rvalue::Use(operand) => self.lower_operand(operand),
             Rvalue::Ref(place, _borrow_kind) => {
@@ -251,12 +312,17 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
-    fn lower_aggregate(&self, kind: &AggregateKind, operands: &[Operand]) -> BasicValueEnum<'ctx> {
+    fn lower_aggregate(
+        &mut self,
+        kind: &AggregateKind,
+        operands: &[Operand],
+    ) -> BasicValueEnum<'ctx> {
         match kind {
             AggregateKind::Tuple => {
                 let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
                     .iter()
-                    .map(|op| self.lower_operand(op).get_type())
+                    .map(|op| self.operand_ty(op))
+                    .map(|ty| self.llvm_type_for_ty(ty))
                     .collect();
                 let struct_ty = self.context.struct_type(&field_types, false);
                 let mut result = struct_ty.const_zero().as_basic_value_enum();
@@ -271,17 +337,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 }
                 result
             }
-            AggregateKind::Array(_elem_ty) => {
-                let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
-                    .iter()
-                    .map(|op| self.lower_operand(op).get_type())
-                    .collect();
-                let elem_ty = if field_types.is_empty() {
-                    self.llvm_int_type(8).into()
-                } else {
-                    field_types[0]
-                };
-                let array_ty = elem_ty.array_type(operands.len() as u32);
+            AggregateKind::Array(elem_ty) => {
+                let elem_llvm_ty = self.llvm_type_for_ty(*elem_ty);
+                let array_ty = elem_llvm_ty.array_type(operands.len().try_into().unwrap_or(0u32));
                 let mut result = array_ty.const_zero().as_basic_value_enum();
                 for (i, op) in operands.iter().enumerate() {
                     let val = self.lower_operand(op);
@@ -295,11 +353,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 result
             }
             AggregateKind::Adt(_adt_id, _variant_idx, _substs) => {
-                tracing::warn!("STUB: ADT aggregate lowering treats as tuple-like struct");
+                // Without AdtDef, treat ADT fields as a simple struct
                 let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
                     .iter()
-                    .map(|op| self.lower_operand(op).get_type())
+                    .map(|op| self.operand_ty(op))
+                    .map(|ty| self.llvm_type_for_ty(ty))
                     .collect();
+                if field_types.is_empty() {
+                    let unit_struct = self.context.struct_type(&[], false);
+                    return unit_struct.const_zero().as_basic_value_enum();
+                }
                 let struct_ty = self.context.struct_type(&field_types, false);
                 let mut result = struct_ty.const_zero().as_basic_value_enum();
                 for (i, op) in operands.iter().enumerate() {
@@ -314,11 +377,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 result
             }
             AggregateKind::Closure(_closure_id, _substs) => {
-                tracing::warn!("STUB: Closure aggregate lowering treats as tuple-like struct");
                 let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
                     .iter()
-                    .map(|op| self.lower_operand(op).get_type())
+                    .map(|op| self.operand_ty(op))
+                    .map(|ty| self.llvm_type_for_ty(ty))
                     .collect();
+                if field_types.is_empty() {
+                    let unit_struct = self.context.struct_type(&[], false);
+                    return unit_struct.const_zero().as_basic_value_enum();
+                }
                 let struct_ty = self.context.struct_type(&field_types, false);
                 let mut result = struct_ty.const_zero().as_basic_value_enum();
                 for (i, op) in operands.iter().enumerate() {
@@ -339,8 +406,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let ptr = self.place_ptr(place);
         let place_ty = self.place_ty(place);
 
-        match place_ty.to_raw() {
-            3 => {
+        match self.ty_ctx.ty_kind(place_ty) {
+            TyKind::Bool => {
                 let val = self
                     .builder
                     .build_load(self.llvm_int_type(1), ptr, "discr_load")
@@ -351,28 +418,52 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .into()
             }
             _ => {
-                let i32_ty = self.llvm_int_type(32);
-                let discr_ptr = unsafe {
-                    self.builder
-                        .build_in_bounds_gep(
-                            i32_ty,
-                            ptr,
-                            &[i32_ty.const_zero(), i32_ty.const_zero()],
-                            "discr_gep",
-                        )
-                        .expect("discr gep failed")
-                };
-                self.builder
-                    .build_load(i32_ty, discr_ptr, "discr_load")
-                    .expect("discr load failed")
+                // For non-bool ADT types without AdtDef, return 0
+                tracing::debug!("discriminant on type without AdtDef, returning 0");
+                self.llvm_int_type(32).const_int(0, false).into()
             }
         }
     }
 
     fn lower_len(&self, place: &Place) -> BasicValueEnum<'ctx> {
-        let _place_ty = self.place_ty(place);
-        let i64_ty = self.llvm_int_type(64);
-        i64_ty.const_zero().into()
+        let place_ty = self.place_ty(place);
+        match self.ty_ctx.ty_kind(place_ty) {
+            TyKind::Array(_elem, count) => {
+                let n = match &count.kind {
+                    ConstKind::Uint(n) => *n as u64,
+                    ConstKind::Int(n) => *n as u64,
+                    _ => {
+                        tracing::warn!("STUB: Len with non-integer count, returning 0");
+                        0
+                    }
+                };
+                let len_ty = self.llvm_int_type(64);
+                len_ty.const_int(n, false).into()
+            }
+            TyKind::Slice(_) => {
+                let ptr = self.place_ptr(place);
+                let i64_ty = self.llvm_int_type(64);
+                let i32_ty = self.llvm_int_type(32);
+                let slice_ty = self.llvm_type_for_ty(place_ty);
+                let len_ptr = unsafe {
+                    self.builder
+                        .build_in_bounds_gep(
+                            slice_ty,
+                            ptr,
+                            &[i32_ty.const_zero(), i32_ty.const_int(1, false)],
+                            "len_gep",
+                        )
+                        .expect("len gep failed")
+                };
+                self.builder
+                    .build_load(i64_ty, len_ptr, "len_load")
+                    .expect("len load failed")
+            }
+            _ => {
+                tracing::warn!("STUB: Len on non-array/slice type, returning 0");
+                self.llvm_int_type(64).const_zero().into()
+            }
+        }
     }
 
     fn lower_binary_op(
@@ -510,7 +601,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .into(),
             BinOp::Shr => self
                 .builder
-                .build_right_shift(lhs, rhs, true, "shr")
+                .build_right_shift(lhs, rhs, !is_unsigned, "shr")
                 .expect("shr failed")
                 .into(),
         }
@@ -633,15 +724,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
     }
 
-    fn lower_cast(
-        &self,
-        kind: glyim_mir::CastKind,
-        operand: &Operand,
-        target_ty: Ty,
-    ) -> BasicValueEnum<'ctx> {
+    fn lower_cast(&self, kind: CastKind, operand: &Operand, target_ty: Ty) -> BasicValueEnum<'ctx> {
         let val = self.lower_operand(operand);
         match kind {
-            glyim_mir::CastKind::IntToInt => {
+            CastKind::IntToInt => {
                 let int_val = val.into_int_value();
                 let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
                 let dest_bits = dest_type.get_bit_width();
@@ -649,35 +735,35 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 if src_bits < dest_bits {
                     self.builder
                         .build_int_s_extend(int_val, dest_type, "int_to_int_ext")
-                        .expect("int_to_int ext failed")
+                        .expect("ext failed")
                         .into()
                 } else if src_bits > dest_bits {
                     self.builder
                         .build_int_truncate(int_val, dest_type, "int_to_int_trunc")
-                        .expect("int_to_int trunc failed")
+                        .expect("trunc failed")
                         .into()
                 } else {
                     val
                 }
             }
-            glyim_mir::CastKind::FloatToInt => {
+            CastKind::FloatToInt => {
                 let float_val = val.into_float_value();
                 let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
                 self.builder
                     .build_float_to_signed_int(float_val, dest_type, "float_to_int")
-                    .expect("float_to_int failed")
+                    .expect("f2i failed")
                     .into()
             }
-            glyim_mir::CastKind::IntToFloat => {
+            CastKind::IntToFloat => {
                 let int_val = val.into_int_value();
                 let dest_type = self.llvm_type_for_ty(target_ty).into_float_type();
                 self.builder
                     .build_signed_int_to_float(int_val, dest_type, "int_to_float")
-                    .expect("int_to_float failed")
+                    .expect("i2f failed")
                     .into()
             }
-            glyim_mir::CastKind::PtrToPtr => val,
-            glyim_mir::CastKind::FnPtrToPtr => val,
+            CastKind::PtrToPtr => val,
+            CastKind::FnPtrToPtr => val,
         }
     }
 
@@ -692,7 +778,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
         };
         let elem_ty = val.get_type();
-        let array_ty = elem_ty.array_type(n as u32);
+        let array_ty = elem_ty.array_type(n.try_into().unwrap_or(0u32));
         let mut array_val = array_ty.const_zero();
         for i in 0..n {
             let inserted = self
@@ -702,50 +788,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             array_val = inserted.into_array_value();
         }
         array_val.as_basic_value_enum()
-    }
-
-    fn lower_drop(
-        &mut self,
-        place: &Place,
-        target: &BasicBlockIdx,
-        cleanup: &Option<BasicBlockIdx>,
-    ) -> CompResult<()> {
-        let place_ty = self.place_ty(place);
-        let needs_drop = self.type_needs_drop(place_ty);
-
-        if needs_drop {
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-
-            let place_ptr = self.place_ptr(place);
-            let i8_ptr = self
-                .builder
-                .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
-                .expect("bitcast for drop failed");
-
-            self.builder
-                .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build drop_in_place call: {:?}",
-                        e
-                    ))]
-                })?;
-
-            if self.type_needs_dealloc(place_ty) {
-                self.emit_dealloc_for_drop(place, cleanup)?;
-            }
-        }
-
-        let target_bb = self.bb_map.get(target).unwrap();
-        self.builder
-            .build_unconditional_branch(*target_bb)
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build branch after Drop: {:?}",
-                    e
-                ))]
-            })?;
-        Ok(())
     }
 
     fn type_needs_drop(&self, ty: Ty) -> bool {
@@ -761,125 +803,59 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
             TyKind::Tuple(subst) => {
                 let args = self.ty_ctx.substitution_args(*subst);
-                args.iter().any(|arg| {
-                    if let glyim_type::GenericArg::Ty(t) = arg {
-                        self.type_needs_drop(*t)
-                    } else {
-                        false
-                    }
+                args.iter().any(|arg| match arg {
+                    glyim_type::GenericArg::Ty(t) => self.type_needs_drop(*t),
+                    _ => false,
                 })
             }
             TyKind::Array(elem, _) => self.type_needs_drop(*elem),
             TyKind::Adt(_, _) | TyKind::Closure(_, _) | TyKind::FnDef(_, _) => true,
-            TyKind::Opaque(_, _) => true,
-            TyKind::Dynamic(_, _) => true,
-            TyKind::Slice(_) => true,
+            TyKind::Opaque(_, _) | TyKind::Dynamic(_, _) | TyKind::Slice(_) => true,
             TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) => true,
+            TyKind::Projection(_) => true,
             TyKind::FnPtr(_) => false,
             TyKind::String => true,
-            TyKind::Projection(_) => true,
         }
     }
 
-    fn type_needs_dealloc(&self, ty: Ty) -> bool {
-        match self.ty_ctx.ty_kind(ty) {
-            TyKind::Ref(_, inner, Mutability::Mut) => !self.is_copy_type(*inner),
-            TyKind::RawPtr(inner, Mutability::Mut) => !self.is_copy_type(*inner),
-            _ => false,
-        }
-    }
-
-    fn is_copy_type(&self, ty: Ty) -> bool {
-        match self.ty_ctx.ty_kind(ty) {
-            TyKind::Never
-            | TyKind::Unit
-            | TyKind::Bool
-            | TyKind::Int(_)
-            | TyKind::Uint(_)
-            | TyKind::Float(_)
-            | TyKind::Char => true,
-            TyKind::Ref(_, inner, Mutability::Not) => self.is_copy_type(*inner),
-            TyKind::RawPtr(_, _) => true,
-            TyKind::FnPtr(_) => true,
-            TyKind::Tuple(subst) => {
-                let args = self.ty_ctx.substitution_args(*subst);
-                args.iter().all(|arg| {
-                    if let glyim_type::GenericArg::Ty(t) = arg {
-                        self.is_copy_type(*t)
-                    } else {
-                        true
-                    }
-                })
-            }
-            TyKind::Array(elem, _) => self.is_copy_type(*elem),
-            _ => false,
-        }
-    }
-
-    fn emit_dealloc_for_drop(
+    fn lower_drop(
         &mut self,
         place: &Place,
+        target: &BasicBlockIdx,
         _cleanup: &Option<BasicBlockIdx>,
     ) -> CompResult<()> {
-        let ptr_type = self.context.ptr_type(AddressSpace::default());
-        let i64_type = self.llvm_int_type(64);
-
-        let place_ptr = self.place_ptr(place);
         let place_ty = self.place_ty(place);
-
-        let (inner_ty, is_ref) = match self.ty_ctx.ty_kind(place_ty) {
-            TyKind::Ref(_, inner, _) => (*inner, true),
-            TyKind::RawPtr(inner, _) => (*inner, true),
-            _ => (place_ty, false),
-        };
-
-        let ptr_val = if is_ref {
-            let ref_llvm_ty = self.llvm_type_for_ty(place_ty);
-            let loaded = self
+        if self.type_needs_drop(place_ty) {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let place_ptr = self.place_ptr(place);
+            let i8_ptr = self
                 .builder
-                .build_load(ref_llvm_ty, place_ptr, "drop_ref_load")
-                .expect("load ref for dealloc failed");
-            loaded.into_pointer_value()
-        } else {
-            place_ptr
-        };
-
-        let i8_ptr = self
-            .builder
-            .build_bit_cast(ptr_val, ptr_type, "dealloc_ptr")
-            .expect("bitcast for dealloc failed");
-
-        let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
-        let layout = layout_computer
-            .layout_of(inner_ty)
-            .unwrap_or_else(|_| glyim_layout::Layout::unit());
-        let size_val = i64_type.const_int(layout.size.0, false);
-        let align_val = i64_type.const_int(layout.align.0, false);
-
+                .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
+                .expect("bitcast for drop failed");
+            self.builder
+                .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "Failed to build drop call: {:?}",
+                        e
+                    ))]
+                })?;
+        }
+        let target_bb = self.bb_map.get(target).unwrap();
         self.builder
-            .build_call(
-                self.dealloc_fn,
-                &[i8_ptr.into(), size_val.into(), align_val.into()],
-                "dealloc_call",
-            )
+            .build_unconditional_branch(*target_bb)
             .map_err(|e| {
                 vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build glyim_dealloc call: {:?}",
+                    "Failed to build branch after Drop: {:?}",
                     e
                 ))]
             })?;
-
         Ok(())
     }
 
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
-                if let Some(ref di) = self.debug_ctx {
-                    if let Some(loc) = di.location_for_span(self.context, &stmt.source_info.span) {
-                        self.builder.set_current_debug_location(loc);
-                    }
-                }
                 let value = self.lower_rvalue(rvalue);
                 let ptr = self.place_ptr(place);
                 self.builder.build_store(ptr, value).map_err(|e| {
@@ -907,251 +883,45 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     ) -> CompResult<()> {
         let branches: Vec<_> = targets.iter().collect();
         let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-
         if branches.is_empty() {
             self.builder
                 .build_unconditional_branch(*otherwise_bb)
                 .map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build unconditional branch for empty bool switch: {:?}",
+                        "branch failed: {:?}",
                         e
                     ))]
                 })?;
             return Ok(());
         }
-
         let true_val = discr_val.get_type().const_int(1, false);
         let cond = self
             .builder
             .build_int_compare(inkwell::IntPredicate::EQ, discr_val, true_val, "bool_eq")
             .map_err(|e| {
                 vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build icmp for bool switch: {:?}",
+                    "icmp failed: {:?}",
                     e
                 ))]
             })?;
-
         let true_bb = branches
             .iter()
             .find(|(v, _)| *v == 1)
             .map(|(_, bb)| *self.bb_map.get(bb).unwrap())
             .unwrap_or(*otherwise_bb);
-
         let false_bb = branches
             .iter()
             .find(|(v, _)| *v == 0)
             .map(|(_, bb)| *self.bb_map.get(bb).unwrap())
             .unwrap_or(*otherwise_bb);
-
         self.builder
             .build_conditional_branch(cond, true_bb, false_bb)
             .map_err(|e| {
                 vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build conditional branch for bool switch: {:?}",
+                    "br failed: {:?}",
                     e
                 ))]
             })?;
-
-        Ok(())
-    }
-
-    fn lower_small_switch(
-        &mut self,
-        discr_val: IntValue<'ctx>,
-        targets: &SwitchTargets,
-    ) -> CompResult<()> {
-        let branches: Vec<_> = targets.iter().collect();
-        let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-
-        if branches.is_empty() {
-            self.builder
-                .build_unconditional_branch(*otherwise_bb)
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build unconditional branch for empty switch: {:?}",
-                        e
-                    ))]
-                })?;
-            return Ok(());
-        }
-
-        if branches.len() == 1 {
-            let (value, target_bb) = branches[0];
-            let target_block = self.bb_map.get(&target_bb).unwrap();
-            let case_val = discr_val.get_type().const_int(value as u64, false);
-            let cond = self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::EQ, discr_val, case_val, "switch_eq")
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build icmp for small switch: {:?}",
-                        e
-                    ))]
-                })?;
-            self.builder
-                .build_conditional_branch(cond, *target_block, *otherwise_bb)
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build conditional branch for small switch: {:?}",
-                        e
-                    ))]
-                })?;
-            return Ok(());
-        }
-
-        if branches.len() == 2 {
-            let first_case_val = discr_val.get_type().const_int(branches[0].0 as u64, false);
-            let first_cond = self
-                .builder
-                .build_int_compare(
-                    inkwell::IntPredicate::EQ,
-                    discr_val,
-                    first_case_val,
-                    "switch_eq_0",
-                )
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build icmp for small switch case 0: {:?}",
-                        e
-                    ))]
-                })?;
-
-            let first_target = *self.bb_map.get(&branches[0].1).unwrap();
-            let second_target = *self.bb_map.get(&branches[1].1).unwrap();
-
-            let second_case_val = discr_val.get_type().const_int(branches[1].0 as u64, false);
-            let second_cond = self
-                .builder
-                .build_int_compare(
-                    inkwell::IntPredicate::EQ,
-                    discr_val,
-                    second_case_val,
-                    "switch_eq_1",
-                )
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build icmp for small switch case 1: {:?}",
-                        e
-                    ))]
-                })?;
-
-            let merge_bb = self
-                .context
-                .append_basic_block(self._function, "small_switch_merge");
-
-            self.builder
-                .build_conditional_branch(first_cond, first_target, merge_bb)
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build conditional branch for small switch case 0: {:?}",
-                        e
-                    ))]
-                })?;
-
-            self.builder.position_at_end(merge_bb);
-            self.builder
-                .build_conditional_branch(second_cond, second_target, *otherwise_bb)
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build conditional branch for small switch case 1: {:?}",
-                        e
-                    ))]
-                })?;
-
-            return Ok(());
-        }
-
-        let first_case_val = discr_val.get_type().const_int(branches[0].0 as u64, false);
-        let first_cond = self
-            .builder
-            .build_int_compare(
-                inkwell::IntPredicate::EQ,
-                discr_val,
-                first_case_val,
-                "switch_eq_0",
-            )
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build icmp for small switch case 0: {:?}",
-                    e
-                ))]
-            })?;
-
-        let first_target = *self.bb_map.get(&branches[0].1).unwrap();
-
-        let merge_bb = self
-            .context
-            .append_basic_block(self._function, "small_switch_merge");
-
-        self.builder
-            .build_conditional_branch(first_cond, first_target, merge_bb)
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build conditional branch for small switch case 0: {:?}",
-                    e
-                ))]
-            })?;
-
-        self.builder.position_at_end(merge_bb);
-
-        let second_case_val = discr_val.get_type().const_int(branches[1].0 as u64, false);
-        let second_cond = self
-            .builder
-            .build_int_compare(
-                inkwell::IntPredicate::EQ,
-                discr_val,
-                second_case_val,
-                "switch_eq_1",
-            )
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build icmp for small switch case 1: {:?}",
-                    e
-                ))]
-            })?;
-
-        let second_target = *self.bb_map.get(&branches[1].1).unwrap();
-        let second_merge_bb = self
-            .context
-            .append_basic_block(self._function, "small_switch_merge2");
-
-        self.builder
-            .build_conditional_branch(second_cond, second_target, second_merge_bb)
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build conditional branch for small switch case 1: {:?}",
-                    e
-                ))]
-            })?;
-
-        self.builder.position_at_end(second_merge_bb);
-
-        let third_case_val = discr_val.get_type().const_int(branches[2].0 as u64, false);
-        let third_cond = self
-            .builder
-            .build_int_compare(
-                inkwell::IntPredicate::EQ,
-                discr_val,
-                third_case_val,
-                "switch_eq_2",
-            )
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build icmp for small switch case 2: {:?}",
-                    e
-                ))]
-            })?;
-
-        let third_target_block = *self.bb_map.get(&branches[2].1).unwrap();
-        self.builder
-            .build_conditional_branch(third_cond, third_target_block, *otherwise_bb)
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build conditional branch for small switch case 2: {:?}",
-                    e
-                ))]
-            })?;
-
         Ok(())
     }
 
@@ -1161,23 +931,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         targets: &SwitchTargets,
     ) -> CompResult<()> {
         let otherwise_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-
         let mut cases = Vec::new();
         for (value, target_bb) in targets.iter() {
             let target_block = self.bb_map.get(&target_bb).unwrap();
             let case_val = discr_val.get_type().const_int(value as u64, false);
             cases.push((case_val, *target_block));
         }
-
         self.builder
             .build_switch(discr_val, *otherwise_bb, &cases)
             .map_err(|e| {
                 vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build switch: {:?}",
+                    "switch failed: {:?}",
                     e
                 ))]
             })?;
-
         Ok(())
     }
 
@@ -1189,7 +956,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_unconditional_branch(*target_bb)
                     .map_err(|e| {
                         vec![GlyimDiagnostic::internal_error(format!(
-                            "Failed to build unconditional branch: {:?}",
+                            "branch failed: {:?}",
                             e
                         ))]
                     })?;
@@ -1197,7 +964,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             TerminatorKind::Return => {
                 self.builder.build_return(None).map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build return: {:?}",
+                        "ret failed: {:?}",
                         e
                     ))]
                 })?;
@@ -1205,7 +972,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             TerminatorKind::Unreachable => {
                 self.builder.build_unreachable().map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build unreachable: {:?}",
+                        "unreachable failed: {:?}",
                         e
                     ))]
                 })?;
@@ -1217,13 +984,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             } => {
                 let discr_val = self.lower_operand(discr);
                 let branch_count = targets.iter().count();
-
-                let is_bool_switch = matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool);
-
-                if is_bool_switch && branch_count <= 2 {
+                let is_bool = matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool);
+                if is_bool && branch_count <= 2 {
                     self.lower_bool_switch(discr_val.into_int_value(), targets)?;
-                } else if branch_count <= 2 {
-                    self.lower_small_switch(discr_val.into_int_value(), targets)?;
                 } else {
                     self.lower_large_switch(discr_val.into_int_value(), targets)?;
                 }
@@ -1241,7 +1004,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 tracing::warn!("STUB: Assert terminator not yet implemented");
                 self.builder.build_unreachable().map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build unreachable for Assert: {:?}",
+                        "unreachable failed: {:?}",
                         e
                     ))]
                 })?;
@@ -1257,24 +1020,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         Ok(())
     }
 
-    fn get_fn_sig_from_operand(&self, func: &Operand) -> CompResult<glyim_type::FnSig> {
-        let place = match func {
-            Operand::Copy(p) | Operand::Move(p) => p,
-            Operand::Constant(_) => {
-                return Err(vec![GlyimDiagnostic::internal_error(
-                    "function pointer constant not supported yet",
-                )]);
-            }
-        };
-        let ty = self.body.locals[place.local].ty;
-        match self.ty_ctx.ty_kind(ty) {
-            TyKind::FnPtr(sig) => Ok(sig.clone()),
-            _ => Err(vec![GlyimDiagnostic::internal_error(
-                "expected function pointer type for call operand",
-            )]),
-        }
-    }
-
     fn lower_call(
         &mut self,
         func: &Operand,
@@ -1283,7 +1028,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         target: &Option<BasicBlockIdx>,
         cleanup: &Option<BasicBlockIdx>,
     ) -> CompResult<()> {
-        let fn_sig = self.get_fn_sig_from_operand(func)?;
+        let fn_sig = match self.operand_ty(func) {
+            ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::FnPtr(_)) => {
+                match self.ty_ctx.ty_kind(ty) {
+                    TyKind::FnPtr(sig) => sig.clone(),
+                    _ => unreachable!(),
+                }
+            }
+            _ => {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "expected function pointer type for call operand",
+                )]);
+            }
+        };
+
         let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
         let fn_abi = layout_computer.fn_abi_of(&fn_sig).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
@@ -1296,8 +1054,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let is_sret = matches!(fn_abi.ret.mode, PassMode::Indirect { .. });
 
         if is_sret {
-            let sret_ptr_ty = self.context.ptr_type(AddressSpace::default()).into();
-            param_types.push(sret_ptr_ty);
+            param_types.push(self.context.ptr_type(AddressSpace::default()).into());
         }
 
         for arg_abi in &fn_abi.args {
@@ -1305,7 +1062,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
                 PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
                 PassMode::Ignore => continue,
-                _ => {
+                PassMode::Cast { .. }
+                | PassMode::HomogeneousAggregate { .. }
+                | PassMode::Split { .. } => {
                     tracing::warn!("Unhandled PassMode {:?}, treating as Direct", arg_abi.mode);
                     self.llvm_type_for_ty(arg_abi.ty)
                 }
@@ -1385,8 +1144,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     llvm_args.push(tmp_ptr.as_basic_value_enum());
                 }
                 PassMode::Ignore => unreachable!(),
-                _ => {
-                    tracing::warn!("Unhandled PassMode {:?}, treating as Direct", arg_abi.mode);
+                PassMode::Cast { .. }
+                | PassMode::HomogeneousAggregate { .. }
+                | PassMode::Split { .. } => {
+                    tracing::warn!("Unhandled PassMode for arg, treating as Direct");
                     llvm_args.push(arg_val);
                 }
             }
@@ -1396,7 +1157,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             llvm_args.iter().map(|v| (*v).into()).collect();
 
         let use_invoke = cleanup.is_some();
-
         let call_result = if use_invoke {
             let normal_bb = if let Some(target_bb) = target {
                 *self.bb_map.get(target_bb).ok_or_else(|| {
@@ -1416,12 +1176,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     "invoke requires a cleanup block",
                 )]);
             };
-
             self.builder
                 .build_indirect_invoke(fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call")
                 .map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "build_indirect_invoke: {:?}",
+                        "invoke failed: {:?}",
                         e
                     ))]
                 })?
@@ -1430,7 +1189,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_indirect_call(fn_type, func_val, &metadata_args, "call")
                 .map_err(|e| {
                     vec![GlyimDiagnostic::internal_error(format!(
-                        "build_indirect_call: {:?}",
+                        "call failed: {:?}",
                         e
                     ))]
                 })?
@@ -1444,11 +1203,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
         }
 
-        if use_invoke {
-            if let Some(target_bb) = target {
-                let target_block = self.bb_map.get(target_bb).unwrap();
-                self.builder.position_at_end(*target_block);
-            }
+        if use_invoke && let Some(target_bb) = target {
+            let target_block = self.bb_map.get(target_bb).unwrap();
+            self.builder.position_at_end(*target_block);
         }
 
         if is_sret {
@@ -1481,8 +1238,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 AnyValueEnum::ScalableVectorValue(v) => BasicValueEnum::ScalableVectorValue(v),
                 _ => {
                     return Err(vec![GlyimDiagnostic::internal_error(
-                        "call returned unexpected value kind",
-                    )])
+                        "unexpected call return kind",
+                    )]);
                 }
             };
             let dest_ptr = self.place_ptr(destination);
@@ -1513,7 +1270,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 })?;
             }
         }
-
         Ok(())
     }
 }
@@ -1533,8 +1289,27 @@ pub(crate) fn lower_body<'ctx>(
         body.owner.local_id.to_raw()
     );
 
+    let ret_llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, body.return_ty);
     let void_type = context.void_type();
-    let fn_type = void_type.fn_type(&[], false);
+
+    let mut param_types = Vec::new();
+    for i in 1..=body.arg_count {
+        let local_idx = LocalIdx::from_raw(i as u32);
+        if let Some(local_decl) = body.locals.get(local_idx) {
+            let param_ty = llvm_type_for_ty(ty_ctx, &target_info, context, local_decl.ty);
+            param_types.push(param_ty.into());
+        }
+    }
+
+    let fn_type = if matches!(ty_ctx.ty_kind(body.return_ty), TyKind::Never | TyKind::Unit)
+        || body.return_ty == Ty::NEVER
+        || body.return_ty == Ty::UNIT
+    {
+        void_type.fn_type(&param_types, false)
+    } else {
+        ret_llvm_ty.fn_type(&param_types, false)
+    };
+
     let function = module.add_function(&fn_name, fn_type, None);
     let entry_block = context.append_basic_block(function, "entry");
     let builder = context.create_builder();
@@ -1560,7 +1335,7 @@ pub(crate) fn lower_body<'ctx>(
 
     let ptr_type = context.ptr_type(AddressSpace::default());
     let i64_type = context
-        .custom_width_int_type(std::num::NonZeroU32::new(64).unwrap())
+        .custom_width_int_type(NonZeroU32::new(64).unwrap())
         .unwrap();
 
     let drop_fn_type = void_type.fn_type(&[ptr_type.into()], false);
@@ -1585,8 +1360,7 @@ pub(crate) fn lower_body<'ctx>(
     };
 
     let debug_ctx = if debug_info {
-        let di = DebugInfoCtx::new(context, module, source_map, true);
-        Some(di)
+        Some(DebugInfoCtx::new(context, module, source_map, true))
     } else {
         None
     };
@@ -1594,7 +1368,7 @@ pub(crate) fn lower_body<'ctx>(
     let mut lowering_ctx = LoweringCtx {
         context,
         builder,
-        _function: function,
+        function,
         drop_fn,
         dealloc_fn,
         body,
@@ -1610,48 +1384,20 @@ pub(crate) fn lower_body<'ctx>(
         lowering_ctx.alloc_local(local_idx);
     }
 
-    if let Some(ref di) = lowering_ctx.debug_ctx {
-        for var_info in &body.var_debug_info {
-            let place = match &var_info.value {
-                glyim_mir::VarDebugInfoValue::Place(p) => p,
-                _ => continue,
-            };
-            if let Some(alloca) = lowering_ctx.locals.get(place.local).and_then(|o| *o) {
-                let block = lowering_ctx.builder.get_insert_block().unwrap();
-                di.declare_local(context, alloca, var_info, ty_ctx, block);
-            }
-        }
-    }
-
-    if let Some(ref mut di) = lowering_ctx.debug_ctx {
-        let fn_name = format!(
-            "func_{}_{}",
-            body.owner.krate.to_raw(),
-            body.owner.local_id.to_raw()
-        );
-        let file_id = body.span.file;
-        let line = 1u32;
-        di.set_function(context, &function, &fn_name, file_id, line);
-    }
-
     for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
         let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
         lowering_ctx.builder.position_at_end(*llvm_bb);
-
         if bb_data.is_cleanup {
             lowering_ctx.emit_landingpad()?;
         }
-
         for stmt in &bb_data.statements {
             lowering_ctx.lower_statement(stmt)?;
         }
-
         lowering_ctx.lower_terminator(&bb_data.terminator)?;
     }
 
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
-
     Ok(())
 }

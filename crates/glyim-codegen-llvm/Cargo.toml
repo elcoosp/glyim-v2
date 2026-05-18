@@ -1,19 +1,19 @@
 [package]
 name = "glyim-codegen-llvm"
-version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+version.workspace = true
 
 [dependencies]
-glyim-layout = { workspace = true }
-tracing = { workspace = true }
-glyim-codegen = { workspace = true }
-glyim-diag = { workspace = true }
-glyim-mir = { workspace = true }
-glyim-core = { workspace = true }
-glyim-span = { workspace = true }
-glyim-type = { workspace = true }
 inkwell = { workspace = true, features = ["llvm22-1"] }
-
+glyim-codegen = { workspace = true }
+glyim-mir = { workspace = true }
+glyim-diag = { workspace = true }
+glyim-core = { workspace = true }
+glyim-type = { workspace = true }
+glyim-layout = { workspace = true }
+glyim-span = { workspace = true }
+tracing = { workspace = true }
 [dev-dependencies]
+tempfile = "3"
+glyim-core = { workspace = true }
 glyim-test = { workspace = true }
-tempfile = {workspace=true}
