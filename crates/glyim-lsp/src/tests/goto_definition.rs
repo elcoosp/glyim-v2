@@ -68,7 +68,6 @@ fn goto_definition_returns_location() {
 
 #[test]
 #[ignore]
-#[ignore]
 fn goto_definition_cross_file() {
     let analysis = AnalysisDatabase::new();
     let path1 = get_test_path("main.g");

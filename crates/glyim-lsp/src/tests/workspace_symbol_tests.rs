@@ -3,7 +3,6 @@ use crate::{AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::*;
 use std::path::PathBuf;
-use url::Url;
 
 fn get_test_path(filename: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -60,7 +59,6 @@ fn workspace_symbols_fuzzy_search() {
 }
 
 #[test]
-#[ignore]
 #[ignore]
 fn workspace_symbols_fuzzy_matching_limit() {
     let analysis = AnalysisDatabase::new();

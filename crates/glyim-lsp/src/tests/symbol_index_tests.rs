@@ -103,7 +103,6 @@ fn multi_file_symbols() {
 
 #[test]
 #[ignore]
-#[ignore]
 fn query_prefix_and_contains() {
     let mut index = SymbolIndex::new();
     let file = FileId::from_raw(1);
