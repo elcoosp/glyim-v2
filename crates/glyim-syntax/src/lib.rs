@@ -274,3 +274,6 @@ ast_node!(CallExpr, SyntaxKind::CallExpr);
 ast_node!(BinaryExpr, SyntaxKind::BinaryExpr);
 ast_node!(PathExpr, SyntaxKind::PathExpr);
 ast_node!(LitExpr, SyntaxKind::LitExpr);
+
+#[cfg(test)]
+mod tests;

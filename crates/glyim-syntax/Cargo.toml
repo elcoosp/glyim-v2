@@ -7,3 +7,6 @@ version.workspace = true
 glyim-core = { workspace = true }
 rowan = { workspace = true }
 num_enum = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }
