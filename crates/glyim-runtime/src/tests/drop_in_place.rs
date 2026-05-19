@@ -1,36 +1,48 @@
 //! Tests for glyim_drop_in_place FFI function.
+//!
+//! Tests that drop_in_place correctly calls the provided drop function
+//! and handles null/None cases safely.
 
-use crate::{glyim_alloc, glyim_dealloc, glyim_drop_in_place};
+use crate::{DropFn, glyim_alloc, glyim_dealloc, glyim_drop_in_place};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
-fn drop_in_place_is_callable() {
+fn test_drop_in_place_is_callable() {
     let ptr = glyim_alloc(8, 8);
     assert!(!ptr.is_null());
     unsafe {
         let typed = ptr as *mut u64;
         typed.write(12345u64);
     }
-    // glyim_drop_in_place is a stub; it should not crash
+    // glyim_drop_in_place with None (trivially destructible) should not crash
     unsafe {
-        glyim_drop_in_place(ptr);
+        glyim_drop_in_place(ptr, None);
     }
-    // Clean up (note: drop_in_place is a stub that doesn't actually drop,
-    // so we still need to dealloc)
+    // After drop_in_place with no drop_fn, memory is still valid
+    // (the type is trivially destructible)
+    unsafe {
+        let typed = ptr as *mut u64;
+        assert_eq!(
+            *typed, 12345u64,
+            "trivially destructible types should not be modified"
+        );
+    }
     unsafe {
         glyim_dealloc(ptr, 8, 8);
     }
 }
 
 #[test]
-fn drop_in_place_null_pointer() {
+fn test_drop_in_place_null_pointer() {
     // Should not crash even with null
     unsafe {
-        glyim_drop_in_place(std::ptr::null_mut());
+        glyim_drop_in_place(std::ptr::null_mut(), None);
     }
 }
 
 #[test]
-fn drop_in_place_sequence() {
+fn test_alloc_and_drop_in_place_sequence() {
+    // Simulates the pattern: allocate, write, drop_in_place, dealloc
     for i in 0..10 {
         let ptr = glyim_alloc(16, 8);
         assert!(!ptr.is_null(), "allocation {} failed", i);
@@ -38,7 +50,7 @@ fn drop_in_place_sequence() {
             std::ptr::write_bytes(ptr, i as u8, 16);
         }
         unsafe {
-            glyim_drop_in_place(ptr);
+            glyim_drop_in_place(ptr, None);
         }
         unsafe {
             glyim_dealloc(ptr, 16, 8);
@@ -47,7 +59,8 @@ fn drop_in_place_sequence() {
 }
 
 #[test]
-fn drop_in_place_multiple_calls() {
+fn test_drop_in_place_multiple_calls() {
+    // Call drop_in_place multiple times on different allocations
     for _ in 0..50 {
         let ptr = glyim_alloc(32, 8);
         assert!(!ptr.is_null());
@@ -55,7 +68,7 @@ fn drop_in_place_multiple_calls() {
             std::ptr::write_bytes(ptr, 0xFF, 32);
         }
         unsafe {
-            glyim_drop_in_place(ptr);
+            glyim_drop_in_place(ptr, None);
         }
         unsafe {
             glyim_dealloc(ptr, 32, 8);
@@ -64,22 +77,130 @@ fn drop_in_place_multiple_calls() {
 }
 
 #[test]
-fn drop_in_place_does_not_corrupt_memory() {
-    // The stub implementation should NOT write to the memory
-    let ptr = glyim_alloc(std::mem::size_of::<u64>(), std::mem::align_of::<u64>());
+fn test_drop_in_place_calls_drop_fn() {
+    // Verify that glyim_drop_in_place actually calls the provided drop function
+    static DROP_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn counting_drop(_ptr: *mut u8) {
+        DROP_CALL_COUNT.fetch_add(1, Ordering::SeqCst);
+    }
+
+    let drop_fn: Option<DropFn> = Some(counting_drop);
+    DROP_CALL_COUNT.store(0, Ordering::SeqCst);
+
+    let ptr = glyim_alloc(8, 8);
     assert!(!ptr.is_null());
     unsafe {
-        let typed = ptr as *mut u64;
-        typed.write(0xBEEFCAFEu64);
-        glyim_drop_in_place(ptr);
-        // After drop_in_place (stub), the value should still be intact
-        // since the stub doesn't actually drop anything
-        assert_eq!(
-            *typed, 0xBEEFCAFEu64,
-            "drop_in_place stub should not corrupt memory"
-        );
+        glyim_drop_in_place(ptr, drop_fn);
     }
+    assert_eq!(
+        DROP_CALL_COUNT.load(Ordering::SeqCst),
+        1,
+        "drop_fn should have been called exactly once"
+    );
     unsafe {
-        glyim_dealloc(ptr, std::mem::size_of::<u64>(), std::mem::align_of::<u64>());
+        glyim_dealloc(ptr, 8, 8);
     }
+}
+
+#[test]
+fn test_drop_in_place_none_does_not_call_anything() {
+    // Verify that None means no destructor is called
+    static UNEXPECTED_DROP: AtomicUsize = AtomicUsize::new(0);
+
+    // This should never be called
+    unsafe extern "C" fn bad_drop(_ptr: *mut u8) {
+        UNEXPECTED_DROP.fetch_add(1, Ordering::SeqCst);
+    }
+
+    let ptr = glyim_alloc(8, 8);
+    assert!(!ptr.is_null());
+    unsafe {
+        glyim_drop_in_place(ptr, None);
+    }
+    assert_eq!(
+        UNEXPECTED_DROP.load(Ordering::SeqCst),
+        0,
+        "no drop function should have been called with None"
+    );
+    unsafe {
+        glyim_dealloc(ptr, 8, 8);
+    }
+    // Just to verify the unused variable doesn't warn
+    let _ = bad_drop as DropFn;
+}
+
+#[test]
+fn test_drop_in_place_multiple_drops_with_fn() {
+    static TOTAL_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn counting_drop(_ptr: *mut u8) {
+        TOTAL_DROPS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    let drop_fn: Option<DropFn> = Some(counting_drop);
+    TOTAL_DROPS.store(0, Ordering::SeqCst);
+
+    for _ in 0..20 {
+        let ptr = glyim_alloc(16, 8);
+        assert!(!ptr.is_null());
+        unsafe {
+            std::ptr::write_bytes(ptr, 0xAB, 16);
+            glyim_drop_in_place(ptr, drop_fn);
+            glyim_dealloc(ptr, 16, 8);
+        }
+    }
+
+    assert_eq!(
+        TOTAL_DROPS.load(Ordering::SeqCst),
+        20,
+        "drop_fn should have been called 20 times"
+    );
+}
+
+#[test]
+fn test_drop_fn_receives_correct_pointer() {
+    static LAST_DROP_PTR: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn recording_drop(ptr: *mut u8) {
+        LAST_DROP_PTR.store(ptr as usize, Ordering::SeqCst);
+    }
+
+    let drop_fn: Option<DropFn> = Some(recording_drop);
+
+    let ptr = glyim_alloc(8, 8);
+    assert!(!ptr.is_null());
+    unsafe {
+        glyim_drop_in_place(ptr, drop_fn);
+    }
+    assert_eq!(
+        LAST_DROP_PTR.load(Ordering::SeqCst),
+        ptr as usize,
+        "drop_fn should receive the exact pointer passed to glyim_drop_in_place"
+    );
+    unsafe {
+        glyim_dealloc(ptr, 8, 8);
+    }
+}
+
+#[test]
+fn test_drop_in_place_null_with_drop_fn() {
+    // null ptr should not call drop_fn even if one is provided
+    static DROP_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn counting_drop(_ptr: *mut u8) {
+        DROP_CALL_COUNT.fetch_add(1, Ordering::SeqCst);
+    }
+
+    let drop_fn: Option<DropFn> = Some(counting_drop);
+    DROP_CALL_COUNT.store(0, Ordering::SeqCst);
+
+    unsafe {
+        glyim_drop_in_place(std::ptr::null_mut(), drop_fn);
+    }
+    assert_eq!(
+        DROP_CALL_COUNT.load(Ordering::SeqCst),
+        0,
+        "drop_fn should NOT be called for null pointer"
+    );
 }

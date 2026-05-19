@@ -5,14 +5,14 @@
 use crate::{glyim_alloc, glyim_dealloc};
 
 #[test]
-fn dealloc_null_is_safe() {
+fn test_dealloc_null_is_safe() {
     unsafe {
         glyim_dealloc(std::ptr::null_mut(), 8, 8);
     }
 }
 
 #[test]
-fn dealloc_zero_size_is_safe() {
+fn test_dealloc_zero_size_is_safe() {
     let ptr = glyim_alloc(0, 1);
     unsafe {
         glyim_dealloc(ptr, 0, 1);
@@ -20,7 +20,8 @@ fn dealloc_zero_size_is_safe() {
 }
 
 #[test]
-fn dealloc_varying_sizes() {
+fn test_alloc_dealloc_varying_sizes() {
+    // Test allocation and deallocation with various sizes
     for size in [
         1, 2, 4, 7, 8, 13, 16, 31, 32, 63, 64, 127, 128, 255, 256, 512, 1024, 4096,
     ] {
@@ -28,19 +29,28 @@ fn dealloc_varying_sizes() {
         assert!(!ptr.is_null(), "alloc of size {} failed", size);
         unsafe {
             std::ptr::write_bytes(ptr, 0x42, size);
+        }
+        unsafe {
+            crate::glyim_drop_in_place(ptr, None);
+        }
+        unsafe {
             glyim_dealloc(ptr, size, 8);
         }
     }
 }
 
 #[test]
-fn dealloc_interleaved_with_alloc() {
+fn test_alloc_dealloc_interleaved() {
+    // Interleave allocations and deallocations to test heap consistency
     let mut live: Vec<(*mut u8, usize)> = Vec::new();
     for i in 0..100 {
         if i % 3 == 0 && !live.is_empty() {
+            // Deallocate the oldest
             let (ptr, size) = live.remove(0);
             unsafe {
-                crate::glyim_drop_in_place(ptr);
+                crate::glyim_drop_in_place(ptr, None);
+            }
+            unsafe {
                 glyim_dealloc(ptr, size, 8);
             }
         } else {
@@ -56,7 +66,9 @@ fn dealloc_interleaved_with_alloc() {
     // Clean up remaining
     for (ptr, size) in live {
         unsafe {
-            crate::glyim_drop_in_place(ptr);
+            crate::glyim_drop_in_place(ptr, None);
+        }
+        unsafe {
             glyim_dealloc(ptr, size, 8);
         }
     }

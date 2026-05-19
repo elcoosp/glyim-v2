@@ -5,7 +5,7 @@
 use crate::glyim_alloc;
 
 #[test]
-fn alloc_returns_non_null_for_valid_request() {
+fn test_alloc_returns_non_null() {
     let ptr = glyim_alloc(8, 8);
     assert!(
         !ptr.is_null(),
@@ -22,7 +22,7 @@ fn alloc_returns_non_null_for_valid_request() {
 }
 
 #[test]
-fn alloc_zero_size_returns_dangling() {
+fn test_alloc_zero_size() {
     let ptr = glyim_alloc(0, 1);
     // Zero-size allocation returns a dangling (non-null) pointer
     assert!(
@@ -35,18 +35,18 @@ fn alloc_zero_size_returns_dangling() {
 }
 
 #[test]
-fn alloc_large_alignment() {
+fn test_alloc_large_alignment() {
     let ptr = glyim_alloc(64, 16);
     assert!(!ptr.is_null());
     let addr = ptr as usize;
-    assert_eq!(addr % 16, 0, "allocated memory must be 16-byte aligned");
+    assert_eq!(addr % 16, 0, "allocated memory must be aligned");
     unsafe {
         crate::glyim_dealloc(ptr, 64, 16);
     }
 }
 
 #[test]
-fn alloc_multiple_sizes() {
+fn test_alloc_multiple_sizes() {
     for &size in &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
         let ptr = glyim_alloc(size, 8);
         assert!(!ptr.is_null(), "alloc of size {} failed", size);
@@ -58,7 +58,7 @@ fn alloc_multiple_sizes() {
 }
 
 #[test]
-fn alloc_alignment_respected() {
+fn test_alloc_alignment_respected() {
     for &align in &[1, 2, 4, 8, 16, 32, 64] {
         let ptr = glyim_alloc(64, align);
         assert!(!ptr.is_null(), "alloc with align {} failed", align);
@@ -76,7 +76,7 @@ fn alloc_alignment_respected() {
 }
 
 #[test]
-fn alloc_write_read_roundtrip() {
+fn test_alloc_write_read_roundtrip() {
     let ptr = glyim_alloc(std::mem::size_of::<u32>(), std::mem::align_of::<u32>());
     assert!(!ptr.is_null());
     unsafe {
@@ -88,7 +88,7 @@ fn alloc_write_read_roundtrip() {
 }
 
 #[test]
-fn alloc_many_small_allocations() {
+fn test_alloc_many_small_allocations() {
     let mut ptrs = Vec::new();
     for i in 0..100 {
         let ptr = glyim_alloc(8, 8);
@@ -115,7 +115,7 @@ fn alloc_many_small_allocations() {
 }
 
 #[test]
-fn alloc_zero_alignment_treated_as_one() {
+fn test_alloc_zero_alignment_treated_as_one() {
     // Alignment 0 is treated as 1 by glyim_alloc, so this should succeed
     let ptr = glyim_alloc(8, 0);
     assert!(!ptr.is_null(), "alignment 0 should be treated as 1");
