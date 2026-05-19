@@ -2,12 +2,14 @@ mod matcher;
 mod substitution;
 mod token_tree;
 
+use crate::BuiltinMacro;
 use glyim_core::interner::{Interner, Name};
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{
     ByteIdx, ExpnData, ExpnKind, FileId, HygieneCtx, Mark, Span, SyntaxContext, Transparency,
 };
 use glyim_syntax::{GlyimLang, GreenNode, SyntaxKind, SyntaxNode};
+use smol_str::SmolStr;
 use rowan::Language;
 use std::collections::HashMap;
 
@@ -32,8 +34,17 @@ pub(crate) fn expand_crate(
     root: &SyntaxNode,
     interner: &mut Interner,
     hygiene: &mut HygieneCtx,
+    registered: &[crate::MacroDef],
 ) -> (GreenNode, Vec<GlyimDiagnostic>) {
     let mut expander = ExpanderImpl::new(hygiene, interner.clone());
+    // Register builtins from the public API
+    for def in registered {
+        if let crate::MacroKind::Builtin { handler, .. } = &def.kind {
+            expander
+                .registered_builtins
+                .insert(def.name, *handler);
+        }
+    }
     expander.collect_macros(root, interner);
     let (green, diags) = expander.expand_node(root, 0);
     (green, diags)
@@ -44,13 +55,20 @@ pub(crate) fn expand_macro_invocation(
     args: &SyntaxNode,
     call_site: Span,
     hygiene: &mut HygieneCtx,
-    macros: &HashMap<Name, MacroDef>,
+    registered: &[crate::MacroDef],
     interner: &Interner,
     depth: u32,
 ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
+    let mut registered_builtins: HashMap<Name, BuiltinMacro> = HashMap::new();
+    for def in registered {
+        if let crate::MacroKind::Builtin { handler, .. } = &def.kind {
+            registered_builtins.insert(def.name, *handler);
+        }
+    }
     let mut expander = ExpanderImpl {
         hygiene,
-        macros: macros.clone(),
+        macros: HashMap::new(),
+        registered_builtins,
         diagnostics: Vec::new(),
         interner: interner.clone(),
     };
@@ -62,6 +80,7 @@ pub(crate) fn expand_macro_invocation(
 pub(crate) struct ExpanderImpl<'a> {
     hygiene: &'a mut HygieneCtx,
     macros: HashMap<Name, MacroDef>,
+    registered_builtins: HashMap<Name, BuiltinMacro>,
     diagnostics: Vec<GlyimDiagnostic>,
     interner: Interner,
 }
@@ -71,6 +90,7 @@ impl<'a> ExpanderImpl<'a> {
         Self {
             hygiene,
             macros: HashMap::new(),
+            registered_builtins: HashMap::new(),
             diagnostics: Vec::new(),
             interner,
         }
@@ -162,7 +182,6 @@ impl<'a> ExpanderImpl<'a> {
                 for child in reparsed_root.children_with_tokens() {
                     match child {
                         rowan::NodeOrToken::Node(n) => {
-                            // Look for the FnDef's block and process its contents
                             if n.kind() == SyntaxKind::FnDef
                                 && let Some(block) =
                                     n.children().find(|c| c.kind() == SyntaxKind::Block)
@@ -263,6 +282,11 @@ impl<'a> ExpanderImpl<'a> {
 
         let call_site = self.span_from_node(node);
 
+        // Check registered builtins first
+        if let Some(handler) = self.registered_builtins.get(&name).copied() {
+            return self.expand_builtin(handler, &args_node, call_site, depth);
+        }
+
         self.expand_macro_call(name, &args_node, call_site, depth)
     }
 
@@ -301,6 +325,79 @@ impl<'a> ExpanderImpl<'a> {
                 format!("no matching macro arm for macro '{}'", name_str),
             )],
         )
+    }
+
+    /// Expand a builtin macro.
+    fn expand_builtin(
+        &mut self,
+        handler: BuiltinMacro,
+        _args_node: &SyntaxNode,
+        call_site: Span,
+        _depth: u32,
+    ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
+        let expanded_trees = match handler {
+            BuiltinMacro::File => {
+                // file!() expands to a string literal with the file ID
+                let file_id_num = call_site.file.to_raw();
+                let text = if file_id_num == u32::MAX {
+                    // BOGUS file id
+                    SmolStr::from("\"<bogus>\"")
+                } else {
+                    SmolStr::from(format!("\"{}\"", file_id_num))
+                };
+                vec![TokenTree::Token(SyntaxKind::StringLit, text)]
+            }
+            BuiltinMacro::Line => {
+                // line!() expands to a line number (approximated from byte offset)
+                let line_num = call_site
+                    .lo
+                    .to_raw()
+                    .checked_div(80)
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                vec![TokenTree::Token(
+                    SyntaxKind::IntLit,
+                    SmolStr::from(line_num.to_string()),
+                )]
+            }
+            BuiltinMacro::Column => {
+                // column!() expands to a column number (approximated from byte offset)
+                let col_num = call_site
+                    .lo
+                    .to_raw()
+                    .checked_rem(80)
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                vec![TokenTree::Token(
+                    SyntaxKind::IntLit,
+                    SmolStr::from(col_num.to_string()),
+                )]
+            }
+            BuiltinMacro::Env => {
+                // env!("VAR") - for now, produce a placeholder or error
+                // Try to extract the variable name from args
+                return (
+                    None,
+                    vec![GlyimDiagnostic::type_error(
+                        call_site,
+                        "env!() macro is not yet fully implemented".to_string(),
+                    )],
+                );
+            }
+            BuiltinMacro::Include => {
+                // include!("path") - for now, produce an error
+                return (
+                    None,
+                    vec![GlyimDiagnostic::type_error(
+                        call_site,
+                        "include!() macro is not yet fully implemented".to_string(),
+                    )],
+                );
+            }
+        };
+
+        let expanded_green = self.build_expansion_green(&expanded_trees, call_site, _depth);
+        (Some(expanded_green), Vec::new())
     }
 
     fn build_expansion_green(

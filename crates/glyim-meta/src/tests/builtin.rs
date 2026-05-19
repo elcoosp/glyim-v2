@@ -2,7 +2,6 @@
 
 use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
 use glyim_core::interner::Interner;
-use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 use glyim_frontend::parse_to_syntax;
 
@@ -22,8 +21,7 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    // Register the file! builtin
-    let mut interner = Interner::default();
+    let interner = Interner::default();
     let file_name = interner.intern("file");
     expander.register_macro(MacroDef {
         name: file_name,
@@ -43,6 +41,12 @@ fn main() {
         "Expected file!() to be expanded away, got: {}",
         expanded_text
     );
+    // The expansion should contain a string literal with the file reference
+    assert!(
+        expanded_text.contains("bogus") || expanded_text.contains('"'),
+        "Expected file!() expansion to contain a string literal, got: {}",
+        expanded_text
+    );
     let _ = diags;
 }
 
@@ -58,7 +62,7 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let mut interner = Interner::default();
+    let interner = Interner::default();
     let line_name = interner.intern("line");
     expander.register_macro(MacroDef {
         name: line_name,
@@ -78,6 +82,12 @@ fn main() {
         "Expected line!() to be expanded away, got: {}",
         expanded_text
     );
+    // The expansion should contain a number
+    assert!(
+        expanded_text.chars().any(|c: char| c.is_ascii_digit()),
+        "Expected line!() expansion to contain a digit, got: {}",
+        expanded_text
+    );
     let _ = diags;
 }
 
@@ -93,7 +103,7 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let mut interner = Interner::default();
+    let interner = Interner::default();
     let col_name = interner.intern("column");
     expander.register_macro(MacroDef {
         name: col_name,
@@ -121,7 +131,7 @@ fn builtin_file_expand_api() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let mut interner = Interner::default();
+    let interner = Interner::default();
     let file_name = interner.intern("file");
 
     expander.register_macro(MacroDef {
@@ -145,7 +155,6 @@ fn builtin_file_expand_api() {
 
     let result = expander.expand(file_name, &args_root, call_site);
 
-    // Should expand to a string literal containing the file id
     assert!(
         result.expanded.is_some(),
         "Expected file!() to produce an expansion, got diagnostics: {:?}",
@@ -155,8 +164,8 @@ fn builtin_file_expand_api() {
     let expanded_text = result.expanded.unwrap().text().to_string();
     // Should contain something related to file 7
     assert!(
-        expanded_text.contains("7") || expanded_text.contains("bogus") || expanded_text.contains("file"),
-        "Expected file!() expansion to reference file, got: {}",
+        expanded_text.contains("7"),
+        "Expected file!() expansion to reference file 7, got: {}",
         expanded_text
     );
 }
@@ -167,7 +176,7 @@ fn builtin_line_expand_api() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let mut interner = Interner::default();
+    let interner = Interner::default();
     let line_name = interner.intern("line");
 
     expander.register_macro(MacroDef {
@@ -182,7 +191,6 @@ fn builtin_line_expand_api() {
     let args_source = "()";
     let args_root = parse(args_source);
 
-    // Use a call_site at byte offset 20 (which we'll compute line from)
     let call_site = Span::new(
         FileId::from_raw(1),
         ByteIdx::from_raw(20),
@@ -198,7 +206,6 @@ fn builtin_line_expand_api() {
         result.diagnostics
     );
 
-    // The expansion should be a numeric literal
     let expanded_text = result.expanded.unwrap().text().to_string();
     assert!(
         expanded_text.chars().any(|c: char| c.is_ascii_digit()),
@@ -207,13 +214,13 @@ fn builtin_line_expand_api() {
     );
 }
 
-/// Test that env!() expands to a string (or produces a reasonable diagnostic).
+/// Test that env!() produces a diagnostic (not yet fully implemented).
 #[test]
 fn builtin_env_expand_api() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let mut interner = Interner::default();
+    let interner = Interner::default();
     let env_name = interner.intern("env");
 
     expander.register_macro(MacroDef {
@@ -237,9 +244,14 @@ fn builtin_env_expand_api() {
 
     let result = expander.expand(env_name, &args_root, call_site);
 
-    // env! may expand or produce a diagnostic; either is acceptable for now
+    // env! currently produces a diagnostic since it's not fully implemented
     assert!(
-        result.expanded.is_some() || !result.diagnostics.is_empty(),
-        "Expected env!() to either expand or produce diagnostics"
+        !result.diagnostics.is_empty(),
+        "Expected env!() to produce a diagnostic about not being implemented, got: {:?}",
+        result.diagnostics
+    );
+    assert!(
+        result.expanded.is_none(),
+        "Expected env!() to not produce an expansion yet"
     );
 }

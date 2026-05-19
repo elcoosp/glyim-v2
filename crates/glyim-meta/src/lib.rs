@@ -62,13 +62,12 @@ impl<'a> Expander<'a> {
 
     #[tracing::instrument(level = "debug", skip(self, args, call_site))]
     pub fn expand(&mut self, name: Name, args: &SyntaxNode, call_site: Span) -> ExpansionResult {
-        let macro_map = self.build_macro_map();
         let (green_opt, diags) = expander::expand_macro_invocation(
             name,
             args,
             call_site,
             self.hygiene,
-            &macro_map,
+            &self.macros,
             &self.interner,
             0,
         );
@@ -81,14 +80,10 @@ impl<'a> Expander<'a> {
 
     #[tracing::instrument(level = "info", skip(self, root))]
     pub fn expand_crate(&mut self, root: &SyntaxNode) -> (SyntaxNode, Vec<GlyimDiagnostic>) {
-        let (green, diags) = expander::expand_crate(root, &mut self.interner, self.hygiene);
-        // Also expand using any HIR-registered macros (but they need arms from syntax)
+        let (green, diags) =
+            expander::expand_crate(root, &mut self.interner, self.hygiene, &self.macros);
         let expanded = SyntaxNode::new_root(green);
         (expanded, diags)
-    }
-
-    fn build_macro_map(&self) -> std::collections::HashMap<Name, expander::MacroDef> {
-        std::collections::HashMap::new()
     }
 }
 
