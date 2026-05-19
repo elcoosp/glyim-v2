@@ -8,9 +8,11 @@ tracing = { workspace = true }
 glyim-syntax = { workspace = true }
 glyim-core = { workspace = true }
 glyim-span = { workspace = true }
+glyim-diag = { workspace = true }
 
 
 [dev-dependencies]
+glyim-diag = { workspace = true }
 rowan = { workspace = true }
 glyim-frontend = { workspace = true }
 glyim-test = { workspace = true }

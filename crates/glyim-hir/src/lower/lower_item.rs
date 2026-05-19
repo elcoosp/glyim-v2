@@ -1,8 +1,10 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
-use glyim_core::interner::Interner;
+use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::*;
+use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
+use std::collections::HashMap;
 
 use crate::{
     Body, BodyId, EnumItem, Field, FnItem, Item, ItemId, ItemKind, Param, Pat, PatId, StructItem,
@@ -14,6 +16,31 @@ use super::{
     next_local_def_id, node_span,
 };
 
+pub(crate) fn collect_struct_fields(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+) -> Option<(Name, Vec<Name>)> {
+    let name_str = first_ident_text(node)?;
+    let name = interner.intern(&name_str);
+    let mut fields = Vec::new();
+    let tokens: Vec<_> = node.children_with_tokens().collect();
+    let mut i = 0;
+    while i < tokens.len() {
+        if let glyim_syntax::SyntaxElement::Token(t) = &tokens[i]
+            && t.kind() == SyntaxKind::Ident
+            && i + 2 < tokens.len()
+            && let glyim_syntax::SyntaxElement::Token(col) = &tokens[i + 1]
+            && col.kind() == SyntaxKind::Colon
+        {
+            fields.push(interner.intern(t.text()));
+            i += 3;
+            continue;
+        }
+        i += 1;
+    }
+    Some((name, fields))
+}
+
 pub(crate) fn lower_fn_def(
     node: &SyntaxNode,
     interner: &mut Interner,
@@ -21,6 +48,8 @@ pub(crate) fn lower_fn_def(
     item_id_counter: &mut u32,
     bodies: &mut IndexVec<BodyId, Body>,
     body_owners: &mut IndexVec<BodyId, LocalDefId>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<Item> {
     let name_str = first_ident_text(node)?;
     let name = interner.intern(&name_str);
@@ -37,7 +66,6 @@ pub(crate) fn lower_fn_def(
         expr_spans: IndexVec::new(),
     };
 
-    // ParamList
     for child in node.children() {
         if child.kind() == SyntaxKind::ParamList {
             for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
@@ -48,7 +76,6 @@ pub(crate) fn lower_fn_def(
         }
     }
 
-    // Return type: scan tokens for Arrow, then take next type node
     let mut arrow_seen = false;
     for el in node.children_with_tokens() {
         match el {
@@ -63,7 +90,6 @@ pub(crate) fn lower_fn_def(
         }
     }
 
-    // Block
     if let Some(block_node) = node.children().find(|c| c.kind() == SyntaxKind::Block) {
         tracing::debug!("Found Block node in FnDef, lowering to expr");
         lower_block_to_expr(
@@ -72,10 +98,11 @@ pub(crate) fn lower_fn_def(
             &mut body.exprs,
             &mut body.pats,
             &mut body.expr_spans,
+            diags,
+            struct_field_map,
         );
     } else {
-        // FIXME: FnDef without Block node
-        unimplemented!("FnDef without Block node")
+        tracing::debug!("FnDef without Block node treated as foreign function");
     }
 
     let bid = bodies.push(body);
@@ -139,11 +166,8 @@ pub(crate) fn lower_struct_def(
 ) -> Option<Item> {
     let name_str = first_ident_text(node)?;
     let name = interner.intern(&name_str);
-
     let mut fields = Vec::new();
     let kind;
-
-    // Scan tokens for field pattern: Ident Colon type
     let tokens: Vec<_> = node.children_with_tokens().collect();
     let mut i = 0;
     let mut has_fields = false;
@@ -169,8 +193,6 @@ pub(crate) fn lower_struct_def(
         }
         i += 1;
     }
-
-    // Check for tuple fields: if there's a TupleType node, it's a tuple struct
     if !has_fields {
         let mut tuple_types = Vec::new();
         for child in node.children() {
@@ -197,7 +219,6 @@ pub(crate) fn lower_struct_def(
     } else {
         kind = StructKind::Record;
     }
-
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
     Some(Item {
@@ -222,7 +243,6 @@ pub(crate) fn lower_enum_def(
 ) -> Option<Item> {
     let name_str = first_ident_text(node)?;
     let name = interner.intern(&name_str);
-
     let mut variants = Vec::new();
     if let Some(variant_list) = node
         .children()
@@ -237,7 +257,6 @@ pub(crate) fn lower_enum_def(
             }
         }
     }
-
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
     Some(Item {
@@ -256,11 +275,8 @@ pub(crate) fn lower_enum_def(
 pub(crate) fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Option<Variant> {
     let vname_str = first_ident_text(node)?;
     let vname = interner.intern(&vname_str);
-
     let mut fields = Vec::new();
     let kind;
-
-    // Check for tuple fields (LParen ... RParen)
     let mut in_paren = false;
     let mut has_tuple = false;
     for child in node.children_with_tokens() {
@@ -283,8 +299,6 @@ pub(crate) fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Optio
             _ => {}
         }
     }
-
-    // Check for record fields (field list with StructField nodes)
     let mut has_record = false;
     for child in node.children() {
         if child.kind() == SyntaxKind::FieldList {
@@ -307,7 +321,6 @@ pub(crate) fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Optio
             }
         }
     }
-
     if has_record {
         kind = StructKind::Record;
     } else if has_tuple {
@@ -315,7 +328,6 @@ pub(crate) fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Optio
     } else {
         kind = StructKind::Unit;
     }
-
     Some(Variant {
         name: vname,
         fields,

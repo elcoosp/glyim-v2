@@ -3,10 +3,8 @@ pub(crate) mod lower_item;
 pub(crate) mod lower_pat;
 pub(crate) mod lower_type;
 
-// Re-exports for test access — these keep existing test imports working
 #[cfg(test)]
 pub(crate) use lower_expr::{lower_expr, lower_literal};
-#[cfg(test)]
 #[cfg(test)]
 pub(crate) use lower_pat::lower_pat;
 #[cfg(test)]
@@ -15,6 +13,7 @@ pub(crate) use lower_type::lower_type_ref;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
+use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_syntax::{SyntaxKind, SyntaxNode};
 
@@ -94,14 +93,28 @@ fn next_local_def_id(counter: &mut u32) -> LocalDefId {
 
 // ---------- entry ----------
 
-pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHir {
+pub(crate) fn lower_crate(
+    root: &SyntaxNode,
+    interner: &mut Interner,
+    diags: &mut Vec<GlyimDiagnostic>,
+) -> CrateHir {
     let mut items = IndexVec::new();
     let mut bodies = IndexVec::new();
     let mut body_owners = IndexVec::new();
     let mut local_def_counter = 0u32;
-
     let mut item_id_counter = 0u32;
 
+    // First pass: collect all struct definitions for field ordering
+    let mut struct_field_map = std::collections::HashMap::new();
+    for child in root.children() {
+        if child.kind() == SyntaxKind::StructDef {
+            if let Some((name, fields)) = lower_item::collect_struct_fields(&child, interner) {
+                struct_field_map.insert(name, fields);
+            }
+        }
+    }
+
+    // Second pass: lower all items (fn bodies can now reorder fields)
     for child in root.children() {
         match child.kind() {
             SyntaxKind::FnDef => {
@@ -112,6 +125,8 @@ pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner) -> CrateHi
                     &mut item_id_counter,
                     &mut bodies,
                     &mut body_owners,
+                    diags,
+                    &struct_field_map,
                 ) {
                     items.push(item);
                 }

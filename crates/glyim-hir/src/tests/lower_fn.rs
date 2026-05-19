@@ -28,7 +28,7 @@ fn test_fn_item_with_params() {
     let parse_result = parse_to_syntax(source, file_id);
     let root = parse_result.root;
     let mut interner = Interner::new();
-    let hir = lower_crate(&root, &mut interner);
+    let hir = lower_crate(&root, &mut interner, &mut Vec::new());
 
     assert_eq!(hir.items.len(), 1, "should have one item");
     let item = &hir.items[ItemId::from_raw(0)];
@@ -49,7 +49,7 @@ fn test_fn_item_with_params() {
             assert!(!body.exprs.is_empty(), "body should have expressions");
             assert!(hir.body_owners.get(body_id).is_some());
             let block_id = last_expr_id(body);
-            match &body.exprs[block_id] {
+            match &body.exprs[*block_id] {
                 Expr::Block { stmts, tail } => {
                     assert!(stmts.is_empty(), "should have no statements");
                     assert!(tail.is_some(), "should have tail expression (a+b)");
@@ -68,7 +68,7 @@ fn test_fn_item_no_params() {
     let parse_result = parse_to_syntax(source, file_id);
     let root = parse_result.root;
     let mut interner = Interner::new();
-    let hir = lower_crate(&root, &mut interner);
+    let hir = lower_crate(&root, &mut interner, &mut Vec::new());
 
     assert_eq!(hir.items.len(), 1);
     let item = &hir.items[ItemId::from_raw(0)];
@@ -84,7 +84,7 @@ fn test_fn_item_no_params() {
                 "body should have exactly one block expression"
             );
             let block_id = last_expr_id(body);
-            match &body.exprs[block_id] {
+            match &body.exprs[*block_id] {
                 Expr::Block { stmts, tail } => {
                     assert!(stmts.is_empty());
                     assert!(tail.is_none());

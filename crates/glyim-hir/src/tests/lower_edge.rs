@@ -11,7 +11,7 @@ fn get_body_hir(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
         other => panic!("expected Fn item, got {:?}", other),
@@ -29,11 +29,11 @@ fn test_chained_binary_expression() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { a + b + c }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert!(stmts.is_empty());
             let expr_id = tail.unwrap();
-            match &body.exprs[expr_id] {
+            match &body.exprs[*expr_id] {
                 Expr::Binary { op, .. } => {
                     // top-level op should be +
                     assert_eq!(*op, BinOp::Add);
@@ -50,11 +50,11 @@ fn test_if_without_else() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { if true { 42 } }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert!(stmts.is_empty());
             let if_id = tail.unwrap();
-            match &body.exprs[if_id] {
+            match &body.exprs[*if_id] {
                 Expr::If { else_branch, .. } => {
                     assert!(else_branch.is_none(), "should have no else branch");
                 }
@@ -70,7 +70,7 @@ fn test_block_multiple_stmts_and_tail() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { 1; 2; 3 }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert_eq!(stmts.len(), 2, "should have two statements");
             assert!(tail.is_some(), "should have tail expression");
@@ -84,11 +84,11 @@ fn test_nested_blocks() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { { 1 } }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert!(stmts.is_empty());
             let inner_id = tail.unwrap();
-            match &body.exprs[inner_id] {
+            match &body.exprs[*inner_id] {
                 Expr::Block {
                     stmts: inner_stmts,
                     tail: inner_tail,
@@ -109,7 +109,7 @@ fn test_empty_enum() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     assert_eq!(hir.items.len(), 1);
     let item = &hir.items[ItemId::from_raw(0)];
     match &item.kind {
@@ -125,10 +125,10 @@ fn test_boolean_literals() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { true }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             let lit_id = tail.unwrap();
-            match &body.exprs[lit_id] {
+            match &body.exprs[*lit_id] {
                 Expr::Literal(Literal::Bool(true)) => {}
                 other => panic!("Expected Bool(true), got {:?}", other),
             }
@@ -144,7 +144,7 @@ fn test_reference_type_with_mut() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let item = &hir.items[ItemId::from_raw(0)];
     if let ItemKind::Fn(fn_item) = &item.kind
         && let Some(ty) = &fn_item.return_ty
@@ -160,7 +160,7 @@ fn test_multiple_top_level_items() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     assert_eq!(hir.items.len(), 3);
     assert!(matches!(
         hir.items[ItemId::from_raw(0)].kind,

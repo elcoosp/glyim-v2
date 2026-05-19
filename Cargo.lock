@@ -816,6 +816,7 @@ name = "glyim-hir"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "glyim-diag",
  "glyim-frontend",
  "glyim-span",
  "glyim-syntax",

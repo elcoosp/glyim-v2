@@ -10,7 +10,7 @@ fn get_body_hir(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
         other => panic!("expected Fn item, got {:?}", other),
@@ -29,7 +29,7 @@ fn test_chained_field_access() {
     let source = "fn f() { a.b.c }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     assert_eq!(hir.items.len(), 1);
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
@@ -43,7 +43,7 @@ fn test_chained_method_calls() {
     let source = "fn f() { a.b().c() }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -56,7 +56,7 @@ fn test_return_with_value() {
     let source = "fn f() -> i32 { return 42; }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
         let body = &hir.bodies[fn_item.body.unwrap()];
@@ -75,7 +75,7 @@ fn test_while_loop_with_body() {
     let source = "fn f() { while x > 0 { x = x - 1; } }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
         let body = &hir.bodies[fn_item.body.unwrap()];
@@ -95,7 +95,7 @@ fn test_comparison_operators() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { a < b }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(bin_id), ..
         } => match &body.exprs[*bin_id] {
@@ -112,7 +112,7 @@ fn test_bool_literal_false() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { false }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(tail_id),
             ..
@@ -130,7 +130,7 @@ fn test_unary_deref() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { *x }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(tail_id),
             ..
@@ -148,7 +148,7 @@ fn test_type_ref_slice() {
     let source = "fn f() -> [i32] { todo!() }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => {
             assert!(fn_item.return_ty.is_some());
@@ -163,7 +163,7 @@ fn test_struct_with_generic() {
     let source = "struct Point<T> { x: T, y: T }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Struct(s) => {
             assert_eq!(s.kind, StructKind::Record);
@@ -179,7 +179,7 @@ fn test_enum_record_variant() {
     let source = "enum Shape { Circle { radius: f64 }, Square { side: f64 } }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Enum(e) => {
             assert_eq!(e.variants.len(), 2);
@@ -196,7 +196,7 @@ fn test_module_with_multiple_items() {
     let source = "mod m { fn a() {} struct B; enum C { X } }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let _ = lower_crate(&result.root, &mut interner);
+    let _ = lower_crate(&result.root, &mut interner, &mut Vec::new());
 }
 
 // Array repeat
@@ -205,7 +205,7 @@ fn test_array_repeat_expr() {
     let source = "fn f() { [0; 10] }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let _ = lower_crate(&result.root, &mut interner);
+    let _ = lower_crate(&result.root, &mut interner, &mut Vec::new());
 }
 
 // Multiple functions
@@ -214,6 +214,6 @@ fn test_multiple_functions() {
     let source = "fn a() {} fn b() {} fn c() {}";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     assert_eq!(hir.items.len(), 3);
 }

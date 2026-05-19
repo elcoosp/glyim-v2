@@ -11,7 +11,7 @@ fn get_body_hir(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
         other => panic!("expected Fn item, got {:?}", other),
@@ -34,7 +34,7 @@ fn test_field_expr_lowering() {
     let source = "fn f() { a.b }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -49,7 +49,7 @@ fn test_method_call_expr_lowering() {
     let source = "fn f() { a.b(1) }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -64,29 +64,29 @@ fn test_break_continue_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { loop { break; continue; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    let while_id = match &body.exprs[block_id] {
+    let while_id = match &body.exprs[*block_id] {
         Expr::Block { tail: Some(id), .. } => *id,
         _ => panic!("Expected Block with tail"),
     };
-    let while_body_id = match &body.exprs[while_id] {
+    let while_body_id = match &body.exprs[*while_id] {
         Expr::Loop { body: b, .. } => *b,
         _ => panic!("Expected While"),
     };
-    let (stmts, tail) = match &body.exprs[while_body_id] {
+    let (stmts, tail) = match &body.exprs[*while_body_id] {
         Expr::Block { stmts, tail } => (stmts.clone(), *tail),
         _ => panic!("Expected Block"),
     };
     let mut saw_break = false;
     let mut saw_continue = false;
     for &sid in &stmts {
-        match &body.exprs[sid] {
+        match &body.exprs[*sid] {
             Expr::Break { .. } => saw_break = true,
             Expr::Continue => saw_continue = true,
             _ => {}
         }
     }
     if let Some(tail_id) = tail {
-        match &body.exprs[tail_id] {
+        match &body.exprs[*tail_id] {
             Expr::Break { .. } => saw_break = true,
             Expr::Continue => saw_continue = true,
             _ => {}
@@ -103,7 +103,7 @@ fn test_for_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { for i in 0..10 { 1; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(for_id), ..
         } => {
@@ -120,7 +120,7 @@ fn test_match_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f(x: i32) { match x { 0 => 1, _ => 0 } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(match_id),
             ..
@@ -141,7 +141,7 @@ fn test_pat_or_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f(x: i32) { match x { 0 | 1 => 2, _ => 3 } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(match_id),
             ..
@@ -171,7 +171,7 @@ fn test_tuple_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { (1, 2) }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(tup_id), ..
         } => {
@@ -247,12 +247,12 @@ fn test_assign_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { x = 5; 0 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, .. } => {
             assert!(!stmts.is_empty(), "should have assign statement");
             let has_assign = stmts
                 .iter()
-                .any(|&id| matches!(&body.exprs[id], Expr::Assign { .. }));
+                .any(|&id| matches!(&body.exprs[*id], Expr::Assign { .. }));
             assert!(has_assign, "Expected Assign in statements");
         }
         _ => panic!("Expected Block"),
@@ -266,7 +266,7 @@ fn test_cast_expr_lowering() {
     let source = "fn f() { x as i32 }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -281,7 +281,7 @@ fn test_index_expr_lowering() {
     let source = "fn f() { a[0] }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -296,7 +296,7 @@ fn test_range_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { 0..10 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(range_id),
             ..
@@ -318,7 +318,7 @@ fn test_ref_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { &x }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(ref_id), ..
         } => {
@@ -341,7 +341,7 @@ fn test_call_expr_lowering() {
     let source = "fn f() { foo(1, 2) }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -356,7 +356,7 @@ fn test_while_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { while true { 1; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(while_id),
             ..
@@ -372,7 +372,7 @@ fn test_loop_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { loop { break; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(loop_id),
             ..
@@ -393,7 +393,7 @@ fn test_struct_record_lowering() {
     let source = "struct Point { x: i32, y: i32 }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     assert_eq!(hir.items.len(), 1);
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Struct(s) => {
@@ -411,7 +411,7 @@ fn test_enum_tuple_variant_lowering() {
     let source = "enum Color { Red, Green, Blue, Rgb(u8, u8, u8) }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Enum(e) => {
             assert_eq!(e.variants.len(), 4);

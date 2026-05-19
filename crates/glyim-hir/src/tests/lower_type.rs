@@ -9,7 +9,7 @@ fn get_fn_return_type_opt(source: &str) -> Option<TypeRef> {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => fn_item.return_ty.clone(),
         other => panic!("Expected Fn item, got {:?}", other),
@@ -32,7 +32,7 @@ fn test_type_ref_ref() {
     let ty = get_fn_return_type_opt("fn f() -> &bool {}").expect("should have return type");
     match ty {
         TypeRef::Ref { inner, mutability } => {
-            assert_eq!(mutability, Mutability::Not);
+            assert_eq!(*mutability, Mutability::Not);
             match *inner {
                 TypeRef::Path(_) => {}
                 other => panic!("Expected Path inside ref, got {:?}", other),
