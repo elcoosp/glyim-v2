@@ -24,3 +24,6 @@ mod stub_coverage;
 mod stubs_tests;
 mod terminator;
 mod terminators;
+mod len_eval;
+mod binop_bitwise;
+mod projection_write;
