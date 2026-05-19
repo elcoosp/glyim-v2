@@ -98,7 +98,7 @@ pub(crate) fn lower_block_to_expr(
                     // Lower pattern to a PatId
                     if let Some(pat_id) = lower_pat(&pat, interner, pats) {
                         // Convert pattern to an expression for the LHS of assignment
-                        let lhs_expr_id = pat_to_expr(pat_id, pats, exprs, expr_spans, interner, span);
+                        let lhs_expr_id = pat_to_expr(pat_id, pats, exprs, interner);
                         let rhs_expr_id = lower_expr(
                             &rhs,
                             interner,
@@ -525,7 +525,10 @@ fn lower_closure_expr(
             _ => {}
         }
     }
-    let body_id = body.unwrap_or_else(|| { let missing = Expr::Missing; expr_spans.push(node_span(node)); exprs.push(missing) });
+    let body_id = body.unwrap_or_else(|| {
+        let missing = Expr::Missing;
+        exprs.push(missing)
+    });
     let expr = Expr::Closure {
         params,
         body: body_id,
@@ -615,7 +618,10 @@ fn lower_struct_expr(
             }
         }
     }
-    let path_id = path.unwrap_or_else(|| { let missing = Expr::Missing; expr_spans.push(node_span(node)); exprs.push(missing) });
+    let path_id = path.unwrap_or_else(|| {
+        let missing = Expr::Missing;
+        exprs.push(missing)
+    });
     let path_struct = if let Expr::Path(p) = &exprs[path_id] {
         p.clone()
     } else {
