@@ -62,9 +62,20 @@ impl<'a> FnCtxt<'a> {
                 // Check each field pattern
                 let mut field_pats = Vec::with_capacity(fields.len());
                 for (field_name, field_pat_id) in fields {
-                    let field_ty = self.lookup_field_ty(adt_id, *field_name, span);
-                    // Add binding for this field to the environment
-                    self.env.add_binding(*field_name, field_ty, Mutability::Not);
+                    // Try to look up field type, fall back to expected_ty
+                    let field_ty = if self.ctx.adt_def(adt_id).is_some() {
+                        self.lookup_field_ty(adt_id, *field_name, span)
+                    } else {
+                        // ADT not registered in TyCtx yet — use expected_ty
+                        // and add binding so the variable is in scope
+                        let ty = if expected_ty == Ty::ERROR {
+                            self.fresh_infer_ty()
+                        } else {
+                            expected_ty
+                        };
+                        self.env.add_binding(*field_name, ty, Mutability::Not);
+                        ty
+                    };
                     let field_pat = self.check_pattern(*field_pat_id, field_ty);
                     field_pats.push(thir::FieldPat {
                         field: *field_name,
