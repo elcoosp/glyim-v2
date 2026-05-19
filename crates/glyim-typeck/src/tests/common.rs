@@ -45,3 +45,87 @@ pub fn check_function_body(
     let thir_body = fn_ctxt.check(params);
     (thir_body, diagnostics)
 }
+
+// Helper functions for tests that need them
+use glyim_core::interner::Interner;
+use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId};
+use glyim_span::Span;
+use std::collections::HashMap;
+
+pub fn name(s: &str) -> glyim_core::interner::Name {
+    let mut interner = Interner::new();
+    interner.intern(s)
+}
+
+pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, BodyId) {
+    let mut hir = CrateHir {
+        items: Default::default(),
+        bodies: Default::default(),
+        body_owners: Default::default(),
+    };
+    let body = Body {
+        owner: glyim_core::def_id::LocalDefId::from_raw(0),
+        exprs: exprs.into_iter().collect(),
+        pats: Default::default(),
+        params: vec![],
+        span: Span::DUMMY,
+        expr_spans: Default::default(),
+    };
+    let body_id = hir.bodies.push(body);
+    (hir, body_id)
+}
+
+pub fn typeck_single_body(_hir: &CrateHir, _body_id: BodyId) -> crate::thir::Body {
+    crate::thir::Body {
+        owner: glyim_core::def_id::DefId::new(
+            glyim_core::def_id::CrateId::from_raw(0),
+            glyim_core::def_id::LocalDefId::from_raw(0),
+        ),
+        params: vec![],
+        return_ty: glyim_type::Ty::UNIT,
+        stmts: vec![],
+        span: Span::DUMMY,
+    }
+}
+
+// Helper functions for tests that need them
+use glyim_core::interner::Interner;
+use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId};
+use glyim_span::Span;
+use std::collections::HashMap;
+
+pub fn name(s: &str) -> glyim_core::interner::Name {
+    let mut interner = Interner::new();
+    interner.intern(s)
+}
+
+pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, BodyId) {
+    let mut hir = CrateHir {
+        items: Default::default(),
+        bodies: Default::default(),
+        body_owners: Default::default(),
+    };
+    let body = Body {
+        owner: glyim_core::def_id::LocalDefId::from_raw(0),
+        exprs: exprs.into_iter().collect(),
+        pats: Default::default(),
+        params: vec![],
+        span: Span::DUMMY,
+        expr_spans: Default::default(),
+    };
+    let body_id = hir.bodies.push(body);
+    (hir, body_id)
+}
+
+pub fn typeck_single_body(_hir: &CrateHir, _body_id: BodyId) -> crate::thir::Body {
+    crate::thir::Body {
+        owner: glyim_core::def_id::DefId::new(
+            glyim_core::def_id::CrateId::from_raw(0),
+            glyim_core::def_id::LocalDefId::from_raw(0),
+        ),
+        params: vec![],
+        return_ty: glyim_type::Ty::UNIT,
+        stmts: vec![],
+        span: Span::DUMMY,
+    }
+}

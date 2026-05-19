@@ -1,4 +1,6 @@
 use super::common::*;
+use super::common::*;
+use super::common::*;
 use glyim_hir::*;
 
 #[test]

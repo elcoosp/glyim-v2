@@ -24,4 +24,5 @@ mod struct_field;
 mod test_utils;
 mod tuple_index;
 mod typeck_result_accessors;
+mod where_clause;
 mod while_loop;
