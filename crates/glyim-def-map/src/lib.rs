@@ -8,6 +8,7 @@ use glyim_core::primitives::Visibility;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_syntax::{SyntaxKind, SyntaxNode};
+use std::collections::HashMap;
 
 glyim_core::define_idx!(ModuleId);
 
@@ -283,6 +284,8 @@ fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Pa
                         let name = interner.intern(token.text());
                         segments.push(PathSegment { name });
                     }
+                    // Non-path tokens (punctuation, whitespace, etc.) are silently
+                    // skipped — only identifiers and keywords contribute to the path.
                     _ => {}
                 }
             } else if let Some(child_node) = elem.as_node() {
@@ -319,6 +322,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
     let mut modules: IndexVec<ModuleId, ModuleData> = IndexVec::new();
     let interner = Interner::default();
     let mut def_counter: u32 = 1;
+    let mut def_to_module: HashMap<LocalDefId, ModuleId> = HashMap::new();
 
     let root_module = modules.push(ModuleData {
         parent: None,
@@ -329,6 +333,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         def_id: LocalDefId::from_raw(0), // root gets id 0
         visibility: Visibility::Public,  // root is always public
     });
+    def_to_module.insert(LocalDefId::from_raw(0), root_module);
 
     collect_items(
         root,
@@ -337,7 +342,10 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         &mut diagnostics,
         &interner,
         &mut def_counter,
+        &mut def_to_module,
     );
+
+    validate_import_visibility(&modules, &def_to_module, &interner, &mut diagnostics);
 
     let def_map = CrateDefMap {
         root: root_module,
@@ -542,6 +550,7 @@ fn collect_items(
     diagnostics: &mut Vec<GlyimDiagnostic>,
     interner: &Interner,
     def_counter: &mut u32,
+    def_to_module: &mut HashMap<LocalDefId, ModuleId>,
 ) {
     for child in node.children() {
         match child.kind() {
@@ -573,6 +582,17 @@ fn collect_items(
                     *def_counter += 1;
                     modules[parent_module].children.push((name, child_module));
 
+                    // Modules are resolvable in the type namespace of their parent.
+                    let child_def_id = modules[child_module].def_id;
+                    modules[parent_module].scope.declare(
+                        name,
+                        child_def_id,
+                        vis,
+                        span,
+                        Namespace::Types,
+                    );
+                    def_to_module.insert(child_def_id, parent_module);
+
                     // Recurse into the module node itself. Its children (nodes) are the items inside.
                     collect_items(
                         &child,
@@ -581,6 +601,7 @@ fn collect_items(
                         diagnostics,
                         interner,
                         def_counter,
+                        def_to_module,
                     );
                 }
             }
@@ -602,6 +623,7 @@ fn collect_items(
                     let id = LocalDefId::from_raw(*def_counter);
                     *def_counter += 1;
                     let span = node_span(&child);
+                    def_to_module.insert(id, parent_module);
 
                     let scope = &mut modules[parent_module].scope;
                     let existing = match ns {
@@ -624,7 +646,8 @@ fn collect_items(
                 process_use_decl(&child, parent_module, modules, interner);
             }
 
-            // Any other node (e.g., inner items inside a block are not expected)
+            // Other syntax kinds (comments, expressions inside blocks, etc.) are
+            // not item declarations and do not contribute to the def map.
             _ => {}
         }
     }
@@ -703,6 +726,104 @@ fn node_span(node: &SyntaxNode) -> Span {
     let lo = ByteIdx::from_raw(u32::from(range.start()));
     let hi = ByteIdx::from_raw(u32::from(range.end()));
     Span::new(FileId::BOGUS, lo, hi, SyntaxContext::ROOT)
+}
+
+/// Check whether an item with the given visibility, defined in `defining_module`,
+/// is accessible from `from_module` within the given `CrateDefMap`.
+///
+/// # Visibility rules
+///
+/// - `Visibility::Public`: always accessible from any module.
+/// - `Visibility::Inherited`: accessible from the defining module and all of its
+///   descendant modules (children, grandchildren, etc.).
+/// - `Visibility::Module(id)`: accessible from the module with `ModuleId == id`
+///   and all of its descendants.
+///
+/// # Preconditions
+///
+/// - `defining_module` must be a valid index into `def_map.modules`.
+/// - `from_module` must be a valid index into `def_map.modules`.
+pub(crate) fn is_accessible_from(
+    vis: Visibility,
+    defining_module: ModuleId,
+    from_module: ModuleId,
+    modules: &IndexVec<ModuleId, ModuleData>,
+) -> bool {
+    match vis {
+        Visibility::Public => true,
+        Visibility::Inherited => is_descendant_of(from_module, defining_module, modules),
+        Visibility::Module(allowed_id) => {
+            let allowed = ModuleId::from_raw(allowed_id);
+            from_module == allowed || is_descendant_of(from_module, allowed, modules)
+        }
+    }
+}
+
+/// Returns `true` if `module` is a descendant of (or equal to) `ancestor`.
+///
+/// Walks the parent chain from `module` upward; if `ancestor` is encountered,
+/// the module is a descendant.
+fn is_descendant_of(
+    module: ModuleId,
+    ancestor: ModuleId,
+    modules: &IndexVec<ModuleId, ModuleData>,
+) -> bool {
+    let mut current = module;
+    loop {
+        if current == ancestor {
+            return true;
+        }
+        match modules[current].parent {
+            Some(parent) => current = parent,
+            None => return false,
+        }
+    }
+}
+
+/// Validate that items in each module's scope are accessible from that module.
+/// Items imported via `use` that are not accessible will generate a diagnostic.
+/// Directly declared items always pass because the defining module equals the
+/// current module, and `is_accessible_from` treats same-module access as valid.
+fn validate_import_visibility(
+    modules: &IndexVec<ModuleId, ModuleData>,
+    def_to_module: &HashMap<LocalDefId, ModuleId>,
+    interner: &Interner,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+) {
+    for module_idx in 0..modules.len() {
+        let module_id = ModuleId::from_raw(module_idx as u32);
+        let scope = &modules[module_id].scope;
+
+        // Check type namespace items
+        for (name, def_id, vis, span) in &scope.types {
+            if let Some(&defining_mod) = def_to_module.get(def_id)
+                && !is_accessible_from(*vis, defining_mod, module_id, modules)
+            {
+                diagnostics.push(GlyimDiagnostic::parse_error(
+                    *span,
+                    format!(
+                        "`{}` is private and not accessible from this module",
+                        interner.resolve(*name)
+                    ),
+                ));
+            }
+        }
+
+        // Check value namespace items
+        for (name, def_id, vis, span) in &scope.values {
+            if let Some(&defining_mod) = def_to_module.get(def_id)
+                && !is_accessible_from(*vis, defining_mod, module_id, modules)
+            {
+                diagnostics.push(GlyimDiagnostic::parse_error(
+                    *span,
+                    format!(
+                        "`{}` is private and not accessible from this module",
+                        interner.resolve(*name)
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
