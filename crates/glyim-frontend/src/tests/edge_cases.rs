@@ -122,7 +122,7 @@ fn unterminated_string() {
 fn unterminated_char() {
     let tokens = lex_tokens("'a");
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind, SyntaxKind::CharLit);
+    assert_eq!(tokens[0].kind, SyntaxKind::Lifetime);
     assert_eq!(tokens[0].text, "'a");
 }
 

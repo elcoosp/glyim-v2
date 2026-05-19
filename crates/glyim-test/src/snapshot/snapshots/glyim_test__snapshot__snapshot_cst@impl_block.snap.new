@@ -1,0 +1,72 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..73
+  ImplDef@0..73
+    KwImpl@0..4 "impl"
+    TypeParamList@4..7
+      Lt@4..5 "<"
+      TypeParam@5..6
+        Ident@5..6 "T"
+      Gt@6..7 ">"
+    PathType@7..16
+      UsePath@7..13
+        Ident@7..13 "Option"
+      Lt@13..14 "<"
+      PathType@14..15
+        UsePath@14..15
+          Ident@14..15 "T"
+      Gt@15..16 ">"
+    LBrace@16..17 "{"
+    FnDef@17..72
+      KwFn@17..19 "fn"
+      Ident@19..25 "unwrap"
+      LParen@25..26 "("
+      ParamList@26..30
+        Param@26..30
+          KwSelf@26..30 "self"
+      RParen@30..31 ")"
+      Arrow@31..33 "->"
+      PathType@33..34
+        UsePath@33..34
+          Ident@33..34 "T"
+      Block@34..72
+        LBrace@34..35 "{"
+        ExprStmt@35..71
+          MatchExpr@35..71
+            KwMatch@35..40 "match"
+            PathExpr@40..44
+              UsePath@40..44
+                KwSelf@40..44 "self"
+            LBrace@44..45 "{"
+            MatchArmList@45..70
+              MatchArm@45..56
+                UsePath@45..49
+                  Ident@45..49 "Some"
+                PatTuple@49..52
+                  LParen@49..50 "("
+                  PatIdent@50..51
+                    Ident@50..51 "v"
+                  RParen@51..52 ")"
+                FatArrow@52..54 "=>"
+                PathExpr@54..55
+                  UsePath@54..55
+                    Ident@54..55 "v"
+                Comma@55..56 ","
+              MatchArm@56..70
+                PatIdent@56..60
+                  Ident@56..60 "None"
+                FatArrow@60..62 "=>"
+                MacroCall@62..70
+                  PathExpr@62..67
+                    UsePath@62..67
+                      Ident@62..67 "panic"
+                  Bang@67..68 "!"
+                  TokenTree@68..70
+                    LParen@68..69 "("
+                    RParen@69..70 ")"
+            RBrace@70..71 "}"
+        RBrace@71..72 "}"
+    RBrace@72..73 "}"

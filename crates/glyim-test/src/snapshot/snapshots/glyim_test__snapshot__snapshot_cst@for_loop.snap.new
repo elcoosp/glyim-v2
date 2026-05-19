@@ -1,0 +1,45 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..39
+  FnDef@0..39
+    KwFn@0..2 "fn"
+    Ident@2..5 "foo"
+    LParen@5..6 "("
+    ParamList@6..6
+    RParen@6..7 ")"
+    Block@7..39
+      LBrace@7..8 "{"
+      ExprStmt@8..38
+        ForExpr@8..38
+          KwFor@8..11 "for"
+          PatIdent@11..12
+            Ident@11..12 "i"
+          KwIn@12..14 "in"
+          RangeExpr@14..19
+            LitExpr@14..15
+              IntLit@14..15 "0"
+            DotDot@15..17 ".."
+            LitExpr@17..19
+              IntLit@17..19 "10"
+          Block@19..38
+            LBrace@19..20 "{"
+            ExprStmt@20..37
+              MacroCall@20..36
+                PathExpr@20..27
+                  UsePath@20..27
+                    Ident@20..27 "println"
+                Bang@27..28 "!"
+                TokenTree@28..36
+                  LParen@28..29 "("
+                  TokenTree@29..33
+                    StringLit@29..33 "\"{}\""
+                  Comma@33..34 ","
+                  TokenTree@34..35
+                    Ident@34..35 "i"
+                  RParen@35..36 ")"
+              Semicolon@36..37 ";"
+            RBrace@37..38 "}"
+      RBrace@38..39 "}"

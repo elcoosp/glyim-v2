@@ -1,0 +1,41 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..28
+  FnDef@0..28
+    KwFn@0..2 "fn"
+    Ident@2..5 "add"
+    LParen@5..6 "("
+    ParamList@6..17
+      Param@6..11
+        Ident@6..7 "a"
+        Colon@7..8 ":"
+        PathType@8..11
+          UsePath@8..11
+            Ident@8..11 "i32"
+      Comma@11..12 ","
+      Param@12..17
+        Ident@12..13 "b"
+        Colon@13..14 ":"
+        PathType@14..17
+          UsePath@14..17
+            Ident@14..17 "i32"
+    RParen@17..18 ")"
+    Arrow@18..20 "->"
+    PathType@20..23
+      UsePath@20..23
+        Ident@20..23 "i32"
+    Block@23..28
+      LBrace@23..24 "{"
+      ExprStmt@24..27
+        BinaryExpr@24..27
+          PathExpr@24..25
+            UsePath@24..25
+              Ident@24..25 "a"
+          Plus@25..26 "+"
+          PathExpr@26..27
+            UsePath@26..27
+              Ident@26..27 "b"
+      RBrace@27..28 "}"
