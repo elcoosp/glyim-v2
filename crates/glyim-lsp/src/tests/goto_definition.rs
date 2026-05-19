@@ -32,7 +32,7 @@ fn goto_definition_returns_location() {
         kind: SymbolKind::Function,
         definition: DefinitionLocation {
             file_id,
-            span: span,
+            span,
         },
         type_signature: None,
         is_pub: true,
