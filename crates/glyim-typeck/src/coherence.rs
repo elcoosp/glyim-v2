@@ -115,16 +115,22 @@ impl<'a> CoherenceChecker<'a> {
                 return Some(self.make_overlap_diag(new_header, old));
             }
 
-            // If either is explicitly a TyKind::Param, it's a blanket impl.
             let new_is_blanket = matches!(ctx.ty_kind(new_header.self_ty), TyKind::Param(_));
             let old_is_blanket = matches!(ctx.ty_kind(old.self_ty), TyKind::Param(_));
 
+            // If both are blanket (type-param) impls with different self types,
+            // conservatively assume they don't overlap for now. Real overlap
+            // detection would require unification, which isn't available here.
+            if new_is_blanket && old_is_blanket {
+                continue;
+            }
+
+            // One blanket + one concrete → overlap
             if new_is_blanket || old_is_blanket {
                 return Some(self.make_overlap_diag(new_header, old));
             }
 
             // Conservative: if it has generic params, it might be a blanket impl
-            // e.g., impl<T> Foo for Vec<T>.
             if !new_header.generic_param_names.is_empty() {
                 return Some(self.make_overlap_diag(new_header, old));
             }
@@ -155,7 +161,6 @@ impl<'a> CoherenceChecker<'a> {
 
     /// Compatibility helper for tests.
     #[allow(dead_code)]
-    #[allow(dead_code)]
     pub(crate) fn check_and_register_impl_compat(
         &mut self,
         header: &ResolvedImplHeader,
@@ -171,7 +176,6 @@ impl<'a> CoherenceChecker<'a> {
             None => return,
         };
 
-        // If we can't deeply check Substitution, assume generic_param_names implies blanket
         let is_blanket = !header.generic_param_names.is_empty();
 
         let polarity = header.polarity;

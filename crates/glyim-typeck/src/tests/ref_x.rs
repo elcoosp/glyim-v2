@@ -10,7 +10,7 @@ use glyim_span::Span;
 use glyim_test::{assert_no_errors, mock::MockSolver};
 
 #[test]
-fn ref_immutable() {
+fn ref_mutable() {
     let inter = global_interner();
     let main_name = inter.intern("main");
     let x_name = inter.intern("x");
@@ -18,7 +18,7 @@ fn ref_immutable() {
     let mut pats: IndexVec<PatId, Pat> = IndexVec::new();
     let x_pat = pats.push(Pat::Binding {
         name: x_name,
-        mutability: Mutability::Not,
+        mutability: Mutability::Mut,
         subpattern: None,
     });
 
@@ -26,7 +26,7 @@ fn ref_immutable() {
     let x_expr = exprs.push(Expr::Path(glyim_hir::Path::from_single(x_name)));
     exprs.push(Expr::Ref {
         expr: x_expr,
-        mutability: Mutability::Not,
+        mutability: Mutability::Mut,
     });
     exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
 

@@ -6,7 +6,9 @@ use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 use glyim_core::interner::Interner;
 use glyim_core::primitives::Visibility;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
+use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{ImplItem, Path, TypeRef};
+use glyim_solve::InferenceTable;
 use glyim_span::Span;
 use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut};
 
@@ -14,28 +16,60 @@ use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut};
 fn impl_item_to_header(
     impl_item: &ImplItem,
     interner: &mut Interner,
-    _ctx: &mut TyCtxMut,
-    _def_map: &CrateDefMap,
+    ctx: &mut TyCtxMut,
+    def_map: &CrateDefMap,
 ) -> ResolvedImplHeader {
     let trait_name = impl_item
         .trait_ref
         .as_ref()
         .and_then(|p| p.as_name())
         .unwrap_or_else(|| interner.intern(""));
-    let trait_def_id = if trait_name != interner.intern("") {
-        Some(TraitDefId::from_raw(0))
+
+    let empty_str = interner.intern("");
+    let trait_def_id = if trait_name != empty_str {
+        if let Some(res) = def_map.modules[def_map.root].scope.resolve(trait_name) {
+            Some(TraitDefId::from_raw(res.0.to_raw()))
+        } else {
+            None
+        }
     } else {
         None
     };
-    let self_ty = Ty::ERROR;
-    let substs = Substitution::empty();
+
+    // Resolve self_ty properly so overlap detection works
+    let mut diags = Vec::new();
+    let mut infer = InferenceTable::new();
+    let param_map = crate::tyconv::build_param_tys(ctx, &impl_item.generic_params);
+    let self_ty = crate::tyconv::resolve_type_ref(
+        ctx,
+        &mut infer,
+        def_map,
+        &mut diags,
+        &impl_item.self_ty,
+        &param_map,
+        Span::DUMMY,
+    );
+
+    let self_type_name = match &impl_item.self_ty {
+        TypeRef::Path(p) => p.as_name().and_then(|name| {
+            if def_map.modules[def_map.root].scope.resolve(name).is_some() {
+                Some(name)
+            } else {
+                None
+            }
+        }),
+        _ => None,
+    };
+
+    let generic_param_names = impl_item.generic_params.iter().map(|p| p.name).collect();
+
     ResolvedImplHeader {
         trait_def_id,
         trait_name: Some(trait_name),
-        trait_substs: substs,
+        trait_substs: Substitution::empty(),
         self_ty,
-        self_type_name: None,
-        generic_param_names: vec![],
+        self_type_name,
+        generic_param_names,
         polarity: ImplPolarity::Positive,
         span: Span::DUMMY,
     }
@@ -48,11 +82,11 @@ fn build_def_map(
     local_type_names: &[&str],
 ) -> CrateDefMap {
     let mut scope = ItemScope::default();
-    for &name_str in local_type_names {
+    for (i, &name_str) in local_type_names.iter().enumerate() {
         let name = interner.intern(name_str);
         scope.types.push((
             name,
-            LocalDefId::from_raw(0),
+            LocalDefId::from_raw(i as u32),
             Visibility::Public,
             Span::DUMMY,
         ));
@@ -162,7 +196,7 @@ fn t02_orphan_rule_foreign_trait_foreign_type_error() {
 fn t03_blanket_impl_conflicts_with_concrete() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = Interner::new();
-    let def_map = build_def_map(&mut interner, local_krate, &["i32", "T"]);
+    let def_map = build_def_map(&mut interner, local_krate, &["i32", "T", "MyTrait"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
@@ -281,7 +315,7 @@ fn t07_orphan_local_trait_foreign_type_allowed() {
 fn t08_two_non_overlapping_blanket_impls_allowed() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = Interner::new();
-    let def_map = build_def_map(&mut interner, local_krate, &["A", "B"]);
+    let def_map = build_def_map(&mut interner, local_krate, &["A", "B", "From"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
@@ -331,7 +365,7 @@ fn t09_negative_impl_orphan_error() {
 fn t10_different_traits_no_conflict() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = Interner::new();
-    let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
+    let def_map = build_def_map(&mut interner, local_krate, &["MyType", "TraitA", "TraitB"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 

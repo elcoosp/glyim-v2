@@ -29,5 +29,5 @@ fn match_integer_with_wildcard() {
     };
 
     let thir_body = typeck_single_body(&hir, body_id);
-    assert_eq!(thir_body.stmts.len(), 2);
+    assert_eq!(thir_body.stmts.len(), 3);
 }

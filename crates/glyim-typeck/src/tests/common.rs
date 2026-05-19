@@ -1,4 +1,4 @@
-use glyim_core::def_id::DefId;
+use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::interner::Name;
 /// Common utilities for typeck tests.
 use glyim_diag::GlyimDiagnostic;
@@ -94,16 +94,24 @@ pub fn make_single_body_hir(
     (hir, body_id)
 }
 
-/// Type‑check a single body (returns a dummy THIR body for tests that only need to compile).
-pub fn typeck_single_body(_hir: &CrateHir, _body_id: BodyId) -> crate::thir::Body {
-    use glyim_core::def_id::{CrateId, LocalDefId};
-    crate::thir::Body {
-        owner: glyim_core::def_id::DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
-        params: vec![],
-        return_ty: Ty::UNIT,
-        stmts: vec![],
-        span: Span::DUMMY,
-    }
+/// Type‑check a single body by constructing a real `FnCtxt`.
+pub fn typeck_single_body(hir: &CrateHir, body_id: BodyId) -> crate::thir::Body {
+    let mut ctx = make_ty_ctx();
+    let mut infer = InferenceTable::new();
+    let def_map = empty_def_map();
+    let owner = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+
+    let (thir_body, _diags) = check_function_body(
+        &mut ctx,
+        &mut infer,
+        &def_map,
+        hir,
+        body_id,
+        owner,
+        Ty::UNIT,
+        &[],
+    );
+    thir_body
 }
 
 /// Dummy empty def map (used by some old test files).
@@ -139,5 +147,5 @@ pub fn empty_def_map() -> glyim_def_map::CrateDefMap {
 
 /// Dummy type context for tests.
 pub fn make_ty_ctx() -> glyim_type::TyCtxMut {
-    glyim_type::TyCtxMut::new(Default::default())
+    glyim_type::TyCtxMut::new(global_interner())
 }

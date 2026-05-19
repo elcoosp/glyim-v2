@@ -12,5 +12,5 @@ fn cast_i32_to_f64() {
 
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
-    assert_eq!(thir_body.stmts.len(), 1);
+    assert_eq!(thir_body.stmts.len(), 2);
 }

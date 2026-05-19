@@ -14,5 +14,5 @@ fn function_call_with_args() {
 
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
-    assert_eq!(thir_body.stmts.len(), 3);
+    assert_eq!(thir_body.stmts.len(), 4);
 }

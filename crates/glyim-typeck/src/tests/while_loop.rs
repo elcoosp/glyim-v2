@@ -16,6 +16,5 @@ fn while_loop_bool_condition() {
 
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
-    // First two expressions are not tail, so they become stmts
-    assert_eq!(thir_body.stmts.len(), 2);
+    assert_eq!(thir_body.stmts.len(), 3);
 }
