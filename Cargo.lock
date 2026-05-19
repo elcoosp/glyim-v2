@@ -1123,7 +1123,9 @@ name = "glyim-vfs"
 version = "0.1.0"
 dependencies = [
  "glyim-span",
+ "glyim-test",
  "parking_lot",
+ "tempfile",
  "tracing",
 ]
 
