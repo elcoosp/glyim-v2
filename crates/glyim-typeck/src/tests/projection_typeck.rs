@@ -1,6 +1,5 @@
 use glyim_core::def_id::TraitDefId;
 use glyim_core::interner::Interner;
-use glyim_core::interner::Name;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;
 use glyim_type::{GenericArg, ProjectionTy, TraitRef, TyCtxMut};

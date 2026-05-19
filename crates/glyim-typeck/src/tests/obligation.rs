@@ -13,8 +13,11 @@ use glyim_type::{Predicate, TraitPredicate, TraitRef, Ty};
 
 // Minimal definition of TypeckCtx to make the test compile.
 struct TypeckCtx<'a> {
+    #[allow(unused)]
     ctx: &'a mut glyim_type::TyCtxMut,
+    #[allow(unused)]
     infer: &'a mut InferenceTable,
+    #[allow(unused)]
     diagnostics: &'a mut Vec<GlyimDiagnostic>,
     pending_obligations: Vec<glyim_solve::Obligation>,
 }

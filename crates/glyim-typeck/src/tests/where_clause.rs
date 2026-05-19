@@ -3,13 +3,12 @@ use glyim_core::Visibility;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
 use glyim_core::interner::Interner;
-use glyim_core::primitives::IntTy;
 use glyim_def_map::*;
 use glyim_hir::where_clause::*;
 use glyim_hir::*;
 use glyim_solve::{SolverResult, TraitSolver};
 use glyim_span::Span;
-use glyim_test::{assert_diag_contains, assert_has_errors, assert_no_errors};
+use glyim_test::{assert_has_errors, assert_no_errors};
 use glyim_type::*;
 
 // ---------------------------------------------------------------------------
