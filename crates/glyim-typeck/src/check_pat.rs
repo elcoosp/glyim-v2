@@ -1,3 +1,4 @@
+use glyim_core::primitives::Mutability;
 //! Pattern checking logic for FnCtxt.
 
 use glyim_core::def_id::AdtId;
