@@ -7,7 +7,7 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::AdtId;
+use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
 use indexmap::IndexSet;
@@ -25,6 +25,9 @@ pub struct TyCtxMut {
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
     adt_defs: HashMap<AdtId, AdtDef>,
+    fn_sigs: HashMap<FnDefId, FnSig>,
+    closure_sigs: HashMap<ClosureId, FnSig>,
+    body_tys: HashMap<LocalDefId, Ty>,
     _not_send_sync: PhantomData<*const ()>,
 }
 
@@ -40,6 +43,9 @@ impl TyCtxMut {
             adt_reprs: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
             adt_defs: HashMap::new(),
+            fn_sigs: HashMap::new(),
+            closure_sigs: HashMap::new(),
+            body_tys: HashMap::new(),
             _not_send_sync: PhantomData,
         };
         // sentinels
@@ -214,6 +220,61 @@ impl TyCtxMut {
         None
     }
 
+    /// Returns the type of the field at the given index in the ADT.
+    /// Checks `adt_defs` first (full definition), then falls back to `adt_reprs`
+    /// (field type list). Returns `error_ty()` if the ADT or field is not found.
+    pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
+        if let Some(def) = self.adt_defs.get(&adt_id) {
+            let Ok(raw_idx) = u32::try_from(field_idx) else {
+                return self.error_ty();
+            };
+            let idx = FieldIdx::from_raw(raw_idx);
+            return def
+                .fields
+                .get(idx)
+                .map(|f| f.ty)
+                .unwrap_or_else(|| self.error_ty());
+        }
+        if let Some(repr) = self.adt_reprs.get(&adt_id) {
+            return repr
+                .field_tys
+                .get(field_idx)
+                .copied()
+                .unwrap_or_else(|| self.error_ty());
+        }
+        self.error_ty()
+    }
+
+    /// Register the `FnSig` for a function definition.
+    pub fn register_fn_sig(&mut self, def_id: FnDefId, sig: FnSig) {
+        self.fn_sigs.insert(def_id, sig);
+    }
+
+    /// Retrieve the `FnSig` for a function definition, if registered.
+    pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
+        self.fn_sigs.get(&def_id)
+    }
+
+    /// Register the `FnSig` for a closure definition.
+    pub fn register_closure_sig(&mut self, closure_id: ClosureId, sig: FnSig) {
+        self.closure_sigs.insert(closure_id, sig);
+    }
+
+    /// Retrieve the `FnSig` for a closure definition, if registered.
+    pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {
+        self.closure_sigs.get(&closure_id)
+    }
+
+    /// Register the return type for a body (function or closure body).
+    pub fn register_body_ty(&mut self, def_id: LocalDefId, ty: Ty) {
+        self.body_tys.insert(def_id, ty);
+    }
+
+    /// Retrieve the return type for a body, if registered.
+    pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {
+        self.body_tys.get(&def_id).copied()
+    }
+
     pub fn freeze(self) -> super::ty_ctx::TyCtx {
         super::ty_ctx::TyCtx {
             types: self.types,
@@ -225,6 +286,9 @@ impl TyCtxMut {
             adt_reprs: self.adt_reprs,
             interior_mutable_adt_ids: self.interior_mutable_adt_ids,
             adt_defs: self.adt_defs,
+            fn_sigs: self.fn_sigs,
+            closure_sigs: self.closure_sigs,
+            body_tys: self.body_tys,
         }
     }
 
@@ -251,5 +315,29 @@ impl TypeLookup for TyCtxMut {
     }
     fn is_interior_mutable_adt(&self, adt_id: AdtId) -> bool {
         self.interior_mutable_adt_ids.contains(&adt_id)
+    }
+    fn adt_def(&self, adt_id: AdtId) -> Option<&AdtDef> {
+        self.adt_defs.get(&adt_id)
+    }
+    fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
+        if let Some(def) = self.adt_defs.get(&adt_id) {
+            let Ok(raw_idx) = u32::try_from(field_idx) else {
+                return self.error_ty();
+            };
+            let idx = FieldIdx::from_raw(raw_idx);
+            return def
+                .fields
+                .get(idx)
+                .map(|f| f.ty)
+                .unwrap_or_else(|| self.error_ty());
+        }
+        if let Some(repr) = self.adt_reprs.get(&adt_id) {
+            return repr
+                .field_tys
+                .get(field_idx)
+                .copied()
+                .unwrap_or_else(|| self.error_ty());
+        }
+        self.error_ty()
     }
 }
