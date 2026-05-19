@@ -60,6 +60,14 @@ impl<'a> Expander<'a> {
         self.macros.push(def);
     }
 
+    /// Returns a reference to the interner used by this expander.
+    ///
+    /// Use this when creating `Name` values for `MacroDef` registration
+    /// to ensure names match during expansion lookups.
+    pub fn interner(&self) -> &Interner {
+        &self.interner
+    }
+
     #[tracing::instrument(level = "debug", skip(self, args, call_site))]
     pub fn expand(&mut self, name: Name, args: &SyntaxNode, call_site: Span) -> ExpansionResult {
         let (green_opt, diags) = expander::expand_macro_invocation(

@@ -1,7 +1,6 @@
 //! S11-T03: expand_crate processes multiple macro calls in sequence
 
 use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
-use glyim_core::interner::Interner;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_frontend::parse_to_syntax;
@@ -32,13 +31,11 @@ fn main() {
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
-    // Both macro calls should be expanded
     assert!(
         !expanded_text.contains("double!"),
         "Expected all double! macro calls to be expanded away, got: {}",
         expanded_text
     );
-    // Should contain both expansions
     assert!(
         expanded_text.contains("1"),
         "Expected expanded output to contain '1', got: {}",
@@ -105,7 +102,6 @@ fn main() {}
     let (expanded, diags) = expander.expand_crate(&root);
 
     let expanded_text = expanded.text().to_string();
-    // macro_rules! definitions should be stripped from output
     assert!(
         !expanded_text.contains("macro_rules"),
         "Expected macro_rules definitions to be removed, got: {}",
@@ -136,8 +132,6 @@ fn main() {
         "Expected function definition to be preserved, got: {}",
         expanded_text
     );
-    // Note: whitespace is stripped during token tree conversion,
-    // so we check for tokens without spaces
     assert!(
         expanded_text.contains("1") && expanded_text.contains("+") && expanded_text.contains("2"),
         "Expected expression tokens to be preserved, got: {}",
@@ -158,8 +152,6 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    // Should have diagnostics about the unrecognized macro or just pass through
-    // The key invariant: no crash, and the output is valid
     let expanded_text = expanded.text().to_string();
     assert!(
         expanded_text.contains("fn") || !expanded_text.is_empty(),
@@ -181,9 +173,8 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let file_name = interner.intern("file");
-    let line_name = interner.intern("line");
+    let file_name = expander.interner().intern("file");
+    let line_name = expander.interner().intern("line");
 
     expander.register_macro(MacroDef {
         name: file_name,
@@ -205,7 +196,6 @@ fn main() {
     let (expanded, diags) = expander.expand_crate(&root);
 
     let expanded_text = expanded.text().to_string();
-    // Both builtin macros should be expanded away
     assert!(
         !expanded_text.contains("file!()"),
         "Expected file!() to be expanded away, got: {}",

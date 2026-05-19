@@ -1,7 +1,6 @@
 //! S11-T01: Declarative macro matches and substitutes correctly
 
 use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
-use glyim_core::interner::Interner;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{FileId, HygieneCtx, Span, SyntaxContext, ByteIdx};
 use glyim_frontend::parse_to_syntax;
@@ -45,7 +44,6 @@ fn main() {
 }
 
 /// Test that a macro with multiple arms selects the correct one.
-/// Uses ident vs literal fragment specifiers to differentiate arms.
 #[test]
 fn multi_arm_macro_selects_correct_arm() {
     let source = r#"
@@ -68,13 +66,11 @@ fn main() {
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
-    // "foo" is an ident, so first arm => 1
     assert!(
         expanded_text.contains("1"),
         "Expected expanded output to contain '1' from ident arm, got: {}",
         expanded_text
     );
-    // "99" is a literal (IntLit), so second arm => 2
     assert!(
         expanded_text.contains("2"),
         "Expected expanded output to contain '2' from literal arm, got: {}",
@@ -140,7 +136,6 @@ fn main() {}
 }
 
 /// Test that substitution replaces $x with the captured value.
-/// Uses a simple identity macro with ident fragment spec.
 #[test]
 fn substitution_replaces_metavar() {
     let source = r#"
@@ -181,8 +176,7 @@ fn expand_api_with_builtin_file_macro() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let name = interner.intern("file");
+    let name = expander.interner().intern("file");
 
     expander.register_macro(MacroDef {
         name,

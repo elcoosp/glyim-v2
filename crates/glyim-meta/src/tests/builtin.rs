@@ -1,8 +1,6 @@
 //! S11-T02: Built-in file! and line! macros expand to correct values
 
 use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
-use glyim_core::interner::Interner;
-use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 use glyim_frontend::parse_to_syntax;
 
@@ -22,8 +20,7 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let file_name = interner.intern("file");
+    let file_name = expander.interner().intern("file");
     expander.register_macro(MacroDef {
         name: file_name,
         kind: MacroKind::Builtin {
@@ -41,7 +38,6 @@ fn main() {
         "Expected file!() to be expanded away, got: {}",
         expanded_text
     );
-    // The expansion should contain a string literal
     assert!(
         expanded_text.contains('"'),
         "Expected file!() expansion to contain a string literal, got: {}",
@@ -62,8 +58,7 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let line_name = interner.intern("line");
+    let line_name = expander.interner().intern("line");
     expander.register_macro(MacroDef {
         name: line_name,
         kind: MacroKind::Builtin {
@@ -101,8 +96,7 @@ fn main() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let col_name = interner.intern("column");
+    let col_name = expander.interner().intern("column");
     expander.register_macro(MacroDef {
         name: col_name,
         kind: MacroKind::Builtin {
@@ -129,9 +123,7 @@ fn builtin_file_expand_api() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let file_name = interner.intern("file");
-
+    let file_name = expander.interner().intern("file");
     expander.register_macro(MacroDef {
         name: file_name,
         kind: MacroKind::Builtin {
@@ -173,9 +165,7 @@ fn builtin_line_expand_api() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let line_name = interner.intern("line");
-
+    let line_name = expander.interner().intern("line");
     expander.register_macro(MacroDef {
         name: line_name,
         kind: MacroKind::Builtin {
@@ -217,9 +207,7 @@ fn builtin_env_expand_api() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);
 
-    let interner = Interner::default();
-    let env_name = interner.intern("env");
-
+    let env_name = expander.interner().intern("env");
     expander.register_macro(MacroDef {
         name: env_name,
         kind: MacroKind::Builtin {
@@ -241,7 +229,6 @@ fn builtin_env_expand_api() {
 
     let result = expander.expand(env_name, &args_root, call_site);
 
-    // env! currently produces a diagnostic since it's not fully implemented
     assert!(
         !result.diagnostics.is_empty(),
         "Expected env!() to produce a diagnostic about not being implemented, got: {:?}",
