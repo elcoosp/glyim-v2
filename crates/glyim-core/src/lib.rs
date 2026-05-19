@@ -13,3 +13,6 @@ pub use def_id::*;
 pub use interner::*;
 pub use path::*;
 pub use primitives::*;
+
+#[cfg(test)]
+mod tests;
