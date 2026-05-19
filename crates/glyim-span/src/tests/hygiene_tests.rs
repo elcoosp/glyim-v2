@@ -78,12 +78,18 @@ fn test_adjust_strips_context_and_applies_scope() {
     let lo = ByteIdx::ZERO;
     let hi = ByteIdx::from_raw(5);
     let root_span = Span::new(file, lo, hi, SyntaxContext::ROOT);
-    let mark1 = Mark { expn_id: ExpnId::ROOT, transparency: Transparency::Opaque };
+    let mark1 = Mark {
+        expn_id: ExpnId::ROOT,
+        transparency: Transparency::Opaque,
+    };
     let marked1 = ctx.apply_mark(root_span, mark1);
     assert!(!marked1.ctx.is_root());
 
     // Create a second mark (different transparency)
-    let mark2 = Mark { expn_id: ExpnId::ROOT, transparency: Transparency::Transparent };
+    let mark2 = Mark {
+        expn_id: ExpnId::ROOT,
+        transparency: Transparency::Transparent,
+    };
     let marked2 = ctx.apply_mark(marked1, mark2);
     assert_ne!(marked2.ctx, marked1.ctx);
 
@@ -100,7 +106,12 @@ fn test_adjust_strips_context_and_applies_scope() {
 #[test]
 fn test_adjust_on_root_span_just_changes_ctx() {
     let mut ctx = HygieneCtx::new();
-    let span = Span::new(FileId::from_raw(10), ByteIdx::from_raw(0), ByteIdx::from_raw(8), SyntaxContext::ROOT);
+    let span = Span::new(
+        FileId::from_raw(10),
+        ByteIdx::from_raw(0),
+        ByteIdx::from_raw(8),
+        SyntaxContext::ROOT,
+    );
     let target_ctx = SyntaxContext::ROOT; // same
     let adjusted = ctx.adjust(span, target_ctx);
     assert_eq!(adjusted, span);

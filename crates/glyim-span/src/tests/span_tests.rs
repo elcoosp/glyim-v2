@@ -24,7 +24,12 @@ fn test_span_new_invalid_lo_gt_hi() {
 #[test]
 fn test_is_dummy() {
     assert!(Span::DUMMY.is_dummy());
-    let real = Span::new(FileId::from_raw(0), ByteIdx::ZERO, ByteIdx::from_raw(1), SyntaxContext::ROOT);
+    let real = Span::new(
+        FileId::from_raw(0),
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(1),
+        SyntaxContext::ROOT,
+    );
     assert!(!real.is_dummy());
 }
 
@@ -41,7 +46,12 @@ fn test_range() {
 #[test]
 fn test_sans_ctx() {
     let ctx = SyntaxContext::from_raw(42); // non-root
-    let span = Span::new(FileId::from_raw(0), ByteIdx::ZERO, ByteIdx::from_raw(1), ctx);
+    let span = Span::new(
+        FileId::from_raw(0),
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(1),
+        ctx,
+    );
     let sans = span.sans_ctx();
     assert_eq!(sans.ctx, SyntaxContext::ROOT);
     assert_eq!(sans.file, span.file);
@@ -51,10 +61,20 @@ fn test_sans_ctx() {
 
 #[test]
 fn test_len_and_is_empty() {
-    let empty = Span::new(FileId::from_raw(0), ByteIdx::from_raw(5), ByteIdx::from_raw(5), SyntaxContext::ROOT);
+    let empty = Span::new(
+        FileId::from_raw(0),
+        ByteIdx::from_raw(5),
+        ByteIdx::from_raw(5),
+        SyntaxContext::ROOT,
+    );
     assert_eq!(empty.len(), 0);
     assert!(empty.is_empty());
-    let nonempty = Span::new(FileId::from_raw(0), ByteIdx::from_raw(5), ByteIdx::from_raw(10), SyntaxContext::ROOT);
+    let nonempty = Span::new(
+        FileId::from_raw(0),
+        ByteIdx::from_raw(5),
+        ByteIdx::from_raw(10),
+        SyntaxContext::ROOT,
+    );
     assert_eq!(nonempty.len(), 5);
     assert!(!nonempty.is_empty());
 }
@@ -62,8 +82,18 @@ fn test_len_and_is_empty() {
 #[test]
 fn test_to_merges_spans_same_file() {
     let file = FileId::from_raw(1);
-    let a = Span::new(file, ByteIdx::from_raw(2), ByteIdx::from_raw(5), SyntaxContext::ROOT);
-    let b = Span::new(file, ByteIdx::from_raw(4), ByteIdx::from_raw(7), SyntaxContext::ROOT);
+    let a = Span::new(
+        file,
+        ByteIdx::from_raw(2),
+        ByteIdx::from_raw(5),
+        SyntaxContext::ROOT,
+    );
+    let b = Span::new(
+        file,
+        ByteIdx::from_raw(4),
+        ByteIdx::from_raw(7),
+        SyntaxContext::ROOT,
+    );
     let merged = a.to(b);
     assert_eq!(merged.file, file);
     assert_eq!(merged.lo, ByteIdx::from_raw(2));
@@ -74,7 +104,17 @@ fn test_to_merges_spans_same_file() {
 #[test]
 #[should_panic(expected = "Cannot merge spans from different files")]
 fn test_to_panics_different_files() {
-    let a = Span::new(FileId::from_raw(1), ByteIdx::ZERO, ByteIdx::from_raw(1), SyntaxContext::ROOT);
-    let b = Span::new(FileId::from_raw(2), ByteIdx::ZERO, ByteIdx::from_raw(1), SyntaxContext::ROOT);
+    let a = Span::new(
+        FileId::from_raw(1),
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(1),
+        SyntaxContext::ROOT,
+    );
+    let b = Span::new(
+        FileId::from_raw(2),
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(1),
+        SyntaxContext::ROOT,
+    );
     let _ = a.to(b);
 }
