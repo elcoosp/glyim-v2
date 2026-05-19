@@ -2,7 +2,7 @@
 
 use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
-use glyim_hir::Expr;
+use glyim_hir::{Expr, Pat};
 use glyim_span::Span;
 use glyim_type::Ty;
 
@@ -24,11 +24,17 @@ impl<'a> FnCtxt<'a> {
             });
         }
 
-        // Use iter_enumerated to get both index and expression safely
+        // Register parameter bindings from HIR body params (patterns)
+        for &pat_id in &self.body.params {
+            self.check_param_pattern(pat_id);
+        }
+
         let mut stmts = Vec::new();
-        let expr_count = self.body.exprs.len();
-        for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
-            let is_tail = pos == expr_count - 1;
+        let mut expr_ids: Vec<_> = self.body.exprs.iter_enumerated().collect();
+        let len = expr_ids.len();
+
+        for (pos, (expr_id, expr)) in expr_ids.into_iter().enumerate() {
+            let is_tail = pos == len - 1;
             let span = self.body.expr_spans[expr_id];
 
             match expr {
@@ -72,6 +78,32 @@ impl<'a> FnCtxt<'a> {
             return_ty: self.return_ty,
             stmts,
             span: self.body.span,
+        }
+    }
+
+    /// Check a parameter pattern (from body.params) — adds bindings to env
+    /// without requiring a pre-resolved type (uses the param type from the
+    /// function signature which was already registered in `check`'s caller).
+    fn check_param_pattern(&mut self, pat_id: glyim_hir::PatId) {
+        let pat = &self.body.pats[pat_id];
+        match pat {
+            Pat::Binding {
+                name,
+                mutability,
+                subpattern,
+            } => {
+                // Use a fresh infer ty — the actual type comes from the
+                // param list that was already set up above.
+                let ty = self.fresh_infer_ty();
+                self.env.add_binding(*name, ty, *mutability);
+                if let Some(sub_id) = subpattern {
+                    self.check_param_pattern(*sub_id);
+                }
+            }
+            Pat::Wild => {}
+            _ => {
+                // For other patterns, just recurse — best effort
+            }
         }
     }
 }

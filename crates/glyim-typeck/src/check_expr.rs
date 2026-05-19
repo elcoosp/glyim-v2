@@ -598,4 +598,76 @@ impl<'a> FnCtxt<'a> {
             _ => fn_ty,
         }
     }
+
+    fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
+        // Search inherent impls and trait impls for the method
+        for (_id, item) in self.hir.items.iter_enumerated() {
+            if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
+                let param_map = crate::tyconv::build_param_tys(self.ctx, &impl_item.generic_params);
+                let impl_self_ty = crate::tyconv::resolve_type_ref(
+                    self.ctx,
+                    self.infer,
+                    self.def_map,
+                    self.diagnostics,
+                    &impl_item.self_ty,
+                    &param_map,
+                    span,
+                );
+                if self.unify(recv_ty, impl_self_ty, span) {
+                    for method in &impl_item.methods {
+                        if method.name == method_name {
+                            if let Some(return_ty_ref) = &method.return_ty {
+                                return crate::tyconv::resolve_type_ref(
+                                    self.ctx,
+                                    self.infer,
+                                    self.def_map,
+                                    self.diagnostics,
+                                    return_ty_ref,
+                                    &param_map,
+                                    span,
+                                );
+                            } else {
+                                return Ty::UNIT;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Also check trait definitions (for default impls)
+        for (_id, item) in self.hir.items.iter_enumerated() {
+            if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
+                for method in &trait_item.methods {
+                    if method.name == method_name {
+                        if let Some(return_ty_ref) = &method.return_ty {
+                            let param_map = std::collections::HashMap::new();
+                            return crate::tyconv::resolve_type_ref(
+                                self.ctx,
+                                self.infer,
+                                self.def_map,
+                                self.diagnostics,
+                                return_ty_ref,
+                                &param_map,
+                                span,
+                            );
+                        } else {
+                            return Ty::UNIT;
+                        }
+                    }
+                }
+            }
+        }
+        self.diagnostics.push(GlyimDiagnostic::type_error(
+            span,
+            format!("no method `{}` found for type", self.ctx.name_str(method_name)),
+        ));
+        Ty::ERROR
+    }
+
+    fn extract_return_ty(&mut self, fn_ty: Ty, _span: Span) -> Ty {
+        match self.ctx.ty_kind(fn_ty) {
+            TyKind::FnDef(_, _) => self.fresh_infer_ty(),
+            _ => fn_ty,
+        }
+    }
 }
