@@ -12,7 +12,6 @@ use crate::check_body::FnCtxt;
 use crate::thir;
 
 impl<'a> FnCtxt<'a> {
-    /// Get the span for an expression, with a fallback for missing spans.
     pub fn expr_span(&self, expr_id: ExprId) -> Span {
         if (expr_id.to_raw() as usize) < self.body.expr_spans.len() {
             self.body.expr_spans[expr_id]

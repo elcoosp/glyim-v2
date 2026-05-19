@@ -1,4 +1,3 @@
-#![allow(unused_variables, unused_imports, dead_code)]
 //! Statement checking logic for FnCtxt.
 
 use glyim_core::interner::Name;

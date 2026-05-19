@@ -1,4 +1,4 @@
-#![allow(unused_variables, unused_imports, dead_code)]
+#![allow(unused_variables)]
 //! Expression checking logic for FnCtxt.
 
 use std::collections::HashMap;
