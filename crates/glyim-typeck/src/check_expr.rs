@@ -84,7 +84,7 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Binary { op, lhs, rhs } => {
                 let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
-                let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
 
                 let operand_ty = if self.unify(lhs_ty, rhs_ty, span) {
                     lhs_ty
@@ -463,7 +463,7 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Assign { lhs, rhs } => {
                 let (_, lhs_ty) = self.check_expr(*lhs);
-                let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
                 self.unify(rhs_ty, lhs_ty, span);
                 (thir::Expr::err(span), Ty::UNIT)
             }
