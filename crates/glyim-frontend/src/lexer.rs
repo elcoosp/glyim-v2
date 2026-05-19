@@ -107,6 +107,9 @@ impl<'a> Lexer<'a> {
                     let after_quote = self.pos + 1;
                     let src = self.source;
                     let mut ident_end = after_quote;
+                    #[allow(unused_assignments)]
+                    let mut is_lifetime = false;
+
                     let mut chars = src[after_quote..].chars();
                     if let Some(first) = chars.next() {
                         if first.is_alphabetic() || first == '_' {

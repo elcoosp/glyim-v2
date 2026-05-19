@@ -188,7 +188,7 @@ fn pat_to_expr(
             let expr = Expr::Path(path.clone());
             Some(exprs.push(expr))
         }
-        Pat::Tuple(pats) => {
+        Pat::Tuple(_pats) => {
             // Not needed for simple let tests
             None
         }
