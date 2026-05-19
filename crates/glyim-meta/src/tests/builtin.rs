@@ -1,8 +1,8 @@
 //! S11-T02: Built-in file! and line! macros expand to correct values
 
-use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
-use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
+use crate::{BuiltinMacro, Expander, MacroDef, MacroKind};
 use glyim_frontend::parse_to_syntax;
+use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 
 fn parse(source: &str) -> glyim_syntax::SyntaxNode {
     parse_to_syntax(source, FileId::BOGUS).root

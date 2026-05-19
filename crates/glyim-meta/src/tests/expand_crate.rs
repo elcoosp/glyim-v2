@@ -1,9 +1,9 @@
 //! S11-T03: expand_crate processes multiple macro calls in sequence
 
-use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
+use crate::{BuiltinMacro, Expander, MacroDef, MacroKind};
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_frontend::parse_to_syntax;
+use glyim_span::{FileId, HygieneCtx, Span};
 
 fn parse(source: &str) -> glyim_syntax::SyntaxNode {
     parse_to_syntax(source, FileId::BOGUS).root

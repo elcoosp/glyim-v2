@@ -1,9 +1,9 @@
 //! S11-T01: Declarative macro matches and substitutes correctly
 
-use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
+use crate::{BuiltinMacro, Expander, MacroDef, MacroKind};
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::{FileId, HygieneCtx, Span, SyntaxContext, ByteIdx};
 use glyim_frontend::parse_to_syntax;
+use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 
 /// Helper: parse source and return the syntax root.
 fn parse(source: &str) -> glyim_syntax::SyntaxNode {

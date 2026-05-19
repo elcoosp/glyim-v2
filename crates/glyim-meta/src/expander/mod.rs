@@ -9,8 +9,8 @@ use glyim_span::{
     ByteIdx, ExpnData, ExpnKind, FileId, HygieneCtx, Mark, Span, SyntaxContext, Transparency,
 };
 use glyim_syntax::{GlyimLang, GreenNode, SyntaxKind, SyntaxNode};
-use smol_str::SmolStr;
 use rowan::Language;
+use smol_str::SmolStr;
 use std::collections::HashMap;
 
 use matcher::{MatchResult, Pattern, match_pattern};
@@ -40,9 +40,7 @@ pub(crate) fn expand_crate(
     // Register builtins from the public API
     for def in registered {
         if let crate::MacroKind::Builtin { handler, .. } = &def.kind {
-            expander
-                .registered_builtins
-                .insert(def.name, *handler);
+            expander.registered_builtins.insert(def.name, *handler);
         }
     }
     expander.collect_macros(root, interner);
