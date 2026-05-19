@@ -6,3 +6,6 @@ version.workspace = true
 [dependencies]
 lasso = { workspace = true, features = ["multi-threaded"] }
 smallvec = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }
