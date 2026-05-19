@@ -4,7 +4,7 @@
 use glyim_core::def_id::AdtId;
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
 
-use super::helpers::{test_frozen_ty_ctx, with_fresh_ty_ctx};
+use super::helpers::with_fresh_ty_ctx;
 use crate::auto_trait::{AutoTrait, AutoTraitFlags};
 use crate::region::Region;
 use crate::substitution::GenericArg;
@@ -237,7 +237,8 @@ fn all_auto_traits_for_i32() {
 #[test]
 fn dynamic_type_has_no_auto_traits() {
     let (ctx, dyn_ty) = with_fresh_ty_ctx(|c| {
-        let preds = crate::binder::Binder::bind(Box::new([]), Box::new([]));
+        let preds: crate::binder::Binder<Box<[crate::predicate::Predicate]>> =
+            crate::binder::Binder::bind(Box::new([]), Box::new([]));
         c.mk_ty(TyKind::Dynamic(preds, Region::Erased))
     });
     let flags = ctx.auto_trait_flags(dyn_ty);

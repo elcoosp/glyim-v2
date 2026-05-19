@@ -6,10 +6,9 @@ use glyim_core::def_id::AdtId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::IntTy;
 
-use super::helpers::{test_frozen_ty_ctx, test_ty_ctx, with_fresh_ty_ctx};
+use super::helpers::{test_ty_ctx, with_fresh_ty_ctx};
 use crate::adt_def::*;
 use crate::display::TypeLookup;
-use crate::ty::FieldIdx;
 use crate::*;
 
 // ---- field_ty on TyCtxMut ----
