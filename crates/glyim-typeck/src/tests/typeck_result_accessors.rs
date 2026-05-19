@@ -1,5 +1,4 @@
 use glyim_test::phase::FrontendTester;
-use glyim_type::Ty;
 
 #[test]
 fn expr_ty_returns_correct_type() {

@@ -1,7 +1,7 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
-use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId};
+use glyim_hir::{Body, BodyId, CrateHir, Expr};
 use glyim_span::Span;
 use glyim_type::Ty;
 
