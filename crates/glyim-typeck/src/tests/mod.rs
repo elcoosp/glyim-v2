@@ -1,5 +1,4 @@
 // Auto-generated mod.rs including all test modules
-=== RECONSTRUCT FULL MOD.RS WITH ALL TEST MODULES ===
 mod array;
 mod array;
 mod assign;
