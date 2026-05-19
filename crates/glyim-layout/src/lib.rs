@@ -42,7 +42,10 @@ impl Align {
     pub const ONE: Align = Align(1);
     pub const EIGHT: Align = Align(8);
     pub fn from_bytes(bytes: u64) -> Self {
-        debug_assert!(bytes.is_power_of_two(), "alignment must be a power of two, got {bytes}");
+        debug_assert!(
+            bytes.is_power_of_two(),
+            "alignment must be a power of two, got {bytes}"
+        );
         Align(bytes)
     }
     pub fn max(self, other: Self) -> Self {
@@ -352,7 +355,10 @@ impl<'a> SimpleLayoutComputer<'a> {
     }
 
     /// Compute layout for a single variant's data (fields only, no tag).
-    fn layout_variant_data(&self, variant: &glyim_type::adt_def::VariantDef) -> Result<Layout, LayoutError> {
+    fn layout_variant_data(
+        &self,
+        variant: &glyim_type::adt_def::VariantDef,
+    ) -> Result<Layout, LayoutError> {
         let mut offsets = IndexVec::new();
         let mut var_align = Align::ONE;
         let mut current_offset = Size::ZERO;
@@ -382,7 +388,8 @@ impl<'a> SimpleLayoutComputer<'a> {
         variant_layouts: &[Layout],
     ) -> Result<Option<Layout>, LayoutError> {
         let variant_count = adt_def.variants.len();
-        let niche_variants_needed = u128::try_from(variant_count.saturating_sub(1)).unwrap_or(u128::MAX);
+        let niche_variants_needed =
+            u128::try_from(variant_count.saturating_sub(1)).unwrap_or(u128::MAX);
 
         for (vi, variant) in adt_def.variants.iter().enumerate() {
             for (fi, field) in variant.fields.iter().enumerate() {
@@ -585,7 +592,12 @@ impl<'a> SimpleLayoutComputer<'a> {
     }
 
     /// Compute layout for an ADT (struct, enum, or union).
-    fn layout_adt(&self, adt_id: glyim_core::AdtId, substs: Substitution, outer_ty: Ty) -> Result<Layout, LayoutError> {
+    fn layout_adt(
+        &self,
+        adt_id: glyim_core::AdtId,
+        substs: Substitution,
+        outer_ty: Ty,
+    ) -> Result<Layout, LayoutError> {
         let adt_def = match self.ctx.adt_def(adt_id) {
             Some(def) => def,
             None => {

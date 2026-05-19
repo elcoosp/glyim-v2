@@ -11,7 +11,9 @@ fn s15_tuple_unit() {
         c.mk_tuple(substs)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(tuple_ty).expect("unit tuple should succeed");
+    let layout = computer
+        .layout_of(tuple_ty)
+        .expect("unit tuple should succeed");
     assert_eq!(layout.size, Size::ZERO);
     assert_eq!(layout.align, Align::ONE);
 }
@@ -24,7 +26,9 @@ fn s15_tuple_single_i32() {
         c.mk_tuple(substs)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(tuple_ty).expect("tuple layout should succeed");
+    let layout = computer
+        .layout_of(tuple_ty)
+        .expect("tuple layout should succeed");
     assert_eq!(layout.size, Size::bytes(4));
     assert_eq!(layout.align, Align::from_bytes(4));
 }
@@ -33,11 +37,16 @@ fn s15_tuple_single_i32() {
 fn s15_tuple_two_i32() {
     let (ctx, tuple_ty) = with_fresh_ty_ctx(|c| {
         let i32_ty = c.mk_ty(glyim_type::TyKind::Int(IntTy::I32));
-        let substs = c.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty), glyim_type::GenericArg::Ty(i32_ty)]);
+        let substs = c.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+        ]);
         c.mk_tuple(substs)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(tuple_ty).expect("tuple layout should succeed");
+    let layout = computer
+        .layout_of(tuple_ty)
+        .expect("tuple layout should succeed");
     assert_eq!(layout.size, Size::bytes(8));
     assert_eq!(layout.align, Align::from_bytes(4));
 }
@@ -47,12 +56,21 @@ fn s15_tuple_bool_and_i32() {
     let (ctx, tuple_ty) = with_fresh_ty_ctx(|c| {
         let bool_ty = c.bool_ty();
         let i32_ty = c.mk_ty(glyim_type::TyKind::Int(IntTy::I32));
-        let substs = c.intern_substitution(vec![glyim_type::GenericArg::Ty(bool_ty), glyim_type::GenericArg::Ty(i32_ty)]);
+        let substs = c.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(bool_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+        ]);
         c.mk_tuple(substs)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(tuple_ty).expect("tuple layout should succeed");
-    assert_eq!(layout.size, Size::bytes(8), "tuple (bool, i32) size = 8 with padding");
+    let layout = computer
+        .layout_of(tuple_ty)
+        .expect("tuple layout should succeed");
+    assert_eq!(
+        layout.size,
+        Size::bytes(8),
+        "tuple (bool, i32) size = 8 with padding"
+    );
     assert_eq!(layout.align, Align::from_bytes(4));
 }
 
@@ -67,7 +85,9 @@ fn s15_tuple_array_layout() {
         c.mk_ty(glyim_type::TyKind::Array(i32_ty, four))
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(arr_ty).expect("array layout should succeed");
+    let layout = computer
+        .layout_of(arr_ty)
+        .expect("array layout should succeed");
     assert_eq!(layout.size, Size::bytes(16), "[i32; 4] size = 16");
     assert_eq!(layout.align, Align::from_bytes(4), "[i32; 4] align = 4");
     match &layout.fields {

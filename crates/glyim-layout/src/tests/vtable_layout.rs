@@ -23,7 +23,7 @@ fn s15_vtable_memory_size_no_methods() {
 
 #[test]
 fn s15_vtable_memory_size_with_methods() {
-    let (ctx, (concrete_ty, sig, foo_name, bar_name)) = with_fresh_ty_ctx(|c| {
+    let (_ctx, (concrete_ty, sig, foo_name, bar_name)) = with_fresh_ty_ctx(|c| {
         let i32_ty = c.mk_ty(glyim_type::TyKind::Int(IntTy::I32));
         let bool_ty = c.bool_ty();
         let inputs = c.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);

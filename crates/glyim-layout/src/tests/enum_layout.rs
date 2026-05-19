@@ -59,17 +59,26 @@ fn s15_t02_enum_simple_two_variants_no_data() {
         make_enum_ty(c, glyim_core::AdtId::from_raw(200), vec![vec![], vec![]])
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(enum_ty).expect("enum layout should succeed");
+    let layout = computer
+        .layout_of(enum_ty)
+        .expect("enum layout should succeed");
 
     assert!(!layout.is_unsized);
     match &layout.variants {
-        VariantsShape::Multiple { tag_encoding, variants, .. } => {
+        VariantsShape::Multiple {
+            tag_encoding,
+            variants,
+            ..
+        } => {
             assert_eq!(variants.len(), 2);
             let _ = tag_encoding;
         }
         VariantsShape::Single { .. } => panic!("enum should have Multiple variants"),
     }
-    assert!(layout.size.0 >= 1, "enum should have at least 1 byte for discriminant");
+    assert!(
+        layout.size.0 >= 1,
+        "enum should have at least 1 byte for discriminant"
+    );
 }
 
 #[test]
@@ -77,16 +86,32 @@ fn s15_t02_enum_with_data_variants() {
     let (ctx, enum_ty) = with_fresh_ty_ctx(|c| {
         let i32_ty = c.mk_ty(glyim_type::TyKind::Int(IntTy::I32));
         let bool_ty = c.bool_ty();
-        make_enum_ty(c, glyim_core::AdtId::from_raw(201), vec![vec![i32_ty], vec![bool_ty]])
+        make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(201),
+            vec![vec![i32_ty], vec![bool_ty]],
+        )
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(enum_ty).expect("enum layout should succeed");
+    let layout = computer
+        .layout_of(enum_ty)
+        .expect("enum layout should succeed");
 
     match &layout.variants {
-        VariantsShape::Multiple { tag, tag_field, tag_encoding, variants } => {
+        VariantsShape::Multiple {
+            tag,
+            tag_field,
+            tag_encoding,
+            variants,
+        } => {
             let tag_kind = ctx.ty_kind(*tag);
             assert!(
-                matches!(tag_kind, glyim_type::TyKind::Int(_) | glyim_type::TyKind::Uint(_) | glyim_type::TyKind::Bool),
+                matches!(
+                    tag_kind,
+                    glyim_type::TyKind::Int(_)
+                        | glyim_type::TyKind::Uint(_)
+                        | glyim_type::TyKind::Bool
+                ),
                 "tag should be an integer or bool type, got {:?}",
                 tag_kind
             );
@@ -96,29 +121,40 @@ fn s15_t02_enum_with_data_variants() {
         }
         VariantsShape::Single { .. } => panic!("enum should have Multiple variants"),
     }
-    assert!(layout.size.0 >= 4, "enum with i32 variant should be at least 4 bytes");
+    assert!(
+        layout.size.0 >= 4,
+        "enum with i32 variant should be at least 4 bytes"
+    );
 }
 
 #[test]
 fn s15_t02_enum_niche_option_bool() {
     let (ctx, enum_ty) = with_fresh_ty_ctx(|c| {
         let bool_ty = c.bool_ty();
-        make_enum_ty(c, glyim_core::AdtId::from_raw(202), vec![vec![bool_ty], vec![]])
+        make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(202),
+            vec![vec![bool_ty], vec![]],
+        )
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(enum_ty).expect("enum layout should succeed");
+    let layout = computer
+        .layout_of(enum_ty)
+        .expect("enum layout should succeed");
 
     match &layout.variants {
-        VariantsShape::Multiple { tag_encoding, .. } => {
-            match tag_encoding {
-                TagEncoding::Niche { untagged_variant, niche_variants, niche_start } => {
-                    assert_eq!(*untagged_variant, 0);
-                    assert_eq!(niche_variants.clone(), 1..=1);
-                    assert_eq!(*niche_start, 2);
-                }
-                TagEncoding::Direct => {}
+        VariantsShape::Multiple { tag_encoding, .. } => match tag_encoding {
+            TagEncoding::Niche {
+                untagged_variant,
+                niche_variants,
+                niche_start,
+            } => {
+                assert_eq!(*untagged_variant, 0);
+                assert_eq!(niche_variants.clone(), 1..=1);
+                assert_eq!(*niche_start, 2);
             }
-        }
+            TagEncoding::Direct => {}
+        },
         VariantsShape::Single { .. } => panic!("enum should have Multiple variants"),
     }
     assert!(layout.size.0 <= 2, "Option<bool> should be at most 2 bytes");
@@ -127,10 +163,16 @@ fn s15_t02_enum_niche_option_bool() {
 #[test]
 fn s15_t02_enum_three_variants_no_data() {
     let (ctx, enum_ty) = with_fresh_ty_ctx(|c| {
-        make_enum_ty(c, glyim_core::AdtId::from_raw(203), vec![vec![], vec![], vec![]])
+        make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(203),
+            vec![vec![], vec![], vec![]],
+        )
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(enum_ty).expect("enum layout should succeed");
+    let layout = computer
+        .layout_of(enum_ty)
+        .expect("enum layout should succeed");
 
     assert!(layout.size.0 >= 1);
     match &layout.variants {
@@ -148,7 +190,9 @@ fn s15_t02_enum_large_discriminant() {
         make_enum_ty(c, glyim_core::AdtId::from_raw(204), variants)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(enum_ty).expect("enum layout should succeed");
+    let layout = computer
+        .layout_of(enum_ty)
+        .expect("enum layout should succeed");
     assert!(layout.size.0 >= 1);
 }
 
@@ -159,6 +203,11 @@ fn s15_t02_enum_257_variants_needs_u16() {
         make_enum_ty(c, glyim_core::AdtId::from_raw(205), variants)
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(enum_ty).expect("enum layout should succeed");
-    assert!(layout.size.0 >= 2, "257-variant enum needs at least 2 bytes for u16 tag");
+    let layout = computer
+        .layout_of(enum_ty)
+        .expect("enum layout should succeed");
+    assert!(
+        layout.size.0 >= 2,
+        "257-variant enum needs at least 2 bytes for u16 tag"
+    );
 }

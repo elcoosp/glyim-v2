@@ -38,7 +38,9 @@ fn s15_t01_struct_two_i32_fields() {
         make_struct_ty(c, glyim_core::AdtId::from_raw(100), vec![i32_ty, i32_ty])
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(struct_ty).expect("struct layout should succeed");
+    let layout = computer
+        .layout_of(struct_ty)
+        .expect("struct layout should succeed");
     assert_eq!(layout.size, Size::bytes(8), "size mismatch");
     assert_eq!(layout.align, Align::from_bytes(4), "align mismatch");
     assert!(!layout.is_unsized, "struct should be sized");
@@ -51,7 +53,10 @@ fn s15_t01_struct_two_i32_fields() {
         }
         _ => panic!("expected Arbitrary fields for struct"),
     }
-    assert!(matches!(&layout.variants, VariantsShape::Single { index: 0 }));
+    assert!(matches!(
+        &layout.variants,
+        VariantsShape::Single { index: 0 }
+    ));
 }
 
 #[test]
@@ -62,18 +67,21 @@ fn s15_t01_struct_with_alignment_gap() {
         make_struct_ty(c, glyim_core::AdtId::from_raw(101), vec![u8_ty, i32_ty])
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(struct_ty).expect("struct layout should succeed");
+    let layout = computer
+        .layout_of(struct_ty)
+        .expect("struct layout should succeed");
     assert_eq!(layout.size, Size::bytes(8), "size should be 8 with padding");
     assert_eq!(layout.align, Align::from_bytes(4), "align should be 4");
 }
 
 #[test]
 fn s15_t01_struct_empty() {
-    let (ctx, struct_ty) = with_fresh_ty_ctx(|c| {
-        make_struct_ty(c, glyim_core::AdtId::from_raw(102), vec![])
-    });
+    let (ctx, struct_ty) =
+        with_fresh_ty_ctx(|c| make_struct_ty(c, glyim_core::AdtId::from_raw(102), vec![]));
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(struct_ty).expect("empty struct layout should succeed");
+    let layout = computer
+        .layout_of(struct_ty)
+        .expect("empty struct layout should succeed");
     assert_eq!(layout.size, Size::ZERO, "empty struct size should be 0");
     assert_eq!(layout.align, Align::ONE, "empty struct align should be 1");
 }
@@ -84,7 +92,9 @@ fn s15_t01_struct_single_bool() {
         make_struct_ty(c, glyim_core::AdtId::from_raw(103), vec![c.bool_ty()])
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(struct_ty).expect("struct layout should succeed");
+    let layout = computer
+        .layout_of(struct_ty)
+        .expect("struct layout should succeed");
     assert_eq!(layout.size, Size::bytes(1));
     assert_eq!(layout.align, Align::ONE);
 }
@@ -95,11 +105,21 @@ fn s15_t01_struct_three_fields_mixed() {
         let bool_ty = c.bool_ty();
         let i32_ty = c.mk_ty(glyim_type::TyKind::Int(IntTy::I32));
         let u8_ty = c.mk_ty(glyim_type::TyKind::Uint(UintTy::U8));
-        make_struct_ty(c, glyim_core::AdtId::from_raw(104), vec![bool_ty, i32_ty, u8_ty])
+        make_struct_ty(
+            c,
+            glyim_core::AdtId::from_raw(104),
+            vec![bool_ty, i32_ty, u8_ty],
+        )
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(struct_ty).expect("struct layout should succeed");
-    assert_eq!(layout.size, Size::bytes(12), "size should be 12 with padding");
+    let layout = computer
+        .layout_of(struct_ty)
+        .expect("struct layout should succeed");
+    assert_eq!(
+        layout.size,
+        Size::bytes(12),
+        "size should be 12 with padding"
+    );
     assert_eq!(layout.align, Align::from_bytes(4), "align should be 4");
 }
 
@@ -111,7 +131,9 @@ fn s15_t01_struct_with_pointer() {
         make_struct_ty(c, glyim_core::AdtId::from_raw(105), vec![ref_ty, i32_ty])
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let layout = computer.layout_of(struct_ty).expect("struct layout should succeed");
+    let layout = computer
+        .layout_of(struct_ty)
+        .expect("struct layout should succeed");
     assert_eq!(layout.size, Size::bytes(16), "size should be 16");
     assert_eq!(layout.align, Align::from_bytes(8), "align should be 8");
 }

@@ -30,7 +30,10 @@ fn s15_t03_fn_abi_aapcs_on_aarch64() {
     let (ctx, fn_sig) = with_fresh_ty_ctx(|c| {
         let i64_ty = c.mk_ty(glyim_type::TyKind::Int(IntTy::I64));
         let f64_ty = c.mk_ty(glyim_type::TyKind::Float(FloatTy::F64));
-        let inputs = c.intern_substitution(vec![glyim_type::GenericArg::Ty(i64_ty), glyim_type::GenericArg::Ty(f64_ty)]);
+        let inputs = c.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(i64_ty),
+            glyim_type::GenericArg::Ty(f64_ty),
+        ]);
         glyim_type::FnSig {
             inputs,
             output: c.unit_ty(),
@@ -62,7 +65,11 @@ fn s15_t03_fn_abi_unit_ret_ignored() {
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
     let abi = computer.fn_abi_of(&fn_sig).expect("fn_abi should succeed");
-    assert_eq!(abi.ret.mode, PassMode::Ignore, "unit return should be Ignore");
+    assert_eq!(
+        abi.ret.mode,
+        PassMode::Ignore,
+        "unit return should be Ignore"
+    );
 }
 
 #[test]
@@ -134,5 +141,9 @@ fn s15_t03_fn_abi_never_ret_ignore() {
     });
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
     let abi = computer.fn_abi_of(&fn_sig).expect("fn_abi should succeed");
-    assert_eq!(abi.ret.mode, PassMode::Ignore, "never return should be Ignore");
+    assert_eq!(
+        abi.ret.mode,
+        PassMode::Ignore,
+        "never return should be Ignore"
+    );
 }

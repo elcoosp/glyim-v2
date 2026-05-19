@@ -1,8 +1,8 @@
-mod extended_tests;
-mod layout_tests;
-mod trait_objects;
-mod struct_layout;
 mod enum_layout;
+mod extended_tests;
 mod fn_abi;
-mod vtable_layout;
+mod layout_tests;
+mod struct_layout;
+mod trait_objects;
 mod tuple_layout;
+mod vtable_layout;
