@@ -83,8 +83,8 @@ pub(crate) fn lower_block_to_expr(
                         pat_node = Some(inner);
                     }
                 }
-                if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone()) {
-                    if let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats) {
+                if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone())
+                    && let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats) {
                         let span = node_span(&child);
                         let lhs_expr_id = pat_to_expr(pat_id, body, interner, span);
                         let rhs_expr_id = lower_expr(&rhs, interner, body, diags, struct_field_map);
@@ -103,7 +103,6 @@ pub(crate) fn lower_block_to_expr(
                             continue;
                         }
                     }
-                }
                 if let Some(rhs) = expr_node {
                     if let Some(prev) = pending.take() {
                         stmts.push(prev);
@@ -126,8 +125,8 @@ pub(crate) fn lower_block_to_expr(
     };
 
     let expr = Expr::Block { stmts, tail };
-    let eid = body.alloc_expr(expr, node_span(node));
-    eid
+    
+    body.alloc_expr(expr, node_span(node))
 }
 
 /// Convert a pattern into an expression (for LHS of assignment)
