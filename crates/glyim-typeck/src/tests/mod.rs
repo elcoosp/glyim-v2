@@ -1,4 +1,3 @@
-=== FORCE REWRITE MOD.RS WITHOUT ANY MARKERS ===
 // Auto-generated test modules
 mod array;
 mod assign;
