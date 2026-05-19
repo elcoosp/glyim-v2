@@ -108,11 +108,10 @@ pub(crate) fn lower_crate(
     // First pass: collect all struct definitions for field ordering
     let mut struct_field_map = std::collections::HashMap::new();
     for child in root.children() {
-        if child.kind() == SyntaxKind::StructDef {
-            if let Some((name, fields)) = lower_item::collect_struct_fields(&child, interner) {
+        if child.kind() == SyntaxKind::StructDef
+            && let Some((name, fields)) = lower_item::collect_struct_fields(&child, interner) {
                 struct_field_map.insert(name, fields);
             }
-        }
     }
 
     // Second pass: lower all items (fn bodies can now reorder fields)

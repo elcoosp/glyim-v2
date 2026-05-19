@@ -112,7 +112,7 @@ impl<'a> Lexer<'a> {
                     if let Some(first) = chars.next() {
                         if first.is_alphabetic() || first == '_' {
                             ident_end += first.len_utf8();
-                            while let Some(c) = chars.next() {
+                            for c in chars {
                                 if c.is_alphanumeric() || c == '_' {
                                     ident_end += c.len_utf8();
                                 } else {

@@ -491,7 +491,175 @@ pub(crate) fn lower_expr(
     }
 }
 
-// ---------- sub-expressions (unchanged from previous correct version) ----------
+fn lower_closure_expr(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    exprs: &mut IndexVec<ExprId, Expr>,
+    pats: &mut IndexVec<PatId, Pat>,
+    expr_spans: &mut IndexVec<ExprId, Span>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<ExprId> {
+    let mut params = Vec::new();
+    let mut body = None;
+    for child in node.children() {
+        match child.kind() {
+            SyntaxKind::ParamList => {
+                for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
+                    let (_, pat_id) = lower_param(&param_node, interner, pats);
+                    params.push(pat_id);
+                }
+            }
+            _ if (is_expr_node(&child) || child.kind() == SyntaxKind::Block) && body.is_none() => {
+                body = lower_expr(
+                    &child,
+                    interner,
+                    exprs,
+                    pats,
+                    expr_spans,
+                    diags,
+                    struct_field_map,
+                );
+            }
+            _ => {}
+        }
+    }
+    let body_id = body.unwrap_or_else(|| {
+        let missing = Expr::Missing;
+        exprs.push(missing)
+    });
+    let expr = Expr::Closure {
+        params,
+        body: body_id,
+    };
+    let eid = exprs.push(expr);
+    expr_spans.push(node_span(node));
+    Some(eid)
+}
+
+fn lower_struct_expr(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    exprs: &mut IndexVec<ExprId, Expr>,
+    pats: &mut IndexVec<PatId, Pat>,
+    expr_spans: &mut IndexVec<ExprId, Span>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<ExprId> {
+    let mut path = None;
+    let mut fields = Vec::new();
+    let mut spread = None;
+    let mut in_braces = false;
+    for child in node.children() {
+        if child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath {
+            if path.is_none() {
+                path = lower_path_expr(&child, interner, exprs, expr_spans);
+            }
+        } else if child.kind() == SyntaxKind::LBrace {
+            in_braces = true;
+        } else if child.kind() == SyntaxKind::RBrace {
+            in_braces = false;
+        } else if in_braces {
+            if child.kind() == SyntaxKind::DotDot && spread.is_none() {
+                let mut found_expr = false;
+                for next in node.children() {
+                    if found_expr {
+                        if let Some(spread_id) = lower_expr(
+                            &next,
+                            interner,
+                            exprs,
+                            pats,
+                            expr_spans,
+                            diags,
+                            struct_field_map,
+                        ) {
+                            spread = Some(spread_id);
+                        }
+                        break;
+                    }
+                    if next == child {
+                        found_expr = true;
+                    }
+                }
+            } else if child.kind() == SyntaxKind::StructField {
+                let field_name = first_ident_text(&child).unwrap_or_default();
+                let name = interner.intern(&field_name);
+                let expr_node = child
+                    .children()
+                    .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
+                if let Some(expr_id) = expr_node.and_then(|n| {
+                    lower_expr(
+                        &n,
+                        interner,
+                        exprs,
+                        pats,
+                        expr_spans,
+                        diags,
+                        struct_field_map,
+                    )
+                }) {
+                    fields.push((name, expr_id));
+                }
+            } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
+                let name = interner.intern(child.text().to_string().trim());
+                let expr_id = lower_expr(
+                    &child,
+                    interner,
+                    exprs,
+                    pats,
+                    expr_spans,
+                    diags,
+                    struct_field_map,
+                );
+                if let Some(eid) = expr_id {
+                    fields.push((name, eid));
+                }
+            }
+        }
+    }
+    let path_id = path.unwrap_or_else(|| {
+        let missing = Expr::Missing;
+        exprs.push(missing)
+    });
+    let path_struct = if let Expr::Path(p) = &exprs[path_id] {
+        p.clone()
+    } else {
+        HirPath {
+            segments: vec![],
+            kind: PathKind::Plain,
+        }
+    };
+    let struct_name = path_struct.as_name();
+    let ordered_fields = if let Some(name) = struct_name {
+        if let Some(def_order) = struct_field_map.get(&name) {
+            let mut ordered = Vec::new();
+            for field_name in def_order {
+                if let Some(pos) = fields.iter().position(|(f, _)| f == field_name) {
+                    ordered.push(fields[pos]);
+                }
+            }
+            for field in &fields {
+                if !def_order.contains(&field.0) {
+                    ordered.push(*field);
+                }
+            }
+            ordered
+        } else {
+            fields
+        }
+    } else {
+        fields
+    };
+    let expr = Expr::Struct {
+        path: path_struct,
+        fields: ordered_fields,
+        spread,
+    };
+    let eid = exprs.push(expr);
+    expr_spans.push(node_span(node));
+    Some(eid)
+}
+
 fn lower_binary_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
@@ -702,17 +870,17 @@ fn lower_path_expr(
                     generic_args: None,
                 });
             }
-        } else if let glyim_syntax::SyntaxElement::Node(n) = el {
-            if n.kind() == SyntaxKind::UsePath {
-                for t in n.children_with_tokens() {
-                    if let glyim_syntax::SyntaxElement::Token(tt) = t
-                        && tt.kind() == SyntaxKind::Ident
-                    {
-                        segments.push(PathSegment {
-                            name: interner.intern(tt.text()),
-                            generic_args: None,
-                        });
-                    }
+        } else if let glyim_syntax::SyntaxElement::Node(n) = el
+            && n.kind() == SyntaxKind::UsePath
+        {
+            for t in n.children_with_tokens() {
+                if let glyim_syntax::SyntaxElement::Token(tt) = t
+                    && tt.kind() == SyntaxKind::Ident
+                {
+                    segments.push(PathSegment {
+                        name: interner.intern(tt.text()),
+                        generic_args: None,
+                    });
                 }
             }
         }
@@ -978,8 +1146,7 @@ fn lower_method_call_expr(
     for child in node.children() {
         if child.kind() != SyntaxKind::PathExpr
             && (is_expr_node(&child) || child.kind() == SyntaxKind::Block)
-        {
-            if let Some(id) = lower_expr(
+            && let Some(id) = lower_expr(
                 &child,
                 interner,
                 exprs,
@@ -987,9 +1154,9 @@ fn lower_method_call_expr(
                 expr_spans,
                 diags,
                 struct_field_map,
-            ) {
-                arg_ids.push(id);
-            }
+            )
+        {
+            arg_ids.push(id);
         }
     }
     let expr = Expr::MethodCall {
@@ -1620,175 +1787,6 @@ fn lower_range_expr(
         start,
         end,
         inclusive,
-    };
-    let eid = exprs.push(expr);
-    expr_spans.push(node_span(node));
-    Some(eid)
-}
-
-fn lower_closure_expr(
-    node: &SyntaxNode,
-    interner: &mut Interner,
-    exprs: &mut IndexVec<ExprId, Expr>,
-    pats: &mut IndexVec<PatId, Pat>,
-    expr_spans: &mut IndexVec<ExprId, Span>,
-    diags: &mut Vec<GlyimDiagnostic>,
-    struct_field_map: &HashMap<Name, Vec<Name>>,
-) -> Option<ExprId> {
-    let mut params = Vec::new();
-    let mut body = None;
-    for child in node.children() {
-        match child.kind() {
-            SyntaxKind::ParamList => {
-                for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
-                    let (_, pat_id) = lower_param(&param_node, interner, pats);
-                    params.push(pat_id);
-                }
-            }
-            _ if (is_expr_node(&child) || child.kind() == SyntaxKind::Block) && body.is_none() => {
-                body = lower_expr(
-                    &child,
-                    interner,
-                    exprs,
-                    pats,
-                    expr_spans,
-                    diags,
-                    struct_field_map,
-                );
-            }
-            _ => {}
-        }
-    }
-    let body_id = body.unwrap_or_else(|| {
-        let missing = Expr::Missing;
-        exprs.push(missing)
-    });
-    let expr = Expr::Closure {
-        params,
-        body: body_id,
-    };
-    let eid = exprs.push(expr);
-    expr_spans.push(node_span(node));
-    Some(eid)
-}
-
-fn lower_struct_expr(
-    node: &SyntaxNode,
-    interner: &mut Interner,
-    exprs: &mut IndexVec<ExprId, Expr>,
-    pats: &mut IndexVec<PatId, Pat>,
-    expr_spans: &mut IndexVec<ExprId, Span>,
-    diags: &mut Vec<GlyimDiagnostic>,
-    struct_field_map: &HashMap<Name, Vec<Name>>,
-) -> Option<ExprId> {
-    let mut path = None;
-    let mut fields = Vec::new();
-    let mut spread = None;
-    let mut in_braces = false;
-    for child in node.children() {
-        if child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath {
-            if path.is_none() {
-                path = lower_path_expr(&child, interner, exprs, expr_spans);
-            }
-        } else if child.kind() == SyntaxKind::LBrace {
-            in_braces = true;
-        } else if child.kind() == SyntaxKind::RBrace {
-            in_braces = false;
-        } else if in_braces {
-            if child.kind() == SyntaxKind::DotDot && spread.is_none() {
-                let mut found_expr = false;
-                for next in node.children() {
-                    if found_expr {
-                        if let Some(spread_id) = lower_expr(
-                            &next,
-                            interner,
-                            exprs,
-                            pats,
-                            expr_spans,
-                            diags,
-                            struct_field_map,
-                        ) {
-                            spread = Some(spread_id);
-                        }
-                        break;
-                    }
-                    if next == child {
-                        found_expr = true;
-                    }
-                }
-            } else if child.kind() == SyntaxKind::StructField {
-                let field_name = first_ident_text(&child).unwrap_or_default();
-                let name = interner.intern(&field_name);
-                let expr_node = child
-                    .children()
-                    .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
-                if let Some(expr_id) = expr_node.and_then(|n| {
-                    lower_expr(
-                        &n,
-                        interner,
-                        exprs,
-                        pats,
-                        expr_spans,
-                        diags,
-                        struct_field_map,
-                    )
-                }) {
-                    fields.push((name, expr_id));
-                }
-            } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
-                let name = interner.intern(child.text().to_string().trim());
-                let expr_id = lower_expr(
-                    &child,
-                    interner,
-                    exprs,
-                    pats,
-                    expr_spans,
-                    diags,
-                    struct_field_map,
-                );
-                if let Some(eid) = expr_id {
-                    fields.push((name, eid));
-                }
-            }
-        }
-    }
-    let path_id = path.unwrap_or_else(|| {
-        let missing = Expr::Missing;
-        exprs.push(missing)
-    });
-    let path_struct = if let Expr::Path(p) = &exprs[path_id] {
-        p.clone()
-    } else {
-        HirPath {
-            segments: vec![],
-            kind: PathKind::Plain,
-        }
-    };
-    let struct_name = path_struct.as_name();
-    let ordered_fields = if let Some(name) = struct_name {
-        if let Some(def_order) = struct_field_map.get(&name) {
-            let mut ordered = Vec::new();
-            for field_name in def_order {
-                if let Some(pos) = fields.iter().position(|(f, _)| f == field_name) {
-                    ordered.push(fields[pos].clone());
-                }
-            }
-            for field in &fields {
-                if !def_order.contains(&field.0) {
-                    ordered.push(field.clone());
-                }
-            }
-            ordered
-        } else {
-            fields
-        }
-    } else {
-        fields
-    };
-    let expr = Expr::Struct {
-        path: path_struct,
-        fields: ordered_fields,
-        spread,
     };
     let eid = exprs.push(expr);
     expr_spans.push(node_span(node));
