@@ -127,14 +127,32 @@ impl<'a> FnCtxt<'a> {
 
     /// Collect struct field types by trying TyCtx first, then HIR.
     fn collect_struct_field_types(&mut self, adt_id: AdtId) -> HashMap<glyim_core::interner::Name, Ty> {
-        // Try TyCtx
-        if let Some(def) = self.ctx.adt_def(adt_id) {
-            let mut map = HashMap::new();
-            for (_idx, field) in def.fields.iter_enumerated() {
-                // Try to get the field name from the TyCtx
-                if let Some(name) = self.ctx.field_name(adt_id, _idx) {
-                    map.insert(name, field.ty);
+        // Look up from HIR directly (TyCtx may not have field name mapping)
+        for (_id, item) in self.hir.items.iter_enumerated() {
+            if let glyim_hir::ItemKind::Struct(struct_item) = &item.kind {
+                if let Some(res) = self.def_map.modules[self.def_map.root].scope.resolve(item.name) {
+                    if AdtId::from_raw(res.0.to_raw()) == adt_id {
+                        let mut map = HashMap::new();
+                        let param_map = crate::tyconv::build_param_tys(self.ctx, &struct_item.generic_params);
+                        for field in &struct_item.fields {
+                            let field_ty = crate::tyconv::resolve_type_ref(
+                                self.ctx,
+                                self.infer,
+                                self.def_map,
+                                self.diagnostics,
+                                &field.ty,
+                                &param_map,
+                                Span::DUMMY,
+                            );
+                            map.insert(field.name, field_ty);
+                        }
+                        return map;
+                    }
                 }
+            }
+        }
+        HashMap::new()
+    }
             }
             if !map.is_empty() {
                 return map;
