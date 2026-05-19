@@ -159,7 +159,7 @@ fn resolve_path_type(
     param_map: &HashMap<Name, Ty>,
     span: Span,
 ) -> Ty {
-    // Convert to core::Path for the resolver
+    // Convert to core::Path for resolver
     let core_segments = path.segments.iter().map(|seg| glyim_core::PathSegment { name: seg.name }).collect();
     let core_path = CorePath { segments: core_segments, kind: path.kind.clone() };
     let resolver = Resolver::new(def_map, def_map.root);
@@ -169,7 +169,6 @@ fn resolve_path_type(
         let substs = ctx.intern_substitution(vec![]);
         return ctx.mk_ty(TyKind::Adt(adt_id, substs));
     }
-    // Fallback to primitive or param
     if let Some(name) = path.as_name() {
         if let Some(&ty) = param_map.get(&name) {
             return ty;
