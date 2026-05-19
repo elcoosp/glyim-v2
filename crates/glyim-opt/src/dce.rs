@@ -20,6 +20,12 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
 
 fn collect_used_locals(body: &Body) -> HashSet<LocalIdx> {
     let mut used = HashSet::new();
+    // The return place (_0) and function arguments are always considered used
+    // because they communicate values to/from the caller.
+    used.insert(LocalIdx::from_raw(0));
+    for i in 0..body.arg_count {
+        used.insert(LocalIdx::from_raw(u32::try_from(i + 1).unwrap_or(u32::MAX)));
+    }
     for bb in 0..body.basic_blocks.len() {
         let block = &body.basic_blocks[BasicBlockIdx::from_raw(bb as u32)];
         for stmt in &block.statements {

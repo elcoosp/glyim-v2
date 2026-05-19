@@ -1,5 +1,9 @@
 mod cfg_simplify;
+mod cfg_simplify_tests;
+mod const_prop_tests;
 mod constant_prop;
 mod dce;
+mod dce_tests;
 mod noop;
+mod testutil;
 mod unreachable_elim;
