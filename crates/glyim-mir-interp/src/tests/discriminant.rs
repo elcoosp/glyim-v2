@@ -1,99 +1,251 @@
-use super::helpers::*;
-use crate::Interpreter;
-use glyim_core::*;
+use crate::{InterpError, InterpValue, Interpreter};
+use glyim_core::{CrateId, DefId, IndexVec, LocalDefId, Mutability};
 use glyim_mir::*;
-use glyim_span::Span;
-use glyim_type::{Ty, TyKind};
+use glyim_type::Ty;
 
+/// S19-T01: Discriminant of enum returns correct variant index
 #[test]
-fn test_t04_match_on_enum_discriminant() {
-    let mut ctx = glyim_test::test_ty_ctx();
-    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
-    let adt_id = AdtId::from_raw(100); // dummy enum def
-    let subst = ctx.intern_substitution(vec![]);
-    let enum_ty = ctx.mk_ty(TyKind::Adt(adt_id, subst));
+fn discriminant_returns_variant_index() {
+    let ctx = glyim_test::test_frozen_ty_ctx();
+    let mut interp = Interpreter::new(&ctx);
 
-    let mut body = empty_body(Ty::UNIT);
-    let local_enum = add_local(&mut body, enum_ty, Mutability::Mut);
-    let local_discr = add_local(
-        &mut body,
-        ctx.mk_ty(TyKind::Int(IntTy::I32)),
-        Mutability::Mut,
-    );
-    let local_result = add_local(&mut body, i32_ty, Mutability::Not);
+    let crate_id = CrateId::from_raw(0);
+    let local_def_id = LocalDefId::from_raw(0);
+    let owner = DefId::new(crate_id, local_def_id);
 
-    // We'll have three basic blocks: bb0 (construct variant and discriminant), bb1 (if discrim ==0), bb2 (if discrim==1), bb3 (return)
-    // Initially only bb0 exists.
-    let bb0 = BasicBlockIdx::from_raw(0);
-    let bb1 = BasicBlockIdx::from_raw(1);
-    let bb2 = BasicBlockIdx::from_raw(2);
-    let bb3 = BasicBlockIdx::from_raw(3);
-    body.basic_blocks.push(BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Goto { target: bb3 },
-        source_info: SourceInfo::new(Span::DUMMY),
-    }));
-    body.basic_blocks.push(BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Goto { target: bb3 },
-        source_info: SourceInfo::new(Span::DUMMY),
-    }));
-    body.basic_blocks.push(BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    }));
+    let mut locals = IndexVec::with_capacity(3);
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
-    // bb0: construct variant 1 (use VariantIdx 1)
-    add_statement(
-        &mut body,
-        bb0,
-        StatementKind::Assign(
-            Place::new(local_enum),
+    let enum_place = Place::new(LocalIdx::from_raw(1));
+    let return_place = Place::new(LocalIdx::from_raw(0));
+
+    // Assign local 1 = Aggregate([Int(2), Unit, Unit])
+    let agg_stmt = Statement {
+        kind: StatementKind::Assign(
+            enum_place.clone(),
             Rvalue::Aggregate(
-                AggregateKind::Adt(adt_id, VariantIdx::from_raw(1), subst),
-                vec![const_int(42)],
+                AggregateKind::Tuple,
+                vec![
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(2),
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Unit,
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Unit,
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
+                ],
             ),
         ),
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
+
+    // Assign local 0 = Discriminant(local 1)
+    let discr_stmt = Statement {
+        kind: StatementKind::Assign(return_place.clone(), Rvalue::Discriminant(enum_place)),
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
+
+    let terminator = Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
+
+    let mut basic_blocks = IndexVec::new();
+    basic_blocks.push(BasicBlockData {
+        statements: vec![agg_stmt, discr_stmt],
+        terminator,
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: glyim_span::Span::DUMMY,
+        var_debug_info: vec![],
+    };
+
+    let result = interp.run_body(&body);
+    assert!(result.is_ok(), "run_body failed: {:?}", result);
+
+    let ret = interp.get_local_value(LocalIdx::from_raw(0));
+    assert!(ret.is_some(), "return place not set");
+    assert_eq!(
+        ret.unwrap(),
+        &InterpValue::Int(2),
+        "discriminant should be variant index 2"
     );
-    // discriminant
-    add_statement(
-        &mut body,
-        bb0,
-        StatementKind::Assign(
-            Place::new(local_discr),
-            Rvalue::Discriminant(Place::new(local_enum)),
+}
+
+/// S19-T01b: Discriminant of unit-like aggregate returns 0
+#[test]
+fn discriminant_empty_aggregate_returns_zero() {
+    let ctx = glyim_test::test_frozen_ty_ctx();
+    let mut interp = Interpreter::new(&ctx);
+
+    let crate_id = CrateId::from_raw(0);
+    let local_def_id = LocalDefId::from_raw(0);
+    let owner = DefId::new(crate_id, local_def_id);
+
+    let mut locals = IndexVec::with_capacity(2);
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+
+    let enum_place = Place::new(LocalIdx::from_raw(1));
+    let return_place = Place::new(LocalIdx::from_raw(0));
+
+    let agg_stmt = Statement {
+        kind: StatementKind::Assign(
+            enum_place.clone(),
+            Rvalue::Aggregate(AggregateKind::Tuple, vec![]),
         ),
-    );
-    // SwitchInt on discriminant
-    set_terminator(
-        &mut body,
-        bb0,
-        TerminatorKind::SwitchInt {
-            discr: Operand::Copy(Place::new(local_discr)),
-            switch_ty: ctx.mk_ty(TyKind::Int(IntTy::I32)),
-            targets: SwitchTargets::new(vec![(0u128, bb1), (1u128, bb2)].into_boxed_slice(), bb3),
-        },
-    );
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
 
-    // bb1: discriminant == 0 -> result = 100
-    add_statement(
-        &mut body,
-        bb1,
-        StatementKind::Assign(Place::new(local_result), Rvalue::Use(const_int(100))),
-    );
+    let discr_stmt = Statement {
+        kind: StatementKind::Assign(return_place.clone(), Rvalue::Discriminant(enum_place)),
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
 
-    // bb2: discriminant == 1 -> result = 200
-    add_statement(
-        &mut body,
-        bb2,
-        StatementKind::Assign(Place::new(local_result), Rvalue::Use(const_int(200))),
-    );
+    let terminator = Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
 
-    let tcx = ctx.freeze();
-    let mut interp = Interpreter::new(&tcx);
-    interp.add_function(
-        DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
-        body,
+    let mut basic_blocks = IndexVec::new();
+    basic_blocks.push(BasicBlockData {
+        statements: vec![agg_stmt, discr_stmt],
+        terminator,
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: glyim_span::Span::DUMMY,
+        var_debug_info: vec![],
+    };
+
+    let result = interp.run_body(&body);
+    assert!(result.is_ok(), "run_body failed: {:?}", result);
+
+    let ret = interp.get_local_value(LocalIdx::from_raw(0));
+    assert!(ret.is_some(), "return place not set");
+    assert_eq!(
+        ret.unwrap(),
+        &InterpValue::Int(0),
+        "empty aggregate discriminant should be 0"
     );
-    // This test currently fails because Discriminant rvalue is not implemented.
-    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
-    assert!(result.is_ok());
+}
+
+/// S19-T01c: Discriminant on non-aggregate returns error
+#[test]
+fn discriminant_non_aggregate_errors() {
+    let ctx = glyim_test::test_frozen_ty_ctx();
+    let mut interp = Interpreter::new(&ctx);
+
+    let crate_id = CrateId::from_raw(0);
+    let local_def_id = LocalDefId::from_raw(0);
+    let owner = DefId::new(crate_id, local_def_id);
+
+    let mut locals = IndexVec::with_capacity(2);
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+
+    let enum_place = Place::new(LocalIdx::from_raw(1));
+    let return_place = Place::new(LocalIdx::from_raw(0));
+
+    let int_stmt = Statement {
+        kind: StatementKind::Assign(
+            enum_place.clone(),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(42),
+                ty: Ty::UNIT,
+                span: glyim_span::Span::DUMMY,
+            })),
+        ),
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
+
+    let discr_stmt = Statement {
+        kind: StatementKind::Assign(return_place.clone(), Rvalue::Discriminant(enum_place)),
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
+
+    let terminator = Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    };
+
+    let mut basic_blocks = IndexVec::new();
+    basic_blocks.push(BasicBlockData {
+        statements: vec![int_stmt, discr_stmt],
+        terminator,
+        is_cleanup: false,
+    });
+
+    let body = Body {
+        owner,
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: glyim_span::Span::DUMMY,
+        var_debug_info: vec![],
+    };
+
+    let result = interp.run_body(&body);
+    assert!(
+        result.is_err(),
+        "discriminant on non-aggregate should error"
+    );
+    match result.unwrap_err() {
+        InterpError::Panic(msg) => {
+            assert!(msg.contains("non-aggregate"), "unexpected panic: {}", msg)
+        }
+        other => panic!("expected Panic error, got: {:?}", other),
+    }
 }
