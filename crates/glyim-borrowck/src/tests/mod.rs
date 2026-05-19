@@ -12,3 +12,8 @@ mod move_tests;
 mod same_block;
 mod two_phase_borrows;
 mod write_conflicts;
+mod double_mutable_borrow;
+mod two_phase_reservation;
+mod use_after_move;
+mod partial_move;
+mod test_ctx;
