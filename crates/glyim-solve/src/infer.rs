@@ -23,14 +23,25 @@ pub struct RegionVariable {
     pub value: Option<Region>,
 }
 
-/// [F18] InferenceTable — separate IndexVecs
-pub struct InferenceTable {
+#[derive(Clone, Debug)]
+pub struct InferenceSnapshot {
     ty_vars: IndexVec<TyVar, TypeVariable>,
     int_vars: IndexVec<IntVar, TypeVariable>,
     float_vars: IndexVec<FloatVar, TypeVariable>,
     region_vars: IndexVec<RegionVid, RegionVariable>,
     universe: UniverseIndex,
 }
+
+pub struct InferenceTable {
+    ty_vars: IndexVec<TyVar, TypeVariable>,
+    int_vars: IndexVec<IntVar, TypeVariable>,
+    float_vars: IndexVec<FloatVar, TypeVariable>,
+    region_vars: IndexVec<RegionVid, RegionVariable>,
+    universe: UniverseIndex,
+    diagnostics: std::cell::RefCell<Vec<GlyimDiagnostic>>,
+}
+
+const MAX_RESOLVE_DEPTH: u32 = 256;
 
 impl InferenceTable {
     pub fn new() -> Self {
@@ -40,8 +51,33 @@ impl InferenceTable {
             float_vars: IndexVec::new(),
             region_vars: IndexVec::new(),
             universe: UniverseIndex(0),
+            diagnostics: std::cell::RefCell::new(Vec::new()),
         }
     }
+
+    pub fn take_diagnostics(&mut self) -> Vec<GlyimDiagnostic> {
+        std::mem::take(&mut *self.diagnostics.borrow_mut())
+    }
+
+    pub fn snapshot(&self) -> InferenceSnapshot {
+        InferenceSnapshot {
+            ty_vars: self.ty_vars.clone(),
+            int_vars: self.int_vars.clone(),
+            float_vars: self.float_vars.clone(),
+            region_vars: self.region_vars.clone(),
+            universe: self.universe,
+        }
+    }
+
+    pub fn rollback_to(&mut self, snapshot: InferenceSnapshot) {
+        self.ty_vars = snapshot.ty_vars;
+        self.int_vars = snapshot.int_vars;
+        self.float_vars = snapshot.float_vars;
+        self.region_vars = snapshot.region_vars;
+        self.universe = snapshot.universe;
+    }
+
+    pub fn commit(&mut self, _snapshot: InferenceSnapshot) {}
 
     pub fn new_ty_var(&mut self, _ctx: &mut TyCtxMut) -> TyVar {
         self.ty_vars.push(TypeVariable {
@@ -74,19 +110,10 @@ impl InferenceTable {
         })
     }
 
-    /// Check if `var` occurs in `ty` (after resolving variables).
-    /// Prevents constructing infinite types like ?T = Vec<?T>.
     fn occurs(&self, ctx: &dyn TypeLookup, var: TyVar, ty: Ty) -> bool {
         let ty = self.resolve_ty_shallow(ctx, ty);
         match ctx.ty_kind(ty) {
             TyKind::Infer(InferVar::Ty(v)) if *v == var => true,
-            TyKind::Infer(InferVar::Ty(v)) => {
-                if let Some(value) = self.ty_vars.get(*v).and_then(|tv| tv.value) {
-                    self.occurs(ctx, var, value)
-                } else {
-                    false
-                }
-            }
             TyKind::Ref(_, inner, _) => self.occurs(ctx, var, *inner),
             TyKind::RawPtr(inner, _) => self.occurs(ctx, var, *inner),
             TyKind::Slice(inner) => self.occurs(ctx, var, *inner),
@@ -307,7 +334,6 @@ impl InferenceTable {
                 }
             }
             (TyKind::Param(param_a), TyKind::Param(param_b)) => {
-                // Parameters unify if they have the same index (name doesn't matter)
                 if param_a.index == param_b.index {
                     Ok(Vec::new())
                 } else {
@@ -322,7 +348,6 @@ impl InferenceTable {
             }
             (TyKind::Param(param), TyKind::Infer(InferVar::Ty(var)))
             | (TyKind::Infer(InferVar::Ty(var)), TyKind::Param(param)) => {
-                // A type variable can be bound to a parameter type
                 let param_ty = if let TyKind::Param(_) = ctx.ty_kind(a) {
                     a
                 } else {
@@ -339,7 +364,6 @@ impl InferenceTable {
             }
             (TyKind::Param(_), TyKind::Infer(InferVar::Int(_var)))
             | (TyKind::Infer(InferVar::Int(_var)), TyKind::Param(_)) => {
-                // Int variable cannot unify with parameter
                 Err(vec![GlyimDiagnostic::type_error(
                     span,
                     "cannot unify integer variable with type parameter".to_string(),
@@ -347,7 +371,6 @@ impl InferenceTable {
             }
             (TyKind::Param(_), TyKind::Infer(InferVar::Float(_var)))
             | (TyKind::Infer(InferVar::Float(_var)), TyKind::Param(_)) => {
-                // Float variable cannot unify with parameter
                 Err(vec![GlyimDiagnostic::type_error(
                     span,
                     "cannot unify float variable with type parameter".to_string(),
@@ -584,7 +607,6 @@ impl InferenceTable {
                 Ok(constraints)
             }
             (TyKind::Dynamic(_, r_a), TyKind::Dynamic(_, r_b)) if r_a == r_b => {
-                // Predicate unification is NYI; treat as compatible for now
                 tracing::warn!("STUB: Dynamic predicate unification not implemented");
                 Ok(Vec::new())
             }
@@ -680,32 +702,54 @@ impl InferenceTable {
     }
 
     pub fn resolve_ty_shallow(&self, ctx: &dyn TypeLookup, ty: Ty) -> Ty {
-        self.resolve_ty_shallow_depth(ctx, ty, 0)
+        self.resolve_ty_shallow_depth(ctx, ty, 0, &mut std::collections::HashSet::new())
     }
 
-    fn resolve_ty_shallow_depth(&self, ctx: &dyn TypeLookup, ty: Ty, depth: u32) -> Ty {
-        if depth > 256 {
-            tracing::warn!("STUB: resolve_ty_shallow exceeded depth limit; possible cycle");
-            return ty;
+    fn resolve_ty_shallow_depth(
+        &self,
+        ctx: &dyn TypeLookup,
+        ty: Ty,
+        depth: u32,
+        visited: &mut std::collections::HashSet<TyVar>,
+    ) -> Ty {
+        if depth > MAX_RESOLVE_DEPTH {
+            let diag = GlyimDiagnostic::type_error(
+                glyim_span::Span::DUMMY,
+                "resolution depth limit exceeded".to_string(),
+            );
+            self.diagnostics.borrow_mut().push(diag);
+            return Ty::ERROR;
         }
         match ctx.ty_kind(ty) {
             TyKind::Infer(InferVar::Ty(var)) => {
+                if visited.contains(&var) {
+                    let diag = GlyimDiagnostic::type_error(
+                        glyim_span::Span::DUMMY,
+                        "infinite type cycle detected while resolving inference variables"
+                            .to_string(),
+                    );
+                    self.diagnostics.borrow_mut().push(diag);
+                    return Ty::ERROR;
+                }
+                visited.insert(*var);
                 if let Some(value) = self.ty_vars.get(*var).and_then(|v| v.value) {
-                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1);
+                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1, visited);
                 }
                 ty
             }
             TyKind::Infer(InferVar::Int(var)) => {
                 if let Some(value) = self.int_vars.get(*var).and_then(|v| v.value) {
-                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1);
+                    self.resolve_ty_shallow_depth(ctx, value, depth + 1, visited)
+                } else {
+                    ty
                 }
-                ty
             }
             TyKind::Infer(InferVar::Float(var)) => {
                 if let Some(value) = self.float_vars.get(*var).and_then(|v| v.value) {
-                    return self.resolve_ty_shallow_depth(ctx, value, depth + 1);
+                    self.resolve_ty_shallow_depth(ctx, value, depth + 1, visited)
+                } else {
+                    ty
                 }
-                ty
             }
             _ => ty,
         }
@@ -816,15 +860,21 @@ impl InferenceTable {
     }
     #[cfg(test)]
     pub(crate) fn set_ty_var_value(&mut self, var: TyVar, value: Ty) {
-        self.ty_vars[var].value = Some(value);
+        if let Some(tv) = self.ty_vars.get_mut(var) {
+            tv.value = Some(value);
+        }
     }
     #[cfg(test)]
     pub(crate) fn set_int_var_value(&mut self, var: IntVar, value: Ty) {
-        self.int_vars[var].value = Some(value);
+        if let Some(iv) = self.int_vars.get_mut(var) {
+            iv.value = Some(value);
+        }
     }
     #[cfg(test)]
     pub(crate) fn set_float_var_value(&mut self, var: FloatVar, value: Ty) {
-        self.float_vars[var].value = Some(value);
+        if let Some(fv) = self.float_vars.get_mut(var) {
+            fv.value = Some(value);
+        }
     }
 }
 
@@ -853,7 +903,6 @@ fn test_occurs_check_prevents_infinite_type() {
     let var = infer.new_ty_var(&mut ctx);
     let var_ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)));
 
-    // Create a list type containing ?T: List<?T>
     let list_ty = ctx.mk_ty(TyKind::Slice(var_ty));
 
     let result = infer.unify(&mut ctx, var_ty, list_ty, glyim_span::Span::DUMMY);

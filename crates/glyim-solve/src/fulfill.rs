@@ -36,6 +36,29 @@ pub struct OverflowError {
     pub depth: usize,
 }
 
+pub fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
+    if a == b {
+        return true;
+    }
+    match (ctx.ty_kind(a), ctx.ty_kind(b)) {
+        (TyKind::Array(elem_a, _), TyKind::Slice(elem_b)) if elem_a == elem_b => true,
+        (TyKind::Ref(_, inner_a, mut_a), TyKind::Ref(_, inner_b, mut_b)) => {
+            // Allow &mut T -> &T as well
+            (mut_a == mut_b)
+                || (*mut_a == glyim_core::primitives::Mutability::Mut
+                    && *mut_b == glyim_core::primitives::Mutability::Not)
+                    && can_coerce(ctx, *inner_a, *inner_b)
+        }
+        (TyKind::RawPtr(inner_a, mut_a), TyKind::RawPtr(inner_b, mut_b)) => {
+            (mut_a == mut_b)
+                || (*mut_a == glyim_core::primitives::Mutability::Mut
+                    && *mut_b == glyim_core::primitives::Mutability::Not)
+                    && can_coerce(ctx, *inner_a, *inner_b)
+        }
+        _ => false,
+    }
+}
+
 impl<'a> FulfillmentCtx<'a> {
     pub fn new(ctx: &'a TyCtx, solver: &'a mut dyn crate::solver::TraitSolver) -> Self {
         Self {
@@ -60,7 +83,6 @@ impl<'a> FulfillmentCtx<'a> {
                     depth: self.processed_count,
                 });
             }
-
             match &obligation.predicate {
                 Predicate::Trait(trait_pred) => match self.solver.can_prove(self.ctx, trait_pred) {
                     crate::solver::SolverResult::Proven => {}
@@ -79,8 +101,8 @@ impl<'a> FulfillmentCtx<'a> {
                 },
                 Predicate::WellFormed(_)
                 | Predicate::TypeOutlives(_)
-                | Predicate::RegionOutlives(_) => {}
-                Predicate::Coerce(_, _) => {}
+                | Predicate::RegionOutlives(_)
+                | Predicate::Coerce(_, _) => {}
             }
         }
         Ok(())
@@ -89,7 +111,6 @@ impl<'a> FulfillmentCtx<'a> {
     pub fn into_diagnostics(self) -> Vec<GlyimDiagnostic> {
         self.diagnostics
     }
-
     #[cfg(test)]
     pub(crate) fn pending_count(&self) -> usize {
         self.obligations.len()
