@@ -1036,6 +1036,7 @@ name = "glyim-span"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "glyim-test",
  "miette",
  "tracing",
 ]

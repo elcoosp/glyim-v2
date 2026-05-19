@@ -113,6 +113,9 @@ impl SyntaxContext {
     pub fn to_raw(self) -> u32 {
         self.0
     }
+    pub(crate) fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -125,6 +128,9 @@ impl ExpnId {
     }
     pub fn to_raw(self) -> u32 {
         self.0
+    }
+    pub(crate) fn from_raw(raw: u32) -> Self {
+        Self(raw)
     }
 }
 
@@ -168,3 +174,6 @@ impl From<Span> for MultiSpan {
         Self::from_span(span)
     }
 }
+
+#[cfg(test)]
+mod tests;
