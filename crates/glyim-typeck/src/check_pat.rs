@@ -1,7 +1,7 @@
-use glyim_core::primitives::Mutability;
-//! Pattern checking logic for FnCtxt.
+// Pattern checking logic for FnCtxt.
 
 use glyim_core::def_id::AdtId;
+use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{Pat, PatId};
 use glyim_span::Span;
@@ -42,7 +42,6 @@ impl<'a> FnCtxt<'a> {
             } => {
                 // Resolve the struct path to get the AdtId
                 let adt_id = if let Some(name) = path.as_name() {
-                    // Try to look up in the def map
                     if let Some(res) = self.def_map.modules[self.def_map.root].scope.resolve(name) {
                         AdtId::from_raw(res.0.to_raw())
                     } else {
@@ -63,8 +62,9 @@ impl<'a> FnCtxt<'a> {
                 // Check each field pattern
                 let mut field_pats = Vec::with_capacity(fields.len());
                 for (field_name, field_pat_id) in fields {
-                    // Try to look up field type from ADT definition
                     let field_ty = self.lookup_field_ty(adt_id, *field_name, span);
+                    // Add binding for this field to the environment
+                    self.env.add_binding(*field_name, field_ty, Mutability::Not);
                     let field_pat = self.check_pattern(*field_pat_id, field_ty);
                     field_pats.push(thir::FieldPat {
                         field: *field_name,

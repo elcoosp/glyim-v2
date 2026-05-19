@@ -29,7 +29,7 @@ impl<'a> FnCtxt<'a> {
 
         for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
             let is_tail = pos == len - 1;
-            let span = self.body.expr_spans.get(expr_id).copied().unwrap_or(Span::DUMMY);
+            let span = self.body.expr_spans[expr_id];
 
             match expr {
                 Expr::Assign { lhs, rhs } => {
