@@ -19,8 +19,6 @@ fn unresolved_projection_diagnostic() {
     let proj = ProjectionTy {
         trait_ref,
         item_name: name,
-    };
-
     // Emit diagnostic (simulating what the type checker will do)
     let msg = format!(
         "cannot resolve projection <_ as Trait{}>::{}",

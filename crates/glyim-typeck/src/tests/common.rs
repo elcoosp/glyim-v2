@@ -9,7 +9,6 @@ pub fn name(s: &str) -> Name {
     let interner = Interner::new();
     interner.intern(s)
 }
-
 pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, BodyId) {
     let mut hir = CrateHir {
         items: Default::default(),
@@ -28,17 +27,10 @@ pub fn make_single_body_hir(exprs: Vec<Expr>) -> (CrateHir, BodyId) {
         params: vec![],
         span: Span::DUMMY,
         expr_spans: Default::default(),
-    };
     let body_id = hir.bodies.push(body);
     (hir, body_id)
-}
-
 pub fn typeck_single_body(_hir: &CrateHir, _body_id: BodyId) -> crate::thir::Body {
     crate::thir::Body {
         owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
-        params: vec![],
         return_ty: Ty::UNIT,
         stmts: vec![],
-        span: Span::DUMMY,
-    }
-}

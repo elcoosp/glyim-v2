@@ -13,7 +13,6 @@ use glyim_test::{assert_no_errors, mock::MockSolver};
 fn binary_i32_add_ok() {
     let inter = Interner::new();
     let main_name = inter.intern("main");
-
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     let lhs = exprs.push(Expr::Literal(glyim_hir::Literal::Int(1, Some(IntTy::I32))));
     let rhs = exprs.push(Expr::Literal(glyim_hir::Literal::Int(2, Some(IntTy::I32))));
@@ -23,7 +22,6 @@ fn binary_i32_add_ok() {
         rhs,
     });
     exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
-
     let body = Body {
         owner: LocalDefId::from_raw(0),
         exprs: exprs.clone(),
@@ -34,7 +32,6 @@ fn binary_i32_add_ok() {
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
-
     let item = Item {
         id: ItemId::from_raw(0),
         name: main_name,
@@ -48,20 +45,14 @@ fn binary_i32_add_ok() {
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
-        span: Span::DUMMY,
-    };
-
     let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
     let mut body_owners = IndexVec::new();
     body_owners.push(LocalDefId::from_raw(0));
-
     let hir = CrateHir {
         items,
         bodies,
         body_owners,
-    };
-
     let ctx = make_ty_ctx();
     let def_map = empty_def_map();
     let mut solver = MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);

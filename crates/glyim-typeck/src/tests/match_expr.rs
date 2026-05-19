@@ -1,6 +1,4 @@
 use super::common::*;
-use super::common::*;
-use super::common::*;
 use glyim_hir::*;
 
 #[test]
@@ -19,7 +17,6 @@ fn match_integer_with_wildcard() {
         scrutinee: ExprId::from_raw(0),
         arms: vec![arm],
     });
-
     let (mut hir, body_id) = make_single_body_hir(exprs);
     let body = &mut hir.bodies[body_id];
     body.pats = {
@@ -28,8 +25,6 @@ fn match_integer_with_wildcard() {
             p.push(pat);
         }
         p
-    };
-
     let thir_body = typeck_single_body(&hir, body_id);
     assert_eq!(thir_body.stmts.len(), 2);
 }

@@ -28,7 +28,5 @@ pub fn empty_def_map() -> CrateDefMap {
         interner: Interner::new(),
     }
 }
-
 pub fn make_ty_ctx() -> TyCtxMut {
     TyCtxMut::new(Interner::new())
-}

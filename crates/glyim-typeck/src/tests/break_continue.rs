@@ -1,6 +1,4 @@
 use super::common::*;
-use super::common::*;
-use super::common::*;
 use glyim_hir::*;
 
 #[test]
@@ -14,8 +12,6 @@ fn break_and_continue_inside_loop() {
     });
     exprs.push(Expr::Loop {
         body: ExprId::from_raw(2),
-    });
-
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
     // 3 stmts: Break expr, Continue expr, Block expr; Loop is tail -> 0 stmts? Wait:

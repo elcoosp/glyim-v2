@@ -8,7 +8,6 @@ fn multi_segment_type_path_resolves() {
         }
         fn test() {
             let x: a::S;
-        }
     "#;
     let trace = FrontendTester::new(source).run();
     let typeck = trace.typeck_result.expect("typeck failed");

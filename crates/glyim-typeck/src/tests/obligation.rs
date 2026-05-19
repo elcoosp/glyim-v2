@@ -24,16 +24,12 @@ fn obligation_collected() {
         diagnostics: &mut diagnostics,
         pending_obligations: Vec::new(),
     };
-
     let dummy_trait_ref = TraitRef {
         def_id: glyim_core::def_id::TraitDefId::from_raw(0),
         substs,
-    };
     let trait_pred = TraitPredicate {
         trait_ref: dummy_trait_ref,
         polarity: glyim_type::ImplPolarity::Positive,
-    };
-
     typeck_ctx.require_trait_bound(Ty::BOOL, trait_pred.clone(), Span::DUMMY);
     assert_eq!(
         typeck_ctx.pending_obligations.len(),
@@ -44,17 +40,12 @@ fn obligation_collected() {
     assert!(
         matches!(obl.predicate, Predicate::Trait(_)),
         "predicate should be Trait"
-    );
 }
-
-#[test]
 fn obligation_fulfilled() {
     let inter = Interner::new();
     let main_name = inter.intern("main");
-
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
-
     let body = Body {
         owner: LocalDefId::from_raw(0),
         exprs: exprs.clone(),
@@ -62,10 +53,8 @@ fn obligation_fulfilled() {
         params: vec![],
         span: Span::DUMMY,
         expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
-    };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
-
     let item = Item {
         id: ItemId::from_raw(0),
         name: main_name,
@@ -79,9 +68,6 @@ fn obligation_fulfilled() {
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
-        span: Span::DUMMY,
-    };
-
     let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
     let mut body_owners = IndexVec::new();
@@ -90,12 +76,9 @@ fn obligation_fulfilled() {
         items,
         bodies,
         body_owners,
-    };
-
     let ctx = make_ty_ctx();
     let def_map = empty_def_map();
     let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);
     let (_, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert!(result.diagnostics.is_empty());
     assert_eq!(solver.call_count(), 0, "no obligations → solver not called");
-}

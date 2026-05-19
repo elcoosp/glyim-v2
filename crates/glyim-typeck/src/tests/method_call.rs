@@ -8,10 +8,8 @@ fn method_call_resolves_to_impl() {
         }
         impl Foo for i32 {
             fn method(&self) -> i32 { 42 }
-        }
         fn test() {
             let x = 5.method();
-        }
     "#;
     let trace = FrontendTester::new(source).run();
     let typeck = trace.typeck_result.expect("typeck failed");
