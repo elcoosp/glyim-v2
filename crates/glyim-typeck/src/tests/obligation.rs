@@ -1,6 +1,5 @@
-//! Obligation tests – disabled for now (requires full trait solver)
-#![allow(unused_imports, dead_code)]
-
+/// Obligation tests – disabled for now (requires full trait solver)
+#[allow(unused_imports, dead_code)]
 use super::common::*;
 
 #[test]

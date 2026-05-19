@@ -1,9 +1,10 @@
-//! Tests for V03: Default Methods
-
+/// Tests for V03: Default Methods
+use crate::tests::test_utils::global_interner;
 use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
-use glyim_core::interner::{Interner, Name};
+use glyim_core::interner::Interner;
+use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::*;
@@ -13,7 +14,7 @@ use glyim_test::mock::MockSolver;
 use glyim_type::*;
 
 fn make_interner() -> Interner {
-    Interner::new()
+    global_interner()
 }
 
 fn make_name(interner: &mut Interner, s: &str) -> Name {
@@ -34,7 +35,7 @@ fn make_return_42_body(owner: LocalDefId) -> Body {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
     }
 }
 
@@ -97,7 +98,7 @@ fn build_empty_def_map(krate: CrateId) -> CrateDefMap {
         root,
         modules,
         krate,
-        interner: Interner::new(),
+        interner: global_interner(),
     }
 }
 
@@ -229,8 +230,6 @@ fn v03_t02_overridden_default_method() {
 
 #[test]
 fn v03_t03_default_method_calling_another_default_method() {
-    // Setup: trait MyTrait { fn bar() -> i32 { 42 }  fn foo() -> i32 { bar() } }
-    // Impl MyType for MyTrait {} (inherits both)
     let mut interner = make_interner();
     let trait_name = make_name(&mut interner, "MyTrait");
     let bar_name = make_name(&mut interner, "bar");
@@ -247,13 +246,13 @@ fn v03_t03_default_method_calling_another_default_method() {
             name: bar_name,
             params: vec![],
             return_ty: None,
-            default_body: None, // set later
+            default_body: None,
         },
         TraitMethod {
             name: foo_name,
             params: vec![],
             return_ty: None,
-            default_body: None, // set later
+            default_body: None,
         },
     ];
 
@@ -301,7 +300,6 @@ fn v03_t03_default_method_calling_another_default_method() {
         visibility: Visibility::Inherited,
         span: Span::DUMMY,
     });
-    // Assign default body ids after insertion
     if let ItemKind::Trait(ref mut ti) = items[trait_item_id].kind {
         ti.methods[0].default_body = Some(BodyId::from_raw(0));
         ti.methods[1].default_body = Some(BodyId::from_raw(1));
@@ -331,10 +329,7 @@ fn v03_t03_default_method_calling_another_default_method() {
     let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);
     let (_frozen_ctx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
 
-    // Should have two THIR bodies (bar and foo)
     assert_eq!(result.thir_bodies.len(), 2, "Expected two method bodies");
-
-    // One of them should contain a Call expression (the foo body)
     let has_call = result.thir_bodies.iter().any(|(_owner, body)| {
         body.stmts.iter().any(|stmt| {
             if let crate::thir::Stmt::Expr { expr } = stmt {
@@ -349,8 +344,6 @@ fn v03_t03_default_method_calling_another_default_method() {
 
 #[test]
 fn v03_t04_default_method_with_generic_params() {
-    // Setup: trait MyTrait<T> { fn my_method() -> T { ... } }
-    // Impl MyType for MyTrait<i32> { } (inherits default)
     let mut interner = make_interner();
     let trait_name = make_name(&mut interner, "MyTrait");
     let method_name = make_name(&mut interner, "my_method");
@@ -369,7 +362,7 @@ fn v03_t04_default_method_with_generic_params() {
         name: method_name,
         params: vec![],
         return_ty: None,
-        default_body: None, // set later
+        default_body: None,
     };
 
     let trait_item = TraitItem {
@@ -399,7 +392,7 @@ fn v03_t04_default_method_with_generic_params() {
         }),
         self_ty: TypeRef::Path(Path::from_single(make_name(&mut interner, "MyType"))),
         methods: vec![impl_method],
-        generic_params: vec![], // impl not polymorphic
+        generic_params: vec![],
         where_clauses: vec![],
     };
 
@@ -438,15 +431,12 @@ fn v03_t04_default_method_with_generic_params() {
     let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);
     let (_frozen_ctx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
 
-    // Should have at least one body, no errors
     assert!(!result.thir_bodies.is_empty());
     assert!(result.diagnostics.is_empty());
 }
 
 #[test]
 fn v03_t05_default_method_calls_missing_method_error() {
-    // Setup: trait MyTrait { fn missing() -> i32; }
-    // Impl MyType for MyTrait { } // does NOT provide missing method -> error
     let mut interner = make_interner();
     let trait_name = make_name(&mut interner, "MyTrait");
     let method_name = make_name(&mut interner, "missing");
@@ -455,7 +445,7 @@ fn v03_t05_default_method_calls_missing_method_error() {
         name: method_name,
         params: vec![],
         return_ty: None,
-        default_body: None, // no default
+        default_body: None,
     };
 
     let trait_item = TraitItem {
@@ -467,7 +457,7 @@ fn v03_t05_default_method_calls_missing_method_error() {
 
     let impl_method = ImplMethod {
         name: method_name,
-        body: None, // no implementation
+        body: None,
         params: vec![],
         return_ty: None,
     };

@@ -1,8 +1,9 @@
-use glyim_core::Visibility;
+use glyim_core::interner::Interner;
+use crate::tests::test_utils::global_interner;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
-use glyim_core::interner::Interner;
 use glyim_core::primitives::IntTy;
+use glyim_core::Visibility;
 use glyim_def_map::*;
 use glyim_hir::where_clause::*;
 use glyim_hir::*;
@@ -21,7 +22,7 @@ fn dummy_span() -> Span {
 
 /// Build a minimal empty CrateDefMap for tests that don't need name resolution
 fn empty_def_map() -> CrateDefMap {
-    let inter = Interner::new();
+    let inter = global_interner();
     let modules = IndexVec::new();
     CrateDefMap {
         root: ModuleId::from_raw(0),
@@ -55,7 +56,7 @@ fn build_simple_hir(
         pats: IndexVec::new(),
         params: Vec::new(),
         span: dummy_span(),
-        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
     };
     let body_id = hir.bodies.push(body);
 
@@ -119,7 +120,7 @@ fn ty_param(inter: &mut Interner, name: &str) -> GenericParam {
 // ---------------------------------------------------------------------------
 #[test]
 fn t01_fn_where_clone_satisfied() {
-    let mut inter = Interner::new();
+    let mut inter = global_interner();
     let name_clone = inter.intern("Clone");
     let name_t = inter.intern("T");
 
@@ -162,7 +163,7 @@ fn t01_fn_where_clone_satisfied() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t02_supertrait_impl_satisfies_both() {
-    let mut inter = Interner::new();
+    let mut inter = global_interner();
     let name_clone = inter.intern("Clone");
     let name_copy = inter.intern("Copy");
     let name_t = inter.intern("T");
@@ -212,7 +213,7 @@ fn t02_supertrait_impl_satisfies_both() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t04_multiple_where_bounds() {
-    let mut inter = Interner::new();
+    let mut inter = global_interner();
     let name_clone = inter.intern("Clone");
     let name_debug = inter.intern("Debug");
     let name_t = inter.intern("T");
@@ -262,7 +263,7 @@ fn t04_multiple_where_bounds() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t06_missing_supertrait_error() {
-    let mut inter = Interner::new();
+    let mut inter = global_interner();
     let name_clone = inter.intern("Clone");
     let name_t = inter.intern("T");
 
@@ -305,7 +306,7 @@ fn t06_missing_supertrait_error() {
 // ---------------------------------------------------------------------------
 #[test]
 fn t07_where_bound_not_satisfied_error() {
-    let mut inter = Interner::new();
+    let mut inter = global_interner();
     let name_copy = inter.intern("Copy");
     let name_t = inter.intern("T");
 

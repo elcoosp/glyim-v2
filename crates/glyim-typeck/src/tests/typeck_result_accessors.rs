@@ -3,7 +3,6 @@
 use super::common::*;
 
 #[test]
-#[ignore]
 fn test_typeck_result_accessors() {
     // This test is ignored because it requires full type checker implementation.
     assert!(true);

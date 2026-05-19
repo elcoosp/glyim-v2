@@ -370,7 +370,7 @@ impl TypeckResult {
     pub fn expr_ty(&self, _body_id: LocalDefId, _expr_id: usize) -> Option<Ty> {
         #[cfg(test)]
         {
-            let ctx = glyim_test::test_ty_ctx();
+            let mut ctx = glyim_test::test_ty_ctx();
             return Some(ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)));
         }
         #[cfg(not(test))]
@@ -379,7 +379,7 @@ impl TypeckResult {
     pub fn pat_ty(&self, _body_id: LocalDefId, _pat_id: usize) -> Option<Ty> {
         #[cfg(test)]
         {
-            let ctx = glyim_test::test_ty_ctx();
+            let mut ctx = glyim_test::test_ty_ctx();
             return Some(ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)));
         }
         #[cfg(not(test))]
