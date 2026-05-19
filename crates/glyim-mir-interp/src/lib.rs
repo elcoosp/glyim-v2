@@ -294,6 +294,7 @@ impl<'tcx> Interpreter<'tcx> {
                             Ok(fields[0].clone())
                         }
                     }
+                    InterpValue::Unit => Ok(InterpValue::Int(0)),
                     _ => Err(InterpError::Panic("Discriminant on non-aggregate".into())),
                 }
             }

@@ -1,7 +1,7 @@
-use glyim_core::{BinOp, CrateId, DefId, LocalDefId, Mutability, IndexVec};
+use crate::{InterpValue, Interpreter};
+use glyim_core::{BinOp, CrateId, DefId, IndexVec, LocalDefId, Mutability};
 use glyim_mir::*;
 use glyim_type::Ty;
-use crate::{Interpreter, InterpValue};
 
 /// Helper: build a body that computes left_val OP right_val and returns the result.
 fn build_binop_body_int(op: BinOp, left: i128, right: i128) -> Body {
@@ -98,9 +98,21 @@ fn build_binop_body_uint(op: BinOp, left: u128, right: u128) -> Body {
     let owner = DefId::new(crate_id, local_def_id);
 
     let mut locals = IndexVec::with_capacity(3);
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     let return_place = Place::new(LocalIdx::from_raw(0));
 
@@ -148,7 +160,11 @@ fn build_binop_body_uint(op: BinOp, left: u128, right: u128) -> Body {
     };
 
     let mut basic_blocks = IndexVec::new();
-    basic_blocks.push(BasicBlockData { statements: stmts, terminator, is_cleanup: false });
+    basic_blocks.push(BasicBlockData {
+        statements: stmts,
+        terminator,
+        is_cleanup: false,
+    });
 
     Body {
         owner,
@@ -168,9 +184,21 @@ fn build_binop_body_bool(op: BinOp, left: bool, right: bool) -> Body {
     let owner = DefId::new(crate_id, local_def_id);
 
     let mut locals = IndexVec::with_capacity(3);
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     let return_place = Place::new(LocalIdx::from_raw(0));
 
@@ -218,7 +246,11 @@ fn build_binop_body_bool(op: BinOp, left: bool, right: bool) -> Body {
     };
 
     let mut basic_blocks = IndexVec::new();
-    basic_blocks.push(BasicBlockData { statements: stmts, terminator, is_cleanup: false });
+    basic_blocks.push(BasicBlockData {
+        statements: stmts,
+        terminator,
+        is_cleanup: false,
+    });
 
     Body {
         owner,
@@ -236,7 +268,10 @@ fn run_int_body(body: &Body) -> InterpValue {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(body);
     assert!(result.is_ok(), "run_body failed: {:?}", result);
-    interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap()
+    interp
+        .get_local_value(LocalIdx::from_raw(0))
+        .cloned()
+        .unwrap()
 }
 
 #[test]
@@ -276,7 +311,13 @@ fn uint_bitand() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Uint(0b1000));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Uint(0b1000)
+    );
 }
 
 #[test]
@@ -286,7 +327,13 @@ fn uint_bitor() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Uint(0b1110));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Uint(0b1110)
+    );
 }
 
 #[test]
@@ -296,7 +343,13 @@ fn uint_bitxor() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Uint(0b0110));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Uint(0b0110)
+    );
 }
 
 #[test]
@@ -306,7 +359,13 @@ fn uint_shl() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Uint(16));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Uint(16)
+    );
 }
 
 #[test]
@@ -316,7 +375,13 @@ fn uint_shr() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Uint(1));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Uint(1)
+    );
 }
 
 #[test]
@@ -326,7 +391,13 @@ fn bool_and() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Bool(false));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Bool(false)
+    );
 }
 
 #[test]
@@ -336,7 +407,13 @@ fn bool_or() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Bool(true));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Bool(true)
+    );
 }
 
 #[test]
@@ -346,7 +423,13 @@ fn bool_and_both_true() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Bool(true));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Bool(true)
+    );
 }
 
 #[test]
@@ -356,7 +439,13 @@ fn bool_or_both_false() {
     let mut interp = Interpreter::new(&ctx);
     let result = interp.run_body(&body);
     assert!(result.is_ok());
-    assert_eq!(interp.get_local_value(LocalIdx::from_raw(0)).cloned().unwrap(), InterpValue::Bool(false));
+    assert_eq!(
+        interp
+            .get_local_value(LocalIdx::from_raw(0))
+            .cloned()
+            .unwrap(),
+        InterpValue::Bool(false)
+    );
 }
 
 /// S19-T03b: Comparison operators on integers

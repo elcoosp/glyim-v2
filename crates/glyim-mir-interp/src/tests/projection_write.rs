@@ -1,7 +1,7 @@
-use glyim_core::{CrateId, DefId, LocalDefId, Mutability, IndexVec};
+use crate::{InterpValue, Interpreter};
+use glyim_core::{CrateId, DefId, IndexVec, LocalDefId, Mutability};
 use glyim_mir::*;
-use glyim_type::{Ty, FieldIdx};
-use crate::{Interpreter, InterpValue};
+use glyim_type::{FieldIdx, Ty};
 
 /// S19-T04: Write through Deref+Field projection updates nested value
 ///
@@ -23,10 +23,26 @@ fn write_through_deref_field_updates_nested_value() {
 
     // 4 locals: return, ref, struct, unused
     let mut locals = IndexVec::with_capacity(4);
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     // Statement 1: Assign local 2 = Aggregate([Int(100), Int(200)])
     let agg_stmt = Statement {
@@ -35,8 +51,16 @@ fn write_through_deref_field_updates_nested_value() {
             Rvalue::Aggregate(
                 AggregateKind::Tuple,
                 vec![
-                    Operand::Constant(MirConst { kind: MirConstKind::Int(100), ty: Ty::UNIT, span: glyim_span::Span::DUMMY }),
-                    Operand::Constant(MirConst { kind: MirConstKind::Int(200), ty: Ty::UNIT, span: glyim_span::Span::DUMMY }),
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(100),
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(200),
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
                 ],
             ),
         ),
@@ -47,7 +71,12 @@ fn write_through_deref_field_updates_nested_value() {
     let ref_stmt = Statement {
         kind: StatementKind::Assign(
             Place::new(LocalIdx::from_raw(1)),
-            Rvalue::Ref(Place::new(LocalIdx::from_raw(2)), BorrowKind::Mut { allow_two_phase_borrow: false }),
+            Rvalue::Ref(
+                Place::new(LocalIdx::from_raw(2)),
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
         ),
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     };
@@ -116,7 +145,11 @@ fn write_through_deref_field_updates_nested_value() {
 
     let ret = interp.get_local_value(LocalIdx::from_raw(0));
     assert!(ret.is_some(), "return place not set");
-    assert_eq!(ret.unwrap(), &InterpValue::Int(999), "Deref+Field write should update nested field to 999");
+    assert_eq!(
+        ret.unwrap(),
+        &InterpValue::Int(999),
+        "Deref+Field write should update nested field to 999"
+    );
 
     // Also verify the struct in local 2 has been updated
     let struct_val = interp.get_local_value(LocalIdx::from_raw(2));
@@ -124,7 +157,11 @@ fn write_through_deref_field_updates_nested_value() {
     match struct_val.unwrap() {
         InterpValue::Aggregate(fields) => {
             assert_eq!(fields[0], InterpValue::Int(999), "field 0 should be 999");
-            assert_eq!(fields[1], InterpValue::Int(200), "field 1 should be unchanged at 200");
+            assert_eq!(
+                fields[1],
+                InterpValue::Int(200),
+                "field 1 should be unchanged at 200"
+            );
         }
         other => panic!("expected Aggregate, got {:?}", other),
     }
@@ -141,15 +178,31 @@ fn write_through_deref_only() {
     let owner = DefId::new(crate_id, local_def_id);
 
     let mut locals = IndexVec::with_capacity(3);
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     // local 2 = Int(10)
     let init_stmt = Statement {
         kind: StatementKind::Assign(
             Place::new(LocalIdx::from_raw(2)),
-            Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::Int(10), ty: Ty::UNIT, span: glyim_span::Span::DUMMY })),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(10),
+                ty: Ty::UNIT,
+                span: glyim_span::Span::DUMMY,
+            })),
         ),
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     };
@@ -158,7 +211,12 @@ fn write_through_deref_only() {
     let ref_stmt = Statement {
         kind: StatementKind::Assign(
             Place::new(LocalIdx::from_raw(1)),
-            Rvalue::Ref(Place::new(LocalIdx::from_raw(2)), BorrowKind::Mut { allow_two_phase_borrow: false }),
+            Rvalue::Ref(
+                Place::new(LocalIdx::from_raw(2)),
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
         ),
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     };
@@ -171,7 +229,11 @@ fn write_through_deref_only() {
     let write_stmt = Statement {
         kind: StatementKind::Assign(
             deref_place,
-            Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::Int(99), ty: Ty::UNIT, span: glyim_span::Span::DUMMY })),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(99),
+                ty: Ty::UNIT,
+                span: glyim_span::Span::DUMMY,
+            })),
         ),
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     };
@@ -216,7 +278,11 @@ fn write_through_deref_only() {
 
     let ret = interp.get_local_value(LocalIdx::from_raw(0));
     assert!(ret.is_some(), "return place not set");
-    assert_eq!(ret.unwrap(), &InterpValue::Int(99), "Deref write should update to 99");
+    assert_eq!(
+        ret.unwrap(),
+        &InterpValue::Int(99),
+        "Deref write should update to 99"
+    );
 }
 
 /// S19-T04c: Write through Field projection only
@@ -230,8 +296,16 @@ fn write_through_field_only() {
     let owner = DefId::new(crate_id, local_def_id);
 
     let mut locals = IndexVec::with_capacity(2);
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Not, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
-    locals.push(LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(glyim_span::Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    });
 
     // local 1 = Aggregate([Int(1), Int(2)])
     let agg_stmt = Statement {
@@ -240,8 +314,16 @@ fn write_through_field_only() {
             Rvalue::Aggregate(
                 AggregateKind::Tuple,
                 vec![
-                    Operand::Constant(MirConst { kind: MirConstKind::Int(1), ty: Ty::UNIT, span: glyim_span::Span::DUMMY }),
-                    Operand::Constant(MirConst { kind: MirConstKind::Int(2), ty: Ty::UNIT, span: glyim_span::Span::DUMMY }),
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(1),
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
+                    Operand::Constant(MirConst {
+                        kind: MirConstKind::Int(2),
+                        ty: Ty::UNIT,
+                        span: glyim_span::Span::DUMMY,
+                    }),
                 ],
             ),
         ),
@@ -256,7 +338,11 @@ fn write_through_field_only() {
     let write_stmt = Statement {
         kind: StatementKind::Assign(
             field_place,
-            Rvalue::Use(Operand::Constant(MirConst { kind: MirConstKind::Int(77), ty: Ty::UNIT, span: glyim_span::Span::DUMMY })),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(77),
+                ty: Ty::UNIT,
+                span: glyim_span::Span::DUMMY,
+            })),
         ),
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     };
@@ -301,5 +387,9 @@ fn write_through_field_only() {
 
     let ret = interp.get_local_value(LocalIdx::from_raw(0));
     assert!(ret.is_some(), "return place not set");
-    assert_eq!(ret.unwrap(), &InterpValue::Int(77), "Field write should update to 77");
+    assert_eq!(
+        ret.unwrap(),
+        &InterpValue::Int(77),
+        "Field write should update to 77"
+    );
 }
