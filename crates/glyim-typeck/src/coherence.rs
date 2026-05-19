@@ -115,11 +115,10 @@ impl<'a> CoherenceChecker<'a> {
         }
 
         // Name-based comparison
-        if let (Some(a), Some(b)) = (old.self_type_name, new.self_type_name) {
-            if a == b {
+        if let (Some(a), Some(b)) = (old.self_type_name, new.self_type_name)
+            && a == b {
                 return true;
             }
-        }
 
         let old_kind = ctx.ty_kind(old.self_ty);
         let new_kind = ctx.ty_kind(new.self_ty);

@@ -60,11 +60,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_protocol_version_positive() {
-        assert!(PROTOCOL_VERSION > 0);
-    }
-
-    #[test]
     fn test_file_op_path_accessor() {
         assert_eq!(
             FileOp::Write {

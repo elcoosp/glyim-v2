@@ -46,6 +46,12 @@ pub mod prometheus_impl {
         histograms: Mutex<HashMap<String, prometheus::Histogram>>,
     }
 
+    impl Default for PrometheusMetrics {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl PrometheusMetrics {
         pub fn new() -> Self {
             Self {

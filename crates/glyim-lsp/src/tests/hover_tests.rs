@@ -38,7 +38,7 @@ fn hover_shows_type_signature_and_doc() {
         kind: SymbolKind::Function,
         definition: DefinitionLocation {
             file_id,
-            span: span.clone(),
+            span: span,
         },
         type_signature: Some(TypeSignature {
             params: vec![

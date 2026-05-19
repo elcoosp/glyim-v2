@@ -62,10 +62,7 @@ fn build_release_mode() {
         ..BuildOptions::default()
     };
     let result = cmd_build(&project_path, &opts);
-    match result {
-        Ok(r) => {
-            assert!(r.output.to_string_lossy().contains("release"));
-        }
-        Err(GlyipError::BuildFailed(_)) | Err(_) => {}
+    if let Ok(r) = result {
+        assert!(r.output.to_string_lossy().contains("release"));
     }
 }

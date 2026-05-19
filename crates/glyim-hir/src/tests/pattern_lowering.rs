@@ -18,16 +18,13 @@ fn test_pattern_or_lowering() {
     let body = &hir.bodies[body_id];
     let mut found_or_pat = false;
     for (_id, expr) in body.exprs.iter_enumerated() {
-        if let crate::Expr::Match { arms, .. } = expr {
-            if let Some(arm) = arms.first() {
-                if let Pat::Or(pats) = &body.pats[arm.pat] {
-                    if pats.len() == 2 {
+        if let crate::Expr::Match { arms, .. } = expr
+            && let Some(arm) = arms.first()
+                && let Pat::Or(pats) = &body.pats[arm.pat]
+                    && pats.len() == 2 {
                         found_or_pat = true;
                         break;
                     }
-                }
-            }
-        }
     }
     assert!(found_or_pat, "Expected OR pattern with 2 alternatives");
 }

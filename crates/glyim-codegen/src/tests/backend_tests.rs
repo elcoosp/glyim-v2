@@ -1215,7 +1215,7 @@ fn t42_bytecode_deterministic() {
 // ============================================================================
 #[test]
 fn t43_default_works() {
-    let backend = BytecodeBackend::default();
+    let backend = BytecodeBackend;
     assert_eq!(backend.name(), "bytecode");
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
     let result = backend.generate_function(&body);
@@ -2471,7 +2471,7 @@ fn test_assign_field_projection() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(bytecode.iter().any(|&b| b == OP_STORE_FIELD));
+    assert!(bytecode.contains(&OP_STORE_FIELD));
 }
 
 #[test]
@@ -2506,7 +2506,7 @@ fn test_ref_creates_pointer() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(bytecode.iter().any(|&b| b == OP_LOAD_LOCAL_ADDR));
+    assert!(bytecode.contains(&OP_LOAD_LOCAL_ADDR));
 }
 
 #[test]
@@ -2541,7 +2541,7 @@ fn test_deref_loads() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(bytecode.iter().any(|&b| b == OP_DEREF));
+    assert!(bytecode.contains(&OP_DEREF));
 }
 
 #[test]
@@ -2577,9 +2577,9 @@ fn test_drop_calls_drop_in_place() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(bytecode.iter().any(|&b| b == OP_DROP));
-    assert!(bytecode.iter().any(|&b| b == OP_LOAD_LOCAL_ADDR));
-    assert!(bytecode.iter().any(|&b| b == OP_JUMP));
+    assert!(bytecode.contains(&OP_DROP));
+    assert!(bytecode.contains(&OP_LOAD_LOCAL_ADDR));
+    assert!(bytecode.contains(&OP_JUMP));
 }
 
 #[test]
@@ -2623,7 +2623,7 @@ fn test_repeat_array_constant() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(bytecode.iter().any(|&b| b == OP_REPEAT));
+    assert!(bytecode.contains(&OP_REPEAT));
 }
 
 #[test]
@@ -2666,7 +2666,7 @@ fn test_float_constant_emits() {
     let expected_bytes = bits.to_le_bytes();
     let mut found = false;
     for i in 0..bytecode.len().saturating_sub(8) {
-        if bytecode[i] == OP_LOAD_CONST && &bytecode[i + 1..i + 9] == expected_bytes {
+        if bytecode[i] == OP_LOAD_CONST && bytecode[i + 1..i + 9] == expected_bytes {
             found = true;
             break;
         }
