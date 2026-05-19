@@ -284,6 +284,8 @@ fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Pa
                         let name = interner.intern(token.text());
                         segments.push(PathSegment { name });
                     }
+                    // Non-path tokens (punctuation, whitespace, etc.) are silently
+                    // skipped — only identifiers and keywords contribute to the path.
                     _ => {}
                 }
             } else if let Some(child_node) = elem.as_node() {
@@ -644,7 +646,8 @@ fn collect_items(
                 process_use_decl(&child, parent_module, modules, interner);
             }
 
-            // Any other node (e.g., inner items inside a block are not expected)
+            // Other syntax kinds (comments, expressions inside blocks, etc.) are
+            // not item declarations and do not contribute to the def map.
             _ => {}
         }
     }
