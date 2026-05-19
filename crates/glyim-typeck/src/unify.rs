@@ -1,7 +1,5 @@
 //! Unification and type resolution logic for FnCtxt.
 
-use std::collections::HashMap;
-
 use glyim_core::def_id::{AdtId, FnDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{IntTy, UintTy};
@@ -37,7 +35,8 @@ impl<'a> FnCtxt<'a> {
             && let Some(def) = self.ctx.adt_def(adt_id)
             && let Some(field_def) = def.fields.get(FieldIdx::from_raw(field_idx as u32))
         {
-            return field_def.ty;
+            let field_ty = field_def.ty;
+            return field_ty;
         }
         self.diagnostics.push(GlyimDiagnostic::type_error(
             span,
@@ -46,31 +45,12 @@ impl<'a> FnCtxt<'a> {
         Ty::ERROR
     }
 
-    pub fn instantiate_fn_sig(&mut self, _def_id: FnDefId, span: Span) -> Ty {
-        // For the TDD test (only one function), find its return type.
-        for (_item_id, item) in self.hir.items.iter_enumerated() {
-            if let glyim_hir::ItemKind::Fn(fn_item) = &item.kind {
-                if let Some(return_ty_ref) = &fn_item.return_ty {
-                    let param_map = HashMap::new();
-                    return crate::tyconv::resolve_type_ref(
-                        self.ctx,
-                        self.infer,
-                        self.def_map,
-                        self.diagnostics,
-                        return_ty_ref,
-                        &param_map,
-                        span,
-                    );
-                } else {
-                    return Ty::UNIT;
-                }
-            }
-        }
+    pub fn instantiate_fn_sig(&mut self, def_id: FnDefId, span: Span) -> Ty {
+        let _ = (def_id, span);
         self.fresh_infer_ty()
     }
 
     pub fn check_path(&mut self, path: &Path, span: Span) -> (thir::Expr, Ty) {
-        // First, try local variable.
         if let Some(name) = path.as_name() {
             if let Some(var_info) = self.env.lookup_by_name(name) {
                 let thir_expr = thir::Expr {
@@ -80,39 +60,15 @@ impl<'a> FnCtxt<'a> {
                 };
                 return (thir_expr, var_info.ty);
             }
-            // Try to resolve as a module‑level item (type or function)
-            if let Some((def_id, _)) = self.def_map.modules[self.def_map.root].scope.resolve(name) {
-                // For tests, treat as a function pointer (dummy type)
-                let fn_ty = self.fresh_infer_ty();
-                let thir_expr = thir::Expr {
-                    kind: thir::ExprKind::FnRef(FnDefId::from_raw(def_id.to_raw())),
-                    ty: fn_ty,
-                    span,
-                };
-                return (thir_expr, fn_ty);
-            }
             self.diagnostics.push(GlyimDiagnostic::type_error(
                 span,
                 format!("unresolved name `{}`", self.ctx.name_str(name)),
             ));
             return (thir::Expr::err(span), Ty::ERROR);
         }
-        // Multi‑segment path: use resolver for types (e.g., a::S)
-        let core_segments = path.segments.iter().map(|seg| glyim_core::PathSegment { name: seg.name }).collect();
-        let core_path = glyim_core::Path { segments: core_segments, kind: path.kind.clone() };
-        let resolver = glyim_def_map::Resolver::new(self.def_map, self.def_map.root);
-        let per_ns = resolver.resolve_path(&core_path);
-        if let Some((def_id, _)) = per_ns.types {
-            let adt_id = AdtId::from_raw(def_id.to_raw());
-            let substs = self.ctx.intern_substitution(vec![]);
-            let ty = self.ctx.mk_ty(TyKind::Adt(adt_id, substs));
-            // Dummy expression for the type (test only checks type, not expression)
-            let thir_expr = thir::Expr::err(span);
-            return (thir_expr, ty);
-        }
         self.diagnostics.push(GlyimDiagnostic::type_error(
             span,
-            format!("unresolved multi‑segment path: {:?}", path),
+            "multi-segment paths not yet implemented",
         ));
         (thir::Expr::err(span), Ty::ERROR)
     }
