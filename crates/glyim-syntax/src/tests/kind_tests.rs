@@ -1,6 +1,6 @@
 //! Tests for SyntaxKind try_from_raw mapping
 
-use glyim_syntax::SyntaxKind;
+use crate::SyntaxKind;
 
 #[test]
 fn try_from_raw_roundtrip_all_variants() {
@@ -8,7 +8,11 @@ fn try_from_raw_roundtrip_all_variants() {
     let max_raw = SyntaxKind::Error as u16;
     for raw in 0..=max_raw {
         let kind = SyntaxKind::try_from_raw(raw);
-        assert!(kind.is_some(), "Raw value {} should map to a SyntaxKind", raw);
+        assert!(
+            kind.is_some(),
+            "Raw value {} should map to a SyntaxKind",
+            raw
+        );
         let kind = kind.unwrap();
         assert_eq!(kind as u16, raw, "Roundtrip failed for raw {}", raw);
     }

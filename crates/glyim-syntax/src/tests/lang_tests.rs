@@ -1,6 +1,6 @@
 //! Tests for GlyimLang rowan::Language impl
 
-use glyim_syntax::{GlyimLang, SyntaxKind};
+use crate::{GlyimLang, SyntaxKind};
 use rowan::Language;
 
 #[test]

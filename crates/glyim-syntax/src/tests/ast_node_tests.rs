@@ -1,14 +1,15 @@
 //! Tests for AstNode can_cast and cast
 
-use glyim_syntax::{
-    AstNode, SyntaxKind, SyntaxNode, SourceFile, FnDef, StructDef, EnumDef, TraitDef,
-    ImplDef, Block, CallExpr, BinaryExpr, PathExpr, LitExpr,
+use crate::{
+    AstNode, BinaryExpr, Block, CallExpr, EnumDef, FnDef, GlyimLang, ImplDef, LitExpr, PathExpr,
+    SourceFile, StructDef, SyntaxKind, SyntaxNode, TraitDef,
 };
 use rowan::GreenNodeBuilder;
+use rowan::Language;
 
 fn build_syntax_node(kind: SyntaxKind) -> SyntaxNode {
     let mut builder = GreenNodeBuilder::new();
-    builder.start_node(kind);
+    builder.start_node(GlyimLang::kind_to_raw(kind));
     builder.finish_node();
     let green = builder.finish();
     SyntaxNode::new_root(green)
@@ -18,19 +19,39 @@ macro_rules! test_ast_node {
     ($node_type:ident, $kind:expr) => {
         let node_type_name = stringify!($node_type);
         let node = build_syntax_node($kind);
-        assert!($node_type::can_cast($kind), "can_cast should return true for {}", node_type_name);
+        assert!(
+            $node_type::can_cast($kind),
+            "can_cast should return true for {}",
+            node_type_name
+        );
         let casted = $node_type::cast(node.clone());
-        assert!(casted.is_some(), "cast should succeed for {}", node_type_name);
-        assert_eq!(casted.unwrap().syntax(), &node, "syntax should return the original node");
+        assert!(
+            casted.is_some(),
+            "cast should succeed for {}",
+            node_type_name
+        );
+        assert_eq!(
+            casted.unwrap().syntax(),
+            &node,
+            "syntax should return the original node"
+        );
 
         let other_kind = if $kind == SyntaxKind::SourceFile {
             SyntaxKind::FnDef
         } else {
             SyntaxKind::SourceFile
         };
-        assert!(!$node_type::can_cast(other_kind), "can_cast should be false for unrelated kind on {}", node_type_name);
+        assert!(
+            !$node_type::can_cast(other_kind),
+            "can_cast should be false for unrelated kind on {}",
+            node_type_name
+        );
         let other_node = build_syntax_node(other_kind);
-        assert!($node_type::cast(other_node).is_none(), "cast should return None for unrelated kind on {}", node_type_name);
+        assert!(
+            $node_type::cast(other_node).is_none(),
+            "cast should return None for unrelated kind on {}",
+            node_type_name
+        );
     };
 }
 
