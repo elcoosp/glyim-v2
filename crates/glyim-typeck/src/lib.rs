@@ -363,7 +363,6 @@ fn find_trait_default_body(
     }
     None
 }
--e 
 #[cfg(test)]
 mod tests;
 
