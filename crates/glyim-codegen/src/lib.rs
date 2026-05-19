@@ -1,13 +1,13 @@
 //! Abstract code generation backend.
 
-use glyim_core::primitives::BinOp;
 use glyim_core::FnDefId;
+use glyim_core::primitives::BinOp;
 use glyim_diag::CompResult;
 use glyim_mir::*;
-use glyim_type::{Ty, Substitution, FieldIdx};
+use glyim_type::{FieldIdx, Substitution, Ty};
+use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 pub trait CodegenBackend {
     fn name(&self) -> &'static str;
@@ -363,16 +363,29 @@ impl BytecodeBackend {
         }
     }
 
-    fn emit_terminator(&self, bc: &mut Vec<u8>, kind: &TerminatorKind, _bb_idx: u32) -> CompResult<()> {
+    fn emit_terminator(
+        &self,
+        bc: &mut Vec<u8>,
+        kind: &TerminatorKind,
+        _bb_idx: u32,
+    ) -> CompResult<()> {
         match kind {
             TerminatorKind::Return => {
                 bc.push(OP_RETURN);
                 Ok(())
             }
-            TerminatorKind::SwitchInt { discr, switch_ty, targets } => {
+            TerminatorKind::SwitchInt {
+                discr,
+                switch_ty,
+                targets,
+            } => {
                 if *switch_ty == Ty::BOOL {
                     self.emit_operand(bc, discr)?;
-                    let false_target = targets.iter().next().map(|(_, idx)| idx).unwrap_or_else(|| targets.otherwise());
+                    let false_target = targets
+                        .iter()
+                        .next()
+                        .map(|(_, idx)| idx)
+                        .unwrap_or_else(|| targets.otherwise());
                     let true_target = targets.otherwise();
                     bc.push(OP_JUMP_IF);
                     bc.extend_from_slice(&true_target.to_raw().to_le_bytes());
@@ -397,7 +410,13 @@ impl BytecodeBackend {
                 bc.extend_from_slice(&target.to_raw().to_le_bytes());
                 Ok(())
             }
-            TerminatorKind::Call { func, args, destination, target, cleanup: _ } => {
+            TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                target,
+                cleanup: _,
+            } => {
                 let is_indirect = matches!(func, Operand::Copy(_) | Operand::Move(_));
                 self.emit_operand(bc, func)?;
                 let arg_count = args.len() as u32;
@@ -416,14 +435,24 @@ impl BytecodeBackend {
                 Ok(())
             }
             TerminatorKind::Unreachable => Ok(()),
-            TerminatorKind::Assert { cond, expected, target, cleanup: _, msg: _ } => {
+            TerminatorKind::Assert {
+                cond,
+                expected,
+                target,
+                cleanup: _,
+                msg: _,
+            } => {
                 self.emit_operand(bc, cond)?;
                 bc.push(OP_ASSERT);
                 bc.push(if *expected { 1u8 } else { 0u8 });
                 bc.extend_from_slice(&target.to_raw().to_le_bytes());
                 Ok(())
             }
-            TerminatorKind::Drop { place, target, cleanup: _ } => {
+            TerminatorKind::Drop {
+                place,
+                target,
+                cleanup: _,
+            } => {
                 // Compute place address and call drop glue
                 self.emit_place_address(bc, place)?;
                 bc.push(OP_DROP); // This will call drop routine on the pointer

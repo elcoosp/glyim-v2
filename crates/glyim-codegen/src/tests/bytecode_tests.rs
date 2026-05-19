@@ -1,13 +1,11 @@
 //! Bytecode backend tests for unstubbing features.
 
-use std::sync::Arc;
-use glyim_core::{
-    CrateId, DefId, LocalDefId, IndexVec, BinOp,
-};
-use glyim_span::Span;
-use glyim_mir::*;
-use glyim_type::{Ty, FieldIdx};
 use crate::{BytecodeBackend, CodegenBackend};
+use glyim_core::{BinOp, CrateId, DefId, IndexVec, LocalDefId};
+use glyim_mir::*;
+use glyim_span::Span;
+use glyim_type::{FieldIdx, Ty};
+use std::sync::Arc;
 
 // Opcode constants
 const OP_LOAD_LOCAL: u8 = 0x16;
@@ -58,10 +56,13 @@ fn assign_with_field_projection_emits_store_field() {
         kind: StatementKind::Assign(place, rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(vec![stmt], Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
+    let body = dummy_body(
+        vec![stmt],
+        Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+    );
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
 
@@ -84,10 +85,13 @@ fn ref_with_projection_emits_addr_and_offset() {
         kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(1)), rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(vec![stmt], Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
+    let body = dummy_body(
+        vec![stmt],
+        Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+    );
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
 
@@ -115,12 +119,18 @@ fn drop_terminator_emits_op_drop() {
     };
     let bb0 = BasicBlockData {
         statements: vec![],
-        terminator: Terminator { kind: term, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: term,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let bb1 = BasicBlockData {
         statements: vec![],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let mut blocks = IndexVec::new();
@@ -137,7 +147,10 @@ fn drop_terminator_emits_op_drop() {
     });
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
-    assert!(bytecode.contains(&OP_DROP), "OP_DROP not emitted for Drop terminator");
+    assert!(
+        bytecode.contains(&OP_DROP),
+        "OP_DROP not emitted for Drop terminator"
+    );
 }
 
 #[test]
@@ -156,12 +169,18 @@ fn assert_terminator_emits_op_assert() {
     };
     let bb0 = BasicBlockData {
         statements: vec![],
-        terminator: Terminator { kind: term, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: term,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let bb1 = BasicBlockData {
         statements: vec![],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let mut blocks = IndexVec::new();
@@ -178,7 +197,10 @@ fn assert_terminator_emits_op_assert() {
     });
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
-    assert!(bytecode.contains(&OP_ASSERT), "OP_ASSERT not emitted for Assert terminator");
+    assert!(
+        bytecode.contains(&OP_ASSERT),
+        "OP_ASSERT not emitted for Assert terminator"
+    );
 }
 
 #[test]
@@ -194,10 +216,13 @@ fn string_constant_emits_load_const() {
         kind: StatementKind::Assign(place, Rvalue::Use(operand)),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(vec![stmt], Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
+    let body = dummy_body(
+        vec![stmt],
+        Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+    );
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
     let mut found_load_const = false;
@@ -223,10 +248,13 @@ fn fn_constant_emits_load_const() {
         kind: StatementKind::Assign(place, Rvalue::Use(operand)),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(vec![stmt], Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
+    let body = dummy_body(
+        vec![stmt],
+        Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+    );
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
     let mut found_load_const = false;
