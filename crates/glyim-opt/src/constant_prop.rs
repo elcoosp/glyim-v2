@@ -2,12 +2,17 @@ use glyim_mir::*;
 use glyim_type::TyCtx;
 use std::collections::HashMap;
 
-/// Intra‑procedural constant propagation with bounded fixpoint iteration.
+/// Intra-procedural constant propagation.
+///
+/// Replaces `Copy(local)` / `Move(local)` operands with the known constant
+/// value when the local was previously assigned a constant. A single forward
+/// pass is sufficient for straight-line code; extra iterations handle cases
+/// where propagation reveals new constants.
 pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
     let mut const_map: HashMap<LocalIdx, MirConst> = HashMap::new();
     let mut changed = true;
     let mut iteration = 0;
-    const MAX_ITERATIONS: usize = 1000;
+    const MAX_ITERATIONS: usize = 10;
 
     while changed && iteration < MAX_ITERATIONS {
         changed = false;
@@ -15,36 +20,38 @@ pub(crate) fn run(_ctx: &TyCtx, body: &mut Body) {
         for bb in 0..body.basic_blocks.len() {
             let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb as u32)];
             for stmt in &mut block.statements {
-                // Replace operands using the current const_map
+                // Phase 1: replace operands using the current const_map.
                 if let StatementKind::Assign(_, rvalue) = &mut stmt.kind {
                     let made_change = replace_in_rvalue(rvalue, &const_map);
                     changed = changed || made_change;
                 }
-                // Update const_map from this assignment
+                // Phase 2: update const_map from this assignment.
                 if let StatementKind::Assign(place, rvalue) = &stmt.kind {
                     if place.projection.is_empty() {
                         if let Rvalue::Use(Operand::Constant(c)) = rvalue {
-                            const_map.insert(place.local, c.clone());
-                            // New constant may enable further propagation
-                            changed = true;
-                        } else {
-                            if const_map.remove(&place.local).is_some() {
+                            // Only signal changed when we insert a brand-new entry.
+                            let prior = const_map.insert(place.local, c.clone());
+                            if prior.is_none() {
                                 changed = true;
                             }
+                        } else {
+                            // Non-constant assignment invalidates the local.
+                            const_map.remove(&place.local);
                         }
                     } else {
-                        if const_map.remove(&place.local).is_some() {
-                            changed = true;
-                        }
+                        // Projection write invalidates the whole local.
+                        const_map.remove(&place.local);
                     }
                 }
             }
         }
     }
     if iteration >= MAX_ITERATIONS {
-        // Warn without tracing (tracing not in dependencies)
         #[cfg(debug_assertions)]
-        eprintln!("Constant propagation reached iteration limit; possible non-termination");
+        eprintln!(
+            "Constant propagation reached iteration limit after {} iterations",
+            iteration
+        );
     }
 }
 
@@ -72,15 +79,8 @@ fn replace_in_rvalue(rv: &mut Rvalue, map: &HashMap<LocalIdx, MirConst>) -> bool
             let b = replace_operand(&mut box_ops.1, map);
             a || b
         }
-        Rvalue::Ref(place, _) => {
-            if place.projection.is_empty() && map.contains_key(&place.local) {
-                // Not replacing a reference; but we still need to consider that
-                // the referenced place might be a constant? We don't replace.
-                false
-            } else {
-                false
-            }
-        }
+        Rvalue::UnaryOp(_, op) => replace_operand(op, map),
+        Rvalue::Ref(_, _) => false,
         Rvalue::Aggregate(_, operands) => {
             let mut changed = false;
             for op in operands {
@@ -88,16 +88,8 @@ fn replace_in_rvalue(rv: &mut Rvalue, map: &HashMap<LocalIdx, MirConst>) -> bool
             }
             changed
         }
-        Rvalue::Discriminant(place) | Rvalue::Len(place) => {
-            if place.projection.is_empty() && map.contains_key(&place.local) {
-                // Cannot replace discriminant or len with constant
-                false
-            } else {
-                false
-            }
-        }
+        Rvalue::Discriminant(_) | Rvalue::Len(_) => false,
         Rvalue::Cast(_, op, _) => replace_operand(op, map),
         Rvalue::Repeat(op, _) => replace_operand(op, map),
-        _ => false,
     }
 }
