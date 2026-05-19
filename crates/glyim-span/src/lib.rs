@@ -113,6 +113,8 @@ impl SyntaxContext {
     pub fn to_raw(self) -> u32 {
         self.0
     }
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub(crate) fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
@@ -129,6 +131,7 @@ impl ExpnId {
     pub fn to_raw(self) -> u32 {
         self.0
     }
+    #[allow(dead_code)]
     pub(crate) fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
