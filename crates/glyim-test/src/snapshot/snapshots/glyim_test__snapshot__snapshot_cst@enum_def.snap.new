@@ -1,0 +1,35 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..29
+  EnumDef@0..29
+    KwEnum@0..4 "enum"
+    Ident@4..10 "Result"
+    TypeParamList@10..15
+      Lt@10..11 "<"
+      TypeParam@11..12
+        Ident@11..12 "T"
+      Comma@12..13 ","
+      TypeParam@13..14
+        Ident@13..14 "E"
+      Gt@14..15 ">"
+    LBrace@15..16 "{"
+    VariantList@16..28
+      EnumVariant@16..21
+        Ident@16..18 "Ok"
+        LParen@18..19 "("
+        PathType@19..20
+          UsePath@19..20
+            Ident@19..20 "T"
+        RParen@20..21 ")"
+      Comma@21..22 ","
+      EnumVariant@22..28
+        Ident@22..25 "Err"
+        LParen@25..26 "("
+        PathType@26..27
+          UsePath@26..27
+            Ident@26..27 "E"
+        RParen@27..28 ")"
+    RBrace@28..29 "}"

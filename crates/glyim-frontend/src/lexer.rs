@@ -103,46 +103,38 @@ impl<'a> Lexer<'a> {
                     ));
                 }
                 '\'' => {
-                    // Check for lifetime: 'identifier: (no closing quote before colon)
-                    let saved_pos = self.pos;
-                    // Peek ahead to see if it looks like a lifetime
-                    self.pos += 1; // temporarily consume the quote
+                    // Lifetime detection: 'identifier unless followed by closing quote
+                    let after_quote = self.pos + 1;
+                    let src = self.source;
+                    let mut ident_end = after_quote;
+                    let mut chars = src[after_quote..].chars();
                     let mut is_lifetime = false;
-                    let ident_start = self.pos;
-                    // Read identifier
-                    while let Some(ch) = self.peek() {
-                        if ch.is_alphanumeric() || ch == '_' {
-                            self.advance();
+                    if let Some(first) = chars.next() {
+                        if first.is_alphabetic() || first == '_' {
+                            ident_end += first.len_utf8();
+                            while let Some(c) = chars.next() {
+                                if c.is_alphanumeric() || c == '_' {
+                                    ident_end += c.len_utf8();
+                                } else {
+                                    break;
+                                }
+                            }
+                            let next_char = src[ident_end..].chars().next();
+                            if next_char == Some('\'') {
+                                is_lifetime = false; // char literal
+                            } else {
+                                is_lifetime = true; // lifetime
+                            }
                         } else {
-                            break;
+                            is_lifetime = false;
                         }
+                    } else {
+                        is_lifetime = false;
                     }
-                    let has_ident = self.pos > ident_start;
-                    if has_ident {
-                        // Skip whitespace
-                        while let Some(ch) = self.peek() {
-                            if ch.is_whitespace() {
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                        // Check for colon
-                        if self.peek() == Some(':') {
-                            is_lifetime = true;
-                        }
-                    }
-                    // Restore position
-                    self.pos = saved_pos;
                     if is_lifetime {
-                        // Consume the quote and identifier
                         self.advance(); // skip '
-                        while let Some(ch) = self.peek() {
-                            if ch.is_alphanumeric() || ch == '_' {
-                                self.advance();
-                            } else {
-                                break;
-                            }
+                        while self.pos < ident_end {
+                            self.advance();
                         }
                         let text = &self.source[start..self.pos];
                         tokens.push(Token::new(
@@ -598,16 +590,16 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_char(&mut self) {
-        self.advance();
+        self.advance(); // consume opening '
         while let Some(ch) = self.peek() {
             match ch {
                 '\'' => {
-                    self.advance();
+                    self.advance(); // consume closing '
                     break;
                 }
                 '\\' => {
-                    self.advance();
-                    self.advance();
+                    self.advance(); // skip backslash
+                    self.advance(); // skip escaped char
                 }
                 _ => {
                     self.advance();

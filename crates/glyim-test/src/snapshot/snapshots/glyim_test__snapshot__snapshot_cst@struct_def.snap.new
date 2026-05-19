@@ -1,0 +1,22 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..37
+  StructDef@0..37
+    KwStruct@0..6 "struct"
+    Ident@6..15 "Rectangle"
+    LBrace@15..16 "{"
+    Ident@16..21 "width"
+    Colon@21..22 ":"
+    PathType@22..25
+      UsePath@22..25
+        Ident@22..25 "u32"
+    Comma@25..26 ","
+    Ident@26..32 "height"
+    Colon@32..33 ":"
+    PathType@33..36
+      UsePath@33..36
+        Ident@33..36 "u32"
+    RBrace@36..37 "}"

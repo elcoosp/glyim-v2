@@ -1,0 +1,24 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..39
+  UseDecl@0..39
+    KwUse@0..3 "use"
+    UseTree@3..38
+      UsePath@3..21
+        Ident@3..6 "std"
+        ColonColon@6..8 "::"
+        Ident@8..19 "collections"
+        ColonColon@19..21 "::"
+      LBrace@21..22 "{"
+      UseTree@22..29
+        UsePath@22..29
+          Ident@22..29 "HashMap"
+      Comma@29..30 ","
+      UseTree@30..37
+        UsePath@30..37
+          Ident@30..37 "HashSet"
+      RBrace@37..38 "}"
+    Semicolon@38..39 ";"

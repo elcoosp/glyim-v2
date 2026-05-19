@@ -124,7 +124,7 @@ fn unterminated_string_no_crash() {
 fn unterminated_char_no_crash() {
     let result = lex_result("'u");
     assert_eq!(result.tokens.len(), 1);
-    assert_eq!(result.tokens[0].kind, SyntaxKind::CharLit);
+    assert_eq!(result.tokens[0].kind, SyntaxKind::Lifetime);
 }
 
 #[test]

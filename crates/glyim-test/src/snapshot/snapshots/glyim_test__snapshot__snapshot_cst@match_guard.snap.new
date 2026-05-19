@@ -1,0 +1,62 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..50
+  FnDef@0..50
+    KwFn@0..2 "fn"
+    Ident@2..5 "foo"
+    LParen@5..6 "("
+    ParamList@6..19
+      Param@6..19
+        Ident@6..7 "x"
+        Colon@7..8 ":"
+        PathType@8..19
+          UsePath@8..14
+            Ident@8..14 "Option"
+          Lt@14..15 "<"
+          PathType@15..18
+            UsePath@15..18
+              Ident@15..18 "i32"
+          Gt@18..19 ">"
+    RParen@19..20 ")"
+    Block@20..50
+      LBrace@20..21 "{"
+      ExprStmt@21..49
+        MatchExpr@21..49
+          KwMatch@21..26 "match"
+          PathExpr@26..27
+            UsePath@26..27
+              Ident@26..27 "x"
+          LBrace@27..28 "{"
+          MatchArmList@28..48
+            MatchArm@28..44
+              UsePath@28..32
+                Ident@28..32 "Some"
+              PatTuple@32..35
+                LParen@32..33 "("
+                PatIdent@33..34
+                  Ident@33..34 "v"
+                RParen@34..35 ")"
+              KwIf@35..37 "if"
+              BinaryExpr@37..40
+                PathExpr@37..38
+                  UsePath@37..38
+                    Ident@37..38 "v"
+                Gt@38..39 ">"
+                LitExpr@39..40
+                  IntLit@39..40 "0"
+              FatArrow@40..42 "=>"
+              PathExpr@42..43
+                UsePath@42..43
+                  Ident@42..43 "v"
+              Comma@43..44 ","
+            MatchArm@44..48
+              PatWild@44..45
+                Underscore@44..45 "_"
+              FatArrow@45..47 "=>"
+              LitExpr@47..48
+                IntLit@47..48 "0"
+          RBrace@48..49 "}"
+      RBrace@49..50 "}"
