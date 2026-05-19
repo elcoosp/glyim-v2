@@ -19,8 +19,14 @@ fn field_ty_from_adt_def() {
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
     let bool_ty = ctx.bool_ty();
     let mut fields = IndexVec::new();
-    fields.push(FieldDef { name: Interner::default().intern("x"), ty: i32_ty });
-    fields.push(FieldDef { name: Interner::default().intern("y"), ty: bool_ty });
+    fields.push(FieldDef {
+        name: Interner::default().intern("x"),
+        ty: i32_ty,
+    });
+    fields.push(FieldDef {
+        name: Interner::default().intern("y"),
+        ty: bool_ty,
+    });
     let def = AdtDef {
         kind: AdtKind::Struct,
         fields,
@@ -62,14 +68,21 @@ fn field_ty_adt_def_takes_priority_over_repr() {
     let bool_ty = ctx.bool_ty();
     ctx.register_adt_repr(adt_id, vec![bool_ty]);
     let mut fields = IndexVec::new();
-    fields.push(FieldDef { name: Interner::default().intern("z"), ty: i32_ty });
+    fields.push(FieldDef {
+        name: Interner::default().intern("z"),
+        ty: i32_ty,
+    });
     let def = AdtDef {
         kind: AdtKind::Struct,
         fields,
         variants: vec![],
     };
     ctx.register_adt(adt_id, def);
-    assert_eq!(ctx.field_ty(adt_id, 0), i32_ty, "AdtDef should take priority over AdtRepr");
+    assert_eq!(
+        ctx.field_ty(adt_id, 0),
+        i32_ty,
+        "AdtDef should take priority over AdtRepr"
+    );
 }
 
 // ---- field_ty on TyCtx (frozen) ----
@@ -80,7 +93,10 @@ fn frozen_field_ty_from_adt_def() {
         let adt_id = AdtId::from_raw(200);
         let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
         let mut fields = IndexVec::new();
-        fields.push(FieldDef { name: Interner::default().intern("x"), ty: i32_ty });
+        fields.push(FieldDef {
+            name: Interner::default().intern("x"),
+            ty: i32_ty,
+        });
         let def = AdtDef {
             kind: AdtKind::Struct,
             fields,
@@ -148,12 +164,18 @@ fn type_lookup_field_ty_default_returns_error_when_no_adt_def() {
     let lookup = MinimalTypeLookup { error: error_ty };
     let adt_id = AdtId::from_raw(999);
     let result = lookup.field_ty(adt_id, 0);
-    assert_eq!(result, error_ty, "default field_ty should return error_ty when adt_def returns None");
+    assert_eq!(
+        result, error_ty,
+        "default field_ty should return error_ty when adt_def returns None"
+    );
 }
 
 #[test]
 fn type_lookup_adt_def_default_returns_none() {
     let lookup = MinimalTypeLookup { error: Ty::ERROR };
     let adt_id = AdtId::from_raw(999);
-    assert!(lookup.adt_def(adt_id).is_none(), "default adt_def should return None");
+    assert!(
+        lookup.adt_def(adt_id).is_none(),
+        "default adt_def should return None"
+    );
 }

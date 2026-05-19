@@ -27,7 +27,10 @@ fn register_fn_sig_and_retrieve() {
     let fn_id = FnDefId::from_raw(42);
     ctx.register_fn_sig(fn_id, sig.clone());
     let retrieved = ctx.fn_sig(fn_id);
-    assert!(retrieved.is_some(), "fn_sig should return Some after registration");
+    assert!(
+        retrieved.is_some(),
+        "fn_sig should return Some after registration"
+    );
     let retrieved_sig = retrieved.unwrap();
     assert_eq!(retrieved_sig.output, bool_ty);
     assert_eq!(retrieved_sig.unsafety, Safety::Safe);
@@ -38,7 +41,10 @@ fn register_fn_sig_and_retrieve() {
 fn fn_sig_returns_none_for_unregistered() {
     let ctx = test_ty_ctx();
     let fn_id = FnDefId::from_raw(999);
-    assert!(ctx.fn_sig(fn_id).is_none(), "fn_sig should return None for unregistered id");
+    assert!(
+        ctx.fn_sig(fn_id).is_none(),
+        "fn_sig should return None for unregistered id"
+    );
 }
 
 #[test]
@@ -87,7 +93,10 @@ fn fn_sig_survives_freeze() {
         ctx.register_fn_sig(fn_id, sig);
     });
     let fn_id = FnDefId::from_raw(7);
-    assert!(frozen.fn_sig(fn_id).is_some(), "fn_sig should survive freeze");
+    assert!(
+        frozen.fn_sig(fn_id).is_some(),
+        "fn_sig should survive freeze"
+    );
     assert_eq!(frozen.fn_sig(fn_id).unwrap().output, frozen.bool_ty());
 }
 
@@ -125,7 +134,10 @@ fn register_closure_sig_and_retrieve() {
     let closure_id = ClosureId::from_raw(5);
     ctx.register_closure_sig(closure_id, sig.clone());
     let retrieved = ctx.closure_sig(closure_id);
-    assert!(retrieved.is_some(), "closure_sig should return Some after registration");
+    assert!(
+        retrieved.is_some(),
+        "closure_sig should return Some after registration"
+    );
     assert_eq!(retrieved.unwrap().output, ctx.bool_ty());
 }
 

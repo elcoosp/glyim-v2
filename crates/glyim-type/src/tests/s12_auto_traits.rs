@@ -154,7 +154,10 @@ fn adt_negative_impl_removes_send() {
         c.mk_adt(adt_id, substs)
     });
     assert!(!ctx.implements_auto_trait(adt_ty, AutoTrait::Send));
-    assert!(ctx.implements_auto_trait(adt_ty, AutoTrait::Sync), "Sync should still be present");
+    assert!(
+        ctx.implements_auto_trait(adt_ty, AutoTrait::Sync),
+        "Sync should still be present"
+    );
 }
 
 #[test]
@@ -168,7 +171,10 @@ fn adt_manual_impl_preserves_trait() {
         let substs = c.intern_substitution(vec![]);
         c.mk_adt(adt_id, substs)
     });
-    assert!(ctx.implements_auto_trait(adt_ty, AutoTrait::Send), "manual impl should override field analysis");
+    assert!(
+        ctx.implements_auto_trait(adt_ty, AutoTrait::Send),
+        "manual impl should override field analysis"
+    );
 }
 
 #[test]
@@ -179,7 +185,11 @@ fn adt_with_no_repr_gets_no_auto_traits() {
         c.mk_adt(adt_id, substs)
     });
     let flags = ctx.auto_trait_flags(adt_ty);
-    assert_eq!(flags, AutoTraitFlags::empty(), "ADT with no AdtRepr should have no auto traits");
+    assert_eq!(
+        flags,
+        AutoTraitFlags::empty(),
+        "ADT with no AdtRepr should have no auto traits"
+    );
 }
 
 // ---- Tuple auto traits ----

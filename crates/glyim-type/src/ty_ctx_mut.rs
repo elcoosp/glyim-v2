@@ -229,10 +229,18 @@ impl TyCtxMut {
                 return self.error_ty();
             };
             let idx = FieldIdx::from_raw(raw_idx);
-            return def.fields.get(idx).map(|f| f.ty).unwrap_or_else(|| self.error_ty());
+            return def
+                .fields
+                .get(idx)
+                .map(|f| f.ty)
+                .unwrap_or_else(|| self.error_ty());
         }
         if let Some(repr) = self.adt_reprs.get(&adt_id) {
-            return repr.field_tys.get(field_idx).copied().unwrap_or_else(|| self.error_ty());
+            return repr
+                .field_tys
+                .get(field_idx)
+                .copied()
+                .unwrap_or_else(|| self.error_ty());
         }
         self.error_ty()
     }
@@ -317,10 +325,18 @@ impl TypeLookup for TyCtxMut {
                 return self.error_ty();
             };
             let idx = FieldIdx::from_raw(raw_idx);
-            return def.fields.get(idx).map(|f| f.ty).unwrap_or_else(|| self.error_ty());
+            return def
+                .fields
+                .get(idx)
+                .map(|f| f.ty)
+                .unwrap_or_else(|| self.error_ty());
         }
         if let Some(repr) = self.adt_reprs.get(&adt_id) {
-            return repr.field_tys.get(field_idx).copied().unwrap_or_else(|| self.error_ty());
+            return repr
+                .field_tys
+                .get(field_idx)
+                .copied()
+                .unwrap_or_else(|| self.error_ty());
         }
         self.error_ty()
     }

@@ -2,10 +2,15 @@
 
 use crate::object_safety::*;
 use glyim_core::interner::Interner;
-use glyim_span::{Span, SyntaxContext, ByteIdx, FileId};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 fn test_span() -> Span {
-    Span::new(FileId::BOGUS, ByteIdx::ZERO, ByteIdx::ZERO, SyntaxContext::ROOT)
+    Span::new(
+        FileId::BOGUS,
+        ByteIdx::ZERO,
+        ByteIdx::ZERO,
+        SyntaxContext::ROOT,
+    )
 }
 
 fn named(s: &str) -> glyim_core::interner::Name {
@@ -33,7 +38,10 @@ fn trait_with_ref_self_only_is_object_safe() {
         returns_self: false,
     }];
     let violations = check_object_safety(false, &methods);
-    assert!(violations.is_empty(), "trait with only &self methods should be object-safe");
+    assert!(
+        violations.is_empty(),
+        "trait with only &self methods should be object-safe"
+    );
 }
 
 // ---- Trait with generic method is not object-safe ----
@@ -48,7 +56,11 @@ fn generic_method_is_not_object_safe() {
         returns_self: false,
     }];
     let violations = check_object_safety(false, &methods);
-    assert!(violations.iter().any(|v| matches!(v, ObjectSafetyViolation::GenericMethod { .. })));
+    assert!(
+        violations
+            .iter()
+            .any(|v| matches!(v, ObjectSafetyViolation::GenericMethod { .. }))
+    );
 }
 
 // ---- Trait with static method (no self) is not object-safe ----
@@ -63,7 +75,11 @@ fn static_method_is_not_object_safe() {
         returns_self: false,
     }];
     let violations = check_object_safety(false, &methods);
-    assert!(violations.iter().any(|v| matches!(v, ObjectSafetyViolation::StaticMethod { .. })));
+    assert!(
+        violations
+            .iter()
+            .any(|v| matches!(v, ObjectSafetyViolation::StaticMethod { .. }))
+    );
 }
 
 // ---- Trait with self by value (without Self: Sized) is not object-safe ----
@@ -78,7 +94,11 @@ fn by_value_self_without_sized_is_not_object_safe() {
         returns_self: false,
     }];
     let violations = check_object_safety(false, &methods);
-    assert!(violations.iter().any(|v| matches!(v, ObjectSafetyViolation::ByValueSelf { .. })));
+    assert!(
+        violations
+            .iter()
+            .any(|v| matches!(v, ObjectSafetyViolation::ByValueSelf { .. }))
+    );
 }
 
 // ---- Self: Sized with by-value self is only SelfSized violation ----
@@ -94,8 +114,16 @@ fn self_sized_with_by_value_self_only_flags_self_sized() {
     }];
     let violations = check_object_safety(true, &methods);
     // Should only have SelfSized, not ByValueSelf (since Self: Sized already covers it)
-    assert!(violations.iter().any(|v| matches!(v, ObjectSafetyViolation::SelfSized)));
-    assert!(!violations.iter().any(|v| matches!(v, ObjectSafetyViolation::ByValueSelf { .. })));
+    assert!(
+        violations
+            .iter()
+            .any(|v| matches!(v, ObjectSafetyViolation::SelfSized))
+    );
+    assert!(
+        !violations
+            .iter()
+            .any(|v| matches!(v, ObjectSafetyViolation::ByValueSelf { .. }))
+    );
 }
 
 // ---- Multiple violations ----
@@ -158,6 +186,12 @@ fn mixed_methods_reports_only_violations() {
         },
     ];
     let violations = check_object_safety(false, &methods);
-    assert_eq!(violations.len(), 1, "only the generic method should be a violation");
-    assert!(matches!(&violations[0], ObjectSafetyViolation::GenericMethod { method, .. } if *method == named("unsafe_generic")));
+    assert_eq!(
+        violations.len(),
+        1,
+        "only the generic method should be a violation"
+    );
+    assert!(
+        matches!(&violations[0], ObjectSafetyViolation::GenericMethod { method, .. } if *method == named("unsafe_generic"))
+    );
 }
