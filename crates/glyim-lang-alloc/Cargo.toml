@@ -5,8 +5,6 @@ edition = "2024"
 description = "Glyim standard library: dynamic allocation and collections"
 
 [dependencies]
-glyim-core = { path = "../glyim-core" }
-glyim-runtime = { path = "../glyim-runtime" }
 
 [dev-dependencies]
 glyim-test = { workspace = true }

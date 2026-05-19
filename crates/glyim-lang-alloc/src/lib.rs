@@ -31,3 +31,6 @@ pub fn alloc_source_all() -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;
