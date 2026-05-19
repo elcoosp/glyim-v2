@@ -100,6 +100,9 @@ impl<'a> CoherenceChecker<'a> {
         Err(vec![GlyimDiagnostic::type_error(header.span, msg)])
     }
 
+    /// Check whether two self types overlap. This does NOT handle the
+    /// blanket-vs-blanket case — that is left to `check_overlap` so it
+    /// can apply its own conservative policy.
     fn self_tys_overlap(
         &self,
         old: &RegisteredImpl,
@@ -118,15 +121,23 @@ impl<'a> CoherenceChecker<'a> {
             }
         }
 
-        // Kind-based comparison for when types aren't content-interned
         let old_kind = ctx.ty_kind(old.self_ty);
         let new_kind = ctx.ty_kind(new.self_ty);
+
+        // Two type params from different impl blocks are NOT automatically
+        // overlapping — each impl has its own parameter namespace.
+        // The blanket-vs-blanket overlap policy is handled separately
+        // in `check_overlap`.
+        if matches!(old_kind, TyKind::Param(_)) && matches!(new_kind, TyKind::Param(_)) {
+            return false;
+        }
+
+        // Kind-based comparison for when types aren't content-interned
         match (old_kind, new_kind) {
             (TyKind::Adt(a, _), TyKind::Adt(b, _)) => a == b,
             (TyKind::Int(a), TyKind::Int(b)) => a == b,
             (TyKind::Uint(a), TyKind::Uint(b)) => a == b,
             (TyKind::Float(a), TyKind::Float(b)) => a == b,
-            (TyKind::Param(a), TyKind::Param(b)) => a.index == b.index,
             (TyKind::Bool, TyKind::Bool)
             | (TyKind::Char, TyKind::Char)
             | (TyKind::Never, TyKind::Never)
@@ -152,7 +163,8 @@ impl<'a> CoherenceChecker<'a> {
             let new_is_blanket = matches!(ctx.ty_kind(new_header.self_ty), TyKind::Param(_));
             let old_is_blanket = matches!(ctx.ty_kind(old.self_ty), TyKind::Param(_));
 
-            // Two blanket impls: conservatively allow if different param names
+            // Two blanket impls: conservatively allow (proper overlap
+            // detection requires unification which isn't available here)
             if new_is_blanket && old_is_blanket {
                 continue;
             }
@@ -191,7 +203,7 @@ impl<'a> CoherenceChecker<'a> {
         vec![diag]
     }
 
-    /// Compatibility helper for tests — actually uses the polarity parameter.
+    /// Compatibility helper for tests — uses the polarity parameter.
     #[allow(dead_code)]
     pub(crate) fn check_and_register_impl_compat(
         &mut self,
