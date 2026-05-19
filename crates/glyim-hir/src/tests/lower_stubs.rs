@@ -3,7 +3,6 @@ use glyim_core::interner::Interner;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
 
-/// Test that an unknown expression kind (e.g., WhileExpr) doesn't crash.
 #[test]
 fn test_while_expr_stub() {
     let source = "fn f() { while true { } }";
@@ -11,10 +10,8 @@ fn test_while_expr_stub() {
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
-    // Should not panic; stub warning will be emitted
 }
 
-/// Test that a loop expression produces stub.
 #[test]
 fn test_loop_expr_stub() {
     let source = "fn f() { loop { break; } }";
@@ -24,7 +21,6 @@ fn test_loop_expr_stub() {
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
-/// Test that tuple struct lowering doesn't crash (stub).
 #[test]
 fn test_tuple_struct_stub() {
     let source = "struct Pair(i32, f64);";
@@ -34,7 +30,6 @@ fn test_tuple_struct_stub() {
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
-/// Test that float literal doesn't crash.
 #[test]
 fn test_float_literal_stub() {
     let source = "fn f() { 3.14 }";
@@ -44,7 +39,6 @@ fn test_float_literal_stub() {
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
-/// Test that an unhandled type node (e.g., DynType) doesn't crash.
 #[test]
 fn test_dyn_type_stub() {
     let source = "fn f(x: &dyn Display) {}";
@@ -54,7 +48,6 @@ fn test_dyn_type_stub() {
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
-/// Test that match expression stub doesn't crash.
 #[test]
 fn test_match_expr_stub() {
     let source = "fn f(x: i32) { match x { 0 => 1, _ => 0 } }";
@@ -64,7 +57,6 @@ fn test_match_expr_stub() {
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
-/// Test that let statement is handled (it's not an expression, but appears inside block).
 #[test]
 fn test_let_stmt_in_block() {
     let source = "fn f() { let x = 1; x }";

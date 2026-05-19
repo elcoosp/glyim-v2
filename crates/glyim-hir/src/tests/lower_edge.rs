@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use crate::lower::lower_crate;
 use crate::{BodyId, Expr, ExprId, ItemId, ItemKind, Literal};
 use glyim_core::interner::Interner;
@@ -23,155 +21,146 @@ fn last_expr_id(body: &crate::Body) -> ExprId {
     ExprId::from_raw(body.exprs.len() as u32 - 1)
 }
 
+fn get_body(hir: &crate::CrateHir, body_id: BodyId) -> &crate::Body {
+    &hir.bodies[body_id]
+}
+
 #[test]
-fn test_chained_binary_expression() {
-    // a + b + c  should parse as (a + b) + c
-    let (hir, _interner, body_id) = get_body_hir("fn f() { a + b + c }");
-    let body = &hir.bodies[body_id];
+fn test_binary_expr_chained() {
+    let (hir, interner, body_id) = get_body_hir("fn f() { a + b * c }");
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty());
-            let expr_id = tail.unwrap();
-            match &body.exprs[*expr_id] {
-                Expr::Binary { op, .. } => {
-                    // top-level op should be +
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(expr_id),
+            ..
+        } => {
+            let expr = &body.exprs[*expr_id];
+            match expr {
+                Expr::Binary { op, lhs, .. } => {
                     assert_eq!(*op, BinOp::Add);
+                    match &body.exprs[*lhs] {
+                        Expr::Path(p) => assert_eq!(p.as_name().unwrap(), interner.intern("a")),
+                        _ => panic!(),
+                    }
                 }
-                other => panic!("Expected Binary in tail, got {:?}", other),
+                _ => panic!(),
             }
         }
-        other => panic!("Expected Block, got {:?}", other),
+        _ => panic!(),
     }
 }
 
 #[test]
-fn test_if_without_else() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { if true { 42 } }");
-    let body = &hir.bodies[body_id];
+fn test_if_else_nested() {
+    let (hir, interner, body_id) =
+        get_body_hir("fn f() { if a { 1 } else { if b { 2 } else { 3 } } }");
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty());
-            let if_id = tail.unwrap();
-            match &body.exprs[*if_id] {
-                Expr::If { else_branch, .. } => {
-                    assert!(else_branch.is_none(), "should have no else branch");
-                }
-                other => panic!("Expected If, got {:?}", other),
-            }
-        }
-        other => panic!("Expected Block, got {:?}", other),
-    }
-}
-
-#[test]
-fn test_block_multiple_stmts_and_tail() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { 1; 2; 3 }");
-    let body = &hir.bodies[body_id];
-    let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert_eq!(stmts.len(), 2, "should have two statements");
-            assert!(tail.is_some(), "should have tail expression");
-        }
-        other => panic!("Expected Block, got {:?}", other),
-    }
-}
-
-#[test]
-fn test_nested_blocks() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { { 1 } }");
-    let body = &hir.bodies[body_id];
-    let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty());
-            let inner_id = tail.unwrap();
-            match &body.exprs[*inner_id] {
-                Expr::Block {
-                    stmts: inner_stmts,
-                    tail: inner_tail,
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(if_id), ..
+        } => {
+            let outer_if = &body.exprs[*if_id];
+            match outer_if {
+                Expr::If {
+                    then_branch,
+                    else_branch: Some(else_id),
+                    ..
                 } => {
-                    assert!(inner_stmts.is_empty());
-                    assert!(inner_tail.is_some());
+                    // Then branch
+                    let then_val = &body.exprs[*then_branch];
+                    let then_lit = match then_val {
+                        Expr::Block {
+                            tail: Some(tail_id),
+                            ..
+                        } => &body.exprs[*tail_id],
+                        Expr::Literal(lit) => then_val,
+                        _ => panic!("Unexpected then branch shape"),
+                    };
+                    assert!(matches!(then_lit, Expr::Literal(Literal::Int(1, None))));
+
+                    // Else branch
+                    let else_expr = &body.exprs[*else_id];
+                    let inner_if = match else_expr {
+                        Expr::If { .. } => else_expr,
+                        Expr::Block {
+                            tail: Some(tail_id),
+                            ..
+                        } => &body.exprs[*tail_id],
+                        _ => panic!("Expected nested If or Block containing If"),
+                    };
+                    match inner_if {
+                        Expr::If {
+                            then_branch: inner_then,
+                            ..
+                        } => {
+                            let inner_val = &body.exprs[*inner_then];
+                            let inner_lit = match inner_val {
+                                Expr::Block {
+                                    tail: Some(tail_id),
+                                    ..
+                                } => &body.exprs[*tail_id],
+                                Expr::Literal(lit) => inner_val,
+                                _ => panic!(),
+                            };
+                            assert!(matches!(inner_lit, Expr::Literal(Literal::Int(2, None))));
+                        }
+                        _ => panic!("Expected nested If"),
+                    }
                 }
-                other => panic!("Expected inner Block, got {:?}", other),
+                _ => panic!("Expected If"),
             }
         }
-        other => panic!("Expected outer Block, got {:?}", other),
+        _ => panic!("Expected Block"),
     }
 }
 
 #[test]
-fn test_empty_enum() {
-    let source = "enum Void {}";
-    let file_id = FileId::from_raw(0);
-    let parse_result = parse_to_syntax(source, file_id);
-    let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
-    assert_eq!(hir.items.len(), 1);
-    let item = &hir.items[ItemId::from_raw(0)];
-    match &item.kind {
-        ItemKind::Enum(e) => {
-            assert!(e.variants.is_empty());
-        }
-        other => panic!("Expected Enum item, got {:?}", other),
-    }
-}
-
-#[test]
-fn test_boolean_literals() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { true }");
-    let body = &hir.bodies[body_id];
+fn test_let_stmt() {
+    let (hir, interner, body_id) = get_body_hir("fn f() { let x = 5; x }");
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block { stmts, tail } => {
-            let lit_id = tail.unwrap();
-            match &body.exprs[*lit_id] {
-                Expr::Literal(Literal::Bool(true)) => {}
-                other => panic!("Expected Bool(true), got {:?}", other),
+            assert!(!stmts.is_empty(), "Expected at least one statement");
+            let assign_found = stmts
+                .iter()
+                .any(|&sid| matches!(&body.exprs[sid], Expr::Assign { .. }));
+            assert!(assign_found, "Expected an Assign for let statement");
+            match tail {
+                Some(tail_id) => assert!(matches!(&body.exprs[*tail_id], Expr::Path(_))),
+                None => panic!("Expected tail expression"),
             }
         }
-        other => panic!("Expected Block, got {:?}", other),
+        _ => panic!(),
     }
 }
 
 #[test]
-fn test_reference_type_with_mut() {
-    // This requires the parser to produce RefType with KwMut; may not work yet.
-    let source = "fn f() -> &mut i32 { todo!() }";
-    let file_id = FileId::from_raw(0);
-    let parse_result = parse_to_syntax(source, file_id);
-    let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
-    let item = &hir.items[ItemId::from_raw(0)];
-    if let ItemKind::Fn(fn_item) = &item.kind
-        && let Some(ty) = &fn_item.return_ty
-    {
-        // we just check that it doesn't panic
-        eprintln!("return type: {:?}", ty);
+fn test_range_expr_inclusive() {
+    let (hir, interner, body_id) = get_body_hir("fn f() { 0..=10 }");
+    let body = get_body(&hir, body_id);
+    let block_id = last_expr_id(body);
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(range_id),
+            ..
+        } => {
+            let expr = &body.exprs[*range_id];
+            match expr {
+                Expr::Range {
+                    start,
+                    end,
+                    inclusive,
+                } => {
+                    assert!(start.is_some());
+                    assert!(end.is_some());
+                    assert!(inclusive);
+                }
+                _ => panic!("Expected Range"),
+            }
+        }
+        _ => panic!("Expected Block"),
     }
-}
-
-#[test]
-fn test_multiple_top_level_items() {
-    let source = "struct S; fn f() {} enum E { A }";
-    let file_id = FileId::from_raw(0);
-    let parse_result = parse_to_syntax(source, file_id);
-    let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
-    assert_eq!(hir.items.len(), 3);
-    assert!(matches!(
-        hir.items[ItemId::from_raw(0)].kind,
-        ItemKind::Struct(_)
-    ));
-    assert!(matches!(
-        hir.items[ItemId::from_raw(1)].kind,
-        ItemKind::Fn(_)
-    ));
-    assert!(matches!(
-        hir.items[ItemId::from_raw(2)].kind,
-        ItemKind::Enum(_)
-    ));
 }

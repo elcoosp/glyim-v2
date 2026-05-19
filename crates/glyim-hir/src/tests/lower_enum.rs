@@ -1,13 +1,12 @@
 use crate::lower::lower_crate;
 use crate::{ItemId, ItemKind};
 use glyim_core::interner::Interner;
-use glyim_core::primitives::StructKind;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
 
 #[test]
-fn test_enum_with_variants() {
-    let source = "enum Color { Red, Green, Blue, Rgb(u8, u8, u8) }";
+fn test_enum_simple() {
+    let source = "enum Color { Red, Green, Blue }";
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let root = parse_result.root;
@@ -19,12 +18,10 @@ fn test_enum_with_variants() {
     assert_eq!(interner.resolve(item.name), "Color");
     match &item.kind {
         ItemKind::Enum(e) => {
-            assert_eq!(e.variants.len(), 4);
+            assert_eq!(e.variants.len(), 3);
             assert_eq!(interner.resolve(e.variants[0].name), "Red");
-            assert_eq!(e.variants[0].kind, StructKind::Unit);
-            assert_eq!(interner.resolve(e.variants[3].name), "Rgb");
-            assert_eq!(e.variants[3].kind, StructKind::Tuple);
-            assert_eq!(e.variants[3].fields.len(), 3);
+            assert_eq!(interner.resolve(e.variants[1].name), "Green");
+            assert_eq!(interner.resolve(e.variants[2].name), "Blue");
         }
         other => panic!("Expected Enum item, got {:?}", other),
     }

@@ -57,25 +57,23 @@ pub(crate) fn lower_fn_def(
     let mut params = Vec::new();
     let mut return_ty = None;
     let owner = next_local_def_id(local_def_counter);
-    let mut body = Body {
-        owner,
-        exprs: IndexVec::new(),
-        pats: IndexVec::new(),
-        params: Vec::new(),
-        span: node_span(node),
-        expr_spans: IndexVec::new(),
-    };
+    let mut body_params = Vec::new();
 
+    // Temporary pats storage for parameters (will be moved into body if present)
+    let mut temp_pats = IndexVec::new();
+
+    // Collect parameters
     for child in node.children() {
         if child.kind() == SyntaxKind::ParamList {
             for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
-                let (p, pat_id) = lower_param(&param_node, interner, &mut body.pats);
+                let (p, pat_id) = lower_param(&param_node, interner, &mut temp_pats);
                 params.push(p);
-                body.params.push(pat_id);
+                body_params.push(pat_id);
             }
         }
     }
 
+    // Parse return type
     let mut arrow_seen = false;
     for el in node.children_with_tokens() {
         match el {
@@ -90,8 +88,18 @@ pub(crate) fn lower_fn_def(
         }
     }
 
-    if let Some(block_node) = node.children().find(|c| c.kind() == SyntaxKind::Block) {
+    // Body or foreign
+    let body_id = if let Some(block_node) = node.children().find(|c| c.kind() == SyntaxKind::Block)
+    {
         tracing::debug!("Found Block node in FnDef, lowering to expr");
+        let mut body = Body {
+            owner,
+            exprs: IndexVec::new(),
+            pats: temp_pats,
+            params: body_params,
+            span: node_span(node),
+            expr_spans: IndexVec::new(),
+        };
         lower_block_to_expr(
             &block_node,
             interner,
@@ -101,12 +109,13 @@ pub(crate) fn lower_fn_def(
             diags,
             struct_field_map,
         );
+        let bid = bodies.push(body);
+        body_owners.push(owner);
+        Some(bid)
     } else {
         tracing::debug!("FnDef without Block node treated as foreign function");
-    }
-
-    let bid = bodies.push(body);
-    body_owners.push(owner);
+        None
+    };
 
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
@@ -116,7 +125,7 @@ pub(crate) fn lower_fn_def(
         kind: ItemKind::Fn(FnItem {
             params,
             return_ty,
-            body: Some(bid),
+            body: body_id,
             is_unsafe: false,
             is_async: false,
             generic_params: Vec::new(),
@@ -126,7 +135,6 @@ pub(crate) fn lower_fn_def(
         span: node_span(node),
     })
 }
-
 pub(crate) fn lower_param(
     node: &SyntaxNode,
     interner: &mut Interner,

@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 pub(crate) mod lower_expr;
 pub(crate) mod lower_item;
 pub(crate) mod lower_pat;
@@ -149,6 +150,31 @@ pub(crate) fn lower_crate(
                     &mut item_id_counter,
                 ) {
                     items.push(item);
+                }
+            }
+            SyntaxKind::ExternBlock => {
+                tracing::debug!("Processing ExternBlock");
+                let mut stack = vec![child.clone()];
+                while let Some(node) = stack.pop() {
+                    tracing::debug!("  visiting node kind {:?}", node.kind());
+                    if node.kind() == SyntaxKind::FnDef {
+                        tracing::debug!("    found FnDef inside extern block");
+                        if let Some(item) = lower_item::lower_fn_def(
+                            &node,
+                            interner,
+                            &mut local_def_counter,
+                            &mut item_id_counter,
+                            &mut bodies,
+                            &mut body_owners,
+                            diags,
+                            &struct_field_map,
+                        ) {
+                            items.push(item);
+                        }
+                    }
+                    for inner_child in node.children() {
+                        stack.push(inner_child);
+                    }
                 }
             }
             // Other item kinds (Trait, Impl, Mod, etc.) are not yet lowered.
