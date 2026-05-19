@@ -199,6 +199,7 @@ fn pat_to_expr(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_field_or_method_with_receiver(
     node: &SyntaxNode,
     receiver_id: ExprId,

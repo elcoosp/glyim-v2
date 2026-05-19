@@ -41,6 +41,7 @@ pub(crate) fn collect_struct_fields(
     Some((name, fields))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_fn_def(
     node: &SyntaxNode,
     interner: &mut Interner,
