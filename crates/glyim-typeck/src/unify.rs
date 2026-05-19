@@ -113,7 +113,7 @@ impl<'a> FnCtxt<'a> {
         (thir::Expr::err(span), Ty::ERROR)
     }
 
-    pub fn instantiate_fn_sig(&mut self, def_id: FnDefId, span: Span) -> Ty {
+    pub fn instantiate_fn_sig(&mut self, __def_id: FnDefId, span: Span) -> Ty {
         // Try to find the function in the HIR by matching its LocalDefId
         for (_id, item) in self.hir.items.iter_enumerated() {
             if let glyim_hir::ItemKind::Fn(fn_item) = &item.kind {

@@ -30,7 +30,7 @@ impl<'a> FnCtxt<'a> {
         }
 
         let mut stmts = Vec::new();
-        let mut expr_ids: Vec<_> = self.body.exprs.iter_enumerated().collect();
+        let expr_ids: Vec<_> = self.body.exprs.iter_enumerated().collect();
         let len = expr_ids.len();
 
         for (pos, (expr_id, expr)) in expr_ids.into_iter().enumerate() {
