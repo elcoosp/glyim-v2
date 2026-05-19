@@ -7,7 +7,7 @@ use glyim_type::*;
 
 #[test]
 fn test_fulfillment_ctx_processes_trait_obligations() {
-    let mut ctx_mut = test_ty_ctx();
+    let ctx_mut = test_ty_ctx();
     let ctx = ctx_mut.freeze();
     let mut trait_ctx = solver::TraitContext::new();
     let trait_id = TraitDefId::from_raw(0);

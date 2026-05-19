@@ -21,7 +21,7 @@ fn test_coerce_array_to_slice() {
 
 #[test]
 fn test_coerce_identity() {
-    let mut ctx_mut = test_ty_ctx();
+    let ctx_mut = test_ty_ctx();
     let bool_ty = ctx_mut.bool_ty();
     let ctx = ctx_mut.freeze();
     assert!(crate::fulfill::can_coerce(&ctx, bool_ty, bool_ty));

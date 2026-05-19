@@ -1,4 +1,3 @@
-use crate::*;
 use glyim_core::arena::IndexVec;
 use glyim_test::{assert_ty, with_fresh_ty_ctx};
 
