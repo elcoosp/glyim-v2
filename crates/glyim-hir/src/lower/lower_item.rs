@@ -101,12 +101,12 @@ pub(crate) fn lower_fn_def(
             span: node_span(node),
             expr_spans: IndexVec::new(),
         };
+        // Call lower_block_to_expr with the new signature: &mut Body
         lower_block_to_expr(
             &block_node,
             interner,
-            &mut body.exprs,
+            &mut body,
             &mut body.pats,
-            &mut body.expr_spans,
             diags,
             struct_field_map,
         );
@@ -136,6 +136,7 @@ pub(crate) fn lower_fn_def(
         span: node_span(node),
     })
 }
+
 pub(crate) fn lower_param(
     node: &SyntaxNode,
     interner: &mut Interner,
