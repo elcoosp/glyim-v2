@@ -65,6 +65,19 @@ pub(crate) fn expand_macro_invocation(
             registered_builtins.insert(def.name, *handler);
         }
     }
+
+    // Check registered builtins first
+    if let Some(handler) = registered_builtins.get(&name).copied() {
+        let mut expander = ExpanderImpl {
+            hygiene,
+            macros: HashMap::new(),
+            registered_builtins,
+            diagnostics: Vec::new(),
+            interner: interner.clone(),
+        };
+        return expander.expand_builtin(handler, args, call_site, depth);
+    }
+
     let mut expander = ExpanderImpl {
         hygiene,
         macros: HashMap::new(),
@@ -234,22 +247,35 @@ impl<'a> ExpanderImpl<'a> {
         builder.finish_node();
     }
 
-    /// Recursively find the first Ident token in a syntax subtree.
-    fn find_ident_in_subtree(node: &SyntaxNode) -> Option<String> {
+    /// Find the macro name in a MacroCall node.
+    /// The macro name is the Ident token immediately before the `!` token.
+    fn find_macro_name(node: &SyntaxNode) -> Option<String> {
+        let mut last_ident: Option<String> = None;
         for child in node.children_with_tokens() {
             match &child {
-                rowan::NodeOrToken::Token(t) if t.kind() == SyntaxKind::Ident => {
-                    return Some(t.text().to_string());
-                }
-                rowan::NodeOrToken::Node(n) => {
-                    if let Some(ident) = Self::find_ident_in_subtree(n) {
-                        return Some(ident);
+                rowan::NodeOrToken::Token(t) => {
+                    if t.kind() == SyntaxKind::Bang {
+                        // Found `!` — return the ident we saw just before it
+                        return last_ident;
+                    }
+                    if t.kind() == SyntaxKind::Ident {
+                        last_ident = Some(t.text().to_string());
+                    } else {
+                        last_ident = None;
                     }
                 }
-                _ => {}
+                rowan::NodeOrToken::Node(n) => {
+                    // Recurse into child nodes, but only use result if we
+                    // haven't seen a `!` at this level
+                    if let Some(ident) = Self::find_macro_name(n) {
+                        return Some(ident);
+                    }
+                    last_ident = None;
+                }
             }
         }
-        None
+        // If no `!` found, fall back to the first ident we saw
+        last_ident
     }
 
     fn try_expand_macro_call(
@@ -267,8 +293,8 @@ impl<'a> ExpanderImpl<'a> {
             );
         }
 
-        // Find the macro name by searching all descendant tokens for an Ident
-        let ident_text = Self::find_ident_in_subtree(node);
+        // Find the macro name (the ident before the ! token)
+        let ident_text = Self::find_macro_name(node);
         let name_token_text = match ident_text {
             Some(t) => t,
             None => return (None, Vec::new()),

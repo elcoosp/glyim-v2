@@ -2,6 +2,7 @@
 
 use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
 use glyim_core::interner::Interner;
+use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 use glyim_frontend::parse_to_syntax;
 
@@ -35,15 +36,14 @@ fn main() {
     let (expanded, diags) = expander.expand_crate(&root);
 
     let expanded_text = expanded.text().to_string();
-    // The file!() macro should expand to something (at minimum the call should be gone)
     assert!(
         !expanded_text.contains("file!()"),
         "Expected file!() to be expanded away, got: {}",
         expanded_text
     );
-    // The expansion should contain a string literal with the file reference
+    // The expansion should contain a string literal
     assert!(
-        expanded_text.contains("bogus") || expanded_text.contains('"'),
+        expanded_text.contains('"'),
         "Expected file!() expansion to contain a string literal, got: {}",
         expanded_text
     );
@@ -76,13 +76,11 @@ fn main() {
     let (expanded, diags) = expander.expand_crate(&root);
 
     let expanded_text = expanded.text().to_string();
-    // The line!() call should be expanded away
     assert!(
         !expanded_text.contains("line!()"),
         "Expected line!() to be expanded away, got: {}",
         expanded_text
     );
-    // The expansion should contain a number
     assert!(
         expanded_text.chars().any(|c: char| c.is_ascii_digit()),
         "Expected line!() expansion to contain a digit, got: {}",
@@ -162,7 +160,6 @@ fn builtin_file_expand_api() {
     );
 
     let expanded_text = result.expanded.unwrap().text().to_string();
-    // Should contain something related to file 7
     assert!(
         expanded_text.contains("7"),
         "Expected file!() expansion to reference file 7, got: {}",

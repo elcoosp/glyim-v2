@@ -100,7 +100,6 @@ fn main() {
     let (expanded, diags) = expander.expand_crate(&root);
 
     let expanded_text = expanded.text().to_string();
-    // At minimum, the macro def should be stripped from the output
     assert!(
         !expanded_text.contains("make_tuple!"),
         "Expected macro call to be expanded away, got: {}",
@@ -141,7 +140,7 @@ fn main() {}
 }
 
 /// Test that substitution replaces $x with the captured value.
-/// Uses a simple identity macro to avoid complex expression matching.
+/// Uses a simple identity macro with ident fragment spec.
 #[test]
 fn substitution_replaces_metavar() {
     let source = r#"
