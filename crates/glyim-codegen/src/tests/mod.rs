@@ -8,3 +8,4 @@ mod existing;
 mod terminators;
 mod trait_objects;
 mod unary_ops;
+mod bytecode_tests;
