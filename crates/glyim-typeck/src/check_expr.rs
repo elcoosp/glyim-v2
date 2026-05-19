@@ -5,12 +5,12 @@
 use std::collections::HashMap;
 
 use glyim_core::def_id::{AdtId, FnDefId};
+use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
 use glyim_type::{GenericArg, Region, Ty, TyKind};
-use glyim_core::interner::Name;
 
 use crate::check_body::FnCtxt;
 use crate::thir;
@@ -137,7 +137,11 @@ impl<'a> FnCtxt<'a> {
                 )
             }
 
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 let (cond_expr, cond_ty) = self.check_expr(*cond);
                 self.unify(cond_ty, Ty::BOOL, span);
 
@@ -201,7 +205,11 @@ impl<'a> FnCtxt<'a> {
                 )
             }
 
-            Expr::For { pat, iterable, body } => {
+            Expr::For {
+                pat,
+                iterable,
+                body,
+            } => {
                 let (_iter_expr, _iter_ty) = self.check_expr(*iterable);
                 self.env.enter_scope();
                 let pat_thir = self.check_pattern(*pat, Ty::ERROR);
@@ -296,7 +304,11 @@ impl<'a> FnCtxt<'a> {
                 )
             }
 
-            Expr::MethodCall { receiver, method, args } => {
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 let (recv_expr, recv_ty) = self.check_expr(*receiver);
                 let mut arg_exprs = Vec::new();
                 for &arg_id in args {
@@ -378,7 +390,10 @@ impl<'a> FnCtxt<'a> {
                 )
             }
 
-            Expr::Cast { expr, ty: target_ref } => {
+            Expr::Cast {
+                expr,
+                ty: target_ref,
+            } => {
                 let (inner_expr, _) = self.check_expr(*expr);
                 let target_ty = crate::tyconv::resolve_type_ref(
                     self.ctx,
@@ -446,7 +461,11 @@ impl<'a> FnCtxt<'a> {
                 )
             }
 
-            Expr::Struct { path, fields, spread } => {
+            Expr::Struct {
+                path,
+                fields,
+                spread,
+            } => {
                 let _ = (path, spread);
                 for field in fields {
                     let _ = self.check_expr(field.1);
@@ -562,7 +581,10 @@ impl<'a> FnCtxt<'a> {
         }
         self.diagnostics.push(GlyimDiagnostic::type_error(
             span,
-            format!("no method `{}` found for type", self.ctx.name_str(method_name)),
+            format!(
+                "no method `{}` found for type",
+                self.ctx.name_str(method_name)
+            ),
         ));
         Ty::ERROR
     }

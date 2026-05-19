@@ -6,7 +6,9 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 use std::collections::HashMap;
 
-use crate::{Body, Expr, ExprId, Literal, MatchArm, Pat, PatId, Path as HirPath, PathSegment, Span};
+use crate::{
+    Body, Expr, ExprId, Literal, MatchArm, Pat, PatId, Path as HirPath, PathSegment, Span,
+};
 
 use super::{
     first_ident_text, is_expr_node, is_type_node, lower_item::lower_param, lower_pat::lower_pat,
@@ -51,13 +53,7 @@ pub(crate) fn lower_block_to_expr(
                         }
                         continue;
                     }
-                    let current = lower_expr(
-                        &inner,
-                        interner,
-                        body,
-                        diags,
-                        struct_field_map,
-                    );
+                    let current = lower_expr(&inner, interner, body, diags, struct_field_map);
                     if let Some(id) = current {
                         if let Some(prev) = chain_base.take() {
                             stmts.push(prev);
@@ -91,13 +87,7 @@ pub(crate) fn lower_block_to_expr(
                     if let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats) {
                         let span = node_span(&child);
                         let lhs_expr_id = pat_to_expr(pat_id, body, interner, span);
-                        let rhs_expr_id = lower_expr(
-                            &rhs,
-                            interner,
-                            body,
-                            diags,
-                            struct_field_map,
-                        );
+                        let rhs_expr_id = lower_expr(&rhs, interner, body, diags, struct_field_map);
                         if let (Some(lhs_id), Some(rhs_id)) = (lhs_expr_id, rhs_expr_id) {
                             let assign = Expr::Assign {
                                 lhs: lhs_id,
@@ -118,13 +108,7 @@ pub(crate) fn lower_block_to_expr(
                     if let Some(prev) = pending.take() {
                         stmts.push(prev);
                     }
-                    pending = lower_expr(
-                        &rhs,
-                        interner,
-                        body,
-                        diags,
-                        struct_field_map,
-                    );
+                    pending = lower_expr(&rhs, interner, body, diags, struct_field_map);
                     last_has_semi = true;
                 }
             }
@@ -147,7 +131,12 @@ pub(crate) fn lower_block_to_expr(
 }
 
 /// Convert a pattern into an expression (for LHS of assignment)
-fn pat_to_expr(pat_id: PatId, body: &mut Body, _interner: &mut Interner, span: Span) -> Option<ExprId> {
+fn pat_to_expr(
+    pat_id: PatId,
+    body: &mut Body,
+    _interner: &mut Interner,
+    span: Span,
+) -> Option<ExprId> {
     match &body.pats[pat_id] {
         Pat::Wild => None,
         Pat::Binding { name, .. } => {
@@ -200,13 +189,7 @@ fn lower_field_or_method_with_receiver(
         let mut arg_ids = Vec::new();
         for child in node.children() {
             if (is_expr_node(&child) || child.kind() == SyntaxKind::Block)
-                && let Some(id) = lower_expr(
-                    &child,
-                    interner,
-                    body,
-                    diags,
-                    struct_field_map,
-                )
+                && let Some(id) = lower_expr(&child, interner, body, diags, struct_field_map)
             {
                 arg_ids.push(id);
             }
@@ -236,13 +219,21 @@ pub(crate) fn lower_expr(
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
     match node.kind() {
-        SyntaxKind::Block => Some(lower_block_to_expr(node, interner, body, diags, struct_field_map)),
+        SyntaxKind::Block => Some(lower_block_to_expr(
+            node,
+            interner,
+            body,
+            diags,
+            struct_field_map,
+        )),
         SyntaxKind::BinaryExpr => lower_binary_expr(node, interner, body, diags, struct_field_map),
         SyntaxKind::IfExpr => lower_if_expr(node, interner, body, diags, struct_field_map),
         SyntaxKind::PathExpr => lower_path_expr(node, interner, body),
         SyntaxKind::LitExpr => lower_lit_expr(node, interner, body),
         SyntaxKind::CallExpr => lower_call_expr(node, interner, body, diags, struct_field_map),
-        SyntaxKind::MethodCallExpr => lower_method_call_expr(node, interner, body, diags, struct_field_map),
+        SyntaxKind::MethodCallExpr => {
+            lower_method_call_expr(node, interner, body, diags, struct_field_map)
+        }
         SyntaxKind::UnaryExpr => lower_unary_expr(node, interner, body, diags, struct_field_map),
         SyntaxKind::RefExpr => lower_ref_expr(node, interner, body, diags, struct_field_map),
         SyntaxKind::MatchExpr => lower_match_expr(node, interner, body, diags, struct_field_map),
@@ -263,7 +254,9 @@ pub(crate) fn lower_expr(
         SyntaxKind::TupleExpr => lower_tuple_expr(node, interner, body, diags, struct_field_map),
         SyntaxKind::RangeExpr => lower_range_expr(node, interner, body, diags, struct_field_map),
         SyntaxKind::ReturnExpr => lower_return_expr(node, interner, body, diags, struct_field_map),
-        SyntaxKind::ClosureExpr => lower_closure_expr(node, interner, body, diags, struct_field_map),
+        SyntaxKind::ClosureExpr => {
+            lower_closure_expr(node, interner, body, diags, struct_field_map)
+        }
         SyntaxKind::StructExpr => lower_struct_expr(node, interner, body, diags, struct_field_map),
         _ => {
             diags.push(GlyimDiagnostic::internal_error(format!(
@@ -292,14 +285,10 @@ fn lower_closure_expr(
                     params.push(pat_id);
                 }
             }
-            _ if (is_expr_node(&child) || child.kind() == SyntaxKind::Block) && body_expr.is_none() => {
-                body_expr = lower_expr(
-                    &child,
-                    interner,
-                    body,
-                    diags,
-                    struct_field_map,
-                );
+            _ if (is_expr_node(&child) || child.kind() == SyntaxKind::Block)
+                && body_expr.is_none() =>
+            {
+                body_expr = lower_expr(&child, interner, body, diags, struct_field_map);
             }
             _ => {}
         }
@@ -338,13 +327,9 @@ fn lower_struct_expr(
                 let mut found_expr = false;
                 for next in node.children() {
                     if found_expr {
-                        if let Some(spread_id) = lower_expr(
-                            &next,
-                            interner,
-                            body,
-                            diags,
-                            struct_field_map,
-                        ) {
+                        if let Some(spread_id) =
+                            lower_expr(&next, interner, body, diags, struct_field_map)
+                        {
                             spread = Some(spread_id);
                         }
                         break;
@@ -359,26 +344,14 @@ fn lower_struct_expr(
                 let expr_node = child
                     .children()
                     .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
-                if let Some(expr_id) = expr_node.and_then(|n| {
-                    lower_expr(
-                        &n,
-                        interner,
-                        body,
-                        diags,
-                        struct_field_map,
-                    )
-                }) {
+                if let Some(expr_id) =
+                    expr_node.and_then(|n| lower_expr(&n, interner, body, diags, struct_field_map))
+                {
                     fields.push((name, expr_id));
                 }
             } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
                 let name = interner.intern(child.text().to_string().trim());
-                let expr_id = lower_expr(
-                    &child,
-                    interner,
-                    body,
-                    diags,
-                    struct_field_map,
-                );
+                let expr_id = lower_expr(&child, interner, body, diags, struct_field_map);
                 if let Some(eid) = expr_id {
                     fields.push((name, eid));
                 }
@@ -460,20 +433,8 @@ fn lower_binary_expr(
             .find_map(|el| el.as_node().cloned())
             .filter(|n| is_expr_node(n) || n.kind() == SyntaxKind::Block);
         if let (Some(lhs), Some(rhs)) = (lhs_node, rhs_node) {
-            let lhs_id = lower_expr(
-                &lhs,
-                interner,
-                body,
-                diags,
-                struct_field_map,
-            )?;
-            let rhs_id = lower_expr(
-                &rhs,
-                interner,
-                body,
-                diags,
-                struct_field_map,
-            )?;
+            let lhs_id = lower_expr(&lhs, interner, body, diags, struct_field_map)?;
+            let rhs_id = lower_expr(&rhs, interner, body, diags, struct_field_map)?;
             let op = lower_bin_op_token(&op_token);
             let expr = Expr::Binary {
                 op,
@@ -491,20 +452,8 @@ fn lower_binary_expr(
     if expr_children.len() < 2 {
         return None;
     }
-    let lhs_id = lower_expr(
-        &expr_children[0],
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let rhs_id = lower_expr(
-        &expr_children[1],
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let lhs_id = lower_expr(&expr_children[0], interner, body, diags, struct_field_map)?;
+    let rhs_id = lower_expr(&expr_children[1], interner, body, diags, struct_field_map)?;
     let op = BinOp::Add;
     let expr = Expr::Binary {
         op,
@@ -554,29 +503,9 @@ fn lower_if_expr(
     let cond = children.remove(0);
     let then_branch = children.remove(0);
     let else_branch = children.pop();
-    let cond_id = lower_expr(
-        &cond,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let then_id = lower_expr(
-        &then_branch,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let else_id = else_branch.and_then(|e| {
-        lower_expr(
-            &e,
-            interner,
-            body,
-            diags,
-            struct_field_map,
-        )
-    });
+    let cond_id = lower_expr(&cond, interner, body, diags, struct_field_map)?;
+    let then_id = lower_expr(&then_branch, interner, body, diags, struct_field_map)?;
+    let else_id = else_branch.and_then(|e| lower_expr(&e, interner, body, diags, struct_field_map));
     let expr = Expr::If {
         cond: cond_id,
         then_branch: then_id,
@@ -586,11 +515,7 @@ fn lower_if_expr(
     Some(eid)
 }
 
-fn lower_path_expr(
-    node: &SyntaxNode,
-    interner: &mut Interner,
-    body: &mut Body,
-) -> Option<ExprId> {
+fn lower_path_expr(node: &SyntaxNode, interner: &mut Interner, body: &mut Body) -> Option<ExprId> {
     let mut segments = Vec::new();
     for el in node.children_with_tokens() {
         if let glyim_syntax::SyntaxElement::Token(t) = el {
@@ -627,11 +552,7 @@ fn lower_path_expr(
     Some(eid)
 }
 
-fn lower_lit_expr(
-    node: &SyntaxNode,
-    _interner: &mut Interner,
-    body: &mut Body,
-) -> Option<ExprId> {
+fn lower_lit_expr(node: &SyntaxNode, _interner: &mut Interner, body: &mut Body) -> Option<ExprId> {
     let lit_token = node
         .children_with_tokens()
         .filter_map(|c| c.into_token())
@@ -799,22 +720,10 @@ fn lower_call_expr(
         .collect();
     let func = children.first()?.clone();
     let args: Vec<SyntaxNode> = children.into_iter().skip(1).collect();
-    let func_id = lower_expr(
-        &func,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let func_id = lower_expr(&func, interner, body, diags, struct_field_map)?;
     let mut arg_ids = Vec::new();
     for arg in args {
-        if let Some(id) = lower_expr(
-            &arg,
-            interner,
-            body,
-            diags,
-            struct_field_map,
-        ) {
+        if let Some(id) = lower_expr(&arg, interner, body, diags, struct_field_map) {
             arg_ids.push(id);
         }
     }
@@ -834,13 +743,7 @@ fn lower_method_call_expr(
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
     let receiver = node.children().find(|c| c.kind() == SyntaxKind::PathExpr)?;
-    let receiver_id = lower_expr(
-        &receiver,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let receiver_id = lower_expr(&receiver, interner, body, diags, struct_field_map)?;
     let mut found_dot = false;
     let mut method_name = None;
     for el in node.children_with_tokens() {
@@ -862,13 +765,7 @@ fn lower_method_call_expr(
     for child in node.children() {
         if child.kind() != SyntaxKind::PathExpr
             && (is_expr_node(&child) || child.kind() == SyntaxKind::Block)
-            && let Some(id) = lower_expr(
-                &child,
-                interner,
-                body,
-                diags,
-                struct_field_map,
-            )
+            && let Some(id) = lower_expr(&child, interner, body, diags, struct_field_map)
         {
             arg_ids.push(id);
         }
@@ -901,13 +798,7 @@ fn lower_unary_expr(
     let inner = node
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
-    let expr_id = lower_expr(
-        &inner,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let expr_id = lower_expr(&inner, interner, body, diags, struct_field_map)?;
     if op_token.kind() == SyntaxKind::And {
         let expr = Expr::Ref {
             expr: expr_id,
@@ -937,13 +828,7 @@ fn lower_ref_expr(
     let inner = node
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
-    let expr_id = lower_expr(
-        &inner,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let expr_id = lower_expr(&inner, interner, body, diags, struct_field_map)?;
     let mutability = if node.children_with_tokens().any(
         |c| matches!(&c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::KwMut),
     ) {
@@ -969,13 +854,7 @@ fn lower_match_expr(
     let scrutinee = node
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
-    let scrutinee_id = lower_expr(
-        &scrutinee,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let scrutinee_id = lower_expr(&scrutinee, interner, body, diags, struct_field_map)?;
     let mut arms = Vec::new();
     if let Some(arm_list) = node
         .children()
@@ -1000,28 +879,20 @@ fn lower_match_expr(
                     }
                     _ if is_expr_node(&part) => {
                         if body_id.is_none() {
-                            body_id = lower_expr(
-                                &part,
-                                interner,
-                                body,
-                                diags,
-                                struct_field_map,
-                            );
+                            body_id = lower_expr(&part, interner, body, diags, struct_field_map);
                         } else if guard.is_none() {
-                            guard = lower_expr(
-                                &part,
-                                interner,
-                                body,
-                                diags,
-                                struct_field_map,
-                            );
+                            guard = lower_expr(&part, interner, body, diags, struct_field_map);
                         }
                     }
                     _ => {}
                 }
             }
             if let (Some(pat), Some(body_id_val)) = (pat_id, body_id) {
-                arms.push(MatchArm { pat, guard, body: body_id_val });
+                arms.push(MatchArm {
+                    pat,
+                    guard,
+                    body: body_id_val,
+                });
             }
         }
     }
@@ -1049,20 +920,8 @@ fn lower_while_expr(
     }
     let cond = children.remove(0);
     let body_expr = children.remove(0);
-    let cond_id = lower_expr(
-        &cond,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let body_id = lower_expr(
-        &body_expr,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let cond_id = lower_expr(&cond, interner, body, diags, struct_field_map)?;
+    let body_id = lower_expr(&body_expr, interner, body, diags, struct_field_map)?;
     let expr = Expr::While {
         cond: cond_id,
         body: body_id,
@@ -1079,13 +938,7 @@ fn lower_loop_expr(
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
     let body_node = node.children().find(|c| c.kind() == SyntaxKind::Block)?;
-    let body_id = lower_expr(
-        &body_node,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let body_id = lower_expr(&body_node, interner, body, diags, struct_field_map)?;
     let expr = Expr::Loop { body: body_id };
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
@@ -1111,20 +964,8 @@ fn lower_for_expr(
     let iterable_node = children.find(|c| is_expr_node(c) || c.kind() == SyntaxKind::RangeExpr)?;
     let body_node = children.find(|c| c.kind() == SyntaxKind::Block)?;
     let pat_id = lower_pat(&pat_node, interner, &mut body.pats)?;
-    let iterable_id = lower_expr(
-        &iterable_node,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let body_id = lower_expr(
-        &body_node,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let iterable_id = lower_expr(&iterable_node, interner, body, diags, struct_field_map)?;
+    let body_id = lower_expr(&body_node, interner, body, diags, struct_field_map)?;
     let expr = Expr::For {
         pat: pat_id,
         iterable: iterable_id,
@@ -1150,20 +991,8 @@ fn lower_assign_expr(
     }
     let lhs = children.remove(0);
     let rhs = children.remove(0);
-    let lhs_id = lower_expr(
-        &lhs,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let rhs_id = lower_expr(
-        &rhs,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let lhs_id = lower_expr(&lhs, interner, body, diags, struct_field_map)?;
+    let rhs_id = lower_expr(&rhs, interner, body, diags, struct_field_map)?;
     let expr = Expr::Assign {
         lhs: lhs_id,
         rhs: rhs_id,
@@ -1182,15 +1011,7 @@ fn lower_return_expr(
     let value = node
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)
-        .and_then(|n| {
-            lower_expr(
-                &n,
-                interner,
-                body,
-                diags,
-                struct_field_map,
-            )
-        });
+        .and_then(|n| lower_expr(&n, interner, body, diags, struct_field_map));
     let expr = Expr::Return { value };
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
@@ -1206,15 +1027,7 @@ fn lower_break_expr(
     let value = node
         .children()
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)
-        .and_then(|n| {
-            lower_expr(
-                &n,
-                interner,
-                body,
-                diags,
-                struct_field_map,
-            )
-        });
+        .and_then(|n| lower_expr(&n, interner, body, diags, struct_field_map));
     let expr = Expr::Break { value };
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
@@ -1236,13 +1049,7 @@ fn lower_cast_expr(
             type_node = Some(child);
         }
     }
-    let expr_id = lower_expr(
-        &expr_node?,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let expr_id = lower_expr(&expr_node?, interner, body, diags, struct_field_map)?;
     let ty = lower_type_ref(&type_node?, interner)?;
     let expr = Expr::Cast { expr: expr_id, ty };
     let eid = body.alloc_expr(expr, node_span(node));
@@ -1257,13 +1064,7 @@ fn lower_field_expr(
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
     let receiver = node.children().find(|c| c.kind() == SyntaxKind::PathExpr)?;
-    let receiver_id = lower_expr(
-        &receiver,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let receiver_id = lower_expr(&receiver, interner, body, diags, struct_field_map)?;
     let mut found_dot = false;
     let mut field_name = None;
     for el in node.children_with_tokens() {
@@ -1305,20 +1106,8 @@ fn lower_index_expr(
     }
     let base = children.remove(0);
     let index = children.remove(0);
-    let base_id = lower_expr(
-        &base,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
-    let index_id = lower_expr(
-        &index,
-        interner,
-        body,
-        diags,
-        struct_field_map,
-    )?;
+    let base_id = lower_expr(&base, interner, body, diags, struct_field_map)?;
+    let index_id = lower_expr(&index, interner, body, diags, struct_field_map)?;
     let expr = Expr::Index {
         base: base_id,
         index: index_id,
@@ -1336,13 +1125,7 @@ fn lower_array_expr(
 ) -> Option<ExprId> {
     let mut elems = Vec::new();
     for child in node.children().filter(is_expr_node) {
-        if let Some(id) = lower_expr(
-            &child,
-            interner,
-            body,
-            diags,
-            struct_field_map,
-        ) {
+        if let Some(id) = lower_expr(&child, interner, body, diags, struct_field_map) {
             elems.push(id);
         }
     }
@@ -1360,13 +1143,7 @@ fn lower_tuple_expr(
 ) -> Option<ExprId> {
     let mut elems = Vec::new();
     for child in node.children().filter(is_expr_node) {
-        if let Some(id) = lower_expr(
-            &child,
-            interner,
-            body,
-            diags,
-            struct_field_map,
-        ) {
+        if let Some(id) = lower_expr(&child, interner, body, diags, struct_field_map) {
             elems.push(id);
         }
     }
@@ -1386,24 +1163,12 @@ fn lower_range_expr(
         .children()
         .filter(|c| is_expr_node(c) || c.kind() == SyntaxKind::LitExpr)
         .collect();
-    let start = children.first().and_then(|n| {
-        lower_expr(
-            n,
-            interner,
-            body,
-            diags,
-            struct_field_map,
-        )
-    });
-    let end = children.get(1).and_then(|n| {
-        lower_expr(
-            n,
-            interner,
-            body,
-            diags,
-            struct_field_map,
-        )
-    });
+    let start = children
+        .first()
+        .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map));
+    let end = children
+        .get(1)
+        .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map));
     let inclusive = node.children_with_tokens().any(
         |c| matches!(&c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDotEq),
     );

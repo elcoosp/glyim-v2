@@ -2,16 +2,16 @@
 
 #![allow(unused_imports, dead_code)]
 
+use crate::{Body, Expr, ExprId, Pat, TypeRef};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
-use glyim_syntax::{SyntaxKind, SyntaxNode};
 use glyim_span::Span;
-use crate::{Body, Expr, ExprId, Pat, TypeRef};
+use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
-use crate::lower::{is_expr_node, lower_expr};
 use crate::lower::lower_expr::lower_expr as lower_expr_fn;
+use crate::lower::{is_expr_node, lower_expr};
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
 

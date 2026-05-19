@@ -1,13 +1,13 @@
 //! S17-T03: Detects use-after-move errors.
 
-use crate::{check_borrows, BorrowckResult};
 use crate::tests::test_ctx::TestBorrowckCtx;
+use crate::{BorrowckResult, check_borrows};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::Mutability;
 use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, Operand, Place, Rvalue, SourceInfo, Statement,
-    StatementKind, Terminator, TerminatorKind,
+    BasicBlockData, Body, LocalDecl, Operand, Place, Rvalue, SourceInfo, Statement, StatementKind,
+    Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
@@ -17,10 +17,7 @@ use glyim_type::{Ty, TyKind};
 fn use_after_move_error() {
     let mut ctx_mut = test_ty_ctx();
     let subst = ctx_mut.intern_substitution(vec![]);
-    let non_copy_ty = ctx_mut.mk_ty(TyKind::Adt(
-        glyim_core::AdtId::from_raw(1),
-        subst,
-    ));
+    let non_copy_ty = ctx_mut.mk_ty(TyKind::Adt(glyim_core::AdtId::from_raw(1), subst));
     let ctx = ctx_mut.freeze();
 
     let mut body = Body {

@@ -1,13 +1,13 @@
 //! S17-T04: Allows disjoint partial moves of struct fields.
 
-use crate::{check_borrows, BorrowckResult};
 use crate::tests::test_ctx::TestBorrowckCtx;
+use crate::{BorrowckResult, check_borrows};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::Mutability;
 use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, Operand, Place, ProjectionElem, Rvalue, SourceInfo,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    BasicBlockData, Body, LocalDecl, Operand, Place, ProjectionElem, Rvalue, SourceInfo, Statement,
+    StatementKind, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
@@ -17,10 +17,7 @@ use glyim_type::{FieldIdx, GenericArg, Ty, TyKind};
 fn partial_move_allows_other_field_use() {
     let mut ctx_mut = test_ty_ctx();
     let elem_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
-    let subst = ctx_mut.intern_substitution(vec![
-        GenericArg::Ty(elem_ty),
-        GenericArg::Ty(elem_ty),
-    ]);
+    let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(elem_ty), GenericArg::Ty(elem_ty)]);
     let tuple_ty = ctx_mut.mk_ty(TyKind::Tuple(subst));
     let ctx = ctx_mut.freeze();
 

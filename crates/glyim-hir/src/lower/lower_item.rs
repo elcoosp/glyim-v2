@@ -101,13 +101,7 @@ pub(crate) fn lower_fn_def(
             span: node_span(node),
             expr_spans: IndexVec::new(),
         };
-        lower_block_to_expr(
-            &block_node,
-            interner,
-            &mut body,
-            diags,
-            struct_field_map,
-        );
+        lower_block_to_expr(&block_node, interner, &mut body, diags, struct_field_map);
         let bid = bodies.push(body);
         body_owners.push(owner);
         Some(bid)

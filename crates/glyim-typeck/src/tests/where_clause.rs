@@ -1,9 +1,9 @@
-use glyim_core::interner::Interner;
 use crate::tests::test_utils::global_interner;
+use glyim_core::Visibility;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
+use glyim_core::interner::Interner;
 use glyim_core::primitives::IntTy;
-use glyim_core::Visibility;
 use glyim_def_map::*;
 use glyim_hir::where_clause::*;
 use glyim_hir::*;

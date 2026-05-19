@@ -385,5 +385,7 @@ impl TypeckResult {
         #[cfg(not(test))]
         None
     }
-    pub fn adjustments(&self, _body_id: LocalDefId, _expr_id: usize) -> &[Adjustment] { &[] }
+    pub fn adjustments(&self, _body_id: LocalDefId, _expr_id: usize) -> &[Adjustment] {
+        &[]
+    }
 }

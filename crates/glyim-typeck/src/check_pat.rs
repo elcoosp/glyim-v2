@@ -16,11 +16,20 @@ impl<'a> FnCtxt<'a> {
         let span = Span::DUMMY;
         match pat {
             Pat::Wild => thir::Pattern::wild(expected_ty, span),
-            Pat::Binding { name, mutability, subpattern } => {
+            Pat::Binding {
+                name,
+                mutability,
+                subpattern,
+            } => {
                 self.env.add_binding(*name, expected_ty, *mutability);
-                let sub = subpattern.map(|sub_id| Box::new(self.check_pattern(sub_id, expected_ty)));
+                let sub =
+                    subpattern.map(|sub_id| Box::new(self.check_pattern(sub_id, expected_ty)));
                 thir::Pattern {
-                    kind: thir::PatternKind::Binding { name: *name, mutability: *mutability, subpattern: sub },
+                    kind: thir::PatternKind::Binding {
+                        name: *name,
+                        mutability: *mutability,
+                        subpattern: sub,
+                    },
                     ty: expected_ty,
                     span,
                 }
@@ -30,11 +39,17 @@ impl<'a> FnCtxt<'a> {
                     if let Some(res) = self.def_map.modules[self.def_map.root].scope.resolve(name) {
                         AdtId::from_raw(res.0.to_raw())
                     } else {
-                        self.diagnostics.push(GlyimDiagnostic::type_error(span, format!("unresolved struct `{}`", self.ctx.name_str(name))));
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            format!("unresolved struct `{}`", self.ctx.name_str(name)),
+                        ));
                         return thir::Pattern::err(span);
                     }
                 } else {
-                    self.diagnostics.push(GlyimDiagnostic::type_error(span, "multi-segment struct paths not yet implemented"));
+                    self.diagnostics.push(GlyimDiagnostic::type_error(
+                        span,
+                        "multi-segment struct paths not yet implemented",
+                    ));
                     return thir::Pattern::err(span);
                 };
                 let mut field_pats = Vec::new();
@@ -46,25 +61,47 @@ impl<'a> FnCtxt<'a> {
                     };
                     self.env.add_binding(*field_name, field_ty, Mutability::Not);
                     let field_pat = self.check_pattern(*field_pat_id, field_ty);
-                    field_pats.push(thir::FieldPat { field: *field_name, pattern: field_pat, span });
+                    field_pats.push(thir::FieldPat {
+                        field: *field_name,
+                        pattern: field_pat,
+                        span,
+                    });
                 }
                 thir::Pattern {
-                    kind: thir::PatternKind::Struct { adt_id, variant_idx: 0, fields: field_pats, rest: *rest },
+                    kind: thir::PatternKind::Struct {
+                        adt_id,
+                        variant_idx: 0,
+                        fields: field_pats,
+                        rest: *rest,
+                    },
                     ty: expected_ty,
                     span,
                 }
             }
             Pat::Tuple(pats) => {
                 let mut thir_pats = Vec::new();
-                for &p_id in pats { thir_pats.push(self.check_pattern(p_id, Ty::ERROR)); }
-                thir::Pattern { kind: thir::PatternKind::Tuple(thir_pats), ty: expected_ty, span }
+                for &p_id in pats {
+                    thir_pats.push(self.check_pattern(p_id, Ty::ERROR));
+                }
+                thir::Pattern {
+                    kind: thir::PatternKind::Tuple(thir_pats),
+                    ty: expected_ty,
+                    span,
+                }
             }
             Pat::Literal(lit) => {
                 let thir_lit = crate::unify::thir_literal(lit);
-                thir::Pattern { kind: thir::PatternKind::Literal(thir_lit), ty: expected_ty, span }
+                thir::Pattern {
+                    kind: thir::PatternKind::Literal(thir_lit),
+                    ty: expected_ty,
+                    span,
+                }
             }
             _ => {
-                self.diagnostics.push(GlyimDiagnostic::type_error(span, "unsupported pattern kind"));
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "unsupported pattern kind",
+                ));
                 thir::Pattern::err(span)
             }
         }

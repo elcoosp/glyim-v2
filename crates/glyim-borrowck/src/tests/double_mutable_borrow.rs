@@ -1,7 +1,7 @@
 //! S17-T01: Detects double mutable borrow error.
 
-use crate::{check_borrows, BorrowckResult};
 use crate::tests::test_ctx::TestBorrowckCtx;
+use crate::{BorrowckResult, check_borrows};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::Mutability;
@@ -62,14 +62,24 @@ fn double_mutable_borrow_error() {
     let borrow_stmt1 = Statement {
         kind: StatementKind::Assign(
             Place::new(local_ref1),
-            Rvalue::Ref(place_x.clone(), BorrowKind::Mut { allow_two_phase_borrow: false }),
+            Rvalue::Ref(
+                place_x.clone(),
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };
     let borrow_stmt2 = Statement {
         kind: StatementKind::Assign(
             Place::new(local_ref2),
-            Rvalue::Ref(place_x, BorrowKind::Mut { allow_two_phase_borrow: false }),
+            Rvalue::Ref(
+                place_x,
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: false,
+                },
+            ),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };

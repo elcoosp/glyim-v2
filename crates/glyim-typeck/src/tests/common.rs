@@ -1,14 +1,13 @@
-/// Common utilities for typeck tests.
-
-use glyim_diag::GlyimDiagnostic;
 use glyim_core::def_id::DefId;
 use glyim_core::interner::Name;
+/// Common utilities for typeck tests.
+use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_solve::InferenceTable;
 use glyim_span::Span;
 use glyim_type::{Ty, TyCtxMut};
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::check_body::FnCtxt;
@@ -18,9 +17,8 @@ use crate::thir;
 // ------------------------------------------------------------------
 // Global interner for all tests (prevents lasso key errors)
 // ------------------------------------------------------------------
-static GLOBAL_INTERNER: Lazy<Mutex<glyim_core::interner::Interner>> = Lazy::new(|| {
-    Mutex::new(glyim_core::interner::Interner::new())
-});
+static GLOBAL_INTERNER: Lazy<Mutex<glyim_core::interner::Interner>> =
+    Lazy::new(|| Mutex::new(glyim_core::interner::Interner::new()));
 
 /// Get a clone of the global interner.
 pub fn global_interner() -> glyim_core::interner::Interner {
@@ -68,7 +66,9 @@ pub fn check_function_body(
 }
 
 /// Build a minimal HIR with a single body from a list of expressions.
-pub fn make_single_body_hir(exprs: Vec<glyim_hir::Expr>) -> (glyim_hir::CrateHir, glyim_hir::BodyId) {
+pub fn make_single_body_hir(
+    exprs: Vec<glyim_hir::Expr>,
+) -> (glyim_hir::CrateHir, glyim_hir::BodyId) {
     use glyim_core::arena::IndexVec;
     use glyim_core::def_id::LocalDefId;
     use glyim_hir::{Body, CrateHir};
@@ -110,8 +110,8 @@ pub fn typeck_single_body(_hir: &CrateHir, _body_id: BodyId) -> crate::thir::Bod
 pub fn empty_def_map() -> glyim_def_map::CrateDefMap {
     use glyim_core::arena::IndexVec;
     use glyim_core::def_id::CrateId;
-    use glyim_def_map::{CrateDefMap, ModuleData, ModuleId, ModuleOrigin, ItemScope};
-    use glyim_span::{FileId, Span, SyntaxContext, ByteIdx};
+    use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
+    use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
     let interner = global_interner();
     let root = ModuleId::from_raw(0);
     let module_data = ModuleData {
@@ -119,7 +119,12 @@ pub fn empty_def_map() -> glyim_def_map::CrateDefMap {
         children: vec![],
         scope: ItemScope::default(),
         origin: ModuleOrigin::CrateRoot,
-        span: Span::new(FileId::from_raw(0), ByteIdx::from_raw(0), ByteIdx::from_raw(0), SyntaxContext::ROOT),
+        span: Span::new(
+            FileId::from_raw(0),
+            ByteIdx::from_raw(0),
+            ByteIdx::from_raw(0),
+            SyntaxContext::ROOT,
+        ),
         def_id: glyim_core::def_id::LocalDefId::from_raw(0),
         visibility: glyim_core::primitives::Visibility::Public,
     };

@@ -1,14 +1,14 @@
+use super::common::make_ty_ctx;
+use crate::coherence::{CoherenceChecker, ResolvedImplHeader};
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 /// Tests for coherence and orphan rules (Stream V04).
 use glyim_core::interner::Interner;
-use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 use glyim_core::primitives::Visibility;
-use glyim_core::arena::IndexVec;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::{ImplItem, Path, TypeRef};
 use glyim_span::Span;
 use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut};
-use crate::coherence::{CoherenceChecker, ResolvedImplHeader};
-use super::common::make_ty_ctx;
 
 // Helper: convert ImplItem to ResolvedImplHeader for testing
 fn impl_item_to_header(
@@ -42,11 +42,20 @@ fn impl_item_to_header(
 }
 
 // Test helpers
-fn build_def_map(interner: &mut Interner, krate: CrateId, local_type_names: &[&str]) -> CrateDefMap {
+fn build_def_map(
+    interner: &mut Interner,
+    krate: CrateId,
+    local_type_names: &[&str],
+) -> CrateDefMap {
     let mut scope = ItemScope::default();
     for &name_str in local_type_names {
         let name = interner.intern(name_str);
-        scope.types.push((name, LocalDefId::from_raw(0), Visibility::Public, Span::DUMMY));
+        scope.types.push((
+            name,
+            LocalDefId::from_raw(0),
+            Visibility::Public,
+            Span::DUMMY,
+        ));
     }
     let root_id = ModuleId::from_raw(0);
     let root_data = ModuleData {
@@ -135,8 +144,16 @@ fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     let checker = CoherenceChecker::new(&def_map);
 
     let impl_item = make_impl_item(&mut interner, "ForeignTrait", "ForeignType");
-    let result = checker.check_orphan_rule(&impl_item_to_header(&impl_item, &mut interner, &mut ctx, &def_map));
-    assert!(result.is_err(), "orphan rule should reject foreign trait + foreign type");
+    let result = checker.check_orphan_rule(&impl_item_to_header(
+        &impl_item,
+        &mut interner,
+        &mut ctx,
+        &def_map,
+    ));
+    assert!(
+        result.is_err(),
+        "orphan rule should reject foreign trait + foreign type"
+    );
     let errors = result.unwrap_err();
     assert!(errors[0].message.contains("orphan rule"));
 }
@@ -152,18 +169,23 @@ fn t03_blanket_impl_conflicts_with_concrete() {
     let concrete = make_impl_item(&mut interner, "MyTrait", "i32");
     let blanket = make_blanket_impl_item(&mut interner, "MyTrait", "T");
 
-    checker.check_and_register_impl_compat(
-        &impl_item_to_header(&concrete, &mut interner, &mut ctx, &def_map),
-        ImplPolarity::Positive,
-        &ctx,
-    ).unwrap();
+    checker
+        .check_and_register_impl_compat(
+            &impl_item_to_header(&concrete, &mut interner, &mut ctx, &def_map),
+            ImplPolarity::Positive,
+            &ctx,
+        )
+        .unwrap();
 
     let result = checker.check_and_register_impl_compat(
         &impl_item_to_header(&blanket, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
         &ctx,
     );
-    assert!(result.is_err(), "blanket impl should conflict with concrete");
+    assert!(
+        result.is_err(),
+        "blanket impl should conflict with concrete"
+    );
 }
 
 #[test]
@@ -175,8 +197,16 @@ fn t04_valid_orphan_foreign_trait_local_type() {
     let checker = CoherenceChecker::new(&def_map);
 
     let impl_item = make_impl_item(&mut interner, "ForeignTrait", "LocalType");
-    let result = checker.check_orphan_rule(&impl_item_to_header(&impl_item, &mut interner, &mut ctx, &def_map));
-    assert!(result.is_ok(), "orphan rule should accept foreign trait + local type");
+    let result = checker.check_orphan_rule(&impl_item_to_header(
+        &impl_item,
+        &mut interner,
+        &mut ctx,
+        &def_map,
+    ));
+    assert!(
+        result.is_ok(),
+        "orphan rule should accept foreign trait + local type"
+    );
 }
 
 #[test]
@@ -207,18 +237,23 @@ fn t06_duplicate_with_different_polarity_error() {
     let pos_impl = make_impl_item(&mut interner, "Send", "MyType");
     let neg_impl = make_impl_item(&mut interner, "Send", "MyType");
 
-    checker.check_and_register_impl_compat(
-        &impl_item_to_header(&pos_impl, &mut interner, &mut ctx, &def_map),
-        ImplPolarity::Positive,
-        &ctx,
-    ).unwrap();
+    checker
+        .check_and_register_impl_compat(
+            &impl_item_to_header(&pos_impl, &mut interner, &mut ctx, &def_map),
+            ImplPolarity::Positive,
+            &ctx,
+        )
+        .unwrap();
 
     let result = checker.check_and_register_impl_compat(
         &impl_item_to_header(&neg_impl, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Negative,
         &ctx,
     );
-    assert!(result.is_err(), "impl with opposite polarity should conflict");
+    assert!(
+        result.is_err(),
+        "impl with opposite polarity should conflict"
+    );
 }
 
 #[test]
@@ -230,8 +265,16 @@ fn t07_orphan_local_trait_foreign_type_allowed() {
     let checker = CoherenceChecker::new(&def_map);
 
     let impl_item = make_impl_item(&mut interner, "MyTrait", "ForeignType");
-    let result = checker.check_orphan_rule(&impl_item_to_header(&impl_item, &mut interner, &mut ctx, &def_map));
-    assert!(result.is_ok(), "orphan rule should allow local trait on foreign type");
+    let result = checker.check_orphan_rule(&impl_item_to_header(
+        &impl_item,
+        &mut interner,
+        &mut ctx,
+        &def_map,
+    ));
+    assert!(
+        result.is_ok(),
+        "orphan rule should allow local trait on foreign type"
+    );
 }
 
 #[test]
@@ -257,7 +300,10 @@ fn t08_two_non_overlapping_blanket_impls_allowed() {
         ImplPolarity::Positive,
         &ctx,
     );
-    assert!(r2.is_ok(), "second blanket impl with different param should be accepted");
+    assert!(
+        r2.is_ok(),
+        "second blanket impl with different param should be accepted"
+    );
 }
 
 #[test]
@@ -269,8 +315,16 @@ fn t09_negative_impl_orphan_error() {
     let checker = CoherenceChecker::new(&def_map);
 
     let neg_impl = make_impl_item(&mut interner, "ForeignTrait", "ForeignType");
-    let result = checker.check_orphan_rule(&impl_item_to_header(&neg_impl, &mut interner, &mut ctx, &def_map));
-    assert!(result.is_err(), "negative impl for foreign trait + foreign type should violate orphan rule");
+    let result = checker.check_orphan_rule(&impl_item_to_header(
+        &neg_impl,
+        &mut interner,
+        &mut ctx,
+        &def_map,
+    ));
+    assert!(
+        result.is_err(),
+        "negative impl for foreign trait + foreign type should violate orphan rule"
+    );
 }
 
 #[test]

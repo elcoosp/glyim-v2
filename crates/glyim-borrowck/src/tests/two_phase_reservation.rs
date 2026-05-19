@@ -1,7 +1,7 @@
 //! S17-T02: Allows shared borrows in two-phase reservation.
 
-use crate::{check_borrows, BorrowckResult};
 use crate::tests::test_ctx::TestBorrowckCtx;
+use crate::{BorrowckResult, check_borrows};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::Mutability;
@@ -52,7 +52,12 @@ fn two_phase_reservation_allows_shared_borrow() {
     let two_phase_borrow = Statement {
         kind: StatementKind::Assign(
             Place::new(local_ref_mut),
-            Rvalue::Ref(place_x.clone(), BorrowKind::Mut { allow_two_phase_borrow: true }),
+            Rvalue::Ref(
+                place_x.clone(),
+                BorrowKind::Mut {
+                    allow_two_phase_borrow: true,
+                },
+            ),
         ),
         source_info: SourceInfo::new(Span::DUMMY),
     };

@@ -1,5 +1,4 @@
 /// HIR `TypeRef` → `Ty` conversion.
-
 use std::collections::HashMap;
 
 use glyim_core::def_id::{AdtId, DefId, TraitDefId};

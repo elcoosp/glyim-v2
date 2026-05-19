@@ -1,7 +1,7 @@
 //! Shared test context implementing BorrowckCtx for testing.
 
 use crate::BorrowckCtx;
-use glyim_mir::{Body, LocalIdx, LocalDecl};
+use glyim_mir::{Body, LocalDecl, LocalIdx};
 use glyim_type::TyCtx;
 
 pub struct TestBorrowckCtx<'a> {
