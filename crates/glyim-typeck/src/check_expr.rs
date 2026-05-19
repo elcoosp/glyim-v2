@@ -21,7 +21,7 @@ impl<'a> FnCtxt<'a> {
         }
 
         let expr = &self.body.exprs[expr_id];
-        let span = self.body.expr_spans[expr_id];
+        let span = self.expr_span(expr_id);
 
         let result = match expr {
             Expr::Literal(lit) => {
