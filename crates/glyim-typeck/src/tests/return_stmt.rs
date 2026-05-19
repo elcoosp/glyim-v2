@@ -1,5 +1,6 @@
 use super::common::*;
 use super::common::*;
+use super::common::*;
 use crate::thir;
 use glyim_hir::*;
 
