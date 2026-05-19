@@ -13,9 +13,11 @@ fn thir_body_constructed() {
     let inter = Interner::new();
     let main_name = inter.intern("main");
     let x_name = inter.intern("x");
+
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     exprs.push(Expr::Path(glyim_hir::Path::from_single(x_name)));
     exprs.push(Expr::Literal(glyim_hir::Literal::Unit));
+
     let body = Body {
         owner: LocalDefId::from_raw(0),
         exprs: exprs.clone(),
@@ -26,6 +28,7 @@ fn thir_body_constructed() {
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
+
     let item = Item {
         id: ItemId::from_raw(0),
         name: main_name,
@@ -45,6 +48,9 @@ fn thir_body_constructed() {
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
+        span: Span::DUMMY,
+    };
+
     let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
     let mut body_owners = IndexVec::new();
@@ -53,6 +59,8 @@ fn thir_body_constructed() {
         items,
         bodies,
         body_owners,
+    };
+
     let ctx = make_ty_ctx();
     let def_map = empty_def_map();
     let mut solver = MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);
@@ -69,4 +77,5 @@ fn thir_body_constructed() {
     assert!(
         thir_body.return_ty == glyim_type::Ty::UNIT,
         "return type should be unit"
+    );
 }

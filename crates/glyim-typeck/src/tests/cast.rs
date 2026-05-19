@@ -9,6 +9,7 @@ fn cast_i32_to_f64() {
         expr: ExprId::from_raw(0),
         ty: TypeRef::Path(glyim_hir::Path::from_single(name("f64"))),
     });
+
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
     assert_eq!(thir_body.stmts.len(), 1);

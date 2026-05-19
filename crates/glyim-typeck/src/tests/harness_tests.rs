@@ -14,7 +14,17 @@ fn run_pass_tests() {
     .expect("failed to discover tests")
     .run();
 }
+
+#[test]
+#[ignore = "projection syntax not yet in parser"]
 fn compile_fail_tests() {
+    TestRunner::new(PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
         "/test_data/compile-fail"
+    )))
     .mode(TestMode::CompileFail)
     .frontend_only()
+    .build()
+    .expect("failed to discover tests")
+    .run();
+}

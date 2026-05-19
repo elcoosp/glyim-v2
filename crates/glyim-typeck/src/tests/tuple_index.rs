@@ -12,6 +12,7 @@ fn tuple_index() {
         base: ExprId::from_raw(2),
         index: ExprId::from_raw(3),
     });
+
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
     assert_eq!(thir_body.stmts.len(), 4);

@@ -12,6 +12,7 @@ fn assign_to_local() {
             rhs: ExprId::from_raw(1),
         },
     ];
+
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
     // All three expressions become statements (Assign is always a Stmt::Assign)

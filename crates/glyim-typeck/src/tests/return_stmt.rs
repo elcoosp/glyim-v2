@@ -9,6 +9,7 @@ fn return_expression() {
     exprs.push(Expr::Return {
         value: Some(ExprId::from_raw(0)),
     });
+
     let (hir, body_id) = make_single_body_hir(exprs);
     let thir_body = typeck_single_body(&hir, body_id);
     // First expression becomes stmt, Return is always stmt
