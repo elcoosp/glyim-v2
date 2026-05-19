@@ -393,7 +393,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 - `pub unsafe extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8`
 - `pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize)`
-- `pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8)`
+- `pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8, drop_fn: Option<DropFn>)`
 - `pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> !`
 - `pub use ALIGN_MAX`
 
