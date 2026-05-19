@@ -1,4 +1,4 @@
-use glyim_core::{CrateId, DefId, LocalDefId, BinOp, Mutability};
+use glyim_core::{CrateId, DefId, LocalDefId, Mutability, IndexVec};
 use glyim_mir::*;
 use glyim_type::Ty;
 use crate::{Interpreter, InterpValue, InterpError};

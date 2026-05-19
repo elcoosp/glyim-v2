@@ -1,7 +1,7 @@
-use glyim_core::{BinOp, CrateId, DefId, LocalDefId, Mutability};
+use glyim_core::{BinOp, CrateId, DefId, LocalDefId, Mutability, IndexVec};
 use glyim_mir::*;
 use glyim_type::Ty;
-use crate::{Interpreter, InterpValue, InterpError};
+use crate::{Interpreter, InterpValue};
 
 /// Helper: build a body that computes left_val OP right_val and returns the result.
 fn build_binop_body_int(op: BinOp, left: i128, right: i128) -> Body {

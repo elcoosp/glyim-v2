@@ -1,7 +1,7 @@
-use glyim_core::{CrateId, DefId, LocalDefId, Mutability, FieldIdx};
+use glyim_core::{CrateId, DefId, LocalDefId, Mutability, IndexVec};
 use glyim_mir::*;
-use glyim_type::Ty;
-use crate::{Interpreter, InterpValue, InterpError};
+use glyim_type::{Ty, FieldIdx};
+use crate::{Interpreter, InterpValue};
 
 /// S19-T04: Write through Deref+Field projection updates nested value
 ///

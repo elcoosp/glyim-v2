@@ -1,7 +1,7 @@
-use glyim_core::{CrateId, DefId, LocalDefId, Mutability};
+use glyim_core::{CrateId, DefId, LocalDefId, Mutability, IndexVec, IntTy};
 use glyim_mir::*;
-use glyim_type::{Ty, TyKind, IntTy};
-use crate::{Interpreter, InterpValue, InterpError};
+use glyim_type::{Ty, TyKind};
+use crate::{Interpreter, InterpValue};
 
 /// S19-T02: Len evaluates array length from const generic
 ///
