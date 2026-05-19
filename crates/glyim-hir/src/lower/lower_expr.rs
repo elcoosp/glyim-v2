@@ -79,7 +79,6 @@ pub(crate) fn lower_block_to_expr(
                 }
             }
             SyntaxKind::LetStmt => {
-                // Find the pattern (LHS) and the expression (RHS)
                 let mut pat_node = None;
                 let mut expr_node = None;
                 for inner in child.children() {
@@ -95,9 +94,8 @@ pub(crate) fn lower_block_to_expr(
                     }
                 }
                 if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone()) {
-                    // Lower pattern to a PatId
                     if let Some(pat_id) = lower_pat(&pat, interner, pats) {
-                        // Convert pattern to an expression for the LHS of assignment
+                        let span = node_span(&child);
                         let lhs_expr_id = pat_to_expr(pat_id, pats, exprs, expr_spans, interner, span);
                         let rhs_expr_id = lower_expr(
                             &rhs,
@@ -125,7 +123,6 @@ pub(crate) fn lower_block_to_expr(
                         }
                     }
                 }
-                // Fallback: just evaluate the RHS (use expr_node if available)
                 if let Some(rhs) = expr_node {
                     if let Some(prev) = pending.take() {
                         stmts.push(prev);
@@ -166,17 +163,21 @@ fn pat_to_expr(
     pat_id: PatId,
     pats: &IndexVec<PatId, Pat>,
     exprs: &mut IndexVec<ExprId, Expr>,
+    expr_spans: &mut IndexVec<ExprId, Span>,
     _interner: &mut Interner,
+    span: Span,
 ) -> Option<ExprId> {
     match &pats[pat_id] {
         Pat::Wild => None,
         Pat::Binding { name, .. } => {
             let path = HirPath::from_single(*name);
             let expr = Expr::Path(path);
+            expr_spans.push(span);
             Some(exprs.push(expr))
         }
         Pat::Path(path) => {
             let expr = Expr::Path(path.clone());
+            expr_spans.push(span);
             Some(exprs.push(expr))
         }
         Pat::Struct {
@@ -184,14 +185,11 @@ fn pat_to_expr(
             fields: _,
             rest: _,
         } => {
-            // For now, just return the path (the struct expression)
             let expr = Expr::Path(path.clone());
+            expr_spans.push(span);
             Some(exprs.push(expr))
         }
-        Pat::Tuple(_pats) => {
-            // Not needed for simple let tests
-            None
-        }
+        Pat::Tuple(_pats) => None,
         Pat::Or(_) => None,
         Pat::Literal(_) => None,
         Pat::Range { .. } => None,
@@ -525,7 +523,11 @@ fn lower_closure_expr(
             _ => {}
         }
     }
-    let body_id = body.unwrap_or_else(|| { let missing = Expr::Missing; expr_spans.push(node_span(node)); exprs.push(missing) });
+    let body_id = body.unwrap_or_else(|| {
+        let missing = Expr::Missing;
+        expr_spans.push(node_span(node));
+        exprs.push(missing)
+    });
     let expr = Expr::Closure {
         params,
         body: body_id,
@@ -615,7 +617,11 @@ fn lower_struct_expr(
             }
         }
     }
-    let path_id = path.unwrap_or_else(|| { let missing = Expr::Missing; expr_spans.push(node_span(node)); exprs.push(missing) });
+    let path_id = path.unwrap_or_else(|| {
+        let missing = Expr::Missing;
+        expr_spans.push(node_span(node));
+        exprs.push(missing)
+    });
     let path_struct = if let Expr::Path(p) = &exprs[path_id] {
         p.clone()
     } else {
