@@ -1,3 +1,4 @@
+#![allow(unused_variables, unused_imports, dead_code)]
 //! Statement checking logic for FnCtxt.
 
 use glyim_core::interner::Name;
@@ -25,15 +26,9 @@ impl<'a> FnCtxt<'a> {
         }
 
         let mut stmts = Vec::new();
-        let expr_ids: Vec<_> = self.body.exprs.iter_enumerated().collect();
-        let len = expr_ids.len();
+        let len = self.body.exprs.len();
 
-        for (pos, (expr_id, expr)) in expr_ids.into_iter().enumerate() {
-            // Skip expressions already processed as sub-expressions
-            if self.expr_cache.contains_key(&expr_id) {
-                continue;
-            }
-
+        for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
             let is_tail = pos == len - 1;
             let span = self.expr_span(expr_id);
 

@@ -1116,6 +1116,7 @@ dependencies = [
  "glyim-span",
  "glyim-test",
  "glyim-type",
+ "once_cell",
  "tracing",
 ]
 
