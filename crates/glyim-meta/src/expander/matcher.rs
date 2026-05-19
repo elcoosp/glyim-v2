@@ -13,7 +13,6 @@ pub(crate) enum PatternPiece {
     },
     Metavar {
         name: SmolStr,
-        #[allow(dead_code)]
         fragment: FragmentSpec,
     },
 }
@@ -181,6 +180,36 @@ fn parse_fragment_spec(tree: &TokenTree) -> Option<FragmentSpec> {
     }
 }
 
+/// Check if a token tree matches a fragment specifier.
+fn matches_fragment_spec(tree: &TokenTree, spec: &FragmentSpec) -> bool {
+    match spec {
+        FragmentSpec::Ident => matches!(tree, TokenTree::Token(SyntaxKind::Ident, _)),
+        FragmentSpec::Literal => matches!(
+            tree,
+            TokenTree::Token(
+                SyntaxKind::IntLit
+                    | SyntaxKind::FloatLit
+                    | SyntaxKind::StringLit
+                    | SyntaxKind::BoolLit
+                    | SyntaxKind::CharLit,
+                _
+            )
+        ),
+        FragmentSpec::Lifetime => matches!(tree, TokenTree::Token(SyntaxKind::Lifetime, _)),
+        // tt, expr, ty, path, block, stmt, item, pat, vis, meta all match any single token tree
+        FragmentSpec::Tt
+        | FragmentSpec::Expr
+        | FragmentSpec::Ty
+        | FragmentSpec::Path
+        | FragmentSpec::Block
+        | FragmentSpec::Stmt
+        | FragmentSpec::Item
+        | FragmentSpec::Pat
+        | FragmentSpec::Vis
+        | FragmentSpec::Meta => true,
+    }
+}
+
 pub(crate) fn match_pattern(pattern: &Pattern, input: &[TokenTree]) -> MatchResult {
     let mut bindings: HashMap<SmolStr, Vec<TokenTree>> = HashMap::new();
     match match_pieces(&pattern.pieces, input, 0, &mut bindings) {
@@ -214,12 +243,40 @@ fn match_pieces(
                     _ => return Err(()),
                 }
             }
-            PatternPiece::Metavar { name, fragment: _ } => {
-                // Metavar matches exactly one token tree if available, zero if at end
+            PatternPiece::Metavar { name, fragment } => {
+                // All fragment specs match exactly one token tree.
+                // Fragment-specific filtering rejects mismatched tokens.
                 if i < input.len() {
-                    let captured = vec![input[i].clone()];
-                    i += 1;
-                    bindings.entry(name.clone()).or_default().extend(captured);
+                    if matches_fragment_spec(&input[i], fragment) {
+                        let captured = vec![input[i].clone()];
+                        i += 1;
+                        bindings.entry(name.clone()).or_default().extend(captured);
+                    } else {
+                        // Token doesn't match the fragment spec
+                        return Err(());
+                    }
+                } else {
+                    // No token to match — for expr/ty/etc. this is acceptable
+                    // (empty match), but for ident/literal/tt it's not.
+                    match fragment {
+                        FragmentSpec::Expr
+                        | FragmentSpec::Ty
+                        | FragmentSpec::Path
+                        | FragmentSpec::Block
+                        | FragmentSpec::Stmt
+                        | FragmentSpec::Item
+                        | FragmentSpec::Pat
+                        | FragmentSpec::Vis
+                        | FragmentSpec::Meta => {
+                            // Allow empty match for these flexible specs
+                        }
+                        FragmentSpec::Ident
+                        | FragmentSpec::Literal
+                        | FragmentSpec::Lifetime
+                        | FragmentSpec::Tt => {
+                            return Err(());
+                        }
+                    }
                 }
             }
             PatternPiece::Repetition {
@@ -228,7 +285,6 @@ fn match_pieces(
                 kind,
             } => {
                 let mut repetitions: Vec<HashMap<SmolStr, Vec<TokenTree>>> = Vec::new();
-                let _start_i = i;
                 loop {
                     let mut rep_bindings: HashMap<SmolStr, Vec<TokenTree>> = HashMap::new();
                     match match_pieces(inner, input, i, &mut rep_bindings) {
@@ -308,14 +364,73 @@ mod tests {
     }
 
     #[test]
-    fn test_metavar_matches_zero_tokens() {
+    fn test_metavar_ident_matches_ident() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Ident,
+        }]);
+        let input = vec![tok(SyntaxKind::Ident, "foo")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_metavar_ident_rejects_literal() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Ident,
+        }]);
+        let input = vec![tok(SyntaxKind::IntLit, "42")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::NoMatch));
+    }
+
+    #[test]
+    fn test_metavar_literal_matches_int() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Literal,
+        }]);
+        let input = vec![tok(SyntaxKind::IntLit, "42")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_metavar_literal_rejects_ident() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Literal,
+        }]);
+        let input = vec![tok(SyntaxKind::Ident, "foo")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::NoMatch));
+    }
+
+    #[test]
+    fn test_expr_metavar_matches_one_token() {
+        // Expr fragment spec matches a single token (not greedy)
         let pattern = Pattern::new(vec![PatternPiece::Metavar {
             name: SmolStr::from("x"),
             fragment: FragmentSpec::Expr,
         }]);
-        let input = vec![];
+        let input = vec![tok(SyntaxKind::IntLit, "42")];
         let result = match_pattern(&pattern, &input);
-        // Empty input should match if metavar can be empty
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+        if let MatchResult::FullMatch(bindings) = result {
+            let captured = &bindings[&SmolStr::from("x")];
+            assert_eq!(captured.len(), 1, "Expected 1 token captured for expr");
+        }
+    }
+
+    #[test]
+    fn test_tt_metavar_matches_any_token() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("x"),
+            fragment: FragmentSpec::Tt,
+        }]);
+        let input = vec![tok(SyntaxKind::Plus, "+")];
+        let result = match_pattern(&pattern, &input);
         assert!(matches!(result, MatchResult::FullMatch(_)));
     }
 }
