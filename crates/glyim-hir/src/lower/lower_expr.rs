@@ -17,7 +17,7 @@ pub(crate) fn lower_block_to_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> ExprId {
@@ -45,7 +45,7 @@ pub(crate) fn lower_block_to_expr(
                             base_id,
                             interner,
                             body,
-                            pats,
+                            body.pats,
                             diags,
                             struct_field_map,
                         ) {
@@ -57,7 +57,7 @@ pub(crate) fn lower_block_to_expr(
                         &inner,
                         interner,
                         body,
-                        pats,
+                        body.pats,
                         diags,
                         struct_field_map,
                     );
@@ -91,14 +91,14 @@ pub(crate) fn lower_block_to_expr(
                     }
                 }
                 if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone()) {
-                    if let Some(pat_id) = lower_pat(&pat, interner, pats) {
+                    if let Some(pat_id) = lower_pat(&pat, interner, body.pats) {
                         let span = node_span(&child);
-                        let lhs_expr_id = pat_to_expr(pat_id, pats, body, interner, span);
+                        let lhs_expr_id = pat_to_expr(pat_id, body.pats, body, interner, span);
                         let rhs_expr_id = lower_expr(
                             &rhs,
                             interner,
                             body,
-                            pats,
+                            body.pats,
                             diags,
                             struct_field_map,
                         );
@@ -126,7 +126,7 @@ pub(crate) fn lower_block_to_expr(
                         &rhs,
                         interner,
                         body,
-                        pats,
+                        body.pats,
                         diags,
                         struct_field_map,
                     );
@@ -154,12 +154,12 @@ pub(crate) fn lower_block_to_expr(
 /// Convert a pattern into an expression (for LHS of assignment)
 fn pat_to_expr(
     pat_id: PatId,
-    pats: &IndexVec<PatId, Pat>,
+    body.pats: &IndexVec<PatId, Pat>,
     body: &mut Body,
     _interner: &mut Interner,
     span: Span,
 ) -> Option<ExprId> {
-    match &pats[pat_id] {
+    match &body.pats[pat_id] {
         Pat::Wild => None,
         Pat::Binding { name, .. } => {
             let path = HirPath::from_single(*name);
@@ -184,7 +184,7 @@ fn lower_field_or_method_with_receiver(
     receiver_id: ExprId,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -216,7 +216,7 @@ fn lower_field_or_method_with_receiver(
                     &child,
                     interner,
                     body,
-                    pats,
+                    body.pats,
                     diags,
                     struct_field_map,
                 )
@@ -245,7 +245,7 @@ pub(crate) fn lower_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -254,7 +254,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         )),
@@ -262,7 +262,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -270,7 +270,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -280,7 +280,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -288,7 +288,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -296,7 +296,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -304,7 +304,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -312,7 +312,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -320,7 +320,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -328,7 +328,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -336,7 +336,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -344,7 +344,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -352,7 +352,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -365,7 +365,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -373,7 +373,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -381,7 +381,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -389,7 +389,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -397,7 +397,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -405,7 +405,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -413,7 +413,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -421,7 +421,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -429,7 +429,7 @@ pub(crate) fn lower_expr(
             node,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ),
@@ -447,7 +447,7 @@ fn lower_closure_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -457,7 +457,7 @@ fn lower_closure_expr(
         match child.kind() {
             SyntaxKind::ParamList => {
                 for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
-                    let (_, pat_id) = lower_param(&param_node, interner, pats);
+                    let (_, pat_id) = lower_param(&param_node, interner, body.pats);
                     params.push(pat_id);
                 }
             }
@@ -466,7 +466,7 @@ fn lower_closure_expr(
                     &child,
                     interner,
                     body,
-                    pats,
+                    body.pats,
                     diags,
                     struct_field_map,
                 );
@@ -487,7 +487,7 @@ fn lower_struct_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -513,7 +513,7 @@ fn lower_struct_expr(
                             &next,
                             interner,
                             body,
-                            pats,
+                            body.pats,
                             diags,
                             struct_field_map,
                         ) {
@@ -536,7 +536,7 @@ fn lower_struct_expr(
                         &n,
                         interner,
                         body,
-                        pats,
+                        body.pats,
                         diags,
                         struct_field_map,
                     )
@@ -549,7 +549,7 @@ fn lower_struct_expr(
                     &child,
                     interner,
                     body,
-                    pats,
+                    body.pats,
                     diags,
                     struct_field_map,
                 );
@@ -602,7 +602,7 @@ fn lower_binary_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -639,7 +639,7 @@ fn lower_binary_expr(
                 &lhs,
                 interner,
                 body,
-                pats,
+                body.pats,
                 diags,
                 struct_field_map,
             )?;
@@ -647,7 +647,7 @@ fn lower_binary_expr(
                 &rhs,
                 interner,
                 body,
-                pats,
+                body.pats,
                 diags,
                 struct_field_map,
             )?;
@@ -672,7 +672,7 @@ fn lower_binary_expr(
         &expr_children[0],
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -680,7 +680,7 @@ fn lower_binary_expr(
         &expr_children[1],
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -720,7 +720,7 @@ fn lower_if_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -738,7 +738,7 @@ fn lower_if_expr(
         &cond,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -746,7 +746,7 @@ fn lower_if_expr(
         &then_branch,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -755,7 +755,7 @@ fn lower_if_expr(
             &e,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         )
@@ -973,7 +973,7 @@ fn lower_call_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -987,7 +987,7 @@ fn lower_call_expr(
         &func,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -997,7 +997,7 @@ fn lower_call_expr(
             &arg,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ) {
@@ -1016,7 +1016,7 @@ fn lower_method_call_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1025,7 +1025,7 @@ fn lower_method_call_expr(
         &receiver,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1054,7 +1054,7 @@ fn lower_method_call_expr(
                 &child,
                 interner,
                 body,
-                pats,
+                body.pats,
                 diags,
                 struct_field_map,
             )
@@ -1075,7 +1075,7 @@ fn lower_unary_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1095,7 +1095,7 @@ fn lower_unary_expr(
         &inner,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1122,7 +1122,7 @@ fn lower_ref_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1133,7 +1133,7 @@ fn lower_ref_expr(
         &inner,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1156,7 +1156,7 @@ fn lower_match_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1167,7 +1167,7 @@ fn lower_match_expr(
         &scrutinee,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1191,7 +1191,7 @@ fn lower_match_expr(
                     | SyntaxKind::PatTuple
                     | SyntaxKind::PatStruct
                     | SyntaxKind::PatOr => {
-                        pat_id = lower_pat(&part, interner, pats);
+                        pat_id = lower_pat(&part, interner, body.pats);
                     }
                     _ if is_expr_node(&part) => {
                         if body_id.is_none() {
@@ -1199,7 +1199,7 @@ fn lower_match_expr(
                                 &part,
                                 interner,
                                 body,
-                                pats,
+                                body.pats,
                                 diags,
                                 struct_field_map,
                             );
@@ -1208,7 +1208,7 @@ fn lower_match_expr(
                                 &part,
                                 interner,
                                 body,
-                                pats,
+                                body.pats,
                                 diags,
                                 struct_field_map,
                             );
@@ -1234,7 +1234,7 @@ fn lower_while_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1251,7 +1251,7 @@ fn lower_while_expr(
         &cond,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1259,7 +1259,7 @@ fn lower_while_expr(
         &body_expr,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1275,7 +1275,7 @@ fn lower_loop_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1284,7 +1284,7 @@ fn lower_loop_expr(
         &body_node,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1297,7 +1297,7 @@ fn lower_for_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1313,12 +1313,12 @@ fn lower_for_expr(
     })?;
     let iterable_node = children.find(|c| is_expr_node(c) || c.kind() == SyntaxKind::RangeExpr)?;
     let body_node = children.find(|c| c.kind() == SyntaxKind::Block)?;
-    let pat_id = lower_pat(&pat_node, interner, pats)?;
+    let pat_id = lower_pat(&pat_node, interner, body.pats)?;
     let iterable_id = lower_expr(
         &iterable_node,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1326,7 +1326,7 @@ fn lower_for_expr(
         &body_node,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1343,7 +1343,7 @@ fn lower_assign_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1360,7 +1360,7 @@ fn lower_assign_expr(
         &lhs,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1368,7 +1368,7 @@ fn lower_assign_expr(
         &rhs,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1384,7 +1384,7 @@ fn lower_return_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1396,7 +1396,7 @@ fn lower_return_expr(
                 &n,
                 interner,
                 body,
-                pats,
+                body.pats,
                 diags,
                 struct_field_map,
             )
@@ -1410,7 +1410,7 @@ fn lower_break_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1422,7 +1422,7 @@ fn lower_break_expr(
                 &n,
                 interner,
                 body,
-                pats,
+                body.pats,
                 diags,
                 struct_field_map,
             )
@@ -1436,7 +1436,7 @@ fn lower_cast_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1453,7 +1453,7 @@ fn lower_cast_expr(
         &expr_node?,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1467,7 +1467,7 @@ fn lower_field_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1476,7 +1476,7 @@ fn lower_field_expr(
         &receiver,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1509,7 +1509,7 @@ fn lower_index_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1526,7 +1526,7 @@ fn lower_index_expr(
         &base,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1534,7 +1534,7 @@ fn lower_index_expr(
         &index,
         interner,
         body,
-        pats,
+        body.pats,
         diags,
         struct_field_map,
     )?;
@@ -1550,7 +1550,7 @@ fn lower_array_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1560,7 +1560,7 @@ fn lower_array_expr(
             &child,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ) {
@@ -1576,7 +1576,7 @@ fn lower_tuple_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1586,7 +1586,7 @@ fn lower_tuple_expr(
             &child,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         ) {
@@ -1602,7 +1602,7 @@ fn lower_range_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
     body: &mut Body,
-    pats: &mut IndexVec<PatId, Pat>,
+    
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
@@ -1615,7 +1615,7 @@ fn lower_range_expr(
             n,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         )
@@ -1625,7 +1625,7 @@ fn lower_range_expr(
             n,
             interner,
             body,
-            pats,
+            body.pats,
             diags,
             struct_field_map,
         )
