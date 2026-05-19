@@ -1,4 +1,3 @@
-use glyim_core::arena::IndexVec;
 use glyim_core::interner::{Interner, Name};
 use glyim_core::path::PathKind;
 use glyim_core::primitives::*;
@@ -125,7 +124,7 @@ pub(crate) fn lower_block_to_expr(
     };
 
     let expr = Expr::Block { stmts, tail };
-    
+
     body.alloc_expr(expr, node_span(node))
 }
 
