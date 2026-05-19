@@ -1,5 +1,5 @@
+=== FORCE REWRITE MOD.RS WITHOUT ANY MARKERS ===
 // Auto-generated test modules
-=== CLEAN UP MOD.RS ===
 mod array;
 mod assign;
 mod binary_error;
@@ -30,8 +30,6 @@ mod tuple_index;
 mod typeck_result_accessors;
 mod where_clause;
 mod while_loop;
-mod CLEAN;
-mod UP;
 
 // Helper modules
 mod common;
