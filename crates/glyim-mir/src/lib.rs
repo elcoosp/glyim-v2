@@ -154,7 +154,9 @@ impl Place {
                     }
                 },
                 ProjectionElem::Downcast(_variant_idx) => {
-                    tracing::warn!("Place::ty(): Downcast projection not fully implemented, returning original type");
+                    tracing::warn!(
+                        "Place::ty(): Downcast projection not fully implemented, returning original type"
+                    );
                     ty
                 }
             };
