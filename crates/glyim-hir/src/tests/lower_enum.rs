@@ -12,9 +12,9 @@ fn test_enum_with_variants() {
     let parse_result = parse_to_syntax(source, file_id);
     let root = parse_result.root;
     let mut interner = Interner::new();
-    let hir = lower_crate(&root, &mut interner);
+    let hir = lower_crate(&root, &mut interner, &mut Vec::new());
 
-    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
+    assert_eq!(hir.items.len(), 1);
     let item = &hir.items[ItemId::from_raw(0)];
     assert_eq!(interner.resolve(item.name), "Color");
     match &item.kind {

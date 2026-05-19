@@ -10,7 +10,7 @@ fn test_while_expr_stub() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let _hir = lower_crate(&parse_result.root, &mut interner);
+    let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     // Should not panic; stub warning will be emitted
 }
 
@@ -18,28 +18,27 @@ fn test_while_expr_stub() {
 #[test]
 fn test_loop_expr_stub() {
     let source = "fn f() { loop { break; } }";
-    let file_id = FileId::from_raw(0, &mut Vec::new());
+    let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let _hir = lower_crate(&parse_result.root, &mut interner);
+    let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
 /// Test that tuple struct lowering doesn't crash (stub).
 #[test]
-fn test_tuple_struct_stub(, &mut Vec::new()) {
+fn test_tuple_struct_stub() {
     let source = "struct Pair(i32, f64);";
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let _hir = lower_crate(&parse_result.root, &mut interner);
-    // Should succeed with a stub warning
+    let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
 /// Test that float literal doesn't crash.
 #[test]
 fn test_float_literal_stub() {
     let source = "fn f() { 3.14 }";
-    let file_id = FileId::from_raw(0, &mut Vec::new());
+    let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
     let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
@@ -52,13 +51,13 @@ fn test_dyn_type_stub() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let _hir = lower_crate(&parse_result.root, &mut interner);
+    let _hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
 }
 
 /// Test that match expression stub doesn't crash.
 #[test]
 fn test_match_expr_stub() {
-    let source = "fn f(x: i32, &mut Vec::new()) { match x { 0 => 1, _ => 0 } }";
+    let source = "fn f(x: i32) { match x { 0 => 1, _ => 0 } }";
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();

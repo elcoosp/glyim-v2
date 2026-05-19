@@ -11,9 +11,9 @@ fn get_body_hir(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
-        ItemKind::Fn(fn_item) => fn_item.body.expect("no body", &mut Vec::new()),
+        ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
         other => panic!("expected Fn item, got {:?}", other),
     };
     (hir, interner, body_id)
@@ -109,8 +109,8 @@ fn test_empty_enum() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
-    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
+    assert_eq!(hir.items.len(), 1);
     let item = &hir.items[ItemId::from_raw(0)];
     match &item.kind {
         ItemKind::Enum(e) => {
@@ -144,10 +144,10 @@ fn test_reference_type_with_mut() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let item = &hir.items[ItemId::from_raw(0)];
     if let ItemKind::Fn(fn_item) = &item.kind
-        && let Some(ty, &mut Vec::new()) = &fn_item.return_ty
+        && let Some(ty) = &fn_item.return_ty
     {
         // we just check that it doesn't panic
         eprintln!("return type: {:?}", ty);
@@ -160,8 +160,8 @@ fn test_multiple_top_level_items() {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
-    assert_eq!(hir.items.len(, &mut Vec::new()), 3);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
+    assert_eq!(hir.items.len(), 3);
     assert!(matches!(
         hir.items[ItemId::from_raw(0)].kind,
         ItemKind::Struct(_)

@@ -11,9 +11,9 @@ fn get_body_hir(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let file_id = FileId::from_raw(0);
     let parse_result = parse_to_syntax(source, file_id);
     let mut interner = Interner::new();
-    let hir = lower_crate(&parse_result.root, &mut interner);
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
-        ItemKind::Fn(fn_item) => fn_item.body.expect("no body", &mut Vec::new()),
+        ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
         other => panic!("expected Fn item, got {:?}", other),
     };
     (hir, interner, body_id)
@@ -34,7 +34,7 @@ fn test_field_expr_lowering() {
     let source = "fn f() { a.b }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -46,10 +46,10 @@ fn test_field_expr_lowering() {
 
 #[test]
 fn test_method_call_expr_lowering() {
-    let source = "fn f() { a.b(1, &mut Vec::new()) }";
+    let source = "fn f() { a.b(1) }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -60,7 +60,7 @@ fn test_method_call_expr_lowering() {
 // ==================== BreakExpr / ContinueExpr ====================
 
 #[test]
-fn test_break_continue_lowering(, &mut Vec::new()) {
+fn test_break_continue_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { loop { break; continue; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
@@ -266,7 +266,7 @@ fn test_cast_expr_lowering() {
     let source = "fn f() { x as i32 }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -278,10 +278,10 @@ fn test_cast_expr_lowering() {
 
 #[test]
 fn test_index_expr_lowering() {
-    let source = "fn f(, &mut Vec::new()) { a[0] }";
+    let source = "fn f() { a[0] }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -292,7 +292,7 @@ fn test_index_expr_lowering() {
 // ==================== RangeExpr ====================
 
 #[test]
-fn test_range_expr_lowering(, &mut Vec::new()) {
+fn test_range_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { 0..10 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
@@ -341,7 +341,7 @@ fn test_call_expr_lowering() {
     let source = "fn f() { foo(1, 2) }";
     let result = glyim_frontend::parse_to_syntax(source, glyim_span::FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -352,7 +352,7 @@ fn test_call_expr_lowering() {
 // ==================== While / Loop ====================
 
 #[test]
-fn test_while_expr_lowering(, &mut Vec::new()) {
+fn test_while_expr_lowering() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { while true { 1; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
@@ -393,8 +393,8 @@ fn test_struct_record_lowering() {
     let source = "struct Point { x: i32, y: i32 }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
-    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
+    assert_eq!(hir.items.len(), 1);
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Struct(s) => {
             assert_eq!(s.kind, StructKind::Record);
@@ -411,10 +411,10 @@ fn test_enum_tuple_variant_lowering() {
     let source = "enum Color { Red, Green, Blue, Rgb(u8, u8, u8) }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
-    let hir = lower_crate(&result.root, &mut interner);
+    let hir = lower_crate(&result.root, &mut interner, &mut Vec::new());
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Enum(e) => {
-            assert_eq!(e.variants.len(, &mut Vec::new()), 4);
+            assert_eq!(e.variants.len(), 4);
             assert_eq!(e.variants[3].kind, StructKind::Tuple);
             assert_eq!(e.variants[3].fields.len(), 3);
         }

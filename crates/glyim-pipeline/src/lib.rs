@@ -53,7 +53,8 @@ impl Pipeline {
         }
 
         // Phase 4: HIR
-        let (hir, hir_diags) = glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
+        let (hir, hir_diags) =
+            glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
         sink.extend(hir_diags);
 
         // Phase 5: Typeck

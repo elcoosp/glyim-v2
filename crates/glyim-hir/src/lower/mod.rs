@@ -93,7 +93,11 @@ fn next_local_def_id(counter: &mut u32) -> LocalDefId {
 
 // ---------- entry ----------
 
-pub(crate) fn lower_crate(root: &SyntaxNode, interner: &mut Interner, diags: &mut Vec<GlyimDiagnostic>) -> CrateHir {
+pub(crate) fn lower_crate(
+    root: &SyntaxNode,
+    interner: &mut Interner,
+    diags: &mut Vec<GlyimDiagnostic>,
+) -> CrateHir {
     let mut items = IndexVec::new();
     let mut bodies = IndexVec::new();
     let mut body_owners = IndexVec::new();

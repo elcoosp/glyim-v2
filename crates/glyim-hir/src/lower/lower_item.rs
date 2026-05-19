@@ -1,19 +1,25 @@
-use std::collections::HashMap;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
+use std::collections::HashMap;
 
-use crate::{Body, BodyId, EnumItem, Field, FnItem, Item, ItemId, ItemKind, Param, Pat, PatId, StructItem, Variant, Visibility};
+use crate::{
+    Body, BodyId, EnumItem, Field, FnItem, Item, ItemId, ItemKind, Param, Pat, PatId, StructItem,
+    Variant, Visibility,
+};
 
 use super::{
     first_ident_text, is_type_node, lower_expr::lower_block_to_expr, lower_type::lower_type_ref,
     next_local_def_id, node_span,
 };
 
-pub(crate) fn collect_struct_fields(node: &SyntaxNode, interner: &mut Interner) -> Option<(Name, Vec<Name>)> {
+pub(crate) fn collect_struct_fields(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+) -> Option<(Name, Vec<Name>)> {
     let name_str = first_ident_text(node)?;
     let name = interner.intern(&name_str);
     let mut fields = Vec::new();
