@@ -85,7 +85,7 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Binary { op, lhs, rhs } => {
                 let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
-                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
 
                 let operand_ty = if self.unify(lhs_ty, rhs_ty, span) {
                     lhs_ty
@@ -296,7 +296,7 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::MethodCall { receiver, method, args } => {
-                let (recv_expr, recv_ty) = self.check_expr(*receiver);
+                let (_recv_expr, recv_ty) = self.check_expr(*receiver);
                 let mut arg_exprs = Vec::new();
                 for &arg_id in args {
                     arg_exprs.push(self.check_expr(arg_id).0);
@@ -315,7 +315,7 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Field { receiver, field } => {
-                let (recv_expr, recv_ty) = self.check_expr(*receiver);
+                let (_recv_expr, recv_ty) = self.check_expr(*receiver);
 
                 let (is_adt, adt_id, is_tuple) = match self.ctx.ty_kind(recv_ty) {
                     TyKind::Adt(adt_id, _) => (true, *adt_id, false),
@@ -459,7 +459,7 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Assign { lhs, rhs } => {
                 let (_, lhs_ty) = self.check_expr(*lhs);
-                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
                 self.unify(rhs_ty, lhs_ty, span);
                 (thir::Expr::err(span), Ty::UNIT)
             }

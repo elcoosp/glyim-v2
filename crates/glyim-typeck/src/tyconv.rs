@@ -109,16 +109,16 @@ pub fn resolve_fn_sig(
     FnSig { param_tys, return_ty }
 }
 
-pub fn resolve_impl_header(
+pub fn resolve_impl_header(infer: pub fn resolve_impl_header(mut InferenceTable, infer: pub fn resolve_impl_header(mut InferenceTable, 
     ctx: &mut TyCtxMut,
-    _infer: &mut InferenceTable,
+    infer: infer: infer: &mut InferenceTablemut InferenceTablemut InferenceTable,
     def_map: &glyim_def_map::CrateDefMap,
     diagnostics: &mut Vec<GlyimDiagnostic>,
     impl_item: &glyim_hir::ImplItem,
     span: Span,
 ) -> ResolvedImplHeader {
     let param_map = build_param_tys(ctx, &impl_item.generic_params);
-    let self_ty = resolve_type_ref(ctx, _infer, def_map, diagnostics, &impl_item.self_ty, &param_map, span);
+    let self_ty = resolve_type_ref(ctx, infer, def_map, diagnostics, &impl_item.self_ty, &param_map, span);
     let (trait_def_id, trait_name, trait_substs) = match &impl_item.trait_ref {
         Some(path) => {
             if let Some(name) = path.as_name() {
@@ -152,7 +152,7 @@ pub fn resolve_impl_header(
 
 fn resolve_path_type(
     ctx: &mut TyCtxMut,
-    _infer: &mut InferenceTable,
+    infer: infer: infer: &mut InferenceTablemut InferenceTablemut InferenceTable,
     def_map: &glyim_def_map::CrateDefMap,
     diagnostics: &mut Vec<GlyimDiagnostic>,
     path: &glyim_hir::Path,
