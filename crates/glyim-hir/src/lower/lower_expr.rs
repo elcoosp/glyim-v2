@@ -90,7 +90,7 @@ pub(crate) fn lower_block_to_expr(
                 if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone()) {
                     if let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats) {
                         let span = node_span(&child);
-                        let lhs_expr_id = pat_to_expr(pat_id, &body.pats, body, interner, span);
+                        let lhs_expr_id = pat_to_expr(pat_id, body, interner, span);
                         let rhs_expr_id = lower_expr(
                             &rhs,
                             interner,
@@ -147,14 +147,8 @@ pub(crate) fn lower_block_to_expr(
 }
 
 /// Convert a pattern into an expression (for LHS of assignment)
-fn pat_to_expr(
-    pat_id: PatId,
-    pats: &IndexVec<PatId, Pat>,
-    body: &mut Body,
-    _interner: &mut Interner,
-    span: Span,
-) -> Option<ExprId> {
-    match &pats[pat_id] {
+fn pat_to_expr(pat_id: PatId, body: &mut Body, _interner: &mut Interner, span: Span) -> Option<ExprId> {
+    match &body.pats[pat_id] {
         Pat::Wild => None,
         Pat::Binding { name, .. } => {
             let path = HirPath::from_single(*name);
