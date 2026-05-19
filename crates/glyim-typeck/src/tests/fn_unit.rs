@@ -1,8 +1,8 @@
+use crate::tests::test_utils::global_interner;
 use super::test_utils::{empty_def_map, make_ty_ctx};
 use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
-use glyim_core::interner::Interner;
 use glyim_core::primitives::Visibility;
 use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind};
 use glyim_span::Span;
@@ -10,7 +10,7 @@ use glyim_test::{assert_no_errors, mock::MockSolver};
 
 #[test]
 fn fn_returning_unit() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();

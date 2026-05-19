@@ -12,6 +12,14 @@ use crate::check_body::FnCtxt;
 use crate::thir;
 
 impl<'a> FnCtxt<'a> {
+    pub fn expr_span(&self, expr_id: ExprId) -> Span {
+        if (expr_id.to_raw() as usize) < self.body.expr_spans.len() {
+            self.body.expr_spans[expr_id]
+        } else {
+            Span::DUMMY
+        }
+    }
+
     pub fn fresh_infer_ty(&mut self) -> Ty {
         let var = self.infer.new_ty_var(self.ctx);
         self.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
@@ -45,11 +53,6 @@ impl<'a> FnCtxt<'a> {
         Ty::ERROR
     }
 
-    pub fn instantiate_fn_sig(&mut self, def_id: FnDefId, span: Span) -> Ty {
-        let _ = (def_id, span);
-        self.fresh_infer_ty()
-    }
-
     pub fn check_path(&mut self, path: &Path, span: Span) -> (thir::Expr, Ty) {
         if let Some(name) = path.as_name() {
             if let Some(var_info) = self.env.lookup_by_name(name) {
@@ -71,6 +74,28 @@ impl<'a> FnCtxt<'a> {
             "multi-segment paths not yet implemented",
         ));
         (thir::Expr::err(span), Ty::ERROR)
+    }
+
+    pub fn instantiate_fn_sig(&mut self, _def_id: FnDefId, span: Span) -> Ty {
+        for (_id, item) in self.hir.items.iter_enumerated() {
+            if let glyim_hir::ItemKind::Fn(fn_item) = &item.kind {
+                if let Some(return_ty_ref) = &fn_item.return_ty {
+                    let param_map = std::collections::HashMap::new();
+                    return crate::tyconv::resolve_type_ref(
+                        self.ctx,
+                        self.infer,
+                        self.def_map,
+                        self.diagnostics,
+                        return_ty_ref,
+                        &param_map,
+                        span,
+                    );
+                } else {
+                    return Ty::UNIT;
+                }
+            }
+        }
+        self.fresh_infer_ty()
     }
 }
 

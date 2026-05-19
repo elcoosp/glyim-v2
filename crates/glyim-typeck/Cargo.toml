@@ -14,5 +14,6 @@ glyim-def-map = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+once_cell = "1.19"
 glyim-test = { workspace = true }
 

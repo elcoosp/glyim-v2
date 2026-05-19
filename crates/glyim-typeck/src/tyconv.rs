@@ -1,4 +1,4 @@
-//! HIR `TypeRef` → `Ty` conversion.
+/// HIR `TypeRef` → `Ty` conversion.
 
 use std::collections::HashMap;
 

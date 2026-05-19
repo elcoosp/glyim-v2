@@ -1,8 +1,8 @@
+use crate::tests::test_utils::global_interner;
 use super::test_utils::{empty_def_map, make_ty_ctx};
 use crate::typeck_crate;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
-use glyim_core::interner::Interner;
 use glyim_core::primitives::Visibility;
 use glyim_core::primitives::*;
 use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Pat, PatId};
@@ -12,7 +12,7 @@ use glyim_test::{assert_has_errors, assert_no_errors, mock::MockSolver};
 /// S14-T11: Multiple functions in one crate
 #[test]
 fn multiple_functions() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let fn_a_name = inter.intern("fn_a");
     let fn_b_name = inter.intern("fn_b");
 
@@ -86,7 +86,7 @@ fn multiple_functions() {
 /// S14-T12: Function with multiple parameters
 #[test]
 fn multiple_params() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
     let x_name = inter.intern("x");
     let y_name = inter.intern("y");
@@ -176,7 +176,7 @@ fn multiple_params() {
 /// S14-T13: i32 * i32 (different operator)
 #[test]
 fn binary_multiply() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
@@ -237,7 +237,7 @@ fn binary_multiply() {
 /// S14-T14: Comparison operators (Eq)
 #[test]
 fn binary_comparison() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
@@ -298,7 +298,7 @@ fn binary_comparison() {
 /// S14-T15: If expression
 #[test]
 fn if_expression() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
@@ -360,7 +360,7 @@ fn if_expression() {
 /// S14-T16: Block expression with statements
 #[test]
 fn block_expression() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
@@ -421,7 +421,7 @@ fn block_expression() {
 /// S14-T17: Unresolved variable reference produces error
 #[test]
 fn unresolved_variable() {
-    let inter = Interner::new();
+    let inter = global_interner();
     let main_name = inter.intern("main");
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
