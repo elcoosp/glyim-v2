@@ -363,7 +363,6 @@ fn find_trait_default_body(
     }
     None
 }
-=== FIX DUPLICATE TypeckResult IMPL AND REMOVE test_ty_ctx DEPENDENCY ===
 -e 
 #[cfg(test)]
 mod tests;
@@ -439,3 +438,6 @@ impl TypeckResult {
         &[]
     }
 }
+
+=== REMOVE STRAY MARKER LINES FROM LIB.RS ===
+
