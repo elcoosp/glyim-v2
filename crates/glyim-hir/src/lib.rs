@@ -448,7 +448,6 @@ impl Body {
     /// to add an expression — it guarantees `exprs` and `expr_spans` stay
     /// in sync.
     #[inline]
-    pub fn alloc_expr(&mut self, expr: Expr, span: Span) -> ExprId {
         debug_assert_eq!(
             self.exprs.len(),
             self.expr_spans.len(),
