@@ -34,3 +34,7 @@ mod traits;
 mod type_construction;
 mod type_display;
 mod type_idx;
+mod s12_fn_sig;
+mod s12_field_ty;
+mod s12_auto_traits;
+mod s12_object_safety;
