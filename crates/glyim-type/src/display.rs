@@ -1,3 +1,4 @@
+use crate::adt_def::AdtDef;
 use crate::flags::TypeFlags;
 use crate::predicate::Predicate;
 use crate::region::{BoundRegionKind, Region};
@@ -17,6 +18,24 @@ pub trait TypeLookup {
     /// Returns `true` if the given ADT has interior mutability (contains `UnsafeCell`).
     fn is_interior_mutable_adt(&self, _adt_id: AdtId) -> bool {
         false
+    }
+    /// Returns the `AdtDef` for the given ADT, if registered.
+    /// Default returns `None`.
+    fn adt_def(&self, _adt_id: AdtId) -> Option<&AdtDef> {
+        None
+    }
+    /// Returns the type of the field at the given index in the ADT.
+    /// Default implementation uses `adt_def`; returns `error_ty()` if not found.
+    fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
+        let Ok(raw_idx) = u32::try_from(field_idx) else {
+            return self.error_ty();
+        };
+        self.adt_def(adt_id)
+            .and_then(|def| {
+                let idx = FieldIdx::from_raw(raw_idx);
+                def.fields.get(idx).map(|f| f.ty)
+            })
+            .unwrap_or_else(|| self.error_ty())
     }
 }
 
