@@ -17,7 +17,6 @@ fn token_from_literal(src: &str) -> glyim_syntax::SyntaxToken {
         .children()
         .find(|n| n.kind() == SyntaxKind::Block)
         .expect("Block not found");
-    // Look for ExprStmt containing the literal, or direct literal node
     let lit_expr = block
         .children()
         .find(|n| n.kind() == SyntaxKind::ExprStmt)
@@ -36,28 +35,28 @@ fn token_from_literal(src: &str) -> glyim_syntax::SyntaxToken {
 fn test_int_suffix_i32() {
     let tok = token_from_literal("42i32");
     let lit = lower_literal(&tok);
-    assert_eq!(*lit, Literal::Int(42, Some(IntTy::I32)));
+    assert_eq!(lit, Literal::Int(42, Some(IntTy::I32)));
 }
 
 #[test]
 fn test_int_suffix_u64() {
     let tok = token_from_literal("100u64");
     let lit = lower_literal(&tok);
-    assert_eq!(*lit, Literal::Uint(100, Some(UintTy::U64)));
+    assert_eq!(lit, Literal::Uint(100, Some(UintTy::U64)));
 }
 
 #[test]
 fn test_int_hex_no_suffix() {
     let tok = token_from_literal("0x1A");
     let lit = lower_literal(&tok);
-    assert_eq!(*lit, Literal::Int(26, None));
+    assert_eq!(lit, Literal::Int(26, None));
 }
 
 #[test]
 fn test_int_binary() {
     let tok = token_from_literal("0b1010");
     let lit = lower_literal(&tok);
-    assert_eq!(*lit, Literal::Int(10, None));
+    assert_eq!(lit, Literal::Int(10, None));
 }
 
 #[test]

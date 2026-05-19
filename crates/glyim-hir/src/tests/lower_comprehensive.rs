@@ -26,14 +26,12 @@ fn get_body(hir: &crate::CrateHir, body_id: BodyId) -> &crate::Body {
     &hir.bodies[body_id]
 }
 
-// ---------- call expression ----------
-
 #[test]
 fn test_call_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { foo(1, 2) }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { foo(1, 2) }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(call_id),
             ..
@@ -45,14 +43,12 @@ fn test_call_expr() {
     }
 }
 
-// ---------- unary expression ----------
-
 #[test]
 fn test_unary_expr_not() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { !true }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { !true }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(unary_id),
             ..
@@ -66,10 +62,10 @@ fn test_unary_expr_not() {
 
 #[test]
 fn test_unary_expr_neg() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { -42 }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { -42 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(unary_id),
             ..
@@ -83,10 +79,10 @@ fn test_unary_expr_neg() {
 
 #[test]
 fn test_ref_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { &x }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { &x }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(ref_id), ..
         } => match &body.exprs[*ref_id] {
@@ -97,14 +93,12 @@ fn test_ref_expr() {
     }
 }
 
-// ---------- match expression ----------
-
 #[test]
 fn test_match_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f(x: i32) { match x { 0 => 1, _ => 0 } }");
+    let (hir, _inter, body_id) = get_body_hir("fn f(x: i32) { match x { 0 => 1, _ => 0 } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(match_id),
             ..
@@ -123,14 +117,12 @@ fn test_match_expr() {
     }
 }
 
-// ---------- while / loop / for ----------
-
 #[test]
 fn test_while_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { while true { 1; } }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { while true { 1; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(while_id),
             ..
@@ -143,10 +135,10 @@ fn test_while_expr() {
 
 #[test]
 fn test_loop_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { loop { break; } }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { loop { break; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(loop_id),
             ..
@@ -159,10 +151,10 @@ fn test_loop_expr() {
 
 #[test]
 fn test_for_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { for i in 0..10 { 1; } }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { for i in 0..10 { 1; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(for_id), ..
         } => {
@@ -172,14 +164,12 @@ fn test_for_expr() {
     }
 }
 
-// ---------- assign / break / continue ----------
-
 #[test]
 fn test_assign_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { x = 5; 0 }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { x = 5; 0 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block { stmts, .. } => {
             assert!(!stmts.is_empty());
             assert!(matches!(&body.exprs[stmts[0]], Expr::Assign { .. }));
@@ -190,31 +180,30 @@ fn test_assign_expr() {
 
 #[test]
 fn test_break_continue() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { loop { break; continue; } }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { loop { break; continue; } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    let while_id = match &body.exprs[*block_id] {
+    let while_id = match &body.exprs[block_id] {
         Expr::Block { tail: Some(id), .. } => *id,
         _ => panic!(),
     };
-    let while_body_id = match &body.exprs[*while_id] {
-        Expr::Loop { body: b, .. } => *b,
+    let while_body_id = match &body.exprs[while_id] {
+        Expr::Loop { body: b, .. } => b,
         _ => panic!(),
     };
     let (stmts, tail) = match &body.exprs[*while_body_id] {
-        Expr::Block { stmts, tail } => (stmts.clone(), *tail),
+        Expr::Block { stmts, tail } => (stmts.clone(), tail),
         _ => panic!(),
     };
     let mut saw_break = false;
     let mut saw_continue = false;
     for &sid in &stmts {
-        match &body.exprs[*sid] {
+        match &body.exprs[sid] {
             Expr::Break { .. } => saw_break = true,
             Expr::Continue => saw_continue = true,
             _ => {}
         }
     }
-    // Also check tail
     if let Some(tail_id) = tail {
         match &body.exprs[*tail_id] {
             Expr::Break { .. } => saw_break = true,
@@ -222,18 +211,16 @@ fn test_break_continue() {
             _ => {}
         }
     }
-    assert!(saw_break, "Expected to find Break expression");
-    assert!(saw_continue, "Expected to find Continue expression");
+    assert!(saw_break, "Expected Break expression");
+    assert!(saw_continue, "Expected Continue expression");
 }
-
-// ---------- cast ----------
 
 #[test]
 fn test_cast_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { x as i32 }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { x as i32 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(cast_id),
             ..
@@ -244,14 +231,12 @@ fn test_cast_expr() {
     }
 }
 
-// ---------- field / index ----------
-
 #[test]
 fn test_field_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { a.b }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { a.b }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(field_id),
             ..
@@ -264,10 +249,10 @@ fn test_field_expr() {
 
 #[test]
 fn test_index_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { a[0] }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { a[0] }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(index_id),
             ..
@@ -278,14 +263,12 @@ fn test_index_expr() {
     }
 }
 
-// ---------- array / tuple / range ----------
-
 #[test]
 fn test_array_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { [1, 2, 3] }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { [1, 2, 3] }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(arr_id), ..
         } => match &body.exprs[*arr_id] {
@@ -298,10 +281,10 @@ fn test_array_expr() {
 
 #[test]
 fn test_tuple_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { (1, 2) }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { (1, 2) }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(tup_id), ..
         } => match &body.exprs[*tup_id] {
@@ -314,10 +297,10 @@ fn test_tuple_expr() {
 
 #[test]
 fn test_range_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { 0..10 }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { 0..10 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(range_id),
             ..
@@ -337,14 +320,12 @@ fn test_range_expr() {
     }
 }
 
-// ---------- method call ----------
-
 #[test]
 fn test_method_call_expr() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { a.b(1) }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { a.b(1) }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(call_id),
             ..
@@ -356,14 +337,12 @@ fn test_method_call_expr() {
     }
 }
 
-// ---------- patterns ----------
-
 #[test]
 fn test_pattern_or() {
-    let (hir, _interner, body_id) = get_body_hir("fn f(x: i32) { match x { 0 | 1 => 2, _ => 3 } }");
+    let (hir, _inter, body_id) = get_body_hir("fn f(x: i32) { match x { 0 | 1 => 2, _ => 3 } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(match_id),
             ..
@@ -384,10 +363,10 @@ fn test_pattern_or() {
 
 #[test]
 fn test_float_literal_type() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { 3.14 }");
+    let (hir, _inter, body_id) = get_body_hir("fn f() { 3.14 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
+    match &body.exprs[block_id] {
         Expr::Block {
             tail: Some(lit_id), ..
         } => match &body.exprs[*lit_id] {

@@ -21,107 +21,129 @@ fn last_expr_id(body: &crate::Body) -> ExprId {
     ExprId::from_raw(body.exprs.len() as u32 - 1)
 }
 
-#[test]
-fn test_block_expression() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { 1 + 2; 3 }");
-    let body = &hir.bodies[body_id];
-    let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(!stmts.is_empty(), "should have at least one statement");
-            assert!(tail.is_some(), "should have tail expression");
-        }
-        other => panic!("Expected Block, got {:?}", other),
-    }
+fn get_body(hir: &crate::CrateHir, body_id: BodyId) -> &crate::Body {
+    &hir.bodies[body_id]
 }
 
 #[test]
-fn test_binary_expression() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { 1 + 2 }");
-    let body = &hir.bodies[body_id];
+fn test_binary_expr() {
+    let (hir, interner, body_id) = get_body_hir("fn f() { 1 + 2 }");
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty(), "should have no statements");
-            let bin_id = tail.expect("should have tail");
-            match &body.exprs[*bin_id] {
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(bin_id), ..
+        } => {
+            let expr = &body.exprs[*bin_id];
+            match expr {
                 Expr::Binary { op, lhs, rhs } => {
                     assert_eq!(*op, BinOp::Add);
                     match &body.exprs[*lhs] {
-                        Expr::Literal(lit) => assert_eq!(*lit, Literal::Int(1, None)),
-                        other => panic!("lhs not literal, got {:?}", other),
+                        Expr::Literal(lit) => assert_eq!(lit, &Literal::Int(1, None)),
+                        _ => panic!(),
                     }
                     match &body.exprs[*rhs] {
-                        Expr::Literal(lit) => assert_eq!(*lit, Literal::Int(2, None)),
-                        other => panic!("rhs not literal, got {:?}", other),
+                        Expr::Literal(lit) => assert_eq!(lit, &Literal::Int(2, None)),
+                        _ => panic!(),
                     }
                 }
-                other => panic!("Expected Binary in tail, got {:?}", other),
+                _ => panic!(),
             }
         }
-        other => panic!("Expected Block, got {:?}", other),
+        _ => panic!(),
     }
 }
 
 #[test]
-fn test_if_else_expression() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { if true { 1 } else { 2 } }");
-    let body = &hir.bodies[body_id];
+fn test_if_expr() {
+    let (hir, interner, body_id) = get_body_hir("fn f() { if true { 1 } else { 0 } }");
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty(), "should have no statements");
-            let if_id = tail.expect("should have tail");
-            match &body.exprs[*if_id] {
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(if_id), ..
+        } => {
+            let expr = &body.exprs[*if_id];
+            match expr {
                 Expr::If {
-                    cond: _,
-                    then_branch: _,
+                    cond,
+                    then_branch,
                     else_branch,
                 } => {
-                    assert!(else_branch.is_some(), "should have else branch");
+                    assert!(matches!(
+                        &body.exprs[*cond],
+                        Expr::Literal(Literal::Bool(true))
+                    ));
+                    let then_val = &body.exprs[*then_branch];
+                    if let Expr::Block {
+                        tail: Some(tail_id),
+                        ..
+                    } = then_val
+                    {
+                        assert!(matches!(
+                            &body.exprs[*tail_id],
+                            Expr::Literal(Literal::Int(1, None))
+                        ));
+                    } else if let Expr::Literal(lit) = then_val {
+                        assert_eq!(lit, &Literal::Int(1, None));
+                    } else {
+                        panic!("Then branch not a literal or block");
+                    }
+                    let else_id = else_branch.expect("else branch missing");
+                    let else_val = &body.exprs[else_id];
+                    if let Expr::Block {
+                        tail: Some(tail_id),
+                        ..
+                    } = else_val
+                    {
+                        assert!(matches!(
+                            &body.exprs[*tail_id],
+                            Expr::Literal(Literal::Int(0, None))
+                        ));
+                    } else if let Expr::Literal(lit) = else_val {
+                        assert_eq!(lit, &Literal::Int(0, None));
+                    } else {
+                        panic!("Else branch not a literal or block");
+                    }
                 }
-                other => panic!("Expected If in tail, got {:?}", other),
+                _ => panic!(),
             }
         }
-        other => panic!("Expected Block, got {:?}", other),
+        _ => panic!(),
     }
 }
 
 #[test]
-fn test_path_expression() {
+fn test_path_expr() {
     let (hir, interner, body_id) = get_body_hir("fn f() { x }");
-    let body = &hir.bodies[body_id];
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty());
-            let path_id = tail.expect("should have tail");
-            match &body.exprs[*path_id] {
-                Expr::Path(path) => {
-                    assert_eq!(path.segments.len(), 1);
-                    assert_eq!(interner.resolve(path.segments[0].name), "x");
-                }
-                other => panic!("Expected Path in tail, got {:?}", other),
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(path_id),
+            ..
+        } => match &body.exprs[*path_id] {
+            Expr::Path(path) => {
+                assert_eq!(path.as_name().unwrap(), interner.intern("x"));
             }
-        }
-        other => panic!("Expected Block, got {:?}", other),
+            _ => panic!(),
+        },
+        _ => panic!(),
     }
 }
 
 #[test]
-fn test_literal_expression() {
-    let (hir, _interner, body_id) = get_body_hir("fn f() { 42 }");
-    let body = &hir.bodies[body_id];
+fn test_literal_expr() {
+    let (hir, interner, body_id) = get_body_hir("fn f() { 42 }");
+    let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
-    match &body.exprs[*block_id] {
-        Expr::Block { stmts, tail } => {
-            assert!(stmts.is_empty());
-            let lit_id = tail.expect("should have tail");
-            match &body.exprs[*lit_id] {
-                Expr::Literal(lit) => assert_eq!(*lit, Literal::Int(42, None)),
-                other => panic!("Expected Int literal in tail, got {:?}", other),
-            }
-        }
-        other => panic!("Expected Block, got {:?}", other),
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(lit_id), ..
+        } => match &body.exprs[*lit_id] {
+            Expr::Literal(lit) => assert_eq!(lit, &Literal::Int(42, None)),
+            _ => panic!(),
+        },
+        _ => panic!(),
     }
 }

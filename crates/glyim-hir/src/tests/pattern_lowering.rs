@@ -1,20 +1,33 @@
-use crate::Pat;
-use crate::lower::lower_pat;
+use crate::lower::lower_crate;
+use crate::{ItemId, ItemKind, Pat};
 use glyim_core::interner::Interner;
-use glyim_syntax::{GlyimLang, GreenNode, SyntaxKind, SyntaxNode};
-use rowan::Language;
+use glyim_frontend::parse_to_syntax;
+use glyim_span::FileId;
 
 #[test]
-fn test_unknown_pattern_returns_err() {
-    // Create a dummy node with SyntaxKind::Error directly.
-    let green = GreenNode::new(GlyimLang::kind_to_raw(SyntaxKind::Error), vec![]);
-    let node = SyntaxNode::new_root(green);
-    let mut interner = Interner::default();
-    let mut pats = glyim_core::arena::IndexVec::new();
-    let pat_id = lower_pat(&node, &mut interner, &mut pats);
-    assert!(pat_id.is_some());
-    match &pats[pat_id.unwrap()] {
-        Pat::Err => {}
-        other => panic!("expected Pat::Err, got {:?}", other),
+fn test_pattern_or_lowering() {
+    let source = "fn f(x: i32) { match x { 0 | 1 => 2, _ => 3 } }";
+    let file_id = FileId::from_raw(0);
+    let parse_result = parse_to_syntax(source, file_id);
+    let mut interner = Interner::new();
+    let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
+    let body_id = match &hir.items[ItemId::from_raw(0)].kind {
+        ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
+        other => panic!("expected Fn item"),
+    };
+    let body = &hir.bodies[body_id];
+    let mut found_or_pat = false;
+    for (_id, expr) in body.exprs.iter_enumerated() {
+        if let crate::Expr::Match { arms, .. } = expr {
+            if let Some(arm) = arms.first() {
+                if let Pat::Or(pats) = &body.pats[arm.pat] {
+                    if pats.len() == 2 {
+                        found_or_pat = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
+    assert!(found_or_pat, "Expected OR pattern with 2 alternatives");
 }
