@@ -28,7 +28,7 @@ fn binary_i32_add_bool_error() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -45,6 +45,7 @@ fn binary_i32_add_bool_error() {
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
+    };
     let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
     let mut body_owners = IndexVec::new();
@@ -53,6 +54,7 @@ fn binary_i32_add_bool_error() {
         items,
         bodies,
         body_owners,
+    };
     let ctx = make_ty_ctx();
     let def_map = empty_def_map();
     let mut solver = MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);

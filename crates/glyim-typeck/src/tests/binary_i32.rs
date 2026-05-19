@@ -7,15 +7,15 @@ use glyim_core::primitives::Visibility;
 use glyim_core::primitives::*;
 use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind};
 use glyim_span::Span;
-use glyim_test::{assert_no_errors, mock::MockSolver};
+use glyim_test::{assert_has_errors, mock::MockSolver};
 
 #[test]
-fn binary_i32_add_ok() {
+fn binary_i32_add_bool_error() {
     let inter = Interner::new();
     let main_name = inter.intern("main");
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     let lhs = exprs.push(Expr::Literal(glyim_hir::Literal::Int(1, Some(IntTy::I32))));
-    let rhs = exprs.push(Expr::Literal(glyim_hir::Literal::Int(2, Some(IntTy::I32))));
+    let rhs = exprs.push(Expr::Literal(glyim_hir::Literal::Bool(true)));
     exprs.push(Expr::Binary {
         op: BinOp::Add,
         lhs,
@@ -28,7 +28,7 @@ fn binary_i32_add_ok() {
         pats: IndexVec::new(),
         params: vec![],
         span: Span::DUMMY,
-        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.clone().len()]),
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
     };
     let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
     let body_id = bodies.push(body);
@@ -45,6 +45,7 @@ fn binary_i32_add_ok() {
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Public,
+    };
     let mut items: IndexVec<ItemId, Item> = IndexVec::new();
     items.push(item);
     let mut body_owners = IndexVec::new();
@@ -53,9 +54,10 @@ fn binary_i32_add_ok() {
         items,
         bodies,
         body_owners,
+    };
     let ctx = make_ty_ctx();
     let def_map = empty_def_map();
     let mut solver = MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);
     let (_, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
-    assert_no_errors(&result.diagnostics);
+    assert_has_errors(&result.diagnostics);
 }
