@@ -1,7 +1,8 @@
 //! S11-T03: expand_crate processes multiple macro calls in sequence
 
+use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
 use glyim_core::interner::Interner;
-use glyim_meta::{Expander, MacroDef, MacroKind, BuiltinMacro};
+use glyim_diag::GlyimDiagnostic;
 use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_frontend::parse_to_syntax;
 
@@ -27,7 +28,7 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    let has_error = diags.iter().any(|d| d.is_error());
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
@@ -72,7 +73,7 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    let has_error = diags.iter().any(|d| d.is_error());
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
@@ -110,6 +111,7 @@ fn main() {}
         "Expected macro_rules definitions to be removed, got: {}",
         expanded_text
     );
+    let _ = diags;
 }
 
 /// Test that expand_crate with no macros returns the original tree.
@@ -125,7 +127,7 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    let has_error = diags.iter().any(|d| d.is_error());
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
@@ -161,6 +163,7 @@ fn main() {
         expanded_text.contains("fn") || !expanded_text.is_empty(),
         "Expected some output even with unmatched macro"
     );
+    let _ = diags;
 }
 
 /// Test that expand_crate with builtin macros registered works.
@@ -211,4 +214,5 @@ fn main() {
         "Expected line!() to be expanded away, got: {}",
         expanded_text
     );
+    let _ = diags;
 }

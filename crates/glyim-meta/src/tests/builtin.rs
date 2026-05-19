@@ -1,8 +1,9 @@
 //! S11-T02: Built-in file! and line! macros expand to correct values
 
+use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
 use glyim_core::interner::Interner;
-use glyim_meta::{Expander, MacroDef, MacroKind, BuiltinMacro};
-use glyim_span::{ByteIdx, ExpnData, ExpnKind, FileId, HygieneCtx, Span, SyntaxContext, Transparency};
+use glyim_diag::GlyimDiagnostic;
+use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 use glyim_frontend::parse_to_syntax;
 
 fn parse(source: &str) -> glyim_syntax::SyntaxNode {
@@ -42,6 +43,7 @@ fn main() {
         "Expected file!() to be expanded away, got: {}",
         expanded_text
     );
+    let _ = diags;
 }
 
 /// Test that line!() expands to a line number.
@@ -76,6 +78,7 @@ fn main() {
         "Expected line!() to be expanded away, got: {}",
         expanded_text
     );
+    let _ = diags;
 }
 
 /// Test that column!() expands to a column number.
@@ -109,6 +112,7 @@ fn main() {
         "Expected column!() to be expanded away, got: {}",
         expanded_text
     );
+    let _ = diags;
 }
 
 /// Test the expand() public API directly for the file! builtin.
@@ -197,7 +201,7 @@ fn builtin_line_expand_api() {
     // The expansion should be a numeric literal
     let expanded_text = result.expanded.unwrap().text().to_string();
     assert!(
-        expanded_text.chars().any(|c| c.is_ascii_digit()),
+        expanded_text.chars().any(|c: char| c.is_ascii_digit()),
         "Expected line!() expansion to contain a number, got: {}",
         expanded_text
     );

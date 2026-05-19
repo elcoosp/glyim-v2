@@ -1,7 +1,8 @@
 //! S11-T01: Declarative macro matches and substitutes correctly
 
+use crate::{Expander, MacroDef, MacroKind, BuiltinMacro};
 use glyim_core::interner::Interner;
-use glyim_meta::{Expander, MacroDef, MacroKind, BuiltinMacro};
+use glyim_diag::GlyimDiagnostic;
 use glyim_span::{FileId, HygieneCtx, Span, SyntaxContext, ByteIdx};
 use glyim_frontend::parse_to_syntax;
 
@@ -30,7 +31,7 @@ fn main() {
     let (expanded, diags) = expander.expand_crate(&root);
 
     // The expansion should succeed without errors
-    let has_error = diags.iter().any(|d| d.is_error());
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     // The expanded tree should contain "42" from the macro expansion
@@ -68,7 +69,7 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    let has_error = diags.iter().any(|d| d.is_error());
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
@@ -103,7 +104,7 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    let has_error = diags.iter().any(|d| d.is_error());
+    let _has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     // This test may produce errors depending on parser support for macro syntax,
     // but the expansion should still produce output containing the tokens
     let expanded_text = expanded.text().to_string();
@@ -144,6 +145,7 @@ fn main() {}
         "Expected expanded output to contain 'Foo', got: {}",
         expanded_text
     );
+    let _ = diags;
 }
 
 /// Test that substitution replaces $x with the captured value.
@@ -163,7 +165,7 @@ fn main() {
     let mut expander = Expander::new(&mut hygiene);
     let (expanded, diags) = expander.expand_crate(&root);
 
-    let has_error = diags.iter().any(|d| d.is_error());
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
     assert!(!has_error, "Expected no errors, got: {:?}", diags);
 
     let expanded_text = expanded.text().to_string();
