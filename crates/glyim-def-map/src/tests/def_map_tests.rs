@@ -516,13 +516,18 @@ fn t38_struct_with_fields_only_struct_collected() {
 
 #[test]
 fn t39_resolve_module_name_as_type() {
-    // A module name should not resolve as a type or value.
+    // Modules are declared in the type namespace of their parent, so they
+    // resolve as types. They should not appear in the value namespace.
     let (def_map, diags) = build_map("mod geometry {}");
     assert!(diags.is_empty());
     let result = resolve_path(&def_map, "geometry");
     assert!(
-        result.is_none(),
-        "module name should not resolve to type/value"
+        result.types.is_some(),
+        "module name should resolve as a type"
+    );
+    assert!(
+        result.values.is_none(),
+        "module name should not resolve as a value"
     );
 }
 
