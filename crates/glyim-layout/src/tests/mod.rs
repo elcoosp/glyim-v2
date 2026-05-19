@@ -1,3 +1,8 @@
+mod enum_layout;
 mod extended_tests;
+mod fn_abi;
 mod layout_tests;
+mod struct_layout;
 mod trait_objects;
+mod tuple_layout;
+mod vtable_layout;
