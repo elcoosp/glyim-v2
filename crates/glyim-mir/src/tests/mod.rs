@@ -28,3 +28,6 @@ mod switch_targets;
 mod terminator;
 mod terminator_edge_cases;
 mod var_debug;
+mod place_ty_tests;
+mod body_tests;
+mod switch_targets_tests;

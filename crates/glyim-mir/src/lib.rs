@@ -136,9 +136,9 @@ impl Place {
                             ctx.error_ty()
                         }
                     }
-                    TyKind::Adt(_adt_id, _substs) => {
-                        // FIXME: ADT field type lookup not yet implemented
-                        unimplemented!("ADT field type lookup not yet implemented")
+                    TyKind::Adt(adt_id, _substs) => {
+                        // Use TypeLookup::field_ty to get the field type
+                        ctx.field_ty(*adt_id, idx.to_raw() as usize)
                     }
                     _ => {
                         tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
@@ -153,7 +153,10 @@ impl Place {
                         ctx.error_ty()
                     }
                 },
-                ProjectionElem::Downcast(_) => ty,
+                ProjectionElem::Downcast(_variant_idx) => {
+                    tracing::warn!("Place::ty(): Downcast projection not fully implemented, returning original type");
+                    ty
+                }
             };
         }
         ty
