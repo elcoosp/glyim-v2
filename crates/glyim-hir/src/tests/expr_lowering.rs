@@ -1,9 +1,19 @@
-use crate::lower::{is_expr_node, lower_expr};
-use crate::{Expr, Pat, TypeRef};
+//! Tests for expression lowering.
+
+#![allow(unused_imports, dead_code)]
+
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
+use glyim_syntax::{SyntaxKind, SyntaxNode};
+use glyim_span::Span;
+use crate::{Body, Expr, ExprId, Pat, TypeRef};
+use std::collections::HashMap;
+
+use crate::lower::{is_expr_node, lower_expr};
+use crate::lower::lower_expr::lower_expr as lower_expr_fn;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
-use glyim_syntax::{SyntaxKind, SyntaxNode};
 
 fn parse_expr(src: &str) -> SyntaxNode {
     let full_src = format!("fn main() {{ {} }}", src);
@@ -30,27 +40,34 @@ fn parse_expr(src: &str) -> SyntaxNode {
         .clone()
 }
 
+fn make_body() -> Body {
+    Body {
+        owner: LocalDefId::from_raw(0),
+        exprs: IndexVec::new(),
+        pats: IndexVec::new(),
+        params: vec![],
+        span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
+    }
+}
+
 #[test]
 fn test_lower_closure_expr() {
     let node = parse_expr("|x: i32| x + 1");
     let mut interner = Interner::default();
-    let mut exprs = glyim_core::arena::IndexVec::new();
-    let mut pats = glyim_core::arena::IndexVec::new();
-    let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(
+    let mut body = make_body();
+    let eid = lower_expr_fn(
         &node,
         &mut interner,
-        &mut exprs,
-        &mut pats,
-        &mut expr_spans,
+        &mut body,
         &mut Vec::new(),
-        &std::collections::HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
-    match &exprs[eid] {
+    match &body.exprs[eid] {
         Expr::Closure { params, body: _ } => {
             assert_eq!(params.len(), 1);
-            let pat = &pats[params[0]];
+            let pat = &body.pats[params[0]];
             match pat {
                 Pat::Binding { name, .. } => assert_eq!(interner.resolve(*name), "x"),
                 Pat::Path(path) => assert_eq!(path.as_name(), Some(interner.intern("x"))),
@@ -66,20 +83,16 @@ fn test_lower_closure_expr() {
 fn test_lower_struct_expr() {
     let node = parse_expr("Point { x, y: 20 }");
     let mut interner = Interner::default();
-    let mut exprs = glyim_core::arena::IndexVec::new();
-    let mut pats = glyim_core::arena::IndexVec::new();
-    let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(
+    let mut body = make_body();
+    let eid = lower_expr_fn(
         &node,
         &mut interner,
-        &mut exprs,
-        &mut pats,
-        &mut expr_spans,
+        &mut body,
         &mut Vec::new(),
-        &std::collections::HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
-    match &exprs[eid] {
+    match &body.exprs[eid] {
         Expr::Struct {
             path,
             fields,
@@ -101,20 +114,16 @@ fn test_lower_struct_expr() {
 fn test_lower_range_expr() {
     let node = parse_expr("1..10");
     let mut interner = Interner::default();
-    let mut exprs = glyim_core::arena::IndexVec::new();
-    let mut pats = glyim_core::arena::IndexVec::new();
-    let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(
+    let mut body = make_body();
+    let eid = lower_expr_fn(
         &node,
         &mut interner,
-        &mut exprs,
-        &mut pats,
-        &mut expr_spans,
+        &mut body,
         &mut Vec::new(),
-        &std::collections::HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
-    match &exprs[eid] {
+    match &body.exprs[eid] {
         Expr::Range {
             start,
             end,
@@ -136,20 +145,16 @@ fn test_lower_index_expr() {}
 fn test_lower_cast_expr() {
     let node = parse_expr("x as i32");
     let mut interner = Interner::default();
-    let mut exprs = glyim_core::arena::IndexVec::new();
-    let mut pats = glyim_core::arena::IndexVec::new();
-    let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(
+    let mut body = make_body();
+    let eid = lower_expr_fn(
         &node,
         &mut interner,
-        &mut exprs,
-        &mut pats,
-        &mut expr_spans,
+        &mut body,
         &mut Vec::new(),
-        &std::collections::HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
-    match &exprs[eid] {
+    match &body.exprs[eid] {
         Expr::Cast { expr, ty } => match ty {
             TypeRef::Path(p) => assert_eq!(p.as_name(), Some(interner.intern("i32"))),
             _ => panic!("expected Path type"),
