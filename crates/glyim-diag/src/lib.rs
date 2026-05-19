@@ -319,9 +319,21 @@ impl Extend<GlyimDiagnostic> for DiagSink {
 #[macro_export]
 macro_rules! stub {
     ($msg:expr) => {
-        compile_error!(concat!("STUB: ", $msg, " - Implementation required before v0.2.0"))
+        unimplemented!(concat!("STUB: ", $msg, " - Implementation required before v0.2.0"))
     };
     ($fmt:expr, $($arg:tt)*) => {
-        compile_error!(&format!(concat!("STUB: ", $fmt), $($arg)*))
+        unimplemented!("{}", &format!(concat!("STUB: ", $fmt), $($arg)*))
     };
 }
+
+#[macro_export]
+macro_rules! stub_impl {
+    ($msg:expr) => {
+        unimplemented!(concat!("STUB (impl): ", $msg, " - Implementation required before v0.2.0"))
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        unimplemented!("{}", &format!(concat!("STUB (impl): ", $fmt), $($arg)*))
+    };
+}
+#[cfg(test)]
+mod tests;

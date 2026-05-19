@@ -7,3 +7,6 @@ version.workspace = true
 glyim-span = { workspace = true }
 miette = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }
