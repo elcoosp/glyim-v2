@@ -437,6 +437,3 @@ impl TypeckResult {
         &[]
     }
 }
-
-=== REMOVE STRAY MARKER LINES FROM LIB.RS ===
-
