@@ -363,3 +363,7 @@ fn find_trait_default_body(
     }
     None
 }
+=== REMOVE STRAY '-e' FROM LIB.RS AND FINALIZE ===
+-e 
+#[cfg(test)]
+mod tests;
