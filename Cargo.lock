@@ -792,6 +792,7 @@ name = "glyim-diag"
 version = "0.1.0"
 dependencies = [
  "glyim-span",
+ "glyim-test",
  "miette",
  "tracing",
 ]
