@@ -722,7 +722,7 @@ impl InferenceTable {
         }
         match ctx.ty_kind(ty) {
             TyKind::Infer(InferVar::Ty(var)) => {
-                if visited.contains(&var) {
+                if visited.contains(var) {
                     let diag = GlyimDiagnostic::type_error(
                         glyim_span::Span::DUMMY,
                         "infinite type cycle detected while resolving inference variables"
