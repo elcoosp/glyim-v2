@@ -26,6 +26,7 @@ pub struct ResolvedImplHeader {
 struct RegisteredImpl {
     trait_def_id: TraitDefId,
     self_ty: Ty,
+    self_type_name: Option<Name>,
     is_blanket: bool,
     polarity: ImplPolarity,
     span: Span,
@@ -51,7 +52,7 @@ impl<'a> CoherenceChecker<'a> {
         header: ResolvedImplHeader,
         ctx: &TyCtxMut,
     ) -> Result<(), Vec<GlyimDiagnostic>> {
-        if header.trait_def_id.is_some() {
+        if header.trait_def_id.is_some() || header.trait_name.is_some() {
             self.check_orphan_rule(&header)?;
         }
 
@@ -69,11 +70,13 @@ impl<'a> CoherenceChecker<'a> {
         &self,
         header: &ResolvedImplHeader,
     ) -> Result<(), Vec<GlyimDiagnostic>> {
+        // Only true inherent impls (no trait_name AND no trait_def_id) are always local.
+        // Unresolved traits (trait_name is Some but trait_def_id is None) are NOT local.
         let trait_is_local = header
             .trait_name
             .and_then(|n| self.def_map.modules[self.def_map.root].scope.resolve(n))
             .is_some()
-            || header.trait_def_id.is_none(); // Inherent impls are always local
+            || (header.trait_name.is_none() && header.trait_def_id.is_none());
 
         let self_type_is_local = header
             .self_type_name
@@ -87,7 +90,7 @@ impl<'a> CoherenceChecker<'a> {
         let trait_str = header
             .trait_def_id
             .map(|id| format!("trait #{}", id.to_raw()))
-            .unwrap_or_else(|| "<inherent>".to_string());
+            .unwrap_or_else(|| "<unresolved>".to_string());
         let self_str = format!("{:?}", header.self_ty);
 
         let msg = format!(
@@ -95,6 +98,41 @@ impl<'a> CoherenceChecker<'a> {
             trait_str, self_str,
         );
         Err(vec![GlyimDiagnostic::type_error(header.span, msg)])
+    }
+
+    fn self_tys_overlap(
+        &self,
+        old: &RegisteredImpl,
+        new: &ResolvedImplHeader,
+        ctx: &TyCtxMut,
+    ) -> bool {
+        // Direct Ty comparison
+        if old.self_ty == new.self_ty {
+            return true;
+        }
+
+        // Name-based comparison
+        if let (Some(a), Some(b)) = (old.self_type_name, new.self_type_name) {
+            if a == b {
+                return true;
+            }
+        }
+
+        // Kind-based comparison for when types aren't content-interned
+        let old_kind = ctx.ty_kind(old.self_ty);
+        let new_kind = ctx.ty_kind(new.self_ty);
+        match (old_kind, new_kind) {
+            (TyKind::Adt(a, _), TyKind::Adt(b, _)) => a == b,
+            (TyKind::Int(a), TyKind::Int(b)) => a == b,
+            (TyKind::Uint(a), TyKind::Uint(b)) => a == b,
+            (TyKind::Float(a), TyKind::Float(b)) => a == b,
+            (TyKind::Param(a), TyKind::Param(b)) => a.index == b.index,
+            (TyKind::Bool, TyKind::Bool)
+            | (TyKind::Char, TyKind::Char)
+            | (TyKind::Never, TyKind::Never)
+            | (TyKind::String, TyKind::String) => true,
+            _ => false,
+        }
     }
 
     fn check_overlap(
@@ -106,21 +144,15 @@ impl<'a> CoherenceChecker<'a> {
         let existing = self.registered.get(&trait_def_id)?;
 
         for old in existing {
-            if old.polarity != new_header.polarity {
-                continue;
-            }
-
-            // If self types are exactly the same, they overlap.
-            if old.self_ty == new_header.self_ty {
+            // Opposite polarities still conflict (can't have both impl and !impl)
+            if self.self_tys_overlap(old, new_header, ctx) {
                 return Some(self.make_overlap_diag(new_header, old));
             }
 
             let new_is_blanket = matches!(ctx.ty_kind(new_header.self_ty), TyKind::Param(_));
             let old_is_blanket = matches!(ctx.ty_kind(old.self_ty), TyKind::Param(_));
 
-            // If both are blanket (type-param) impls with different self types,
-            // conservatively assume they don't overlap for now. Real overlap
-            // detection would require unification, which isn't available here.
+            // Two blanket impls: conservatively allow if different param names
             if new_is_blanket && old_is_blanket {
                 continue;
             }
@@ -130,7 +162,7 @@ impl<'a> CoherenceChecker<'a> {
                 return Some(self.make_overlap_diag(new_header, old));
             }
 
-            // Conservative: if it has generic params, it might be a blanket impl
+            // Generic params might make it a blanket impl
             if !new_header.generic_param_names.is_empty() {
                 return Some(self.make_overlap_diag(new_header, old));
             }
@@ -159,15 +191,17 @@ impl<'a> CoherenceChecker<'a> {
         vec![diag]
     }
 
-    /// Compatibility helper for tests.
+    /// Compatibility helper for tests — actually uses the polarity parameter.
     #[allow(dead_code)]
     pub(crate) fn check_and_register_impl_compat(
         &mut self,
         header: &ResolvedImplHeader,
-        _polarity: ImplPolarity,
+        polarity: ImplPolarity,
         ctx: &TyCtxMut,
     ) -> Result<(), Vec<GlyimDiagnostic>> {
-        self.check_and_register(header.clone(), ctx)
+        let mut header = header.clone();
+        header.polarity = polarity;
+        self.check_and_register(header, ctx)
     }
 
     fn register(&mut self, header: ResolvedImplHeader) {
@@ -190,6 +224,7 @@ impl<'a> CoherenceChecker<'a> {
             .push(RegisteredImpl {
                 trait_def_id,
                 self_ty: header.self_ty,
+                self_type_name: header.self_type_name,
                 is_blanket,
                 polarity,
                 span: header.span,

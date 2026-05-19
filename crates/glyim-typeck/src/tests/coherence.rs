@@ -1,18 +1,15 @@
-use super::common::make_ty_ctx;
+use super::common::{global_interner, make_ty_ctx};
 use crate::coherence::{CoherenceChecker, ResolvedImplHeader};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
-/// Tests for coherence and orphan rules (Stream V04).
 use glyim_core::interner::Interner;
+use glyim_core::primitives::Visibility;
 use glyim_core::primitives::*;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::{ImplItem, Path, TypeRef};
 use glyim_span::Span;
 use glyim_type::{ImplPolarity, ParamTy, Substitution, Ty, TyCtxMut, TyKind};
 
-use super::common::global_interner;
-
-// Helper: convert ImplItem to ResolvedImplHeader for testing
 fn impl_item_to_header(
     impl_item: &ImplItem,
     _interner: &mut Interner,
@@ -30,12 +27,9 @@ fn impl_item_to_header(
         None
     };
 
-    // Resolve self_ty manually without calling resolve_type_ref
-    // to avoid cross-interner issues
     let self_ty = match &impl_item.self_ty {
         TypeRef::Path(p) => {
             if let Some(name) = p.as_name() {
-                // Check if it's a generic param
                 let is_generic = impl_item.generic_params.iter().any(|gp| gp.name == name);
                 if is_generic {
                     let idx = impl_item
@@ -49,7 +43,6 @@ fn impl_item_to_header(
                     let substs = ctx.intern_substitution(vec![]);
                     ctx.mk_ty(TyKind::Adt(adt_id, substs))
                 } else {
-                    // Try primitives
                     let s = ctx.name_str(name);
                     match s.as_ref() {
                         "i8" => ctx.mk_ty(TyKind::Int(IntTy::I8)),
@@ -100,7 +93,6 @@ fn impl_item_to_header(
     }
 }
 
-// Test helpers
 fn build_def_map(
     interner: &mut Interner,
     krate: CrateId,
@@ -163,7 +155,6 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
     }
 }
 
-// Tests
 #[test]
 fn t01_duplicate_impl_should_error() {
     let local_krate = CrateId::from_raw(0);
@@ -272,7 +263,7 @@ fn t04_valid_orphan_foreign_trait_local_type() {
 fn t05_negative_impl_overrides_auto_trait() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = global_interner();
-    let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
+    let def_map = build_def_map(&mut interner, local_krate, &["MyType", "Send"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
@@ -289,7 +280,7 @@ fn t05_negative_impl_overrides_auto_trait() {
 fn t06_duplicate_with_different_polarity_error() {
     let local_krate = CrateId::from_raw(0);
     let mut interner = global_interner();
-    let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
+    let def_map = build_def_map(&mut interner, local_krate, &["MyType", "Send"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
