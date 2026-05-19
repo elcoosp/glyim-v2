@@ -7,8 +7,16 @@ use glyim_core::primitives::Visibility;
 #[test]
 fn test_empty_source() {
     let (def_map, diags) = parse_and_build("");
-    assert!(diags.is_empty(), "expected no diagnostics for empty source, got: {:?}", diags);
-    assert_eq!(def_map.modules.len(), 1, "expected exactly one module (root)");
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics for empty source, got: {:?}",
+        diags
+    );
+    assert_eq!(
+        def_map.modules.len(),
+        1,
+        "expected exactly one module (root)"
+    );
     let root = &def_map.modules[def_map.root];
     assert!(root.children.is_empty(), "root should have no children");
     assert!(root.scope.types.is_empty(), "root should have no types");
@@ -23,9 +31,17 @@ fn test_empty_source() {
 #[test]
 fn test_single_fn() {
     let (def_map, diags) = parse_and_build("fn main() {}");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
-    assert_eq!(root.scope.values.len(), 1, "expected one value in root scope");
+    assert_eq!(
+        root.scope.values.len(),
+        1,
+        "expected one value in root scope"
+    );
     let (name, _id, vis, _span) = &root.scope.values[0];
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "main", "expected function named 'main'");
@@ -39,17 +55,33 @@ fn test_single_fn() {
 #[test]
 fn test_pub_fn_visibility() {
     let (def_map, diags) = parse_and_build("pub fn foo() {}");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
-    assert_eq!(root.scope.values.len(), 1, "expected one value in root scope");
+    assert_eq!(
+        root.scope.values.len(),
+        1,
+        "expected one value in root scope"
+    );
     let (_name, _id, vis, _span) = &root.scope.values[0];
-    assert_eq!(*vis, Visibility::Public, "pub fn should have Public visibility");
+    assert_eq!(
+        *vis,
+        Visibility::Public,
+        "pub fn should have Public visibility"
+    );
 }
 
 #[test]
 fn test_struct_in_types_namespace() {
     let (def_map, diags) = parse_and_build("struct Foo;");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type in root scope");
     assert!(
@@ -69,16 +101,28 @@ fn test_struct_in_types_namespace() {
 #[test]
 fn test_pub_struct_visibility() {
     let (def_map, diags) = parse_and_build("pub struct Foo;");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     let (_name, _id, vis, _span) = &root.scope.types[0];
-    assert_eq!(*vis, Visibility::Public, "pub struct should have Public visibility");
+    assert_eq!(
+        *vis,
+        Visibility::Public,
+        "pub struct should have Public visibility"
+    );
 }
 
 #[test]
 fn test_enum_in_types_namespace() {
     let (def_map, diags) = parse_and_build("enum Color { Red, Green, Blue }");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type in root scope");
     let (name, _, _, _) = &root.scope.types[0];
@@ -89,9 +133,17 @@ fn test_enum_in_types_namespace() {
 #[test]
 fn test_const_in_values_namespace() {
     let (def_map, diags) = parse_and_build("const MAX: i32 = 100;");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
-    assert_eq!(root.scope.values.len(), 1, "expected one value in root scope");
+    assert_eq!(
+        root.scope.values.len(),
+        1,
+        "expected one value in root scope"
+    );
     let (name, _, _, _) = &root.scope.values[0];
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "MAX");
@@ -100,9 +152,17 @@ fn test_const_in_values_namespace() {
 #[test]
 fn test_static_in_values_namespace() {
     let (def_map, diags) = parse_and_build("static COUNT: i32 = 0;");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
-    assert_eq!(root.scope.values.len(), 1, "expected one value in root scope");
+    assert_eq!(
+        root.scope.values.len(),
+        1,
+        "expected one value in root scope"
+    );
     let (name, _, _, _) = &root.scope.values[0];
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "COUNT");
@@ -117,7 +177,11 @@ fn test_multiple_items() {
         const X: i32 = 1;
     "#;
     let (def_map, diags) = parse_and_build(source);
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.values.len(), 2, "expected two values (main, X)");
     assert_eq!(root.scope.types.len(), 2, "expected two types (Foo, Bar)");
@@ -131,19 +195,27 @@ fn test_inline_module() {
         }
     "#;
     let (def_map, diags) = parse_and_build(source);
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.children.len(), 1, "root should have one child module");
 
-    let inner = find_child_module(&def_map, def_map.root, "inner")
-        .expect("should find inner module");
+    let inner =
+        find_child_module(&def_map, def_map.root, "inner").expect("should find inner module");
     let inner_data = &def_map.modules[inner];
     assert_eq!(
         inner_data.parent,
         Some(def_map.root),
         "inner's parent should be root"
     );
-    assert_eq!(inner_data.scope.values.len(), 1, "inner should have one value");
+    assert_eq!(
+        inner_data.scope.values.len(),
+        1,
+        "inner should have one value"
+    );
     assert!(
         matches!(inner_data.origin, ModuleOrigin::Inline { .. }),
         "inner should be Inline origin"
@@ -160,16 +232,27 @@ fn test_nested_inline_modules() {
         }
     "#;
     let (def_map, diags) = parse_and_build(source);
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
 
-    let outer = find_child_module(&def_map, def_map.root, "outer")
-        .expect("should find outer module");
-    let inner = find_child_module(&def_map, outer, "inner")
-        .expect("should find inner module");
+    let outer =
+        find_child_module(&def_map, def_map.root, "outer").expect("should find outer module");
+    let inner = find_child_module(&def_map, outer, "inner").expect("should find inner module");
 
     let inner_data = &def_map.modules[inner];
-    assert_eq!(inner_data.parent, Some(outer), "inner's parent should be outer");
-    assert_eq!(inner_data.scope.values.len(), 1, "inner should have one value");
+    assert_eq!(
+        inner_data.parent,
+        Some(outer),
+        "inner's parent should be outer"
+    );
+    assert_eq!(
+        inner_data.scope.values.len(),
+        1,
+        "inner should have one value"
+    );
 
     let outer_data = &def_map.modules[outer];
     assert_eq!(
@@ -225,9 +308,16 @@ fn test_duplicate_module_error() {
         mod foo { fn b() {} }
     "#;
     let (_def_map, diags) = parse_and_build(source);
-    assert!(!diags.is_empty(), "expected diagnostics for duplicate module");
+    assert!(
+        !diags.is_empty(),
+        "expected diagnostics for duplicate module"
+    );
     let has_dup = diags.iter().any(|d| d.message.contains("duplicate module"));
-    assert!(has_dup, "expected 'duplicate module' error, got: {:?}", diags);
+    assert!(
+        has_dup,
+        "expected 'duplicate module' error, got: {:?}",
+        diags
+    );
 }
 
 #[test]
@@ -268,7 +358,11 @@ fn test_same_name_different_namespaces() {
 #[test]
 fn test_type_alias_in_types_namespace() {
     let (def_map, diags) = parse_and_build("type Point = (i32, i32);");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type");
     let (name, _, _, _) = &root.scope.types[0];
@@ -279,15 +373,27 @@ fn test_type_alias_in_types_namespace() {
 #[test]
 fn test_impl_in_types_namespace() {
     let (def_map, diags) = parse_and_build("impl Foo { fn bar() {} }");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
-    assert_eq!(root.scope.types.len(), 1, "impl should be in types namespace");
+    assert_eq!(
+        root.scope.types.len(),
+        1,
+        "impl should be in types namespace"
+    );
 }
 
 #[test]
 fn test_trait_def_in_types_namespace() {
     let (def_map, diags) = parse_and_build("trait Display { fn fmt(); }");
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type");
     let (name, _, _, _) = &root.scope.types[0];
@@ -361,12 +467,24 @@ fn test_module_with_items() {
         }
     "#;
     let (def_map, diags) = parse_and_build(source);
-    assert!(diags.is_empty(), "expected no diagnostics, got: {:?}", diags);
-    let net = find_child_module(&def_map, def_map.root, "network")
-        .expect("should find network module");
+    assert!(
+        diags.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        diags
+    );
+    let net =
+        find_child_module(&def_map, def_map.root, "network").expect("should find network module");
     let net_data = &def_map.modules[net];
-    assert_eq!(net_data.scope.types.len(), 1, "network should have one type");
-    assert_eq!(net_data.scope.values.len(), 2, "network should have two values");
+    assert_eq!(
+        net_data.scope.types.len(),
+        1,
+        "network should have one type"
+    );
+    assert_eq!(
+        net_data.scope.values.len(),
+        2,
+        "network should have two values"
+    );
 
     let connect_name = def_map.interner.intern("connect");
     let connect_vis = net_data

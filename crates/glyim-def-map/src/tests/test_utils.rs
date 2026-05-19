@@ -1,6 +1,6 @@
 //! Shared test utilities for glyim-def-map tests.
 
-use crate::{build_def_map, CrateDefMap, ModuleId, Resolver};
+use crate::{CrateDefMap, ModuleId, Resolver, build_def_map};
 use glyim_core::def_id::CrateId;
 use glyim_diag::GlyimDiagnostic;
 use glyim_frontend::parse_to_syntax;

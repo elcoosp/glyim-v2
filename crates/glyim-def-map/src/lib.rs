@@ -760,7 +760,11 @@ pub(crate) fn is_accessible_from(
 ///
 /// Walks the parent chain from `module` upward; if `ancestor` is encountered,
 /// the module is a descendant.
-fn is_descendant_of(module: ModuleId, ancestor: ModuleId, modules: &IndexVec<ModuleId, ModuleData>) -> bool {
+fn is_descendant_of(
+    module: ModuleId,
+    ancestor: ModuleId,
+    modules: &IndexVec<ModuleId, ModuleData>,
+) -> bool {
     let mut current = module;
     loop {
         if current == ancestor {
@@ -792,14 +796,14 @@ fn validate_import_visibility(
             if let Some(&defining_mod) = def_to_module.get(def_id)
                 && !is_accessible_from(*vis, defining_mod, module_id, modules)
             {
-                    diagnostics.push(GlyimDiagnostic::parse_error(
-                        *span,
-                        format!(
-                            "`{}` is private and not accessible from this module",
-                            interner.resolve(*name)
-                        ),
-                    ));
-                }
+                diagnostics.push(GlyimDiagnostic::parse_error(
+                    *span,
+                    format!(
+                        "`{}` is private and not accessible from this module",
+                        interner.resolve(*name)
+                    ),
+                ));
+            }
         }
 
         // Check value namespace items
@@ -807,14 +811,14 @@ fn validate_import_visibility(
             if let Some(&defining_mod) = def_to_module.get(def_id)
                 && !is_accessible_from(*vis, defining_mod, module_id, modules)
             {
-                    diagnostics.push(GlyimDiagnostic::parse_error(
-                        *span,
-                        format!(
-                            "`{}` is private and not accessible from this module",
-                            interner.resolve(*name)
-                        ),
-                    ));
-                }
+                diagnostics.push(GlyimDiagnostic::parse_error(
+                    *span,
+                    format!(
+                        "`{}` is private and not accessible from this module",
+                        interner.resolve(*name)
+                    ),
+                ));
+            }
         }
     }
 }

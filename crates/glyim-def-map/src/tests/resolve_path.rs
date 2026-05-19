@@ -68,7 +68,10 @@ fn test_resolve_simple_name_in_same_module() {
     let path = simple_path("foo", &def_map.interner);
     let result = resolver.resolve_path(&path);
     assert!(result.values.is_some(), "should resolve 'foo' as a value");
-    assert!(result.types.is_none(), "foo should not be in types namespace");
+    assert!(
+        result.types.is_none(),
+        "foo should not be in types namespace"
+    );
 }
 
 #[test]
@@ -79,7 +82,10 @@ fn test_resolve_struct_as_type() {
     let path = simple_path("Foo", &def_map.interner);
     let result = resolver.resolve_path(&path);
     assert!(result.types.is_some(), "should resolve 'Foo' as a type");
-    assert!(result.values.is_none(), "Foo should not be in values namespace");
+    assert!(
+        result.values.is_none(),
+        "Foo should not be in values namespace"
+    );
 }
 
 #[test]
@@ -89,7 +95,10 @@ fn test_resolve_self_path() {
     let resolver = resolver_for(&def_map, def_map.root);
     let path = self_path("foo", &def_map.interner);
     let result = resolver.resolve_path(&path);
-    assert!(result.values.is_some(), "should resolve 'self::foo' as a value");
+    assert!(
+        result.values.is_some(),
+        "should resolve 'self::foo' as a value"
+    );
 }
 
 #[test]
@@ -101,8 +110,8 @@ fn test_resolve_super_path_from_child() {
         }
     "#;
     let (def_map, _diags) = parse_and_build(source);
-    let child = find_child_module(&def_map, def_map.root, "child")
-        .expect("should find child module");
+    let child =
+        find_child_module(&def_map, def_map.root, "child").expect("should find child module");
     let resolver = resolver_for(&def_map, child);
     let path = super_path("parent_fn", &def_map.interner);
     let result = resolver.resolve_path(&path);

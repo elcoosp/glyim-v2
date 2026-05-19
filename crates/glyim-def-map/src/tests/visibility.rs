@@ -1,7 +1,7 @@
 //! S10-T03: Visibility checks prevent access to private items
 
 use super::test_utils::{find_child_module, parse_and_build};
-use crate::{is_accessible_from, CrateDefMap, ModuleId};
+use crate::{CrateDefMap, ModuleId, is_accessible_from};
 use glyim_core::primitives::Visibility;
 
 /// Helper: check if a named item's visibility allows access from a given module.
@@ -36,8 +36,8 @@ fn test_public_item_accessible_from_child_module() {
         }
     "#;
     let (def_map, _diags) = parse_and_build(source);
-    let child = find_child_module(&def_map, def_map.root, "child")
-        .expect("should find child module");
+    let child =
+        find_child_module(&def_map, def_map.root, "child").expect("should find child module");
     assert!(
         item_is_accessible(&def_map, def_map.root, "public_fn", child),
         "public item should be accessible from child module"
@@ -84,8 +84,8 @@ fn test_inherited_item_accessible_from_descendant() {
         }
     "#;
     let (def_map, _diags) = parse_and_build(source);
-    let child = find_child_module(&def_map, def_map.root, "child")
-        .expect("should find child module");
+    let child =
+        find_child_module(&def_map, def_map.root, "child").expect("should find child module");
     assert!(
         item_is_accessible(&def_map, def_map.root, "parent_fn", child),
         "inherited-visibility item should be accessible from child module"
@@ -116,7 +116,12 @@ fn test_is_accessible_from_public() {
     let source = "";
     let (def_map, _diags) = parse_and_build(source);
     assert!(
-        is_accessible_from(Visibility::Public, def_map.root, def_map.root, &def_map.modules),
+        is_accessible_from(
+            Visibility::Public,
+            def_map.root,
+            def_map.root,
+            &def_map.modules
+        ),
         "Public items should always be accessible"
     );
 }
@@ -144,8 +149,7 @@ fn test_is_accessible_from_inherited_child_module() {
         }
     "#;
     let (def_map, _diags) = parse_and_build(source);
-    let child = find_child_module(&def_map, def_map.root, "child")
-        .expect("should find child");
+    let child = find_child_module(&def_map, def_map.root, "child").expect("should find child");
     assert!(
         is_accessible_from(Visibility::Inherited, def_map.root, child, &def_map.modules),
         "Inherited items should be accessible from descendant modules"
@@ -182,10 +186,10 @@ fn test_module_visibility_tracked() {
         }
     "#;
     let (def_map, _diags) = parse_and_build(source);
-    let pub_mod = find_child_module(&def_map, def_map.root, "public_mod")
-        .expect("should find public_mod");
-    let priv_mod = find_child_module(&def_map, def_map.root, "private_mod")
-        .expect("should find private_mod");
+    let pub_mod =
+        find_child_module(&def_map, def_map.root, "public_mod").expect("should find public_mod");
+    let priv_mod =
+        find_child_module(&def_map, def_map.root, "private_mod").expect("should find private_mod");
 
     assert_eq!(
         def_map.modules[pub_mod].visibility,
