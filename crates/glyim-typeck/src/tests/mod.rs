@@ -1,78 +1,38 @@
-// Auto-generated mod.rs including all test modules
-mod array;
+// Auto-generated test modules
+=== CLEAN UP MOD.RS ===
 mod array;
 mod assign;
-mod assign;
-mod binary_error;
 mod binary_error;
 mod binary_i32;
-mod binary_i32;
 mod break_continue;
-mod cast;
-mod break_continue;
-mod coherence;
 mod cast;
 mod coherence;
 mod default_methods;
 mod edge_cases;
-mod default_methods;
 mod empty_crate;
-mod edge_cases;
 mod fn_sig_inst;
-mod empty_crate;
 mod fn_unit;
 mod function_call;
-mod fn_sig_inst;
 mod harness_tests;
-mod fn_unit;
 mod inference;
-mod function_call;
 mod match_expr;
-mod harness_tests;
 mod method_call;
-mod inference;
 mod multi_seg_path;
-mod match_expr;
 mod obligation;
-mod method_call;
 mod pattern_matching;
 mod projection_typeck;
-mod multi_seg_path;
 mod ref_mut;
-mod obligation;
 mod ref_x;
-mod pattern_matching;
 mod return_stmt;
-mod projection_typeck;
 mod struct_field;
-mod ref_mut;
 mod thir_body;
-mod ref_x;
 mod tuple_index;
-mod return_stmt;
 mod typeck_result_accessors;
-mod struct_field;
 mod where_clause;
-mod thir_body;
 mod while_loop;
-mod tuple_index;
-mod ===;
-mod typeck_result_accessors;
-mod RECONSTRUCT;
-mod where_clause;
-mod FULL;
-mod while_loop;
-mod MOD.RS;
+mod CLEAN;
+mod UP;
 
-mod WITH;
-// Helper modules (not test modules but needed for tests)
-mod ALL;
-mod common;
-mod TEST;
-mod test_utils;
-mod MODULES;
-mod ===;
-
-// Helper modules (not test modules but needed for tests)
+// Helper modules
 mod common;
 mod test_utils;
