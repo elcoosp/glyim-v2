@@ -37,7 +37,16 @@ fn test_lower_closure_expr() {
     let mut exprs = glyim_core::arena::IndexVec::new();
     let mut pats = glyim_core::arena::IndexVec::new();
     let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
+    let eid = lower_expr(
+        &node,
+        &mut interner,
+        &mut exprs,
+        &mut pats,
+        &mut expr_spans,
+        &mut Vec::new(),
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
     match &exprs[eid] {
         Expr::Closure { params, body: _ } => {
             assert_eq!(params.len(), 1);
@@ -60,7 +69,16 @@ fn test_lower_struct_expr() {
     let mut exprs = glyim_core::arena::IndexVec::new();
     let mut pats = glyim_core::arena::IndexVec::new();
     let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
+    let eid = lower_expr(
+        &node,
+        &mut interner,
+        &mut exprs,
+        &mut pats,
+        &mut expr_spans,
+        &mut Vec::new(),
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
     match &exprs[eid] {
         Expr::Struct {
             path,
@@ -86,7 +104,16 @@ fn test_lower_range_expr() {
     let mut exprs = glyim_core::arena::IndexVec::new();
     let mut pats = glyim_core::arena::IndexVec::new();
     let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
+    let eid = lower_expr(
+        &node,
+        &mut interner,
+        &mut exprs,
+        &mut pats,
+        &mut expr_spans,
+        &mut Vec::new(),
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
     match &exprs[eid] {
         Expr::Range {
             start,
@@ -103,11 +130,7 @@ fn test_lower_range_expr() {
 
 #[test]
 #[ignore = "Parser does not produce IndexExpr node for arr[0]; needs parser fix"]
-fn test_lower_index_expr() {
-    // This test is ignored because the current parser does not produce a proper IndexExpr node for array indexing.
-    // It likely produces a CallExpr or something else. The lowering code works, but the test's CST is not as expected.
-    // To be re-enabled after parser improvements.
-}
+fn test_lower_index_expr() {}
 
 #[test]
 fn test_lower_cast_expr() {
@@ -116,7 +139,16 @@ fn test_lower_cast_expr() {
     let mut exprs = glyim_core::arena::IndexVec::new();
     let mut pats = glyim_core::arena::IndexVec::new();
     let mut expr_spans = glyim_core::arena::IndexVec::new();
-    let eid = lower_expr(&node, &mut interner, &mut exprs, &mut pats, &mut expr_spans).unwrap();
+    let eid = lower_expr(
+        &node,
+        &mut interner,
+        &mut exprs,
+        &mut pats,
+        &mut expr_spans,
+        &mut Vec::new(),
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
     match &exprs[eid] {
         Expr::Cast { expr, ty } => match ty {
             TypeRef::Path(p) => assert_eq!(p.as_name(), Some(interner.intern("i32"))),

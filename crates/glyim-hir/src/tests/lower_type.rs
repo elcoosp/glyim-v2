@@ -32,7 +32,7 @@ fn test_type_ref_ref() {
     let ty = get_fn_return_type_opt("fn f() -> &bool {}").expect("should have return type");
     match ty {
         TypeRef::Ref { inner, mutability } => {
-            assert_eq!(mutability, Mutability::Not);
+            assert_eq!(*mutability, Mutability::Not);
             match *inner {
                 TypeRef::Path(_) => {}
                 other => panic!("Expected Path inside ref, got {:?}", other),

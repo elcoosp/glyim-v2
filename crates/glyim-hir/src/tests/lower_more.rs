@@ -95,7 +95,7 @@ fn test_comparison_operators() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { a < b }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(bin_id), ..
         } => match &body.exprs[*bin_id] {
@@ -112,7 +112,7 @@ fn test_bool_literal_false() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { false }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(tail_id),
             ..
@@ -130,7 +130,7 @@ fn test_unary_deref() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { *x }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block {
             tail: Some(tail_id),
             ..

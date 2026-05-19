@@ -29,11 +29,11 @@ fn test_chained_binary_expression() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { a + b + c }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert!(stmts.is_empty());
             let expr_id = tail.unwrap();
-            match &body.exprs[expr_id] {
+            match &body.exprs[*expr_id] {
                 Expr::Binary { op, .. } => {
                     // top-level op should be +
                     assert_eq!(*op, BinOp::Add);
@@ -50,11 +50,11 @@ fn test_if_without_else() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { if true { 42 } }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert!(stmts.is_empty());
             let if_id = tail.unwrap();
-            match &body.exprs[if_id] {
+            match &body.exprs[*if_id] {
                 Expr::If { else_branch, .. } => {
                     assert!(else_branch.is_none(), "should have no else branch");
                 }
@@ -70,7 +70,7 @@ fn test_block_multiple_stmts_and_tail() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { 1; 2; 3 }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert_eq!(stmts.len(), 2, "should have two statements");
             assert!(tail.is_some(), "should have tail expression");
@@ -84,11 +84,11 @@ fn test_nested_blocks() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { { 1 } }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             assert!(stmts.is_empty());
             let inner_id = tail.unwrap();
-            match &body.exprs[inner_id] {
+            match &body.exprs[*inner_id] {
                 Expr::Block {
                     stmts: inner_stmts,
                     tail: inner_tail,
@@ -125,10 +125,10 @@ fn test_boolean_literals() {
     let (hir, _interner, body_id) = get_body_hir("fn f() { true }");
     let body = &hir.bodies[body_id];
     let block_id = last_expr_id(body);
-    match &body.exprs[block_id] {
+    match &body.exprs[*block_id] {
         Expr::Block { stmts, tail } => {
             let lit_id = tail.unwrap();
-            match &body.exprs[lit_id] {
+            match &body.exprs[*lit_id] {
                 Expr::Literal(Literal::Bool(true)) => {}
                 other => panic!("Expected Bool(true), got {:?}", other),
             }

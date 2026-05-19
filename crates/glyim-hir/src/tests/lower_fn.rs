@@ -49,7 +49,7 @@ fn test_fn_item_with_params() {
             assert!(!body.exprs.is_empty(), "body should have expressions");
             assert!(hir.body_owners.get(body_id).is_some());
             let block_id = last_expr_id(body);
-            match &body.exprs[block_id] {
+            match &body.exprs[*block_id] {
                 Expr::Block { stmts, tail } => {
                     assert!(stmts.is_empty(), "should have no statements");
                     assert!(tail.is_some(), "should have tail expression (a+b)");
@@ -84,7 +84,7 @@ fn test_fn_item_no_params() {
                 "body should have exactly one block expression"
             );
             let block_id = last_expr_id(body);
-            match &body.exprs[block_id] {
+            match &body.exprs[*block_id] {
                 Expr::Block { stmts, tail } => {
                     assert!(stmts.is_empty());
                     assert!(tail.is_none());
