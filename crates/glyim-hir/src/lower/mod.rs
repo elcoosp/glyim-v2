@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 pub(crate) mod lower_expr;
 pub(crate) mod lower_item;
 pub(crate) mod lower_pat;
@@ -6,10 +5,6 @@ pub(crate) mod lower_type;
 
 #[cfg(test)]
 pub(crate) use lower_expr::{lower_expr, lower_literal};
-#[cfg(test)]
-pub(crate) use lower_pat::lower_pat;
-#[cfg(test)]
-pub(crate) use lower_type::lower_type_ref;
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
