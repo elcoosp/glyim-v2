@@ -442,37 +442,3 @@ impl Body {
         Ok(())
     }
 }
-
-impl Body {
-    /// Allocate a new expression with its span. This is the ONLY correct way
-    /// to add an expression — it guarantees `exprs` and `expr_spans` stay
-    /// in sync.
-    #[inline]
-        debug_assert_eq!(
-            self.exprs.len(),
-            self.expr_spans.len(),
-            "Body::alloc_expr: exprs and expr_spans out of sync before push"
-        );
-        let id = self.exprs.push(expr);
-        self.expr_spans.push(span);
-        id
-    }
-
-    /// Convenience: allocate a `Expr::Missing` placeholder.
-    #[inline]
-    pub fn alloc_missing(&mut self, span: Span) -> ExprId {
-        self.alloc_expr(Expr::Missing, span)
-    }
-
-    /// Runtime invariant check. Call this after body construction.
-    pub fn verify_invariants(&self) -> Result<(), String> {
-        if self.exprs.len() != self.expr_spans.len() {
-            return Err(format!(
-                "Body invariant violated: exprs has {} entries but expr_spans has {}",
-                self.exprs.len(),
-                self.expr_spans.len()
-            ));
-        }
-        Ok(())
-    }
-}
