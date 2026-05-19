@@ -11,7 +11,7 @@ fn get_body_pat(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let mut interner = Interner::new();
     let hir = lower_crate(&parse_result.root, &mut interner);
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
-        ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
+        ItemKind::Fn(fn_item) => fn_item.body.expect("no body", &mut Vec::new()),
         other => panic!("Expected Fn item, got {:?}", other),
     };
     (hir, interner, body_id)

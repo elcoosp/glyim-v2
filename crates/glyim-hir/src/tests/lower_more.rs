@@ -12,7 +12,7 @@ fn get_body_hir(source: &str) -> (crate::CrateHir, Interner, BodyId) {
     let mut interner = Interner::new();
     let hir = lower_crate(&parse_result.root, &mut interner);
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
-        ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
+        ItemKind::Fn(fn_item) => fn_item.body.expect("no body", &mut Vec::new()),
         other => panic!("expected Fn item, got {:?}", other),
     };
     (hir, interner, body_id)
@@ -30,7 +30,7 @@ fn test_chained_field_access() {
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
     let hir = lower_crate(&result.root, &mut interner);
-    assert_eq!(hir.items.len(), 1);
+    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
     if let ItemKind::Fn(fn_item) = &hir.items[ItemId::from_raw(0)].kind {
         assert!(fn_item.body.is_some());
     } else {
@@ -53,7 +53,7 @@ fn test_chained_method_calls() {
 
 #[test]
 fn test_return_with_value() {
-    let source = "fn f() -> i32 { return 42; }";
+    let source = "fn f(, &mut Vec::new()) -> i32 { return 42; }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
     let hir = lower_crate(&result.root, &mut interner);
@@ -62,7 +62,7 @@ fn test_return_with_value() {
         let body = &hir.bodies[fn_item.body.unwrap()];
         let has_return = body
             .exprs
-            .iter_enumerated()
+            .iter_enumerated(, &mut Vec::new())
             .any(|(_, expr)| matches!(expr, Expr::Return { .. }));
         assert!(has_return, "Expected Return in body");
     } else {
@@ -81,7 +81,7 @@ fn test_while_loop_with_body() {
         let body = &hir.bodies[fn_item.body.unwrap()];
         let has_while = body
             .exprs
-            .iter_enumerated()
+            .iter_enumerated(, &mut Vec::new())
             .any(|(_, expr)| matches!(expr, Expr::While { .. }));
         assert!(has_while, "Expected While in body");
     } else {
@@ -153,7 +153,7 @@ fn test_type_ref_slice() {
         ItemKind::Fn(fn_item) => {
             assert!(fn_item.return_ty.is_some());
         }
-        _ => panic!("Expected Fn"),
+        _ => panic!("Expected Fn", &mut Vec::new()),
     }
 }
 
@@ -165,7 +165,7 @@ fn test_struct_with_generic() {
     let mut interner = Interner::new();
     let hir = lower_crate(&result.root, &mut interner);
     match &hir.items[ItemId::from_raw(0)].kind {
-        ItemKind::Struct(s) => {
+        ItemKind::Struct(s, &mut Vec::new()) => {
             assert_eq!(s.kind, StructKind::Record);
             assert_eq!(s.fields.len(), 2);
         }
@@ -182,7 +182,7 @@ fn test_enum_record_variant() {
     let hir = lower_crate(&result.root, &mut interner);
     match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Enum(e) => {
-            assert_eq!(e.variants.len(), 2);
+            assert_eq!(e.variants.len(, &mut Vec::new()), 2);
             assert_eq!(e.variants[0].kind, StructKind::Record);
             assert_eq!(e.variants[0].fields.len(), 1);
         }
@@ -202,7 +202,7 @@ fn test_module_with_multiple_items() {
 // Array repeat
 #[test]
 fn test_array_repeat_expr() {
-    let source = "fn f() { [0; 10] }";
+    let source = "fn f(, &mut Vec::new()) { [0; 10] }";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
     let _ = lower_crate(&result.root, &mut interner);
@@ -211,9 +211,9 @@ fn test_array_repeat_expr() {
 // Multiple functions
 #[test]
 fn test_multiple_functions() {
-    let source = "fn a() {} fn b() {} fn c() {}";
+    let source = "fn a() {} fn b() {} fn c(, &mut Vec::new()) {}";
     let result = parse_to_syntax(source, FileId::from_raw(0));
     let mut interner = Interner::new();
     let hir = lower_crate(&result.root, &mut interner);
-    assert_eq!(hir.items.len(), 3);
+    assert_eq!(hir.items.len(, &mut Vec::new()), 3);
 }

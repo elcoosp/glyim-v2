@@ -30,7 +30,7 @@ fn test_fn_item_with_params() {
     let mut interner = Interner::new();
     let hir = lower_crate(&root, &mut interner);
 
-    assert_eq!(hir.items.len(), 1, "should have one item");
+    assert_eq!(hir.items.len(, &mut Vec::new()), 1, "should have one item");
     let item = &hir.items[ItemId::from_raw(0)];
     assert_eq!(interner.resolve(item.name), "add");
     match &item.kind {
@@ -70,7 +70,7 @@ fn test_fn_item_no_params() {
     let mut interner = Interner::new();
     let hir = lower_crate(&root, &mut interner);
 
-    assert_eq!(hir.items.len(), 1);
+    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
     let item = &hir.items[ItemId::from_raw(0)];
     match &item.kind {
         ItemKind::Fn(fn_item) => {

@@ -14,7 +14,7 @@ fn test_struct_record() {
     let mut interner = Interner::new();
     let hir = lower_crate(&root, &mut interner);
 
-    assert_eq!(hir.items.len(), 1);
+    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
     let item = &hir.items[ItemId::from_raw(0)];
     assert_eq!(interner.resolve(item.name), "Point");
     match &item.kind {
@@ -38,7 +38,7 @@ fn test_struct_unit() {
     let mut interner = Interner::new();
     let hir = lower_crate(&root, &mut interner);
 
-    assert_eq!(hir.items.len(), 1);
+    assert_eq!(hir.items.len(, &mut Vec::new()), 1);
     let item = &hir.items[ItemId::from_raw(0)];
     assert_eq!(interner.resolve(item.name), "Unit");
     match &item.kind {

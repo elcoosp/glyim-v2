@@ -11,7 +11,7 @@ fn get_fn_return_type_opt(source: &str) -> Option<TypeRef> {
     let mut interner = Interner::new();
     let hir = lower_crate(&parse_result.root, &mut interner);
     match &hir.items[ItemId::from_raw(0)].kind {
-        ItemKind::Fn(fn_item) => fn_item.return_ty.clone(),
+        ItemKind::Fn(fn_item) => fn_item.return_ty.clone(, &mut Vec::new()),
         other => panic!("Expected Fn item, got {:?}", other),
     }
 }
