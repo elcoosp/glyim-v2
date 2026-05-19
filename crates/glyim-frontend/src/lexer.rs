@@ -108,7 +108,6 @@ impl<'a> Lexer<'a> {
                     let src = self.source;
                     let mut ident_end = after_quote;
                     let mut chars = src[after_quote..].chars();
-                    let mut is_lifetime = false;
                     if let Some(first) = chars.next() {
                         if first.is_alphabetic() || first == '_' {
                             ident_end += first.len_utf8();

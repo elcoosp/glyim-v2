@@ -166,7 +166,7 @@ fn pat_to_expr(
     pat_id: PatId,
     pats: &IndexVec<PatId, Pat>,
     exprs: &mut IndexVec<ExprId, Expr>,
-    interner: &mut Interner,
+    _interner: &mut Interner,
 ) -> Option<ExprId> {
     match &pats[pat_id] {
         Pat::Wild => None,
@@ -181,7 +181,7 @@ fn pat_to_expr(
         }
         Pat::Struct {
             path,
-            fields,
+            fields: _,
             rest: _,
         } => {
             // For now, just return the path (the struct expression)
@@ -782,18 +782,6 @@ fn lower_bin_op_token(token: &SyntaxToken) -> BinOp {
             tracing::warn!("STUB: unknown bin op {:?}", token.text());
             BinOp::Add
         }
-    }
-}
-
-/// If the expression is a block containing exactly one tail expression and no statements, return that tail expression.
-/// Otherwise return the original expression id.
-fn maybe_unwrap_block(eid: ExprId, exprs: &IndexVec<ExprId, Expr>) -> ExprId {
-    match &exprs[eid] {
-        Expr::Block {
-            stmts,
-            tail: Some(tail_id),
-        } if stmts.is_empty() => *tail_id,
-        _ => eid,
     }
 }
 
@@ -1791,16 +1779,4 @@ fn lower_range_expr(
     let eid = exprs.push(expr);
     expr_spans.push(node_span(node));
     Some(eid)
-}
-
-/// If expression is a block with exactly one tail expression and no statements, return that tail expression id.
-/// Otherwise return the original expression id.
-fn unwrap_single_tail_block(eid: ExprId, exprs: &IndexVec<ExprId, Expr>) -> ExprId {
-    match &exprs[eid] {
-        Expr::Block {
-            stmts,
-            tail: Some(tail_id),
-        } if stmts.is_empty() => *tail_id,
-        _ => eid,
-    }
 }
