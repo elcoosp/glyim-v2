@@ -101,9 +101,13 @@ impl HygieneCtx {
         self.expansions.get(id.to_raw() as usize)
     }
 
-    pub fn adjust(&mut self, span: Span, _scope_ctx: SyntaxContext) -> Span {
-        // STUB: hygiene adjust is not implemented; macro spans may be incorrect.
-        span
+    pub fn adjust(&mut self, span: Span, scope_ctx: SyntaxContext) -> Span {
+        let mut current = span;
+        while current.ctx != scope_ctx && !current.ctx.is_root() {
+            let (next, _) = self.remove_mark(current);
+            current = next;
+        }
+        current
     }
 }
 
@@ -114,22 +118,14 @@ impl Default for HygieneCtx {
 }
 
 impl SyntaxContext {
-    /// Create a SyntaxContext from a hygiene key and raw index.
-    /// The key parameter is reserved for future cross-session isolation
-    /// and is currently unused. IDs are globally unique within a single
-    /// compiler invocation.
-    fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
+    pub(crate) fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
         let _ = _key;
         SyntaxContext(raw)
     }
 }
 
 impl ExpnId {
-    /// Create a SyntaxContext from a hygiene key and raw index.
-    /// The key parameter is reserved for future cross-session isolation
-    /// and is currently unused. IDs are globally unique within a single
-    /// compiler invocation.
-    fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
+    pub(crate) fn from_hygiene_key(_key: HygieneKey, raw: u32) -> Self {
         let _ = _key;
         ExpnId(raw)
     }
