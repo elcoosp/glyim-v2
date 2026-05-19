@@ -4,51 +4,76 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 /// Tests for coherence and orphan rules (Stream V04).
 use glyim_core::interner::Interner;
-use glyim_core::primitives::Visibility;
+use glyim_core::primitives::*;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
-use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{ImplItem, Path, TypeRef};
-use glyim_solve::InferenceTable;
 use glyim_span::Span;
-use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut};
+use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut, TyKind};
+
+use super::common::global_interner;
 
 // Helper: convert ImplItem to ResolvedImplHeader for testing
 fn impl_item_to_header(
     impl_item: &ImplItem,
-    interner: &mut Interner,
+    _interner: &mut Interner,
     ctx: &mut TyCtxMut,
     def_map: &CrateDefMap,
 ) -> ResolvedImplHeader {
-    let trait_name = impl_item
-        .trait_ref
-        .as_ref()
-        .and_then(|p| p.as_name())
-        .unwrap_or_else(|| interner.intern(""));
+    let trait_name = impl_item.trait_ref.as_ref().and_then(|p| p.as_name());
 
-    let empty_str = interner.intern("");
-    let trait_def_id = if trait_name != empty_str {
-        if let Some(res) = def_map.modules[def_map.root].scope.resolve(trait_name) {
-            Some(TraitDefId::from_raw(res.0.to_raw()))
-        } else {
-            None
-        }
+    let trait_def_id = if let Some(name) = trait_name {
+        def_map.modules[def_map.root]
+            .scope
+            .resolve(name)
+            .map(|res| TraitDefId::from_raw(res.0.to_raw()))
     } else {
         None
     };
 
-    // Resolve self_ty properly so overlap detection works
-    let mut diags = Vec::new();
-    let mut infer = InferenceTable::new();
-    let param_map = crate::tyconv::build_param_tys(ctx, &impl_item.generic_params);
-    let self_ty = crate::tyconv::resolve_type_ref(
-        ctx,
-        &mut infer,
-        def_map,
-        &mut diags,
-        &impl_item.self_ty,
-        &param_map,
-        Span::DUMMY,
-    );
+    // Resolve self_ty manually without calling resolve_type_ref
+    // to avoid cross-interner issues
+    let self_ty = match &impl_item.self_ty {
+        TypeRef::Path(p) => {
+            if let Some(name) = p.as_name() {
+                // Check if it's a generic param
+                let is_generic = impl_item.generic_params.iter().any(|gp| gp.name == name);
+                if is_generic {
+                    let idx = impl_item
+                        .generic_params
+                        .iter()
+                        .position(|gp| gp.name == name)
+                        .unwrap() as u32;
+                    ctx.mk_ty(TyKind::Param(ParamTy { index: idx, name }))
+                } else if let Some(res) = def_map.modules[def_map.root].scope.resolve(name) {
+                    let adt_id = glyim_core::def_id::AdtId::from_raw(res.0.to_raw());
+                    let substs = ctx.intern_substitution(vec![]);
+                    ctx.mk_ty(TyKind::Adt(adt_id, substs))
+                } else {
+                    // Try primitives
+                    let s = ctx.name_str(name);
+                    match s.as_ref() {
+                        "i8" => ctx.mk_ty(TyKind::Int(IntTy::I8)),
+                        "i16" => ctx.mk_ty(TyKind::Int(IntTy::I16)),
+                        "i32" => ctx.mk_ty(TyKind::Int(IntTy::I32)),
+                        "i64" => ctx.mk_ty(TyKind::Int(IntTy::I64)),
+                        "isize" => ctx.mk_ty(TyKind::Int(IntTy::Isize)),
+                        "u8" => ctx.mk_ty(TyKind::Uint(UintTy::U8)),
+                        "u16" => ctx.mk_ty(TyKind::Uint(UintTy::U16)),
+                        "u32" => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
+                        "u64" => ctx.mk_ty(TyKind::Uint(UintTy::U64)),
+                        "usize" => ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
+                        "f32" => ctx.mk_ty(TyKind::Float(FloatTy::F32)),
+                        "f64" => ctx.mk_ty(TyKind::Float(FloatTy::F64)),
+                        "bool" => Ty::BOOL,
+                        _ => Ty::ERROR,
+                    }
+                }
+            } else {
+                Ty::ERROR
+            }
+        }
+        _ => Ty::ERROR,
+    };
 
     let self_type_name = match &impl_item.self_ty {
         TypeRef::Path(p) => p.as_name().and_then(|name| {
@@ -65,7 +90,7 @@ fn impl_item_to_header(
 
     ResolvedImplHeader {
         trait_def_id,
-        trait_name: Some(trait_name),
+        trait_name,
         trait_substs: Substitution::empty(),
         self_ty,
         self_type_name,
@@ -142,8 +167,8 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
 #[test]
 fn t01_duplicate_impl_should_error() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
-    let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
+    let mut interner = global_interner();
+    let def_map = build_def_map(&mut interner, local_krate, &["MyType", "Send"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
@@ -172,7 +197,7 @@ fn t01_duplicate_impl_should_error() {
 #[test]
 fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &[]);
     let mut ctx = make_ty_ctx();
     let checker = CoherenceChecker::new(&def_map);
@@ -195,8 +220,8 @@ fn t02_orphan_rule_foreign_trait_foreign_type_error() {
 #[test]
 fn t03_blanket_impl_conflicts_with_concrete() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
-    let def_map = build_def_map(&mut interner, local_krate, &["i32", "T", "MyTrait"]);
+    let mut interner = global_interner();
+    let def_map = build_def_map(&mut interner, local_krate, &["MyTrait"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
@@ -225,7 +250,7 @@ fn t03_blanket_impl_conflicts_with_concrete() {
 #[test]
 fn t04_valid_orphan_foreign_trait_local_type() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["LocalType"]);
     let mut ctx = make_ty_ctx();
     let checker = CoherenceChecker::new(&def_map);
@@ -246,7 +271,7 @@ fn t04_valid_orphan_foreign_trait_local_type() {
 #[test]
 fn t05_negative_impl_overrides_auto_trait() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
@@ -263,7 +288,7 @@ fn t05_negative_impl_overrides_auto_trait() {
 #[test]
 fn t06_duplicate_with_different_polarity_error() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
@@ -293,7 +318,7 @@ fn t06_duplicate_with_different_polarity_error() {
 #[test]
 fn t07_orphan_local_trait_foreign_type_allowed() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyTrait"]);
     let mut ctx = make_ty_ctx();
     let checker = CoherenceChecker::new(&def_map);
@@ -314,8 +339,8 @@ fn t07_orphan_local_trait_foreign_type_allowed() {
 #[test]
 fn t08_two_non_overlapping_blanket_impls_allowed() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
-    let def_map = build_def_map(&mut interner, local_krate, &["A", "B", "From"]);
+    let mut interner = global_interner();
+    let def_map = build_def_map(&mut interner, local_krate, &["From"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
 
@@ -343,7 +368,7 @@ fn t08_two_non_overlapping_blanket_impls_allowed() {
 #[test]
 fn t09_negative_impl_orphan_error() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &[]);
     let mut ctx = make_ty_ctx();
     let checker = CoherenceChecker::new(&def_map);
@@ -364,7 +389,7 @@ fn t09_negative_impl_orphan_error() {
 #[test]
 fn t10_different_traits_no_conflict() {
     let local_krate = CrateId::from_raw(0);
-    let mut interner = Interner::new();
+    let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType", "TraitA", "TraitB"]);
     let mut ctx = make_ty_ctx();
     let mut checker = CoherenceChecker::new(&def_map);
