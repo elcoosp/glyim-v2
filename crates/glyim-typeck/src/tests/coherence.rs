@@ -8,7 +8,7 @@ use glyim_core::primitives::*;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::{ImplItem, Path, TypeRef};
 use glyim_span::Span;
-use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut, TyKind};
+use glyim_type::{ImplPolarity, ParamTy, Substitution, Ty, TyCtxMut, TyKind};
 
 use super::common::global_interner;
 
