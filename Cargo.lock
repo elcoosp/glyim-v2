@@ -1017,6 +1017,7 @@ name = "glyim-runtime"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "tracing",
 ]
 
 [[package]]

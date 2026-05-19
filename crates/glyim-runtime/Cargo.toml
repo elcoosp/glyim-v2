@@ -3,4 +3,5 @@ name = "glyim-runtime"
 edition.workspace = true
 version.workspace = true
 [dependencies]
+tracing = { workspace = true }
 glyim-core = { workspace = true }
