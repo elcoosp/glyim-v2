@@ -2,14 +2,13 @@
 //! Comprehensive tests for auto trait flags through TypeLookup, TyCtxMut, and TyCtx.
 
 use glyim_core::def_id::AdtId;
-use glyim_core::primitives::{IntTy, Mutability, UintTy};
+use glyim_core::primitives::{IntTy, Mutability};
 
 use super::helpers::with_fresh_ty_ctx;
 use crate::auto_trait::{AutoTrait, AutoTraitFlags};
 use crate::region::Region;
 use crate::substitution::GenericArg;
 use crate::ty::TyKind;
-use crate::*;
 
 // ---- Send for primitives ----
 
@@ -59,14 +58,11 @@ fn ref_to_send_is_send_and_sync() {
 
 #[test]
 fn ref_to_non_sync_is_not_sync() {
-    // RawPtr is not Sync, so &RawPtr should not be Sync
     let (ctx, ref_ty) = with_fresh_ty_ctx(|c| {
         let inner = c.bool_ty();
         let raw_ptr = c.mk_ty(TyKind::RawPtr(inner, Mutability::Not));
         c.mk_ref(Region::Erased, raw_ptr, Mutability::Not)
     });
-    // RawPtr is UNPIN only, not SEND or SYNC
-    // &T: Sync if T: Sync => &RawPtr is not Sync
     assert!(!ctx.implements_auto_trait(ref_ty, AutoTrait::Sync));
 }
 
@@ -168,7 +164,6 @@ fn adt_manual_impl_preserves_trait() {
         let inner = c.bool_ty();
         let raw_ptr = c.mk_ty(TyKind::RawPtr(inner, Mutability::Not));
         c.register_adt_repr(adt_id, vec![raw_ptr]);
-        // Manual impl overrides field-based analysis
         c.register_manual_impl(adt_id, AutoTrait::Send);
         let substs = c.intern_substitution(vec![]);
         c.mk_adt(adt_id, substs)

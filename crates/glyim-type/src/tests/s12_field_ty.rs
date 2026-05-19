@@ -6,8 +6,7 @@ use glyim_core::def_id::AdtId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::IntTy;
 
-use super::helpers::{test_ty_ctx, with_fresh_ty_ctx};
-use crate::adt_def::*;
+use super::helpers::{test_frozen_ty_ctx, test_ty_ctx, with_fresh_ty_ctx};
 use crate::display::TypeLookup;
 use crate::*;
 
@@ -37,7 +36,6 @@ fn field_ty_from_adt_repr_fallback() {
     let mut ctx = test_ty_ctx();
     let adt_id = AdtId::from_raw(101);
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
-    // Only register repr, not full AdtDef
     ctx.register_adt_repr(adt_id, vec![i32_ty]);
     assert_eq!(ctx.field_ty(adt_id, 0), i32_ty);
 }
@@ -62,9 +60,7 @@ fn field_ty_adt_def_takes_priority_over_repr() {
     let adt_id = AdtId::from_raw(104);
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
     let bool_ty = ctx.bool_ty();
-    // Register repr with bool
     ctx.register_adt_repr(adt_id, vec![bool_ty]);
-    // Register AdtDef with i32 — should take priority
     let mut fields = IndexVec::new();
     fields.push(FieldDef { name: Interner::default().intern("z"), ty: i32_ty });
     let def = AdtDef {
@@ -124,7 +120,6 @@ struct MinimalTypeLookup {
 
 impl TypeLookup for MinimalTypeLookup {
     fn ty_kind(&self, ty: Ty) -> &TyKind {
-        // Minimal: only Error
         if ty == self.error {
             static ERROR_KIND: TyKind = TyKind::Error;
             &ERROR_KIND
@@ -145,8 +140,6 @@ impl TypeLookup for MinimalTypeLookup {
     fn error_ty(&self) -> Ty {
         self.error
     }
-    // adt_def default returns None
-    // field_ty default uses adt_def which returns None -> error_ty
 }
 
 #[test]

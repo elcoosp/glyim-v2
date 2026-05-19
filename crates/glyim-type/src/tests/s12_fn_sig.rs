@@ -2,11 +2,10 @@
 //! closure_sig, register_body_ty, body_ty methods.
 
 use glyim_core::def_id::{ClosureId, FnDefId, LocalDefId};
-use glyim_core::primitives::{Abi, IntTy, Mutability, Safety, UintTy};
+use glyim_core::primitives::{Abi, IntTy, Safety, UintTy};
 
-use super::helpers::{test_frozen_ty_ctx, test_ty_ctx, with_fresh_ty_ctx};
+use super::helpers::{test_ty_ctx, with_fresh_ty_ctx};
 use crate::fn_sig::FnSig;
-use crate::region::Region;
 use crate::substitution::GenericArg;
 use crate::*;
 
