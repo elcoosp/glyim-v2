@@ -6,7 +6,7 @@ use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
 use glyim_mir::{
     BasicBlockData, BasicBlockIdx, Body, LocalIdx, Place, ProjectionElem, Rvalue, SourceInfo,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    StatementKind, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_type::{AdtKind, FieldIdx, GenericArg, ParamTy, Substitution, Ty, TyCtx, TyKind};
