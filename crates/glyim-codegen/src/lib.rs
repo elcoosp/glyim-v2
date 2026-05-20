@@ -139,11 +139,9 @@ impl BytecodeBackend {
                 }
                 ProjectionElem::Field(idx) => {
                     let offset = self.layout_provider.field_offset(current_ty, *idx);
-                    if offset > 0 {
-                        bc.push(OP_LOAD_CONST);
-                        bc.extend_from_slice(&(offset as i64).to_le_bytes());
-                        bc.push(OP_ADD);
-                    }
+                    bc.push(OP_LOAD_CONST);
+                    bc.extend_from_slice(&(offset as i64).to_le_bytes());
+                    bc.push(OP_ADD);
                 }
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);
