@@ -30,10 +30,7 @@ fn goto_definition_returns_location() {
     let sym = SymbolInfo {
         name: "foo".to_string(),
         kind: SymbolKind::Function,
-        definition: DefinitionLocation {
-            file_id,
-            span,
-        },
+        definition: DefinitionLocation { file_id, span },
         type_signature: None,
         is_pub: true,
         documentation: None,

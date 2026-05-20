@@ -30,10 +30,7 @@ fn workspace_symbols_fuzzy_search() {
         let sym = SymbolInfo {
             name: name.to_string(),
             kind: SymbolKind::Function,
-            definition: DefinitionLocation {
-                file_id,
-                span,
-            },
+            definition: DefinitionLocation { file_id, span },
             type_signature: None,
             is_pub: true,
             documentation: None,
@@ -78,10 +75,7 @@ fn workspace_symbols_fuzzy_matching_limit() {
         let sym = SymbolInfo {
             name: name.to_string(),
             kind: SymbolKind::Function,
-            definition: DefinitionLocation {
-                file_id,
-                span,
-            },
+            definition: DefinitionLocation { file_id, span },
             type_signature: None,
             is_pub: true,
             documentation: None,

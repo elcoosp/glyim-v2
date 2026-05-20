@@ -4,7 +4,7 @@ use glyim_core::interner::Name;
 use glyim_lower::{AdtDef, AdtKind, LowerCtx};
 use glyim_mir;
 use glyim_span::Span;
-use glyim_type::{FnSig, FieldIdx, Substitution, TyCtx};
+use glyim_type::{FieldIdx, FnSig, Substitution, TyCtx};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -50,17 +50,14 @@ impl<'a> MockLowerCtx<'a> {
         field_name: Name,
         field_idx: FieldIdx,
     ) {
-        self.field_indices.insert((adt_id.to_raw(), variant_idx, field_name), field_idx);
+        self.field_indices
+            .insert((adt_id.to_raw(), variant_idx, field_name), field_idx);
     }
 
     /// Register a variant index for an ADT.
-    pub fn add_variant_index(
-        &mut self,
-        adt_id: AdtId,
-        variant_name: Name,
-        variant_idx: u32,
-    ) {
-        self.variant_indices.insert((adt_id.to_raw(), variant_name), variant_idx);
+    pub fn add_variant_index(&mut self, adt_id: AdtId, variant_name: Name, variant_idx: u32) {
+        self.variant_indices
+            .insert((adt_id.to_raw(), variant_name), variant_idx);
     }
 
     /// Register an ADT definition.
@@ -89,20 +86,13 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
         self.span_stack.borrow_mut().pop();
     }
 
-    fn field_index_by_name(
-        &self,
-        adt_id: AdtId,
-        variant_idx: u32,
-        name: Name,
-    ) -> Option<FieldIdx> {
-        self.field_indices.get(&(adt_id.to_raw(), variant_idx, name)).copied()
+    fn field_index_by_name(&self, adt_id: AdtId, variant_idx: u32, name: Name) -> Option<FieldIdx> {
+        self.field_indices
+            .get(&(adt_id.to_raw(), variant_idx, name))
+            .copied()
     }
 
-    fn variant_index_by_name(
-        &self,
-        adt_id: AdtId,
-        name: Name,
-    ) -> Option<u32> {
+    fn variant_index_by_name(&self, adt_id: AdtId, name: Name) -> Option<u32> {
         self.variant_indices.get(&(adt_id.to_raw(), name)).copied()
     }
 
@@ -110,7 +100,11 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
         None
     }
 
-    fn const_value(&self, _def_id: ConstDefId, _substs: Substitution) -> Option<glyim_mir::MirConst> {
+    fn const_value(
+        &self,
+        _def_id: ConstDefId,
+        _substs: Substitution,
+    ) -> Option<glyim_mir::MirConst> {
         None
     }
 }

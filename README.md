@@ -1,32 +1,34 @@
 # Glyim Compiler
 
-**Glyim** is a modular, from‑scratch compiler for a Rust‑like systems programming language, written in Rust.  
+Glyim is a modular, from‑scratch compiler for a Rust‑like systems programming language, written in Rust.  
 It implements a complete compilation pipeline: lexing, parsing, name resolution, HIR, MIR, type inference & trait solving, borrow checking, optimizations, and multiple code generation backends (LLVM and a custom bytecode VM).
 
 The project is organised as a Cargo workspace with more than 20 crates, designed for clarity, testability, and incremental development.
 
 ## ✨ Features
 
-- **Lexer & Parser** – Recursive‑descent parser with error recovery, producing a concrete syntax tree (CST).
-- **Name Resolution** – Module graph, item scopes, and path resolution (`self::`, `super::`, `crate::`).
-- **HIR (High‑Level IR)** – Untyped, name‑resolved AST, used as input for type checking.
-- **Type System** – Full type interning, substitutions, regions, and predicates. Supports ADTs, generics, closures, opaque types, etc.
-- **Type Inference & Trait Solving** – Bidirectional type checking with inference variables, unification, and a simple trait solver (fulfillment‑based).
-- **THIR (Typed HIR)** – Fully typed intermediate representation, still generic.
-- **MIR (Mid‑Level IR)** – Control‑flow graph (CFG) form with statements, terminators, places, and rich rvalue expressions.
-- **Borrow Checking** – Non‑lexical lifetime (NLL) borrow checking for detecting conflicting borrows within a single basic block (extensible to full region constraints).
-- **Optimisations** – Constant propagation, dead code elimination, CFG simplification, and unreachable block elimination.
+- **Lexer & Parser** – Recursive‑descent parser with error recovery, producing a concrete syntax tree (CST).  
+- **Name Resolution** – Module graph, item scopes, and path resolution (`self::`, `super::`, `crate::`).  
+- **Macro System** – Declarative `macro_rules!` and built‑in macros (`file!`, `line!`, `column!`).  
+- **HIR (High‑Level IR)** – Untyped, name‑resolved AST, used as input for type checking.  
+- **Type System** – Full type interning, substitutions, regions, predicates, auto‑traits (Send/Sync/Unpin), and object safety checks. Supports ADTs, generics, closures, opaque types, projections.  
+- **Type Inference & Trait Solving** – Bidirectional type checking with inference variables, unification, and a simple trait solver (fulfillment‑based).  
+- **THIR (Typed HIR)** – Fully typed intermediate representation, still generic.  
+- **MIR (Mid‑Level IR)** – Control‑flow graph (CFG) form with statements, terminators, places, and rich rvalue expressions.  
+- **Borrow Checking** – Non‑lexical lifetime (NLL) borrow checking with liveness analysis, two‑phase borrow support, and move analysis.  
+- **Optimisations** – Constant propagation, dead code elimination, CFG simplification, and unreachable block elimination.  
 - **Code Generation**  
   - **Bytecode Backend** – Simple stack‑based bytecode for testing and embedded use.  
-  - **LLVM Backend** – Generates native object files using the `inkwell` crate (LLVM 22).
-- **Language Server** – Basic LSP implementation supporting `didOpen`, `didChange`, and diagnostics reporting.
-- **Command‑Line Interface** – `glyim` driver with subcommands for compilation, backend selection, and optimisation levels.
-- **Comprehensive Testing Infrastructure** – Built‑in test runner that supports:
-  - Compile‑pass / compile‑fail / UI / run‑pass / run‑fail modes
-  - Inline annotations (`//~ ERROR`, `//~ WARNING`, fuzzy matching, optional diagnostics)
-  - Snapshot testing for CST, def‑map, and MIR
-  - Mocking utilities for all major compiler phases
-  - Property‑based type generation
+  - **LLVM Backend** – Generates native object files using the `inkwell` crate (LLVM 22) with ABI‑aware argument/return lowering (sret, byval, etc.).  
+- **Language Server** – LSP implementation supporting `didOpen`, `didChange`, diagnostics, goto definition, hover, completion, folding, formatting, rename, and workspace symbols.  
+- **Command‑Line Interface** – `glyim` driver with subcommands for compilation, backend selection, and optimisation levels.  
+- **Comprehensive Testing Infrastructure** – Built‑in test runner that supports:  
+  - Compile‑pass / compile‑fail / UI / run‑pass / run‑fail modes  
+  - Inline annotations (`//~ ERROR`, `//~ WARNING`, fuzzy matching, optional diagnostics)  
+  - Snapshot testing for CST, def‑map, and MIR  
+  - Mocking utilities for all major compiler phases  
+  - Property‑based type generation  
+- **Standard & Core Libraries** – Source files for `core`, `alloc`, and `std` written in Glyim syntax, used for testing and bootstrapping.  
 
 ## 🏗️ Architecture
 
@@ -41,24 +43,30 @@ The compiler is split into many small crates, each with a single responsibility:
 | `glyim-syntax` | CST definition (Rowan based), `SyntaxKind` enum, AST node helpers. |
 | `glyim-frontend` | Lexer + parser (merged), produces `SyntaxNode`. |
 | `glyim-def-map` | Module graph, item scopes, name resolution. |
+| `glyim-meta` | Macro expansion: `macro_rules!` declarative macros and built‑in macros. |
 | `glyim-hir` | High‑level IR (untyped), lowering from CST. |
-| `glyim-type` | Type interning (TyCtx), type kinds, substitutions, regions, predicates, printing. |
-| `glyim-solve` | Type inference table (`InferenceTable`), unification, trait solver, fulfillment context. |
+| `glyim-type` | Type interning (TyCtx), type kinds, substitutions, regions, predicates, auto‑traits, object safety, printing. |
+| `glyim-solve` | Type inference table (`InferenceTable`), unification, trait solver, fulfillment context, HRTB support. |
 | `glyim-typeck` | Type checker: HIR → THIR with inference and trait resolution. |
 | `glyim-mir` | Mid‑level IR (CFG), place types, statement/terminator kinds. |
-| `glyim-lower` | THIR → MIR lowering + monomorphization. |
-| `glyim-borrowck` | Borrow checker (NLL, initial implementation). |
+| `glyim-lower` | THIR → MIR lowering + monomorphization + CGU partitioning + polymorphization. |
+| `glyim-borrowck` | Borrow checker (NLL, two‑phase borrows, move analysis). |
 | `glyim-opt` | MIR optimisation passes. |
 | `glyim-mir-interp` | Interpreter for MIR (used in tests). |
-| `glyim-layout` | Type layout computation (size, alignment, ABI). |
+| `glyim-layout` | Type layout computation (size, alignment, ABI, vtables). |
 | `glyim-codegen` | Abstract code generation backend trait. |
-| `glyim-codegen-llvm` | LLVM backend (via `inkwell`). |
+| `glyim-codegen-llvm` | LLVM backend (via `inkwell`) with full ABI handling. |
+| `glyim-runtime` | Runtime stubs (alloc, dealloc, drop glue, panic). |
 | `glyim-db` | Compilation database (holds interners, VFS, type context, trait context). |
 | `glyim-pipeline` | End‑to‑end compilation driver (lex → parse → def‑map → HIR → typeck → lower → borrowck → opt → codegen). |
 | `glyim-cli` | Command‑line interface (clap). |
 | `glyim-lsp` | Language Server Protocol implementation. |
-| `glyim-runtime` | Runtime stubs (alloc, panic). |
 | `glyim-test` | Testing framework: test discovery, execution, snapshots, mocks, property testing. |
+| `glyim-lang-core` | Core library source (`.g` files) for `core` (Option, Result, iter, slice, str, cell, mem, ptr, ops, cmp, marker, panic, hint, convert, default). |
+| `glyim-lang-alloc` | Alloc library source (Box, Vec, String, Rc, RawVec). |
+| `glyim-lang-std` | Standard library source (io, fs, net, thread, sync, env, time, process). |
+| `glyip` | Package manager / build tool (in development). |
+| `glyim-pilot` | Agent‑driven development tool (experimental). |
 
 ## 🚀 Getting Started
 

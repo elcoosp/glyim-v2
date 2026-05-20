@@ -20,11 +20,12 @@ fn test_pattern_or_lowering() {
     for (_id, expr) in body.exprs.iter_enumerated() {
         if let crate::Expr::Match { arms, .. } = expr
             && let Some(arm) = arms.first()
-                && let Pat::Or(pats) = &body.pats[arm.pat]
-                    && pats.len() == 2 {
-                        found_or_pat = true;
-                        break;
-                    }
+            && let Pat::Or(pats) = &body.pats[arm.pat]
+            && pats.len() == 2
+        {
+            found_or_pat = true;
+            break;
+        }
     }
     assert!(found_or_pat, "Expected OR pattern with 2 alternatives");
 }

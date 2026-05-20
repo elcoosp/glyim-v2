@@ -36,10 +36,7 @@ fn hover_shows_type_signature_and_doc() {
     let sym = SymbolInfo {
         name: "add".to_string(),
         kind: SymbolKind::Function,
-        definition: DefinitionLocation {
-            file_id,
-            span,
-        },
+        definition: DefinitionLocation { file_id, span },
         type_signature: Some(TypeSignature {
             params: vec![
                 ("a".to_string(), "i32".to_string()),

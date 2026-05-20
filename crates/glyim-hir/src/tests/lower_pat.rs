@@ -29,9 +29,10 @@ fn test_pat_binding() {
         Expr::Block { stmts, .. } => {
             let found = stmts.iter().any(|&sid| {
                 if let Expr::Assign { lhs, .. } = &body.exprs[sid]
-                    && let Expr::Path(p) = &body.exprs[*lhs] {
-                        return p.as_name().unwrap() == interner.intern("x");
-                    }
+                    && let Expr::Path(p) = &body.exprs[*lhs]
+                {
+                    return p.as_name().unwrap() == interner.intern("x");
+                }
                 false
             });
             assert!(found, "No assignment to x found in block statements");
