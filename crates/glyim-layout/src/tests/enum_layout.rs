@@ -103,6 +103,7 @@ fn s15_t02_enum_with_data_variants() {
             tag_field,
             tag_encoding,
             variants,
+            ..
         } => {
             let tag_kind = ctx.ty_kind(*tag);
             assert!(

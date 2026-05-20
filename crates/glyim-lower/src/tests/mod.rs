@@ -21,7 +21,6 @@ mod match_advanced;
 mod match_guard;
 mod match_guard_eval;
 mod mock_lower_ctx;
-mod mono;
 mod mono_cache;
 mod mono_cache_cross_kind;
 mod mono_cache_edge_cases;
