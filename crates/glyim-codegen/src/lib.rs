@@ -112,13 +112,13 @@ impl BytecodeBackend {
         bc.push(OP_LOAD_LOCAL_ADDR);
         bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
 
-        let mut current_ty = match local_tys.get(place.local) {
-            Some(decl) => decl.ty,
-            None => {
-                tracing::warn!("STUB: local index {} out of bounds", place.local.to_raw());
-                return Ok(());
-            }
-        };
+        // Defensive bounds check before any IndexVec access
+        let local_idx = place.local.to_raw() as usize;
+        if local_idx >= local_tys.len() {
+            tracing::warn!("STUB: local index {} out of bounds (len={})", local_idx, local_tys.len());
+            return Ok(());
+        }
+        let mut current_ty = local_tys[place.local].ty;
 
         for proj in place.projection.iter() {
             match proj {
