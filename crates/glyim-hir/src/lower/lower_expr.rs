@@ -83,7 +83,7 @@ pub(crate) fn lower_block_to_expr(
                     }
                 }
                 if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone())
-                    && let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats)
+                    && let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats, diags)
                 {
                     let span = node_span(&child);
                     let lhs_expr_id = pat_to_expr(pat_id, body, interner, span);
@@ -301,6 +301,31 @@ fn lower_closure_expr(
     Some(eid)
 }
 
+fn path_as_name(node: &SyntaxNode, interner: &mut Interner) -> Option<Name> {
+    let mut segments = Vec::new();
+    for el in node.children_with_tokens() {
+        if let glyim_syntax::SyntaxElement::Token(t) = el {
+            if t.kind() == SyntaxKind::Ident {
+                segments.push(interner.intern(t.text()));
+            }
+        } else if let glyim_syntax::SyntaxElement::Node(n) = el {
+            if n.kind() == SyntaxKind::UsePath {
+                for t in n.children_with_tokens() {
+                    if let glyim_syntax::SyntaxElement::Token(tt) = t {
+                        if tt.kind() == SyntaxKind::Ident {
+                            segments.push(interner.intern(tt.text()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if segments.len() == 1 {
+        Some(segments[0])
+    } else {
+        None
+    }
+}
 fn lower_struct_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
@@ -311,52 +336,154 @@ fn lower_struct_expr(
     let mut path = None;
     let mut fields = Vec::new();
     let mut spread = None;
-    let mut in_braces = false;
+
+    // First, find the path (struct name)
     for child in node.children() {
         if child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath {
             if path.is_none() {
                 path = lower_path_expr(&child, interner, body);
             }
-        } else if child.kind() == SyntaxKind::LBrace {
-            in_braces = true;
-        } else if child.kind() == SyntaxKind::RBrace {
-            in_braces = false;
-        } else if in_braces {
-            if child.kind() == SyntaxKind::DotDot && spread.is_none() {
-                let mut found_expr = false;
-                for next in node.children() {
-                    if found_expr {
-                        if let Some(spread_id) =
-                            lower_expr(&next, interner, body, diags, struct_field_map)
+        }
+    }
+
+    // Helper to collect fields from a list of sibling nodes (fallback when child extraction fails)
+    fn collect_from_siblings(
+        siblings: &[SyntaxNode],
+        interner: &mut Interner,
+        body: &mut Body,
+        diags: &mut Vec<GlyimDiagnostic>,
+        struct_field_map: &HashMap<Name, Vec<Name>>,
+        fields: &mut Vec<(Name, ExprId)>,
+        spread: &mut Option<ExprId>,
+    ) {
+        let mut i = 0;
+        while i < siblings.len() {
+            let node = &siblings[i];
+            match node.kind() {
+                SyntaxKind::StructField => {
+                    // Extract field name
+                    let field_name = first_ident_text(node).unwrap_or_default();
+                    let name = interner.intern(&field_name);
+                    // Check if the field has an expression inside it
+                    let expr_inside = node.children().find(|c| is_expr_node(c));
+                    if let Some(expr_id) = expr_inside
+                        .as_ref()
+                        .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map))
+                    {
+                        fields.push((name, expr_id));
+                        i += 1;
+                        continue;
+                    }
+                    // Otherwise, assume the next sibling is the expression
+                    if i + 1 < siblings.len() {
+                        let next = &siblings[i + 1];
+                        if let Some(expr_id) =
+                            lower_expr(next, interner, body, diags, struct_field_map)
                         {
-                            spread = Some(spread_id);
+                            fields.push((name, expr_id));
+                            i += 2;
+                            continue;
                         }
-                        break;
                     }
-                    if next == child {
-                        found_expr = true;
+                    i += 1;
+                }
+                SyntaxKind::DotDot => {
+                    // Spread: find the next expression sibling
+                    if i + 1 < siblings.len() {
+                        if let Some(expr_id) =
+                            lower_expr(&siblings[i + 1], interner, body, diags, struct_field_map)
+                        {
+                            *spread = Some(expr_id);
+                            i += 2;
+                            continue;
+                        }
                     }
+                    i += 1;
                 }
-            } else if child.kind() == SyntaxKind::StructField {
-                let field_name = first_ident_text(&child).unwrap_or_default();
-                let name = interner.intern(&field_name);
-                let expr_node = child
-                    .children()
-                    .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block);
-                if let Some(expr_id) =
-                    expr_node.and_then(|n| lower_expr(&n, interner, body, diags, struct_field_map))
-                {
-                    fields.push((name, expr_id));
+                SyntaxKind::PathExpr => {
+                    // Shorthand field: single identifier
+                    if let Some(name) = path_as_name(node, interner) {
+                        // Avoid capturing the struct name itself
+                        // We'll filter later, but collect for now
+                        if let Some(expr_id) =
+                            lower_expr(node, interner, body, diags, struct_field_map)
+                        {
+                            fields.push((name, expr_id));
+                        }
+                    }
+                    i += 1;
                 }
-            } else if is_expr_node(&child) && child.kind() != SyntaxKind::StructField {
-                let name = interner.intern(child.text().to_string().trim());
-                let expr_id = lower_expr(&child, interner, body, diags, struct_field_map);
-                if let Some(eid) = expr_id {
-                    fields.push((name, eid));
+                _ => {
+                    i += 1;
                 }
             }
         }
     }
+
+    // Recursively collect all field nodes, but also gather sibling lists for fallback
+    fn collect_fields(
+        n: &SyntaxNode,
+        interner: &mut Interner,
+        body: &mut Body,
+        diags: &mut Vec<GlyimDiagnostic>,
+        struct_field_map: &HashMap<Name, Vec<Name>>,
+        fields: &mut Vec<(Name, ExprId)>,
+        spread: &mut Option<ExprId>,
+    ) {
+        match n.kind() {
+            SyntaxKind::StructExpr => {
+                // For the top-level StructExpr, use sibling-based collection on its children
+                let children: Vec<SyntaxNode> = n.children().collect();
+                collect_from_siblings(
+                    &children,
+                    interner,
+                    body,
+                    diags,
+                    struct_field_map,
+                    fields,
+                    spread,
+                );
+                // Also recurse into children for safety (but sibling collection should cover it)
+                for child in children {
+                    collect_fields(
+                        &child,
+                        interner,
+                        body,
+                        diags,
+                        struct_field_map,
+                        fields,
+                        spread,
+                    );
+                }
+            }
+            _ => {
+                // For other nodes, just recurse
+                for child in n.children() {
+                    collect_fields(
+                        &child,
+                        interner,
+                        body,
+                        diags,
+                        struct_field_map,
+                        fields,
+                        spread,
+                    );
+                }
+            }
+        }
+    }
+
+    collect_fields(
+        node,
+        interner,
+        body,
+        diags,
+        struct_field_map,
+        &mut fields,
+        &mut spread,
+    );
+
+    // Remove any field that matches the struct name (shorthand for the struct itself)
     let path_id = path.unwrap_or_else(|| body.alloc_missing(node_span(node)));
     let path_struct = if let Expr::Path(p) = &body.exprs[path_id] {
         p.clone()
@@ -367,6 +494,10 @@ fn lower_struct_expr(
         }
     };
     let struct_name = path_struct.as_name();
+    if let Some(struct_name_val) = struct_name {
+        fields.retain(|(name, _)| *name != struct_name_val);
+    }
+
     let ordered_fields = if let Some(name) = struct_name {
         if let Some(def_order) = struct_field_map.get(&name) {
             let mut ordered = Vec::new();
@@ -874,7 +1005,7 @@ fn lower_match_expr(
                     | SyntaxKind::PatTuple
                     | SyntaxKind::PatStruct
                     | SyntaxKind::PatOr => {
-                        pat_id = lower_pat(&part, interner, &mut body.pats);
+                        pat_id = lower_pat(&part, interner, &mut body.pats, diags)
                     }
                     _ if is_expr_node(&part) => {
                         if body_id.is_none() {
@@ -962,7 +1093,7 @@ fn lower_for_expr(
     })?;
     let iterable_node = children.find(|c| is_expr_node(c) || c.kind() == SyntaxKind::RangeExpr)?;
     let body_node = children.find(|c| c.kind() == SyntaxKind::Block)?;
-    let pat_id = lower_pat(&pat_node, interner, &mut body.pats)?;
+    let pat_id = lower_pat(&pat_node, interner, &mut body.pats, diags)?;
     let iterable_id = lower_expr(&iterable_node, interner, body, diags, struct_field_map)?;
     let body_id = lower_expr(&body_node, interner, body, diags, struct_field_map)?;
     let expr = Expr::For {
