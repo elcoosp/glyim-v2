@@ -1,6 +1,3 @@
-use tracing;n
-use tracing;n
-use tracing;n
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_core::primitives::Mutability;
@@ -587,6 +584,7 @@ impl<'a> MirBuilder<'a> {
         span: glyim_span::Span,
     ) {
         match &pat.kind {
+            thir::PatternKind::Range { start: _, end: _, inclusive: _ } => {},
             thir::PatternKind::Binding {
                 name,
                 mutability,
@@ -817,6 +815,7 @@ impl<'a> MirBuilder<'a> {
 
     fn pattern_to_switch_value(&self, pat: &thir::Pattern) -> u128 {
         match &pat.kind {
+            thir::PatternKind::Range { .. } => u128::MAX,
             thir::PatternKind::Literal(lit) => match lit {
                 thir::Literal::Int(v, _) => *v as u128,
                 thir::Literal::Uint(v, _) => *v,
@@ -850,12 +849,6 @@ impl<'a> MirBuilder<'a> {
                 } else {
                     None
                 }
-            }
-            thir::PatternKind::Range { start, end, inclusive } => {
-                tracing::warn!("range pattern lowering not implemented");
-                let err_place = self.alloc_local(Ty::ERROR, Mutability::Mut, span);
-                self.push_stmt(glyim_mir::StatementKind::StorageLive(err_place), span);
-                (glyim_mir::Place::new(err_place), None)
             }
             _ => None,
         }
