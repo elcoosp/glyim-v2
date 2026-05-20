@@ -3,8 +3,9 @@
 use glyim_test::test_frozen_ty_ctx;
 use glyim_core::{FnDefId, CrateId, LocalDefId, Name};
 use glyim_type::Substitution;
-use glyim_mir::{MirConst, MirConstKind, Body, BasicBlockIdx, BasicBlockData, Terminator, TerminatorKind, SourceInfo, Statement, StatementKind, Rvalue, Operand, LocalDecl, Mutability, Place, LocalIdx};
-use glyim_codegen::{BytecodeBackend, CodegenBackend};
+use glyim_mir::{MirConst, MirConstKind, Body, BasicBlockData, Terminator, TerminatorKind, SourceInfo, Statement, StatementKind, Rvalue, Operand, LocalDecl, Place, LocalIdx};
+use glyim_core::primitives::Mutability;
+use crate::{BytecodeBackend, CodegenBackend};
 use std::sync::Arc;
 
 #[test]
@@ -16,7 +17,7 @@ fn string_constant_emitted_to_string_table() {
         mutability: Mutability::Not,
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     });
-    let name = Name::from_symbol(glyim_core::Symbol::intern("test_string"));
+    let name = Name::from_symbol(glyim_core::Interner::default().intern("test_string"));
     let mir_const = MirConst {
         kind: MirConstKind::String(name),
         ty: ctx.unit_ty(),

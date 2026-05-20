@@ -1,7 +1,6 @@
 //! Tests for ABI-aware argument passing (S08-T04)
 
-use glyim_test::test_frozen_ty_ctx;
-use glyim_codegen::BytecodeBackend;
+use crate::BytecodeBackend;
 
 #[test]
 fn backend_instantiates_with_layout_provider() {
@@ -12,8 +11,8 @@ fn backend_instantiates_with_layout_provider() {
 #[test]
 fn backend_accepts_custom_layout_provider() {
     struct TestProvider;
-    impl glyim_codegen::LayoutProvider for TestProvider {
-        fn field_offset(&self, _ty: glyim_type::Ty, _field_idx: glyim_core::FieldIdx) -> u64 {
+    impl crate::LayoutProvider for TestProvider {
+        fn field_offset(&self, _ty: glyim_type::Ty, _field_idx: glyim_type::FieldIdx) -> u64 {
             16
         }
     }

@@ -2,9 +2,10 @@
 
 use glyim_test::test_frozen_ty_ctx;
 use glyim_core::primitives::*;
-use glyim_type::{Ty, TyKind, FieldIdx};
-use glyim_mir::{Place, ProjectionElem, LocalIdx, Body, BasicBlockIdx, BasicBlockData, Terminator, TerminatorKind, SourceInfo, Statement, StatementKind, Rvalue, Operand, LocalDecl, Mutability};
-use glyim_codegen::{BytecodeBackend, CodegenBackend};
+use glyim_type::{TyKind, FieldIdx};
+use glyim_mir::{Place, ProjectionElem, LocalIdx, Body, BasicBlockData, Terminator, TerminatorKind, SourceInfo, Statement, StatementKind, Rvalue, LocalDecl};
+use glyim_core::primitives::Mutability;
+use crate::{BytecodeBackend, CodegenBackend, LayoutProvider};
 use std::sync::Arc;
 
 #[test]
