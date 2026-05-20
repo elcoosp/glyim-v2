@@ -1,6 +1,7 @@
 mod aggregate;
 mod backend_tests;
 mod binary_ops;
+mod bytecode_tests;
 mod cast;
 mod comprehensive;
 mod discriminant_len;
