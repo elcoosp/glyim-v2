@@ -8,6 +8,7 @@ use glyim_type::{FieldIdx, Ty};
 use std::sync::Arc;
 
 // Opcode constants
+use glyim_core::primitives::Mutability;
 const OP_LOAD_LOCAL: u8 = 0x16;
 const OP_STORE_LOCAL: u8 = 0x17;
 const OP_LOAD_LOCAL_ADDR: u8 = 0x29;
@@ -39,8 +40,6 @@ fn dummy_body(statements: Vec<Statement>, terminator: Terminator) -> Arc<Body> {
 
 #[test]
 fn assign_with_field_projection_emits_store_field() {
-    // Use field index 0, but we don't care about the exact index because the store
-    // address is computed via emit_place_address which adds the field offset.
     let field_idx = FieldIdx::from_raw(0);
     let local_idx = LocalIdx::from_raw(0);
     let place = Place {
@@ -49,26 +48,38 @@ fn assign_with_field_projection_emits_store_field() {
     };
     let rvalue = Rvalue::Use(Operand::Constant(MirConst {
         kind: MirConstKind::Int(42),
-        ty: Ty::ERROR,
+        ty: Ty::UNIT,
         span: Span::DUMMY,
     }));
     let stmt = Statement {
         kind: StatementKind::Assign(place, rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(
-        vec![stmt],
-        Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-    );
+
+    // Build body with locals
+    let mut b = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+    b.locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
+    let mut block = BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    block.statements.push(stmt);
+    b.basic_blocks.push(block);
+    let body: Arc<Body> = Arc::new(b);
+
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
 
-    // Check that OP_STORE_FIELD appears somewhere.
-    let found = bytecode.iter().any(|&b| b == OP_STORE_FIELD);
-    assert!(found, "OP_STORE_FIELD not emitted for field assignment");
+    // Verify bytecode contains OP_STORE_FIELD (terminator follows it)
+    assert!(
+        bytecode.contains(&OP_STORE_FIELD),
+        "OP_STORE_FIELD missing in bytecode"
+    );
 }
 
 #[test]
@@ -85,13 +96,28 @@ fn ref_with_projection_emits_addr_and_offset() {
         kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(1)), rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(
-        vec![stmt],
-        Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-    );
+
+    // Build body with locals so emit_place_address doesn't early-return
+    let mut b = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+    b.locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    b.locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
+    let mut block = BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    block.statements.push(stmt);
+    b.basic_blocks.push(block);
+    let body: Arc<Body> = Arc::new(b);
+
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
 

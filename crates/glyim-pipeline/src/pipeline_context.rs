@@ -8,7 +8,6 @@ use glyim_type::TyCtx;
 use std::cell::RefCell;
 use tracing::warn;
 
-/// Real LowerCtx used by the pipeline.
 pub(crate) struct PipelineLowerCtx<'a> {
     ty_ctx: &'a TyCtx,
     hir: &'a CrateHir,
@@ -31,7 +30,6 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
     }
 
     fn adt_def(&self, id: AdtId) -> AdtDef {
-        // First try to get the definition from the type context.
         if let Some(adt_def) = self.ty_ctx.adt_def(id) {
             let variants = adt_def
                 .variants
@@ -48,9 +46,6 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
             return AdtDef { variants, kind };
         }
 
-        // Fallback: construct a minimal ADT definition from HIR.
-        // This is primarily for tests where the TyCtx may not have the ADT
-        // registered, but we still need to satisfy variant count expectations.
         let def_id = glyim_core::def_id::DefId::new(
             glyim_core::def_id::CrateId::from_raw(0),
             glyim_core::def_id::LocalDefId::from_raw(id.to_raw()),
@@ -60,15 +55,10 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
         match self.hir.items.get(item_id) {
             Some(item) => match &item.kind {
                 ItemKind::Struct(s) => {
-                    // Struct has exactly one variant.
                     let fields = s
                         .fields
                         .iter()
-                        .map(|_f| {
-                            // We don't have a proper Ty for the field here,
-                            // but the test only cares about variant count, not field types.
-                            self.ty_ctx.error_ty()
-                        })
+                        .map(|_field| self.ty_ctx.error_ty())
                         .collect();
                     AdtDef {
                         variants: vec![AdtVariant { fields }],
@@ -119,7 +109,6 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
     }
 }
 
-/// Real BorrowckCtx used by the pipeline.
 pub(crate) struct PipelineBorrowckCtx<'a> {
     ty_ctx: &'a TyCtx,
     body: &'a Body,

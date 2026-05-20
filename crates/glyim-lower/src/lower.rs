@@ -11,6 +11,28 @@ pub struct LowerResult {
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
 
+/// Pre-computed information about the `Iterator::next` method for a specific
+/// iterator type. Used by for-loop lowering to generate the `next()` call
+/// and `Option` switching.
+///
+/// All types are pre-constructed during the mutable type-context phase because
+/// the lowering only has access to a frozen `TyCtx`.
+#[derive(Clone, Debug)]
+pub struct IteratorNextInfo {
+    /// The `FnDefId` for the `Iterator::next` method.
+    pub fn_def_id: FnDefId,
+    /// The substitution for the `next()` method.
+    pub fn_substs: Substitution,
+    /// The type of the `next()` function reference (`TyKind::FnDef`).
+    pub fn_ty: Ty,
+    /// The return type of `next()`: `Option<elem_ty>`.
+    pub option_ty: Ty,
+    /// The discriminant type for the `Option` enum (typically `u8`).
+    pub discr_ty: Ty,
+    /// The type of `&mut I` — the argument passed to `next()`.
+    pub ref_iter_ty: Ty,
+}
+
 /// Context trait provided by the caller to the THIR→MIR lowering.
 ///
 /// Implementors provide type information, ADT definitions, and name-resolution
@@ -64,6 +86,20 @@ pub trait LowerCtx {
         _def_id: ConstDefId,
         _substs: Substitution,
     ) -> Option<glyim_mir::MirConst> {
+        None
+    }
+
+    /// Get information about the `Iterator::next` method for the given
+    /// iterator type.
+    ///
+    /// Returns `None` if the iterator protocol is not available, in which
+    /// case for-loop lowering uses a simplified model (loop without
+    /// `next()` call).
+    ///
+    /// When `Some` is returned, for-loop lowering generates a full `Call`
+    /// terminator for `next()` followed by a `SwitchInt` on the `Option`
+    /// discriminant.
+    fn iterator_next_fn(&self, _iter_ty: Ty, _elem_ty: Ty) -> Option<IteratorNextInfo> {
         None
     }
 }

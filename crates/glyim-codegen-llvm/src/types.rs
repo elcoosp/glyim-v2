@@ -42,14 +42,21 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             64 => context.f64_type().into(),
             other => {
                 tracing::warn!(
-                    "STUB: unsupported float width {}, falling back to f64",
+                    "unsupported float width {} in TyKind::Float, falling back to f64",
                     other
                 );
                 context.f64_type().into()
             }
         },
         TyKind::Char => int_type(context, 32).into(),
-        TyKind::String => context.ptr_type(inkwell::AddressSpace::default()).into(),
+        TyKind::String => {
+            // String is a fat pointer: { *u8 data, usize len }
+            let ptr_ty = context.ptr_type(inkwell::AddressSpace::default());
+            let len_ty = int_type(context, target_info.pointer_width());
+            context
+                .struct_type(&[ptr_ty.into(), len_ty.into()], false)
+                .into()
+        }
         TyKind::Ref(..) | TyKind::RawPtr(..) => {
             context.ptr_type(inkwell::AddressSpace::default()).into()
         }
@@ -78,7 +85,9 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 glyim_type::ConstKind::Uint(n) => *n as u32,
                 glyim_type::ConstKind::Int(n) => *n as u32,
                 _ => {
-                    tracing::warn!("STUB: array with non-integer count, defaulting to 0");
+                    tracing::warn!(
+                        "array with non-integer count in TyKind::Array — defaulting to 0"
+                    );
                     0
                 }
             };

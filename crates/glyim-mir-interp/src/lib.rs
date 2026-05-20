@@ -628,11 +628,7 @@ impl<'tcx> Interpreter<'tcx> {
         if let Some(ProjectionElem::Deref) = place.projection.first() {
             if proj_count > 1 {
                 // Deref followed by further projections: read through deref, then write through rest
-                let _inner_place = Place {
-                    local: place.local,
-                    projection: place.projection[1..].to_vec().into_boxed_slice(),
-                };
-                // But we need to resolve deref first to get the target local
+                // Resolve deref first to get the target local
                 let base_val = self
                     .locals
                     .get(idx)
@@ -700,7 +696,7 @@ impl<'tcx> Interpreter<'tcx> {
 
     fn write_through_projections_with_locals(
         &self,
-        mut base: InterpValue,
+        base: InterpValue,
         projections: &[ProjectionElem],
         val: InterpValue,
     ) -> InterpResult<InterpValue> {
@@ -712,7 +708,7 @@ impl<'tcx> Interpreter<'tcx> {
             ProjectionElem::Field(field_idx) => {
                 let fi = field_idx.index();
                 match base {
-                    InterpValue::Aggregate(ref mut fields) => {
+                    InterpValue::Aggregate(mut fields) => {
                         if fi >= fields.len() {
                             return Err(InterpError::Panic(format!(
                                 "field index {} out of bounds (len {})",
@@ -723,7 +719,7 @@ impl<'tcx> Interpreter<'tcx> {
                         let inner = fields[fi].clone();
                         fields[fi] =
                             self.write_through_projections_with_locals(inner, rest, val)?;
-                        Ok(base)
+                        Ok(InterpValue::Aggregate(fields))
                     }
                     _ => Err(InterpError::Panic(
                         "field projection on non-aggregate".into(),
@@ -747,7 +743,7 @@ impl<'tcx> Interpreter<'tcx> {
                     _ => return Err(InterpError::Panic("index must be an integer".into())),
                 };
                 match base {
-                    InterpValue::Aggregate(ref mut elems) => {
+                    InterpValue::Aggregate(mut elems) => {
                         if idx_u >= elems.len() {
                             return Err(InterpError::Panic(format!(
                                 "index {} out of bounds (len {})",
@@ -758,7 +754,7 @@ impl<'tcx> Interpreter<'tcx> {
                         let inner = elems[idx_u].clone();
                         elems[idx_u] =
                             self.write_through_projections_with_locals(inner, rest, val)?;
-                        Ok(base)
+                        Ok(InterpValue::Aggregate(elems))
                     }
                     _ => Err(InterpError::Panic(
                         "index projection on non-aggregate".into(),
