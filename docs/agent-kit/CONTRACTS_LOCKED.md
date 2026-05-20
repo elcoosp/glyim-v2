@@ -1,6 +1,6 @@
 # Locked Public Contracts — v0.2.0
 
-Generated from: actual codebase scan (2026-05-18)  
+Generated from: actual codebase scan (2026-05-20)  
 Any change to items listed here requires a formal Change Request.
 
 ---
@@ -375,7 +375,7 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 - `pub struct LspState` — `new(db: Database)`, `start_driver(&mut self, cache_dir: PathBuf)`, `did_open(&mut self, path: PathBuf, content: String, version: i32)`, `did_change(&mut self, path: PathBuf, content: String, version: i32)`, `did_close(&mut self, path: &PathBuf)`, `file_content(&self, path: &PathBuf) -> Option<String>`, `diagnostics_for_file(&self, path: &PathBuf) -> Vec<GlyimDiagnostic>`, `file_id(&self, path: &PathBuf) -> Option<FileId>`
 - `pub mod uri` — `pub fn path_to_uri(path: &Path) -> Result<String, String>`, `pub fn uri_to_file_path(uri: &str) -> Result<PathBuf, String>`, `pub fn offset_to_position(text: &str, offset: usize) -> Result<(usize, usize), String>`
-- `pub struct AnalysisDatabase` — `new`, `touch`, `evict_stale` (fields are crate‑internal)
+- `pub struct AnalysisDatabase` (crate‑internal, but re‑exported for type safety; do not depend on its fields)
 - `pub struct ReferenceGraph`, `Reference`, `ReferenceKind`, `SymbolIndex`, `SymbolInfo`, `SymbolKind`, `DefinitionLocation`, `TypeSignature` (public via re‑export)
 
 ---
@@ -401,20 +401,16 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 
 ## glyim-test
 
-- `pub mod annotations` — `Annotation` struct, `MatchPattern` enum, `parse_all`
-- `pub mod assertions` — `assert_no_errors`, `assert_has_errors`, `assert_error_count`, `assert_diag_contains`, `assert_diag_code`, `assert_has_severity`, `assert_layout`, `assert_mir`, `assert_ty`, `assert_ty_eq`, `check_ty`, `assert_span_pushed`, `assert_spans_balanced`
-- `pub mod comparison` — `compare_diagnostics`, `normalize_output`, `NormalizedDiag`, `ComparisonResult`, `DiagSeverityExt`
-- `pub mod error` — `TestDiscoveryError`, `FailureReason`, `TimeoutError`, `AssertionFailure`
-- `pub mod fixtures` — `SourceBuilder`, `TyCtxBuilder`, `TyFactory`
-- `pub mod harness` — `TestMode`, `TestPlan`, `TestRunner`, `TestResult`, `DiscoveredTest`, `TestConfig`, `TestExecutor`, `TestReporter`, `TestSummary`, `TestOutcome`, `FrontendOnlyCompiler`, `PipelineCompiler`
-- `pub mod mock` — `MockBorrowckCtx`, `MockCodegen`, `TestDbBuilder`, `MockLowerCtx`, `MockSolver`
-- `pub mod phase` — `FrontendTester`, `AnalysisTester`, `MirGenTester`, `CodegenTester`, `CompilationTrace`
-- `pub mod property` — `check_ty_property`, `Generator`, `sentinel_invariant`
-- `pub mod snapshot` — `snapshot_cst`, `snapshot_mir`, `snapshot_def_map`
-- `pub fn test_ty_ctx() -> TyCtxMut`
-- `pub fn test_frozen_ty_ctx() -> TyCtx`
-- `pub fn with_fresh_ty_ctx<F, R>(f: F) -> (TyCtx, R)`
-- Re‑exports from sub‑modules: assertion helpers, fixture builders, mock types, phase testers, property checker, snapshot functions, error types
+- **Harness & utilities** – `TestMode`, `TestPlan`, `TestRunner`, `TestResult`, `TestConfig`, `TestExecutor`, `FrontendOnlyCompiler`, `PipelineCompiler`, `TestReporter`, `TestSummary`, `TestOutcome`, `DiscoveredTest`
+- **Annotations** – `Annotation`, `MatchPattern`, `parse_all`
+- **Assertions** – `assert_no_errors`, `assert_has_errors`, `assert_error_count`, `assert_diag_contains`, `assert_diag_code`, `assert_has_severity`, `assert_layout`, `assert_mir`, `assert_ty`, `assert_ty_eq`, `check_ty`, `assert_span_pushed`, `assert_spans_balanced`
+- **Comparison** – `compare_diagnostics`, `normalize_output`, `NormalizedDiag`, `ComparisonResult`, `DiagSeverityExt`
+- **Fixtures** – `SourceBuilder`, `TyCtxBuilder`, `TyFactory`
+- **Mocks** – `MockBorrowckCtx`, `MockCodegen`, `TestDbBuilder`, `MockLowerCtx`, `MockSolver`
+- **Phases** – `FrontendTester`, `AnalysisTester`, `MirGenTester`, `CodegenTester`, `CompilationTrace`
+- **Properties** – `check_ty_property`, `Generator`, `sentinel_invariant`
+- **Snapshot** – `snapshot_cst`, `snapshot_mir`, `snapshot_def_map`
+- **Helpers** – `test_ty_ctx() -> TyCtxMut`, `test_frozen_ty_ctx() -> TyCtx`, `with_fresh_ty_ctx<F, R>(f: F) -> (TyCtx, R)`
 
 ---
 
@@ -452,7 +448,6 @@ Re‑exports: `glyim_span::{MultiSpan, Span}`, `miette::{Diagnostic as MietteDia
 - `pub mod error` — `GlyipError`, `GlyipResult`
 - `pub mod fingerprint` — `Fingerprint`, `FingerprintStore`
 - `pub mod lockfile` — `Lockfile`, `LockedCrate`, `CrateSource`
-- Re‑exports of all public types from sub‑modules
 
 ---
 
@@ -462,4 +457,4 @@ This crate is a development tool and its public interface is not locked.
 
 ---
 
-**Note:** This contract reflects the exact public API as of the provided codebase (2026-05-18). Any addition, removal, or modification of these items requires a formal Change Request before being merged.
+**Note:** This contract reflects the exact public API as of the provided codebase (2026-05-20). Any addition, removal, or modification of these items requires a formal Change Request before being merged.
