@@ -1,5 +1,3 @@
-//! Test suite for glyim-mir
-
 mod aggregate_kind;
 mod assert_message;
 mod basic_block;

@@ -1,4 +1,3 @@
-#![allow(unused_variables)]
 mod expr_lowering;
 mod lower_comprehensive;
 mod lower_edge;
@@ -14,5 +13,5 @@ mod lower_struct;
 mod lower_stubs;
 mod lower_type;
 mod number_suffix;
-pub mod pattern_lowering;
+mod pattern_lowering;
 mod type_lowering;
