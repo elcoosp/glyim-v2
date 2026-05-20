@@ -192,7 +192,19 @@ fn compute_auto_traits_for_kind(
                     continue;
                 }
 
-                if let Some(repr) = adt_reprs.get(adt_id) {
+                // First, try AdtDef via TypeLookup (full definition with named fields).
+                if let Some(def) = lookup.adt_def(*adt_id) {
+                    for field in def.fields.iter() {
+                        let field_flags = compute_auto_traits_recursive(
+                            field.ty, lookup, registry, adt_reprs, cache, evaluating,
+                        );
+                        if !field_flags.contains(trait_flag) {
+                            flags -= trait_flag;
+                            break;
+                        }
+                    }
+                } else if let Some(repr) = adt_reprs.get(adt_id) {
+                    // Fall back to AdtRepr (field type list only).
                     for &field_ty in &repr.field_tys {
                         let field_flags = compute_auto_traits_recursive(
                             field_ty, lookup, registry, adt_reprs, cache, evaluating,
@@ -203,10 +215,7 @@ fn compute_auto_traits_for_kind(
                         }
                     }
                 } else {
-                    tracing::warn!(
-                        "STUB: no AdtRepr registered for AdtId {}, assuming no auto traits",
-                        adt_id.to_raw()
-                    );
+                    // No definition or repr registered — cannot determine auto traits.
                     flags = AutoTraitFlags::empty();
                     break;
                 }
