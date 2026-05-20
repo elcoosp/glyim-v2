@@ -196,7 +196,6 @@ pub enum SyntaxKind {
     // Macro metavariables
     MetaVar,
     MetaVarCrate,
-
 }
 
 impl SyntaxKind {
