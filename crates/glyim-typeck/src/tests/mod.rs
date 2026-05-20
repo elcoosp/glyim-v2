@@ -33,3 +33,7 @@ mod while_loop;
 // Helper modules
 mod common;
 mod test_utils;
+mod method_resolution;
+mod for_loop_desugar;
+mod pattern_checking;
+mod cast_handling;
