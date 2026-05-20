@@ -26,3 +26,6 @@ mod rename;
 mod rename_tests;
 mod symbol_index_tests;
 mod test_utils;
+mod references_tests;
+mod graph_tests;
+mod server_tests;

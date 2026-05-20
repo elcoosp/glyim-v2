@@ -16,6 +16,7 @@ pub enum ReferenceKind {
     FieldAccess,
     Constructor,
     Pattern,
+    Definition,
 }
 
 pub struct ReferenceGraph {

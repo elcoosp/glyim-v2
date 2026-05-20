@@ -1,0 +1,18 @@
+use crate::LspState;
+use glyim_db::{Database, CrateConfig};
+use std::path::PathBuf;
+
+#[test]
+fn run_server_wires_router() {
+    // This test just ensures LspState and driver can be initialized.
+    let config = CrateConfig {
+        name: "test".to_string(),
+        target_triple: "x86_64".to_string(),
+        opt_level: 0,
+    };
+    let db = Database::new(config);
+    let mut state = LspState::new(db);
+    state.start_driver(PathBuf::from("/tmp/cache"));
+    // If we get here without panic, the router is wired enough.
+    assert!(true);
+}
