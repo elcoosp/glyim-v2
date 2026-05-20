@@ -20,7 +20,7 @@ fn try_from_raw_roundtrip_all_variants() {
 
 #[test]
 fn try_from_raw_invalid_returns_none() {
-    let invalid_raw = (SyntaxKind::Error as u16) + 1;
+    let invalid_raw = u16::MAX;
     assert_eq!(SyntaxKind::try_from_raw(invalid_raw), None);
 }
 

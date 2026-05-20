@@ -9,11 +9,8 @@ use std::sync::Arc;
 
 // Opcode constants
 use glyim_core::primitives::Mutability;
-const OP_LOAD_LOCAL: u8 = 0x16;
-const OP_STORE_LOCAL: u8 = 0x17;
 const OP_LOAD_LOCAL_ADDR: u8 = 0x29;
 const OP_STORE_FIELD: u8 = 0x2A;
-const OP_DEREF: u8 = 0x2B;
 const OP_DROP: u8 = 0x2C;
 const OP_ASSERT: u8 = 0x21;
 const OP_LOAD_CONST: u8 = 0x01;

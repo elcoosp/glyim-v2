@@ -11,7 +11,7 @@ fn test_database_tyctx_roundtrip() {
         opt_level: 0,
     });
     // Create a TyCtx (frozen) from a mutable builder
-    let mut ctx_mut = glyim_test::test_ty_ctx();
+    let ctx_mut = glyim_test::test_ty_ctx();
     let bool_ty = ctx_mut.bool_ty();
     let ctx = ctx_mut.freeze();
     // Store it (move, no clone)

@@ -4,7 +4,7 @@ use glyim_frontend;
 
 #[test]
 fn diagnostics_are_emitted_on_change() {
-    let mut db = AnalysisDatabase::new();
+    let db = AnalysisDatabase::new();
     let path = std::path::PathBuf::from("/test/diag.g");
     let file_id = db.file_map.write().get_or_create(&path);
 
@@ -14,7 +14,7 @@ fn diagnostics_are_emitted_on_change() {
     let lex_result = glyim_frontend::lex("fn main() { @ }", file_id);
     let parse_result = glyim_frontend::parse_to_syntax("fn main() { @ }", file_id);
     let mut interner = Interner::new();
-    let (hir, _hir_diags) =
+    let (_hir, _hir_diags) =
         glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
 
     let mut all_diags = Vec::new();
