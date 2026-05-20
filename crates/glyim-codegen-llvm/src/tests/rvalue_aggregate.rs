@@ -236,49 +236,86 @@ fn v13_t05_len_array() {
     Target::initialize_all(&InitializationConfig::default());
     let backend = LlvmBackend::new();
 
-    let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
-    locals.push(LocalDecl {
-        ty: Ty::UNIT,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
-    });
-    locals.push(LocalDecl {
-        ty: Ty::BOOL,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
-    });
-    locals.push(LocalDecl {
-        ty: Ty::BOOL,
-        mutability: Mutability::Mut,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+    // Import from correct modules
+    use glyim_core::UintTy;
+    use glyim_test::with_fresh_ty_ctx;
+    use glyim_type::{Const, ConstKind}; // ← Added Const imports
+
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        // 1. Create element type: u64
+        let elem_ty = ctx_mut.mk_ty(glyim_type::TyKind::Uint(UintTy::U64));
+
+        // 2. Create the length constant: Const { kind: Uint(4), ty: usize }
+        // Note: Construct Const directly; no mk_const method exists
+        let usize_ty = ctx_mut.mk_ty(glyim_type::TyKind::Uint(UintTy::U64));
+        let len_const = Const {
+            kind: ConstKind::Uint(4),
+            ty: usize_ty,
+        };
+
+        // 3. Create Array type: [u64; 4]
+        let array_ty = ctx_mut.mk_ty(glyim_type::TyKind::Array(elem_ty, len_const));
+
+        // 4. Result type for Len (usize/u64)
+        let result_ty = ctx_mut.mk_ty(glyim_type::TyKind::Uint(UintTy::U64));
+
+        let mut locals = IndexVec::<LocalIdx, LocalDecl>::new();
+
+        // Local 0: Return place
+        locals.push(LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        // Local 1: The array variable [u64; 4]
+        locals.push(LocalDecl {
+            ty: array_ty,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        // Local 2: Result of Len (usize)
+        locals.push(LocalDecl {
+            ty: result_ty,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        });
+
+        // Rvalue: Len of local 1 (the array)
+        let rvalue = Rvalue::Len(Place::new(LocalIdx::from_raw(1)));
+        let stmt = Statement {
+            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(2)), rvalue),
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        };
+
+        let term = Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(glyim_span::Span::DUMMY),
+        };
+
+        let bb0 = BasicBlockData {
+            statements: vec![stmt],
+            terminator: term,
+            is_cleanup: false,
+        };
+
+        let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
+        bbs.push(bb0);
+
+        Body {
+            owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            basic_blocks: bbs,
+            locals,
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: glyim_span::Span::DUMMY,
+            var_debug_info: vec![],
+        }
     });
 
-    let rvalue = Rvalue::Len(Place::new(LocalIdx::from_raw(1)));
-    let stmt = Statement {
-        kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(2)), rvalue),
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
-    };
-    let term = Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(glyim_span::Span::DUMMY),
-    };
-    let bb0 = BasicBlockData {
-        statements: vec![stmt],
-        terminator: term,
-        is_cleanup: false,
-    };
-    let mut bbs = IndexVec::<BasicBlockIdx, BasicBlockData>::new();
-    bbs.push(bb0);
-
-    let body = Body {
-        owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
-        basic_blocks: bbs,
-        locals,
-        arg_count: 0,
-        return_ty: Ty::UNIT,
-        span: glyim_span::Span::DUMMY,
-        var_debug_info: vec![],
-    };
+    // Backend must use the context that created our types
+    let backend = LlvmBackend::new().with_ty_ctx(ctx);
 
     let result = CodegenBackend::generate_function(&backend, &Arc::new(body));
     assert!(
