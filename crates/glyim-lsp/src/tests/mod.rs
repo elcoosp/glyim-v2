@@ -18,6 +18,17 @@ mod lsp_integration_tests;
 mod lsp_state_tests;
 mod navigation_tests;
 mod reference_graph;
+mod symbol_index;
+mod uri_tests;
+mod workspace_symbol_tests;
+// New test modules for M10
+mod code_action;
+mod code_action_tests;
+mod document_symbol_tests;
+mod driver_tests;
+mod folding;
+mod formatting;
+mod graph_tests;
 mod reference_graph_tests;
 mod references_tests;
 mod rename;

@@ -23,6 +23,7 @@ dashmap = "6.1"
 parking_lot = "0.12"
 url = "2.5"
 file_url = "0.3"
+glyim-def-map = { workspace = true }
 
 [dev-dependencies]
 glyim-test = { workspace = true }
