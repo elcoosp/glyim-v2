@@ -404,11 +404,11 @@ impl DependencyResolver {
     ///
     /// Returns the path to the extracted source directory.
     pub fn download_crate(&self, locked: &LockedCrate, cache_dir: &Path) -> GlyipResult<PathBuf> {
-        if let Some(ref client) = self.registry_client {
-            if let CrateSource::Registry { .. } = &locked.source {
-                let dest = cache_dir.join("registry").join(&locked.name);
-                return client.download_crate(&locked.name, &locked.version, &dest);
-            }
+        if let Some(ref client) = self.registry_client
+            && let CrateSource::Registry { .. } = &locked.source
+        {
+            let dest = cache_dir.join("registry").join(&locked.name);
+            return client.download_crate(&locked.name, &locked.version, &dest);
         }
         Err(GlyipError::RegistryError(format!(
             "no registry client available to download '{}'",
