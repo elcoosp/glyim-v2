@@ -17,7 +17,6 @@ impl<'a> FullLayoutComputer<'a> {
             ctx,
         }
     }
-
     fn ptr_size(&self) -> Size {
         self.simple.ptr_size()
     }
@@ -28,6 +27,9 @@ impl LayoutComputer for FullLayoutComputer<'_> {
         match self.ctx.ty_kind(ty) {
             TyKind::Tuple(subst) => {
                 let args = self.ctx.substitution_args(*subst);
+                if args.is_empty() {
+                    return Ok(Layout::unit());
+                }
                 let mut field_layouts = Vec::new();
                 for arg in args {
                     if let glyim_type::GenericArg::Ty(t) = arg {
@@ -73,6 +75,11 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                     is_unsized: false,
                 })
             }
+            TyKind::Adt(adt_id, _subst) => {
+                // Delegate to simple layout computer for ADTs
+                // Full enum layout requires AdtDef integration which is complex
+                self.simple.layout_of(ty)
+            }
             _ => self.simple.layout_of(ty),
         }
     }
@@ -80,7 +87,6 @@ impl LayoutComputer for FullLayoutComputer<'_> {
     fn fn_abi_of(&self, sig: &glyim_type::FnSig) -> Result<FnAbi, LayoutError> {
         let ptr_size = self.ptr_size();
         let large_threshold = ptr_size.0.saturating_mul(2);
-
         let ret_layout = self.layout_of(sig.output)?;
         let ret_mode = if ret_layout.size.0 == 0 {
             PassMode::Ignore
@@ -89,7 +95,6 @@ impl LayoutComputer for FullLayoutComputer<'_> {
         } else {
             PassMode::Direct
         };
-
         let args = self.ctx.substitution_args(sig.inputs);
         let mut arg_abis = Vec::with_capacity(args.len());
         for arg in args {
@@ -109,7 +114,6 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                 });
             }
         }
-
         Ok(FnAbi {
             args: arg_abis,
             ret: ArgAbi {
@@ -125,11 +129,9 @@ impl LayoutComputer for FullLayoutComputer<'_> {
     fn ptr_size(&self) -> Size {
         self.simple.ptr_size()
     }
-
     fn ptr_align(&self) -> Align {
         self.simple.ptr_align()
     }
-
     fn target_info(&self) -> &TargetInfo {
         self.simple.target_info()
     }

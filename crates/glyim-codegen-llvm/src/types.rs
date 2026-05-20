@@ -4,18 +4,6 @@ use inkwell::context::Context;
 use inkwell::types::{BasicType, BasicTypeEnum, IntType};
 use std::num::NonZeroU32;
 
-/// Map a Glyim `Ty` to the corresponding LLVM `BasicTypeEnum`.
-///
-/// # Preconditions
-/// - `ctx` must contain the interned type for `ty`.
-/// - `target_info` must reflect the compilation target.
-///
-/// # Postconditions
-/// - Returns a valid LLVM type representing the Glyim type.
-/// - `TyKind::Error` maps to `i64` (a visible but safe fallback).
-/// - `TyKind::Float(F32)` maps to `f32`, `Float(F64)` maps to `f64`.
-/// - Aggregates (tuples, arrays, ADTs) map to LLVM struct/array types.
-/// - Unknown `TyKind` variants map to `i64` with a tracing warning.
 pub(crate) fn llvm_type_for_ty<'ctx>(
     ctx: &TyCtx,
     target_info: &TargetInfo,
@@ -24,33 +12,19 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
 ) -> BasicTypeEnum<'ctx> {
     match ctx.ty_kind(ty) {
         TyKind::Error => {
-            tracing::debug!("error Ty maps to i64");
-            int_type(context, 64).into()
+            panic!("TyKind::Error reached LLVM codegen – type checking should have caught this")
         }
         TyKind::Never | TyKind::Unit => context.struct_type(&[], false).into(),
         TyKind::Bool => int_type(context, 1).into(),
-        TyKind::Int(it) => {
-            let bw = it.bit_width(target_info);
-            int_type(context, bw).into()
-        }
-        TyKind::Uint(ut) => {
-            let bw = ut.bit_width(target_info);
-            int_type(context, bw).into()
-        }
+        TyKind::Int(it) => int_type(context, it.bit_width(target_info)).into(),
+        TyKind::Uint(ut) => int_type(context, ut.bit_width(target_info)).into(),
         TyKind::Float(ft) => match ft.bit_width() {
             32 => context.f32_type().into(),
             64 => context.f64_type().into(),
-            other => {
-                tracing::warn!(
-                    "unsupported float width {} in TyKind::Float, falling back to f64",
-                    other
-                );
-                context.f64_type().into()
-            }
+            other => panic!("Unsupported float width {} in TyKind::Float", other),
         },
         TyKind::Char => int_type(context, 32).into(),
         TyKind::String => {
-            // String is a fat pointer: { *u8 data, usize len }
             let ptr_ty = context.ptr_type(inkwell::AddressSpace::default());
             let len_ty = int_type(context, target_info.pointer_width());
             context
@@ -84,12 +58,7 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             let n = match &count.kind {
                 glyim_type::ConstKind::Uint(n) => *n as u32,
                 glyim_type::ConstKind::Int(n) => *n as u32,
-                _ => {
-                    tracing::warn!(
-                        "array with non-integer count in TyKind::Array — defaulting to 0"
-                    );
-                    0
-                }
+                _ => panic!("Array with non-integer count in TyKind::Array"),
             };
             elem_llvm.array_type(n).into()
         }
@@ -100,22 +69,24 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 .struct_type(&[ptr_ty.into(), len_ty.into()], false)
                 .into()
         }
-        TyKind::Adt(_adt_id, subst) => {
-            // Without AdtDef, treat ADT fields from substitution args
-            let args = ctx.substitution_args(*subst);
-            if args.is_empty() {
-                return context.struct_type(&[], false).into();
-            }
-            let mut field_types = Vec::with_capacity(args.len());
-            for arg in args {
-                if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t));
+        TyKind::Adt(adt_id, _subst) => {
+            // Use AdtDef to get actual field types, not generic substitution args
+            if let Some(adt_def) = ctx.adt_def(*adt_id) {
+                // For now, handle the first variant (structs have one; enums need variant selection)
+                if let Some(variant) = adt_def.variants.first() {
+                    if variant.fields.is_empty() {
+                        return context.struct_type(&[], false).into();
+                    }
+                    let mut field_types = Vec::with_capacity(variant.fields.len());
+                    for field_def in variant.fields.iter() {
+                        // Use the field's actual type from AdtDef
+                        field_types.push(llvm_type_for_ty(ctx, target_info, context, field_def.ty));
+                    }
+                    return context.struct_type(&field_types, false).into();
                 }
             }
-            if field_types.is_empty() {
-                return context.struct_type(&[], false).into();
-            }
-            context.struct_type(&field_types, false).into()
+            // Fallback for missing AdtDef (should not happen in valid code)
+            context.struct_type(&[], false).into()
         }
         TyKind::Closure(_closure_id, subst) => {
             let args = ctx.substitution_args(*subst);
@@ -133,7 +104,8 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             }
             context.struct_type(&field_types, false).into()
         }
-        TyKind::Dynamic(_, _) => {
+        TyKind::Dynamic(..) => {
+            // Trait object fat pointer: { data: *T, vtable: *const VTable }
             let ptr_ty = context.ptr_type(inkwell::AddressSpace::default());
             context
                 .struct_type(&[ptr_ty.into(), ptr_ty.into()], false)
@@ -156,21 +128,20 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             context.struct_type(&field_types, false).into()
         }
         TyKind::Projection(_) => {
-            tracing::debug!("projection Ty maps to i64");
-            int_type(context, 64).into()
+            panic!("TyKind::Projection reached LLVM codegen – type normalization incomplete")
         }
-        TyKind::Param(_) => {
-            tracing::debug!("param Ty maps to i64");
-            int_type(context, 64).into()
-        }
-        TyKind::Bound(_, _) => {
-            tracing::debug!("bound Ty maps to i64");
-            int_type(context, 64).into()
-        }
-        TyKind::Infer(_) => {
-            tracing::debug!("infer Ty maps to i64");
-            int_type(context, 64).into()
-        }
+        TyKind::Param(param) => panic!(
+            "TyKind::Param({:?}) reached LLVM codegen – monomorphization should have resolved this",
+            param
+        ),
+        TyKind::Bound(debruijn, var) => panic!(
+            "TyKind::Bound({:?}, {:?}) reached LLVM codegen – binder instantiation failed",
+            debruijn, var
+        ),
+        TyKind::Infer(var) => panic!(
+            "TyKind::Infer({:?}) reached LLVM codegen – type inference incomplete",
+            var
+        ),
     }
 }
 

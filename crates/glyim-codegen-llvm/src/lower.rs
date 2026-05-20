@@ -5,13 +5,13 @@ use glyim_core::TargetInfo;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
 use glyim_diag::{CompResult, GlyimDiagnostic};
-use glyim_layout::{LayoutComputer, PassMode};
+use glyim_layout::{FieldsShape, LayoutComputer, PassMode, Size, VariantsShape};
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use glyim_span::{FileId, Span};
-use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
+use glyim_type::{ConstKind, FieldIdx, Ty, TyCtx, TyKind};
 use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -46,11 +46,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let non_zero = NonZeroU32::new(bits).unwrap_or_else(|| NonZeroU32::new(64).unwrap());
         self.context.custom_width_int_type(non_zero).unwrap()
     }
-
     fn llvm_type_for_ty(&self, ty: Ty) -> inkwell::types::BasicTypeEnum<'ctx> {
         llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty)
     }
-
     fn set_debug_location(&self, span: Span) {
         if span.is_dummy() {
             return;
@@ -61,20 +59,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             self.builder.set_current_debug_location(loc);
         }
     }
-
-    fn clear_debug_location(&self) {
-        if self.debug_ctx.is_some() {
-            // No direct clear, but setting to a dummy location is not needed.
-            // Leave as is; the next set_debug_location will overwrite.
-        }
-    }
-
+    fn clear_debug_location(&self) {}
     fn alloc_local(&mut self, local: LocalIdx) {
         let ty = local_ty(self.body, local);
         let llvm_ty = self.llvm_type_for_ty(ty);
         let name = format!("local_{}", local.index());
-
-        // Zero-sized types (unit, never, empty struct) get a null pointer
         let is_zero_sized = ty == Ty::UNIT
             || ty == Ty::NEVER
             || (if let inkwell::types::BasicTypeEnum::StructType(st) = llvm_ty {
@@ -82,7 +71,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             } else {
                 false
             });
-
         if is_zero_sized {
             let ptr = self
                 .context
@@ -97,11 +85,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             self.locals[local] = Some(alloca);
         }
     }
-
     fn get_local_ptr(&self, local: LocalIdx) -> PointerValue<'ctx> {
         self.locals[local].unwrap_or_else(|| panic!("local {} not allocated", local.index()))
     }
-
     fn lower_operand(&self, operand: &Operand) -> BasicValueEnum<'ctx> {
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
@@ -115,7 +101,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             Operand::Constant(c) => self.lower_const(c),
         }
     }
-
     fn lower_const(&self, c: &MirConst) -> BasicValueEnum<'ctx> {
         match &c.kind {
             MirConstKind::Int(v) => {
@@ -200,10 +185,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
                     .expect("const ref load failed")
             }
-            MirConstKind::Error => {
-                tracing::debug!("error constant lowered as i64 zero");
-                self.llvm_int_type(64).const_zero().into()
-            }
+            MirConstKind::Error => panic!("MirConstKind::Error reached codegen"),
         }
     }
 
@@ -225,38 +207,52 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ptr = loaded.into_pointer_value();
                     current_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
-                        other => {
-                            tracing::debug!(
-                                "Deref on non-pointer type {:?}, treating as pointer",
-                                other
-                            );
-                            let llvm_ty = self.llvm_type_for_ty(current_ty);
-                            let loaded = self
-                                .builder
-                                .build_load(llvm_ty, ptr, "deref_load_nonptr")
-                                .expect("deref load failed");
-                            ptr = loaded.into_pointer_value();
-                            current_ty
-                        }
+                        other => panic!("Deref on non-pointer type {:?} – MIR is invalid", other),
                     };
                 }
                 ProjectionElem::Field(idx) => {
-                    let field_idx = idx.to_raw() as u64;
-                    let i32_type = self.llvm_int_type(32);
-                    let zero = i32_type.const_zero();
-                    let field_index = i32_type.const_int(field_idx, false);
-
-                    let llvm_ty = self.llvm_type_for_ty(current_ty);
-                    ptr = unsafe {
-                        self.builder
-                            .build_in_bounds_gep(llvm_ty, ptr, &[zero, field_index], "field_gep")
-                            .expect("field gep failed")
+                    let layout_computer =
+                        FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+                    let layout = layout_computer
+                        .layout_of(current_ty)
+                        .expect("layout_of failed for field projection");
+                    let field_offset_bytes = match &layout.fields {
+                        FieldsShape::Arbitrary { offsets } => offsets
+                            .get(FieldIdx::from_raw(idx.to_raw()))
+                            .map(|s| s.0)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Field index {} out of bounds for {:?}",
+                                    idx.to_raw(),
+                                    current_ty
+                                )
+                            }),
+                        FieldsShape::Array { .. } | FieldsShape::Primitive => {
+                            panic!("Field projection on non-aggregate type {:?}", current_ty)
+                        }
                     };
-
-                    current_ty = match self.ty_ctx.ty_kind(current_ty) {
+                    let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
+                    let base_i8 = self
+                        .builder
+                        .build_bit_cast(ptr, i8_ptr, "field_base_i8")
+                        .expect("bitcast to i8* failed")
+                        .into_pointer_value();
+                    let offset_val = self.llvm_int_type(64).const_int(field_offset_bytes, false);
+                    let field_i8_ptr = unsafe {
+                        self.builder
+                            .build_in_bounds_gep(
+                                self.context.i8_type(),
+                                base_i8,
+                                &[offset_val],
+                                "field_offset",
+                            )
+                            .expect("field offset GEP failed")
+                    };
+                    let field_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Tuple(subst) => {
                             let args = self.ty_ctx.substitution_args(*subst);
-                            args.get(idx.to_raw() as usize)
+                            args.iter()
+                                .nth(idx.to_raw() as usize)
                                 .and_then(|arg| {
                                     if let glyim_type::GenericArg::Ty(t) = arg {
                                         Some(*t)
@@ -264,23 +260,32 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                         None
                                     }
                                 })
-                                .unwrap_or(Ty::ERROR)
+                                .unwrap_or_else(|| {
+                                    panic!("Tuple field {} out of bounds", idx.to_raw())
+                                })
                         }
-                        TyKind::Adt(_adt_id, subst) => {
-                            let args = self.ty_ctx.substitution_args(*subst);
-                            args.get(idx.to_raw() as usize)
-                                .and_then(|arg| {
-                                    if let glyim_type::GenericArg::Ty(t) = arg {
-                                        Some(*t)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or(Ty::ERROR)
+                        TyKind::Adt(adt_id, _) => {
+                            if let Some(adt_def) = self.ty_ctx.adt_def(*adt_id) {
+                                if let Some(variant) = adt_def.variants.first() {
+                                    variant
+                                        .fields
+                                        .iter()
+                                        .nth(idx.to_raw() as usize)
+                                        .map(|f| f.ty)
+                                        .unwrap_or_else(|| {
+                                            panic!("ADT field {} out of bounds", idx.to_raw())
+                                        })
+                                } else {
+                                    panic!("ADT has no variants");
+                                }
+                            } else {
+                                panic!("AdtDef not found for {:?}", adt_id);
+                            }
                         }
                         TyKind::Closure(_, subst) => {
                             let args = self.ty_ctx.substitution_args(*subst);
-                            args.get(idx.to_raw() as usize)
+                            args.iter()
+                                .nth(idx.to_raw() as usize)
                                 .and_then(|arg| {
                                     if let glyim_type::GenericArg::Ty(t) = arg {
                                         Some(*t)
@@ -288,16 +293,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                         None
                                     }
                                 })
-                                .unwrap_or(Ty::ERROR)
+                                .unwrap_or_else(|| {
+                                    panic!("Closure field {} out of bounds", idx.to_raw())
+                                })
                         }
-                        other => {
-                            tracing::debug!(
-                                "field projection on non-aggregate type {:?}, returning error type",
-                                other
-                            );
-                            Ty::ERROR
-                        }
+                        other => panic!("Field projection on non-aggregate type {:?}", other),
                     };
+                    let field_llvm_ty = self.llvm_type_for_ty(field_ty);
+                    let field_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+                    ptr = self
+                        .builder
+                        .build_bit_cast(field_i8_ptr, field_ptr_ty, "field_ptr")
+                        .expect("bitcast to field type failed")
+                        .into_pointer_value();
+                    current_ty = field_ty;
                 }
                 ProjectionElem::Index(local_idx) => {
                     let index_ptr = self.get_local_ptr(*local_idx);
@@ -312,17 +321,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .builder
                         .build_int_truncate(index_val, i32_ty, "idx_trunc")
                         .expect("idx trunc failed");
-
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) => *elem,
                         TyKind::Slice(elem) => *elem,
-                        other => {
-                            tracing::debug!(
-                                "index projection on non-array/slice type {:?}, returning error type",
-                                other
-                            );
-                            Ty::ERROR
-                        }
+                        other => panic!("Index projection on non-array/slice type {:?}", other),
                     };
                     let llvm_ty = self.llvm_type_for_ty(current_ty);
                     ptr = unsafe {
@@ -338,7 +340,41 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     current_ty = elem_ty;
                 }
                 ProjectionElem::Downcast(variant_idx) => {
-                    tracing::debug!("Downcast projection to variant {}", variant_idx.to_raw());
+                    let layout_computer =
+                        FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+                    let layout = layout_computer
+                        .layout_of(current_ty)
+                        .expect("layout_of failed for downcast");
+                    if let VariantsShape::Multiple {
+                        tag_size,
+                        tag_align,
+                        variants,
+                        ..
+                    } = &layout.variants
+                    {
+                        let vi = variant_idx.to_raw() as usize;
+                        if vi >= variants.len() {
+                            panic!("Variant index {} out of bounds for {:?}", vi, current_ty);
+                        }
+                        let data_start = Size(tag_size.0).align_to(*tag_align).0;
+                        let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
+                        let base_i8 = self
+                            .builder
+                            .build_bit_cast(ptr, i8_ptr, "downcast_base_i8")
+                            .expect("bitcast failed")
+                            .into_pointer_value();
+                        let offset_val = self.llvm_int_type(64).const_int(data_start, false);
+                        ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(
+                                    self.context.i8_type(),
+                                    base_i8,
+                                    &[offset_val],
+                                    "variant_data_ptr",
+                                )
+                                .expect("downcast GEP failed")
+                        };
+                    }
                 }
             }
         }
@@ -348,7 +384,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn place_ty(&self, place: &Place) -> Ty {
         local_ty(self.body, place.local)
     }
-
     fn emit_landingpad(&self) -> CompResult<()> {
         if let Some(personality_fn) = self.personality_fn {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -356,7 +391,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             let result_type = self
                 .context
                 .struct_type(&[ptr_type.into(), i32_type.into()], false);
-
             let _pad = self
                 .builder
                 .build_landing_pad(result_type, personality_fn, &[], true, "pad")
@@ -384,24 +418,27 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let is_float = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_));
                 let is_unsigned = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Uint(_));
                 if is_float {
-                    let lhs = lhs_val.into_float_value();
-                    let rhs = rhs_val.into_float_value();
-                    self.lower_float_binary_op(*op, lhs, rhs)
+                    self.lower_float_binary_op(
+                        *op,
+                        lhs_val.into_float_value(),
+                        rhs_val.into_float_value(),
+                    )
                 } else {
-                    let lhs = lhs_val.into_int_value();
-                    let rhs = rhs_val.into_int_value();
-                    self.lower_binary_op(*op, lhs, rhs, is_unsigned)
+                    self.lower_binary_op(
+                        *op,
+                        lhs_val.into_int_value(),
+                        rhs_val.into_int_value(),
+                        is_unsigned,
+                    )
                 }
             }
             Rvalue::UnaryOp(op, operand) => {
                 let val = self.lower_operand(operand);
                 let operand_ty = self.operand_ty(operand);
                 if matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_)) {
-                    let float_val = val.into_float_value();
-                    self.lower_float_unary_op(*op, float_val)
+                    self.lower_float_unary_op(*op, val.into_float_value())
                 } else {
-                    let int_val = val.into_int_value();
-                    self.lower_unary_op(*op, int_val)
+                    self.lower_unary_op(*op, val.into_int_value())
                 }
             }
             Rvalue::Aggregate(kind, operands) => self.lower_aggregate(kind, operands),
@@ -432,7 +469,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let inserted = self
                         .builder
                         .build_insert_value(agg, val, i as u32, "insert_field")
-                        .expect("insert_value failed for tuple field");
+                        .expect("insert_value failed");
                     result = inserted.as_basic_value_enum();
                 }
                 result
@@ -447,7 +484,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let inserted = self
                         .builder
                         .build_insert_value(agg, val, i as u32, "insert_elem")
-                        .expect("insert_value failed for array element");
+                        .expect("insert_value failed");
                     result = inserted.as_basic_value_enum();
                 }
                 result
@@ -470,7 +507,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let inserted = self
                         .builder
                         .build_insert_value(agg, val, i as u32, "insert_adt_field")
-                        .expect("insert_value failed for ADT field");
+                        .expect("insert_value failed");
                     result = inserted.as_basic_value_enum();
                 }
                 result
@@ -493,7 +530,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let inserted = self
                         .builder
                         .build_insert_value(agg, val, i as u32, "insert_closure_field")
-                        .expect("insert_value failed for Closure field");
+                        .expect("insert_value failed");
                     result = inserted.as_basic_value_enum();
                 }
                 result
@@ -504,7 +541,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn lower_discriminant(&self, place: &Place) -> BasicValueEnum<'ctx> {
         let ptr = self.place_ptr(place);
         let place_ty = self.place_ty(place);
-
         match self.ty_ctx.ty_kind(place_ty) {
             TyKind::Bool => {
                 let val = self
@@ -514,12 +550,103 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 self.builder
                     .build_int_z_extend(val.into_int_value(), self.llvm_int_type(32), "discr_ext")
                     .expect("discr ext failed")
-                    .into()
+                    .as_basic_value_enum()
             }
-            _ => {
-                tracing::warn!("discriminant on type without AdtDef — emitting 0 as safe sentinel");
-                self.llvm_int_type(32).const_int(0, false).into()
+            TyKind::Adt(_adt_id, _subst) => {
+                let layout_computer =
+                    FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+                let Ok(layout) = layout_computer.layout_of(place_ty) else {
+                    tracing::warn!("Failed layout for discriminant of {:?}", place_ty);
+                    return self
+                        .llvm_int_type(32)
+                        .const_int(0, false)
+                        .as_basic_value_enum();
+                };
+                match &layout.variants {
+                    VariantsShape::Single { .. } => self
+                        .llvm_int_type(32)
+                        .const_int(0, false)
+                        .as_basic_value_enum(),
+                    VariantsShape::Multiple {
+                        tag_field,
+                        tag_size,
+                        tag_encoding,
+                        ..
+                    } => {
+                        let tag_offset = match &layout.fields {
+                            FieldsShape::Arbitrary { offsets } => offsets
+                                .get(FieldIdx::from_raw(*tag_field))
+                                .map(|s| s.0)
+                                .unwrap_or(0),
+                            _ => 0,
+                        };
+                        let tag_bits = tag_size.bits() as u32;
+                        let tag_llvm_ty = self.llvm_int_type(tag_bits);
+                        let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
+                        let base_i8 = self
+                            .builder
+                            .build_bit_cast(ptr, i8_ptr, "discr_base_i8")
+                            .expect("bitcast failed")
+                            .into_pointer_value();
+                        let offset_val = self.llvm_int_type(64).const_int(tag_offset, false);
+                        let tag_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(
+                                    self.context.i8_type(),
+                                    base_i8,
+                                    &[offset_val],
+                                    "tag_ptr",
+                                )
+                                .expect("tag GEP failed")
+                        };
+                        let raw_discr = self
+                            .builder
+                            .build_load(tag_llvm_ty, tag_ptr, "enum_discr")
+                            .expect("discriminant load failed")
+                            .into_int_value();
+                        match tag_encoding {
+                            glyim_layout::TagEncoding::Direct => raw_discr.as_basic_value_enum(),
+                            glyim_layout::TagEncoding::Niche {
+                                untagged_variant,
+                                niche_variants,
+                                niche_start,
+                            } => {
+                                let niche_start_val =
+                                    tag_llvm_ty.const_int(*niche_start as u64, false);
+                                let cmp = self
+                                    .builder
+                                    .build_int_compare(
+                                        inkwell::IntPredicate::ULT,
+                                        raw_discr,
+                                        niche_start_val,
+                                        "niche_check",
+                                    )
+                                    .expect("niche cmp failed");
+                                let sub = self
+                                    .builder
+                                    .build_int_sub(raw_discr, niche_start_val, "niche_sub")
+                                    .expect("niche sub failed");
+                                let range_start =
+                                    tag_llvm_ty.const_int(*niche_variants.start() as u64, false);
+                                let decoded = self
+                                    .builder
+                                    .build_int_add(sub, range_start, "niche_decoded")
+                                    .expect("niche add failed");
+                                self.builder
+                                    .build_select(
+                                        cmp,
+                                        tag_llvm_ty.const_int(*untagged_variant as u64, false),
+                                        decoded,
+                                        "discr_result",
+                                    )
+                                    .expect("niche select failed")
+                                    .as_basic_value_enum()
+                            }
+                        }
+                    }
+                }
             }
+            _ => panic!("Discriminant on non-enum type {:?}", place_ty),
         }
     }
 
@@ -530,13 +657,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let n = match &count.kind {
                     ConstKind::Uint(n) => *n as u64,
                     ConstKind::Int(n) => *n as u64,
-                    other => {
-                        tracing::warn!(
-                            "Len with non-integer count {:?} — emitting 0 as safe sentinel",
-                            other
-                        );
-                        0
-                    }
+                    other => panic!("Len with non-integer count {:?}", other),
                 };
                 let len_ty = self.llvm_int_type(64);
                 len_ty.const_int(n, false).into()
@@ -560,13 +681,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_load(i64_ty, len_ptr, "len_load")
                     .expect("len load failed")
             }
-            other => {
-                tracing::warn!(
-                    "Len on non-array/slice type {:?} — emitting 0 as safe sentinel",
-                    other
-                );
-                self.llvm_int_type(64).const_zero().into()
-            }
+            other => panic!("Len on non-array/slice type {:?}", other),
         }
     }
 
@@ -773,13 +888,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_float_compare(inkwell::FloatPredicate::OGE, lhs, rhs, "fge")
                 .expect("fge failed")
                 .into(),
-            other => {
-                tracing::warn!(
-                    "unsupported float binary op {:?} — returning lhs as safe sentinel",
-                    other
-                );
-                lhs.into()
-            }
+            other => panic!("Unsupported float binary op {:?}", other),
         }
     }
 
@@ -794,44 +903,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_float_neg(val, "fneg")
                 .expect("fneg failed")
                 .into(),
-            UnOp::Not => {
-                tracing::debug!("logical Not on float is undefined, emitting trap");
-                let module = self.module;
-                let trap_fn_name = "llvm.trap";
-                let trap_fn = module.get_function(trap_fn_name).unwrap_or_else(|| {
-                    module.add_function(
-                        trap_fn_name,
-                        self.context.void_type().fn_type(&[], false),
-                        None,
-                    )
-                });
-                self.builder
-                    .build_call(trap_fn, &[], "float_not_trap")
-                    .expect("trap call failed");
-                self.builder
-                    .build_unreachable()
-                    .expect("unreachable failed");
-                val.into()
-            }
-            UnOp::Deref => {
-                tracing::debug!("Deref on float is undefined, emitting trap");
-                let module = self.module;
-                let trap_fn_name = "llvm.trap";
-                let trap_fn = module.get_function(trap_fn_name).unwrap_or_else(|| {
-                    module.add_function(
-                        trap_fn_name,
-                        self.context.void_type().fn_type(&[], false),
-                        None,
-                    )
-                });
-                self.builder
-                    .build_call(trap_fn, &[], "float_deref_trap")
-                    .expect("trap call failed");
-                self.builder
-                    .build_unreachable()
-                    .expect("unreachable failed");
-                val.into()
-            }
+            UnOp::Not => panic!("Logical Not on float is undefined"),
+            UnOp::Deref => panic!("Deref on float is undefined"),
         }
     }
 
@@ -848,9 +921,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .expect("neg failed")
                 .into(),
             UnOp::Deref => {
-                // Deref on an integer-typed value: load through the pointer it represents.
-                // The integer is treated as a raw pointer address; emit a load of i64.
-                tracing::debug!("UnaryOp::Deref on integer value — emitting inttoptr + load");
                 let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
                 let ptr = self
                     .builder
@@ -919,10 +989,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let n = match &count.kind {
             MirConstKind::Uint(n) => *n as usize,
             MirConstKind::Int(n) => *n as usize,
-            other => {
-                tracing::debug!("Repeat with non-integer count {:?}, defaulting to 0", other);
-                0
-            }
+            other => panic!("Repeat with non-integer count {:?}", other),
         };
         let elem_ty = val.get_type();
         let array_ty = elem_ty.array_type(n.try_into().unwrap_or(0u32));
@@ -931,7 +998,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             let inserted = self
                 .builder
                 .build_insert_value(array_val, val, i as u32, "repeat_insert")
-                .expect("insert_value failed for repeat element");
+                .expect("insert_value failed");
             array_val = inserted.into_array_value();
         }
         array_val.as_basic_value_enum()
@@ -946,20 +1013,21 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             | TyKind::Uint(_)
             | TyKind::Float(_)
             | TyKind::Char => false,
-            TyKind::Error => false,
+            TyKind::Error => panic!("TyKind::Error reached type_needs_drop"),
             TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
             TyKind::Tuple(subst) => {
                 let args = self.ty_ctx.substitution_args(*subst);
-                args.iter().any(|arg| match arg {
-                    glyim_type::GenericArg::Ty(t) => self.type_needs_drop(*t),
-                    _ => false,
-                })
+                args.iter().any(
+                    |arg| matches!(arg, glyim_type::GenericArg::Ty(t) if self.type_needs_drop(*t)),
+                )
             }
             TyKind::Array(elem, _) => self.type_needs_drop(*elem),
             TyKind::Adt(_, _) | TyKind::Closure(_, _) | TyKind::FnDef(_, _) => true,
             TyKind::Opaque(_, _) | TyKind::Dynamic(_, _) | TyKind::Slice(_) => true,
-            TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) => true,
-            TyKind::Projection(_) => true,
+            TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) => {
+                panic!("Unresolved type {:?} reached codegen", ty)
+            }
+            TyKind::Projection(_) => panic!("Unresolved projection type {:?} reached codegen", ty),
             TyKind::FnPtr(_) => false,
             TyKind::String => true,
         }
@@ -983,7 +1051,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     ) -> CompResult<()> {
         let place_ty = self.place_ty(place);
         let target_bb = self.bb_map.get(target).unwrap();
-
         if self.type_needs_drop(place_ty) {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let place_ptr = self.place_ptr(place);
@@ -1000,7 +1067,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ))]
                 })?;
         }
-
         if self.type_needs_dealloc(place_ty) {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let place_ptr = self.place_ptr(place);
@@ -1023,7 +1089,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ))]
                 })?;
         }
-
         self.builder
             .build_unconditional_branch(*target_bb)
             .map_err(|e| {
@@ -1113,7 +1178,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let discr_val = self.lower_operand(discr);
                 let discr_int = discr_val.into_int_value();
                 let n_cases = targets.iter().count();
-
                 if n_cases == 0 {
                     let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                     self.builder
@@ -1121,7 +1185,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
                     return Ok(());
                 }
-
                 if n_cases == 1 {
                     let (value, target_bb_idx) = targets.iter().next().unwrap();
                     let target_bb = self.bb_map.get(&target_bb_idx).unwrap();
@@ -1141,7 +1204,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .expect("conditional branch failed");
                     return Ok(());
                 }
-
                 if n_cases == 2 {
                     let cases: Vec<_> = targets.iter().collect();
                     let (val0, bb0_idx) = cases[0];
@@ -1149,7 +1211,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let target0 = self.bb_map.get(&bb0_idx).unwrap();
                     let target1 = self.bb_map.get(&bb1_idx).unwrap();
                     let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-
                     let val0_const = discr_int.get_type().const_int(val0 as u64, false);
                     let cmp0 = self
                         .builder
@@ -1182,7 +1243,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .expect("conditional branch1 failed");
                     return Ok(());
                 }
-
                 let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
                 let mut cases = Vec::new();
                 for (value, target_bb_idx) in targets.iter() {
@@ -1296,7 +1356,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 )]);
             }
         };
-
         let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
         let fn_abi = layout_computer.fn_abi_of(&fn_sig).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
@@ -1304,37 +1363,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 e
             ))]
         })?;
-
         let mut param_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = Vec::new();
         let is_sret = matches!(fn_abi.ret.mode, PassMode::Indirect { .. });
-
         if is_sret {
             param_types.push(self.context.ptr_type(AddressSpace::default()).into());
         }
-
         for arg_abi in &fn_abi.args {
             let llvm_ty = match arg_abi.mode {
                 PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
                 PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
                 PassMode::Ignore => continue,
-                PassMode::Cast { .. } => {
-                    tracing::debug!("Cast PassMode for arg type, using original type");
-                    self.llvm_type_for_ty(arg_abi.ty)
-                }
-                PassMode::HomogeneousAggregate { .. } => {
-                    tracing::debug!(
-                        "HomogeneousAggregate PassMode for arg type, using original type"
-                    );
-                    self.llvm_type_for_ty(arg_abi.ty)
-                }
-                PassMode::Split { .. } => {
-                    tracing::debug!("Split PassMode for arg type, using original type");
-                    self.llvm_type_for_ty(arg_abi.ty)
-                }
+                _ => self.llvm_type_for_ty(arg_abi.ty),
             };
             param_types.push(llvm_ty);
         }
-
         let ret_type: Option<inkwell::types::BasicTypeEnum<'ctx>> = if is_sret {
             None
         } else {
@@ -1343,7 +1385,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 _ => Some(self.llvm_type_for_ty(fn_abi.ret.ty)),
             }
         };
-
         let metadata_param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> =
             param_types.iter().map(|ty| (*ty).into()).collect();
         let fn_type = if let Some(ret) = ret_type {
@@ -1353,12 +1394,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .void_type()
                 .fn_type(&metadata_param_types, fn_sig.c_variadic)
         };
-
         let func_val = self.lower_operand(func).into_pointer_value();
-
         let mut llvm_args: Vec<inkwell::values::BasicValueEnum<'ctx>> = Vec::new();
         let mut sret_alloca = None;
-
         if is_sret {
             let sret_llvm_ty = self.llvm_type_for_ty(fn_abi.ret.ty);
             let sret_ptr = self
@@ -1368,7 +1406,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             llvm_args.push(sret_ptr.as_basic_value_enum());
             sret_alloca = Some(sret_ptr);
         }
-
         let mut arg_idx = 0;
         for arg_abi in &fn_abi.args {
             if matches!(arg_abi.mode, PassMode::Ignore) {
@@ -1382,9 +1419,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             let arg_op = &args[arg_idx];
             let arg_val = self.lower_operand(arg_op);
             match arg_abi.mode {
-                PassMode::Direct => {
-                    llvm_args.push(arg_val);
-                }
+                PassMode::Direct => llvm_args.push(arg_val),
                 PassMode::Indirect { .. } => {
                     let ty = arg_val.get_type();
                     let tmp_ptr = self
@@ -1397,50 +1432,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     llvm_args.push(tmp_ptr.as_basic_value_enum());
                 }
                 PassMode::Ignore => unreachable!(),
-                PassMode::Cast { .. } => {
-                    tracing::debug!("Cast PassMode for arg, bitcasting through memory");
-                    let src_ty = arg_val.get_type();
-                    let dest_ty = self.llvm_type_for_ty(arg_abi.ty);
-                    if src_ty == dest_ty {
-                        llvm_args.push(arg_val);
-                    } else {
-                        let tmp = self
-                            .builder
-                            .build_alloca(src_ty, "cast_src")
-                            .expect("cast alloca failed");
-                        self.builder
-                            .build_store(tmp, arg_val)
-                            .expect("cast store failed");
-                        let cast_ptr = self
-                            .builder
-                            .build_bit_cast(
-                                tmp,
-                                self.context.ptr_type(inkwell::AddressSpace::default()),
-                                "cast_ptr",
-                            )
-                            .expect("cast bitcast failed")
-                            .into_pointer_value();
-                        let cast_val = self
-                            .builder
-                            .build_load(dest_ty, cast_ptr, "cast_load")
-                            .expect("cast load failed");
-                        llvm_args.push(cast_val);
-                    }
-                }
-                PassMode::HomogeneousAggregate { .. } => {
-                    tracing::debug!("HomogeneousAggregate PassMode for arg, treating as Direct");
-                    llvm_args.push(arg_val);
-                }
-                PassMode::Split { .. } => {
-                    tracing::debug!("Split PassMode for arg, treating as Direct");
-                    llvm_args.push(arg_val);
-                }
+                _ => llvm_args.push(arg_val),
             }
             arg_idx += 1;
         }
         let metadata_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
             llvm_args.iter().map(|v| (*v).into()).collect();
-
         let use_invoke = cleanup.is_some();
         let call_result = if use_invoke {
             let normal_bb = if let Some(target_bb) = target {
@@ -1478,7 +1475,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ))]
                 })?
         };
-
         if is_sret {
             let sret_attr = self.context.create_enum_attribute(
                 inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
@@ -1486,12 +1482,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             );
             call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
         }
-
         if use_invoke && let Some(target_bb) = target {
             let target_block = self.bb_map.get(target_bb).unwrap();
             self.builder.position_at_end(*target_block);
         }
-
         if is_sret {
             let sret_ptr = sret_alloca.unwrap();
             let sret_ty = self.llvm_type_for_ty(fn_abi.ret.ty);
@@ -1523,7 +1517,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_store(dest_ptr, ret_val)
                 .expect("store ret failed");
         }
-
         if !use_invoke {
             if let Some(target_bb) = target {
                 let target_block = self.bb_map.get(target_bb).expect("target block not found");
@@ -1554,10 +1547,8 @@ pub(crate) fn lower_body<'ctx>(
         body.owner.krate.to_raw(),
         body.owner.local_id.to_raw()
     );
-
     let ret_llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, body.return_ty);
     let void_type = context.void_type();
-
     let mut param_types = Vec::new();
     for i in 1..=body.arg_count {
         let local_idx = LocalIdx::from_raw(i as u32);
@@ -1566,7 +1557,6 @@ pub(crate) fn lower_body<'ctx>(
             param_types.push(param_ty.into());
         }
     }
-
     let fn_type = if matches!(ty_ctx.ty_kind(body.return_ty), TyKind::Never | TyKind::Unit)
         || body.return_ty == Ty::NEVER
         || body.return_ty == Ty::UNIT
@@ -1575,27 +1565,20 @@ pub(crate) fn lower_body<'ctx>(
     } else {
         ret_llvm_ty.fn_type(&param_types, false)
     };
-
     let function = module.add_function(&fn_name, fn_type, None);
-
     let mut debug_ctx = if debug_info {
         Some(DebugInfoCtx::new(context, module, source_map, true))
     } else {
         None
     };
-
-    // Attach subprogram if debug info is enabled
     if let Some(ref mut di) = debug_ctx {
         di.set_function(context, &function, &fn_name, FileId::from_raw(0), 1);
     }
-
     let entry_block = context.append_basic_block(function, "entry");
     let builder = context.create_builder();
     builder.position_at_end(entry_block);
-
     let mut bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>> = HashMap::new();
     bb_map.insert(BasicBlockIdx::from_raw(0), entry_block);
-
     for (bb_idx, _bb_data) in body.basic_blocks.iter_enumerated() {
         if bb_idx != BasicBlockIdx::from_raw(0) {
             let bb_name = format!("bb_{}", bb_idx.index());
@@ -1603,30 +1586,25 @@ pub(crate) fn lower_body<'ctx>(
             bb_map.insert(bb_idx, llvm_bb);
         }
     }
-
     let num_locals = body.locals.len();
     let mut locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>> =
         IndexVec::with_capacity(num_locals);
     for _ in 0..num_locals {
         locals.push(None);
     }
-
     let ptr_type = context.ptr_type(AddressSpace::default());
     let i64_type = context
         .custom_width_int_type(NonZeroU32::new(64).unwrap())
         .unwrap();
-
     let drop_fn_type = void_type.fn_type(&[ptr_type.into()], false);
     let drop_fn = module
         .get_function("glyim_drop_in_place")
         .unwrap_or_else(|| module.add_function("glyim_drop_in_place", drop_fn_type, None));
-
     let dealloc_fn_type =
         void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
     let dealloc_fn = module
         .get_function("glyim_dealloc")
         .unwrap_or_else(|| module.add_function("glyim_dealloc", dealloc_fn_type, None));
-
     let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
     let personality_fn = if has_cleanup {
         let personality_fn_type = context.void_type().fn_type(&[], false);
@@ -1636,7 +1614,6 @@ pub(crate) fn lower_body<'ctx>(
     } else {
         None
     };
-
     let mut lowering_ctx = LoweringCtx {
         context,
         builder,
@@ -1652,11 +1629,9 @@ pub(crate) fn lower_body<'ctx>(
         personality_fn,
         debug_ctx,
     };
-
     for (local_idx, _local_decl) in body.locals.iter_enumerated() {
         lowering_ctx.alloc_local(local_idx);
     }
-
     for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
         let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
         lowering_ctx.builder.position_at_end(*llvm_bb);
@@ -1668,7 +1643,6 @@ pub(crate) fn lower_body<'ctx>(
         }
         lowering_ctx.lower_terminator(&bb_data.terminator)?;
     }
-
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }

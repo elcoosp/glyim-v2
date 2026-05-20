@@ -22,7 +22,6 @@ impl Size {
         let mask = align.0 - 1;
         Size((self.0 + mask) & !mask)
     }
-    /// Checked multiplication: returns `None` on overflow.
     pub fn checked_mul(self, rhs: u64) -> Option<Size> {
         self.0.checked_mul(rhs).map(Size)
     }
@@ -102,6 +101,8 @@ pub enum VariantsShape {
         tag_field: u32,
         tag_encoding: TagEncoding,
         variants: Vec<Layout>,
+        tag_size: Size,   // ← ADDED
+        tag_align: Align, // ← ADDED
     },
 }
 
@@ -185,17 +186,14 @@ impl<'a> SimpleLayoutComputer<'a> {
         Self { ctx, target }
     }
 
-    /// Compute layout for a tuple type (including unit).
     fn layout_tuple(&self, substs: Substitution) -> Result<Layout, LayoutError> {
         let args = self.ctx.substitution_args(substs);
         if args.is_empty() {
             return Ok(Layout::unit());
         }
-
         let mut offsets = IndexVec::new();
         let mut struct_align = Align::ONE;
         let mut current_offset = Size::ZERO;
-
         for arg in args {
             if let GenericArg::Ty(field_ty) = arg {
                 let field_layout = self.layout_of(*field_ty)?;
@@ -204,11 +202,8 @@ impl<'a> SimpleLayoutComputer<'a> {
                 offsets.push(current_offset);
                 current_offset = current_offset + field_layout.size;
             }
-            // Skip lifetime/const args — they don't occupy tuple space
         }
-
         let size = current_offset.align_to(struct_align);
-
         Ok(Layout {
             size,
             align: struct_align,
@@ -218,10 +213,8 @@ impl<'a> SimpleLayoutComputer<'a> {
         })
     }
 
-    /// Compute layout for an array type.
     fn layout_array(&self, inner: Ty, count: &Const, outer_ty: Ty) -> Result<Layout, LayoutError> {
         let inner_layout = self.layout_of(inner)?;
-
         let count_val: u64 = match &count.kind {
             ConstKind::Uint(n) => {
                 u64::try_from(*n).map_err(|_| LayoutError::SizeOverflow(outer_ty))?
@@ -234,12 +227,10 @@ impl<'a> SimpleLayoutComputer<'a> {
             }
             _ => return Err(LayoutError::UnknownType(outer_ty)),
         };
-
         let stride = inner_layout.size.align_to(inner_layout.align);
         let size = stride
             .checked_mul(count_val)
             .ok_or(LayoutError::SizeOverflow(outer_ty))?;
-
         Ok(Layout {
             size,
             align: inner_layout.align,
@@ -252,12 +243,10 @@ impl<'a> SimpleLayoutComputer<'a> {
         })
     }
 
-    /// Compute layout for a struct ADT.
     fn layout_struct(&self, adt_def: &AdtDef) -> Result<Layout, LayoutError> {
         let mut offsets = IndexVec::new();
         let mut struct_align = Align::ONE;
         let mut current_offset = Size::ZERO;
-
         for field in adt_def.fields.iter() {
             let field_layout = self.layout_of(field.ty)?;
             struct_align = struct_align.max(field_layout.align);
@@ -265,9 +254,7 @@ impl<'a> SimpleLayoutComputer<'a> {
             offsets.push(current_offset);
             current_offset = current_offset + field_layout.size;
         }
-
         let size = current_offset.align_to(struct_align);
-
         Ok(Layout {
             size,
             align: struct_align,
@@ -277,21 +264,17 @@ impl<'a> SimpleLayoutComputer<'a> {
         })
     }
 
-    /// Compute layout for a union ADT (all fields at offset 0, size = max).
     fn layout_union(&self, adt_def: &AdtDef) -> Result<Layout, LayoutError> {
         let mut union_size = Size::ZERO;
         let mut union_align = Align::ONE;
         let mut offsets = IndexVec::new();
-
         for field in adt_def.fields.iter() {
             let field_layout = self.layout_of(field.ty)?;
             union_align = union_align.max(field_layout.align);
             union_size = union_size.max(field_layout.size);
-            offsets.push(Size::ZERO); // All union fields at offset 0
+            offsets.push(Size::ZERO);
         }
-
         let size = union_size.align_to(union_align);
-
         Ok(Layout {
             size,
             align: union_align,
@@ -301,41 +284,30 @@ impl<'a> SimpleLayoutComputer<'a> {
         })
     }
 
-    /// Compute layout for an enum ADT.
     fn layout_enum(&self, adt_def: &AdtDef, outer_ty: Ty) -> Result<Layout, LayoutError> {
         let variant_count = adt_def.variants.len();
         if variant_count == 0 {
             return Err(LayoutError::UnknownType(outer_ty));
         }
-
         if variant_count == 1 {
-            // Single-variant enum is just a struct
             return self.layout_single_variant_enum(adt_def);
         }
-
-        // Compute each variant's data layout (fields only, no tag)
         let variant_layouts: Vec<Layout> = adt_def
             .variants
             .iter()
-            .map(|variant| self.layout_variant_data(variant))
+            .map(|v| self.layout_variant_data(v))
             .collect::<Result<Vec<_>, LayoutError>>()?;
-
-        // Try niche encoding first
         if let Some(result) = self.try_niche_encoding(adt_def, &variant_layouts)? {
             return Ok(result);
         }
-
-        // Fall back to direct tag encoding
         self.direct_tag_encoding(adt_def, &variant_layouts)
     }
 
-    /// Layout for a single-variant enum (degenerate case, like a struct).
     fn layout_single_variant_enum(&self, adt_def: &AdtDef) -> Result<Layout, LayoutError> {
         let variant_fields = &adt_def.variants[0].fields;
         let mut offsets = IndexVec::new();
         let mut enum_align = Align::ONE;
         let mut current_offset = Size::ZERO;
-
         for field in variant_fields.iter() {
             let field_layout = self.layout_of(field.ty)?;
             enum_align = enum_align.max(field_layout.align);
@@ -343,7 +315,6 @@ impl<'a> SimpleLayoutComputer<'a> {
             offsets.push(current_offset);
             current_offset = current_offset + field_layout.size;
         }
-
         let size = current_offset.align_to(enum_align);
         Ok(Layout {
             size,
@@ -354,7 +325,6 @@ impl<'a> SimpleLayoutComputer<'a> {
         })
     }
 
-    /// Compute layout for a single variant's data (fields only, no tag).
     fn layout_variant_data(
         &self,
         variant: &glyim_type::adt_def::VariantDef,
@@ -362,7 +332,6 @@ impl<'a> SimpleLayoutComputer<'a> {
         let mut offsets = IndexVec::new();
         let mut var_align = Align::ONE;
         let mut current_offset = Size::ZERO;
-
         for field in variant.fields.iter() {
             let field_layout = self.layout_of(field.ty)?;
             var_align = var_align.max(field_layout.align);
@@ -370,7 +339,6 @@ impl<'a> SimpleLayoutComputer<'a> {
             offsets.push(current_offset);
             current_offset = current_offset + field_layout.size;
         }
-
         let size = current_offset.align_to(var_align);
         Ok(Layout {
             size,
@@ -381,7 +349,6 @@ impl<'a> SimpleLayoutComputer<'a> {
         })
     }
 
-    /// Try to use niche encoding for an enum.
     fn try_niche_encoding(
         &self,
         adt_def: &AdtDef,
@@ -390,7 +357,6 @@ impl<'a> SimpleLayoutComputer<'a> {
         let variant_count = adt_def.variants.len();
         let niche_variants_needed =
             u128::try_from(variant_count.saturating_sub(1)).unwrap_or(u128::MAX);
-
         for (vi, variant) in adt_def.variants.iter().enumerate() {
             for (fi, field) in variant.fields.iter().enumerate() {
                 if let Some((niche_start, niche_count)) = self.niche_info(field.ty)
@@ -408,12 +374,9 @@ impl<'a> SimpleLayoutComputer<'a> {
                 }
             }
         }
-
         Ok(None)
     }
 
-    /// Build a niche-encoded layout for an enum.
-    #[allow(clippy::too_many_arguments)]
     fn build_niche_layout(
         &self,
         variant_layouts: &[Layout],
@@ -425,26 +388,11 @@ impl<'a> SimpleLayoutComputer<'a> {
         variant_count: usize,
     ) -> Result<Layout, LayoutError> {
         let data_layout = &variant_layouts[niche_variant_idx];
-        let _field_offset = match &data_layout.fields {
-            FieldsShape::Arbitrary { offsets } => offsets
-                .get(FieldIdx::from_raw(
-                    u32::try_from(niche_field_idx).unwrap_or(u32::MAX),
-                ))
-                .copied()
-                .unwrap_or(Size::ZERO),
-            FieldsShape::Primitive => Size::ZERO,
-            FieldsShape::Array { .. } => Size::ZERO,
-        };
-
-        // The untagged variant is the one holding the niche field.
-        // Niche variants are all OTHER variants, mapped to niche values starting at niche_start.
         let niche_variants = if niche_variant_idx == 0 {
             1..=u32::try_from(variant_count - 1).unwrap_or(u32::MAX)
         } else {
             0..=u32::try_from(niche_variant_idx - 1).unwrap_or(0)
         };
-
-        // Size = max of all variant data sizes (they share the niche field's space)
         let mut max_size = Size::ZERO;
         let mut max_align = Align::ONE;
         for vl in variant_layouts {
@@ -452,9 +400,8 @@ impl<'a> SimpleLayoutComputer<'a> {
             max_align = max_align.max(vl.align);
         }
         let size = max_size.align_to(max_align);
-
         let output_variants: Vec<Layout> = variant_layouts.to_vec();
-
+        let niche_layout = self.layout_of(niche_field_ty)?; // ← Compute tag size/align
         Ok(Layout {
             size,
             align: max_align,
@@ -486,25 +433,18 @@ impl<'a> SimpleLayoutComputer<'a> {
                     niche_start,
                 },
                 variants: output_variants,
+                tag_size: niche_layout.size,   // ← ADDED
+                tag_align: niche_layout.align, // ← ADDED
             },
             is_unsized: false,
         })
     }
 
-    /// Returns `(niche_start, niche_count)` if the type has unused bit patterns
-    /// that can be used for niche encoding.
     fn niche_info(&self, ty: Ty) -> Option<(u128, u128)> {
         match self.ctx.ty_kind(ty) {
-            TyKind::Bool => {
-                // bool: valid values 0..=1, niche values 2..=255
-                Some((2, 254))
-            }
-            TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => {
-                // References are non-null; null (0) is a niche value
-                Some((0, 1))
-            }
+            TyKind::Bool => Some((2, 254)),
+            TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => Some((0, 1)),
             TyKind::Int(int_ty) => {
-                // Signed integers: the minimum value is a niche
                 let bw = int_ty.bit_width(&self.target);
                 match bw {
                     8 => Some((0x80, 1)),
@@ -514,16 +454,11 @@ impl<'a> SimpleLayoutComputer<'a> {
                     _ => None,
                 }
             }
-            TyKind::Char => {
-                // char: valid 0..=0x10FFFF, niche 0x110000..=0xFFFFFFFF
-                Some((0x110000, u128::MAX - 0x110000 + 1))
-            }
+            TyKind::Char => Some((0x110000, u128::MAX - 0x110000 + 1)),
             _ => None,
         }
     }
 
-    /// Choose the discriminant type for an enum with the given number of variants.
-    /// Returns (tag_size, tag_align, tag_ty) where tag_ty is a best-effort Ty from the context.
     fn discriminant_info(&self, variant_count: usize) -> (Size, Align, Ty) {
         if variant_count <= 256 {
             (Size::bytes(1), Align::ONE, self.ctx.bool_ty())
@@ -536,7 +471,6 @@ impl<'a> SimpleLayoutComputer<'a> {
         }
     }
 
-    /// Compute direct tag encoding for an enum.
     fn direct_tag_encoding(
         &self,
         adt_def: &AdtDef,
@@ -544,30 +478,19 @@ impl<'a> SimpleLayoutComputer<'a> {
     ) -> Result<Layout, LayoutError> {
         let variant_count = adt_def.variants.len();
         let (tag_size, tag_align, tag_ty) = self.discriminant_info(variant_count);
-
         let mut max_variant_size = Size::ZERO;
         let mut overall_align = tag_align;
-
         let mut tagged_variant_layouts: Vec<Layout> = Vec::with_capacity(variant_count);
-
         for variant_data in variant_layouts {
             overall_align = overall_align.max(variant_data.align);
-
-            // Tag at offset 0, variant data starts after tag (aligned)
             let data_start = tag_size.align_to(variant_data.align);
             let variant_end = data_start + variant_data.size;
             max_variant_size = max_variant_size.max(variant_end);
-
             tagged_variant_layouts.push(variant_data.clone());
         }
-
         let size = max_variant_size.align_to(overall_align);
-
-        // Build the top-level field offsets: tag at offset 0
         let mut offsets = IndexVec::new();
-        offsets.push(Size::ZERO); // tag field at offset 0
-
-        // Variant data starts after the tag
+        offsets.push(Size::ZERO);
         let data_start = tag_size.align_to(
             variant_layouts
                 .iter()
@@ -576,7 +499,6 @@ impl<'a> SimpleLayoutComputer<'a> {
                 .unwrap_or(Align::ONE),
         );
         offsets.push(data_start);
-
         Ok(Layout {
             size,
             align: overall_align,
@@ -586,12 +508,13 @@ impl<'a> SimpleLayoutComputer<'a> {
                 tag_field: 0,
                 tag_encoding: TagEncoding::Direct,
                 variants: tagged_variant_layouts,
+                tag_size,  // ← ADDED
+                tag_align, // ← ADDED
             },
             is_unsized: false,
         })
     }
 
-    /// Compute layout for an ADT (struct, enum, or union).
     fn layout_adt(
         &self,
         adt_id: glyim_core::AdtId,
@@ -601,12 +524,10 @@ impl<'a> SimpleLayoutComputer<'a> {
         let adt_def = match self.ctx.adt_def(adt_id) {
             Some(def) => def,
             None => {
-                // No AdtDef registered — if there's an AdtRepr, use that as a simple field list
                 if let Some(repr) = self.ctx.adt_repr(adt_id) {
                     let mut offsets = IndexVec::new();
                     let mut struct_align = Align::ONE;
                     let mut current_offset = Size::ZERO;
-
                     for field_ty in &repr.field_tys {
                         let field_layout = self.layout_of(*field_ty)?;
                         struct_align = struct_align.max(field_layout.align);
@@ -614,7 +535,6 @@ impl<'a> SimpleLayoutComputer<'a> {
                         offsets.push(current_offset);
                         current_offset = current_offset + field_layout.size;
                     }
-
                     let size = current_offset.align_to(struct_align);
                     return Ok(Layout {
                         size,
@@ -627,12 +547,7 @@ impl<'a> SimpleLayoutComputer<'a> {
                 return Err(LayoutError::UnknownType(outer_ty));
             }
         };
-
-        // Substitute generic arguments if present
         let _args = self.ctx.substitution_args(substs);
-        // TODO: substitute type parameters in adt_def fields once we have
-        // a substitution engine. For now, fields use concrete types.
-
         match adt_def.kind {
             AdtKind::Struct => self.layout_struct(adt_def),
             AdtKind::Enum => self.layout_enum(adt_def, outer_ty),
@@ -640,32 +555,23 @@ impl<'a> SimpleLayoutComputer<'a> {
         }
     }
 
-    /// Determine the pass mode for a function argument or return value.
     fn pass_mode_for(&self, ty: Ty, layout: &Layout, conv: CallConvention) -> PassMode {
-        // Never type: function diverges, ignore return
         if matches!(self.ctx.ty_kind(ty), TyKind::Never) {
             return PassMode::Ignore;
         }
-
-        // Unit type: no return value
         if matches!(self.ctx.ty_kind(ty), TyKind::Unit) {
             return PassMode::Ignore;
         }
-
-        // ZST (zero-sized type): ignore unless it has non-trivial drop
         if layout.size == Size::ZERO && !layout.is_unsized {
             return PassMode::Ignore;
         }
-
-        // On C/SystemV/AAPCS calling conventions, large types are passed indirectly
         match conv {
             CallConvention::C | CallConvention::System => {
-                // On both SystemV (x86_64) and AAPCS (aarch64), aggregates larger
-                // than 16 bytes are passed indirectly.
                 if layout.size.0 > 16 {
-                    return PassMode::Indirect { meta_attrs: false };
+                    PassMode::Indirect { meta_attrs: false }
+                } else {
+                    PassMode::Direct
                 }
-                PassMode::Direct
             }
             CallConvention::Glyim => PassMode::Direct,
         }
@@ -676,9 +582,7 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
     fn layout_of(&self, ty: Ty) -> Result<Layout, LayoutError> {
         let ptr_size = Size::bytes(self.target.pointer_size());
         let ptr_align = Align::from_bytes(self.target.pointer_align());
-
         let layout = match self.ctx.ty_kind(ty) {
-            // Primitives
             TyKind::Bool => Layout::scalar(Size::bytes(1), Align::ONE),
             TyKind::Int(i) => {
                 let bw = i.bit_width(&self.target);
@@ -698,12 +602,8 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
             TyKind::Char => Layout::scalar(Size::bytes(4), Align::from_bytes(4)),
             TyKind::Never => Layout::scalar(Size::ZERO, Align::ONE),
             TyKind::Unit => Layout::unit(),
-
-            // Pointer types
             TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => Layout::scalar(ptr_size, ptr_align),
             TyKind::FnPtr(_) => Layout::scalar(ptr_size, ptr_align),
-
-            // Dynamic (fat pointer: data + vtable)
             TyKind::Dynamic(_binder, _region) => {
                 let raw_size = self.target.pointer_size();
                 Layout {
@@ -721,44 +621,19 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
                     is_unsized: false,
                 }
             }
-
-            // Unsized types
             TyKind::Slice(_) => return Err(LayoutError::Unsized(ty)),
-
-            // Tuples
             TyKind::Tuple(substs) => return self.layout_tuple(*substs),
-
-            // Arrays
             TyKind::Array(inner, count) => return self.layout_array(*inner, count, ty),
-
-            // ADTs
             TyKind::Adt(adt_id, substs) => return self.layout_adt(*adt_id, *substs, ty),
-
-            // Inference variables — cannot compute layout
             TyKind::Infer(_) => return Err(LayoutError::UnknownType(ty)),
-
-            // Error type
             TyKind::Error => return Err(LayoutError::UnknownType(ty)),
-
-            // Placeholder, bound, param types — cannot compute layout without substitution
             TyKind::Param(_) | TyKind::Bound(_, _) => return Err(LayoutError::UnknownType(ty)),
-
-            // Opaque types — cannot compute layout
             TyKind::Opaque(_, _) => return Err(LayoutError::UnknownType(ty)),
-
-            // Projection types — cannot compute layout
             TyKind::Projection(_) => return Err(LayoutError::UnknownType(ty)),
-
-            // Closures — treat as unknown for now
             TyKind::Closure(_, _) => return Err(LayoutError::UnknownType(ty)),
-
-            // String type — unsized
             TyKind::String => return Err(LayoutError::Unsized(ty)),
-
-            // Function definitions are not types with layout
             TyKind::FnDef(_, _) => return Err(LayoutError::UnknownType(ty)),
         };
-
         if layout.align.0 > ALIGN_MAX {
             return Err(LayoutError::AlignmentExceedsRuntime {
                 ty,
@@ -766,14 +641,12 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
                 max: ALIGN_MAX,
             });
         }
-
         Ok(layout)
     }
 
     fn fn_abi_of(&self, sig: &FnSig) -> Result<FnAbi, LayoutError> {
         let conv = CallConvention::from(sig.abi);
         let args = self.ctx.substitution_args(sig.inputs);
-
         let arg_abis: Vec<ArgAbi> = args
             .iter()
             .filter_map(|arg| {
@@ -790,10 +663,8 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
                 }
             })
             .collect();
-
         let ret_layout = self.layout_of(sig.output)?;
         let ret_mode = self.pass_mode_for(sig.output, &ret_layout, conv);
-
         Ok(FnAbi {
             args: arg_abis,
             ret: ArgAbi {
