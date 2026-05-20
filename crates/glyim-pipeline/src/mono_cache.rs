@@ -1,3 +1,4 @@
+#![allow(clippy::single_match)]
 //! Mono item caching for the pipeline.
 //!
 //! Provides a thin wrapper around `MonoCtx` that integrates with
