@@ -584,7 +584,11 @@ impl<'a> MirBuilder<'a> {
         span: glyim_span::Span,
     ) {
         match &pat.kind {
-            thir::PatternKind::Range { start: _, end: _, inclusive: _ } => {},
+            thir::PatternKind::Range {
+                start: _,
+                end: _,
+                inclusive: _,
+            } => {}
             thir::PatternKind::Binding {
                 name,
                 mutability,
