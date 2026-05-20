@@ -106,8 +106,8 @@ fn string_type_maps_to_ptr() {
     let target_info = TargetInfo::default();
     let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, string_ty);
     assert!(
-        llvm_ty.is_pointer_type(),
-        "String type should map to pointer type"
+        llvm_ty.is_struct_type(),
+        "String type should map to fat pointer struct"
     );
 }
 

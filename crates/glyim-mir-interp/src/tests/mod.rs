@@ -15,7 +15,7 @@ mod helpers;
 mod len_eval;
 mod len_test;
 mod limits;
-mod r#loop;
+mod loop;
 mod more_edges;
 mod nested_calls;
 mod nested_projections;
