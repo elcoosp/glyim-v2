@@ -308,14 +308,14 @@ fn path_as_name(node: &SyntaxNode, interner: &mut Interner) -> Option<Name> {
             if t.kind() == SyntaxKind::Ident {
                 segments.push(interner.intern(t.text()));
             }
-        } else if let glyim_syntax::SyntaxElement::Node(n) = el {
-            if n.kind() == SyntaxKind::UsePath {
-                for t in n.children_with_tokens() {
-                    if let glyim_syntax::SyntaxElement::Token(tt) = t {
-                        if tt.kind() == SyntaxKind::Ident {
-                            segments.push(interner.intern(tt.text()));
-                        }
-                    }
+        } else if let glyim_syntax::SyntaxElement::Node(n) = el
+            && n.kind() == SyntaxKind::UsePath
+        {
+            for t in n.children_with_tokens() {
+                if let glyim_syntax::SyntaxElement::Token(tt) = t
+                    && tt.kind() == SyntaxKind::Ident
+                {
+                    segments.push(interner.intern(tt.text()));
                 }
             }
         }
@@ -339,10 +339,10 @@ fn lower_struct_expr(
 
     // First, find the path (struct name)
     for child in node.children() {
-        if child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath {
-            if path.is_none() {
-                path = lower_path_expr(&child, interner, body);
-            }
+        if (child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath)
+            && path.is_none()
+        {
+            path = lower_path_expr(&child, interner, body);
         }
     }
 
@@ -365,7 +365,7 @@ fn lower_struct_expr(
                     let field_name = first_ident_text(node).unwrap_or_default();
                     let name = interner.intern(&field_name);
                     // Check if the field has an expression inside it
-                    let expr_inside = node.children().find(|c| is_expr_node(c));
+                    let expr_inside = node.children().find(is_expr_node);
                     if let Some(expr_id) = expr_inside
                         .as_ref()
                         .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map))
@@ -389,14 +389,13 @@ fn lower_struct_expr(
                 }
                 SyntaxKind::DotDot => {
                     // Spread: find the next expression sibling
-                    if i + 1 < siblings.len() {
-                        if let Some(expr_id) =
+                    if i + 1 < siblings.len()
+                        && let Some(expr_id) =
                             lower_expr(&siblings[i + 1], interner, body, diags, struct_field_map)
-                        {
-                            *spread = Some(expr_id);
-                            i += 2;
-                            continue;
-                        }
+                    {
+                        *spread = Some(expr_id);
+                        i += 2;
+                        continue;
                     }
                     i += 1;
                 }

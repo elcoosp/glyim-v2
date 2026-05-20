@@ -1,6 +1,7 @@
 mod build;
 mod cache;
 mod cache_advanced;
+mod cache_artifact;
 mod collect_files;
 mod config;
 mod config_advanced;
@@ -14,3 +15,4 @@ mod lockfile_advanced;
 mod new_project;
 mod run_cmd;
 mod test_cmd;
+mod test_command;

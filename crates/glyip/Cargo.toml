@@ -9,10 +9,14 @@ name = "glyip"
 path = "src/bin/glyip.rs"
 
 [features]
+registry = ["reqwest", "flate2", "tar"]
 default = []
 llvm = ["glyim-codegen-llvm"]
 
 [dependencies]
+reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
+flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
 glyim-core = { workspace = true }
 glyim-diag = { workspace = true }
 glyim-pipeline = { workspace = true }
@@ -27,6 +31,7 @@ sha2 = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+serde_json = "1"
 [dev-dependencies]
 glyim-test = { workspace = true }
 tempfile = { workspace = true }

@@ -18,7 +18,10 @@ pub use commands::{
     BuildResult, NewResult, RunResult, TestResult, cmd_build, cmd_new, cmd_run, cmd_test,
 };
 pub use config::{BuildOptions, GlyipToml, NewOptions, RunOptions, TestOptions};
-pub use dep::{CrateIndex, DependencyResolver, IndexEntry};
+pub use dep::{CrateIndex, DependencyResolver, IndexEntry, RegistryClient};
+
+#[cfg(feature = "registry")]
+pub use dep::HttpRegistryClient;
 pub use error::{GlyipError, GlyipResult};
 pub use fingerprint::{Fingerprint, FingerprintStore};
 pub use lockfile::{CrateSource, LockedCrate, Lockfile};
