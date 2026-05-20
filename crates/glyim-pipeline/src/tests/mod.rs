@@ -8,3 +8,5 @@ mod missing_body;
 mod mono_cache_tests;
 mod mono_integration_tests;
 mod pipeline_tests;
+mod drop_glue_tests;
+mod monomorphization_tests;
