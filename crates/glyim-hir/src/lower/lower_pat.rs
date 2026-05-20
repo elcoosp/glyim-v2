@@ -7,12 +7,14 @@ use glyim_syntax::{SyntaxKind, SyntaxNode};
 use crate::{Pat, PatId, Path as HirPath, PathSegment};
 
 use super::{first_ident_text, lower_expr::lower_literal};
+use glyim_diag::GlyimDiagnostic;
 
 #[allow(unused_assignments)]
 pub(crate) fn lower_pat(
     node: &SyntaxNode,
     interner: &mut Interner,
     pats: &mut IndexVec<PatId, Pat>,
+    diags: &mut Vec<GlyimDiagnostic>,
 ) -> Option<PatId> {
     match node.kind() {
         SyntaxKind::PatIdent => {
@@ -44,7 +46,7 @@ pub(crate) fn lower_pat(
                                 | SyntaxKind::PatOr
                         )
                     })
-                    .and_then(|n| lower_pat(&n, interner, pats));
+                    .and_then(|n| lower_pat(&n, interner, pats, diags));
                 Some(pats.push(Pat::Binding {
                     name,
                     mutability: Mutability::Not,
@@ -91,7 +93,7 @@ pub(crate) fn lower_pat(
                         }
                         glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatLit => {
                             // Nested PatLit contains the end literal
-                            if let Some(inner_lit) = lower_pat(n, interner, pats) {
+                            if let Some(inner_lit) = lower_pat(n, interner, pats, diags) {
                                 // Extract literal from the inner pat
                                 if let Pat::Literal(lit) = &pats[inner_lit] {
                                     end = Some(lit.clone());
@@ -153,7 +155,7 @@ pub(crate) fn lower_pat(
                     };
                     let mut fields = Vec::new();
                     for child in node.children() {
-                        if let Some(pat_id) = lower_pat(&child, interner, pats) {
+                        if let Some(pat_id) = lower_pat(&child, interner, pats, diags) {
                             let field_name = {
                                 let s = child.text().to_string();
                                 interner.intern(s.trim())
@@ -207,7 +209,7 @@ pub(crate) fn lower_pat(
                                             | SyntaxKind::UsePath
                                     ) =>
                                 {
-                                    let arg_pat_id = lower_pat(&n, interner, pats);
+                                    let arg_pat_id = lower_pat(&n, interner, pats, diags);
                                     if let Some(pid) = arg_pat_id {
                                         let field_name = {
                                             let s = n.text().to_string();
@@ -230,7 +232,7 @@ pub(crate) fn lower_pat(
                     };
                     elems.push(pats.push(struct_pat));
                 } else {
-                    if let Some(pat_id) = lower_pat(child, interner, pats) {
+                    if let Some(pat_id) = lower_pat(child, interner, pats, diags) {
                         elems.push(pat_id);
                     }
                     i += 1;
@@ -279,7 +281,7 @@ pub(crate) fn lower_pat(
                                             | SyntaxKind::UsePath
                                     ) =>
                                 {
-                                    if let Some(pid) = lower_pat(&n, interner, pats) {
+                                    if let Some(pid) = lower_pat(&n, interner, pats, diags) {
                                         let field_name = {
                                             let s = n.text().to_string();
                                             interner.intern(s.trim())
@@ -301,7 +303,7 @@ pub(crate) fn lower_pat(
                     };
                     pat_ids.push(pats.push(struct_pat));
                 } else {
-                    if let Some(pat_id) = lower_pat(child, interner, pats) {
+                    if let Some(pat_id) = lower_pat(child, interner, pats, diags) {
                         pat_ids.push(pat_id);
                     }
                     i += 1;
@@ -382,7 +384,7 @@ pub(crate) fn lower_pat(
                                             | SyntaxKind::PatOr
                                     )
                                 {
-                                    if let Some(pat_id) = lower_pat(sub_n, interner, pats) {
+                                    if let Some(pat_id) = lower_pat(sub_n, interner, pats, diags) {
                                         fields.push((name, pat_id));
                                     }
                                     break;
@@ -460,8 +462,11 @@ pub(crate) fn lower_pat(
             Some(pats.push(Pat::Path(path)))
         }
         _ => {
-            tracing::warn!("STUB: unknown pattern kind {:?}", node.kind());
-            Some(pats.push(Pat::Err))
+            diags.push(GlyimDiagnostic::internal_error(format!(
+                "unhandled pattern kind: {:?}",
+                node.kind()
+            )));
+            None
         }
     }
 }

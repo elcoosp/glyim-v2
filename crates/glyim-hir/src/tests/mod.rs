@@ -14,3 +14,5 @@ mod lower_type;
 mod number_suffix;
 pub mod pattern_lowering;
 mod type_lowering;
+mod lower_expr_tests;
+mod lower_pat_tests;
