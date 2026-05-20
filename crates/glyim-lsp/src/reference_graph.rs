@@ -85,7 +85,7 @@ impl ReferenceGraph {
             expr_id: ExprId,
             body: &Body,
             interner: &Interner,
-            #[allow(clippy::only_used_in_recursion)] file_id: FileId,
+            _file_id: FileId,
             add_ref: &mut impl FnMut(&str, Span, bool, ReferenceKind),
         ) {
             let expr = &body.exprs[expr_id];
@@ -98,7 +98,7 @@ impl ReferenceGraph {
                     }
                 }
                 Expr::Call { func, args: _ } => {
-                    walk_expr(*func, body, interner, file_id, add_ref);
+                    walk_expr(*func, body, interner, _file_id, add_ref);
                     if let Expr::Path(path) = &body.exprs[*func]
                         && let Some(name) = path.as_name()
                     {
@@ -109,26 +109,26 @@ impl ReferenceGraph {
                 Expr::MethodCall {
                     receiver, method, ..
                 } => {
-                    walk_expr(*receiver, body, interner, file_id, add_ref);
+                    walk_expr(*receiver, body, interner, _file_id, add_ref);
                     let method_str = interner.resolve(*method).to_string();
                     add_ref(&method_str, span, false, ReferenceKind::Call);
                 }
                 Expr::Field { receiver, field } => {
-                    walk_expr(*receiver, body, interner, file_id, add_ref);
+                    walk_expr(*receiver, body, interner, _file_id, add_ref);
                     let field_str = interner.resolve(*field).to_string();
                     add_ref(&field_str, span, false, ReferenceKind::FieldAccess);
                 }
                 Expr::Binary { lhs, rhs, .. } => {
-                    walk_expr(*lhs, body, interner, file_id, add_ref);
-                    walk_expr(*rhs, body, interner, file_id, add_ref);
+                    walk_expr(*lhs, body, interner, _file_id, add_ref);
+                    walk_expr(*rhs, body, interner, _file_id, add_ref);
                 }
-                Expr::Unary { expr, .. } => walk_expr(*expr, body, interner, file_id, add_ref),
+                Expr::Unary { expr, .. } => walk_expr(*expr, body, interner, _file_id, add_ref),
                 Expr::Block { stmts, tail } => {
                     for stmt in stmts {
-                        walk_expr(*stmt, body, interner, file_id, add_ref);
+                        walk_expr(*stmt, body, interner, _file_id, add_ref);
                     }
                     if let Some(tail_expr) = tail {
-                        walk_expr(*tail_expr, body, interner, file_id, add_ref);
+                        walk_expr(*tail_expr, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::If {
@@ -136,68 +136,68 @@ impl ReferenceGraph {
                     then_branch,
                     else_branch,
                 } => {
-                    walk_expr(*cond, body, interner, file_id, add_ref);
-                    walk_expr(*then_branch, body, interner, file_id, add_ref);
+                    walk_expr(*cond, body, interner, _file_id, add_ref);
+                    walk_expr(*then_branch, body, interner, _file_id, add_ref);
                     if let Some(else_expr) = else_branch {
-                        walk_expr(*else_expr, body, interner, file_id, add_ref);
+                        walk_expr(*else_expr, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::Match { scrutinee, arms } => {
-                    walk_expr(*scrutinee, body, interner, file_id, add_ref);
+                    walk_expr(*scrutinee, body, interner, _file_id, add_ref);
                     for arm in arms {
                         if let Some(guard) = arm.guard {
-                            walk_expr(guard, body, interner, file_id, add_ref);
+                            walk_expr(guard, body, interner, _file_id, add_ref);
                         }
-                        walk_expr(arm.body, body, interner, file_id, add_ref);
+                        walk_expr(arm.body, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::Return { value } => {
                     if let Some(val) = value {
-                        walk_expr(*val, body, interner, file_id, add_ref);
+                        walk_expr(*val, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::Assign { lhs, rhs } => {
-                    walk_expr(*lhs, body, interner, file_id, add_ref);
-                    walk_expr(*rhs, body, interner, file_id, add_ref);
+                    walk_expr(*lhs, body, interner, _file_id, add_ref);
+                    walk_expr(*rhs, body, interner, _file_id, add_ref);
                 }
                 Expr::Loop { body: loop_body } => {
-                    walk_expr(*loop_body, body, interner, file_id, add_ref)
+                    walk_expr(*loop_body, body, interner, _file_id, add_ref)
                 }
                 Expr::While {
                     cond,
                     body: loop_body,
                 } => {
-                    walk_expr(*cond, body, interner, file_id, add_ref);
-                    walk_expr(*loop_body, body, interner, file_id, add_ref);
+                    walk_expr(*cond, body, interner, _file_id, add_ref);
+                    walk_expr(*loop_body, body, interner, _file_id, add_ref);
                 }
                 Expr::For {
                     pat: _,
                     iterable,
                     body: loop_body,
                 } => {
-                    walk_expr(*iterable, body, interner, file_id, add_ref);
-                    walk_expr(*loop_body, body, interner, file_id, add_ref);
+                    walk_expr(*iterable, body, interner, _file_id, add_ref);
+                    walk_expr(*loop_body, body, interner, _file_id, add_ref);
                 }
                 Expr::Struct { fields, spread, .. } => {
                     for (_, field_expr) in fields {
-                        walk_expr(*field_expr, body, interner, file_id, add_ref);
+                        walk_expr(*field_expr, body, interner, _file_id, add_ref);
                     }
                     if let Some(spread_expr) = spread {
-                        walk_expr(*spread_expr, body, interner, file_id, add_ref);
+                        walk_expr(*spread_expr, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::Array(elems) | Expr::Tuple(elems) => {
                     for elem in elems {
-                        walk_expr(*elem, body, interner, file_id, add_ref);
+                        walk_expr(*elem, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::Closure {
                     body: closure_body, ..
                 } => {
-                    walk_expr(*closure_body, body, interner, file_id, add_ref);
+                    walk_expr(*closure_body, body, interner, _file_id, add_ref);
                 }
                 Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
-                    walk_expr(*expr, body, interner, file_id, add_ref);
+                    walk_expr(*expr, body, interner, _file_id, add_ref);
                 }
                 _ => {}
             }
