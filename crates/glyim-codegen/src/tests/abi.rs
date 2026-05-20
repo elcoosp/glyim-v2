@@ -1,6 +1,6 @@
 //! Tests for ABI-aware argument passing (S08-T04)
 
-use crate::BytecodeBackend;
+use crate::{BytecodeBackend, CodegenBackend};
 
 #[test]
 fn backend_instantiates_with_layout_provider() {
@@ -16,6 +16,7 @@ fn backend_accepts_custom_layout_provider() {
             16
         }
     }
+
     let backend = BytecodeBackend::new()
         .with_layout_provider(Box::new(TestProvider));
     assert_eq!(backend.name(), "bytecode");
