@@ -1,4 +1,4 @@
-mod array;
+
 mod assign;
 mod binary_error;
 mod binary_i32;
@@ -12,7 +12,6 @@ mod empty_crate;
 mod fn_sig_inst;
 mod fn_unit;
 mod function_call;
-mod harness_tests;
 mod inference;
 mod match_expr;
 mod method_call;

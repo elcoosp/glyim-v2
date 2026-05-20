@@ -801,6 +801,11 @@ impl<'a> MirBuilder<'a> {
         span: glyim_span::Span,
     ) {
         match &pat.kind {
+            thir::PatternKind::Range {
+                start: _,
+                end: _,
+                inclusive: _,
+            } => {}
             thir::PatternKind::Binding {
                 name,
                 mutability,
@@ -1031,6 +1036,7 @@ impl<'a> MirBuilder<'a> {
 
     fn pattern_to_switch_value(&self, pat: &thir::Pattern) -> u128 {
         match &pat.kind {
+            thir::PatternKind::Range { .. } => u128::MAX,
             thir::PatternKind::Literal(lit) => match lit {
                 thir::Literal::Int(v, _) => *v as u128,
                 thir::Literal::Uint(v, _) => *v,

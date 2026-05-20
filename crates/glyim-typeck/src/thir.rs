@@ -56,7 +56,6 @@ pub struct Expr {
 }
 
 impl Expr {
-    /// Create an error-recovery expression at the given span.
     #[inline]
     pub fn err(span: Span) -> Self {
         Self {
@@ -192,27 +191,7 @@ impl Pattern {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum PatternKind {
-    Wild,
-    Binding {
-        name: Name,
-        mutability: Mutability,
-        subpattern: Option<Box<Pattern>>,
-    },
-    Struct {
-        adt_id: AdtId,
-        variant_idx: u32,
-        fields: Vec<FieldPat>,
-        rest: bool,
-    },
-    Tuple(Vec<Pattern>),
-    Or(Vec<Pattern>),
-    Literal(Literal),
-    ConstBlock(Box<Body>),
-    Error,
-}
-
+// Manual implementation of Clone and Debug to avoid derive issues
 #[derive(Clone, Debug)]
 pub struct FieldPat {
     pub field: Name,
@@ -242,4 +221,118 @@ pub enum Literal {
     Char(char),
     String(Name),
     Unit,
+}
+
+pub enum PatternKind {
+    Wild,
+    Binding {
+        name: Name,
+        mutability: Mutability,
+        subpattern: Option<Box<Pattern>>,
+    },
+    Struct {
+        adt_id: AdtId,
+        variant_idx: u32,
+        fields: Vec<FieldPat>,
+        rest: bool,
+    },
+    Tuple(Vec<Pattern>),
+    Or(Vec<Pattern>),
+    Literal(Literal),
+    Range {
+        start: Option<Literal>,
+        end: Option<Literal>,
+        inclusive: bool,
+    },
+    ConstBlock(Box<Body>),
+    Error,
+}
+
+// Manual Debug for PatternKind to avoid derive non-exhaustive error
+impl std::fmt::Debug for PatternKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatternKind::Wild => write!(f, "Wild"),
+            PatternKind::Binding {
+                name,
+                mutability,
+                subpattern,
+            } => f
+                .debug_struct("Binding")
+                .field("name", name)
+                .field("mutability", mutability)
+                .field("subpattern", subpattern)
+                .finish(),
+            PatternKind::Struct {
+                adt_id,
+                variant_idx,
+                fields,
+                rest,
+            } => f
+                .debug_struct("Struct")
+                .field("adt_id", adt_id)
+                .field("variant_idx", variant_idx)
+                .field("fields", fields)
+                .field("rest", rest)
+                .finish(),
+            PatternKind::Tuple(pats) => f.debug_tuple("Tuple").field(pats).finish(),
+            PatternKind::Or(pats) => f.debug_tuple("Or").field(pats).finish(),
+            PatternKind::Literal(lit) => f.debug_tuple("Literal").field(lit).finish(),
+            PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => f
+                .debug_struct("Range")
+                .field("start", start)
+                .field("end", end)
+                .field("inclusive", inclusive)
+                .finish(),
+            PatternKind::ConstBlock(body) => f.debug_tuple("ConstBlock").field(body).finish(),
+            PatternKind::Error => write!(f, "Error"),
+        }
+    }
+}
+
+// Manual Clone for PatternKind
+impl Clone for PatternKind {
+    fn clone(&self) -> Self {
+        match self {
+            PatternKind::Wild => PatternKind::Wild,
+            PatternKind::Binding {
+                name,
+                mutability,
+                subpattern,
+            } => PatternKind::Binding {
+                name: *name,
+                mutability: *mutability,
+                subpattern: subpattern.clone(),
+            },
+            PatternKind::Struct {
+                adt_id,
+                variant_idx,
+                fields,
+                rest,
+            } => PatternKind::Struct {
+                adt_id: *adt_id,
+                variant_idx: *variant_idx,
+                fields: fields.clone(),
+                rest: *rest,
+            },
+            PatternKind::Tuple(pats) => PatternKind::Tuple(pats.clone()),
+            PatternKind::Or(pats) => PatternKind::Or(pats.clone()),
+            PatternKind::Literal(lit) => PatternKind::Literal(lit.clone()),
+            PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => PatternKind::Range {
+                start: start.clone(),
+                end: end.clone(),
+                inclusive: *inclusive,
+            },
+            PatternKind::ConstBlock(body) => PatternKind::ConstBlock(body.clone()),
+            PatternKind::Error => PatternKind::Error,
+        }
+    }
 }
