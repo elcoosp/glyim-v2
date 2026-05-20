@@ -769,6 +769,7 @@ dependencies = [
  "glyim-diag",
  "glyim-solve",
  "glyim-span",
+ "glyim-test",
  "glyim-type",
  "glyim-vfs",
  "parking_lot",
