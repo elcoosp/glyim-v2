@@ -85,7 +85,7 @@ impl ReferenceGraph {
             expr_id: ExprId,
             body: &Body,
             interner: &Interner,
-            file_id: FileId,
+            #[allow(clippy::only_used_in_recursion)] file_id: FileId,
             add_ref: &mut impl FnMut(&str, Span, bool, ReferenceKind),
         ) {
             let expr = &body.exprs[expr_id];
@@ -99,11 +99,11 @@ impl ReferenceGraph {
                 }
                 Expr::Call { func, args: _ } => {
                     walk_expr(*func, body, interner, file_id, add_ref);
-                    if let Expr::Path(path) = &body.exprs[*func] {
-                        if let Some(name) = path.as_name() {
-                            let name_str = interner.resolve(name).to_string();
-                            add_ref(&name_str, span, false, ReferenceKind::Call);
-                        }
+                    if let Expr::Path(path) = &body.exprs[*func]
+                        && let Some(name) = path.as_name()
+                    {
+                        let name_str = interner.resolve(name).to_string();
+                        add_ref(&name_str, span, false, ReferenceKind::Call);
                     }
                 }
                 Expr::MethodCall {
