@@ -1,30 +1,21 @@
-use glyim_test::harness::{TestMode, TestRunner};
-use std::path::PathBuf;
+use glyim_test::harness::{TestRunner, TestMode};
 
 #[test]
-#[ignore = "projection syntax not yet in parser"]
-fn run_pass_tests() {
-    TestRunner::new(PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/test_data/run-pass"
-    )))
-    .mode(TestMode::CompilePass)
-    .frontend_only() // avoid LLVM dependency
-    .build()
-    .expect("failed to discover tests")
-    .run();
+fn compile_pass_tests() {
+    TestRunner::new("tests/compile-pass")
+        .mode(TestMode::CompilePass)
+        .parallel(false)
+        .build()
+        .expect("failed to discover tests")
+        .run();
 }
 
 #[test]
-#[ignore = "projection syntax not yet in parser"]
 fn compile_fail_tests() {
-    TestRunner::new(PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/test_data/compile-fail"
-    )))
-    .mode(TestMode::CompileFail)
-    .frontend_only()
-    .build()
-    .expect("failed to discover tests")
-    .run();
+    TestRunner::new("tests/compile-fail")
+        .mode(TestMode::CompileFail)
+        .parallel(false)
+        .build()
+        .expect("failed to discover tests")
+        .run();
 }

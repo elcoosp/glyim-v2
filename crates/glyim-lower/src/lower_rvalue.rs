@@ -670,6 +670,13 @@ impl<'a> MirBuilder<'a> {
                 tracing::warn!("STUB: const block pattern binding not implemented");
             }
             thir::PatternKind::Error => {}
+            thir::PatternKind::Range { start, end, inclusive } => {
+                tracing::warn!("STUB: lower range pattern start={:?} end={:?} inclusive={}", start, end, inclusive);
+                self.diagnostics.push(glyim_diag::GlyimDiagnostic::type_error(
+                    span,
+                    "range patterns not yet implemented in lowering",
+                ));
+            }
         }
     }
 
