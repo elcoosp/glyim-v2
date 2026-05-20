@@ -20,7 +20,6 @@ fn backend_accepts_custom_layout_provider() {
         }
     }
 
-    let backend = BytecodeBackend::new()
-        .with_layout_provider(Box::new(TestProvider));
+    let backend = BytecodeBackend::new().with_layout_provider(Box::new(TestProvider));
     assert_eq!(backend.name(), "bytecode");
 }

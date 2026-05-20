@@ -1,17 +1,23 @@
 //! Tests for constant emission (S08-T02, S08-T03)
 
-use glyim_test::with_fresh_ty_ctx;
-use glyim_core::{FnDefId, CrateId, LocalDefId};
-use glyim_core::primitives::Mutability;
-use glyim_type::Substitution;
-use glyim_mir::{MirConst, MirConstKind, Body, BasicBlockData, Terminator, TerminatorKind, SourceInfo, Statement, StatementKind, Rvalue, Operand, LocalDecl, Place, LocalIdx};
 use crate::{BytecodeBackend, CodegenBackend};
+use glyim_core::primitives::Mutability;
+use glyim_core::{CrateId, FnDefId, LocalDefId};
+use glyim_mir::{
+    BasicBlockData, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
+    SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
+};
+use glyim_test::with_fresh_ty_ctx;
+use glyim_type::Substitution;
 use std::sync::Arc;
 
 #[test]
 fn string_constant_emitted_to_string_table() {
     let (_, body) = with_fresh_ty_ctx(|ctx| {
-        let mut body = Body::dummy(glyim_core::DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+        let mut body = Body::dummy(glyim_core::DefId::new(
+            CrateId::from_raw(0),
+            LocalDefId::from_raw(0),
+        ));
 
         body.locals.push(LocalDecl {
             ty: ctx.unit_ty(),
@@ -58,7 +64,10 @@ fn string_constant_emitted_to_string_table() {
 #[test]
 fn function_constant_emitted_to_fn_table() {
     let (_, body) = with_fresh_ty_ctx(|ctx| {
-        let mut body = Body::dummy(glyim_core::DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+        let mut body = Body::dummy(glyim_core::DefId::new(
+            CrateId::from_raw(0),
+            LocalDefId::from_raw(0),
+        ));
 
         body.locals.push(LocalDecl {
             ty: ctx.unit_ty(),

@@ -1,10 +1,13 @@
 //! Tests for field projection layout (S08-T01)
 
-use glyim_test::with_fresh_ty_ctx;
-use glyim_core::primitives::Mutability;
-use glyim_type::{TyKind, FieldIdx};
-use glyim_mir::{Place, ProjectionElem, LocalIdx, Body, BasicBlockData, Terminator, TerminatorKind, SourceInfo, Statement, StatementKind, Rvalue, LocalDecl};
 use crate::{BytecodeBackend, CodegenBackend};
+use glyim_core::primitives::Mutability;
+use glyim_mir::{
+    BasicBlockData, Body, LocalDecl, LocalIdx, Place, ProjectionElem, Rvalue, SourceInfo,
+    Statement, StatementKind, Terminator, TerminatorKind,
+};
+use glyim_test::with_fresh_ty_ctx;
+use glyim_type::{FieldIdx, TyKind};
 use std::sync::Arc;
 
 #[test]
@@ -13,7 +16,10 @@ fn field_projection_emits_offset_bytecode() {
         let unit_ty = ctx.unit_ty();
         let ptr_ty = ctx.mk_ty(TyKind::RawPtr(unit_ty, Mutability::Not));
 
-        let mut body = Body::dummy(glyim_core::DefId::new(glyim_core::CrateId::from_raw(0), glyim_core::LocalDefId::from_raw(0)));
+        let mut body = Body::dummy(glyim_core::DefId::new(
+            glyim_core::CrateId::from_raw(0),
+            glyim_core::LocalDefId::from_raw(0),
+        ));
 
         body.locals.push(LocalDecl {
             ty: ptr_ty,
