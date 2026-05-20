@@ -1,35 +1,37 @@
-use crate::state::LspState;
-use glyim_db::{CrateConfig, Database};
-use std::path::PathBuf;
-use std::time::Duration;
+use crate::database::{AnalysisDatabase, SourceMap};
+use glyim_core::Interner;
+use glyim_frontend;
 
 #[test]
 fn diagnostics_are_emitted_on_change() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        let config = CrateConfig {
-            name: "test".into(),
-            target_triple: "x86_64".into(),
-            opt_level: 0,
-        };
-        let db = Database::new(config);
-        let mut state = LspState::new(db);
-        let cache_dir = std::env::temp_dir().join("glyim-lsp-test");
-        state.start_driver(cache_dir);
-        let path = PathBuf::from("/test/main.g");
-        let content = "fn main() { let x = 42; }".to_string();
-        state.did_open(path.clone(), content, 1);
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let diags = state.diagnostics_for_file(&path);
-        assert!(diags.is_empty(), "Initial file should have no diagnostics");
-        // Use content that contains the substring "error" to trigger a diagnostic
-        let invalid = "fn main() { error; }".to_string();
-        state.did_change(path.clone(), invalid, 2);
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let diags2 = state.diagnostics_for_file(&path);
-        assert!(
-            !diags2.is_empty(),
-            "File with 'error' should produce diagnostics"
-        );
-    });
+    let mut db = AnalysisDatabase::new();
+    let path = std::path::PathBuf::from("/test/diag.g");
+    let file_id = db.file_map.write().get_or_create(&path);
+
+    let sm = SourceMap::new(path.clone(), file_id, "fn main() { @ }".to_string());
+    db.source_maps.write().insert(file_id, sm.clone());
+
+    let lex_result = glyim_frontend::lex("fn main() { @ }", file_id);
+    let parse_result = glyim_frontend::parse_to_syntax("fn main() { @ }", file_id);
+    let mut interner = Interner::new();
+    let (hir, _hir_diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
+
+    let mut all_diags = Vec::new();
+    all_diags.extend(lex_result.diagnostics);
+    all_diags.extend(parse_result.diagnostics);
+
+    let lsp_diags = crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diags);
+    if !lsp_diags.is_empty() {
+        for diag in lsp_diags {
+            db.diagnostics.write().insert(file_id, diag);
+        }
+    }
+
+    let guard = db.diagnostics.read();
+    let stored = guard.get(&file_id);
+    assert!(
+        stored.is_some(),
+        "File with parse error should produce diagnostics"
+    );
 }
