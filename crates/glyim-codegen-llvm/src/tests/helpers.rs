@@ -1,77 +1,191 @@
+//! Test helpers for constructing MIR bodies.
+
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
 use glyim_core::{CrateId, DefId, LocalDefId};
-use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand,
-    Place, Rvalue, SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
-};
+use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::Ty;
 
-pub(crate) fn simple_mir_body(dest_ty: Ty, rvalue: Rvalue) -> Body {
-    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-    let local0 = locals.push(LocalDecl {
-        ty: dest_ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-    let place = Place::new(local0);
+/// Builder for constructing MIR bodies in tests.
+pub struct BodyBuilder {
+    locals: IndexVec<LocalIdx, LocalDecl>,
+    basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData>,
+    arg_count: usize,
+    return_ty: Ty,
+}
 
-    let stmt = Statement {
-        kind: StatementKind::Assign(place, rvalue),
-        source_info: SourceInfo::new(Span::DUMMY),
-    };
+impl BodyBuilder {
+    /// Create a new body builder with the given return type.
+    pub fn new(return_ty: Ty) -> Self {
+        let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+        locals.push(LocalDecl {
+            ty: return_ty,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+        basic_blocks.push(BasicBlockData {
+            statements: vec![],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            is_cleanup: false,
+        });
+        Self {
+            locals,
+            basic_blocks,
+            arg_count: 0,
+            return_ty,
+        }
+    }
 
-    let mut basic_blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
-    let bb0 = basic_blocks.push(BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    }));
-    basic_blocks[bb0].statements.push(stmt);
+    pub fn add_local(&mut self, ty: Ty) -> LocalIdx {
+        let idx = LocalIdx::from_raw(self.locals.len() as u32);
+        self.locals.push(LocalDecl {
+            ty,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        idx
+    }
 
-    Body {
-        owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
-        basic_blocks,
-        locals,
-        arg_count: 0,
-        return_ty: Ty::UNIT,
-        span: Span::DUMMY,
-        var_debug_info: vec![],
+    pub fn add_arg(&mut self, ty: Ty) -> LocalIdx {
+        let idx = self.add_local(ty);
+        self.arg_count += 1;
+        idx
+    }
+
+    pub fn add_statement(&mut self, stmt: Statement) {
+        self.basic_blocks[BasicBlockIdx::from_raw(0)]
+            .statements
+            .push(stmt);
+    }
+
+    pub fn set_terminator(&mut self, term: Terminator) {
+        self.basic_blocks[BasicBlockIdx::from_raw(0)].terminator = term;
+    }
+
+    pub fn add_block(&mut self, term: Terminator) -> BasicBlockIdx {
+        let idx = BasicBlockIdx::from_raw(self.basic_blocks.len() as u32);
+        self.basic_blocks.push(BasicBlockData {
+            statements: vec![],
+            terminator: term,
+            is_cleanup: false,
+        });
+        idx
+    }
+
+    pub fn build(self) -> Body {
+        Body {
+            owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            basic_blocks: self.basic_blocks,
+            locals: self.locals,
+            arg_count: self.arg_count,
+            return_ty: self.return_ty,
+            span: Span::DUMMY,
+            var_debug_info: vec![],
+        }
     }
 }
 
-pub(crate) fn const_operand_i32(val: i64, i32_ty: Ty) -> Operand {
+#[allow(dead_code)]
+pub fn make_int_const(value: i128, ty: Ty) -> MirConst {
+    MirConst {
+        kind: MirConstKind::Int(value),
+        ty,
+        span: Span::DUMMY,
+    }
+}
+
+#[allow(dead_code)]
+pub fn make_uint_const(value: u128, ty: Ty) -> MirConst {
+    MirConst {
+        kind: MirConstKind::Uint(value),
+        ty,
+        span: Span::DUMMY,
+    }
+}
+
+#[allow(dead_code)]
+pub fn make_bool_const(value: bool) -> MirConst {
+    MirConst {
+        kind: MirConstKind::Bool(value),
+        ty: Ty::BOOL,
+        span: Span::DUMMY,
+    }
+}
+
+#[allow(dead_code)]
+pub fn make_unit_const() -> MirConst {
+    MirConst {
+        kind: MirConstKind::Unit,
+        ty: Ty::UNIT,
+        span: Span::DUMMY,
+    }
+}
+
+pub fn make_string_const(name: glyim_core::Name, ty: Ty) -> MirConst {
+    MirConst {
+        kind: MirConstKind::String(name),
+        ty,
+        span: Span::DUMMY,
+    }
+}
+
+pub fn make_assign(place: Place, rvalue: Rvalue) -> Statement {
+    Statement {
+        kind: StatementKind::Assign(place, rvalue),
+        source_info: SourceInfo::new(Span::DUMMY),
+    }
+}
+
+/// Create a constant i32/i64 operand.
+pub fn const_operand_i32(value: impl Into<i128>, ty: Ty) -> Operand {
     Operand::Constant(MirConst {
-        kind: MirConstKind::Int(val as i128),
-        ty: i32_ty,
+        kind: MirConstKind::Int(value.into()),
+        ty,
         span: Span::DUMMY,
     })
 }
 
-pub(crate) fn const_operand_u32(val: u64, u32_ty: Ty) -> Operand {
+/// Create a constant u32 operand.
+pub fn const_operand_u32(value: impl Into<u128>, ty: Ty) -> Operand {
     Operand::Constant(MirConst {
-        kind: MirConstKind::Uint(val as u128),
-        ty: u32_ty,
+        kind: MirConstKind::Uint(value.into()),
+        ty,
         span: Span::DUMMY,
     })
 }
 
-pub(crate) fn const_operand_bool(val: bool) -> Operand {
+/// Create a constant f64 operand.
+pub fn const_operand_f64(value: f64, ty: Ty) -> Operand {
     Operand::Constant(MirConst {
-        kind: MirConstKind::Bool(val),
+        kind: MirConstKind::FloatBits(value.to_bits()),
+        ty,
+        span: Span::DUMMY,
+    })
+}
+
+/// Create a constant bool operand.
+pub fn const_operand_bool(value: bool) -> Operand {
+    Operand::Constant(MirConst {
+        kind: MirConstKind::Bool(value),
         ty: Ty::BOOL,
         span: Span::DUMMY,
     })
 }
 
-pub(crate) fn box_operands(left: Operand, right: Operand) -> Box<(Operand, Operand)> {
-    Box::new((left, right))
+/// Box a pair of operands for BinaryOp.
+pub fn box_operands(lhs: Operand, rhs: Operand) -> Box<(Operand, Operand)> {
+    Box::new((lhs, rhs))
 }
 
-pub(crate) fn const_operand_f64(val: f64, f64_ty: Ty) -> Operand {
-    Operand::Constant(MirConst {
-        kind: MirConstKind::FloatBits(val.to_bits()),
-        ty: f64_ty,
-        span: Span::DUMMY,
-    })
+/// Create a simple MIR body that computes a single rvalue and returns it.
+pub fn simple_mir_body(return_ty: Ty, rvalue: Rvalue) -> Body {
+    let mut builder = BodyBuilder::new(return_ty);
+    let result_local = builder.add_local(return_ty);
+    builder.add_statement(make_assign(Place::new(result_local), rvalue));
+    builder.build()
 }

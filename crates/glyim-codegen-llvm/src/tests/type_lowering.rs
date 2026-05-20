@@ -1,140 +1,220 @@
-use crate::LlvmBackend;
-use glyim_core::Interner;
-use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-use glyim_core::primitives::Mutability;
-use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
-};
-use glyim_span::{ByteIdx, FileId, Span};
-use glyim_type::{TyCtxMut, TyKind};
+//! S22-T01: Tests for LLVM type lowering (llvm_type_for_ty).
 
-fn build_tuple_body(ctx: &mut TyCtxMut) -> Body {
-    let i32_ty = ctx.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
-    let tuple_subst = ctx.intern_substitution(vec![
-        glyim_type::GenericArg::Ty(i32_ty),
-        glyim_type::GenericArg::Ty(i32_ty),
-    ]);
-    let tuple_ty = ctx.mk_ty(TyKind::Tuple(tuple_subst));
+use glyim_core::primitives::*;
+use glyim_test::{test_frozen_ty_ctx, with_fresh_ty_ctx};
+use glyim_type::*;
+use inkwell::context::Context;
 
-    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-    locals.push(LocalDecl {
-        ty: tuple_ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::new(
-            FileId::BOGUS,
-            ByteIdx::ZERO,
-            ByteIdx::ZERO,
-            glyim_span::SyntaxContext::ROOT,
-        )),
-    });
-    locals.push(LocalDecl {
-        ty: i32_ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-    locals.push(LocalDecl {
-        ty: i32_ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-
-    let const_10 = MirConst {
-        kind: MirConstKind::Int(10),
-        ty: i32_ty,
-        span: Span::DUMMY,
-    };
-    let const_20 = MirConst {
-        kind: MirConstKind::Int(20),
-        ty: i32_ty,
-        span: Span::DUMMY,
-    };
-
-    let mut basic_blocks: IndexVec<glyim_mir::BasicBlockIdx, BasicBlockData> = IndexVec::new();
-
-    let stmts = vec![
-        Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(1)),
-                Rvalue::Use(Operand::Constant(const_10)),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(2)),
-                Rvalue::Use(Operand::Constant(const_20)),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(0)),
-                Rvalue::Aggregate(
-                    glyim_mir::AggregateKind::Tuple,
-                    vec![
-                        Operand::Copy(Place::new(LocalIdx::from_raw(1))),
-                        Operand::Copy(Place::new(LocalIdx::from_raw(2))),
-                    ],
-                ),
-            ),
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-    ];
-
-    let mut bb0 = BasicBlockData::new(Terminator {
-        kind: TerminatorKind::Return,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-    bb0.statements = stmts;
-    basic_blocks.push(bb0);
-
-    Body {
-        owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
-        basic_blocks,
-        locals,
-        arg_count: 0,
-        return_ty: tuple_ty,
-        span: Span::DUMMY,
-        var_debug_info: Vec::new(),
-    }
+#[test]
+fn error_type_maps_to_i64() {
+    let ctx = test_frozen_ty_ctx();
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::ERROR);
+    assert!(llvm_ty.is_int_type(), "Error type should map to int type");
+    assert_eq!(llvm_ty.into_int_type().get_bit_width(), 64);
 }
 
 #[test]
-fn u05_t01_struct_type_lowered_to_llvm_struct() {
-    let mut ctx = TyCtxMut::new(Interner::default());
-    let body = build_tuple_body(&mut ctx);
-    let frozen = ctx.freeze();
-
-    let backend = LlvmBackend::new().with_ty_ctx(frozen);
-    let ir = backend
-        .generate_ir(&body)
-        .expect("generate_ir should succeed");
-
+fn never_type_maps_to_empty_struct() {
+    let ctx = test_frozen_ty_ctx();
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::NEVER);
     assert!(
-        ir.contains("{ i32, i32 }"),
-        "IR should contain struct type {{ i32, i32 }}, got:\n{}",
-        ir
+        llvm_ty.is_struct_type(),
+        "Never type should map to struct type"
     );
+    assert_eq!(llvm_ty.into_struct_type().get_field_types().len(), 0);
+}
+
+#[test]
+fn unit_type_maps_to_empty_struct() {
+    let ctx = test_frozen_ty_ctx();
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::UNIT);
     assert!(
-        ir.contains("insertvalue"),
-        "IR should contain insertvalue for tuple construction, got:\n{}",
-        ir
+        llvm_ty.is_struct_type(),
+        "Unit type should map to struct type"
+    );
+    assert_eq!(llvm_ty.into_struct_type().get_field_types().len(), 0);
+}
+
+#[test]
+fn bool_type_maps_to_i1() {
+    let ctx = test_frozen_ty_ctx();
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::BOOL);
+    assert!(llvm_ty.is_int_type());
+    assert_eq!(llvm_ty.into_int_type().get_bit_width(), 1);
+}
+
+#[test]
+fn i32_type_maps_to_i32() {
+    let (ctx, i32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Int(IntTy::I32)));
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, i32_ty);
+    assert!(llvm_ty.is_int_type());
+    assert_eq!(llvm_ty.into_int_type().get_bit_width(), 32);
+}
+
+#[test]
+fn u8_type_maps_to_i8() {
+    let (ctx, u8_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Uint(UintTy::U8)));
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, u8_ty);
+    assert!(llvm_ty.is_int_type());
+    assert_eq!(llvm_ty.into_int_type().get_bit_width(), 8);
+}
+
+#[test]
+fn float_f32_maps_to_f32() {
+    let (ctx, f32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Float(FloatTy::F32)));
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, f32_ty);
+    assert!(llvm_ty.is_float_type(), "F32 type should map to float type");
+}
+
+#[test]
+fn float_f64_maps_to_f64() {
+    let (ctx, f64_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Float(FloatTy::F64)));
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, f64_ty);
+    assert!(llvm_ty.is_float_type(), "F64 type should map to float type");
+}
+
+#[test]
+fn char_type_maps_to_i32() {
+    let (ctx, char_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Char));
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, char_ty);
+    assert!(llvm_ty.is_int_type());
+    assert_eq!(llvm_ty.into_int_type().get_bit_width(), 32);
+}
+
+#[test]
+fn string_type_maps_to_ptr() {
+    let (ctx, string_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::String));
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, string_ty);
+    assert!(
+        llvm_ty.is_pointer_type(),
+        "String type should map to pointer type"
     );
 }
 
 #[test]
-fn u05_t01_struct_type_ir_is_valid() {
-    let mut ctx = TyCtxMut::new(Interner::default());
-    let body = build_tuple_body(&mut ctx);
-    let frozen = ctx.freeze();
+fn ref_type_maps_to_ptr() {
+    let (ctx, ref_ty) = with_fresh_ty_ctx(|c| {
+        let inner = c.bool_ty();
+        c.mk_ref(Region::Erased, inner, Mutability::Not)
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, ref_ty);
+    assert!(llvm_ty.is_pointer_type());
+}
 
-    let backend = LlvmBackend::new().with_ty_ctx(frozen);
-    let result = backend.generate_ir(&body);
+#[test]
+fn raw_ptr_type_maps_to_ptr() {
+    let (ctx, ptr_ty) = with_fresh_ty_ctx(|c| {
+        let inner = c.bool_ty();
+        c.mk_ty(TyKind::RawPtr(inner, Mutability::Not))
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, ptr_ty);
+    assert!(llvm_ty.is_pointer_type());
+}
+
+#[test]
+fn fn_ptr_type_maps_to_ptr() {
+    let (ctx, fn_ptr_ty) = with_fresh_ty_ctx(|c| {
+        let ret = c.bool_ty();
+        let inputs = c.intern_substitution(vec![]);
+        let sig = FnSig {
+            inputs,
+            output: ret,
+            c_variadic: false,
+            unsafety: Safety::Safe,
+            abi: Abi::Glyim,
+        };
+        c.mk_fn_ptr(sig)
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, fn_ptr_ty);
+    assert!(llvm_ty.is_pointer_type());
+}
+
+#[test]
+fn tuple_type_maps_to_struct() {
+    let (ctx, tuple_ty) = with_fresh_ty_ctx(|c| {
+        let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
+        let bool_ty = c.bool_ty();
+        let subst = c.intern_substitution(vec![GenericArg::Ty(i32_ty), GenericArg::Ty(bool_ty)]);
+        c.mk_tuple(subst)
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, tuple_ty);
+    assert!(llvm_ty.is_struct_type());
+    let st = llvm_ty.into_struct_type();
+    assert_eq!(st.get_field_types().len(), 2);
+}
+
+#[test]
+fn empty_tuple_maps_to_empty_struct() {
+    let (ctx, et) = with_fresh_ty_ctx(|c| {
+        let subst = c.intern_substitution(vec![]);
+        c.mk_tuple(subst)
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, et);
+    assert!(llvm_ty.is_struct_type());
+    assert_eq!(llvm_ty.into_struct_type().get_field_types().len(), 0);
+}
+
+#[test]
+fn array_type_maps_to_llvm_array() {
+    let (ctx, array_ty) = with_fresh_ty_ctx(|c| {
+        let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
+        let count = Const {
+            kind: ConstKind::Uint(4),
+            ty: c.mk_ty(TyKind::Uint(UintTy::Usize)),
+        };
+        c.mk_ty(TyKind::Array(i32_ty, count))
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, array_ty);
     assert!(
-        result.is_ok(),
-        "generate_ir should succeed: {:?}",
-        result.err()
+        llvm_ty.is_array_type(),
+        "Array type should map to LLVM array type"
     );
+}
+
+#[test]
+fn slice_type_maps_to_fat_ptr() {
+    let (ctx, slice_ty) = with_fresh_ty_ctx(|c| {
+        let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
+        c.mk_ty(TyKind::Slice(i32_ty))
+    });
+    let context = Context::create();
+    let target_info = TargetInfo::default();
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, slice_ty);
+    assert!(
+        llvm_ty.is_struct_type(),
+        "Slice should map to struct (fat pointer)"
+    );
+    assert_eq!(llvm_ty.into_struct_type().get_field_types().len(), 2);
 }
