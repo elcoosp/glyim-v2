@@ -85,6 +85,12 @@ impl ApplyError {
     }
 }
 
+impl From<std::io::Error> for PilotError {
+    fn from(e: std::io::Error) -> Self {
+        PilotError::Io(e)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,11 +115,5 @@ mod tests {
         };
         assert_eq!(err.code(), "E0205");
         assert!(!format!("{err}").contains("I/O"));
-    }
-}
-
-impl From<std::io::Error> for PilotError {
-    fn from(e: std::io::Error) -> Self {
-        PilotError::Io(e)
     }
 }

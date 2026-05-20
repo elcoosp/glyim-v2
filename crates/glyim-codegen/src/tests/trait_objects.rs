@@ -32,7 +32,7 @@ fn create_trait_object_from_concrete_type() {
 
 #[test]
 fn call_method_through_trait_object() {
-    let (ctx, dyn_ty) = with_fresh_ty_ctx(|ctx| make_dyn_ty(ctx));
+    let (ctx, dyn_ty) = with_fresh_ty_ctx(make_dyn_ty);
 
     let local0 = LocalIdx::from_raw(0);
     let local1 = LocalIdx::from_raw(1);
@@ -100,7 +100,7 @@ fn call_method_through_trait_object() {
 
 #[test]
 fn upcast_to_supertrait_object() {
-    let (ctx, dyn_ty) = with_fresh_ty_ctx(|ctx| make_dyn_ty(ctx));
+    let (ctx, dyn_ty) = with_fresh_ty_ctx(make_dyn_ty);
 
     let _local0 = LocalIdx::from_raw(0);
     let local1 = LocalIdx::from_raw(1);

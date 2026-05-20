@@ -32,7 +32,7 @@ fn workspace_symbols_fuzzy_search() {
             kind: SymbolKind::Function,
             definition: DefinitionLocation {
                 file_id,
-                span: span.clone(),
+                span,
             },
             type_signature: None,
             is_pub: true,
@@ -80,7 +80,7 @@ fn workspace_symbols_fuzzy_matching_limit() {
             kind: SymbolKind::Function,
             definition: DefinitionLocation {
                 file_id,
-                span: span.clone(),
+                span,
             },
             type_signature: None,
             is_pub: true,

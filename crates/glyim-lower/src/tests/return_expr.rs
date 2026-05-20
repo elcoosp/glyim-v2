@@ -12,7 +12,7 @@ fn return_with_value_generates_assign_then_return() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(i32_ty, interner);
     let ret_val = b.expr(ExprKind::Literal(Literal::Int(42, None)), i32_ty);
@@ -34,7 +34,7 @@ fn return_without_value_just_terminates() {
     let ctx_mut = test_ty_ctx();
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(Ty::UNIT, interner);
     let body = b.into_body(

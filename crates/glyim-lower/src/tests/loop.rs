@@ -10,7 +10,7 @@ fn loop_to_back_edge_block() {
     let ctx_mut = test_ty_ctx();
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(Ty::NEVER, interner);
     let loop_expr = b.expr(

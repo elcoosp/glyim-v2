@@ -12,7 +12,7 @@ fn deeply_nested_blocks_lower_correctly() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(i32_ty, interner);
     // { { { 42 } } }
@@ -50,7 +50,7 @@ fn block_with_multiple_statements() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let mut b = ThirBuilder::new(Ty::UNIT, interner);
     let mut stmts = Vec::new();

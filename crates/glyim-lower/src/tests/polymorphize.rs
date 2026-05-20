@@ -1233,7 +1233,7 @@ fn dedup_reduces_item_count() {
     let body_used = build_body_with_local_of_type(param_t);
     let fn_used = FnDefId::from_raw(101);
 
-    let types = vec![i32_ty, bool_ty, u8_ty, u16_ty];
+    let types = [i32_ty, bool_ty, u8_ty, u16_ty];
     let mut items = Vec::new();
 
     // 4 instantiations of unused-T function

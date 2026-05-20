@@ -28,11 +28,10 @@ fn test_pat_binding() {
     match &body.exprs[block_id] {
         Expr::Block { stmts, .. } => {
             let found = stmts.iter().any(|&sid| {
-                if let Expr::Assign { lhs, .. } = &body.exprs[sid] {
-                    if let Expr::Path(p) = &body.exprs[*lhs] {
+                if let Expr::Assign { lhs, .. } = &body.exprs[sid]
+                    && let Expr::Path(p) = &body.exprs[*lhs] {
                         return p.as_name().unwrap() == interner.intern("x");
                     }
-                }
                 false
             });
             assert!(found, "No assignment to x found in block statements");

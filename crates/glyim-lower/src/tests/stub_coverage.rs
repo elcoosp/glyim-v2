@@ -12,7 +12,7 @@ fn err_expr_emits_warning_not_panic() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(i32_ty, interner);
     let err_expr = b.expr(ExprKind::Err, i32_ty);
@@ -28,7 +28,7 @@ fn expr_stmt_warns_about_dropped_value() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(Ty::UNIT, interner);
     let lit_expr = b.expr(ExprKind::Literal(Literal::Int(42, None)), i32_ty);

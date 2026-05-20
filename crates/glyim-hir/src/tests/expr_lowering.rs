@@ -29,12 +29,12 @@ fn parse_expr(src: &str) -> SyntaxNode {
         .expect("Block not found");
     block
         .children()
-        .find(|n| is_expr_node(n))
+        .find(is_expr_node)
         .or_else(|| {
             block
                 .children()
                 .find(|n| n.kind() == SyntaxKind::ExprStmt)
-                .and_then(|stmt| stmt.children().find(|c| is_expr_node(c)))
+                .and_then(|stmt| stmt.children().find(is_expr_node))
         })
         .expect("expr node not found")
         .clone()

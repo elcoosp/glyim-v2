@@ -14,7 +14,7 @@ fn while_to_loop_with_conditional_break() {
     let bool_ty = ctx_mut.bool_ty();
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let mut b = ThirBuilder::new(Ty::UNIT, interner);
     let mut stmts = Vec::new();

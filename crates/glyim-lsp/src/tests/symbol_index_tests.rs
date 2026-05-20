@@ -1,12 +1,12 @@
 use crate::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
-use glyim_core::{IndexVec, Interner, Name, Visibility};
+use glyim_core::{IndexVec, Interner, Visibility};
 use glyim_hir::*;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 fn create_dummy_hir(interner: &Interner) -> CrateHir {
     let mut items = IndexVec::new();
     let key = interner.intern("main");
-    let name = Name::from(key);
+    let name = key;
     let fn_item = Item {
         id: ItemId::from_raw(0),
         name,
@@ -121,7 +121,7 @@ fn query_prefix_and_contains() {
             kind: SymbolKind::Function,
             definition: DefinitionLocation {
                 file_id: file,
-                span: span.clone(),
+                span,
             },
             type_signature: None,
             is_pub: true,

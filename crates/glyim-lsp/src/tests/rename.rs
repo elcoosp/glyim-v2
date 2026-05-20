@@ -32,7 +32,7 @@ fn test_rename_updates_all_references() {
         work_done_progress_params: WorkDoneProgressParams::default(),
     };
     let file_map_guard = db.file_map.read();
-    let edit = rename_symbol(&db, &*file_map_guard, &params);
+    let edit = rename_symbol(&db, &file_map_guard, &params);
     drop(file_map_guard);
     assert!(edit.is_some());
     let edit = edit.unwrap();

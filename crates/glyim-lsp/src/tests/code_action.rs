@@ -28,7 +28,7 @@ fn main() {
         partial_result_params: PartialResultParams::default(),
     };
     let file_map_guard = db.file_map.read();
-    let actions = provide_code_actions(&db, &*file_map_guard, &params);
+    let actions = provide_code_actions(&db, &file_map_guard, &params);
     drop(file_map_guard);
     assert!(actions.is_some());
     let actions = actions.unwrap();

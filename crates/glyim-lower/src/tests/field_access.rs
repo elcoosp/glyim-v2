@@ -12,7 +12,7 @@ fn struct_field_access_does_not_panic() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let mut b = ThirBuilder::new(Ty::UNIT, interner);
     let mut stmts = Vec::new();

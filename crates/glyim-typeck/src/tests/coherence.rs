@@ -44,7 +44,7 @@ fn impl_item_to_header(
                     ctx.mk_ty(TyKind::Adt(adt_id, substs))
                 } else {
                     let s = ctx.name_str(name);
-                    match s.as_ref() {
+                    match s {
                         "i8" => ctx.mk_ty(TyKind::Int(IntTy::I8)),
                         "i16" => ctx.mk_ty(TyKind::Int(IntTy::I16)),
                         "i32" => ctx.mk_ty(TyKind::Int(IntTy::I32)),
