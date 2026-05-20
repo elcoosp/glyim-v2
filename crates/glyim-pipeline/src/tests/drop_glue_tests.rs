@@ -1,5 +1,5 @@
-use glyim_test::with_fresh_ty_ctx;
 use glyim_core::primitives::IntTy;
+use glyim_test::with_fresh_ty_ctx;
 use glyim_type::TyKind;
 
 #[test]
