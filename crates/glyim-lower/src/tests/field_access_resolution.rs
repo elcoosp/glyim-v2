@@ -6,7 +6,7 @@ use glyim_core::primitives::IntTy;
 use glyim_mir::ProjectionElem;
 use glyim_test::test_ty_ctx;
 use glyim_type::*;
-use glyim_typeck::thir::{self, ExprKind, Literal};
+use glyim_typeck::thir::{self, ExprKind};
 
 /// S20-T01: Field access lowers to correct FieldIdx projection
 #[test]

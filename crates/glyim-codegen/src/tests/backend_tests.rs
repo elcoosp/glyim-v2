@@ -1215,7 +1215,7 @@ fn t42_bytecode_deterministic() {
 // ============================================================================
 #[test]
 fn t43_default_works() {
-    let backend = BytecodeBackend;
+    let backend = BytecodeBackend::new();
     assert_eq!(backend.name(), "bytecode");
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
     let result = backend.generate_function(&body);
