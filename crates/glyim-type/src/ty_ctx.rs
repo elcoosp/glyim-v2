@@ -126,13 +126,12 @@ impl TyCtx {
     /// (field type list). Returns `error_ty()` if the ADT or field is not found.
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
-            let Ok(raw_idx) = u32::try_from(field_idx) else {
-                return self.error_ty();
-            };
-            let idx = FieldIdx::from_raw(raw_idx);
+            // Use as_slice().get() to avoid debug_assert! in IndexVec::get()
+            // which panics on out-of-bounds even though the method returns Option.
             return def
                 .fields
-                .get(idx)
+                .as_slice()
+                .get(field_idx)
                 .map(|f| f.ty)
                 .unwrap_or_else(|| self.error_ty());
         }
@@ -201,13 +200,11 @@ impl TypeLookup for TyCtx {
     }
     fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
-            let Ok(raw_idx) = u32::try_from(field_idx) else {
-                return self.error_ty();
-            };
-            let idx = FieldIdx::from_raw(raw_idx);
+            // Use as_slice().get() to avoid debug_assert! in IndexVec::get()
             return def
                 .fields
-                .get(idx)
+                .as_slice()
+                .get(field_idx)
                 .map(|f| f.ty)
                 .unwrap_or_else(|| self.error_ty());
         }

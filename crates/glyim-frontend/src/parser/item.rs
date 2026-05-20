@@ -138,7 +138,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-
     pub(crate) fn parse_visibility(&mut self) -> bool {
         if self.current_kind() != SyntaxKind::KwPub {
             return false;
@@ -178,7 +177,6 @@ impl<'a> Parser<'a> {
         true
     }
 
-
     pub(crate) fn parse_macro_def(&mut self) {
         self.start_node(SyntaxKind::MacroDef);
         self.bump_expected(SyntaxKind::KwMacroRules);
@@ -214,8 +212,6 @@ impl<'a> Parser<'a> {
         self.finish_node(); // MacroDef
     }
 
-
-
     pub(crate) fn parse_token_tree(&mut self) {
         match self.current_kind() {
             SyntaxKind::LParen => {
@@ -227,10 +223,16 @@ impl<'a> Parser<'a> {
                         self.bump(); // $
                         if self.current_kind() == SyntaxKind::LParen {
                             self.parse_token_tree(); // $(...)
-                            if matches!(self.current_kind(), SyntaxKind::Comma | SyntaxKind::Semicolon) {
+                            if matches!(
+                                self.current_kind(),
+                                SyntaxKind::Comma | SyntaxKind::Semicolon
+                            ) {
                                 self.bump(); // separator
                             }
-                            if matches!(self.current_kind(), SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question) {
+                            if matches!(
+                                self.current_kind(),
+                                SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question
+                            ) {
                                 self.bump(); // operator
                             } else {
                                 self.error("expected repetition operator after $(...)");
@@ -261,7 +263,10 @@ impl<'a> Parser<'a> {
                         }
                         self.finish_node(); // TokenTree for dollar
                     } else {
-                        if matches!(self.current_kind(), SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket) {
+                        if matches!(
+                            self.current_kind(),
+                            SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+                        ) {
                             self.parse_token_tree();
                         } else {
                             self.start_node(SyntaxKind::TokenTree);
@@ -280,7 +285,10 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                    if matches!(self.current_kind(), SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket) {
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+                    ) {
                         self.parse_token_tree();
                     } else {
                         self.start_node(SyntaxKind::TokenTree);
@@ -295,7 +303,10 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
-                    if matches!(self.current_kind(), SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket) {
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
+                    ) {
                         self.parse_token_tree();
                     } else {
                         self.start_node(SyntaxKind::TokenTree);
@@ -313,8 +324,6 @@ impl<'a> Parser<'a> {
             }
         }
     }
-
-
 
     pub(crate) fn parse_fn_def(&mut self) {
         self.start_node(SyntaxKind::FnDef);
@@ -610,8 +619,6 @@ impl<'a> Parser<'a> {
         self.finish_node(); // ImplDef
     }
 
-
-
     pub(crate) fn parse_where_clause(&mut self) {
         self.start_node(SyntaxKind::WhereClause);
         self.expect(SyntaxKind::KwWhere);
@@ -640,8 +647,6 @@ impl<'a> Parser<'a> {
         }
         self.finish_node(); // WhereClause
     }
-
-
 
     pub(crate) fn parse_type_param_list(&mut self) {
         self.start_node(SyntaxKind::TypeParamList);
