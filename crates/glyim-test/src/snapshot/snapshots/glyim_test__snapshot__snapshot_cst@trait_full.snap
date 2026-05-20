@@ -4,7 +4,8 @@ assertion_line: 16
 expression: tree
 ---
 SourceFile@0..163
-  KwPub@0..3 "pub"
+  Visibility@0..3
+    KwPub@0..3 "pub"
   TraitDef@3..101
     KwTrait@3..8 "trait"
     Ident@8..16 "Iterator"

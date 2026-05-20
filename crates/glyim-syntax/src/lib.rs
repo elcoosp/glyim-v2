@@ -184,6 +184,19 @@ pub enum SyntaxKind {
     VariantList,
     // Error
     Error,
+    // Visibility qualifiers
+    Visibility,
+    VisCrate,
+    VisSuper,
+    VisSelf,
+    VisPath,
+    // Where clause components
+    WherePredicate,
+    Bound,
+    // Macro metavariables
+    MetaVar,
+    MetaVarCrate,
+
 }
 
 impl SyntaxKind {

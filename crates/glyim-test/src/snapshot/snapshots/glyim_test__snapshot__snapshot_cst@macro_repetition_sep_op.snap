@@ -1,0 +1,49 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..52
+  MacroDef@0..52
+    KwMacroRules@0..11 "macro_rules"
+    Bang@11..12 "!"
+    Ident@12..16 "test"
+    LBrace@16..17 "{"
+    MacroArm@17..50
+      TokenTree@17..46
+        LParen@17..18 "("
+        TokenTree@18..31
+          Dollar@18..19 "$"
+          TokenTree@19..29
+            LParen@19..20 "("
+            TokenTree@20..28
+              Dollar@20..21 "$"
+              MetaVar@21..28
+                Ident@21..22 "a"
+                Colon@22..23 ":"
+                Ident@23..28 "ident"
+            RParen@28..29 ")"
+          Comma@29..30 ","
+          Star@30..31 "*"
+        TokenTree@31..33
+          FatArrow@31..33 "=>"
+        TokenTree@33..45
+          Dollar@33..34 "$"
+          TokenTree@34..43
+            LParen@34..35 "("
+            TokenTree@35..42
+              Dollar@35..36 "$"
+              MetaVar@36..42
+                Ident@36..37 "b"
+                Colon@37..38 ":"
+                Ident@38..42 "expr"
+            RParen@42..43 ")"
+          Semicolon@43..44 ";"
+          Star@44..45 "*"
+        RParen@45..46 ")"
+      FatArrow@46..48 "=>"
+      TokenTree@48..50
+        LBrace@48..49 "{"
+        RBrace@49..50 "}"
+    Semicolon@50..51 ";"
+    RBrace@51..52 "}"
