@@ -15,7 +15,7 @@ fn s11_t02_changing_file_updates_diagnostics_incrementally() {
         let lex_result = glyim_frontend::lex(source, file_id);
         let parse_result = glyim_frontend::parse_to_syntax(source, file_id);
         let mut interner = Interner::new();
-        let (hir, _diags) =
+        let (hir, _hir_diags) =
             glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
         db.symbol_index
             .write()
@@ -28,13 +28,12 @@ fn s11_t02_changing_file_updates_diagnostics_incrementally() {
         all_diags.extend(lex_result.diagnostics);
         all_diags.extend(parse_result.diagnostics);
         let lsp_diags = crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diags);
-        let has_diags = !lsp_diags.is_empty();
-        if has_diags {
+        if lsp_diags.is_empty() {
+            db.diagnostics.write().remove(&file_id);
+        } else {
             for diag in lsp_diags {
                 db.diagnostics.write().insert(file_id, diag);
             }
-        } else {
-            db.diagnostics.write().remove(&file_id);
         }
         all_diags.len()
     };
