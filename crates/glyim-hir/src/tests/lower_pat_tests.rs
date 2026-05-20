@@ -1,5 +1,5 @@
 use crate::pipeline_api::lower_crate_for_pipeline;
-use crate::{CrateHir, Expr, BodyId, ItemKind, Pat};
+use crate::{BodyId, CrateHir, Expr, ItemKind, Pat};
 use glyim_core::interner::Interner;
 use glyim_test::phase::FrontendTester;
 
@@ -13,7 +13,11 @@ fn lower_source(source: &str) -> TestContext {
     let root = trace.parse_tree.unwrap();
     let mut interner = Interner::new();
     let (hir, diags) = lower_crate_for_pipeline(&root, &mut interner);
-    assert!(diags.is_empty(), "Lowering produced diagnostics: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "Lowering produced diagnostics: {:?}",
+        diags
+    );
     TestContext { hir, interner }
 }
 

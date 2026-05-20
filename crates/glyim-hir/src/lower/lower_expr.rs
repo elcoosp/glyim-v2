@@ -301,7 +301,6 @@ fn lower_closure_expr(
     Some(eid)
 }
 
-
 fn path_as_name(node: &SyntaxNode, interner: &mut Interner) -> Option<Name> {
     let mut segments = Vec::new();
     for el in node.children_with_tokens() {
@@ -367,7 +366,10 @@ fn lower_struct_expr(
                     let name = interner.intern(&field_name);
                     // Check if the field has an expression inside it
                     let expr_inside = node.children().find(|c| is_expr_node(c));
-                    if let Some(expr_id) = expr_inside.as_ref().and_then(|n| lower_expr(n, interner, body, diags, struct_field_map)) {
+                    if let Some(expr_id) = expr_inside
+                        .as_ref()
+                        .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map))
+                    {
                         fields.push((name, expr_id));
                         i += 1;
                         continue;
@@ -375,7 +377,9 @@ fn lower_struct_expr(
                     // Otherwise, assume the next sibling is the expression
                     if i + 1 < siblings.len() {
                         let next = &siblings[i + 1];
-                        if let Some(expr_id) = lower_expr(next, interner, body, diags, struct_field_map) {
+                        if let Some(expr_id) =
+                            lower_expr(next, interner, body, diags, struct_field_map)
+                        {
                             fields.push((name, expr_id));
                             i += 2;
                             continue;
@@ -386,7 +390,9 @@ fn lower_struct_expr(
                 SyntaxKind::DotDot => {
                     // Spread: find the next expression sibling
                     if i + 1 < siblings.len() {
-                        if let Some(expr_id) = lower_expr(&siblings[i + 1], interner, body, diags, struct_field_map) {
+                        if let Some(expr_id) =
+                            lower_expr(&siblings[i + 1], interner, body, diags, struct_field_map)
+                        {
                             *spread = Some(expr_id);
                             i += 2;
                             continue;
@@ -399,7 +405,9 @@ fn lower_struct_expr(
                     if let Some(name) = path_as_name(node, interner) {
                         // Avoid capturing the struct name itself
                         // We'll filter later, but collect for now
-                        if let Some(expr_id) = lower_expr(node, interner, body, diags, struct_field_map) {
+                        if let Some(expr_id) =
+                            lower_expr(node, interner, body, diags, struct_field_map)
+                        {
                             fields.push((name, expr_id));
                         }
                     }
@@ -426,22 +434,54 @@ fn lower_struct_expr(
             SyntaxKind::StructExpr => {
                 // For the top-level StructExpr, use sibling-based collection on its children
                 let children: Vec<SyntaxNode> = n.children().collect();
-                collect_from_siblings(&children, interner, body, diags, struct_field_map, fields, spread);
+                collect_from_siblings(
+                    &children,
+                    interner,
+                    body,
+                    diags,
+                    struct_field_map,
+                    fields,
+                    spread,
+                );
                 // Also recurse into children for safety (but sibling collection should cover it)
                 for child in children {
-                    collect_fields(&child, interner, body, diags, struct_field_map, fields, spread);
+                    collect_fields(
+                        &child,
+                        interner,
+                        body,
+                        diags,
+                        struct_field_map,
+                        fields,
+                        spread,
+                    );
                 }
             }
             _ => {
                 // For other nodes, just recurse
                 for child in n.children() {
-                    collect_fields(&child, interner, body, diags, struct_field_map, fields, spread);
+                    collect_fields(
+                        &child,
+                        interner,
+                        body,
+                        diags,
+                        struct_field_map,
+                        fields,
+                        spread,
+                    );
                 }
             }
         }
     }
 
-    collect_fields(node, interner, body, diags, struct_field_map, &mut fields, &mut spread);
+    collect_fields(
+        node,
+        interner,
+        body,
+        diags,
+        struct_field_map,
+        &mut fields,
+        &mut spread,
+    );
 
     // Remove any field that matches the struct name (shorthand for the struct itself)
     let path_id = path.unwrap_or_else(|| body.alloc_missing(node_span(node)));
