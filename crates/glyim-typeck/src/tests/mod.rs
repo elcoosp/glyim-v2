@@ -38,6 +38,3 @@ mod while_loop;
 // Helper modules
 mod common;
 mod test_utils;
-=== REMOVING ALL STUBS AND FULLY IMPLEMENTING RANGE PATTERN LOWERING ===
-mod harness_tests;
-mod harness_tests;
