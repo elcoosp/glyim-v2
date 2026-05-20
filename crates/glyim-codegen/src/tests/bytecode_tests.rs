@@ -65,7 +65,7 @@ fn assign_with_field_projection_emits_store_field() {
         },
     );
     let backend = BytecodeBackend::new();
-    let bytecode = backend.generate_function(&body).unwrap();
+    let bytecode = backend.generate_function(&Arc::new(body)).unwrap();
 
     // Check that OP_STORE_FIELD appears somewhere.
     let found = bytecode.iter().any(|&b| b == OP_STORE_FIELD);
@@ -108,7 +108,7 @@ fn ref_with_projection_emits_addr_and_offset() {
     block.statements.push(stmt);
     body.basic_blocks.push(block);
     let backend = BytecodeBackend::new();
-    let bytecode = backend.generate_function(&body).unwrap();
+    let bytecode = backend.generate_function(&Arc::new(body)).unwrap();
 
     let mut saw_load_addr = false;
     let mut saw_add = false;
@@ -161,7 +161,7 @@ fn drop_terminator_emits_op_drop() {
         var_debug_info: vec![],
     });
     let backend = BytecodeBackend::new();
-    let bytecode = backend.generate_function(&body).unwrap();
+    let bytecode = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(
         bytecode.contains(&OP_DROP),
         "OP_DROP not emitted for Drop terminator"
@@ -211,7 +211,7 @@ fn assert_terminator_emits_op_assert() {
         var_debug_info: vec![],
     });
     let backend = BytecodeBackend::new();
-    let bytecode = backend.generate_function(&body).unwrap();
+    let bytecode = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(
         bytecode.contains(&OP_ASSERT),
         "OP_ASSERT not emitted for Assert terminator"
@@ -239,7 +239,7 @@ fn string_constant_emits_load_const() {
         },
     );
     let backend = BytecodeBackend::new();
-    let bytecode = backend.generate_function(&body).unwrap();
+    let bytecode = backend.generate_function(&Arc::new(body)).unwrap();
     let mut found_load_const = false;
     for &op in &bytecode {
         if op == OP_LOAD_CONST {
@@ -271,7 +271,7 @@ fn fn_constant_emits_load_const() {
         },
     );
     let backend = BytecodeBackend::new();
-    let bytecode = backend.generate_function(&body).unwrap();
+    let bytecode = backend.generate_function(&Arc::new(body)).unwrap();
     let mut found_load_const = false;
     for &op in &bytecode {
         if op == OP_LOAD_CONST {
