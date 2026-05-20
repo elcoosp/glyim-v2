@@ -1,22 +1,27 @@
 //! Dependency resolution for Glyim projects.
 //!
 //! Resolves a project's dependency graph from a `Glyip.toml` and optional
-//! index, performs cycle detection, and produces a `Lockfile`.
+//! index, performs cycle detection, and produces a `Lockfile`. Supports
+//! fetching crate metadata from remote registries via the [`RegistryClient`]
+//! trait.
 
 use crate::config::GlyipToml;
 use crate::error::{GlyipError, GlyipResult};
 use crate::lockfile::{CrateSource, LockedCrate, Lockfile};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 /// An entry in the crate index — metadata about a published crate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IndexEntry {
     /// Crate name.
     pub name: String,
     /// Available versions (semver-like strings, newest first).
     pub versions: Vec<String>,
     /// Checksums keyed by version.
+    #[serde(default)]
     pub checksums: HashMap<String, String>,
 }
 
@@ -77,26 +82,179 @@ impl CrateIndex {
     }
 }
 
-/// Resolves the full dependency graph for a project.
+/// Trait for fetching crate metadata and source from a remote registry.
+///
+/// Implementations can use HTTP, a local cache, or a mock for testing.
+/// The default build ships without a registry client; one is constructed
+/// only when the `registry` feature is enabled.
+pub trait RegistryClient {
+    /// Fetch the index entry for a crate from the registry.
+    fn fetch_index(&self, name: &str) -> GlyipResult<IndexEntry>;
+
+    /// Download a crate's source tarball and extract it to `dest`.
+    ///
+    /// Returns the path to the extracted source directory.
+    fn download_crate(&self, name: &str, version: &str, dest: &Path) -> GlyipResult<PathBuf>;
+}
+
+/// HTTP-based registry client that fetches from a remote crate index.
+///
+/// Uses the `reqwest` blocking client for HTTP requests and supports
+/// gzip-compressed `.crate` tarballs (the standard format).
+#[cfg(feature = "registry")]
 #[derive(Debug)]
+pub struct HttpRegistryClient {
+    base_url: String,
+    client: reqwest::blocking::Client,
+    cache_dir: PathBuf,
+}
+
+#[cfg(feature = "registry")]
+impl HttpRegistryClient {
+    /// Create a new HTTP registry client.
+    ///
+    /// `base_url` is the registry root (e.g. `https://index.glyim.dev`).
+    /// `cache_dir` is where downloaded crates are stored.
+    pub fn new(base_url: &str, cache_dir: PathBuf) -> Self {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            client,
+            cache_dir,
+        }
+    }
+
+    /// Return the cache directory path.
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+}
+
+#[cfg(feature = "registry")]
+impl RegistryClient for HttpRegistryClient {
+    fn fetch_index(&self, name: &str) -> GlyipResult<IndexEntry> {
+        let url = format!("{}/index/{}.json", self.base_url, name);
+        debug!("Fetching index for '{}' from {}", name, url);
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .map_err(|e| GlyipError::RegistryError(format!("fetch index '{}': {}", name, e)))?;
+
+        if !response.status().is_success() {
+            return Err(GlyipError::RegistryError(format!(
+                "registry returned {} for '{}'",
+                response.status(),
+                name
+            )));
+        }
+
+        let entry: IndexEntry = response
+            .json()
+            .map_err(|e| GlyipError::RegistryError(format!("parse index '{}': {}", name, e)))?;
+
+        info!(
+            "Fetched index for '{}' with {} versions",
+            name,
+            entry.versions.len()
+        );
+        Ok(entry)
+    }
+
+    fn download_crate(&self, name: &str, version: &str, dest: &Path) -> GlyipResult<PathBuf> {
+        let url = format!(
+            "{}/crates/{}/{}-{}.crate",
+            self.base_url, name, name, version
+        );
+        debug!("Downloading '{}' v{} from {}", name, version, url);
+
+        let response = self.client.get(&url).send().map_err(|e| {
+            GlyipError::RegistryError(format!("download '{}' v{}: {}", name, version, e))
+        })?;
+
+        if !response.status().is_success() {
+            return Err(GlyipError::RegistryError(format!(
+                "registry returned {} for '{}' v{}",
+                response.status(),
+                name,
+                version
+            )));
+        }
+
+        let bytes = response.bytes().map_err(|e| {
+            GlyipError::RegistryError(format!("read response '{}' v{}: {}", name, version, e))
+        })?;
+
+        // Persist the tarball to cache.
+        std::fs::create_dir_all(dest)?;
+        let tarball_path = dest.join(format!("{}-{}.crate", name, version));
+        std::fs::write(&tarball_path, &bytes)?;
+
+        // Extract the gzip + tar archive.
+        let extract_dir = dest.join(format!("{}-{}", name, version));
+        std::fs::create_dir_all(&extract_dir)?;
+
+        let gz_decoder = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut archive = tar::Archive::new(gz_decoder);
+        archive.unpack(&extract_dir).map_err(|e| {
+            GlyipError::RegistryError(format!("extract '{}' v{}: {}", name, version, e))
+        })?;
+
+        info!("Downloaded and extracted '{}' v{}", name, version);
+        Ok(extract_dir)
+    }
+}
+
+/// Resolves the full dependency graph for a project.
 pub struct DependencyResolver {
     index: CrateIndex,
+    registry_client: Option<Box<dyn RegistryClient>>,
+}
+
+impl std::fmt::Debug for DependencyResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DependencyResolver")
+            .field("index", &self.index)
+            .field("has_registry_client", &self.registry_client.is_some())
+            .finish()
+    }
 }
 
 impl DependencyResolver {
     /// Create a new resolver with the given crate index.
     pub fn new(index: CrateIndex) -> Self {
-        Self { index }
+        Self {
+            index,
+            registry_client: None,
+        }
     }
 
     /// Create a resolver with an empty index (for path-only dependencies).
     pub fn new_no_index() -> Self {
         Self {
             index: CrateIndex::new(),
+            registry_client: None,
         }
     }
 
-    /// Resolve all dependencies from a `Glyip.toml` and produce a `Lockfile`.
+    /// Attach a registry client for remote dependency resolution.
+    ///
+    /// When a dependency is not found in the local [`CrateIndex`], the
+    /// resolver will attempt to fetch its metadata from the registry.
+    pub fn with_registry_client(mut self, client: Box<dyn RegistryClient>) -> Self {
+        self.registry_client = Some(client);
+        self
+    }
+
+    /// Resolve all dependencies from a `GlyipToml` and produce a `Lockfile`.
+    ///
+    /// For dependencies not found in the local index, falls back to the
+    /// registry client (if one was provided via [`with_registry_client`]).
     pub fn resolve(&self, config: &GlyipToml, project_dir: &Path) -> GlyipResult<Lockfile> {
         let mut lockfile = Lockfile::new();
         let mut visited: HashSet<String> = HashSet::new();
@@ -132,22 +290,7 @@ impl DependencyResolver {
                 self.resolve_path_dep(&name, &abs_path)?
             } else {
                 // Index / registry dependency.
-                let version = self.index.resolve_version(&name, version_req.as_deref())?;
-                let checksum = self
-                    .index
-                    .get(&name)
-                    .and_then(|e| e.checksums.get(&version))
-                    .cloned()
-                    .unwrap_or_default();
-                LockedCrate {
-                    name: name.clone(),
-                    version,
-                    source: CrateSource::Registry {
-                        url: "https://index.glyim.dev".to_string(),
-                        checksum,
-                    },
-                    dependencies: BTreeMap::new(),
-                }
+                self.resolve_registry_dep(&name, version_req.as_deref())?
             };
 
             lockfile.add_crate(locked);
@@ -157,6 +300,78 @@ impl DependencyResolver {
         self.detect_cycles(&lockfile)?;
 
         Ok(lockfile)
+    }
+
+    /// Resolve a dependency from the local index or remote registry.
+    fn resolve_registry_dep(
+        &self,
+        name: &str,
+        version_req: Option<&str>,
+    ) -> GlyipResult<LockedCrate> {
+        // Try the local index first.
+        match self.index.resolve_version(name, version_req) {
+            Ok(version) => {
+                let checksum = self
+                    .index
+                    .get(name)
+                    .and_then(|e| e.checksums.get(&version))
+                    .cloned()
+                    .unwrap_or_default();
+                Ok(LockedCrate {
+                    name: name.to_string(),
+                    version,
+                    source: CrateSource::Registry {
+                        url: "https://index.glyim.dev".to_string(),
+                        checksum,
+                    },
+                    dependencies: BTreeMap::new(),
+                })
+            }
+            Err(_) if self.registry_client.is_some() => {
+                // Fall back to the registry client.
+                let client = self.registry_client.as_ref().unwrap(); // INVARIANT: checked is_some above
+                debug!(
+                    "Dependency '{}' not in local index, fetching from registry",
+                    name
+                );
+                let entry = client.fetch_index(name)?;
+
+                let version = if let Some(req) = version_req {
+                    entry
+                        .versions
+                        .iter()
+                        .find(|v| v.starts_with(req))
+                        .or_else(|| entry.versions.first())
+                        .cloned()
+                        .ok_or_else(|| GlyipError::DependencyNotFound {
+                            name: name.to_string(),
+                            version: version_req.map(String::from),
+                        })?
+                } else {
+                    entry.versions.first().cloned().ok_or_else(|| {
+                        GlyipError::DependencyNotFound {
+                            name: name.to_string(),
+                            version: None,
+                        }
+                    })?
+                };
+
+                let checksum = entry.checksums.get(&version).cloned().unwrap_or_default();
+
+                debug!("Resolved '{}' v{} from remote registry", name, version);
+
+                Ok(LockedCrate {
+                    name: name.to_string(),
+                    version,
+                    source: CrateSource::Registry {
+                        url: "https://index.glyim.dev".to_string(),
+                        checksum,
+                    },
+                    dependencies: BTreeMap::new(),
+                })
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Resolve a path-based dependency.
@@ -183,6 +398,22 @@ impl DependencyResolver {
             },
             dependencies: BTreeMap::new(),
         })
+    }
+
+    /// Download a crate's source code from the registry.
+    ///
+    /// Returns the path to the extracted source directory.
+    pub fn download_crate(&self, locked: &LockedCrate, cache_dir: &Path) -> GlyipResult<PathBuf> {
+        if let Some(ref client) = self.registry_client
+            && let CrateSource::Registry { .. } = &locked.source
+        {
+            let dest = cache_dir.join("registry").join(&locked.name);
+            return client.download_crate(&locked.name, &locked.version, &dest);
+        }
+        Err(GlyipError::RegistryError(format!(
+            "no registry client available to download '{}'",
+            locked.name
+        )))
     }
 
     /// Detect dependency cycles by checking for back-edges.

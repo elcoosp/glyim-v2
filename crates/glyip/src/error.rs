@@ -27,6 +27,8 @@ pub enum GlyipError {
     ProjectNotFound(PathBuf),
     /// Project already exists at path.
     ProjectAlreadyExists(PathBuf),
+    /// Registry fetch or download error.
+    RegistryError(String),
     /// Lockfile conflict.
     LockfileConflict(String),
     /// Entry point source file not found.
@@ -61,6 +63,7 @@ impl fmt::Display for GlyipError {
             Self::ProjectAlreadyExists(path) => {
                 write!(f, "project already exists at {}", path.display())
             }
+            Self::RegistryError(msg) => write!(f, "registry error: {}", msg),
             Self::LockfileConflict(msg) => write!(f, "lockfile conflict: {}", msg),
             Self::NoEntryPoint(dir) => {
                 write!(f, "no entry point found in {}", dir.display())

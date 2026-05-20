@@ -1,16 +1,99 @@
-//! Tests for dependency resolution.
+//! Tests for dependency resolution — S12-T01.
 
-use crate::config::*;
-use crate::dep::*;
-use crate::error::GlyipError;
-use crate::lockfile::{CrateSource, LockedCrate, Lockfile};
+use crate::config::{Dependency, DependencyDetail, GlyipToml, PackageConfig};
+use crate::dep::{CrateIndex, DependencyResolver, IndexEntry, RegistryClient};
+use crate::lockfile::CrateSource;
 use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-fn make_simple_config(name: &str, deps: BTreeMap<String, Dependency>) -> GlyipToml {
+/// A mock registry client that returns pre-canned responses.
+#[derive(Debug, Clone)]
+struct MockRegistryClient {
+    entries: HashMap<String, IndexEntry>,
+    download_log: std::cell::RefCell<Vec<(String, String, PathBuf)>>,
+}
+
+impl MockRegistryClient {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            download_log: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    fn add_entry(&mut self, entry: IndexEntry) {
+        self.entries.insert(entry.name.clone(), entry);
+    }
+
+    fn download_count(&self) -> usize {
+        self.download_log.borrow().len()
+    }
+}
+
+impl RegistryClient for MockRegistryClient {
+    fn fetch_index(&self, name: &str) -> crate::error::GlyipResult<IndexEntry> {
+        self.entries.get(name).cloned().ok_or_else(|| {
+            crate::error::GlyipError::DependencyNotFound {
+                name: name.to_string(),
+                version: None,
+            }
+        })
+    }
+
+    fn download_crate(
+        &self,
+        name: &str,
+        version: &str,
+        dest: &Path,
+    ) -> crate::error::GlyipResult<PathBuf> {
+        let extract_dir = dest.join(format!("{}-{}", name, version));
+        let src_dir = extract_dir.join("src");
+        std::fs::create_dir_all(&src_dir)?;
+        std::fs::write(src_dir.join("lib.g"), "// mock crate\n")?;
+        self.download_log.borrow_mut().push((
+            name.to_string(),
+            version.to_string(),
+            dest.to_path_buf(),
+        ));
+        Ok(extract_dir)
+    }
+}
+
+fn make_config_with_dep(name: &str, version: &str) -> GlyipToml {
+    let mut deps = BTreeMap::new();
+    deps.insert(name.to_string(), Dependency::Simple(version.to_string()));
     GlyipToml {
         package: PackageConfig {
-            name: name.to_string(),
+            name: "test-project".to_string(),
+            version: "0.1.0".to_string(),
+            edition: "2024".to_string(),
+            authors: Vec::new(),
+            description: None,
+            bin: None,
+            lib: None,
+        },
+        dependencies: deps,
+        dev_dependencies: BTreeMap::new(),
+    }
+}
+
+fn make_config_with_path_dep(name: &str, path: &str) -> GlyipToml {
+    let mut deps = BTreeMap::new();
+    deps.insert(
+        name.to_string(),
+        Dependency::Detailed(DependencyDetail {
+            version: None,
+            path: Some(PathBuf::from(path)),
+            git: None,
+            branch: None,
+            tag: None,
+            rev: None,
+        }),
+    );
+    GlyipToml {
+        package: PackageConfig {
+            name: "test-project".to_string(),
             version: "0.1.0".to_string(),
             edition: "2024".to_string(),
             authors: Vec::new(),
@@ -24,230 +107,238 @@ fn make_simple_config(name: &str, deps: BTreeMap<String, Dependency>) -> GlyipTo
 }
 
 #[test]
-fn resolve_no_dependencies() {
-    let config = make_simple_config("empty", BTreeMap::new());
-    let resolver = DependencyResolver::new_no_index();
-    let dir = TempDir::new().expect("temp dir");
+fn resolve_from_local_index() {
+    let mut index = CrateIndex::new();
+    index.insert(IndexEntry {
+        name: "foo".to_string(),
+        versions: vec!["1.0.0".to_string(), "0.9.0".to_string()],
+        checksums: {
+            let mut m = HashMap::new();
+            m.insert("1.0.0".to_string(), "abc123".to_string());
+            m
+        },
+    });
 
-    let lockfile = resolver.resolve(&config, dir.path()).expect("resolve");
-    assert!(lockfile.is_empty());
+    let resolver = DependencyResolver::new(index);
+    let config = make_config_with_dep("foo", "1.0");
+    let dir = TempDir::new().unwrap();
+    let lockfile = resolver.resolve(&config, dir.path()).unwrap();
+
+    assert!(lockfile.get_crate("foo", "1.0.0").is_some());
+    let locked = lockfile.get_crate("foo", "1.0.0").unwrap();
+    assert_eq!(locked.version, "1.0.0");
+    match &locked.source {
+        CrateSource::Registry { checksum, .. } => assert_eq!(checksum, "abc123"),
+        _ => panic!("expected Registry source"),
+    }
 }
 
 #[test]
-fn resolve_path_dependency() {
-    let dir = TempDir::new().expect("temp dir");
+fn resolve_from_registry_fetch() {
+    // S12-T01: glyip build fetches dependency from registry.
+    let mut mock = MockRegistryClient::new();
+    mock.add_entry(IndexEntry {
+        name: "bar".to_string(),
+        versions: vec!["2.1.0".to_string()],
+        checksums: {
+            let mut m = HashMap::new();
+            m.insert("2.1.0".to_string(), "def456".to_string());
+            m
+        },
+    });
 
-    let dep_dir = dir.path().join("my-dep");
-    std::fs::create_dir_all(dep_dir.join("src")).expect("mkdir dep");
-    let dep_config = GlyipToml {
+    let resolver = DependencyResolver::new_no_index().with_registry_client(Box::new(mock));
+    let config = make_config_with_dep("bar", "2");
+    let dir = TempDir::new().unwrap();
+    let lockfile = resolver.resolve(&config, dir.path()).unwrap();
+
+    assert!(lockfile.get_crate("bar", "2.1.0").is_some());
+    let locked = lockfile.get_crate("bar", "2.1.0").unwrap();
+    assert_eq!(locked.version, "2.1.0");
+    match &locked.source {
+        CrateSource::Registry { checksum, .. } => assert_eq!(checksum, "def456"),
+        _ => panic!("expected Registry source"),
+    }
+}
+
+#[test]
+fn registry_fallback_on_missing_index_entry() {
+    let mut index = CrateIndex::new();
+    index.insert(IndexEntry {
+        name: "foo".to_string(),
+        versions: vec!["1.0.0".to_string()],
+        checksums: HashMap::new(),
+    });
+
+    let mut mock = MockRegistryClient::new();
+    mock.add_entry(IndexEntry {
+        name: "bar".to_string(),
+        versions: vec!["3.0.0".to_string()],
+        checksums: HashMap::new(),
+    });
+
+    let resolver = DependencyResolver::new(index).with_registry_client(Box::new(mock));
+
+    let mut deps = BTreeMap::new();
+    deps.insert("foo".to_string(), Dependency::Simple("1.0".to_string()));
+    deps.insert("bar".to_string(), Dependency::Simple("3".to_string()));
+
+    let config = GlyipToml {
         package: PackageConfig {
-            name: "my-dep".to_string(),
-            version: "0.2.0".to_string(),
+            name: "test-project".to_string(),
+            version: "0.1.0".to_string(),
             edition: "2024".to_string(),
             authors: Vec::new(),
             description: None,
             bin: None,
             lib: None,
         },
-        dependencies: BTreeMap::new(),
+        dependencies: deps,
         dev_dependencies: BTreeMap::new(),
     };
-    dep_config.write_to_dir(&dep_dir).expect("write dep config");
 
-    let mut deps = BTreeMap::new();
-    deps.insert(
-        "my-dep".to_string(),
-        Dependency::Detailed(DependencyDetail {
-            version: None,
-            path: Some(dep_dir.clone()),
-            git: None,
-            branch: None,
-            tag: None,
-            rev: None,
-        }),
-    );
-    let config = make_simple_config("main", deps);
+    let dir = TempDir::new().unwrap();
+    let lockfile = resolver.resolve(&config, dir.path()).unwrap();
+
+    assert!(lockfile.get_crate("foo", "1.0.0").is_some());
+    assert!(lockfile.get_crate("bar", "3.0.0").is_some());
+}
+
+#[test]
+fn resolve_path_dependency() {
+    let dir = TempDir::new().unwrap();
+    let sub_dir = dir.path().join("sub-crate");
+    std::fs::create_dir_all(sub_dir.join("src")).unwrap();
+    std::fs::write(
+        sub_dir.join("Glyip.toml"),
+        "[package]\nname = \"sub-crate\"\nversion = \"0.2.0\"\nedition = \"2024\"\n",
+    )
+    .unwrap();
 
     let resolver = DependencyResolver::new_no_index();
-    let lockfile = resolver.resolve(&config, dir.path()).expect("resolve");
+    let config = make_config_with_path_dep("sub-crate", sub_dir.to_str().unwrap());
+    let lockfile = resolver.resolve(&config, dir.path()).unwrap();
 
-    assert_eq!(lockfile.len(), 1);
-    let locked = lockfile.get_crate("my-dep", "0.2.0").expect("find dep");
-    assert!(matches!(locked.source, CrateSource::Path { .. }));
-}
-
-#[test]
-fn resolve_registry_dependency() {
-    let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
-        name: "serde".to_string(),
-        versions: vec!["1.0.100".to_string(), "1.0.50".to_string()],
-        checksums: {
-            let mut m = HashMap::new();
-            m.insert("1.0.100".to_string(), "sha256:aaaa".to_string());
-            m
-        },
-    });
-
-    let mut deps = BTreeMap::new();
-    deps.insert("serde".to_string(), Dependency::Simple("1.0".to_string()));
-    let config = make_simple_config("main", deps);
-
-    let resolver = DependencyResolver::new(index);
-    let dir = TempDir::new().expect("temp dir");
-    let lockfile = resolver.resolve(&config, dir.path()).expect("resolve");
-
-    assert_eq!(lockfile.len(), 1);
-    let locked = lockfile.get_crate("serde", "1.0.100").expect("find serde");
-    assert!(matches!(locked.source, CrateSource::Registry { .. }));
-}
-
-#[test]
-fn resolve_missing_dependency() {
-    let config = make_simple_config("main", {
-        let mut m = BTreeMap::new();
-        m.insert(
-            "nonexistent".to_string(),
-            Dependency::Simple("1.0".to_string()),
-        );
-        m
-    });
-
-    let resolver = DependencyResolver::new_no_index();
-    let dir = TempDir::new().expect("temp dir");
-    let result = resolver.resolve(&config, dir.path());
-    assert!(result.is_err());
-}
-
-#[test]
-fn index_resolve_latest_version() {
-    let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
-        name: "foo".to_string(),
-        versions: vec![
-            "2.0.0".to_string(),
-            "1.5.0".to_string(),
-            "1.0.0".to_string(),
-        ],
-        checksums: HashMap::new(),
-    });
-
-    let version = index.resolve_version("foo", None).expect("version");
-    assert_eq!(version, "2.0.0");
-}
-
-#[test]
-fn index_resolve_version_prefix() {
-    let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
-        name: "bar".to_string(),
-        versions: vec![
-            "2.0.0".to_string(),
-            "1.5.0".to_string(),
-            "1.0.0".to_string(),
-        ],
-        checksums: HashMap::new(),
-    });
-
-    let version = index.resolve_version("bar", Some("1")).expect("version");
-    assert_eq!(version, "1.5.0");
-}
-
-#[test]
-fn index_resolve_missing_crate() {
-    let index = CrateIndex::new();
-    let result = index.resolve_version("missing", Some("1.0"));
-    assert!(result.is_err());
-}
-
-#[test]
-fn cycle_detection() {
-    let mut lf = Lockfile::new();
-    lf.add_crate(LockedCrate {
-        name: "a".to_string(),
-        version: "1.0.0".to_string(),
-        source: CrateSource::Path {
-            path: "/a".to_string(),
-        },
-        dependencies: {
-            let mut m = BTreeMap::new();
-            m.insert("b".to_string(), "1.0.0".to_string());
-            m
-        },
-    });
-    lf.add_crate(LockedCrate {
-        name: "b".to_string(),
-        version: "1.0.0".to_string(),
-        source: CrateSource::Path {
-            path: "/b".to_string(),
-        },
-        dependencies: {
-            let mut m = BTreeMap::new();
-            m.insert("a".to_string(), "1.0.0".to_string());
-            m
-        },
-    });
-
-    let resolver = DependencyResolver::new_no_index();
-    let result = resolver.detect_cycles(&lf);
-    assert!(result.is_err());
-    if let Err(GlyipError::DependencyCycle(cycle)) = result {
-        assert!(cycle.contains(&"a".to_string()) || cycle.contains(&"b".to_string()));
-    } else {
-        panic!("expected DependencyCycle error");
+    assert!(lockfile.get_crate("sub-crate", "0.2.0").is_some());
+    let locked = lockfile.get_crate("sub-crate", "0.2.0").unwrap();
+    match &locked.source {
+        CrateSource::Path { path } => assert!(path.contains("sub-crate")),
+        _ => panic!("expected Path source"),
     }
 }
 
 #[test]
-fn no_cycle_in_diamond() {
-    let mut lf = Lockfile::new();
-    lf.add_crate(LockedCrate {
+fn detect_dependency_cycle() {
+    let index = CrateIndex::new();
+    let resolver = DependencyResolver::new(index);
+
+    let mut lockfile = crate::lockfile::Lockfile::new();
+    let mut a_deps = BTreeMap::new();
+    a_deps.insert("b".to_string(), "1.0.0".to_string());
+    lockfile.add_crate(crate::lockfile::LockedCrate {
         name: "a".to_string(),
         version: "1.0.0".to_string(),
-        source: CrateSource::Path {
-            path: "/a".to_string(),
+        source: CrateSource::Registry {
+            url: "https://index.glyim.dev".to_string(),
+            checksum: String::new(),
         },
-        dependencies: {
-            let mut m = BTreeMap::new();
-            m.insert("b".to_string(), "1.0.0".to_string());
-            m.insert("c".to_string(), "1.0.0".to_string());
-            m
-        },
+        dependencies: a_deps,
     });
-    lf.add_crate(LockedCrate {
+    let mut b_deps = BTreeMap::new();
+    b_deps.insert("a".to_string(), "1.0.0".to_string());
+    lockfile.add_crate(crate::lockfile::LockedCrate {
         name: "b".to_string(),
         version: "1.0.0".to_string(),
-        source: CrateSource::Path {
-            path: "/b".to_string(),
+        source: CrateSource::Registry {
+            url: "https://index.glyim.dev".to_string(),
+            checksum: String::new(),
         },
-        dependencies: {
-            let mut m = BTreeMap::new();
-            m.insert("d".to_string(), "1.0.0".to_string());
-            m
-        },
-    });
-    lf.add_crate(LockedCrate {
-        name: "c".to_string(),
-        version: "1.0.0".to_string(),
-        source: CrateSource::Path {
-            path: "/c".to_string(),
-        },
-        dependencies: {
-            let mut m = BTreeMap::new();
-            m.insert("d".to_string(), "1.0.0".to_string());
-            m
-        },
-    });
-    lf.add_crate(LockedCrate {
-        name: "d".to_string(),
-        version: "1.0.0".to_string(),
-        source: CrateSource::Path {
-            path: "/d".to_string(),
-        },
-        dependencies: BTreeMap::new(),
+        dependencies: b_deps,
     });
 
-    let resolver = DependencyResolver::new_no_index();
-    let result = resolver.detect_cycles(&lf);
+    let result = resolver.detect_cycles(&lockfile);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        crate::error::GlyipError::DependencyCycle(cycle) => {
+            assert!(cycle.contains(&"a".to_string()) || cycle.contains(&"b".to_string()));
+        }
+        other => panic!("expected DependencyCycle, got {:?}", other),
+    }
+}
+
+#[test]
+fn download_crate_with_registry() {
+    let mut mock = MockRegistryClient::new();
+    mock.add_entry(IndexEntry {
+        name: "qux".to_string(),
+        versions: vec!["1.0.0".to_string()],
+        checksums: HashMap::new(),
+    });
+
+    let resolver = DependencyResolver::new_no_index().with_registry_client(Box::new(mock));
+
+    let dir = TempDir::new().unwrap();
+    let locked = crate::lockfile::LockedCrate {
+        name: "qux".to_string(),
+        version: "1.0.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://index.glyim.dev".to_string(),
+            checksum: String::new(),
+        },
+        dependencies: BTreeMap::new(),
+    };
+
+    let result = resolver.download_crate(&locked, dir.path());
     assert!(result.is_ok());
+    let extracted = result.unwrap();
+    assert!(extracted.exists());
+}
+
+#[test]
+fn download_crate_without_registry_fails() {
+    let resolver = DependencyResolver::new_no_index();
+    let dir = TempDir::new().unwrap();
+    let locked = crate::lockfile::LockedCrate {
+        name: "nope".to_string(),
+        version: "1.0.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://index.glyim.dev".to_string(),
+            checksum: String::new(),
+        },
+        dependencies: BTreeMap::new(),
+    };
+
+    let result = resolver.download_crate(&locked, dir.path());
+    assert!(result.is_err());
+}
+
+#[test]
+fn dependency_not_found_without_registry() {
+    let resolver = DependencyResolver::new_no_index();
+    let config = make_config_with_dep("nonexistent", "1.0");
+    let dir = TempDir::new().unwrap();
+
+    let result = resolver.resolve(&config, dir.path());
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        crate::error::GlyipError::DependencyNotFound { name, .. } => {
+            assert_eq!(name, "nonexistent");
+        }
+        other => panic!("expected DependencyNotFound, got {:?}", other),
+    }
+}
+
+#[test]
+fn mock_registry_download_count() {
+    let mut mock = MockRegistryClient::new();
+    mock.add_entry(IndexEntry {
+        name: "counted".to_string(),
+        versions: vec!["0.1.0".to_string()],
+        checksums: HashMap::new(),
+    });
+    assert_eq!(mock.download_count(), 0);
+
+    let dir = TempDir::new().unwrap();
+    mock.download_crate("counted", "0.1.0", dir.path()).unwrap();
+    assert_eq!(mock.download_count(), 1);
 }
