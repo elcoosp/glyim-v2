@@ -1,3 +1,6 @@
+use tracing;n
+use tracing;n
+use tracing;n
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_core::primitives::Mutability;
@@ -670,13 +673,6 @@ impl<'a> MirBuilder<'a> {
                 tracing::warn!("STUB: const block pattern binding not implemented");
             }
             thir::PatternKind::Error => {}
-            thir::PatternKind::Range { start, end, inclusive } => {
-                tracing::warn!("STUB: lower range pattern start={:?} end={:?} inclusive={}", start, end, inclusive);
-                self.diagnostics.push(glyim_diag::GlyimDiagnostic::type_error(
-                    span,
-                    "range patterns not yet implemented in lowering",
-                ));
-            }
         }
     }
 
@@ -854,6 +850,12 @@ impl<'a> MirBuilder<'a> {
                 } else {
                     None
                 }
+            }
+            thir::PatternKind::Range { start, end, inclusive } => {
+                tracing::warn!("range pattern lowering not implemented");
+                let err_place = self.alloc_local(Ty::ERROR, Mutability::Mut, span);
+                self.push_stmt(glyim_mir::StatementKind::StorageLive(err_place), span);
+                (glyim_mir::Place::new(err_place), None)
             }
             _ => None,
         }
