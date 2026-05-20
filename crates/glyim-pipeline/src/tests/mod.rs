@@ -4,3 +4,7 @@ mod e2e_generic_tests;
 mod mono_cache_tests;
 mod mono_integration_tests;
 mod pipeline_tests;
+mod generic_instantiation;
+mod missing_body;
+mod drop_glue;
+mod adt_field_resolution;
