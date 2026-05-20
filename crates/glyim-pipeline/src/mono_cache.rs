@@ -6,10 +6,10 @@
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
-use glyim_mir::{Body, BasicBlockIdx, Rvalue, StatementKind, TerminatorKind};
-use glyim_type::{Substitution, Ty, TyCtx, GenericArg, TyKind, ParamTy};
-use std::sync::Arc;
+use glyim_mir::{BasicBlockIdx, Body, Rvalue, StatementKind, TerminatorKind};
+use glyim_type::{GenericArg, ParamTy, Substitution, Ty, TyCtx, TyKind};
 use std::cell::RefCell;
+use std::sync::Arc;
 
 /// Pipeline-level mono cache that wraps MonoCtx and tracks
 /// which items have been collected for potential reuse.
@@ -68,17 +68,15 @@ fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx) -> Body {
     for block_data in new_blocks.iter_mut() {
         for stmt in &mut block_data.statements {
             match &mut stmt.kind {
-                StatementKind::Assign(_, rvalue) => {
-                    match rvalue {
-                        Rvalue::Cast(_, _, target_ty) => {
-                            *target_ty = replace_ty(*target_ty, &ty_map, ty_ctx);
-                        }
-                        Rvalue::Repeat(_, const_val) => {
-                            const_val.ty = replace_ty(const_val.ty, &ty_map, ty_ctx);
-                        }
-                        _ => {}
+                StatementKind::Assign(_, rvalue) => match rvalue {
+                    Rvalue::Cast(_, _, target_ty) => {
+                        *target_ty = replace_ty(*target_ty, &ty_map, ty_ctx);
                     }
-                }
+                    Rvalue::Repeat(_, const_val) => {
+                        const_val.ty = replace_ty(const_val.ty, &ty_map, ty_ctx);
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -128,9 +126,7 @@ pub(crate) fn make_mir_body_provider<'a>(
 
 /// Build a drop glue body provider.
 pub(crate) fn make_drop_glue_provider(ty_ctx: &TyCtx) -> impl Fn(glyim_type::Ty) -> Arc<Body> + '_ {
-    move |ty: glyim_type::Ty| -> Arc<Body> {
-        generate_drop_glue(ty, ty_ctx)
-    }
+    move |ty: glyim_type::Ty| -> Arc<Body> { generate_drop_glue(ty, ty_ctx) }
 }
 
 /// Generate a minimal MIR body that drops the given type.

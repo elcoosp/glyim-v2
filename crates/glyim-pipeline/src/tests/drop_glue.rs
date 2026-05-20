@@ -1,4 +1,4 @@
-use glyim_test::{assert_ty, test_frozen_ty_ctx, CompilationTrace};
+use glyim_test::{CompilationTrace, assert_ty, test_frozen_ty_ctx};
 
 // S24-T03: Drop glue generated for struct with Drop field
 #[test]

@@ -6,9 +6,9 @@ use glyim_lower::partition::partition;
 use glyim_mir::Body;
 use glyim_solve::SimpleTraitSolver;
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 mod mono_cache;
 mod pipeline_context;
@@ -41,7 +41,9 @@ impl Pipeline {
 
         // Phase 2: Parse
         let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
-        sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
+        sink_cell
+            .borrow_mut()
+            .extend(parse_result.diagnostics.clone());
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
         }

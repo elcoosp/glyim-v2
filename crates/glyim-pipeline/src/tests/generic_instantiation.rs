@@ -1,6 +1,6 @@
-use glyim_test::{assert_ty, test_frozen_ty_ctx, CompilationTrace};
 use glyim_core::primitives::*;
-use glyim_type::{Ty, TyCtx, TyKind, Substitution, GenericArg};
+use glyim_test::{CompilationTrace, assert_ty, test_frozen_ty_ctx};
+use glyim_type::{GenericArg, Substitution, Ty, TyCtx, TyKind};
 
 // S24-T01: Generic function instantiation substitutes type parameters
 // This test will initially fail because instantiation is stubbed.

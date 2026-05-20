@@ -1,4 +1,4 @@
-use glyim_test::{assert_ty, test_frozen_ty_ctx, CompilationTrace};
+use glyim_test::{CompilationTrace, assert_ty, test_frozen_ty_ctx};
 
 // S24-T04: ADT field types resolve correctly instead of erroring
 #[test]

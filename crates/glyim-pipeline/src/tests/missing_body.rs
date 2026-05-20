@@ -1,4 +1,4 @@
-use glyim_test::{assert_has_errors, CompilationTrace};
+use glyim_test::{CompilationTrace, assert_has_errors};
 
 // S24-T02: Missing MIR body emits internal error diagnostic
 #[test]

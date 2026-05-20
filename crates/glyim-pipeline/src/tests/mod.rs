@@ -1,10 +1,10 @@
 mod adt_def_tests;
+mod adt_field_resolution;
 mod cgu_parallel_tests;
+mod drop_glue;
 mod e2e_generic_tests;
+mod generic_instantiation;
+mod missing_body;
 mod mono_cache_tests;
 mod mono_integration_tests;
 mod pipeline_tests;
-mod generic_instantiation;
-mod missing_body;
-mod drop_glue;
-mod adt_field_resolution;
