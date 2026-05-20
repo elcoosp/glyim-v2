@@ -12,6 +12,7 @@ fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) 
     let mut file_map = FileMap::new();
     let path = PathBuf::from("/test/main.gly");
     let file_id = file_map.get_or_create(&path);
+
     // Build a reference graph manually for testing
     let mut graph = ReferenceGraph::new();
     let span = Span::new(file_id, ByteIdx::from_raw(0), ByteIdx::from_raw(5), SyntaxContext::ROOT);
@@ -29,7 +30,12 @@ fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) 
     };
     graph.insert_test_reference("foo", def_ref);
     graph.insert_test_reference("foo", use_ref);
+
+    // Create a source map for the file so that get_symbol_name_at_position works
+    let source_map = crate::database::SourceMap::new(path.clone(), file_id, "fn foo() { foo(); }".to_string());
+    db.source_maps.write().insert(file_id, source_map);
     *db.reference_graph.write() = graph;
+
     (db, file_map, path)
 }
 
@@ -41,7 +47,7 @@ fn find_references_returns_locations() {
             text_document: lsp_types::TextDocumentIdentifier {
                 uri: Url::from_file_path(&path).unwrap(),
             },
-            position: Position { line: 0, character: 0 },
+            position: Position { line: 0, character: 3 }, // Position on "foo"
         },
         work_done_progress_params: lsp_types::WorkDoneProgressParams::default(),
         partial_result_params: lsp_types::PartialResultParams::default(),
@@ -52,6 +58,5 @@ fn find_references_returns_locations() {
     let result = find_references(&db, &file_map, &params);
     assert!(result.is_some());
     let locations = result.unwrap();
-    // Should contain at least one location (the definition and use)
     assert!(!locations.is_empty());
 }
