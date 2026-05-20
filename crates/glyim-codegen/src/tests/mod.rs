@@ -9,3 +9,6 @@ mod existing;
 mod terminators;
 mod trait_objects;
 mod unary_ops;
+mod layout;
+mod constants;
+mod abi;
