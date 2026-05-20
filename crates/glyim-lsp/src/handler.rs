@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 
 pub fn build_router(
     db: Arc<AnalysisDatabase>,
-    analysis_tx: mpsc::Sender<AnalysisMessage>,
+    _analysis_tx: mpsc::Sender<AnalysisMessage>,
     _client: async_lsp::ClientSocket,
 ) -> Router<()> {
     let mut router = Router::new(());
@@ -28,8 +28,8 @@ pub fn build_router(
 
     // Initialize
     let db_init = db.clone();
-    router.request::<Initialize, _>(move |_, params: InitializeParams| {
-        let db = db_init.clone();
+    router.request::<Initialize, _>(move |_, _params: InitializeParams| {
+        let _db = db_init.clone();
         async move {
             let capabilities = ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
@@ -119,7 +119,7 @@ pub fn build_router(
         let db = db_fmt.clone();
         let file_map = file_map_fmt.clone();
         async move {
-            let guard = file_map.read();
+            let _guard = file_map.read();
             Ok(format_document(&db, &params))
         }
     });
