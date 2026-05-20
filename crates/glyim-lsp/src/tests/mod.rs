@@ -18,6 +18,7 @@ mod workspace_symbol_tests;
 mod code_action;
 mod code_action_tests;
 mod document_symbol_tests;
+mod driver_tests;
 mod folding;
 mod formatting;
 mod graph_tests;

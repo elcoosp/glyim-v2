@@ -1,48 +1,44 @@
-use crate::{Reference, ReferenceGraph, ReferenceKind};
-use glyim_core::{IndexVec, Interner};
-use glyim_hir::*;
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use crate::reference_graph::ReferenceGraph;
+use glyim_core::Interner;
+use glyim_span::FileId;
 
-#[test]
-fn build_from_hir_populates_references() {
+fn build_graph_for_source(file_id: FileId, source: &str) -> (ReferenceGraph, Interner) {
+    let parse_result = glyim_frontend::parse_to_syntax(source, file_id);
+    let mut interner = Interner::new();
+    let (hir, _diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
     let mut graph = ReferenceGraph::new();
-    let file_id = FileId::from_raw(1);
-    let hir = CrateHir {
-        items: IndexVec::new(),
-        bodies: IndexVec::new(),
-        body_owners: IndexVec::new(),
-    };
-    let interner = Interner::default();
     graph.build_from_hir(file_id, &hir, &interner);
+    (graph, interner)
 }
 
 #[test]
-fn build_references_from_hir() {
-    let mut graph = ReferenceGraph::new();
-    let file_id = FileId::from_raw(100);
-    let interner = Interner::default();
-    let hir = CrateHir {
-        items: IndexVec::new(),
-        bodies: IndexVec::new(),
-        body_owners: IndexVec::new(),
-    };
-    graph.build_from_hir(file_id, &hir, &interner);
+fn s11_t01_find_references_returns_all_uses_of_function() {
+    let source = "fn foo() {}\nfn bar() {\n    foo();\n    foo();\n}\n";
+    let file_id = FileId::from_raw(1);
+    let (graph, _interner) = build_graph_for_source(file_id, source);
+    let refs = graph.find_references("foo");
+    assert!(!refs.is_empty(), "Expected references to foo");
 
-    let span = Span::new(
-        file_id,
-        ByteIdx::ZERO,
-        ByteIdx::from_raw(10),
-        SyntaxContext::ROOT,
+    let def_count = refs.iter().filter(|r| r.is_definition).count();
+    let use_count = refs.iter().filter(|r| !r.is_definition).count();
+
+    assert_eq!(def_count, 1, "Expected exactly one definition of foo");
+    assert!(
+        use_count >= 2,
+        "Expected at least 2 uses of foo, got {}",
+        use_count
     );
-    let reference = Reference {
-        file_id,
-        span,
-        is_definition: false,
-        kind: ReferenceKind::Call,
-    };
-    graph.insert_test_reference("some_func", reference.clone());
+}
 
-    let found = graph.find_references("some_func");
-    assert_eq!(found.len(), 1);
-    assert_eq!(found[0].kind, ReferenceKind::Call);
+#[test]
+fn s11_t01_find_references_no_false_positives() {
+    let source = "fn main() {}";
+    let file_id = FileId::from_raw(2);
+    let (graph, _interner) = build_graph_for_source(file_id, source);
+    let refs = graph.find_references("nonexistent");
+    assert!(
+        refs.is_empty(),
+        "Expected no references for nonexistent symbol"
+    );
 }

@@ -888,6 +888,7 @@ dependencies = [
  "file_url",
  "glyim-core",
  "glyim-db",
+ "glyim-def-map",
  "glyim-diag",
  "glyim-frontend",
  "glyim-hir",

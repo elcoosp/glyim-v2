@@ -1,10 +1,11 @@
 use crate::AnalysisDatabase;
+use crate::database::FileMap;
 use lsp_types::*;
 use url::Url;
 
 pub fn goto_definition(
     db: &AnalysisDatabase,
-    file_map: &crate::database::FileMap,
+    file_map: &FileMap,
     params: &GotoDefinitionParams,
 ) -> Option<GotoDefinitionResponse> {
     let uri = &params.text_document_position_params.text_document.uri;
@@ -14,9 +15,27 @@ pub fn goto_definition(
     let sm = source_maps.get(&file_id)?;
     let pos = params.text_document_position_params.position;
     let offset = sm.line_col_to_offset(pos.line as usize, pos.character as usize)?;
+    let source = sm.source();
+
+    let chars: Vec<char> = source.chars().collect();
+    let mut start = offset;
+    let mut end = offset;
+    while start > 0 && (chars[start - 1].is_alphabetic() || chars[start - 1] == '_') {
+        start -= 1;
+    }
+    while end < chars.len() && (chars[end].is_alphabetic() || chars[end] == '_') {
+        end += 1;
+    }
+    if start == end {
+        return None;
+    }
+    let symbol_name = &source[start..end];
+
     let symbol_index = db.symbol_index.read();
-    let symbol = symbol_index.lookup_by_location(file_id, offset)?;
+    let symbols = symbol_index.lookup_by_name(symbol_name);
+    let symbol = symbols.first()?;
     let def = &symbol.definition;
+
     let def_sm = source_maps.get(&def.file_id)?;
     let (start_line, start_col) = def_sm
         .span_to_position(def.span.lo.to_usize(), def.span.hi.to_usize())
