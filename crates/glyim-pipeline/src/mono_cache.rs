@@ -1,19 +1,18 @@
 #![allow(clippy::single_match)]
 //! Mono item caching for the pipeline.
-//!
-//! Provides a thin wrapper around `MonoCtx` that integrates with
-//! `Database`'s mono cache for cross-compilation reuse.
 
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
-use glyim_mir::{BasicBlockIdx, Body, Rvalue, StatementKind, TerminatorKind};
-use glyim_type::{GenericArg, ParamTy, Substitution, Ty, TyCtx, TyKind};
+use glyim_mir::{
+    BasicBlockData, BasicBlockIdx, Body, LocalIdx, Place, ProjectionElem, Rvalue, SourceInfo,
+    StatementKind, Terminator, TerminatorKind,
+};
+use glyim_span::Span;
+use glyim_type::{AdtKind, FieldIdx, GenericArg, ParamTy, Substitution, Ty, TyCtx, TyKind};
 use std::cell::RefCell;
 use std::sync::Arc;
 
-/// Pipeline-level mono cache that wraps MonoCtx and tracks
-/// which items have been collected for potential reuse.
 pub(crate) struct PipelineMonoCache {
     symbols: Vec<String>,
 }
@@ -39,9 +38,7 @@ impl PipelineMonoCache {
     }
 }
 
-/// Substitute generic parameters in a MIR body with concrete arguments.
-fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx) -> Body {
-    // Build a mapping from ParamTy index to concrete Ty.
+pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx) -> Body {
     let mut ty_map = Vec::new();
     for arg in ty_ctx.substitution_args(*substs) {
         match arg {
@@ -98,7 +95,6 @@ fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx) -> Body {
     }
 }
 
-/// Build a MIR body provider that looks up pre-lowered bodies by DefId.
 pub(crate) fn make_mir_body_provider<'a>(
     bodies: &'a std::collections::HashMap<DefId, Arc<Body>>,
     sink: &'a RefCell<DiagSink>,
@@ -125,23 +121,106 @@ pub(crate) fn make_mir_body_provider<'a>(
     }
 }
 
-/// Build a drop glue body provider.
 pub(crate) fn make_drop_glue_provider(ty_ctx: &TyCtx) -> impl Fn(glyim_type::Ty) -> Arc<Body> + '_ {
     move |ty: glyim_type::Ty| -> Arc<Body> { generate_drop_glue(ty, ty_ctx) }
 }
 
-/// Generate a minimal MIR body that drops the given type.
-fn generate_drop_glue(_ty: Ty, ty_ctx: &TyCtx) -> Arc<Body> {
+pub(crate) fn generate_drop_glue(ty: Ty, ty_ctx: &TyCtx) -> Arc<Body> {
     let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
     let mut body = Body::dummy(def_id);
     body.return_ty = ty_ctx.unit_ty();
-    if let Some(block) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
-        block.terminator.kind = TerminatorKind::Return;
+
+    let ptr_local = LocalIdx::from_raw(0);
+    let place = Place::new(ptr_local);
+
+    // Collect places to drop (simplified: just the whole value for now)
+    let mut drop_places = Vec::new();
+    collect_drop_places(ty, &place, ty_ctx, &mut drop_places);
+
+    if drop_places.is_empty() {
+        if let Some(block) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
+            block.terminator.kind = TerminatorKind::Return;
+        }
+        return Arc::new(body);
     }
+
+    // Build a chain of basic blocks, each dropping one place.
+    let start_block = BasicBlockIdx::from_raw(0);
+    let return_block = BasicBlockIdx::from_raw(drop_places.len() as u32);
+
+    for (i, drop_place) in drop_places.iter().enumerate() {
+        let target = if i == drop_places.len() - 1 {
+            return_block
+        } else {
+            BasicBlockIdx::from_raw((i + 1) as u32)
+        };
+        let terminator = Terminator {
+            kind: TerminatorKind::Drop {
+                place: drop_place.clone(),
+                target,
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+        let block_data = BasicBlockData {
+            statements: vec![],
+            terminator,
+            is_cleanup: false,
+        };
+        if i == 0 {
+            *body.basic_blocks.get_mut(start_block).unwrap() = block_data;
+        } else {
+            body.basic_blocks.push(block_data);
+        }
+    }
+
+    // Add final return block
+    body.basic_blocks.push(BasicBlockData {
+        statements: vec![],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    });
+
     Arc::new(body)
 }
 
-/// Compute the maximum number of codegen units based on available parallelism.
+fn collect_drop_places(ty: Ty, place: &Place, ty_ctx: &TyCtx, out: &mut Vec<Place>) {
+    match ty_ctx.ty_kind(ty) {
+        TyKind::Adt(adt_id, _) => {
+            if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
+                match adt_def.kind {
+                    AdtKind::Struct => {
+                        for (field_idx, _) in adt_def.variants[0].fields.iter().enumerate() {
+                            let mut proj = place.projection.to_vec();
+                            proj.push(ProjectionElem::Field(FieldIdx::from_raw(field_idx as u32)));
+                            let field_place = Place {
+                                local: place.local,
+                                projection: proj.into_boxed_slice(),
+                            };
+                            // For simplicity, drop each field individually.
+                            out.push(field_place);
+                        }
+                    }
+                    AdtKind::Enum => {
+                        // For enums, drop the whole place (simplified).
+                        out.push(place.clone());
+                    }
+                    AdtKind::Union => {}
+                }
+            } else {
+                out.push(place.clone());
+            }
+        }
+        TyKind::Array(_, _) | TyKind::Slice(_) => {
+            out.push(place.clone());
+        }
+        _ => {}
+    }
+}
+
 pub(crate) fn compute_max_cgus() -> usize {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
