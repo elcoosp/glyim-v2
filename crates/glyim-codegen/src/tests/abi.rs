@@ -15,6 +15,9 @@ fn backend_accepts_custom_layout_provider() {
         fn field_offset(&self, _ty: glyim_type::Ty, _field_idx: glyim_type::FieldIdx) -> u64 {
             16
         }
+        fn size_of(&self, _ty: glyim_type::Ty) -> u64 {
+            16
+        }
     }
 
     let backend = BytecodeBackend::new()

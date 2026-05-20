@@ -3,7 +3,6 @@
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_diag::CompResult;
-use glyim_span::Span;
 use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
 use glyim_type::{FieldIdx, Substitution, Ty, TyCtx, TyKind};
@@ -70,7 +69,6 @@ impl LayoutProvider for FallbackLayoutProvider {
 pub struct BytecodeBackend {
     string_table: RefCell<Vec<String>>,
     fn_table: RefCell<Vec<(FnDefId, Substitution)>>,
-    const_table: RefCell<Vec<MirConstKind>>,
     layout_provider: Box<dyn LayoutProvider>,
 }
 
@@ -85,7 +83,6 @@ impl BytecodeBackend {
         Self {
             string_table: RefCell::new(Vec::new()),
             fn_table: RefCell::new(Vec::new()),
-            const_table: RefCell::new(Vec::new()),
             layout_provider: Box::new(FallbackLayoutProvider),
         }
     }
