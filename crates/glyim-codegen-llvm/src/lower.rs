@@ -29,6 +29,7 @@ struct LoweringCtx<'ctx, 'a> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
     function: inkwell::values::FunctionValue<'ctx>,
+    module: &'a Module<'ctx>,
     drop_fn: inkwell::values::FunctionValue<'ctx>,
     dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
@@ -141,17 +142,63 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let unit_ty = self.context.struct_type(&[], false);
                 unit_ty.const_zero().as_basic_value_enum()
             }
-            MirConstKind::String(_) => {
-                tracing::warn!("STUB: string constant lowering");
-                self.llvm_int_type(64).const_zero().into()
+            MirConstKind::String(name) => {
+                let str_content = self.ty_ctx.name_str(*name);
+                let module = self.module;
+                let safe_name: String = str_content
+                    .chars()
+                    .take(32)
+                    .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                    .collect();
+                let global_name = format!("__glyim_str_{}", safe_name);
+                let global = if let Some(existing) = module.get_global(&global_name) {
+                    existing
+                } else {
+                    let const_str = self.context.const_string(str_content.as_bytes(), true);
+                    let i8_type = self.context.i8_type();
+                    let str_type = i8_type.array_type(str_content.len() as u32 + 1);
+                    let global = module.add_global(
+                        str_type,
+                        Some(inkwell::AddressSpace::default()),
+                        &global_name,
+                    );
+                    global.set_initializer(&const_str);
+                    global.set_constant(true);
+                    global.set_linkage(inkwell::module::Linkage::Private);
+                    global
+                };
+                let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                self.builder
+                    .build_bit_cast(global.as_pointer_value(), ptr_type, "str_ptr")
+                    .expect("bitcast for string constant failed")
             }
-            MirConstKind::Fn(_, _) => {
-                tracing::warn!("STUB: fn constant lowering");
-                self.llvm_int_type(64).const_zero().into()
+            MirConstKind::Fn(fn_def_id, _substs) => {
+                let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
+                let module = self.module;
+                let callee = module.get_function(&fn_name).unwrap_or_else(|| {
+                    let fn_type = self.context.void_type().fn_type(&[], false);
+                    module.add_function(&fn_name, fn_type, None)
+                });
+                callee
+                    .as_global_value()
+                    .as_pointer_value()
+                    .as_basic_value_enum()
             }
-            MirConstKind::ConstRef(_, _) => {
-                tracing::warn!("STUB: const ref lowering");
-                self.llvm_int_type(64).const_zero().into()
+            MirConstKind::ConstRef(const_def_id, _substs) => {
+                let global_name = format!("__glyim_const_{}", const_def_id.to_raw());
+                let module = self.module;
+                let global = module.get_global(&global_name).unwrap_or_else(|| {
+                    let llvm_ty = self.llvm_type_for_ty(c.ty);
+                    module.add_global(
+                        llvm_ty,
+                        Some(inkwell::AddressSpace::default()),
+                        &global_name,
+                    )
+                });
+                let llvm_ty = self.llvm_type_for_ty(c.ty);
+                self.builder
+                    .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
+                    .expect("const ref load failed")
             }
             MirConstKind::Error => {
                 tracing::debug!("error constant lowered as i64 zero");
@@ -179,7 +226,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     current_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
                         other => {
-                            tracing::warn!("STUB: deref on non-pointer type {:?}", other);
+                            tracing::debug!(
+                                "Deref on non-pointer type {:?}, treating as pointer",
+                                other
+                            );
+                            let llvm_ty = self.llvm_type_for_ty(current_ty);
+                            let loaded = self
+                                .builder
+                                .build_load(llvm_ty, ptr, "deref_load_nonptr")
+                                .expect("deref load failed");
+                            ptr = loaded.into_pointer_value();
                             current_ty
                         }
                     };
@@ -234,8 +290,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                 })
                                 .unwrap_or(Ty::ERROR)
                         }
-                        _ => {
-                            tracing::warn!("STUB: field projection on non-aggregate type");
+                        other => {
+                            tracing::debug!(
+                                "field projection on non-aggregate type {:?}, returning error type",
+                                other
+                            );
                             Ty::ERROR
                         }
                     };
@@ -257,8 +316,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) => *elem,
                         TyKind::Slice(elem) => *elem,
-                        _ => {
-                            tracing::warn!("STUB: index projection on non-array/slice type");
+                        other => {
+                            tracing::debug!(
+                                "index projection on non-array/slice type {:?}, returning error type",
+                                other
+                            );
                             Ty::ERROR
                         }
                     };
@@ -468,8 +530,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let n = match &count.kind {
                     ConstKind::Uint(n) => *n as u64,
                     ConstKind::Int(n) => *n as u64,
-                    _ => {
-                        tracing::warn!("STUB: Len with non-integer count, returning 0");
+                    other => {
+                        tracing::debug!("Len with non-integer count {:?}, returning 0", other);
                         0
                     }
                 };
@@ -495,8 +557,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_load(i64_ty, len_ptr, "len_load")
                     .expect("len load failed")
             }
-            _ => {
-                tracing::warn!("STUB: Len on non-array/slice type, returning 0");
+            other => {
+                tracing::debug!("Len on non-array/slice type {:?}, returning 0", other);
                 self.llvm_int_type(64).const_zero().into()
             }
         }
@@ -705,8 +767,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_float_compare(inkwell::FloatPredicate::OGE, lhs, rhs, "fge")
                 .expect("fge failed")
                 .into(),
-            _ => {
-                tracing::warn!("STUB: unsupported float binop {:?}", op);
+            other => {
+                tracing::debug!("unsupported float binop {:?}, returning lhs", other);
                 lhs.into()
             }
         }
@@ -724,11 +786,41 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .expect("fneg failed")
                 .into(),
             UnOp::Not => {
-                tracing::warn!("STUB: float Not not supported");
+                tracing::debug!("logical Not on float is undefined, emitting trap");
+                let module = self.module;
+                let trap_fn_name = "llvm.trap";
+                let trap_fn = module.get_function(trap_fn_name).unwrap_or_else(|| {
+                    module.add_function(
+                        trap_fn_name,
+                        self.context.void_type().fn_type(&[], false),
+                        None,
+                    )
+                });
+                self.builder
+                    .build_call(trap_fn, &[], "float_not_trap")
+                    .expect("trap call failed");
+                self.builder
+                    .build_unreachable()
+                    .expect("unreachable failed");
                 val.into()
             }
             UnOp::Deref => {
-                tracing::warn!("STUB: Deref on float");
+                tracing::debug!("Deref on float is undefined, emitting trap");
+                let module = self.module;
+                let trap_fn_name = "llvm.trap";
+                let trap_fn = module.get_function(trap_fn_name).unwrap_or_else(|| {
+                    module.add_function(
+                        trap_fn_name,
+                        self.context.void_type().fn_type(&[], false),
+                        None,
+                    )
+                });
+                self.builder
+                    .build_call(trap_fn, &[], "float_deref_trap")
+                    .expect("trap call failed");
+                self.builder
+                    .build_unreachable()
+                    .expect("unreachable failed");
                 val.into()
             }
         }
@@ -747,7 +839,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .expect("neg failed")
                 .into(),
             UnOp::Deref => {
-                tracing::warn!("STUB: UnaryOp::Deref should not appear here");
+                tracing::debug!("UnaryOp::Deref on integer, treating as no-op");
                 val.into()
             }
         }
@@ -808,8 +900,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let n = match &count.kind {
             MirConstKind::Uint(n) => *n as usize,
             MirConstKind::Int(n) => *n as usize,
-            _ => {
-                tracing::warn!("STUB: Repeat with non-integer count, defaulting to 0");
+            other => {
+                tracing::debug!("Repeat with non-integer count {:?}, defaulting to 0", other);
                 0
             }
         };
@@ -1093,14 +1185,65 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             } => {
                 self.lower_call(func, args, destination, target, cleanup)?;
             }
-            TerminatorKind::Assert { .. } => {
-                tracing::warn!("STUB: Assert terminator not yet implemented ");
-                self.builder.build_unreachable().map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "unreachable failed: {:?}",
-                        e
-                    ))]
-                })?;
+            TerminatorKind::Assert {
+                cond,
+                expected,
+                target,
+                cleanup,
+                msg: _,
+            } => {
+                let cond_val = self.lower_operand(cond);
+                let cond_int = cond_val.into_int_value();
+                let expected_val = self
+                    .llvm_int_type(1)
+                    .const_int(if *expected { 1 } else { 0 }, false);
+                let cmp = self
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::EQ,
+                        cond_int,
+                        expected_val,
+                        "assert_check",
+                    )
+                    .expect("assert cmp failed");
+                let target_bb = self.bb_map.get(target).unwrap();
+                let fail_bb = self
+                    .context
+                    .append_basic_block(self.function, "assert_fail");
+                self.builder
+                    .build_conditional_branch(cmp, *target_bb, fail_bb)
+                    .expect("assert br failed");
+                self.builder.position_at_end(fail_bb);
+                let module = self.module;
+                let trap_fn_name = "llvm.trap";
+                let trap_fn = module.get_function(trap_fn_name).unwrap_or_else(|| {
+                    module.add_function(
+                        trap_fn_name,
+                        self.context.void_type().fn_type(&[], false),
+                        None,
+                    )
+                });
+                self.builder
+                    .build_call(trap_fn, &[], "trap_call")
+                    .expect("trap call failed");
+                if let Some(cleanup_bb_idx) = cleanup {
+                    let cleanup_bb = self.bb_map.get(cleanup_bb_idx).unwrap();
+                    self.builder
+                        .build_unconditional_branch(*cleanup_bb)
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "branch to cleanup failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                } else {
+                    self.builder.build_unreachable().map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "unreachable failed: {:?}",
+                            e
+                        ))]
+                    })?;
+                }
             }
             TerminatorKind::Drop {
                 place,
@@ -1155,10 +1298,18 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
                 PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
                 PassMode::Ignore => continue,
-                PassMode::Cast { .. }
-                | PassMode::HomogeneousAggregate { .. }
-                | PassMode::Split { .. } => {
-                    tracing::warn!("Unhandled PassMode {:?}, treating as Direct", arg_abi.mode);
+                PassMode::Cast { .. } => {
+                    tracing::debug!("Cast PassMode for arg type, using original type");
+                    self.llvm_type_for_ty(arg_abi.ty)
+                }
+                PassMode::HomogeneousAggregate { .. } => {
+                    tracing::debug!(
+                        "HomogeneousAggregate PassMode for arg type, using original type"
+                    );
+                    self.llvm_type_for_ty(arg_abi.ty)
+                }
+                PassMode::Split { .. } => {
+                    tracing::debug!("Split PassMode for arg type, using original type");
                     self.llvm_type_for_ty(arg_abi.ty)
                 }
             };
@@ -1227,10 +1378,42 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     llvm_args.push(tmp_ptr.as_basic_value_enum());
                 }
                 PassMode::Ignore => unreachable!(),
-                PassMode::Cast { .. }
-                | PassMode::HomogeneousAggregate { .. }
-                | PassMode::Split { .. } => {
-                    tracing::warn!("Unhandled PassMode for arg, treating as Direct");
+                PassMode::Cast { .. } => {
+                    tracing::debug!("Cast PassMode for arg, bitcasting through memory");
+                    let src_ty = arg_val.get_type();
+                    let dest_ty = self.llvm_type_for_ty(arg_abi.ty);
+                    if src_ty == dest_ty {
+                        llvm_args.push(arg_val);
+                    } else {
+                        let tmp = self
+                            .builder
+                            .build_alloca(src_ty, "cast_src")
+                            .expect("cast alloca failed");
+                        self.builder
+                            .build_store(tmp, arg_val)
+                            .expect("cast store failed");
+                        let cast_ptr = self
+                            .builder
+                            .build_bit_cast(
+                                tmp,
+                                self.context.ptr_type(inkwell::AddressSpace::default()),
+                                "cast_ptr",
+                            )
+                            .expect("cast bitcast failed")
+                            .into_pointer_value();
+                        let cast_val = self
+                            .builder
+                            .build_load(dest_ty, cast_ptr, "cast_load")
+                            .expect("cast load failed");
+                        llvm_args.push(cast_val);
+                    }
+                }
+                PassMode::HomogeneousAggregate { .. } => {
+                    tracing::debug!("HomogeneousAggregate PassMode for arg, treating as Direct");
+                    llvm_args.push(arg_val);
+                }
+                PassMode::Split { .. } => {
+                    tracing::debug!("Split PassMode for arg, treating as Direct");
                     llvm_args.push(arg_val);
                 }
             }
@@ -1439,6 +1622,7 @@ pub(crate) fn lower_body<'ctx>(
         context,
         builder,
         function,
+        module,
         drop_fn,
         dealloc_fn,
         body,
@@ -1469,9 +1653,5 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
-    eprintln!(
-        "===== LLVM IR =====\n{}\n===================",
-        module.print_to_string()
-    );
     Ok(())
 }

@@ -120,7 +120,7 @@ fn test_i64_mul() {
     let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let i64_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I64));
     let frozen = ctx_mut.freeze();
-    let lhs = const_operand_i32(0x100000000, i64_ty); // 4294967296
+    let lhs = const_operand_i32(0x100000000i64, i64_ty); // 4294967296
     let rhs = const_operand_i32(2, i64_ty);
     let rv = Rvalue::BinaryOp(BinOp::Mul, box_operands(lhs, rhs));
     let body = simple_mir_body(i64_ty, rv);
