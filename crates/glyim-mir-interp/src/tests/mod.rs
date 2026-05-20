@@ -12,6 +12,7 @@ mod comprehensive;
 mod discriminant;
 mod edge_cases;
 mod helpers;
+mod interp_ops;
 mod len_eval;
 mod len_test;
 mod limits;

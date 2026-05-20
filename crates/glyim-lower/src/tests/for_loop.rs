@@ -62,6 +62,15 @@ fn for_loop_does_not_panic() {
 
     let body = b.into_body(stmts, vec![]);
     let result = lower_body(&mock, &body);
-    // For loops are stubbed; should not panic
-    assert_mir(&ctx, &result.body).block_count(1);
+    // For-loop lowering now produces a loop structure with multiple blocks
+    // (header, body, exit) instead of the old stub that returned 1 block.
+    assert!(
+        result.body.basic_blocks.len() >= 3,
+        "expected at least 3 blocks for for-loop, got {}",
+        result.body.basic_blocks.len()
+    );
+    assert!(
+        !result.diagnostics.iter().any(|d| d.is_error()),
+        "for-loop lowering should not produce error diagnostics"
+    );
 }
