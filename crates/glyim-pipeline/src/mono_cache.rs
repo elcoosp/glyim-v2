@@ -1,16 +1,21 @@
 #![allow(clippy::single_match)]
 //! Mono item caching for the pipeline.
 
+use glyim_core::Mutability;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
 use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, LocalIdx, Place, ProjectionElem, Rvalue, SourceInfo,
-    StatementKind, Terminator, TerminatorKind,
+    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, Operand, Place, ProjectionElem,
+    Rvalue, SourceInfo, Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
+    VariantIdx,
 };
 use glyim_span::Span;
-use glyim_type::{AdtKind, FieldIdx, GenericArg, ParamTy, Substitution, Ty, TyCtx, TyKind};
+use glyim_type::{
+    AdtDef, AdtKind, FieldIdx, GenericArg, ParamTy, Substitution, Ty, TyCtx, TyCtxMut, TyKind,
+};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) struct PipelineMonoCache {
@@ -36,6 +41,18 @@ impl PipelineMonoCache {
     pub(crate) fn is_empty(&self) -> bool {
         self.symbols.is_empty()
     }
+}
+
+/// Build a pipeline mono cache, applying polymorphization deduplication first.
+///
+/// Call this instead of `PipelineMonoCache::from_items` directly so that polymorphization
+/// is actually integrated into the pipeline.
+pub(crate) fn build_mono_cache(
+    ctx: &mut glyim_lower::MonoCtx,
+    ty_ctx: &mut TyCtxMut,
+) -> PipelineMonoCache {
+    ctx.polymorphize_and_deduplicate(ty_ctx);
+    PipelineMonoCache::from_items(ctx.items())
 }
 
 pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx) -> Body {
@@ -121,8 +138,13 @@ pub(crate) fn make_mir_body_provider<'a>(
     }
 }
 
-pub(crate) fn make_drop_glue_provider(ty_ctx: &TyCtx) -> impl Fn(glyim_type::Ty) -> Arc<Body> + '_ {
-    move |ty: glyim_type::Ty| -> Arc<Body> { generate_drop_glue(ty, ty_ctx) }
+/// Create a drop-glue provider that can generate recursive drop glue for ADTs.
+///
+/// The provider only requires `&TyCtx` (immutable) so it fits the existing pipeline
+/// call site.  Enum discriminant locals currently use `error_ty()` as a placeholder
+/// type; once `TyCtx` grows `u8_ty()` / `u16_ty()` accessors they can be swapped in.
+pub(crate) fn make_drop_glue_provider(ty_ctx: &TyCtx) -> impl Fn(Ty) -> Arc<Body> + '_ {
+    move |ty: Ty| -> Arc<Body> { generate_drop_glue(ty, ty_ctx) }
 }
 
 pub(crate) fn generate_drop_glue(ty: Ty, ty_ctx: &TyCtx) -> Arc<Body> {
@@ -133,91 +155,288 @@ pub(crate) fn generate_drop_glue(ty: Ty, ty_ctx: &TyCtx) -> Arc<Body> {
     let ptr_local = LocalIdx::from_raw(0);
     let place = Place::new(ptr_local);
 
-    // Collect places to drop (simplified: just the whole value for now)
-    let mut drop_places = Vec::new();
-    collect_drop_places(ty, &place, ty_ctx, &mut drop_places);
-
-    if drop_places.is_empty() {
-        if let Some(block) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
-            block.terminator.kind = TerminatorKind::Return;
-        }
+    // Fast path: types that do not need dropping get a single `Return`.
+    if !type_needs_drop(ty, ty_ctx, &mut HashSet::new()) {
+        set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
         return Arc::new(body);
     }
 
-    // Build a chain of basic blocks, each dropping one place.
-    let start_block = BasicBlockIdx::from_raw(0);
-    let return_block = BasicBlockIdx::from_raw(drop_places.len() as u32);
-
-    for (i, drop_place) in drop_places.iter().enumerate() {
-        let target = if i == drop_places.len() - 1 {
-            return_block
-        } else {
-            BasicBlockIdx::from_raw((i + 1) as u32)
-        };
-        let terminator = Terminator {
-            kind: TerminatorKind::Drop {
-                place: drop_place.clone(),
-                target,
-                cleanup: None,
-            },
-            source_info: SourceInfo::new(Span::DUMMY),
-        };
-        let block_data = BasicBlockData {
-            statements: vec![],
-            terminator,
-            is_cleanup: false,
-        };
-        if i == 0 {
-            *body.basic_blocks.get_mut(start_block).unwrap() = block_data;
-        } else {
-            body.basic_blocks.push(block_data);
-        }
-    }
-
-    // Add final return block
-    body.basic_blocks.push(BasicBlockData {
-        statements: vec![],
-        terminator: Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-        is_cleanup: false,
-    });
-
-    Arc::new(body)
-}
-
-fn collect_drop_places(ty: Ty, place: &Place, ty_ctx: &TyCtx, out: &mut Vec<Place>) {
     match ty_ctx.ty_kind(ty) {
         TyKind::Adt(adt_id, _) => {
             if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
                 match adt_def.kind {
                     AdtKind::Struct => {
-                        for (field_idx, _) in adt_def.variants[0].fields.iter().enumerate() {
-                            let mut proj = place.projection.to_vec();
-                            proj.push(ProjectionElem::Field(FieldIdx::from_raw(field_idx as u32)));
-                            let field_place = Place {
-                                local: place.local,
-                                projection: proj.into_boxed_slice(),
-                            };
-                            // For simplicity, drop each field individually.
-                            out.push(field_place);
-                        }
+                        generate_struct_drop_glue(&mut body, &place, adt_def, ty_ctx);
                     }
                     AdtKind::Enum => {
-                        // For enums, drop the whole place (simplified).
-                        out.push(place.clone());
+                        generate_enum_drop_glue(&mut body, &place, adt_def, ty_ctx);
                     }
-                    AdtKind::Union => {}
+                    AdtKind::Union => {
+                        // Unions do not have automatic drop glue; the user is responsible
+                        // for unsafe union manipulation.
+                        set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
+                    }
                 }
             } else {
-                out.push(place.clone());
+                set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
             }
         }
-        TyKind::Array(_, _) | TyKind::Slice(_) => {
-            out.push(place.clone());
+        TyKind::Array(_elem_ty, _) | TyKind::Slice(_elem_ty) => {
+            // Arrays and slices are dropped as a whole; the runtime or a later
+            // loop-generation pass can expand this to per-element drops if required.
+            // The collector will still enqueue `DropGlue` for the element type when
+            // it scans the terminator, so nested ADT elements are handled.
+            set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
         }
-        _ => {}
+        _ => {
+            set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
+        }
+    }
+
+    Arc::new(body)
+}
+
+fn set_return_terminator(body: &mut Body, block: BasicBlockIdx) {
+    if let Some(block_data) = body.basic_blocks.get_mut(block) {
+        block_data.terminator.kind = TerminatorKind::Return;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// type_needs_drop
+// ---------------------------------------------------------------------------
+
+/// Determine whether a type needs drop glue.
+///
+/// Returns `false` for primitive types, references, and types that have already
+/// been visited (prevents infinite recursion on recursive ADTs such as linked lists).
+fn type_needs_drop(ty: Ty, ty_ctx: &TyCtx, visited: &mut HashSet<Ty>) -> bool {
+    if !visited.insert(ty) {
+        return false;
+    }
+
+    match ty_ctx.ty_kind(ty) {
+        TyKind::Adt(adt_id, _) => {
+            if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
+                match adt_def.kind {
+                    AdtKind::Union => false,
+                    _ => adt_def.variants.iter().any(|v| {
+                        v.fields
+                            .iter()
+                            .any(|f| type_needs_drop(f.ty, ty_ctx, visited))
+                    }),
+                }
+            } else {
+                false
+            }
+        }
+        TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => {
+            type_needs_drop(*elem_ty, ty_ctx, visited)
+        }
+        TyKind::Tuple(substs) => ty_ctx
+            .substitution_args(*substs)
+            .iter()
+            .any(|arg| match *arg {
+                GenericArg::Ty(t) => type_needs_drop(t, ty_ctx, visited),
+                _ => false,
+            }),
+        TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => false,
+        TyKind::FnPtr(_) | TyKind::FnDef(_, _) | TyKind::Closure(_, _) => false,
+        TyKind::Never
+        | TyKind::Unit
+        | TyKind::Bool
+        | TyKind::Int(_)
+        | TyKind::Uint(_)
+        | TyKind::Float(_)
+        | TyKind::Char
+        | TyKind::String => false,
+        TyKind::Infer(_) | TyKind::Error => false,
+        _ => true,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Struct drop glue
+// ---------------------------------------------------------------------------
+
+fn generate_struct_drop_glue(body: &mut Body, place: &Place, adt_def: &AdtDef, ty_ctx: &TyCtx) {
+    let fields_to_drop: Vec<_> = adt_def.variants[0]
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| type_needs_drop(f.ty, ty_ctx, &mut HashSet::new()))
+        .map(|(i, _)| i)
+        .collect();
+
+    if fields_to_drop.is_empty() {
+        set_return_terminator(body, BasicBlockIdx::from_raw(0));
+        return;
+    }
+
+    let return_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    let mut next_target = return_bb;
+
+    // Build the tail of the chain in reverse order (last field -> second field).
+    for field_idx in fields_to_drop.iter().skip(1).rev() {
+        let mut proj = place.projection.to_vec();
+        proj.push(ProjectionElem::Field(FieldIdx::from_raw(*field_idx as u32)));
+        let field_place = Place {
+            local: place.local,
+            projection: proj.into_boxed_slice(),
+        };
+
+        let bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Drop {
+                place: field_place,
+                target: next_target,
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+        next_target = bb;
+    }
+
+    // The first field drop re-uses basic block 0.
+    let first_field_idx = fields_to_drop[0];
+    let mut proj = place.projection.to_vec();
+    proj.push(ProjectionElem::Field(FieldIdx::from_raw(
+        first_field_idx as u32,
+    )));
+    let field_place = Place {
+        local: place.local,
+        projection: proj.into_boxed_slice(),
+    };
+
+    if let Some(block0) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
+        block0.statements.clear();
+        block0.terminator = Terminator {
+            kind: TerminatorKind::Drop {
+                place: field_place,
+                target: next_target,
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Enum drop glue
+// ---------------------------------------------------------------------------
+
+fn generate_enum_drop_glue(body: &mut Body, place: &Place, adt_def: &AdtDef, ty_ctx: &TyCtx) {
+    let variants = &adt_def.variants;
+
+    // Block that all variant-specific drop chains fall through to.
+    let return_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    // TODO: once TyCtx exposes u8_ty() / u16_ty(), use the proper width here.
+    let discr_ty = ty_ctx.error_ty();
+
+    let discr_local = body.locals.push(LocalDecl {
+        ty: discr_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    let discr_place = Place::new(discr_local);
+
+    // Build a drop-chain entry block for every variant.
+    let mut variant_entry_blocks = Vec::new();
+
+    for (variant_idx, variant) in variants.iter().enumerate() {
+        let fields_to_drop: Vec<_> = variant
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| type_needs_drop(f.ty, ty_ctx, &mut HashSet::new()))
+            .map(|(i, _)| i)
+            .collect();
+
+        if fields_to_drop.is_empty() {
+            variant_entry_blocks.push(return_bb);
+            continue;
+        }
+
+        let mut next_target = return_bb;
+
+        // Reverse chain for all fields except the first.
+        for field_idx in fields_to_drop.iter().skip(1).rev() {
+            let mut proj = place.projection.to_vec();
+            proj.push(ProjectionElem::Downcast(VariantIdx::from_raw(
+                variant_idx as u32,
+            )));
+            proj.push(ProjectionElem::Field(FieldIdx::from_raw(*field_idx as u32)));
+            let field_place = Place {
+                local: place.local,
+                projection: proj.into_boxed_slice(),
+            };
+
+            let bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+                kind: TerminatorKind::Drop {
+                    place: field_place,
+                    target: next_target,
+                    cleanup: None,
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            }));
+            next_target = bb;
+        }
+
+        // First field for this variant gets its own block.
+        let first_field_idx = fields_to_drop[0];
+        let mut proj = place.projection.to_vec();
+        proj.push(ProjectionElem::Downcast(VariantIdx::from_raw(
+            variant_idx as u32,
+        )));
+        proj.push(ProjectionElem::Field(FieldIdx::from_raw(
+            first_field_idx as u32,
+        )));
+        let field_place = Place {
+            local: place.local,
+            projection: proj.into_boxed_slice(),
+        };
+
+        let entry_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Drop {
+                place: field_place,
+                target: next_target,
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+        variant_entry_blocks.push(entry_bb);
+    }
+
+    // Assemble SwitchInt in block 0.
+    let branches: Vec<_> = variant_entry_blocks
+        .iter()
+        .enumerate()
+        .map(|(i, bb)| (i as u128, *bb))
+        .collect();
+    let otherwise = return_bb;
+    let switch_targets = SwitchTargets::new(branches.into_boxed_slice(), otherwise);
+
+    if let Some(block0) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
+        block0.statements.clear();
+        block0.statements.push(Statement {
+            kind: StatementKind::Assign(discr_place.clone(), Rvalue::Discriminant(place.clone())),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        block0.terminator = Terminator {
+            kind: TerminatorKind::SwitchInt {
+                discr: Operand::Copy(discr_place),
+                switch_ty: discr_ty,
+                targets: switch_targets,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
     }
 }
 

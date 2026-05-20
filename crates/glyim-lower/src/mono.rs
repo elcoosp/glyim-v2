@@ -22,7 +22,7 @@ pub enum MonoItem {
     },
     DropGlue {
         ty: Ty,
-    }, // New variant for drop glue
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,6 @@ pub struct MonoCtx {
     queue: std::collections::VecDeque<MonoItem>,
     seen: std::collections::HashSet<MonoItem>,
     cache: std::collections::HashMap<MonoItem, MonoItemId>,
-    /// Accumulated local indices from Drop terminators, resolved in scan_body_for_refs.
     drop_locals: Vec<glyim_mir::LocalIdx>,
 }
 
@@ -107,7 +106,6 @@ impl MonoCtx {
     }
 
     fn scan_body_for_refs(&mut self, body: &glyim_mir::Body) {
-        // Clear drop_locals before scanning this body
         self.drop_locals.clear();
 
         for block in body.basic_blocks.iter() {
@@ -119,7 +117,6 @@ impl MonoCtx {
             self.scan_terminator(&block.terminator.kind);
         }
 
-        // Resolve accumulated drop locals: enqueue DropGlue for each unique type
         let pending_drops: Vec<_> = self.drop_locals.drain(..).collect();
         for local_idx in pending_drops {
             let local_raw = local_idx.to_raw() as usize;
@@ -186,23 +183,7 @@ impl MonoCtx {
                 }
             }
             TerminatorKind::Drop { place, .. } => {
-                // Enqueue drop glue for the type of the dropped place.
-                // We look up the place's base local in the current body's local decls
-                // to determine the type. The body is accessible because scan_body_for_refs
-                // is called while we have the body reference.
-                //
-                // Note: We only look at the base local's type here. Projection-aware
-                // type computation would require access to TypeLookup, but for drop glue
-                // purposes the base local type is sufficient — drop runs on the whole value.
-                let drop_ty = place.local;
-                // We store the local index; the caller (scan_body_for_refs) has the body
-                // and can resolve the type. However, scan_terminator doesn't have access
-                // to the body. We solve this by having scan_body_for_refs pass the locals
-                // to scan_terminator.
-                //
-                // For now, we record the local index so the caller can resolve it.
-                // The DropGlue enqueuing happens in scan_body_for_refs after this returns.
-                self.drop_locals.push(drop_ty);
+                self.drop_locals.push(place.local);
             }
             TerminatorKind::SwitchInt { discr, .. } => self.scan_operand(discr),
             TerminatorKind::Assert { cond, .. } => self.scan_operand(cond),
@@ -214,19 +195,36 @@ impl MonoCtx {
         self.items.as_slice()
     }
 
-    /// Returns the number of collected mono items.
     pub fn item_count(&self) -> usize {
         self.items.len()
     }
 
-    /// Returns the number of entries in the cache (should equal item_count).
     pub fn cache_len(&self) -> usize {
         self.cache.len()
     }
 
-    /// Look up a mono item in the cache, returning its MonoItemId if found.
     pub fn lookup(&self, item: &MonoItem) -> Option<MonoItemId> {
         self.cache.get(item).copied()
+    }
+
+    /// Apply polymorphization to all collected mono items and deduplicate identical instantiations.
+    ///
+    /// This should be called after `collect` finishes and before codegen. It uses the
+    /// `polymorphize` module (already present in `glyim-lower`) to analyse which generic
+    /// parameters are actually used by each MIR body, shrink substitutions accordingly, and
+    /// merge duplicate items so that codegen only sees unique instantiations.
+    pub fn polymorphize_and_deduplicate(&mut self, ctx: &mut TyCtxMut) {
+        if self.items.is_empty() {
+            return;
+        }
+        let deduped = crate::polymorphize::deduplicate(ctx, self.items.as_slice());
+        self.items = IndexVec::new();
+        self.cache.clear();
+        for data in deduped {
+            let item = data.item.clone();
+            let id = self.items.push(data);
+            self.cache.insert(item, id);
+        }
     }
 }
 
