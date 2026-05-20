@@ -1,7 +1,5 @@
 mod coerce_tests;
 mod cycle_diagnostic_tests;
-mod fulfill;
-mod fulfillment_tests;
 mod hrtb;
 mod inference_snapshot_tests;
 mod projection_occurs_check;

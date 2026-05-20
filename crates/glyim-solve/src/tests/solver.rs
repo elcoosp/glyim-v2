@@ -87,7 +87,7 @@ fn t03_prove_with_matching_impl() {
 }
 
 #[test]
-fn t04_prove_no_impl_gives_ambiguous() {
+fn t04_prove_no_impl_gives_definite_no() {
     let interner = Interner::new();
     let mut trait_ctx = TraitContext::new();
     let trait_id = TraitDefId::from_raw(3);
@@ -107,9 +107,11 @@ fn t04_prove_no_impl_gives_ambiguous() {
         },
         polarity: ImplPolarity::Positive,
     };
+    // Fixed: Updated from Ambiguous to DefiniteNo. With proper trait resolution,
+    // having 0 matching impls results in a DefiniteNo rather than Ambiguous.
     assert_eq!(
         solver.can_prove(&ty_ctx.freeze(), &pred),
-        SolverResult::Ambiguous
+        SolverResult::DefiniteNo
     );
 }
 
@@ -514,7 +516,8 @@ fn t34_evaluate_predicate_on_non_existent_trait() {
         },
         polarity: ImplPolarity::Positive,
     };
-    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::Ambiguous);
+    // Fixed: returns DefiniteNo instead of Ambiguous when there are 0 matching impls
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::DefiniteNo);
 }
 
 #[test]
@@ -687,7 +690,7 @@ fn t50_prove_with_substitution_same_as_empty() {
 }
 
 #[test]
-fn t59_solver_with_empty_trait_context_always_ambiguous() {
+fn t59_solver_with_empty_trait_context_always_definite_no() {
     let ctx = TraitContext::new();
     let mut ty_ctx = test_ty_ctx();
     let subst = empty_subst(&mut ty_ctx);
@@ -701,7 +704,8 @@ fn t59_solver_with_empty_trait_context_always_ambiguous() {
             },
             polarity: ImplPolarity::Positive,
         };
-        assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::Ambiguous);
+        // Fixed: returns DefiniteNo instead of Ambiguous if there's no impl matching
+        assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::DefiniteNo);
     }
 }
 
@@ -711,7 +715,6 @@ fn t60_register_impl_for_unregistered_trait() {
     let mut ctx = TraitContext::new();
     let mut ty_ctx = test_ty_ctx();
     let subst = ty_ctx.intern_substitution(vec![]);
-    // Register impl for a trait that hasn't been registered
     ctx.register_impl(ImplDef {
         def_id: ImplDefId::from_raw(6000),
         trait_ref: TraitRef {
@@ -721,7 +724,6 @@ fn t60_register_impl_for_unregistered_trait() {
         predicates: vec![],
     });
     assert_eq!(ctx.impl_defs().len(), 1);
-    // impls_of_trait should still find it
     assert_eq!(ctx.impls_of_trait(TraitDefId::from_raw(999)).count(), 1);
 }
 
@@ -769,8 +771,8 @@ fn t62_impl_def_with_many_predicates() {
 }
 
 #[test]
-fn t63_prove_checks_existence_not_matching() {
-    // The simple solver only checks if any impl exists for the trait
+fn t63_prove_checks_matching_not_existence() {
+    // The updated solver actually checks the substitution types matching
     let interner = Interner::new();
     let mut ctx = TraitContext::new();
     let tid = TraitDefId::from_raw(63);
@@ -783,6 +785,7 @@ fn t63_prove_checks_existence_not_matching() {
     let mut ty_ctx = test_ty_ctx();
     let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
     let f64_ty = ty_ctx.mk_ty(glyim_type::TyKind::Float(glyim_core::FloatTy::F64));
+
     // Register impl for i32
     let subst_i32 = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
     ctx.register_impl(ImplDef {
@@ -793,7 +796,8 @@ fn t63_prove_checks_existence_not_matching() {
         },
         predicates: vec![],
     });
-    // Query for f64 (different substitution) - still Proven because simple solver ignores substitution
+
+    // Query for f64 (different substitution) - Now DefiniteNo because nothing matches!
     let subst_f64 = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(f64_ty)]);
     let frozen = ty_ctx.freeze();
     let mut solver = SimpleTraitSolver::new(&ctx);
@@ -804,7 +808,8 @@ fn t63_prove_checks_existence_not_matching() {
         },
         polarity: ImplPolarity::Positive,
     };
-    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::Proven);
+    // Fixed: Updated to DefiniteNo. The solver correctly matches parameters now, so differing types yield DefiniteNo.
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::DefiniteNo);
 }
 
 #[test]
@@ -877,4 +882,765 @@ fn t64_solver_evaluate_predicate_all_variants() {
         ),
         SolverResult::Ambiguous
     );
+}
+
+// ====================================================================
+// New Tests for Full Substitution Matching, Negatives, Coherence, Projections
+// ====================================================================
+
+#[test]
+fn t65_prove_negative_impl_with_positive_existing() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(65);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("NegativeTest"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+    let mut ty_ctx = test_ty_ctx();
+    let subst = empty_subst(&mut ty_ctx);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(6500),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        predicates: vec![],
+    });
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let neg_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: frozen.intern_substitution(vec![]),
+        },
+        polarity: ImplPolarity::Negative,
+    };
+    // Negative impl when positive exists -> DefiniteNo
+    assert_eq!(
+        solver.can_prove(&frozen, &neg_pred),
+        SolverResult::DefiniteNo
+    );
+}
+
+#[test]
+fn t66_prove_negative_impl_with_no_impls() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(66);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("NegativeTestNoImpls"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+    let mut ty_ctx = test_ty_ctx();
+    let subst = empty_subst(&mut ty_ctx);
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let neg_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        polarity: ImplPolarity::Negative,
+    };
+    // Negative impl with no positive impls -> Ambiguous (can't definitively prove it yet)
+    assert_eq!(
+        solver.can_prove(&frozen, &neg_pred),
+        SolverResult::Ambiguous
+    );
+}
+
+#[test]
+fn t67_prove_with_where_clause_proven() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(67);
+    let base_trait_id = TraitDefId::from_raw(670);
+
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("Derived"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+    trait_ctx.register_trait(TraitDef {
+        def_id: base_trait_id,
+        name: interner.intern("Base"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let subst = empty_subst(&mut ty_ctx);
+
+    // Base is unconditionally implemented
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(6700),
+        trait_ref: TraitRef {
+            def_id: base_trait_id,
+            substs: subst,
+        },
+        predicates: vec![],
+    });
+
+    // Derived requires Base
+    let base_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: base_trait_id,
+            substs: subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(6701),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        predicates: vec![Predicate::Trait(base_pred)],
+    });
+
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let derived_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: frozen.intern_substitution(vec![]),
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    assert_eq!(
+        solver.can_prove(&frozen, &derived_pred),
+        SolverResult::Proven
+    );
+}
+
+#[test]
+fn t68_prove_with_where_clause_fails() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(68);
+    let base_trait_id = TraitDefId::from_raw(680);
+
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("DerivedFail"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+    trait_ctx.register_trait(TraitDef {
+        def_id: base_trait_id,
+        name: interner.intern("BaseFail"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let subst = empty_subst(&mut ty_ctx);
+
+    // Base is NOT implemented
+
+    // Derived requires Base
+    let base_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: base_trait_id,
+            substs: subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(6801),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        predicates: vec![Predicate::Trait(base_pred)],
+    });
+
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let derived_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: frozen.intern_substitution(vec![]),
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    // Fails because the where clause (BaseFail) cannot be proven
+    assert_eq!(
+        solver.can_prove(&frozen, &derived_pred),
+        SolverResult::DefiniteNo
+    );
+}
+
+#[test]
+fn t69_substitution_mismatch_yields_definite_no() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(69);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("MatchTy"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+    let f64_ty = ty_ctx.mk_ty(glyim_type::TyKind::Float(glyim_core::FloatTy::F64));
+
+    let subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(6900),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        predicates: vec![],
+    });
+
+    let pred_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(f64_ty)]);
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    let pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: pred_subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::DefiniteNo);
+}
+
+#[test]
+fn t70_generic_param_matches_anything() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(70);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("GenericParam"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let param_ty = ty_ctx.mk_ty(glyim_type::TyKind::Param(glyim_type::ParamTy {
+        index: 0,
+        name: interner.intern("T"),
+    }));
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+
+    // impl GenericParam<T> for T
+    let impl_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(param_ty)]);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7000),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    });
+
+    // Query for GenericParam<i32>
+    let pred_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    let pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: pred_subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    // Should Proven because Param(T) matches i32
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::Proven);
+}
+
+#[test]
+fn t71_projection_predicate_proven() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(71);
+    let assoc_name = interner.intern("Item");
+
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("AssocTrait"),
+        associated_types: vec![assoc_name],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let subst = empty_subst(&mut ty_ctx);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7100),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        predicates: vec![],
+    });
+
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    // Create a projection type: <AssocTrait>::Item
+    let proj = glyim_type::ProjectionTy {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: frozen.intern_substitution(vec![]),
+        },
+        item_name: assoc_name,
+    };
+    let proj_ty = frozen.mk_ty(glyim_type::TyKind::Projection(proj));
+
+    // Evaluate WellFormed with projection
+    let result = solver.evaluate_predicate(&frozen, &Predicate::WellFormed(proj_ty));
+    assert_eq!(result, SolverResult::Proven);
+}
+
+#[test]
+fn t72_coherence_overlap_violation() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(72);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("Overlap"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let param_a = ty_ctx.mk_ty(glyim_type::TyKind::Param(glyim_type::ParamTy {
+        index: 0,
+        name: interner.intern("T"),
+    }));
+    let param_b = ty_ctx.mk_ty(glyim_type::TyKind::Param(glyim_type::ParamTy {
+        index: 1,
+        name: interner.intern("U"),
+    }));
+
+    let subst_a = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(param_a)]);
+    let subst_b = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(param_b)]);
+
+    // First impl
+    let impl1 = ImplDef {
+        def_id: ImplDefId::from_raw(7200),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst_a,
+        },
+        predicates: vec![],
+    };
+    trait_ctx.register_impl(impl1.clone());
+
+    // Second impl that overlaps naively (same length substitution)
+    let impl2 = ImplDef {
+        def_id: ImplDefId::from_raw(7201),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst_b,
+        },
+        predicates: vec![],
+    };
+
+    // Coherence check should flag overlap
+    let coherence_result = trait_ctx.check_coherence(&impl2);
+    assert!(coherence_result.is_err());
+    assert!(coherence_result.unwrap_err().contains("Overlap violation"));
+}
+
+#[test]
+fn t73_coherence_no_overlap_different_types() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(73);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("NoOverlap"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+    let f64_ty = ty_ctx.mk_ty(glyim_type::TyKind::Float(glyim_core::FloatTy::F64));
+
+    let subst_i32 = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    let subst_f64 = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(f64_ty)]);
+
+    let impl1 = ImplDef {
+        def_id: ImplDefId::from_raw(7300),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst_i32,
+        },
+        predicates: vec![],
+    };
+    trait_ctx.register_impl(impl1);
+
+    let impl2 = ImplDef {
+        def_id: ImplDefId::from_raw(7301),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst_f64,
+        },
+        predicates: vec![],
+    };
+
+    // Should pass coherence (no overlap as i32 != f64 bounds)
+    let coherence_result = trait_ctx.check_coherence(&impl2);
+    assert!(coherence_result.is_ok());
+}
+
+#[test]
+fn t74_multiple_matching_impls_ambiguous() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(74);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("AmbigImpl"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let param_t = ty_ctx.mk_ty(glyim_type::TyKind::Param(glyim_type::ParamTy {
+        index: 0,
+        name: interner.intern("T"),
+    }));
+
+    // Two blanket impls that structurally match the same query
+    let subst1 = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(param_t)]);
+    let subst2 = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(param_t)]);
+
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7400),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst1,
+        },
+        predicates: vec![],
+    });
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7401),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst2,
+        },
+        predicates: vec![],
+    });
+
+    let query_subst =
+        ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(ty_ctx.bool_ty())]);
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    let pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: query_subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    // Ambiguous because multiple impls match
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::Ambiguous);
+}
+
+#[test]
+fn t75_substs_length_mismatch() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(75);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("LenMismatch"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+    let bool_ty = ty_ctx.bool_ty();
+
+    // Impl with 2 substs
+    let impl_subst = ty_ctx.intern_substitution(vec![
+        glyim_type::GenericArg::Ty(i32_ty),
+        glyim_type::GenericArg::Ty(bool_ty),
+    ]);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7500),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    });
+
+    // Query with 1 subst
+    let query_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    let pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: query_subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::DefiniteNo);
+}
+
+#[test]
+fn t76_infer_var_in_query_matches() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(76);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("InferMatch"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+    let infer_ty = ty_ctx.mk_ty(glyim_type::TyKind::Infer(glyim_type::InferVar::Ty(
+        glyim_type::TyVar::from_raw(0),
+    )));
+
+    // Impl for i32
+    let impl_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7600),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    });
+
+    // Query with Infer Var
+    let query_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(infer_ty)]);
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    let pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: query_subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    // Should Proven because Infer matches i32
+    assert_eq!(solver.can_prove(&frozen, &pred), SolverResult::Proven);
+}
+
+#[test]
+fn t77_ref_substitution_matching() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(77);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("RefMatch"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+    let ref_i32 = ty_ctx.mk_ref(
+        glyim_type::Region::Erased,
+        i32_ty,
+        glyim_core::Mutability::Not,
+    );
+    let ref_bool = ty_ctx.mk_ref(
+        glyim_type::Region::Erased,
+        ty_ctx.bool_ty(),
+        glyim_core::Mutability::Not,
+    );
+
+    // Impl for &i32
+    let impl_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(ref_i32)]);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7700),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    });
+
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    // Query for &bool -> DefiniteNo
+    let query_no = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(ref_bool)]);
+    let pred_no = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: query_no,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    assert_eq!(
+        solver.can_prove(&frozen, &pred_no),
+        SolverResult::DefiniteNo
+    );
+
+    // Query for &i32 -> Proven
+    let query_yes = frozen.intern_substitution(vec![glyim_type::GenericArg::Ty(frozen.mk_ref(
+        glyim_type::Region::Erased,
+        frozen.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32)),
+        glyim_core::Mutability::Not,
+    ))]);
+    let pred_yes = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: query_yes,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    assert_eq!(solver.can_prove(&frozen, &pred_yes), SolverResult::Proven);
+}
+
+#[test]
+fn t78_where_clause_ambiguous() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(78);
+    let base_trait_id = TraitDefId::from_raw(780);
+
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("DerivedAmb"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+    trait_ctx.register_trait(TraitDef {
+        def_id: base_trait_id,
+        name: interner.intern("BaseAmb"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let subst = empty_subst(&mut ty_ctx);
+
+    // Base has an ambiguous blanket impl
+    let param_t = ty_ctx.mk_ty(glyim_type::TyKind::Param(glyim_type::ParamTy {
+        index: 0,
+        name: interner.intern("T"),
+    }));
+    let impl_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(param_t)]);
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7800),
+        trait_ref: TraitRef {
+            def_id: base_trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    });
+
+    // Derived requires Base, but evaluated for an empty substitution
+    let base_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: base_trait_id,
+            substs: subst,
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    trait_ctx.register_impl(ImplDef {
+        def_id: ImplDefId::from_raw(7801),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: subst,
+        },
+        predicates: vec![Predicate::Trait(base_pred)],
+    });
+
+    let frozen = ty_ctx.freeze();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let derived_pred = TraitPredicate {
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: frozen.intern_substitution(vec![]),
+        },
+        polarity: ImplPolarity::Positive,
+    };
+    // Ambiguous because base impl doesn't structurally match empty substs perfectly, leading to no match -> DefiniteNo
+    // Let's test exactly: if Base matches no impl (length mismatch), Derived yields DefiniteNo
+    assert_eq!(
+        solver.can_prove(&frozen, &derived_pred),
+        SolverResult::DefiniteNo
+    );
+}
+
+#[test]
+fn t79_coherence_orphan_rule_violation() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(79);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("Orphan"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    // Empty substitution -> orphan rule fails (no local types)
+    let impl_subst = ty_ctx.intern_substitution(vec![]);
+    let impl_def = ImplDef {
+        def_id: ImplDefId::from_raw(7900),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    };
+
+    let result = trait_ctx.check_coherence(&impl_def);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Orphan rule violation"));
+}
+
+#[test]
+fn t80_coherence_orphan_rule_pass() {
+    let interner = Interner::new();
+    let mut trait_ctx = TraitContext::new();
+    let trait_id = TraitDefId::from_raw(80);
+    trait_ctx.register_trait(TraitDef {
+        def_id: trait_id,
+        name: interner.intern("OrphanPass"),
+        associated_types: vec![],
+        predicates: vec![],
+    });
+
+    let mut ty_ctx = test_ty_ctx();
+    let i32_ty = ty_ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+    // Substitution with local type -> orphan rule passes (naive check: !is_empty())
+    let impl_subst = ty_ctx.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    let impl_def = ImplDef {
+        def_id: ImplDefId::from_raw(8000),
+        trait_ref: TraitRef {
+            def_id: trait_id,
+            substs: impl_subst,
+        },
+        predicates: vec![],
+    };
+
+    let result = trait_ctx.check_coherence(&impl_def);
+    assert!(result.is_ok());
 }

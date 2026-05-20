@@ -378,7 +378,7 @@ pub fn resolve_path_type(
 
     // Multi-segment paths: try to resolve fully
     if !path.segments.is_empty() {
-        if let Some(resolved) = resolve_qualified_path(ctx, def_map, path, param_map, span) {
+        if let Some(resolved) = resolve_qualified_path(ctx, def_map, path, param_map, span, infer) {
             return resolved;
         }
     }
@@ -405,6 +405,7 @@ fn resolve_qualified_path(
     path: &glyim_hir::Path,
     _param_map: &HashMap<Name, Ty>,
     span: Span,
+    infer: &mut InferenceTable,
 ) -> Option<Ty> {
     if path.segments.len() == 1 {
         return None;
@@ -417,7 +418,7 @@ fn resolve_qualified_path(
                 for arg in args {
                     let resolved = resolve_type_ref(
                         ctx,
-                        &mut InferenceTable::new(),
+                        infer,
                         def_map,
                         &mut Vec::new(),
                         arg,
