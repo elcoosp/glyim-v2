@@ -27,7 +27,7 @@ fn get_body(hir: &crate::CrateHir, body_id: BodyId) -> &crate::Body {
 
 #[test]
 fn test_binary_expr_with_lt() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { 1 < 2 }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { 1 < 2 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {
@@ -43,7 +43,7 @@ fn test_binary_expr_with_lt() {
 
 #[test]
 fn test_assign_inside_block() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { x = 42; x }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { x = 42; x }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {
@@ -61,7 +61,7 @@ fn test_assign_inside_block() {
 
 #[test]
 fn test_deref_unary() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { *x }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { *x }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {
@@ -78,7 +78,7 @@ fn test_deref_unary() {
 
 #[test]
 fn test_return_expr() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { return 5; }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { return 5; }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {

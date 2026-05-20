@@ -27,7 +27,7 @@ fn get_body(hir: &crate::CrateHir, body_id: BodyId) -> &crate::Body {
 
 #[test]
 fn test_binary_expr() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { 1 + 2 }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { 1 + 2 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {
@@ -56,7 +56,7 @@ fn test_binary_expr() {
 
 #[test]
 fn test_if_expr() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { if true { 1 } else { 0 } }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { if true { 1 } else { 0 } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {
@@ -134,7 +134,7 @@ fn test_path_expr() {
 
 #[test]
 fn test_literal_expr() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { 42 }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { 42 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {

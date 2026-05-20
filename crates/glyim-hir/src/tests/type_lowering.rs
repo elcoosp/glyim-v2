@@ -13,7 +13,7 @@ fn test_type_ref_slice() {
     let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let ty = match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => fn_item.return_ty.clone().unwrap(),
-        other => panic!("expected Fn"),
+        _ => panic!("expected Fn"),
     };
     match ty {
         TypeRef::Slice(inner) => match *inner {

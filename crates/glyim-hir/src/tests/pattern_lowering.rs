@@ -13,7 +13,7 @@ fn test_pattern_or_lowering() {
     let hir = lower_crate(&parse_result.root, &mut interner, &mut Vec::new());
     let body_id = match &hir.items[ItemId::from_raw(0)].kind {
         ItemKind::Fn(fn_item) => fn_item.body.expect("no body"),
-        other => panic!("expected Fn item"),
+        _ => panic!("expected Fn item"),
     };
     let body = &hir.bodies[body_id];
     let mut found_or_pat = false;

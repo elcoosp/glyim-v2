@@ -1,6 +1,6 @@
 use crate::pipeline_api::lower_crate_for_pipeline;
 use crate::{BodyId, CrateHir, Expr, ExprId, ItemKind, Pat};
-use glyim_core::interner::{Interner, Name};
+use glyim_core::interner::Interner;
 use glyim_test::phase::FrontendTester;
 
 struct TestContext {

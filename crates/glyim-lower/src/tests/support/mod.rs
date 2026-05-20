@@ -25,7 +25,7 @@ impl<'a> MockLowerCtx<'a> {
             adt_defs: HashMap::new(),
         }
     }
-
+    #[allow(unused)]
     pub fn add_field_index(
         &mut self,
         adt_id: AdtId,
@@ -37,6 +37,7 @@ impl<'a> MockLowerCtx<'a> {
             .insert((adt_id.to_raw(), variant_idx, field_name), field_idx);
     }
 
+    #[allow(unused)]
     pub fn add_adt_def(&mut self, adt_id: AdtId, def: AdtDef) {
         self.adt_defs.insert(adt_id.to_raw(), def);
     }

@@ -133,7 +133,7 @@ fn match_single_wildcard_no_switch() {
 /// Match on bool should produce SwitchInt with branches for true (1) and false (0).
 #[test]
 fn match_bool_to_switch_int() {
-    let mut ctx_mut = test_ty_ctx();
+    let ctx_mut = test_ty_ctx();
     let bool_ty = ctx_mut.bool_ty();
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();

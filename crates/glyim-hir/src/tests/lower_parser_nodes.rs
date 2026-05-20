@@ -22,7 +22,7 @@ fn get_body(hir: &crate::CrateHir, body_id: BodyId) -> &crate::Body {
 
 #[test]
 fn test_break_continue_lowering() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { loop { break; continue; } }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { loop { break; continue; } }");
     let body = get_body(&hir, body_id);
     let block_id = ExprId::from_raw(body.exprs.len() as u32 - 1);
     match &body.exprs[block_id] {

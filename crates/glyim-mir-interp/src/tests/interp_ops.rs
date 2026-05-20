@@ -328,7 +328,7 @@ fn write_through_deref_field_modifies_nested_value() {
 
 #[test]
 fn not_on_bool() {
-    let mut ctx_mut = test_ty_ctx();
+    let ctx_mut = test_ty_ctx();
     let bool_ty = ctx_mut.bool_ty();
     let tcx = ctx_mut.freeze();
 

@@ -53,7 +53,7 @@ fn test_binary_expr_chained() {
 
 #[test]
 fn test_if_else_nested() {
-    let (hir, interner, body_id) =
+    let (hir, _interner, body_id) =
         get_body_hir("fn f() { if a { 1 } else { if b { 2 } else { 3 } } }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
@@ -75,7 +75,7 @@ fn test_if_else_nested() {
                             tail: Some(tail_id),
                             ..
                         } => &body.exprs[*tail_id],
-                        Expr::Literal(lit) => then_val,
+                        Expr::Literal(_) => then_val,
                         _ => panic!("Unexpected then branch shape"),
                     };
                     assert!(matches!(then_lit, Expr::Literal(Literal::Int(1, None))));
@@ -101,7 +101,7 @@ fn test_if_else_nested() {
                                     tail: Some(tail_id),
                                     ..
                                 } => &body.exprs[*tail_id],
-                                Expr::Literal(lit) => inner_val,
+                                Expr::Literal(_) => inner_val,
                                 _ => panic!(),
                             };
                             assert!(matches!(inner_lit, Expr::Literal(Literal::Int(2, None))));
@@ -118,7 +118,7 @@ fn test_if_else_nested() {
 
 #[test]
 fn test_let_stmt() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { let x = 5; x }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { let x = 5; x }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {
@@ -139,7 +139,7 @@ fn test_let_stmt() {
 
 #[test]
 fn test_range_expr_inclusive() {
-    let (hir, interner, body_id) = get_body_hir("fn f() { 0..=10 }");
+    let (hir, _interner, body_id) = get_body_hir("fn f() { 0..=10 }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
     match &body.exprs[block_id] {

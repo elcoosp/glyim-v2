@@ -155,7 +155,7 @@ fn test_lower_cast_expr() {
     )
     .unwrap();
     match &body.exprs[eid] {
-        Expr::Cast { expr, ty } => match ty {
+        Expr::Cast { expr: _, ty } => match ty {
             TypeRef::Path(p) => assert_eq!(p.as_name(), Some(interner.intern("i32"))),
             _ => panic!("expected Path type"),
         },

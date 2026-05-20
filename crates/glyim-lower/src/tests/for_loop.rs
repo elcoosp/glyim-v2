@@ -2,7 +2,7 @@ use crate::lower::lower_body;
 use crate::tests::mock_lower_ctx::TestLowerCtx;
 use crate::tests::thir_builder::ThirBuilder;
 use glyim_core::primitives::{IntTy, Mutability};
-use glyim_test::{assert_mir, test_ty_ctx};
+use glyim_test::test_ty_ctx;
 use glyim_type::*;
 use glyim_typeck::thir::{self, ExprKind, Literal, Pattern, PatternKind};
 
