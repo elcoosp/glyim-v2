@@ -10,7 +10,14 @@ fn parse_args(args: &[&str]) -> crate::CliArgs {
 
 #[test]
 fn t01_cli_parses_target_and_opt_level() {
-    let args = parse_args(&["glyim", "input.g", "--target", "aarch64-unknown-linux-gnu", "-O", "2"]);
+    let args = parse_args(&[
+        "glyim",
+        "input.g",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "-O",
+        "2",
+    ]);
     assert_eq!(args.input, PathBuf::from("input.g"));
     assert_eq!(args.target, Some("aarch64-unknown-linux-gnu".to_string()));
     assert_eq!(args.opt_level, 2);
@@ -35,7 +42,9 @@ fn t01_default_target_and_opt_level() {
     // Default target triple should be x86_64-unknown-linux-gnu
     let config = glyim_db::CrateConfig {
         name: "input".to_string(),
-        target_triple: args.target.unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
+        target_triple: args
+            .target
+            .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
         opt_level: args.opt_level,
     };
     assert_eq!(config.target_triple, "x86_64-unknown-linux-gnu");
@@ -86,9 +95,15 @@ fn t03_cli_reports_compilation_errors() {
     let errs = result.unwrap_err();
     assert!(!errs.is_empty(), "expected at least one diagnostic");
     // Collect all error messages as strings
-    let all_messages: String = errs.iter().map(|d| d.message.as_str()).collect::<Vec<_>>().join(" ");
+    let all_messages: String = errs
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
-        all_messages.contains("semicolon") || all_messages.contains("expected") || all_messages.contains("error"),
+        all_messages.contains("semicolon")
+            || all_messages.contains("expected")
+            || all_messages.contains("error"),
         "error message missing expected content: {}",
         all_messages
     );
