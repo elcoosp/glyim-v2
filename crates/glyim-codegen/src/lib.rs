@@ -138,10 +138,12 @@ impl BytecodeBackend {
                     current_ty = Ty::ERROR; // Cannot inspect inner type without TyCtx
                 }
                 ProjectionElem::Field(idx) => {
+                    // Always emit offset calculation for field projections
                     let offset = self.layout_provider.field_offset(current_ty, *idx);
                     bc.push(OP_LOAD_CONST);
                     bc.extend_from_slice(&(offset as i64).to_le_bytes());
                     bc.push(OP_ADD);
+                    tracing::trace!("Emitted: OP_LOAD_CONST, offset bytes, OP_ADD");
                 }
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);

@@ -8,6 +8,7 @@ use glyim_type::{FieldIdx, Ty};
 use std::sync::Arc;
 
 // Opcode constants
+use glyim_core::primitives::Mutability;
 const OP_LOAD_LOCAL: u8 = 0x16;
 const OP_STORE_LOCAL: u8 = 0x17;
 const OP_LOAD_LOCAL_ADDR: u8 = 0x29;
@@ -85,13 +86,27 @@ fn ref_with_projection_emits_addr_and_offset() {
         kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(1)), rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let body = dummy_body(
-        vec![stmt],
-        Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::DUMMY),
-        },
-    );
+
+    // Build body with proper locals so emit_place_address can access them
+    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+    // Add locals for local_idx 0 and 1 (the place and the assignment target)
+    body.locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    body.locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
+    let mut block = BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    block.statements.push(stmt);
+    body.basic_blocks.push(block);
     let backend = BytecodeBackend::new();
     let bytecode = backend.generate_function(&body).unwrap();
 
