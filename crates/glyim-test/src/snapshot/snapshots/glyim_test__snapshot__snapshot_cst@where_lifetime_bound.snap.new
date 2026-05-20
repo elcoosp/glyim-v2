@@ -1,0 +1,26 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..24
+  FnDef@0..13
+    KwFn@0..2 "fn"
+    Ident@2..5 "qux"
+    TypeParamList@5..11
+      Lt@5..6 "<"
+      TypeParam@6..8
+        Lifetime@6..8 "'a"
+      Comma@8..9 ","
+      TypeParam@9..10
+        Ident@9..10 "T"
+      Gt@10..11 ">"
+    LParen@11..12 "("
+    ParamList@12..12
+    RParen@12..13 ")"
+  KwWhere@13..18 "where"
+  Ident@18..19 "T"
+  Colon@19..20 ":"
+  Lifetime@20..22 "'a"
+  LBrace@22..23 "{"
+  RBrace@23..24 "}"

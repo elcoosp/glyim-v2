@@ -1,0 +1,26 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
+expression: tree
+---
+SourceFile@0..18
+  StructDef@0..15
+    KwStruct@0..6 "struct"
+    Ident@6..7 "S"
+    TypeParamList@7..15
+      Lt@7..8 "<"
+      TypeParam@8..9
+        Ident@8..9 "A"
+      TypeParam@9..10
+        Lt@9..10 "<"
+      TypeParam@10..11
+        Ident@10..11 "B"
+      TypeParam@11..12
+        Lt@11..12 "<"
+      TypeParam@12..13
+        Ident@12..13 "C"
+      Gt@13..14 ">"
+      Gt@14..15 ">"
+  Gt@15..16 ">"
+  Gt@16..17 ">"
+  Semicolon@17..18 ";"

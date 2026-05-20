@@ -24,3 +24,7 @@ mod stub_removal;
 mod suffixes;
 mod trivia;
 mod unicode;
+mod macro_repetition;
+mod visibility;
+mod where_clause;
+mod shift_gt;

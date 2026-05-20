@@ -182,81 +182,28 @@ impl<'a> Parser<'a> {
         self.finish_node(); // MacroDef
     }
 
+
     pub(crate) fn parse_token_tree(&mut self) {
-        // Parse a balanced token tree: either a single token, or a group delimited by parens/braces/brackets
+        // Parse a balanced token tree: either a single token, or a delimited group
         match self.current_kind() {
             SyntaxKind::LParen => {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump(); // (
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
-                    // Match repetition pattern: $(...)sep?rep_op or metavar: $name:fragment
-                    if self.current_kind() == SyntaxKind::Dollar {
-                        self.start_node(SyntaxKind::TokenTree);
-                        self.bump(); // $
-                        if self.current_kind() == SyntaxKind::LParen {
-                            // Repetition: $(...)...
-                            self.parse_token_tree(); // parse the parenthesized group
-                            // Optional separator
-                            if matches!(
-                                self.current_kind(),
-                                SyntaxKind::Comma | SyntaxKind::Semicolon
-                            ) {
-                                self.bump();
-                            }
-                            // Repetition operator
-                            if matches!(
-                                self.current_kind(),
-                                SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question
-                            ) {
-                                self.bump();
-                            }
-                        } else if self.current_kind() == SyntaxKind::Ident {
-                            // Metavariable: $name or $name:fragment
-                            self.bump(); // variable name
-                            if self.current_kind() == SyntaxKind::Colon {
-                                self.bump(); // :
-                                // Parse fragment specifier
-                                self.bump();
-                            }
-                        } else {
-                            // Standalone $ token
-                            self.bump();
-                        }
-                        self.finish_node(); // TokenTree for dollar construct
-                    } else {
-                        // Regular token tree item
-                        if matches!(
-                            self.current_kind(),
-                            SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
-                        ) {
-                            self.parse_token_tree();
-                        } else {
-                            self.start_node(SyntaxKind::TokenTree);
-                            self.bump();
-                            self.finish_node();
-                        }
-                    }
+                    self.parse_token_tree(); // recursively parse inner tokens
+                    // After a token tree, there may be a comma (separator inside repetition)
                     if self.current_kind() == SyntaxKind::Comma {
                         self.bump();
                     }
                 }
                 self.expect(SyntaxKind::RParen);
-                self.finish_node(); // TokenTree group
+                self.finish_node();
             }
             SyntaxKind::LBrace => {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                    if matches!(
-                        self.current_kind(),
-                        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
-                    ) {
-                        self.parse_token_tree();
-                    } else {
-                        self.start_node(SyntaxKind::TokenTree);
-                        self.bump();
-                        self.finish_node();
-                    }
+                    self.parse_token_tree();
                 }
                 self.expect(SyntaxKind::RBrace);
                 self.finish_node();
@@ -265,16 +212,7 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
-                    if matches!(
-                        self.current_kind(),
-                        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket
-                    ) {
-                        self.parse_token_tree();
-                    } else {
-                        self.start_node(SyntaxKind::TokenTree);
-                        self.bump();
-                        self.finish_node();
-                    }
+                    self.parse_token_tree();
                 }
                 self.expect(SyntaxKind::RBracket);
                 self.finish_node();
@@ -287,6 +225,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
+
 
     pub(crate) fn parse_fn_def(&mut self) {
         self.start_node(SyntaxKind::FnDef);
@@ -582,6 +521,7 @@ impl<'a> Parser<'a> {
         self.finish_node(); // ImplDef
     }
 
+
     pub(crate) fn parse_where_clause(&mut self) {
         self.start_node(SyntaxKind::WhereClause);
         self.expect(SyntaxKind::KwWhere);
@@ -589,14 +529,13 @@ impl<'a> Parser<'a> {
             && self.current_kind() != SyntaxKind::Semicolon
             && self.current().is_some()
         {
+            // Parse the type (or associated type path)
             self.parse_type();
             if self.current_kind() == SyntaxKind::Colon {
                 self.bump(); // :
+                // Parse the bounds (separated by +)
                 loop {
-                    self.parse_type();
-                    if self.current_kind() == SyntaxKind::Lt {
-                        self.parse_type_param_list();
-                    }
+                    self.parse_type(); // each bound is a trait type (e.g., Clone)
                     if self.current_kind() == SyntaxKind::Plus {
                         self.bump();
                     } else {
@@ -606,15 +545,13 @@ impl<'a> Parser<'a> {
             }
             if self.current_kind() == SyntaxKind::Comma {
                 self.bump();
-            } else if self.current_kind() != SyntaxKind::LBrace
-                && self.current_kind() != SyntaxKind::Semicolon
-            {
-                self.error("expected ',' or end of where clause");
+            } else {
                 break;
             }
         }
         self.finish_node();
     }
+
 
     pub(crate) fn parse_type_param_list(&mut self) {
         self.start_node(SyntaxKind::TypeParamList);

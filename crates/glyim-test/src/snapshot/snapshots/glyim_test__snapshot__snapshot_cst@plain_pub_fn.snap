@@ -1,0 +1,15 @@
+---
+source: crates/glyim-test/src/snapshot/mod.rs
+expression: tree
+---
+SourceFile@0..12
+  KwPub@0..3 "pub"
+  FnDef@3..12
+    KwFn@3..5 "fn"
+    Ident@5..8 "bar"
+    LParen@8..9 "("
+    ParamList@9..9
+    RParen@9..10 ")"
+    Block@10..12
+      LBrace@10..11 "{"
+      RBrace@11..12 "}"
