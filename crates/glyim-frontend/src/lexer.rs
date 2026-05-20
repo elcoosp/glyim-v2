@@ -813,5 +813,3 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
 pub fn lex(source: &str, file_id: FileId) -> LexResult {
     Lexer::new(source, file_id).lex()
 }
-
-

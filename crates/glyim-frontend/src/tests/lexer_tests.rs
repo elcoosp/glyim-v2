@@ -187,7 +187,11 @@ fn lex_single(source: &str) -> LexResult {
 #[test]
 fn valid_i32_suffix() {
     let result = lex_single("42i32");
-    assert!(result.diagnostics.is_empty(), "Expected no diagnostics, got {:?}", result.diagnostics);
+    assert!(
+        result.diagnostics.is_empty(),
+        "Expected no diagnostics, got {:?}",
+        result.diagnostics
+    );
     let token = result.tokens.first().expect("No token");
     assert_eq!(token.kind, SyntaxKind::IntLit);
     assert_eq!(token.text, "42i32");
