@@ -66,13 +66,119 @@ pub fn resolve_type_ref(
 
         glyim_hir::TypeRef::Error => Ty::ERROR,
 
-        _ => {
+        // Function pointer types: fn(T, U) -> R
+        glyim_hir::TypeRef::Fn { params, ret } => {
+            let mut param_tys = Vec::with_capacity(params.len());
+            for param_ty_ref in params {
+                let ty = resolve_type_ref(
+                    ctx,
+                    infer,
+                    def_map,
+                    diagnostics,
+                    param_ty_ref,
+                    param_map,
+                    span,
+                );
+                if ty == Ty::ERROR {
+                    return Ty::ERROR;
+                }
+                param_tys.push(GenericArg::Ty(ty));
+            }
+            let return_ty = match ret {
+                Some(ret_ref) => {
+                    resolve_type_ref(ctx, infer, def_map, diagnostics, ret_ref, param_map, span)
+                }
+                None => Ty::UNIT,
+            };
+            if return_ty == Ty::ERROR {
+                return Ty::ERROR;
+            }
+            let fn_sig = glyim_type::FnSig {
+                inputs: ctx.intern_substitution(param_tys),
+                output: return_ty,
+                c_variadic: false,
+                unsafety: Safety::Safe,
+                abi: Abi::Glyim,
+            };
+            ctx.mk_ty(TyKind::FnPtr(fn_sig))
+        }
+
+        // Slice types: [T]
+        glyim_hir::TypeRef::Slice(inner) => {
+            let elem_ty =
+                resolve_type_ref(ctx, infer, def_map, diagnostics, inner, param_map, span);
+            if elem_ty == Ty::ERROR {
+                Ty::ERROR
+            } else {
+                ctx.mk_ty(TyKind::Slice(elem_ty))
+            }
+        }
+
+        // Array types: [T; N]
+        glyim_hir::TypeRef::Array { inner, len } => {
+            let elem_ty =
+                resolve_type_ref(ctx, infer, def_map, diagnostics, inner, param_map, span);
+            if elem_ty == Ty::ERROR {
+                return Ty::ERROR;
+            }
+            let const_val = resolve_const_ref(ctx, def_map, diagnostics, len, param_map, span);
+            ctx.mk_ty(TyKind::Array(elem_ty, const_val))
+        }
+    }
+}
+
+/// Resolve const expressions in type positions (simplified)
+fn resolve_const_ref(
+    ctx: &mut TyCtxMut,
+    _def_map: &glyim_def_map::CrateDefMap,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+    const_ref: &glyim_hir::ConstRef,
+    _param_map: &HashMap<Name, Ty>,
+    span: Span,
+) -> Const {
+    match const_ref {
+        glyim_hir::ConstRef::Literal(lit) => match lit {
+            glyim_hir::Literal::Int(v, _) => Const {
+                kind: ConstKind::Int(*v),
+                ty: ctx.mk_ty(TyKind::Int(IntTy::Isize)),
+            },
+            glyim_hir::Literal::Uint(v, _) => Const {
+                kind: ConstKind::Uint(*v),
+                ty: ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
+            },
+            glyim_hir::Literal::Bool(b) => Const {
+                kind: ConstKind::Bool(*b),
+                ty: Ty::BOOL,
+            },
+            glyim_hir::Literal::Char(c) => Const {
+                kind: ConstKind::Char(*c),
+                ty: ctx.mk_ty(TyKind::Char),
+            },
+            _ => {
+                diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "unsupported const literal in type position",
+                ));
+                Const {
+                    kind: ConstKind::Error,
+                    ty: ctx.error_ty(),
+                }
+            }
+        },
+        glyim_hir::ConstRef::Path(_path) => {
             diagnostics.push(GlyimDiagnostic::type_error(
                 span,
-                "unsupported type annotation (not yet implemented)",
+                "const generic paths not yet fully implemented",
             ));
-            Ty::ERROR
+            Const {
+                kind: ConstKind::Error,
+                ty: ctx.error_ty(),
+            }
         }
+        glyim_hir::ConstRef::Error => Const {
+            kind: ConstKind::Error,
+            ty: ctx.error_ty(),
+        },
     }
 }
 
@@ -82,11 +188,21 @@ pub fn build_param_tys(
 ) -> HashMap<Name, Ty> {
     let mut map = HashMap::with_capacity(params.len());
     for (i, param) in params.iter().enumerate() {
-        let pt = ParamTy {
-            index: i as u32,
-            name: param.name,
-        };
-        map.insert(param.name, ctx.mk_ty(TyKind::Param(pt)));
+        match param.kind {
+            glyim_hir::GenericParamKind::Type { .. } => {
+                let pt = ParamTy {
+                    index: i as u32,
+                    name: param.name,
+                };
+                map.insert(param.name, ctx.mk_ty(TyKind::Param(pt)));
+            }
+            glyim_hir::GenericParamKind::Lifetime => {
+                // Lifetimes handled separately
+            }
+            glyim_hir::GenericParamKind::Const { .. } => {
+                // Const generics handled via separate resolution
+            }
+        }
     }
     map
 }
@@ -193,11 +309,19 @@ pub fn resolve_impl_header(
                     }
                 }
             } else {
-                diagnostics.push(GlyimDiagnostic::type_error(
-                    span,
-                    "multi-segment trait paths not yet implemented",
-                ));
-                (None, None, ctx.intern_substitution(vec![]))
+                match resolve_path_to_trait_def_id(def_map, path, span) {
+                    Some(trait_def_id) => {
+                        let substs = ctx.intern_substitution(vec![]);
+                        (Some(trait_def_id), path.as_name(), substs)
+                    }
+                    None => {
+                        diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            "multi-segment trait paths not yet implemented",
+                        ));
+                        (None, None, ctx.intern_substitution(vec![]))
+                    }
+                }
             }
         }
         None => (None, None, ctx.intern_substitution(vec![])),
@@ -222,37 +346,115 @@ pub fn resolve_impl_header(
     }
 }
 
-fn resolve_path_type(
+pub fn resolve_path_type(
     ctx: &mut TyCtxMut,
-    _infer: &mut InferenceTable,
+    infer: &mut InferenceTable,
     def_map: &glyim_def_map::CrateDefMap,
     diagnostics: &mut Vec<GlyimDiagnostic>,
     path: &glyim_hir::Path,
     param_map: &HashMap<Name, Ty>,
     span: Span,
 ) -> Ty {
+    // Check param_map first for generic params
     if let Some(name) = path.as_name() {
         if let Some(&ty) = param_map.get(&name) {
             return ty;
         }
+    }
+
+    // Check primitives
+    if let Some(name) = path.as_name() {
         if let Some(ty) = resolve_primitive(ctx, name) {
             return ty;
         }
+    }
+
+    // Check ADTs (structs, enums, unions)
+    if let Some(name) = path.as_name() {
         if let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, name) {
             return ty;
         }
-        diagnostics.push(GlyimDiagnostic::type_error(
-            span,
-            format!("unresolved type name `{}`", def_map.interner.resolve(name)),
-        ));
-        return Ty::ERROR;
     }
+
+    // Multi-segment paths: try to resolve fully
+    if !path.segments.is_empty() {
+        if let Some(resolved) = resolve_qualified_path(ctx, def_map, path, param_map, span) {
+            return resolved;
+        }
+    }
+
+    // Fallback error
+    let path_str = path
+        .segments
+        .iter()
+        .map(|seg| ctx.name_str(seg.name))
+        .collect::<Vec<_>>()
+        .join("::");
 
     diagnostics.push(GlyimDiagnostic::type_error(
         span,
-        "multi-segment type paths not yet implemented",
+        format!("unresolved type `{}`", path_str),
     ));
     Ty::ERROR
+}
+
+/// Resolve qualified paths like std::vec::Vec<T>
+fn resolve_qualified_path(
+    ctx: &mut TyCtxMut,
+    def_map: &glyim_def_map::CrateDefMap,
+    path: &glyim_hir::Path,
+    _param_map: &HashMap<Name, Ty>,
+    span: Span,
+) -> Option<Ty> {
+    if path.segments.len() == 1 {
+        return None;
+    }
+
+    if let Some(last_name) = path.segments.last().map(|s| s.name) {
+        if let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, last_name) {
+            if let Some(args) = path.segments.last().and_then(|s| s.generic_args.as_ref()) {
+                let mut arg_tys = Vec::with_capacity(args.len());
+                for arg in args {
+                    let resolved = resolve_type_ref(
+                        ctx,
+                        &mut InferenceTable::new(),
+                        def_map,
+                        &mut Vec::new(),
+                        arg,
+                        &HashMap::new(),
+                        span,
+                    );
+                    arg_tys.push(GenericArg::Ty(resolved));
+                }
+                if !arg_tys
+                    .iter()
+                    .any(|a| matches!(a, GenericArg::Ty(Ty::ERROR)))
+                {
+                    let substs = ctx.intern_substitution(arg_tys);
+                    if let TyKind::Adt(adt_id, _) = ctx.ty_kind(ty) {
+                        return Some(ctx.mk_ty(TyKind::Adt(*adt_id, substs)));
+                    }
+                }
+            }
+            return Some(ty);
+        }
+    }
+
+    None
+}
+
+/// Resolve path to trait DefId
+fn resolve_path_to_trait_def_id(
+    def_map: &glyim_def_map::CrateDefMap,
+    path: &glyim_hir::Path,
+    _span: Span,
+) -> Option<TraitDefId> {
+    if let Some(name) = path.as_name() {
+        let res = def_map.modules[def_map.root].scope.resolve(name)?;
+        Some(TraitDefId::from_raw(res.0.to_raw()))
+    } else {
+        None
+    }
 }
 
 fn resolve_primitive(ctx: &mut TyCtxMut, name: Name) -> Option<Ty> {

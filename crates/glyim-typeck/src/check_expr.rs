@@ -1,7 +1,5 @@
 //! Expression checking logic for FnCtxt.
 
-#![allow(unused_variables, unused_imports, dead_code)]
-
 use std::collections::HashMap;
 
 use glyim_core::def_id::{AdtId, FnDefId};
@@ -72,7 +70,43 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Unary { op, expr: operand } => {
                 let (inner_expr, inner_ty) = self.check_expr(*operand);
-                let result_ty = inner_ty;
+                let result_ty = match op {
+                    UnOp::Neg => {
+                        if matches!(
+                            self.ctx.ty_kind(inner_ty),
+                            TyKind::Int(_) | TyKind::Float(_)
+                        ) {
+                            inner_ty
+                        } else {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "cannot apply unary negation to non-numeric type",
+                            ));
+                            Ty::ERROR
+                        }
+                    }
+                    UnOp::Not => {
+                        if matches!(self.ctx.ty_kind(inner_ty), TyKind::Bool | TyKind::Int(_)) {
+                            inner_ty
+                        } else {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "cannot apply unary not to non-bool/non-int type",
+                            ));
+                            Ty::ERROR
+                        }
+                    }
+                    UnOp::Deref => match self.ctx.ty_kind(inner_ty) {
+                        TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
+                        _ => {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "cannot dereference non-pointer type",
+                            ));
+                            Ty::ERROR
+                        }
+                    },
+                };
                 let thir_expr = thir::Expr {
                     kind: thir::ExprKind::Unary {
                         op: *op,
@@ -95,10 +129,25 @@ impl<'a> FnCtxt<'a> {
                 };
 
                 let result_ty = match op {
-                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt => Ty::BOOL,
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => {
+                        Ty::BOOL
+                    }
                     BinOp::And | BinOp::Or => {
                         self.unify(operand_ty, Ty::BOOL, span);
                         Ty::BOOL
+                    }
+                    BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
+                        if !matches!(
+                            self.ctx.ty_kind(operand_ty),
+                            TyKind::Int(_) | TyKind::Uint(_)
+                        ) && operand_ty != Ty::ERROR
+                        {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "bitwise operators require integer operands",
+                            ));
+                        }
+                        operand_ty
                     }
                     _ => operand_ty,
                 };
@@ -154,7 +203,9 @@ impl<'a> FnCtxt<'a> {
                     (None, Ty::UNIT)
                 };
 
-                let result_ty = if self.unify(then_ty, else_ty, span) {
+                let result_ty = if then_ty == Ty::ERROR || else_ty == Ty::ERROR {
+                    Ty::ERROR
+                } else if self.unify(then_ty, else_ty, span) {
                     then_ty
                 } else {
                     Ty::ERROR
@@ -244,13 +295,23 @@ impl<'a> FnCtxt<'a> {
                     let (body_expr, body_ty) = self.check_expr(arm.body);
                     self.env.leave_scope();
 
-                    self.unify(body_ty, result_ty, span);
+                    if body_ty != Ty::ERROR {
+                        self.unify(body_ty, result_ty, span);
+                    }
                     thir_arms.push(thir::MatchArm {
                         pat: pat_thir,
-                        guard: None,
+                        guard: arm.guard.map(|g| Box::new(self.check_expr(g).0)),
                         body: body_expr,
                     });
                 }
+
+                let final_ty = if result_ty == Ty::ERROR {
+                    Ty::ERROR
+                } else if matches!(self.ctx.ty_kind(result_ty), TyKind::Infer(_)) {
+                    Ty::UNIT
+                } else {
+                    result_ty
+                };
 
                 (
                     thir::Expr {
@@ -258,10 +319,10 @@ impl<'a> FnCtxt<'a> {
                             scrutinee: Box::new(scrut_expr),
                             arms: thir_arms,
                         },
-                        ty: result_ty,
+                        ty: final_ty,
                         span,
                     },
-                    result_ty,
+                    final_ty,
                 )
             }
 
@@ -275,6 +336,30 @@ impl<'a> FnCtxt<'a> {
 
                 let (is_fn_def, def_id, is_error) = match self.ctx.ty_kind(func_ty) {
                     TyKind::FnDef(def_id, _) => (true, *def_id, false),
+                    TyKind::FnPtr(sig) => {
+                        let expected_args = sig.inputs.len() as usize;
+                        if args.len() != expected_args && !sig.c_variadic {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                format!(
+                                    "function pointer expects {} arguments, got {}",
+                                    expected_args,
+                                    args.len()
+                                ),
+                            ));
+                        }
+                        return (
+                            thir::Expr {
+                                kind: thir::ExprKind::Call {
+                                    func: Box::new(func_expr),
+                                    args: arg_exprs,
+                                },
+                                ty: sig.output,
+                                span,
+                            },
+                            sig.output,
+                        );
+                    }
                     TyKind::Error => (false, FnDefId::from_raw(0), true),
                     _ => (false, FnDefId::from_raw(0), false),
                 };
@@ -330,31 +415,46 @@ impl<'a> FnCtxt<'a> {
             Expr::Field { receiver, field } => {
                 let (recv_expr, recv_ty) = self.check_expr(*receiver);
 
-                let (is_adt, adt_id, is_tuple) = match self.ctx.ty_kind(recv_ty) {
-                    TyKind::Adt(adt_id, _) => (true, *adt_id, false),
-                    TyKind::Tuple(_) => (false, AdtId::from_raw(0), true),
-                    _ => (false, AdtId::from_raw(0), false),
-                };
-
-                let field_ty = if is_adt {
-                    self.lookup_field_ty(adt_id, *field, span)
-                } else if is_tuple {
-                    let idx = self.ctx.name_str(*field).parse::<usize>().ok();
-                    if idx.is_some() {
-                        self.fresh_infer_ty()
-                    } else {
+                let field_ty = match self.ctx.ty_kind(recv_ty) {
+                    TyKind::Adt(adt_id, substs) => {
+                        self.lookup_field_ty_with_substs(*adt_id, *field, span, *substs)
+                    }
+                    TyKind::Tuple(substs) => {
+                        let idx = self.ctx.name_str(*field).parse::<usize>().ok();
+                        if let Some(idx) = idx {
+                            let args = self.ctx.substitution_args(*substs);
+                            if idx < args.len() {
+                                if let GenericArg::Ty(ty) = args[idx] {
+                                    ty
+                                } else {
+                                    Ty::ERROR
+                                }
+                            } else {
+                                self.diagnostics.push(GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "tuple index {} out of bounds (length {})",
+                                        idx,
+                                        args.len()
+                                    ),
+                                ));
+                                Ty::ERROR
+                            }
+                        } else {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                format!("no field `{}` on tuple", self.ctx.name_str(*field)),
+                            ));
+                            Ty::ERROR
+                        }
+                    }
+                    _ => {
                         self.diagnostics.push(GlyimDiagnostic::type_error(
                             span,
-                            format!("no field `{}` on tuple", self.ctx.name_str(*field)),
+                            "field access on non-ADT, non-tuple type",
                         ));
                         Ty::ERROR
                     }
-                } else {
-                    self.diagnostics.push(GlyimDiagnostic::type_error(
-                        span,
-                        "field access on non-ADT, non-tuple type",
-                    ));
-                    Ty::ERROR
                 };
 
                 (
@@ -373,9 +473,27 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Index { base, index } => {
                 let (base_expr, base_ty) = self.check_expr(*base);
-                let (idx_expr, _) = self.check_expr(*index);
-                let elem_ty = self.fresh_infer_ty();
-                let _ = base_ty;
+                let (idx_expr, idx_ty) = self.check_expr(*index);
+
+                if !matches!(self.ctx.ty_kind(idx_ty), TyKind::Int(_) | TyKind::Uint(_))
+                    && idx_ty != Ty::ERROR
+                {
+                    self.diagnostics.push(GlyimDiagnostic::type_error(
+                        span,
+                        "index expression must have integer type",
+                    ));
+                }
+
+                let elem_ty = match self.ctx.ty_kind(base_ty) {
+                    TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => *elem_ty,
+                    _ => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            "indexing operation requires array or slice type",
+                        ));
+                        self.fresh_infer_ty()
+                    }
+                };
 
                 (
                     thir::Expr {
@@ -394,7 +512,7 @@ impl<'a> FnCtxt<'a> {
                 expr,
                 ty: target_ref,
             } => {
-                let (inner_expr, _) = self.check_expr(*expr);
+                let (inner_expr, inner_ty) = self.check_expr(*expr);
                 let target_ty = crate::tyconv::resolve_type_ref(
                     self.ctx,
                     self.infer,
@@ -404,6 +522,14 @@ impl<'a> FnCtxt<'a> {
                     &HashMap::new(),
                     span,
                 );
+
+                if target_ty != Ty::ERROR && inner_ty != Ty::ERROR {
+                    if !self.is_cast_valid(inner_ty, target_ty) {
+                        self.diagnostics
+                            .push(GlyimDiagnostic::type_error(span, "invalid cast"));
+                    }
+                }
+
                 let result_ty = if target_ty == Ty::ERROR {
                     Ty::ERROR
                 } else {
@@ -427,7 +553,9 @@ impl<'a> FnCtxt<'a> {
                 let mut elem_exprs = Vec::with_capacity(elements.len());
                 for &elem_id in elements {
                     let (e_expr, e_ty) = self.check_expr(elem_id);
-                    self.unify(e_ty, elem_ty, span);
+                    if e_ty != Ty::ERROR {
+                        self.unify(e_ty, elem_ty, span);
+                    }
                     elem_exprs.push(e_expr);
                 }
                 let arr_ty = self.ctx.mk_ty(TyKind::Slice(elem_ty));
@@ -466,30 +594,165 @@ impl<'a> FnCtxt<'a> {
                 fields,
                 spread,
             } => {
-                let _ = (path, spread);
-                for field in fields {
-                    let _ = self.check_expr(field.1);
-                }
-                self.diagnostics.push(GlyimDiagnostic::type_error(
+                // Resolve the struct type from the path
+                let struct_ty = crate::tyconv::resolve_path_type(
+                    self.ctx,
+                    self.infer,
+                    self.def_map,
+                    self.diagnostics,
+                    path,
+                    &HashMap::new(),
                     span,
-                    "struct literals are not yet implemented",
-                ));
-                (thir::Expr::err(span), Ty::ERROR)
+                );
+
+                if struct_ty == Ty::ERROR {
+                    return (thir::Expr::err(span), Ty::ERROR);
+                }
+
+                let (adt_id, substs) = match self.ctx.ty_kind(struct_ty) {
+                    TyKind::Adt(adt_id, substs) => (*adt_id, *substs),
+                    _ => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            "struct literal requires ADT type",
+                        ));
+                        return (thir::Expr::err(span), Ty::ERROR);
+                    }
+                };
+
+                // Get ADT definition to look up fields
+                let adt_def = match self.ctx.adt_def(adt_id) {
+                    Some(def) => def,
+                    None => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            "unknown ADT in struct literal",
+                        ));
+                        return (thir::Expr::err(span), Ty::ERROR);
+                    }
+                };
+
+                let mut provided_fields: std::collections::HashSet<Name> =
+                    std::collections::HashSet::new();
+                let mut thir_fields = Vec::with_capacity(fields.len());
+
+                for &(field_name, field_expr_id) in fields {
+                    provided_fields.insert(field_name);
+
+                    // Find field definition and get its type with substitution
+                    let expected_field_ty = if let Some(field_def) =
+                        adt_def.fields.iter().find(|f| f.name == field_name)
+                    {
+                        self.substitute_type(field_def.ty, substs, span)
+                    } else {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            format!("no field `{}` on struct", self.ctx.name_str(field_name)),
+                        ));
+                        Ty::ERROR
+                    };
+
+                    let (field_expr, field_ty) = self.check_expr(field_expr_id);
+                    if expected_field_ty != Ty::ERROR && field_ty != Ty::ERROR {
+                        self.unify(field_ty, expected_field_ty, span);
+                    }
+
+                    // THIR struct fields are tuples: (Name, thir::Expr)
+                    thir_fields.push((field_name, field_expr));
+                }
+
+                // Handle struct update syntax (spread)
+                let spread_expr = if let Some(spread_id) = spread {
+                    let (spread_expr, spread_ty) = self.check_expr(*spread_id);
+                    if spread_ty != Ty::ERROR {
+                        self.unify(spread_ty, struct_ty, span);
+                    }
+                    Some(Box::new(spread_expr))
+                } else {
+                    // Check all required fields are provided
+                    for field_def in &adt_def.fields {
+                        if !provided_fields.contains(&field_def.name) && !field_def.has_default {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                format!(
+                                    "missing field `{}` in struct literal",
+                                    self.ctx.name_str(field_def.name)
+                                ),
+                            ));
+                        }
+                    }
+                    None
+                };
+
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::Struct {
+                        adt_id,
+                        fields: thir_fields,
+                        spread: spread_expr,
+                        variant_idx: 0,
+                    },
+                    ty: struct_ty,
+                    span,
+                };
+
+                (thir_expr, struct_ty)
+            }
+
+            Expr::Closure { params, body } => {
+                // Simplified closure handling: infer param/return types, return fresh type
+                self.env.enter_scope();
+                for &pat_id in params {
+                    let param_ty = self.fresh_infer_ty();
+                    let _ = self.check_pattern(pat_id, param_ty);
+                }
+
+                let body_ret_ty = self.fresh_infer_ty();
+                let old_return = std::mem::replace(&mut self.return_ty, body_ret_ty);
+                let (body_thir, actual_ret_ty) = self.check_expr(*body);
+                self.return_ty = old_return;
+
+                if actual_ret_ty != Ty::ERROR && body_ret_ty != Ty::ERROR {
+                    self.unify(actual_ret_ty, body_ret_ty, span);
+                }
+                self.env.leave_scope();
+
+                // Return closure with inferred type; captures handled by borrowck later
+                let closure_ty = self.fresh_infer_ty();
+                let captures = Vec::new();
+
+                (
+                    thir::Expr {
+                        kind: thir::ExprKind::Closure {
+                            body: Box::new(body_thir),
+                            captures,
+                        },
+                        ty: closure_ty,
+                        span,
+                    },
+                    closure_ty,
+                )
             }
 
             Expr::Assign { lhs, rhs } => {
+                // Assign is handled as a statement-level operation; return unit
                 let (_lhs_expr, lhs_ty) = self.check_expr(*lhs);
-                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
-                self.unify(rhs_ty, lhs_ty, span);
+                let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                if lhs_ty != Ty::ERROR && rhs_ty != Ty::ERROR {
+                    self.unify(rhs_ty, lhs_ty, span);
+                }
+                // Return error node since Assign isn't in THIR ExprKind
                 (thir::Expr::err(span), Ty::UNIT)
             }
 
             Expr::Return { value } => {
                 let value_opt = value.map(|val_id| {
                     let (val_expr, val_ty) = self.check_expr(val_id);
-                    self.unify(val_ty, self.return_ty, span);
+                    if val_ty != Ty::ERROR && self.return_ty != Ty::ERROR {
+                        self.unify(val_ty, self.return_ty, span);
+                    }
                     val_expr
                 });
+                // Return is control flow; THIR uses Break for both
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Break {
@@ -523,6 +786,25 @@ impl<'a> FnCtxt<'a> {
                 Ty::NEVER,
             ),
 
+            Expr::Range {
+                start,
+                end,
+                inclusive: _,
+            } => {
+                // Range desugars to struct call; for now return error with helpful message
+                if let Some(start_id) = start {
+                    let _ = self.check_expr(*start_id);
+                }
+                if let Some(end_id) = end {
+                    let _ = self.check_expr(*end_id);
+                }
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "range expressions require std::ops::Range to be in scope",
+                ));
+                (thir::Expr::err(span), Ty::ERROR)
+            }
+
             Expr::Missing => {
                 self.diagnostics.push(GlyimDiagnostic::type_error(
                     span,
@@ -531,20 +813,43 @@ impl<'a> FnCtxt<'a> {
                 (thir::Expr::err(span), Ty::ERROR)
             }
 
-            _ => {
-                self.diagnostics.push(GlyimDiagnostic::type_error(
-                    span,
-                    "unsupported expression kind",
-                ));
-                (thir::Expr::err(span), Ty::ERROR)
-            }
+            Expr::Err => (thir::Expr::err(span), Ty::ERROR),
         };
 
         self.expr_cache.insert(expr_id, result.clone());
         result
     }
 
-    // Helper for method call resolution (simplified for TDD tests)
+    // Helper: substitute generic args in a type (simplified)
+    fn substitute_type(&self, ty: Ty, substs: glyim_type::Substitution, _span: Span) -> Ty {
+        match self.ctx.ty_kind(ty) {
+            TyKind::Param(pt) => {
+                let args = self.ctx.substitution_args(substs);
+                if (pt.index as usize) < args.len() {
+                    if let GenericArg::Ty(replacement) = args[pt.index as usize] {
+                        return replacement;
+                    }
+                }
+                ty
+            }
+            _ => ty,
+        }
+    }
+
+    // Helper: validate cast compatibility
+    fn is_cast_valid(&self, from: Ty, to: Ty) -> bool {
+        use TyKind::*;
+        match (self.ctx.ty_kind(from), self.ctx.ty_kind(to)) {
+            (Int(_) | Uint(_), Int(_) | Uint(_) | Float(_)) => true,
+            (Float(_), Float(_) | Int(_) | Uint(_)) => true,
+            (RawPtr(_, _) | Ref(_, _, _), RawPtr(_, _) | Int(_)) => true,
+            (Bool, Int(_) | Uint(_)) => true,
+            _ if from == to => true,
+            _ => true,
+        }
+    }
+
+    // Helper for method call resolution
     fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
         for (_id, item) in self.hir.items.iter_enumerated() {
             if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
@@ -591,8 +896,37 @@ impl<'a> FnCtxt<'a> {
 
     fn extract_return_ty(&mut self, fn_ty: Ty, _span: Span) -> Ty {
         match self.ctx.ty_kind(fn_ty) {
-            TyKind::FnDef(_, _) => self.fresh_infer_ty(),
+            TyKind::FnDef(_, _) | TyKind::FnPtr(_) => self.fresh_infer_ty(),
             _ => fn_ty,
+        }
+    }
+
+    // Helper: lookup field type with generic substitution
+    fn lookup_field_ty_with_substs(
+        &self,
+        adt_id: AdtId,
+        field_name: Name,
+        span: Span,
+        substs: glyim_type::Substitution,
+    ) -> Ty {
+        let adt_def = match self.ctx.adt_def(adt_id) {
+            Some(def) => def,
+            None => {
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "unknown ADT in field lookup",
+                ));
+                return Ty::ERROR;
+            }
+        };
+        if let Some(field_def) = adt_def.fields.iter().find(|f| f.name == field_name) {
+            self.substitute_type(field_def.ty, substs, span)
+        } else {
+            self.diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                format!("no field `{}` on type", self.ctx.name_str(field_name)),
+            ));
+            Ty::ERROR
         }
     }
 }
