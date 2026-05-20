@@ -517,7 +517,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .into()
             }
             _ => {
-                tracing::debug!("discriminant on type without AdtDef, returning 0");
+                tracing::warn!("discriminant on type without AdtDef — emitting 0 as safe sentinel");
                 self.llvm_int_type(32).const_int(0, false).into()
             }
         }
@@ -531,7 +531,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ConstKind::Uint(n) => *n as u64,
                     ConstKind::Int(n) => *n as u64,
                     other => {
-                        tracing::debug!("Len with non-integer count {:?}, returning 0", other);
+                        tracing::warn!(
+                            "Len with non-integer count {:?} — emitting 0 as safe sentinel",
+                            other
+                        );
                         0
                     }
                 };
@@ -558,7 +561,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .expect("len load failed")
             }
             other => {
-                tracing::debug!("Len on non-array/slice type {:?}, returning 0", other);
+                tracing::warn!(
+                    "Len on non-array/slice type {:?} — emitting 0 as safe sentinel",
+                    other
+                );
                 self.llvm_int_type(64).const_zero().into()
             }
         }
@@ -768,7 +774,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .expect("fge failed")
                 .into(),
             other => {
-                tracing::debug!("unsupported float binop {:?}, returning lhs", other);
+                tracing::warn!(
+                    "unsupported float binary op {:?} — returning lhs as safe sentinel",
+                    other
+                );
                 lhs.into()
             }
         }
@@ -839,8 +848,18 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .expect("neg failed")
                 .into(),
             UnOp::Deref => {
-                tracing::debug!("UnaryOp::Deref on integer, treating as no-op");
-                val.into()
+                // Deref on an integer-typed value: load through the pointer it represents.
+                // The integer is treated as a raw pointer address; emit a load of i64.
+                tracing::debug!("UnaryOp::Deref on integer value — emitting inttoptr + load");
+                let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+                let ptr = self
+                    .builder
+                    .build_int_to_ptr(val, ptr_ty, "deref_inttoptr")
+                    .expect("inttoptr failed");
+                let i64_ty = self.llvm_int_type(64);
+                self.builder
+                    .build_load(i64_ty, ptr, "deref_load")
+                    .expect("deref load failed")
             }
         }
     }

@@ -1,17 +1,16 @@
 [package]
 name = "glyim-codegen"
-edition.workspace = true
-version.workspace = true
+version = "0.1.0"
+edition = "2024"
 
 [dependencies]
-tracing = { workspace = true }
-glyim-mir = { workspace = true }
 glyim-core = { workspace = true }
-glyim-type = { workspace = true }
 glyim-diag = { workspace = true }
-
+glyim-mir = { workspace = true }
+glyim-type = { workspace = true }
+glyim-layout = { workspace = true }
+glyim-span = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-glyim-span = { workspace = true }
 glyim-test = { workspace = true }
-glyim-layout = { workspace = true }

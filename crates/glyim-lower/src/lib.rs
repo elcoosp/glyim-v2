@@ -9,6 +9,7 @@ pub mod lower_rvalue;
 pub mod lower_terminator;
 
 pub use lower::*;
+// IteratorNextInfo is re-exported via pub use lower::*;
 pub use mono::*;
 pub mod partition;
 pub mod polymorphize;

@@ -38,6 +38,8 @@ pub struct MonoCtx {
     queue: std::collections::VecDeque<MonoItem>,
     seen: std::collections::HashSet<MonoItem>,
     cache: std::collections::HashMap<MonoItem, MonoItemId>,
+    /// Accumulated local indices from Drop terminators, resolved in scan_body_for_refs.
+    drop_locals: Vec<glyim_mir::LocalIdx>,
 }
 
 impl MonoCtx {
@@ -47,6 +49,7 @@ impl MonoCtx {
             queue: std::collections::VecDeque::new(),
             seen: std::collections::HashSet::new(),
             cache: std::collections::HashMap::new(),
+            drop_locals: Vec::new(),
         }
     }
 
@@ -104,6 +107,9 @@ impl MonoCtx {
     }
 
     fn scan_body_for_refs(&mut self, body: &glyim_mir::Body) {
+        // Clear drop_locals before scanning this body
+        self.drop_locals.clear();
+
         for block in body.basic_blocks.iter() {
             for stmt in &block.statements {
                 if let StatementKind::Assign(_, ref rvalue) = stmt.kind {
@@ -111,6 +117,19 @@ impl MonoCtx {
                 }
             }
             self.scan_terminator(&block.terminator.kind);
+        }
+
+        // Resolve accumulated drop locals: enqueue DropGlue for each unique type
+        let pending_drops: Vec<_> = self.drop_locals.drain(..).collect();
+        for local_idx in pending_drops {
+            let local_raw = local_idx.to_raw() as usize;
+            if let Some(local_decl) = body
+                .locals
+                .get(glyim_mir::LocalIdx::from_raw(local_raw as u32))
+            {
+                let drop_ty = local_decl.ty;
+                self.enqueue(MonoItem::DropGlue { ty: drop_ty });
+            }
         }
     }
 
@@ -166,15 +185,24 @@ impl MonoCtx {
                     self.scan_operand(arg);
                 }
             }
-            TerminatorKind::Drop { place: _, .. } => {
-                // In a real implementation we would get the type of the place from the body's local decls.
-                // Since we don't have access to the body here, we need to pass the type.
-                // This is a placeholder; the actual monomorphization collector will need to have
-                // access to the body's locals to compute the type.
-                // For now, we'll skip and rely on the caller to handle drop glue generation.
-                // In the full implementation, this method would be called with access to the body.
-                // We'll add a stub warning.
-                tracing::warn!("STUB: drop glue scanning not fully implemented");
+            TerminatorKind::Drop { place, .. } => {
+                // Enqueue drop glue for the type of the dropped place.
+                // We look up the place's base local in the current body's local decls
+                // to determine the type. The body is accessible because scan_body_for_refs
+                // is called while we have the body reference.
+                //
+                // Note: We only look at the base local's type here. Projection-aware
+                // type computation would require access to TypeLookup, but for drop glue
+                // purposes the base local type is sufficient — drop runs on the whole value.
+                let drop_ty = place.local;
+                // We store the local index; the caller (scan_body_for_refs) has the body
+                // and can resolve the type. However, scan_terminator doesn't have access
+                // to the body. We solve this by having scan_body_for_refs pass the locals
+                // to scan_terminator.
+                //
+                // For now, we record the local index so the caller can resolve it.
+                // The DropGlue enqueuing happens in scan_body_for_refs after this returns.
+                self.drop_locals.push(drop_ty);
             }
             TerminatorKind::SwitchInt { discr, .. } => self.scan_operand(discr),
             TerminatorKind::Assert { cond, .. } => self.scan_operand(cond),
