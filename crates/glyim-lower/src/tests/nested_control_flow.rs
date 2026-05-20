@@ -13,7 +13,7 @@ fn if_inside_while_lowers_correctly() {
     let bool_ty = ctx_mut.bool_ty();
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let mut b = ThirBuilder::new(Ty::UNIT, interner);
     let mut stmts = Vec::new();
@@ -79,7 +79,8 @@ fn if_inside_while_lowers_correctly() {
 
     let body = b.into_body(stmts, vec![]);
     let result = lower_body(&mock, &body);
-    // Should produce multiple blocks; just ensure no panic
-    assert_mir(&ctx, &result.body).block_count(4); // entry, while header, body, if cond, then, else, merge, back-edge, return
+    // Full lowering produces: entry, while-header, while-body(if-switch),
+    // then, else, if-merge, while-exit = 7 blocks
+    assert_mir(&ctx, &result.body).block_count(7);
     assert!(result.diagnostics.is_empty());
 }

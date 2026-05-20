@@ -13,7 +13,7 @@ fn uint_literal_lowers_correctly() {
     let u32_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(u32_ty, interner);
     let lit = b.expr(ExprKind::Literal(Literal::Uint(100, None)), u32_ty);
@@ -28,7 +28,7 @@ fn bool_literal_lowers_correctly() {
     let bool_ty = ctx_mut.bool_ty();
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(bool_ty, interner);
     let lit = b.expr(ExprKind::Literal(Literal::Bool(true)), bool_ty);
@@ -43,7 +43,7 @@ fn float_literal_falls_through_to_error_const() {
     let f64_ty = ctx_mut.mk_ty(TyKind::Float(FloatTy::F64));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(f64_ty, interner);
     let lit = b.expr(ExprKind::Literal(Literal::Int(0, None)), f64_ty);
@@ -67,7 +67,7 @@ fn fn_ref_does_not_panic() {
     });
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(fn_ty, interner);
     let fn_ref = b.expr(ExprKind::FnRef(FnDefId::from_raw(0)), fn_ty);
@@ -82,7 +82,7 @@ fn ref_expr_lowers_correctly() {
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let mut b = ThirBuilder::new(i32_ty, interner);
     let mut stmts = Vec::new();

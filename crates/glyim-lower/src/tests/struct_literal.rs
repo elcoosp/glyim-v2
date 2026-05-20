@@ -16,7 +16,7 @@ fn struct_literal_does_not_panic() {
     let struct_ty = ctx_mut.mk_adt(adt_id, subst);
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(struct_ty, interner);
     let struct_expr = b.expr(
@@ -52,7 +52,7 @@ fn struct_literal_with_spread_does_not_panic() {
     let struct_ty = ctx_mut.mk_adt(adt_id, subst);
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(struct_ty, interner);
     let base = b.expr(ExprKind::Literal(Literal::Int(0, None)), struct_ty);

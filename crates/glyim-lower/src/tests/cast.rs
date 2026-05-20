@@ -13,7 +13,7 @@ fn cast_expr_to_rvalue_cast() {
     let i64_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I64));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(i64_ty, interner);
     let cast_expr = b.expr(

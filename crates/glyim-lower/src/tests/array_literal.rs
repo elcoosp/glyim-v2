@@ -20,7 +20,7 @@ fn array_literal_lowers_to_aggregate() {
     ));
     let interner = ctx_mut.resolver().clone();
     let ctx = ctx_mut.freeze();
-    let mock = TestLowerCtx { ty_ctx: &ctx };
+    let mock = TestLowerCtx::new(&ctx);
 
     let b = ThirBuilder::new(arr_ty, interner);
     let arr_expr = b.expr(
