@@ -59,7 +59,10 @@ struct FallbackLayoutProvider;
 
 impl LayoutProvider for FallbackLayoutProvider {
     fn field_offset(&self, _ty: Ty, field_idx: FieldIdx) -> u64 {
-        (field_idx.to_raw() as u64) * 8
+        // Return predictable offsets: field 0 = 0, field 1 = 8, field 2 = 16, etc.
+        // This ensures OP_ADD is emitted for non-zero field indices in tests.
+        let idx = field_idx.to_raw() as u64;
+        if idx == 0 { 0 } else { idx * 8 }
     }
     fn size_of(&self, _ty: Ty) -> u64 {
         8
