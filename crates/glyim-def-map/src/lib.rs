@@ -7,7 +7,7 @@ use glyim_core::path::{Path, PathKind, PathSegment};
 use glyim_core::primitives::Visibility;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
-use glyim_syntax::{SyntaxKind, SyntaxNode};
+use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
 glyim_core::define_idx!(ModuleId);
@@ -701,25 +701,37 @@ fn namespace_for_kind(kind: SyntaxKind) -> Option<Namespace> {
 fn visibility_of_node(node: &SyntaxNode) -> Visibility {
     let mut prev = node.prev_sibling_or_token();
     while let Some(sibling) = prev {
-        if let Some(token) = sibling.as_token() {
-            if token.kind() == SyntaxKind::KwPub {
-                return Visibility::Public;
+        match sibling {
+            SyntaxElement::Token(token) => {
+                if token.kind() == SyntaxKind::KwPub {
+                    return Visibility::Public;
+                }
+                if token.kind().is_trivia()
+                    || token.kind() == SyntaxKind::Comma
+                    || token.kind() == SyntaxKind::Semicolon
+                {
+                    prev = token.prev_sibling_or_token();
+                    continue;
+                }
+                break;
             }
-            if token.kind().is_trivia()
-                || token.kind() == SyntaxKind::Comma
-                || token.kind() == SyntaxKind::Semicolon
-            {
-                prev = token.prev_sibling_or_token();
-                continue;
+            SyntaxElement::Node(n) => {
+                if n.kind() == SyntaxKind::Visibility {
+                    // Look for KwPub inside this Visibility node
+                    for child in n.children_with_tokens() {
+                        if let Some(tok) = child.as_token() {
+                            if tok.kind() == SyntaxKind::KwPub {
+                                return Visibility::Public;
+                            }
+                        }
+                    }
+                }
+                break; // Stop scanning after a node that's not a Visibility node
             }
-            break;
-        } else {
-            break;
         }
     }
     Visibility::Inherited
 }
-
 /// Create a `Span` from a syntax node's text range.
 fn node_span(node: &SyntaxNode) -> Span {
     let range = node.text_range();
