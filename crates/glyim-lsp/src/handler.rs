@@ -1,3 +1,4 @@
+use crate::AnalysisDatabase;
 use crate::code_action::provide_code_actions;
 use crate::completion::provide_completions;
 use crate::database::FileMap;
@@ -8,7 +9,6 @@ use crate::goto_definition::goto_definition;
 use crate::hover::provide_hover;
 use crate::navigation::{document_symbols, find_references};
 use crate::rename::rename_symbol;
-use crate::AnalysisDatabase;
 use async_lsp::router::Router;
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentSymbolRequest, FoldingRangeRequest, Formatting,

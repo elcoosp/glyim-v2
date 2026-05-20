@@ -1,13 +1,18 @@
 use crate::reference_graph::ReferenceGraph;
-use glyim_span::{FileId, Span, ByteIdx, SyntaxContext};
-use glyim_hir::{CrateHir, Item, ItemKind, FnItem, ItemId};
 use glyim_core::{Interner, Visibility};
+use glyim_hir::{CrateHir, FnItem, Item, ItemId, ItemKind};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 #[test]
 fn build_from_hir_records_definitions_and_references() {
     let interner = Interner::new();
     let file_id = FileId::from_raw(1);
-    let span = Span::new(file_id, ByteIdx::from_raw(0), ByteIdx::from_raw(10), SyntaxContext::ROOT);
+    let span = Span::new(
+        file_id,
+        ByteIdx::from_raw(0),
+        ByteIdx::from_raw(10),
+        SyntaxContext::ROOT,
+    );
     let fn_name = interner.intern("my_function");
     let fn_item = FnItem {
         params: vec![],

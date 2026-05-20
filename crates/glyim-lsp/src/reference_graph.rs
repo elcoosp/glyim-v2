@@ -1,6 +1,6 @@
-use glyim_span::{FileId, Span};
-use glyim_hir::{CrateHir, ItemKind, Body, Expr, ExprId};
 use glyim_core::Interner;
+use glyim_hir::{Body, CrateHir, Expr, ExprId, ItemKind};
+use glyim_span::{FileId, Span};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -38,12 +38,7 @@ impl ReferenceGraph {
         }
     }
 
-    pub fn build_from_hir(
-        &mut self,
-        file_id: FileId,
-        hir: &CrateHir,
-        interner: &Interner,
-    ) {
+    pub fn build_from_hir(&mut self, file_id: FileId, hir: &CrateHir, interner: &Interner) {
         // Remove stale references for this file
         self.references
             .retain(|_, refs| refs.iter().all(|r| r.file_id != file_id));
@@ -111,7 +106,9 @@ impl ReferenceGraph {
                         }
                     }
                 }
-                Expr::MethodCall { receiver, method, .. } => {
+                Expr::MethodCall {
+                    receiver, method, ..
+                } => {
                     walk_expr(*receiver, body, interner, file_id, add_ref);
                     let method_str = interner.resolve(*method).to_string();
                     add_ref(&method_str, span, false, ReferenceKind::Call);
@@ -134,7 +131,11 @@ impl ReferenceGraph {
                         walk_expr(*tail_expr, body, interner, file_id, add_ref);
                     }
                 }
-                Expr::If { cond, then_branch, else_branch } => {
+                Expr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
                     walk_expr(*cond, body, interner, file_id, add_ref);
                     walk_expr(*then_branch, body, interner, file_id, add_ref);
                     if let Some(else_expr) = else_branch {
@@ -159,12 +160,21 @@ impl ReferenceGraph {
                     walk_expr(*lhs, body, interner, file_id, add_ref);
                     walk_expr(*rhs, body, interner, file_id, add_ref);
                 }
-                Expr::Loop { body: loop_body } => walk_expr(*loop_body, body, interner, file_id, add_ref),
-                Expr::While { cond, body: loop_body } => {
+                Expr::Loop { body: loop_body } => {
+                    walk_expr(*loop_body, body, interner, file_id, add_ref)
+                }
+                Expr::While {
+                    cond,
+                    body: loop_body,
+                } => {
                     walk_expr(*cond, body, interner, file_id, add_ref);
                     walk_expr(*loop_body, body, interner, file_id, add_ref);
                 }
-                Expr::For { pat: _, iterable, body: loop_body } => {
+                Expr::For {
+                    pat: _,
+                    iterable,
+                    body: loop_body,
+                } => {
                     walk_expr(*iterable, body, interner, file_id, add_ref);
                     walk_expr(*loop_body, body, interner, file_id, add_ref);
                 }
@@ -181,7 +191,9 @@ impl ReferenceGraph {
                         walk_expr(*elem, body, interner, file_id, add_ref);
                     }
                 }
-                Expr::Closure { body: closure_body, .. } => {
+                Expr::Closure {
+                    body: closure_body, ..
+                } => {
                     walk_expr(*closure_body, body, interner, file_id, add_ref);
                 }
                 Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {

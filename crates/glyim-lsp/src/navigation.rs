@@ -76,7 +76,8 @@ pub fn find_references(
     params: &ReferenceParams,
 ) -> Option<Vec<Location>> {
     let uri = &params.text_document_position.text_document.uri;
-    let symbol_name = get_symbol_name_at_position(db, file_map, uri, params.text_document_position.position)?;
+    let symbol_name =
+        get_symbol_name_at_position(db, file_map, uri, params.text_document_position.position)?;
     let ref_graph = db.reference_graph.read();
     let references = ref_graph.find_references(&symbol_name);
     if references.is_empty() {

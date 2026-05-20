@@ -1,5 +1,5 @@
 use crate::LspState;
-use glyim_db::{Database, CrateConfig};
+use glyim_db::{CrateConfig, Database};
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
