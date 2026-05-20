@@ -1,5 +1,6 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
 expression: tree
 ---
 SourceFile@0..73
@@ -11,21 +12,18 @@ SourceFile@0..73
     MacroArm@16..71
       TokenTree@16..30
         LParen@16..17 "("
-        TokenTree@17..18
+        TokenTree@17..29
           Dollar@17..18 "$"
-        TokenTree@18..27
-          LParen@18..19 "("
-          TokenTree@19..20
-            Dollar@19..20 "$"
-          TokenTree@20..21
-            Ident@20..21 "x"
-          TokenTree@21..22
-            Colon@21..22 ":"
-          TokenTree@22..26
-            Ident@22..26 "expr"
-          RParen@26..27 ")"
-        Comma@27..28 ","
-        TokenTree@28..29
+          TokenTree@18..27
+            LParen@18..19 "("
+            TokenTree@19..26
+              Dollar@19..20 "$"
+              MetaVar@20..26
+                Ident@20..21 "x"
+                Colon@21..22 ":"
+                Ident@22..26 "expr"
+            RParen@26..27 ")"
+          Comma@27..28 ","
           Star@28..29 "*"
         RParen@29..30 ")"
       FatArrow@30..32 "=>"
@@ -64,10 +62,10 @@ SourceFile@0..73
               Ident@57..61 "push"
             TokenTree@61..65
               LParen@61..62 "("
-              TokenTree@62..63
+              TokenTree@62..64
                 Dollar@62..63 "$"
-              TokenTree@63..64
-                Ident@63..64 "x"
+                MetaVar@63..64
+                  Ident@63..64 "x"
               RParen@64..65 ")"
             TokenTree@65..66
               Semicolon@65..66 ";"

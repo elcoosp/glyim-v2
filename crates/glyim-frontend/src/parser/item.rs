@@ -138,14 +138,46 @@ impl<'a> Parser<'a> {
         }
     }
 
+
     pub(crate) fn parse_visibility(&mut self) -> bool {
-        if self.current_kind() == SyntaxKind::KwPub {
-            self.bump();
-            true
-        } else {
-            false
+        if self.current_kind() != SyntaxKind::KwPub {
+            return false;
         }
+        self.start_node(SyntaxKind::Visibility);
+        self.bump(); // pub
+        if self.current_kind() == SyntaxKind::LParen {
+            self.bump(); // (
+            match self.current_kind() {
+                SyntaxKind::KwCrate => {
+                    self.start_node(SyntaxKind::VisCrate);
+                    self.bump();
+                    self.finish_node();
+                }
+                SyntaxKind::KwSuper => {
+                    self.start_node(SyntaxKind::VisSuper);
+                    self.bump();
+                    self.finish_node();
+                }
+                SyntaxKind::KwSelf => {
+                    self.start_node(SyntaxKind::VisSelf);
+                    self.bump();
+                    self.finish_node();
+                }
+                SyntaxKind::Ident => {
+                    self.start_node(SyntaxKind::VisPath);
+                    self.parse_path();
+                    self.finish_node();
+                }
+                _ => {
+                    self.error("expected crate, super, self, or path in visibility");
+                }
+            }
+            self.expect(SyntaxKind::RParen);
+        }
+        self.finish_node(); // Visibility
+        true
     }
+
 
     pub(crate) fn parse_macro_def(&mut self) {
         self.start_node(SyntaxKind::MacroDef);
@@ -183,27 +215,78 @@ impl<'a> Parser<'a> {
     }
 
 
+
     pub(crate) fn parse_token_tree(&mut self) {
-        // Parse a balanced token tree: either a single token, or a delimited group
         match self.current_kind() {
             SyntaxKind::LParen => {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump(); // (
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
-                    self.parse_token_tree(); // recursively parse inner tokens
-                    // After a token tree, there may be a comma (separator inside repetition)
+                    if self.current_kind() == SyntaxKind::Dollar {
+                        self.start_node(SyntaxKind::TokenTree);
+                        self.bump(); // $
+                        if self.current_kind() == SyntaxKind::LParen {
+                            self.parse_token_tree(); // $(...)
+                            if matches!(self.current_kind(), SyntaxKind::Comma | SyntaxKind::Semicolon) {
+                                self.bump(); // separator
+                            }
+                            if matches!(self.current_kind(), SyntaxKind::Plus | SyntaxKind::Star | SyntaxKind::Question) {
+                                self.bump(); // operator
+                            } else {
+                                self.error("expected repetition operator after $(...)");
+                            }
+                        } else if self.current_kind() == SyntaxKind::Ident {
+                            let name_cp = self.checkpoint();
+                            self.bump(); // variable name
+                            if self.current_kind() == SyntaxKind::Colon {
+                                self.bump(); // :
+                                if self.current_kind() == SyntaxKind::Ident {
+                                    self.start_node_at(name_cp, SyntaxKind::MetaVar);
+                                    self.bump(); // fragment specifier
+                                    self.finish_node();
+                                } else {
+                                    self.error("expected fragment specifier after ':'");
+                                }
+                            } else {
+                                self.start_node_at(name_cp, SyntaxKind::MetaVar);
+                                self.finish_node();
+                            }
+                        } else if self.current_kind() == SyntaxKind::KwCrate {
+                            self.start_node(SyntaxKind::MetaVarCrate);
+                            self.bump();
+                            self.finish_node();
+                        } else {
+                            self.error("expected '(' or identifier after '$'");
+                            self.bump();
+                        }
+                        self.finish_node(); // TokenTree for dollar
+                    } else {
+                        if matches!(self.current_kind(), SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket) {
+                            self.parse_token_tree();
+                        } else {
+                            self.start_node(SyntaxKind::TokenTree);
+                            self.bump();
+                            self.finish_node();
+                        }
+                    }
                     if self.current_kind() == SyntaxKind::Comma {
                         self.bump();
                     }
                 }
                 self.expect(SyntaxKind::RParen);
-                self.finish_node();
+                self.finish_node(); // TokenTree group
             }
             SyntaxKind::LBrace => {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                    self.parse_token_tree();
+                    if matches!(self.current_kind(), SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket) {
+                        self.parse_token_tree();
+                    } else {
+                        self.start_node(SyntaxKind::TokenTree);
+                        self.bump();
+                        self.finish_node();
+                    }
                 }
                 self.expect(SyntaxKind::RBrace);
                 self.finish_node();
@@ -212,19 +295,25 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
-                    self.parse_token_tree();
+                    if matches!(self.current_kind(), SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket) {
+                        self.parse_token_tree();
+                    } else {
+                        self.start_node(SyntaxKind::TokenTree);
+                        self.bump();
+                        self.finish_node();
+                    }
                 }
                 self.expect(SyntaxKind::RBracket);
                 self.finish_node();
             }
             _ => {
-                // Single token
                 self.start_node(SyntaxKind::TokenTree);
                 self.bump();
                 self.finish_node();
             }
         }
     }
+
 
 
     pub(crate) fn parse_fn_def(&mut self) {
@@ -522,20 +611,19 @@ impl<'a> Parser<'a> {
     }
 
 
+
     pub(crate) fn parse_where_clause(&mut self) {
         self.start_node(SyntaxKind::WhereClause);
         self.expect(SyntaxKind::KwWhere);
-        while self.current_kind() != SyntaxKind::LBrace
-            && self.current_kind() != SyntaxKind::Semicolon
-            && self.current().is_some()
-        {
-            // Parse the type (or associated type path)
-            self.parse_type();
+        loop {
+            self.start_node(SyntaxKind::WherePredicate);
+            self.parse_type(); // type or associated type binding
             if self.current_kind() == SyntaxKind::Colon {
                 self.bump(); // :
-                // Parse the bounds (separated by +)
                 loop {
-                    self.parse_type(); // each bound is a trait type (e.g., Clone)
+                    self.start_node(SyntaxKind::Bound);
+                    self.parse_type(); // bound (trait with args)
+                    self.finish_node(); // Bound
                     if self.current_kind() == SyntaxKind::Plus {
                         self.bump();
                     } else {
@@ -543,14 +631,16 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            self.finish_node(); // WherePredicate
             if self.current_kind() == SyntaxKind::Comma {
                 self.bump();
-            } else {
-                break;
+                continue;
             }
+            break;
         }
-        self.finish_node();
+        self.finish_node(); // WhereClause
     }
+
 
 
     pub(crate) fn parse_type_param_list(&mut self) {

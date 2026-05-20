@@ -1,9 +1,11 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
 expression: tree
 ---
 SourceFile@0..175
-  KwPub@0..3 "pub"
+  Visibility@0..3
+    KwPub@0..3 "pub"
   StructDef@3..27
     KwStruct@3..9 "struct"
     Ident@9..14 "Point"

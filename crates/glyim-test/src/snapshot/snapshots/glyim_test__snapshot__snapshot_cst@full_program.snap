@@ -1,5 +1,6 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
 expression: tree
 ---
 SourceFile@0..550
@@ -21,7 +22,8 @@ SourceFile@0..550
           Ident@22..27 "Debug"
       RBrace@27..28 "}"
     Semicolon@28..29 ";"
-  KwPub@29..32 "pub"
+  Visibility@29..32
+    KwPub@29..32 "pub"
   TraitDef@32..88
     KwTrait@32..37 "trait"
     Ident@37..43 "Animal"
@@ -57,7 +59,8 @@ SourceFile@0..550
           Ident@80..86 "String"
       Semicolon@86..87 ";"
     RBrace@87..88 "}"
-  KwPub@88..91 "pub"
+  Visibility@88..91
+    KwPub@88..91 "pub"
   StructDef@91..122
     KwStruct@91..97 "struct"
     Ident@97..100 "Dog"

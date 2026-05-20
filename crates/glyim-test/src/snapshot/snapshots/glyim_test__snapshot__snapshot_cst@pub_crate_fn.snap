@@ -1,12 +1,15 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 16
 expression: tree
 ---
 SourceFile@0..19
-  KwPub@0..3 "pub"
-  LParen@3..4 "("
-  KwCrate@4..9 "crate"
-  RParen@9..10 ")"
+  Visibility@0..10
+    KwPub@0..3 "pub"
+    LParen@3..4 "("
+    VisCrate@4..9
+      KwCrate@4..9 "crate"
+    RParen@9..10 ")"
   FnDef@10..19
     KwFn@10..12 "fn"
     Ident@12..15 "foo"
