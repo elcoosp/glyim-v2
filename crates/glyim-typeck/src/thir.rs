@@ -301,6 +301,12 @@ impl std::fmt::Debug for PatternKind {
                 .field("suffix", suffix)
                 .finish(),
             PatternKind::Error => write!(f, "Error"),
+            PatternKind::Slice { prefix, slice, suffix } => f
+                .debug_struct("Slice")
+                .field("prefix", prefix)
+                .field("slice", slice)
+                .field("suffix", suffix)
+                .finish(),
         }
     }
 }
@@ -349,6 +355,11 @@ impl Clone for PatternKind {
                 suffix: suffix.clone(),
             },
             PatternKind::Error => PatternKind::Error,
+            PatternKind::Slice { prefix, slice, suffix } => PatternKind::Slice {
+                prefix: prefix.clone(),
+                slice: slice.clone(),
+                suffix: suffix.clone(),
+            },
         }
     }
 }

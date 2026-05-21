@@ -5,7 +5,7 @@ use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{Pat, PatId};
 use glyim_span::Span;
-use glyim_type::Ty;
+use glyim_type::{Ty, TyKind};
 
 use crate::check_body::FnCtxt;
 use crate::thir;
@@ -90,8 +90,58 @@ impl<'a> FnCtxt<'a> {
                 }
             }
             Pat::Literal(lit) => {
-                        Pat::Slice(elements) => {
-                // Determine element type of scrutinee (must be array or slice)
+                let thir_lit = crate::unify::thir_literal(lit);
+                thir::Pattern {
+                    kind: thir::PatternKind::Literal(thir_lit),
+                    ty: expected_ty,
+                    span,
+                }
+            }
+            Pat::Or(pats) => {
+                let mut thir_pats = Vec::new();
+                let mut first_ty = None;
+                for p_id in pats {
+                    let pat_thir = self.check_pattern(*p_id, expected_ty);
+                    if first_ty.is_none() {
+                        first_ty = Some(pat_thir.ty);
+                    } else if let Some(ty) = first_ty {
+                        self.unify(ty, pat_thir.ty, span);
+                    }
+                    thir_pats.push(pat_thir);
+                }
+                let unified_ty = first_ty.unwrap_or(expected_ty);
+                thir::Pattern {
+                    kind: thir::PatternKind::Or(thir_pats),
+                    ty: unified_ty,
+                    span,
+                }
+            }
+            Pat::Range { start, end, inclusive } => {
+                let start_opt = start.as_ref().map(|lit| crate::unify::thir_literal(lit));
+                let end_opt = end.as_ref().map(|lit| crate::unify::thir_literal(lit));
+                let ty = expected_ty;
+                if ty != Ty::ERROR {
+                    if let Some(lit) = start.as_ref() {
+                        let lit_ty = crate::unify::literal_ty(self.ctx, lit);
+                        self.unify(lit_ty, ty, span);
+                    }
+                    if let Some(lit) = end.as_ref() {
+                        let lit_ty = crate::unify::literal_ty(self.ctx, lit);
+                        self.unify(lit_ty, ty, span);
+                    }
+                }
+                thir::Pattern {
+                    kind: thir::PatternKind::Range {
+                        start: start_opt,
+                        end: end_opt,
+                        inclusive: *inclusive,
+                    },
+                    ty,
+                    span,
+                }
+            }
+            Pat::Slice(elements) => {
+                // Determine element type of the expected array/slice.
                 let elem_ty = match self.ctx.ty_kind(expected_ty) {
                     TyKind::Array(ety, _) | TyKind::Slice(ety) => *ety,
                     _ => {
@@ -102,51 +152,31 @@ impl<'a> FnCtxt<'a> {
                         Ty::ERROR
                     }
                 };
-                // Scan elements to find the slice matcher (Wild or Binding without subpattern)
-                let mut prefix = Vec::new();
-                let mut slice_pat = None;
-                let mut suffix = Vec::new();
+                // Type‑check each subpattern against the element type.
+                let mut thir_prefix = Vec::new();
+                let mut thir_slice = None;
+                let mut thir_suffix = Vec::new();
                 let mut found_slice = false;
-                for p_id in elements {
-                    let pat = &self.body.pats[*p_id];
-                    let is_slice_pat = match pat {
-                        Pat::Wild => true,
-                        Pat::Binding { subpattern: None, .. } => true,
-                        _ => false,
-                    };
-                    if !found_slice && is_slice_pat {
-                        slice_pat = Some(*p_id);
+                for &sub_pat_id in elements {
+                    let sub_pat = &self.body.pats[sub_pat_id];
+                    // Detect the slice‑binding subpattern (wildcard or simple binding).
+                    let is_slice = matches!(sub_pat, Pat::Wild | Pat::Binding { subpattern: None, .. });
+                    if !found_slice && is_slice {
+                        let pat_thir = self.check_pattern(sub_pat_id, expected_ty);
+                        thir_slice = Some(Box::new(pat_thir));
                         found_slice = true;
                     } else if !found_slice {
-                        prefix.push(*p_id);
+                        thir_prefix.push(self.check_pattern(sub_pat_id, elem_ty));
                     } else {
-                        suffix.push(*p_id);
+                        thir_suffix.push(self.check_pattern(sub_pat_id, elem_ty));
                     }
                 }
-                // Type-check subpatterns
-                for p_id in &prefix {
-                    self.check_pattern(*p_id, elem_ty);
-                }
-                if let Some(p_id) = slice_pat {
-                    self.check_pattern(p_id, expected_ty);
-                }
-                for p_id in &suffix {
-                    self.check_pattern(*p_id, elem_ty);
-                }
-                // Build THIR pattern (placeholder with empty vectors; actual vectors would need to carry checked patterns)
                 thir::Pattern {
                     kind: thir::PatternKind::Slice {
-                        prefix: vec![],
-                        slice: None,
-                        suffix: vec![],
+                        prefix: thir_prefix,
+                        slice: thir_slice,
+                        suffix: thir_suffix,
                     },
-                    ty: expected_ty,
-                    span,
-                }
-            }
-                let thir_lit = crate::unify::thir_literal(lit);
-                thir::Pattern {
-                    kind: thir::PatternKind::Literal(thir_lit),
                     ty: expected_ty,
                     span,
                 }
