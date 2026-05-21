@@ -489,15 +489,72 @@ impl<'a> ExpanderImpl<'a> {
                 }
             }
             BuiltinMacro::Concat => {
-                // concat!(a, b, ...) concatenates string literals
+                // concat!(a, b, ...) concatenates string representations, skipping punctuation
                 let args_tt = flatten_token_tree(args_node);
                 let mut result = String::new();
                 for tt in &args_tt {
-                    if let TokenTree::Token(SyntaxKind::StringLit, text) = tt {
-                        let s = &text.as_str()[1..text.len() - 1];
-                        result.push_str(s);
+                    match tt {
+                        TokenTree::Token(kind, text) => {
+                            // Skip tokens that are punctuation (commas, semicolons, colons, parentheses, braces, brackets)
+                            let text_str = text.as_str();
+                            if text_str == ","
+                                || text_str == ";"
+                                || text_str == ":"
+                                || text_str == "("
+                                || text_str == ")"
+                                || text_str == "{"
+                                || text_str == "}"
+                                || text_str == "["
+                                || text_str == "]"
+                            {
+                                continue;
+                            }
+                            // For string literals, strip quotes
+                            if *kind == SyntaxKind::StringLit {
+                                let s = &text_str[1..text_str.len() - 1];
+                                result.push_str(s);
+                            } else {
+                                result.push_str(text_str);
+                            }
+                        }
+                        TokenTree::Group(open, inner, close) => {
+                            // Recursively flatten group content (ignore delimiters)
+                            for inner_tt in inner {
+                                if let TokenTree::Token(kind, text) = inner_tt {
+                                    let text_str = text.as_str();
+                                    if text_str == "," || text_str == ";" || text_str == ":" {
+                                        continue;
+                                    }
+                                    if *kind == SyntaxKind::StringLit {
+                                        let s = &text_str[1..text_str.len() - 1];
+                                        result.push_str(s);
+                                    } else {
+                                        result.push_str(text_str);
+                                    }
+                                } else if let TokenTree::Group(_, inner2, _) = inner_tt {
+                                    // Flatten further groups (avoid recursion for simplicity - just skip)
+                                    for inn in inner2 {
+                                        if let TokenTree::Token(kind, text) = inn {
+                                            let text_str = text.as_str();
+                                            if text_str == "," || text_str == ";" || text_str == ":"
+                                            {
+                                                continue;
+                                            }
+                                            if *kind == SyntaxKind::StringLit {
+                                                let s = &text_str[1..text_str.len() - 1];
+                                                result.push_str(s);
+                                            } else {
+                                                result.push_str(text_str);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        TokenTree::DollarCrate => {
+                            result.push_str("$crate");
+                        }
                     }
-                    // ignore commas and other punctuation
                 }
                 let lit = SmolStr::from(format!("\"{}\"", result));
                 vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
