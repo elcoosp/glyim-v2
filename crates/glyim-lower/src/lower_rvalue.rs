@@ -822,6 +822,13 @@ impl<'a> MirBuilder<'a> {
                 tracing::warn!("STUB: const block pattern binding not implemented");
             }
             thir::PatternKind::Error => {}
+            thir::PatternKind::Slice { prefix: _, slice: _, suffix: _ } => {
+                // Slice pattern lowering not implemented; emit a diagnostic.
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "slice pattern lowering not yet implemented".to_string(),
+                ));
+            }
         }
     }
 

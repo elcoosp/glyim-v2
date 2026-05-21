@@ -620,6 +620,10 @@ impl<'tcx> Interpreter<'tcx> {
                     }
                 }
                 ProjectionElem::Downcast(_) => {}
+                ProjectionElem::Slice { .. } => {
+                    tracing::warn!("Slice projection not implemented in interpreter");
+                    value // return the base value as approximation
+                },
             }
         }
         Ok(val)

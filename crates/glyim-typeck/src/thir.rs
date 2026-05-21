@@ -253,27 +253,18 @@ pub enum PatternKind {
     Error,
 }
 
-// Manual Debug for PatternKind to avoid derive non-exhaustive error
+// Manual Debug for PatternKind
 impl std::fmt::Debug for PatternKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PatternKind::Wild => write!(f, "Wild"),
-            PatternKind::Binding {
-                name,
-                mutability,
-                subpattern,
-            } => f
+            PatternKind::Binding { name, mutability, subpattern } => f
                 .debug_struct("Binding")
                 .field("name", name)
                 .field("mutability", mutability)
                 .field("subpattern", subpattern)
                 .finish(),
-            PatternKind::Struct {
-                adt_id,
-                variant_idx,
-                fields,
-                rest,
-            } => f
+            PatternKind::Struct { adt_id, variant_idx, fields, rest } => f
                 .debug_struct("Struct")
                 .field("adt_id", adt_id)
                 .field("variant_idx", variant_idx)
@@ -283,11 +274,7 @@ impl std::fmt::Debug for PatternKind {
             PatternKind::Tuple(pats) => f.debug_tuple("Tuple").field(pats).finish(),
             PatternKind::Or(pats) => f.debug_tuple("Or").field(pats).finish(),
             PatternKind::Literal(lit) => f.debug_tuple("Literal").field(lit).finish(),
-            PatternKind::Range {
-                start,
-                end,
-                inclusive,
-            } => f
+            PatternKind::Range { start, end, inclusive } => f
                 .debug_struct("Range")
                 .field("start", start)
                 .field("end", end)
@@ -301,12 +288,6 @@ impl std::fmt::Debug for PatternKind {
                 .field("suffix", suffix)
                 .finish(),
             PatternKind::Error => write!(f, "Error"),
-            PatternKind::Slice { prefix, slice, suffix } => f
-                .debug_struct("Slice")
-                .field("prefix", prefix)
-                .field("slice", slice)
-                .field("suffix", suffix)
-                .finish(),
         }
     }
 }
@@ -316,21 +297,12 @@ impl Clone for PatternKind {
     fn clone(&self) -> Self {
         match self {
             PatternKind::Wild => PatternKind::Wild,
-            PatternKind::Binding {
-                name,
-                mutability,
-                subpattern,
-            } => PatternKind::Binding {
+            PatternKind::Binding { name, mutability, subpattern } => PatternKind::Binding {
                 name: *name,
                 mutability: *mutability,
                 subpattern: subpattern.clone(),
             },
-            PatternKind::Struct {
-                adt_id,
-                variant_idx,
-                fields,
-                rest,
-            } => PatternKind::Struct {
+            PatternKind::Struct { adt_id, variant_idx, fields, rest } => PatternKind::Struct {
                 adt_id: *adt_id,
                 variant_idx: *variant_idx,
                 fields: fields.clone(),
@@ -339,11 +311,7 @@ impl Clone for PatternKind {
             PatternKind::Tuple(pats) => PatternKind::Tuple(pats.clone()),
             PatternKind::Or(pats) => PatternKind::Or(pats.clone()),
             PatternKind::Literal(lit) => PatternKind::Literal(lit.clone()),
-            PatternKind::Range {
-                start,
-                end,
-                inclusive,
-            } => PatternKind::Range {
+            PatternKind::Range { start, end, inclusive } => PatternKind::Range {
                 start: start.clone(),
                 end: end.clone(),
                 inclusive: *inclusive,
@@ -355,11 +323,6 @@ impl Clone for PatternKind {
                 suffix: suffix.clone(),
             },
             PatternKind::Error => PatternKind::Error,
-            PatternKind::Slice { prefix, slice, suffix } => PatternKind::Slice {
-                prefix: prefix.clone(),
-                slice: slice.clone(),
-                suffix: suffix.clone(),
-            },
         }
     }
 }

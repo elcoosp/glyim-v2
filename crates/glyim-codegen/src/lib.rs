@@ -160,6 +160,9 @@ impl BytecodeBackend {
                     current_ty = Ty::ERROR;
                 }
                 ProjectionElem::Downcast(_) => {
+                ProjectionElem::Slice { .. } => {
+                    tracing::warn!("Slice projection not implemented in codegen");
+                },
                     // Downcast doesn't change address in this model
                 }
             }
