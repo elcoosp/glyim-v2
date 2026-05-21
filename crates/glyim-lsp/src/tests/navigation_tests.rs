@@ -1,52 +1,111 @@
+use crate::database::{AnalysisDatabase, SourceMap};
 use crate::navigation::workspace_symbols;
-use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
-use glyim_span::{FileId, Span};
+use glyim_core::Interner;
+use glyim_span::FileId;
 use lsp_types::{
-    Location, Position, Range, SymbolInformation, SymbolKind as LspSymbolKind, Url,
+    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, Url,
     WorkspaceSymbolParams,
 };
-use std::collections::HashMap;
 use std::path::PathBuf;
 
+fn setup_db_with_file(path: &str, source: &str) -> (AnalysisDatabase, FileId) {
+    let db = AnalysisDatabase::new();
+    let path_buf = PathBuf::from(path);
+    let file_id = db.file_map.write().get_or_create(&path_buf);
+    let sm = SourceMap::new(path_buf.clone(), file_id, source.to_string());
+    db.source_maps.write().insert(file_id, sm);
+
+    let parse_result = glyim_frontend::parse_to_syntax(source, file_id);
+    let mut interner = Interner::new();
+    let (hir, _diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
+    db.symbol_index
+        .write()
+        .build_from_hir(file_id, &hir, &interner);
+    db.reference_graph
+        .write()
+        .build_from_hir(file_id, &hir, &interner);
+    db.hirs.write().insert(file_id, hir);
+
+    (db, file_id)
+}
+
 #[test]
-fn test_workspace_symbols_returns_symbols_from_all_files() {
-    let mut symbol_index = SymbolIndex::new();
-    let file_id1 = FileId::from_raw(1);
-    let file_id2 = FileId::from_raw(2);
-    let span = Span::DUMMY;
+fn test_goto_definition_jumps_to_definition() {
+    let source = "fn foo() {}\nfn bar() { foo(); }";
+    let (db, _file_id) = setup_db_with_file("/test/goto.g", source);
+    let file_map = db.file_map.read();
 
-    let sym1 = SymbolInfo {
-        name: "foo".to_string(),
-        kind: SymbolKind::Function,
-        definition: DefinitionLocation {
-            file_id: file_id1,
-            span,
+    let uri = Url::from_file_path("/test/goto.g").unwrap();
+    let params = GotoDefinitionParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 1,
+                character: 12,
+            },
         },
-        type_signature: None,
-        is_pub: true,
-        documentation: None,
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
     };
-    let sym2 = SymbolInfo {
-        name: "bar".to_string(),
-        kind: SymbolKind::Struct,
-        definition: DefinitionLocation {
-            file_id: file_id2,
-            span,
-        },
-        type_signature: None,
-        is_pub: true,
-        documentation: None,
-    };
-    symbol_index.insert_test_symbol(file_id1, sym1);
-    symbol_index.insert_test_symbol(file_id2, sym2);
 
-    // Create a minimal AnalysisDatabase with the symbol index
-    // Since workspace_symbols requires AnalysisDatabase, we need to mock it or build a test database.
-    // We'll instead test the underlying query logic via symbol_index directly.
-    // For the sake of this test, we assume workspace_symbols correctly uses symbol_index.query.
-    let results = symbol_index.query("", 10);
-    assert_eq!(results.len(), 2);
-    let names: Vec<&str> = results.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"foo"));
-    assert!(names.contains(&"bar"));
+    let result = crate::goto_definition::goto_definition(&db, &file_map, &params);
+    assert!(
+        result.is_some(),
+        "goto_definition should find the definition"
+    );
+
+    if let Some(lsp_types::GotoDefinitionResponse::Scalar(loc)) = result {
+        assert_eq!(loc.uri, uri, "Definition should be in same file");
+        assert_eq!(loc.range.start.line, 0, "Definition should be on line 0");
+    } else {
+        panic!("Expected scalar location response");
+    }
+}
+
+#[test]
+fn test_workspace_symbols_returns_matching_prefix() {
+    let source = "fn alpha() {}\nfn beta() {}\nstruct Gamma {}\n";
+    let (db, _file_id) = setup_db_with_file("/test/workspace.g", source);
+
+    let params = WorkspaceSymbolParams {
+        query: "al".to_string(),
+        ..Default::default()
+    };
+
+    let result = workspace_symbols(&db, &params);
+    assert!(result.is_some(), "workspace_symbols should return results");
+    let symbols = result.unwrap();
+    assert!(!symbols.is_empty(), "Expected at least one symbol");
+    assert!(
+        symbols.iter().any(|s| s.name == "alpha"),
+        "Expected alpha in results"
+    );
+    assert!(
+        !symbols.iter().any(|s| s.name == "beta"),
+        "Expected beta not in results"
+    );
+    assert!(
+        !symbols.iter().any(|s| s.name == "Gamma"),
+        "Expected Gamma not in results"
+    );
+}
+
+#[test]
+fn test_workspace_symbols_empty_query_returns_none_or_all() {
+    let source = "fn foo() {}";
+    let (db, _file_id) = setup_db_with_file("/test/workspace2.g", source);
+
+    let params = WorkspaceSymbolParams {
+        query: "nonexistent".to_string(),
+        ..Default::default()
+    };
+
+    let result = workspace_symbols(&db, &params);
+    if let Some(symbols) = result {
+        assert!(
+            symbols.is_empty(),
+            "Expected no symbols for nonexistent query"
+        );
+    }
 }
