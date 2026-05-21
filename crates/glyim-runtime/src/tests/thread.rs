@@ -12,7 +12,6 @@ fn thread_spawn_and_join() {
     extern "C" fn thread_func(arg: *mut u8) {
         let flag = unsafe { Arc::from_raw(arg as *const AtomicBool) };
         flag.store(true, Ordering::SeqCst);
-        // Leak the Arc to avoid double free; the test will not reclaim it.
         std::mem::forget(flag);
     }
     let handle = unsafe { glyim_thread_spawn(thread_func, flag_ptr) };
@@ -26,9 +25,8 @@ fn thread_spawn_and_join() {
 fn thread_yield_and_sleep() {
     unsafe {
         glyim_thread_yield();
-        glyim_thread_sleep(0, 10_000_000); // 10ms
+        glyim_thread_sleep(0, 10_000_000);
     }
-    // Just check it doesn't crash
 }
 
 #[test]
@@ -42,7 +40,6 @@ fn thread_park_unpark() {
         std::mem::forget(flag);
     }
     let handle = unsafe { glyim_thread_spawn(parked_thread, flag_ptr) };
-    // Give thread time to park
     std::thread::sleep(Duration::from_millis(50));
     unsafe { glyim_thread_unpark(handle) };
     let ret = unsafe { glyim_thread_join(handle) };

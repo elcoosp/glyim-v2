@@ -1,6 +1,8 @@
 //! TCP networking tests for glyim-runtime
 
 use crate::*;
+
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;
 use std::time::Duration;

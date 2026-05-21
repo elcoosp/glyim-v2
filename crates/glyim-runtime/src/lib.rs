@@ -1,35 +1,70 @@
-//! Runtime support: memory allocation, panic handling, drop glue, ABI stubs.
-//!
-//! This crate provides the low-level FFI interface used by generated code:
-//! - `glyim_alloc` — heap allocation with alignment
-//! - `glyim_dealloc` — heap deallocation
-//! - `glyim_drop_in_place` — drop glue via caller-provided destructor
-//! - `glyim_panic` — unrecoverable panic handler
+//! Runtime support: memory allocation, panic handling, drop glue, ABI stubs,
+//! networking, threading, and time.
 
 pub use glyim_core::abi::ALIGN_MAX;
 
 use std::alloc::{self, Layout};
+use std::collections::HashMap;
+use std::net::{TcpListener, TcpStream, UdpSocket, ToSocketAddrs};
+use std::sync::{Mutex, OnceLock, Arc};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::io::{Read, Write};
+
+// ========== Global Resource Management ==========
+
+type SocketId = u32;
+type ThreadId = usize;
+
+struct TcpStreamStore {
+    next_id: SocketId,
+    streams: HashMap<SocketId, TcpStream>,
+}
+struct TcpListenerStore {
+    next_id: SocketId,
+    listeners: HashMap<SocketId, TcpListener>,
+}
+struct UdpSocketStore {
+    next_id: SocketId,
+    sockets: HashMap<SocketId, UdpSocket>,
+}
+struct ThreadInfo {
+    handle: JoinHandle<()>,
+    thread: Arc<std::thread::Thread>,
+}
+struct ThreadStore {
+    next_id: ThreadId,
+    infos: HashMap<ThreadId, ThreadInfo>,
+}
+
+fn tcp_streams() -> &'static Mutex<TcpStreamStore> {
+    static STREAMS: OnceLock<Mutex<TcpStreamStore>> = OnceLock::new();
+    STREAMS.get_or_init(|| Mutex::new(TcpStreamStore { next_id: 1, streams: HashMap::new() }))
+}
+fn tcp_listeners() -> &'static Mutex<TcpListenerStore> {
+    static LISTENERS: OnceLock<Mutex<TcpListenerStore>> = OnceLock::new();
+    LISTENERS.get_or_init(|| Mutex::new(TcpListenerStore { next_id: 1, listeners: HashMap::new() }))
+}
+fn udp_sockets() -> &'static Mutex<UdpSocketStore> {
+    static SOCKETS: OnceLock<Mutex<UdpSocketStore>> = OnceLock::new();
+    SOCKETS.get_or_init(|| Mutex::new(UdpSocketStore { next_id: 1, sockets: HashMap::new() }))
+}
+fn threads() -> &'static Mutex<ThreadStore> {
+    static THREADS: OnceLock<Mutex<ThreadStore>> = OnceLock::new();
+    THREADS.get_or_init(|| Mutex::new(ThreadStore { next_id: 1, infos: HashMap::new() }))
+}
+
+// Helper: convert raw bytes to string (assumes valid UTF-8, null-terminated or length provided)
+unsafe fn bytes_to_string(ptr: *const u8, len: usize) -> Option<String> {
+    if ptr.is_null() { return None; }
+    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+    std::str::from_utf8(slice).ok().map(|s| s.to_string())
+}
 
 /// Type for a drop function pointer passed to `glyim_drop_in_place`.
-///
-/// The function receives a pointer to the value to drop and is responsible
-/// for calling the type-specific destructor. Generated code produces these
-/// by monomorphizing drop glue for each concrete type.
 pub type DropFn = unsafe extern "C" fn(*mut u8);
 
 /// Allocate memory with the given size and alignment.
-///
-/// Returns a pointer to the allocated memory, or null if allocation fails.
-/// For zero-size allocations, returns a dangling non-null pointer.
-///
-/// # Safety
-///
-/// This is an FFI function intended for use by generated code. The caller
-/// must ensure that:
-/// - `align` is a valid alignment (a power of two, or zero which is treated as 1)
-/// - If `size > 0`, the returned pointer must be deallocated with
-///   `glyim_dealloc` using the same `size` and `align`
-/// - A null return indicates allocation failure (OOM)
 #[unsafe(no_mangle)]
 pub extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8 {
     if size == 0 {
@@ -39,139 +74,157 @@ pub extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8 {
         Ok(l) => l,
         Err(_) => return std::ptr::null_mut(),
     };
-    // SAFETY: Layout is validated above. alloc::alloc may return null on OOM,
-    // which is a valid return value for this FFI function.
     unsafe { alloc::alloc(layout) }
 }
 
 /// Deallocate memory previously allocated by `glyim_alloc`.
-///
-/// # Safety
-///
-/// - `ptr` must have been returned by `glyim_alloc` with the same `size` and `align`
-/// - `ptr` must not have been already deallocated
-/// - The memory pointed to by `ptr` must not be accessed after this call
-/// - Passing a null pointer or zero size is safe and results in a no-op
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 {
-        return;
-    }
-    if ptr.is_null() {
-        return;
-    }
+    if size == 0 || ptr.is_null() { return; }
     let layout = match Layout::from_size_align(size, align.max(1)) {
         Ok(l) => l,
         Err(_) => return,
     };
-    // SAFETY: Caller guarantees ptr was allocated with the same layout
-    // and has not been deallocated.
     unsafe { alloc::dealloc(ptr, layout) }
 }
 
 /// Drop a value in place by calling its type-specific destructor.
-///
-/// The `drop_fn` parameter is a function pointer that implements the drop
-/// glue for the value at `ptr`. Generated code produces these by
-/// monomorphizing drop glue for each concrete type. If `drop_fn` is null,
-/// the type is trivially destructible and no action is taken.
-///
-/// # Safety
-///
-/// - `ptr` must point to a valid, aligned value of the expected type
-/// - `drop_fn` must be the correct destructor for the type at `ptr`, or null
-///   if the type has no destructor (trivially destructible)
-/// - After this call, the value at `ptr` has been dropped; `ptr` must not be
-///   used to access the dropped value (but may be passed to `glyim_dealloc`)
-/// - Passing a null `ptr` is safe and results in a no-op
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8, drop_fn: Option<DropFn>) {
-    if ptr.is_null() {
-        return;
-    }
+    if ptr.is_null() { return; }
     if let Some(drop) = drop_fn {
-        // SAFETY: Caller guarantees that ptr points to valid memory and
-        // drop_fn is the correct destructor for the type at ptr.
         unsafe { drop(ptr) }
     }
-    // If drop_fn is None, the type is trivially destructible — no action needed.
 }
 
 /// Panic handler for the runtime.
-///
-/// Aborts the process immediately. The `msg` and `len` parameters provide
-/// the panic message as a UTF-8 byte slice, but are currently unused.
-/// A future implementation will print the message before aborting.
-///
-/// # Safety
-///
-/// This is an FFI function intended for use by generated code. It never returns.
-/// - `msg` should point to valid UTF-8 data of length `len`
-/// - `len` should be the exact byte length of the message
 #[unsafe(no_mangle)]
 pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> ! {
     std::process::abort()
 }
 
-
-
 // ========== Networking (TCP) ==========
 
-/// Connect to a TCP server.
-///
-/// # Safety
-/// `addr` must point to a valid UTF-8 string of length `addr_len`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_connect(
     addr: *const u8,
     addr_len: usize,
     port: u16,
 ) -> i32 {
-    tracing::warn!("STUB: glyim_net_tcp_connect");
-    -1
+    let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
+        Some(s) => s,
+        None => return -1,
+    };
+    let full_addr = format!("{}:{}", addr_str, port);
+    let stream = match TcpStream::connect(&full_addr) {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let mut store = tcp_streams().lock().unwrap();
+    let id = store.next_id;
+    store.next_id += 1;
+    store.streams.insert(id, stream);
+    id as i32
 }
 
-/// Bind a TCP socket.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_bind(
     addr: *const u8,
     addr_len: usize,
     port: u16,
 ) -> i32 {
-    tracing::warn!("STUB: glyim_net_tcp_bind");
-    -1
+    let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
+        Some(s) => s,
+        None => return -1,
+    };
+    let full_addr = format!("{}:{}", addr_str, port);
+    let listener = match TcpListener::bind(&full_addr) {
+        Ok(l) => l,
+        Err(_) => return -1,
+    };
+    let mut store = tcp_listeners().lock().unwrap();
+    let id = store.next_id;
+    store.next_id += 1;
+    store.listeners.insert(id, listener);
+    id as i32
 }
 
-/// Accept an incoming TCP connection.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_accept(fd: i32) -> i32 {
-    tracing::warn!("STUB: glyim_net_tcp_accept");
-    -1
+    let fd = fd as u32;
+    let mut listener_store = tcp_listeners().lock().unwrap();
+    let listener = match listener_store.listeners.get_mut(&fd) {
+        Some(l) => l,
+        None => return -1,
+    };
+    let (stream, _) = match listener.accept() {
+        Ok(pair) => pair,
+        Err(_) => return -1,
+    };
+    drop(listener_store);
+    let mut stream_store = tcp_streams().lock().unwrap();
+    let new_id = stream_store.next_id;
+    stream_store.next_id += 1;
+    stream_store.streams.insert(new_id, stream);
+    new_id as i32
 }
 
-/// Read from a TCP socket.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_read(fd: i32, buf: *mut u8, count: usize) -> isize {
-    tracing::warn!("STUB: glyim_net_tcp_read");
-    -1
+    if buf.is_null() { return -1; }
+    let fd = fd as u32;
+    let mut store = tcp_streams().lock().unwrap();
+    let stream = match store.streams.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let slice = unsafe { std::slice::from_raw_parts_mut(buf, count) };
+    match stream.read(slice) {
+        Ok(n) => n as isize,
+        Err(_) => -1,
+    }
 }
 
-/// Write to a TCP socket.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_write(fd: i32, buf: *const u8, count: usize) -> isize {
-    tracing::warn!("STUB: glyim_net_tcp_write");
-    -1
+    if buf.is_null() { return -1; }
+    let fd = fd as u32;
+    let mut store = tcp_streams().lock().unwrap();
+    let stream = match store.streams.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let slice = unsafe { std::slice::from_raw_parts(buf, count) };
+    match stream.write_all(slice) {
+        Ok(()) => count as isize,
+        Err(_) => -1,
+    }
 }
 
-/// Get local address of a TCP socket.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_local_addr(
     fd: i32,
     buf: *mut u8,
     buf_len: usize,
 ) -> i32 {
-    tracing::warn!("STUB: glyim_net_tcp_local_addr");
-    -1
+    let fd = fd as u32;
+    let store = tcp_streams().lock().unwrap();
+    let stream = match store.streams.get(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let addr = match stream.local_addr() {
+        Ok(a) => a,
+        Err(_) => return -1,
+    };
+    let addr_str = addr.to_string();
+    let bytes = addr_str.as_bytes();
+    if bytes.len() >= buf_len { return -1; }
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
+        *buf.add(bytes.len()) = 0;
+    }
+    bytes.len() as i32
 }
 
 // ========== Networking (UDP) ==========
@@ -182,8 +235,20 @@ pub unsafe extern "C" fn glyim_net_udp_bind(
     addr_len: usize,
     port: u16,
 ) -> i32 {
-    tracing::warn!("STUB: glyim_net_udp_bind");
-    -1
+    let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
+        Some(s) => s,
+        None => return -1,
+    };
+    let full_addr = format!("{}:{}", addr_str, port);
+    let socket = match UdpSocket::bind(&full_addr) {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let mut store = udp_sockets().lock().unwrap();
+    let id = store.next_id;
+    store.next_id += 1;
+    store.sockets.insert(id, socket);
+    id as i32
 }
 
 #[unsafe(no_mangle)]
@@ -195,8 +260,30 @@ pub unsafe extern "C" fn glyim_net_udp_send_to(
     dest_addr_len: usize,
     dest_port: u16,
 ) -> isize {
-    tracing::warn!("STUB: glyim_net_udp_send_to");
-    -1
+    if buf.is_null() { return -1; }
+    let fd = fd as u32;
+    let addr_str = match unsafe { bytes_to_string(dest_addr, dest_addr_len) } {
+        Some(s) => s,
+        None => return -1,
+    };
+    let target = match format!("{}:{}", addr_str, dest_port).to_socket_addrs() {
+        Ok(mut addrs) => addrs.next(),
+        Err(_) => None,
+    };
+    let target = match target {
+        Some(addr) => addr,
+        None => return -1,
+    };
+    let mut store = udp_sockets().lock().unwrap();
+    let socket = match store.sockets.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let slice = unsafe { std::slice::from_raw_parts(buf, count) };
+    match socket.send_to(slice, target) {
+        Ok(n) => n as isize,
+        Err(_) => -1,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -208,8 +295,39 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
     src_addr_len: *mut usize,
     src_port: *mut u16,
 ) -> isize {
-    tracing::warn!("STUB: glyim_net_udp_recv_from");
-    -1
+    if buf.is_null() || src_addr.is_null() || src_addr_len.is_null() || src_port.is_null() {
+        return -1;
+    }
+    let fd = fd as u32;
+    let mut store = udp_sockets().lock().unwrap();
+    let socket = match store.sockets.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let mut slice = unsafe { std::slice::from_raw_parts_mut(buf, count) };
+    let (n, addr) = match socket.recv_from(&mut slice) {
+        Ok((n, addr)) => (n, addr),
+        Err(_) => return -1,
+    };
+    let addr_str = addr.to_string();
+    let parts: Vec<&str> = addr_str.rsplitn(2, ':').collect();
+    let (ip, port_val) = if parts.len() == 2 {
+        (parts[1], parts[0].parse::<u16>().unwrap_or(0))
+    } else {
+        ("", 0)
+    };
+    let ip_bytes = ip.as_bytes();
+    let max_len = unsafe { *src_addr_len };
+    if ip_bytes.len() >= max_len {
+        return -1;
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(ip_bytes.as_ptr(), src_addr, ip_bytes.len());
+        *src_addr.add(ip_bytes.len()) = 0;
+        *src_addr_len = ip_bytes.len() + 1;
+        *src_port = port_val;
+    }
+    n as isize
 }
 
 #[unsafe(no_mangle)]
@@ -219,92 +337,176 @@ pub unsafe extern "C" fn glyim_net_udp_connect(
     addr_len: usize,
     port: u16,
 ) -> i32 {
-    tracing::warn!("STUB: glyim_net_udp_connect");
-    -1
+    let fd = fd as u32;
+    let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
+        Some(s) => s,
+        None => return -1,
+    };
+    let target = match format!("{}:{}", addr_str, port).to_socket_addrs() {
+        Ok(mut addrs) => addrs.next(),
+        Err(_) => None,
+    };
+    let target = match target {
+        Some(addr) => addr,
+        None => return -1,
+    };
+    let mut store = udp_sockets().lock().unwrap();
+    let socket = match store.sockets.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    match socket.connect(target) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_udp_send(fd: i32, buf: *const u8, count: usize) -> isize {
-    tracing::warn!("STUB: glyim_net_udp_send");
-    -1
+    if buf.is_null() { return -1; }
+    let fd = fd as u32;
+    let mut store = udp_sockets().lock().unwrap();
+    let socket = match store.sockets.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let slice = unsafe { std::slice::from_raw_parts(buf, count) };
+    match socket.send(slice) {
+        Ok(n) => n as isize,
+        Err(_) => -1,
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_udp_recv(fd: i32, buf: *mut u8, count: usize) -> isize {
-    tracing::warn!("STUB: glyim_net_udp_recv");
-    -1
+    if buf.is_null() { return -1; }
+    let fd = fd as u32;
+    let mut store = udp_sockets().lock().unwrap();
+    let socket = match store.sockets.get_mut(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let slice = unsafe { std::slice::from_raw_parts_mut(buf, count) };
+    match socket.recv(slice) {
+        Ok(n) => n as isize,
+        Err(_) => -1,
+    }
 }
 
 // ========== Threading ==========
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_spawn(f: extern "C" fn(*mut u8), arg: *mut u8) -> usize {
-    tracing::warn!("STUB: glyim_thread_spawn");
-    0
+    let arg_usize = arg as usize;
+    let handle = thread::spawn(move || {
+        let arg_ptr = arg_usize as *mut u8;
+        f(arg_ptr);
+    });
+    let thread = handle.thread().clone();
+    let info = ThreadInfo {
+        handle,
+        thread: Arc::new(thread),
+    };
+    let mut store = threads().lock().unwrap();
+    let id = store.next_id;
+    store.next_id += 1;
+    store.infos.insert(id, info);
+    id
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_join(handle: usize) -> i32 {
-    tracing::warn!("STUB: glyim_thread_join");
-    -1
+    let handle_id = handle;
+    let mut store = threads().lock().unwrap();
+    if let Some(info) = store.infos.remove(&handle_id) {
+        drop(store);
+        match info.handle.join() {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -1
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_yield() {
-    tracing::warn!("STUB: glyim_thread_yield");
+    thread::yield_now();
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_sleep(secs: u64, nanos: u32) {
-    tracing::warn!("STUB: glyim_thread_sleep");
+    let duration = Duration::new(secs, nanos);
+    thread::sleep(duration);
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_park() {
-    tracing::warn!("STUB: glyim_thread_park");
+    thread::park();
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_unpark(handle: usize) {
-    tracing::warn!("STUB: glyim_thread_unpark");
+    let handle_id = handle;
+    let store = threads().lock().unwrap();
+    if let Some(info) = store.infos.get(&handle_id) {
+        info.thread.unpark();
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_current_id() -> usize {
-    tracing::warn!("STUB: glyim_thread_current_id");
-    0
+    // Use libc::pthread_self() for a numeric thread ID (Unix).
+    #[cfg(unix)]
+    {
+        use libc::pthread_self;
+        unsafe { pthread_self() as usize }
+    }
+    #[cfg(not(unix))]
+    {
+        use std::hash::{Hash, Hasher};
+        let id = thread::current().id();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        id.hash(&mut hasher);
+        hasher.finish() as usize
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_thread_available_parallelism() -> usize {
-    tracing::warn!("STUB: glyim_thread_available_parallelism");
-    0
+    match thread::available_parallelism() {
+        Ok(n) => n.get(),
+        Err(_) => 1,
+    }
 }
 
 // ========== Time ==========
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_time_now_secs() -> u64 {
-    tracing::warn!("STUB: glyim_time_now_secs");
-    0
+    Instant::now().elapsed().as_secs()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_time_now_nanos() -> u64 {
-    tracing::warn!("STUB: glyim_time_now_nanos");
-    0
+    Instant::now().elapsed().subsec_nanos() as u64
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_time_system_secs() -> u64 {
-    tracing::warn!("STUB: glyim_time_system_secs");
-    0
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_time_system_nanos() -> u64 {
-    tracing::warn!("STUB: glyim_time_system_nanos");
-    0
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0)
 }
+
 #[cfg(test)]
 mod tests;
