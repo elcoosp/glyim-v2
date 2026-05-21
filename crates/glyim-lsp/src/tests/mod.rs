@@ -30,3 +30,5 @@ mod rename_tests;
 mod server_tests;
 mod symbol_index_tests;
 mod test_utils;
+mod common;
+mod goto_definition_tests;
