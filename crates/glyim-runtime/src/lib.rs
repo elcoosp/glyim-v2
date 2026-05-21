@@ -113,5 +113,198 @@ pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> ! {
     std::process::abort()
 }
 
+
+
+// ========== Networking (TCP) ==========
+
+/// Connect to a TCP server.
+///
+/// # Safety
+/// `addr` must point to a valid UTF-8 string of length `addr_len`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_connect(
+    addr: *const u8,
+    addr_len: usize,
+    port: u16,
+) -> i32 {
+    tracing::warn!("STUB: glyim_net_tcp_connect");
+    -1
+}
+
+/// Bind a TCP socket.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_bind(
+    addr: *const u8,
+    addr_len: usize,
+    port: u16,
+) -> i32 {
+    tracing::warn!("STUB: glyim_net_tcp_bind");
+    -1
+}
+
+/// Accept an incoming TCP connection.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_accept(fd: i32) -> i32 {
+    tracing::warn!("STUB: glyim_net_tcp_accept");
+    -1
+}
+
+/// Read from a TCP socket.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_read(fd: i32, buf: *mut u8, count: usize) -> isize {
+    tracing::warn!("STUB: glyim_net_tcp_read");
+    -1
+}
+
+/// Write to a TCP socket.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_write(fd: i32, buf: *const u8, count: usize) -> isize {
+    tracing::warn!("STUB: glyim_net_tcp_write");
+    -1
+}
+
+/// Get local address of a TCP socket.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_local_addr(
+    fd: i32,
+    buf: *mut u8,
+    buf_len: usize,
+) -> i32 {
+    tracing::warn!("STUB: glyim_net_tcp_local_addr");
+    -1
+}
+
+// ========== Networking (UDP) ==========
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_udp_bind(
+    addr: *const u8,
+    addr_len: usize,
+    port: u16,
+) -> i32 {
+    tracing::warn!("STUB: glyim_net_udp_bind");
+    -1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_udp_send_to(
+    fd: i32,
+    buf: *const u8,
+    count: usize,
+    dest_addr: *const u8,
+    dest_addr_len: usize,
+    dest_port: u16,
+) -> isize {
+    tracing::warn!("STUB: glyim_net_udp_send_to");
+    -1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_udp_recv_from(
+    fd: i32,
+    buf: *mut u8,
+    count: usize,
+    src_addr: *mut u8,
+    src_addr_len: *mut usize,
+    src_port: *mut u16,
+) -> isize {
+    tracing::warn!("STUB: glyim_net_udp_recv_from");
+    -1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_udp_connect(
+    fd: i32,
+    addr: *const u8,
+    addr_len: usize,
+    port: u16,
+) -> i32 {
+    tracing::warn!("STUB: glyim_net_udp_connect");
+    -1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_udp_send(fd: i32, buf: *const u8, count: usize) -> isize {
+    tracing::warn!("STUB: glyim_net_udp_send");
+    -1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_udp_recv(fd: i32, buf: *mut u8, count: usize) -> isize {
+    tracing::warn!("STUB: glyim_net_udp_recv");
+    -1
+}
+
+// ========== Threading ==========
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_spawn(f: extern "C" fn(*mut u8), arg: *mut u8) -> usize {
+    tracing::warn!("STUB: glyim_thread_spawn");
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_join(handle: usize) -> i32 {
+    tracing::warn!("STUB: glyim_thread_join");
+    -1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_yield() {
+    tracing::warn!("STUB: glyim_thread_yield");
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_sleep(secs: u64, nanos: u32) {
+    tracing::warn!("STUB: glyim_thread_sleep");
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_park() {
+    tracing::warn!("STUB: glyim_thread_park");
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_unpark(handle: usize) {
+    tracing::warn!("STUB: glyim_thread_unpark");
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_current_id() -> usize {
+    tracing::warn!("STUB: glyim_thread_current_id");
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_available_parallelism() -> usize {
+    tracing::warn!("STUB: glyim_thread_available_parallelism");
+    0
+}
+
+// ========== Time ==========
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_time_now_secs() -> u64 {
+    tracing::warn!("STUB: glyim_time_now_secs");
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_time_now_nanos() -> u64 {
+    tracing::warn!("STUB: glyim_time_now_nanos");
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_time_system_secs() -> u64 {
+    tracing::warn!("STUB: glyim_time_system_secs");
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_time_system_nanos() -> u64 {
+    tracing::warn!("STUB: glyim_time_system_nanos");
+    0
+}
 #[cfg(test)]
 mod tests;
