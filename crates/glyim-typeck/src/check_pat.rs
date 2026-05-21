@@ -6,6 +6,11 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{Pat, PatId};
 use glyim_span::Span;
 use glyim_type::Ty;
+use glyim_type::TyKind;
+use glyim_type::TyKind;
+use glyim_type::TyKind;
+use glyim_type::TyKind;
+use glyim_type::TyKind;
 
 use crate::check_body::FnCtxt;
 use crate::thir;
