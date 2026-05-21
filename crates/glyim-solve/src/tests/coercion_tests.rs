@@ -1,7 +1,7 @@
 //! Tests for type coercions: array→slice, &mut→&, &→*const, &mut→*mut, *mut→*const
 
-use crate::{SimpleTraitSolver, SolverResult, TraitContext};
 use crate::solver::TraitSolver;
+use crate::{SimpleTraitSolver, SolverResult, TraitContext};
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
 use glyim_test::with_fresh_ty_ctx;
 use glyim_type::{Const, ConstKind, Predicate, Region, TyKind};
