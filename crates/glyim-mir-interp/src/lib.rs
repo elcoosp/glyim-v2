@@ -23,7 +23,6 @@ pub struct Interpreter<'tcx> {
     call_stack: Vec<CallFrame>,
 }
 
-#[allow(dead_code)]
 struct CallFrame {
     body: Body,
     bb: BasicBlockIdx,
@@ -69,6 +68,14 @@ impl<'tcx> Interpreter<'tcx> {
 
     pub fn recursion_limit(&self) -> usize {
         self.recursion_limit
+    }
+
+    pub fn get_local_value(&self, local: LocalIdx) -> Option<&InterpValue> {
+        self.locals.get(local.index())?.as_ref()
+    }
+
+    pub fn get_return_value(&self) -> Option<InterpValue> {
+        self.locals.get(0).and_then(|opt| opt.clone())
     }
 
     pub fn run_body(&mut self, body: &Body) -> InterpResult<()> {
@@ -248,9 +255,7 @@ impl<'tcx> Interpreter<'tcx> {
             StatementKind::StorageLive(local) => {
                 self.locals[local.index()] = None;
             }
-            StatementKind::StorageDead(_local) => {
-                // Lenient: keep value alive so reads after StorageDead don't panic
-            }
+            StatementKind::StorageDead(_local) => {}
             StatementKind::Nop => {}
         }
         Ok(())
@@ -300,31 +305,41 @@ impl<'tcx> Interpreter<'tcx> {
             }
             Rvalue::Len(place) => {
                 let ty = self.local_decls[place.local.index()].ty;
-                let len = self.array_length_from_ty(&ty)?;
-                Ok(InterpValue::Int(len as i128))
+                let ty_kind = self.tcx.ty_kind(ty);
+                match ty_kind {
+                    glyim_type::TyKind::Array(_, const_val) => {
+                        let len = match &const_val.kind {
+                            glyim_type::ConstKind::Int(n) => *n as usize,
+                            glyim_type::ConstKind::Uint(n) => *n as usize,
+                            _ => {
+                                return Err(InterpError::Panic(
+                                    "Len: unsupported array length kind".into(),
+                                ))
+                            }
+                        };
+                        Ok(InterpValue::Int(len as i128))
+                    }
+                    glyim_type::TyKind::Slice(_) => {
+                        let val = self.read_place(place)?;
+                        let len = self.slice_length_from_value(&val)?;
+                        Ok(InterpValue::Int(len as i128))
+                    }
+                    _ => Err(InterpError::Panic("Len: expected array or slice".into())),
+                }
             }
             Rvalue::Cast(kind, operand, _target_ty) => {
                 let val = self.eval_operand(operand)?;
                 match kind {
                     CastKind::IntToInt => Ok(val),
                     CastKind::IntToFloat => match val {
-                        InterpValue::Int(i) => {
-                            let f = i as f64;
-                            Ok(InterpValue::Float(f))
-                        }
+                        InterpValue::Int(i) => Ok(InterpValue::Float(i as f64)),
                         _ => Err(InterpError::Panic("expected int for IntToFloat".into())),
                     },
                     CastKind::FloatToInt => match val {
-                        InterpValue::Float(f) => {
-                            let i = f as i128;
-                            Ok(InterpValue::Int(i))
-                        }
+                        InterpValue::Float(f) => Ok(InterpValue::Int(f as i128)),
                         _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
                     },
-                    CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
-                        // Keep value unchanged, only type changes
-                        Ok(val)
-                    }
+                    CastKind::PtrToPtr | CastKind::FnPtrToPtr => Ok(val),
                 }
             }
             Rvalue::Repeat(operand, count_const) => {
@@ -333,7 +348,11 @@ impl<'tcx> Interpreter<'tcx> {
                 let len = match count_val {
                     InterpValue::Int(i) => i as usize,
                     InterpValue::Uint(u) => u as usize,
-                    _ => return Err(InterpError::Panic("repeat count must be integer".into())),
+                    _ => {
+                        return Err(InterpError::Panic(
+                            "repeat count must be integer".into(),
+                        ))
+                    }
                 };
                 let repeated = vec![val; len];
                 Ok(InterpValue::Aggregate(repeated))
@@ -507,8 +526,10 @@ impl<'tcx> Interpreter<'tcx> {
     fn eval_unary_op(&self, op: UnOp, val: &InterpValue) -> InterpResult<InterpValue> {
         match (op, val) {
             (UnOp::Not, InterpValue::Bool(b)) => Ok(InterpValue::Bool(!b)),
-            (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-i)),
-            (UnOp::Neg, InterpValue::Float(f)) => Ok(InterpValue::Float(-f)),
+            (UnOp::Not, InterpValue::Int(i)) => Ok(InterpValue::Int(!*i)),
+            (UnOp::Not, InterpValue::Uint(u)) => Ok(InterpValue::Uint(!*u)),
+            (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-*i)),
+            (UnOp::Neg, InterpValue::Float(f)) => Ok(InterpValue::Float(-*f)),
             _ => Err(InterpError::Panic(format!(
                 "unsupported unary op: {:?} on {:?}",
                 op, val
@@ -601,9 +622,7 @@ impl<'tcx> Interpreter<'tcx> {
                         }
                     }
                 }
-                ProjectionElem::Downcast(_) => {
-                    // Downcast is a no-op for the interpreter; we just continue
-                }
+                ProjectionElem::Downcast(_) => {}
             }
         }
         Ok(val)
@@ -624,11 +643,8 @@ impl<'tcx> Interpreter<'tcx> {
 
         let proj_count = place.projection.len();
 
-        // If the first projection is Deref, we handle separately
         if let Some(ProjectionElem::Deref) = place.projection.first() {
             if proj_count > 1 {
-                // Deref followed by further projections: read through deref, then write through rest
-                // Resolve deref first to get the target local
                 let base_val = self
                     .locals
                     .get(idx)
@@ -645,14 +661,12 @@ impl<'tcx> Interpreter<'tcx> {
                         ));
                     }
                 };
-                // Create a place for target local with the remaining projections
                 let target_place = Place {
                     local: LocalIdx::from_raw(target_local as u32),
                     projection: place.projection[1..].to_vec().into_boxed_slice(),
                 };
                 return self.write_place(&target_place, val);
             } else {
-                // Single Deref projection: write to the referenced local
                 let base_val = self
                     .locals
                     .get(idx)
@@ -680,7 +694,6 @@ impl<'tcx> Interpreter<'tcx> {
             }
         }
 
-        // For Field/Index/Downcast projections, we read the base, modify, and write back.
         let base_val = self
             .locals
             .get(idx)
@@ -764,12 +777,9 @@ impl<'tcx> Interpreter<'tcx> {
             ProjectionElem::Downcast(_) => {
                 Ok(self.write_through_projections_with_locals(base, rest, val)?)
             }
-            ProjectionElem::Deref => {
-                // Deref should have been handled before.
-                Err(InterpError::Panic(
-                    "Deref projection unexpected in write_through_projections".into(),
-                ))
-            }
+            ProjectionElem::Deref => Err(InterpError::Panic(
+                "Deref projection unexpected in write_through_projections".into(),
+            )),
         }
     }
 
@@ -852,8 +862,33 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
-    pub fn get_local_value(&self, local: LocalIdx) -> Option<&InterpValue> {
-        self.locals.get(local.index())?.as_ref()
+    fn slice_length_from_value(&self, val: &InterpValue) -> InterpResult<usize> {
+        match val {
+            InterpValue::Aggregate(fields) => {
+                if fields.len() >= 2 {
+                    match &fields[1] {
+                        InterpValue::Int(i) => Ok(*i as usize),
+                        InterpValue::Uint(u) => Ok(*u as usize),
+                        _ => Err(InterpError::Panic(
+                            "slice length must be an integer".into(),
+                        )),
+                    }
+                } else {
+                    Err(InterpError::Panic("slice value must be an aggregate of at least 2 elements".into()))
+                }
+            }
+            InterpValue::Ref(target) => {
+                let target_val = self
+                    .locals
+                    .get(*target)
+                    .and_then(|opt| opt.as_ref())
+                    .ok_or_else(|| InterpError::Panic(format!("slice reference to uninitialized local {}", target)))?;
+                self.slice_length_from_value(target_val)
+            }
+            _ => Err(InterpError::Panic(
+                "slice length expected aggregate or reference".into(),
+            )),
+        }
     }
 }
 
