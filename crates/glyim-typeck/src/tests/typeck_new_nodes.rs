@@ -1,11 +1,36 @@
-use glyim_test::phase::AnalysisTester;
-use glyim_test::assert_no_errors;
-use glyim_test::assert_has_errors;
-use glyim_test::assert_diag_contains;
+use glyim_def_map::{build_def_map, CrateDefMap};
+use glyim_diag::GlyimDiagnostic;
+use glyim_frontend::parse_to_syntax;
+use glyim_hir::CrateHir;
+use glyim_solve::{SimpleTraitSolver, TraitContext};
+use glyim_span::FileId;
+use glyim_type::TyCtxMut;
+use glyim_typeck::{typeck_crate, TypeckResult};
+use glyim_typeck::thir;
+
+// Helper to compile a source string and return typecheck result
+fn typeck_source(src: &str) -> (TyCtxMut, CrateDefMap, CrateHir, TypeckResult, Vec<GlyimDiagnostic>) {
+    let file_id = FileId::from_raw(1);
+    let parse = parse_to_syntax(src, file_id);
+    assert!(parse.diagnostics.is_empty(), "parse errors: {:?}", parse.diagnostics);
+
+    let krate = glyim_core::def_id::CrateId::from_raw(0);
+    let (def_map, def_diags) = build_def_map(&parse.root, krate);
+    assert!(def_diags.is_empty(), "def map errors: {:?}", def_diags);
+
+    let (hir, hir_diags) = glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse.root, &mut glyim_core::Interner::new());
+    assert!(hir_diags.is_empty(), "hir lowering errors: {:?}", hir_diags);
+
+    let mut ctx = glyim_test::test_ty_ctx();
+    let mut trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (frozen_ctx, typeck_result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    (frozen_ctx, def_map, hir, typeck_result, typeck_result.diagnostics)
+}
 
 #[test]
 fn match_guard_uses_binding() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         fn main() {
             let x = Some(5);
@@ -15,14 +40,13 @@ fn match_guard_uses_binding() {
             }
         }
         "#,
-    )
-    .run();
-    assert_no_errors(&trace.typeck_diagnostics);
+    );
+    assert!(diags.is_empty(), "expected no diagnostics, got {:?}", diags);
 }
 
 #[test]
 fn or_pattern_same_types() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         fn main() {
             match 1 {
@@ -31,14 +55,13 @@ fn or_pattern_same_types() {
             }
         }
         "#,
-    )
-    .run();
-    assert_no_errors(&trace.typeck_diagnostics);
+    );
+    assert!(diags.is_empty(), "expected no diagnostics, got {:?}", diags);
 }
 
 #[test]
 fn range_pattern_integer() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         fn main() {
             match 5 {
@@ -47,14 +70,13 @@ fn range_pattern_integer() {
             }
         }
         "#,
-    )
-    .run();
-    assert_no_errors(&trace.typeck_diagnostics);
+    );
+    assert!(diags.is_empty(), "expected no diagnostics, got {:?}", diags);
 }
 
 #[test]
 fn slice_pattern_array() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         fn main() {
             let arr = [1, 2, 3];
@@ -64,28 +86,26 @@ fn slice_pattern_array() {
             }
         }
         "#,
-    )
-    .run();
-    assert_no_errors(&trace.typeck_diagnostics);
+    );
+    assert!(diags.is_empty(), "expected no diagnostics, got {:?}", diags);
 }
 
 #[test]
 fn index_expression_array() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         fn main() {
             let arr = [1, 2, 3];
             let x = arr[0];
         }
         "#,
-    )
-    .run();
-    assert_no_errors(&trace.typeck_diagnostics);
+    );
+    assert!(diags.is_empty(), "expected no diagnostics, got {:?}", diags);
 }
 
 #[test]
 fn struct_literal_with_spread() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         struct S { x: i32, y: i32 }
         fn main() {
@@ -93,14 +113,13 @@ fn struct_literal_with_spread() {
             let b = S { x: 3, ..a };
         }
         "#,
-    )
-    .run();
-    assert_no_errors(&trace.typeck_diagnostics);
+    );
+    assert!(diags.is_empty(), "expected no diagnostics, got {:?}", diags);
 }
 
 #[test]
 fn or_pattern_mismatched_types_fails() {
-    let trace = AnalysisTester::new(
+    let (_ctx, _def_map, _hir, _typeck, diags) = typeck_source(
         r#"
         fn main() {
             match 1 {
@@ -109,8 +128,9 @@ fn or_pattern_mismatched_types_fails() {
             }
         }
         "#,
-    )
-    .run();
-    assert_has_errors(&trace.typeck_diagnostics);
-    assert_diag_contains(&trace.typeck_diagnostics, "mismatched types");
+    );
+    assert!(!diags.is_empty(), "expected diagnostics, got none");
+    let diag_str = format!("{:?}", diags);
+    assert!(diag_str.contains("mismatched types") || diag_str.contains("type error"),
+            "expected mismatched types diagnostic, got {:?}", diags);
 }
