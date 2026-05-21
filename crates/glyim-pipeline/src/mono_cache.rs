@@ -47,6 +47,7 @@ impl PipelineMonoCache {
 ///
 /// Call this instead of `PipelineMonoCache::from_items` directly so that polymorphization
 /// is actually integrated into the pipeline.
+#[allow(dead_code)]
 pub(crate) fn build_mono_cache(
     ctx: &mut glyim_lower::MonoCtx,
     ty_ctx: &mut TyCtxMut,

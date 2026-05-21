@@ -377,6 +377,7 @@ impl<'a> SimpleLayoutComputer<'a> {
         Ok(None)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_niche_layout(
         &self,
         variant_layouts: &[Layout],

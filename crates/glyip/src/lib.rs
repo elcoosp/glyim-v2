@@ -12,6 +12,7 @@ pub mod dep;
 pub mod error;
 pub mod fingerprint;
 pub mod lockfile;
+pub mod test_discovery;
 
 pub use cache::Cache;
 pub use commands::{

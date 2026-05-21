@@ -127,7 +127,11 @@ pub fn cmd_build(project_dir: &Path, opts: &BuildOptions) -> GlyipResult<BuildRe
     let incremental = !cache.needs_rebuild()?;
     if incremental {
         info!("No source changes detected — skipping compilation");
-        let output = cache.output_binary(&config.package.name, opts.release);
+        let output = cache.output_binary_for_target(
+            &config.package.name,
+            opts.release,
+            opts.target.as_deref(),
+        );
         if output.exists() {
             return Ok(BuildResult {
                 output,
@@ -173,6 +177,11 @@ pub struct TestResult {
 }
 
 /// Build and run the project's tests.
+///
+/// Discovers individual test functions within each `.g` source file using
+/// [`crate::test_discovery::FileTestDiscovery`]. Reports per-function
+/// results when possible, falling back to per-file results for compilation
+/// failures.
 pub fn cmd_test(project_dir: &Path, opts: &TestOptions) -> GlyipResult<TestResult> {
     let config = GlyipToml::read_from_dir(project_dir)?;
     let mut cache = Cache::new(project_dir)?;
@@ -201,64 +210,117 @@ pub fn cmd_test(project_dir: &Path, opts: &TestOptions) -> GlyipResult<TestResul
 
     if test_files.is_empty() {
         info!("No test files found");
-        if opts.no_run {
-            return Ok(TestResult {
-                total: 0,
-                passed: 0,
-                failed: 0,
-                ignored: 0,
-            });
+        return Ok(TestResult {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            ignored: 0,
+        });
+    }
+
+    // Discover individual test functions across all files.
+    let mut all_discovered: Vec<crate::test_discovery::DiscoveredTest> = Vec::new();
+    for test_file in &test_files {
+        if let Ok(discovery) = crate::test_discovery::FileTestDiscovery::scan(test_file) {
+            all_discovered.extend(discovery.tests);
         }
     }
 
-    // Compile each test file.
     let mut total = 0usize;
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut ignored = 0usize;
 
-    for test_file in &test_files {
-        let build_opts = BuildOptions {
-            release: opts.release,
-            target: None,
-            backend: "bytecode".to_string(),
-            opt_level: 0,
-        };
-
-        // Apply filter: skip files that don't match.
-        if let Some(ref filter) = opts.filter {
-            let name = test_file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            if !name.contains(filter.as_str()) {
+    // If individual test functions were discovered, report per-function.
+    if !all_discovered.is_empty() {
+        for discovered_test in &all_discovered {
+            // Apply filter: skip tests that don't match.
+            if let Some(ref filter) = opts.filter
+                && !discovered_test.name.contains(filter.as_str())
+            {
                 ignored += 1;
                 continue;
             }
-        }
 
-        if opts.no_run {
             total += 1;
-            continue;
-        }
 
-        match compile_source(project_dir, test_file, &config, &build_opts, &mut cache) {
-            Ok(_) => {
-                total += 1;
-                passed += 1;
+            if opts.no_run {
+                continue;
             }
-            Err(GlyipError::BuildFailed(_diags)) => {
-                total += 1;
-                failed += 1;
+
+            // Compile the containing file.
+            let build_opts = BuildOptions {
+                release: opts.release,
+                target: None,
+                backend: "bytecode".to_string(),
+                opt_level: 0,
+            };
+
+            match compile_source(
+                project_dir,
+                &discovered_test.file,
+                &config,
+                &build_opts,
+                &mut cache,
+            ) {
+                Ok(_) => {
+                    passed += 1;
+                }
+                Err(GlyipError::BuildFailed(_diags)) => {
+                    failed += 1;
+                }
+                Err(e) => {
+                    warn!(
+                        "Test compilation error for '{}': {}",
+                        discovered_test.name, e
+                    );
+                    failed += 1;
+                }
             }
-            Err(e) => {
-                warn!("Test compilation error: {}", e);
-                total += 1;
-                failed += 1;
+        }
+    } else {
+        // No individual test functions found — fall back to per-file.
+        for test_file in &test_files {
+            let build_opts = BuildOptions {
+                release: opts.release,
+                target: None,
+                backend: "bytecode".to_string(),
+                opt_level: 0,
+            };
+
+            // Apply filter: skip files that don't match.
+            if let Some(ref filter) = opts.filter {
+                let name = test_file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                if !name.contains(filter.as_str()) {
+                    ignored += 1;
+                    continue;
+                }
+            }
+
+            total += 1;
+
+            if opts.no_run {
+                continue;
+            }
+
+            match compile_source(project_dir, test_file, &config, &build_opts, &mut cache) {
+                Ok(_) => {
+                    passed += 1;
+                }
+                Err(GlyipError::BuildFailed(_diags)) => {
+                    failed += 1;
+                }
+                Err(e) => {
+                    warn!("Test compilation error: {}", e);
+                    failed += 1;
+                }
             }
         }
     }
 
     info!(
-        "Test results: {} passed, {} failed, {} ignored",
-        passed, failed, ignored
+        "Test results: {} passed, {} failed, {} ignored (of {} total)",
+        passed, failed, ignored, total
     );
     Ok(TestResult {
         total,
@@ -400,7 +462,7 @@ fn compile_source(
     };
 
     // Run the pipeline.
-    let output_dir = cache.output_dir(opts.release);
+    let output_dir = cache.output_dir_for_target(opts.release, opts.target.as_deref());
     fs::create_dir_all(&output_dir)?;
     let output_path = output_dir.join(&config.package.name);
 
