@@ -5,11 +5,11 @@ use glyim_core::{CrateId, Interner};
 use glyim_def_map::build_def_map;
 use glyim_frontend::{lex, parse_to_syntax};
 use glyim_hir::pipeline_api::lower_crate_for_pipeline;
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecommendedWatcher;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
-use tracing::{debug, warn};
+use tracing::debug;
 
 pub enum AnalysisMessage {
     FileChanged {
