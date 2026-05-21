@@ -240,76 +240,62 @@ pub(crate) fn lower_pat(
             }
             Some(pats.push(Pat::Tuple(elems)))
         }
-        SyntaxKind::PatOr => {
-            let mut pat_ids = Vec::new();
-            // Similar handling: UsePath + PatTuple inside PatOr creates PatStruct arms.
-            let children: Vec<glyim_syntax::SyntaxNode> = node.children().collect();
-            let mut i = 0;
-            while i < children.len() {
-                let child = &children[i];
-                if child.kind() == SyntaxKind::UsePath {
-                    // Struct-like pattern in or: Some(x)
-                    let mut segments = Vec::new();
-                    for el in child.children_with_tokens() {
-                        if let glyim_syntax::SyntaxElement::Token(t) = el
-                            && t.kind() == SyntaxKind::Ident
-                        {
-                            segments.push(PathSegment {
-                                name: interner.intern(t.text()),
-                                generic_args: None,
-                            });
+        SyntaxKind::PatRange => {
+            // Extract start literal, end literal, and inclusive flag.
+            let mut start = None;
+            let mut end = None;
+            let mut inclusive = false;
+            let mut after_dot = false;
+
+            for child in node.children_with_tokens() {
+                match child {
+                    glyim_syntax::SyntaxElement::Token(t) if t.kind().is_literal() => {
+                        let lit = lower_literal(&t);
+                        if !after_dot {
+                            start = Some(lit);
+                        } else {
+                            end = Some(lit);
                         }
                     }
-                    let path = HirPath {
-                        segments,
-                        kind: PathKind::Plain,
-                    };
-                    let mut fields = Vec::new();
-                    if i + 1 < children.len() && children[i + 1].kind() == SyntaxKind::PatTuple {
-                        let args_node = &children[i + 1];
-                        for el in args_node.children_with_tokens() {
-                            match el {
-                                glyim_syntax::SyntaxElement::Node(n)
-                                    if matches!(
-                                        n.kind(),
-                                        SyntaxKind::PatIdent
-                                            | SyntaxKind::PatWild
-                                            | SyntaxKind::PatLit
-                                            | SyntaxKind::PatTuple
-                                            | SyntaxKind::PatStruct
-                                            | SyntaxKind::PatOr
-                                            | SyntaxKind::UsePath
-                                    ) =>
-                                {
-                                    if let Some(pid) = lower_pat(&n, interner, pats, diags) {
-                                        let field_name = {
-                                            let s = n.text().to_string();
-                                            interner.intern(s.trim())
-                                        };
-                                        fields.push((field_name, pid));
-                                    }
-                                }
-                                _ => {}
+                    glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDotEq => {
+                        inclusive = true;
+                        after_dot = true;
+                    }
+                    glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::DotDot => {
+                        inclusive = false;
+                        after_dot = true;
+                    }
+                    glyim_syntax::SyntaxElement::Node(n) if after_dot => {
+                        // End pattern can be a literal (already handled) or another pattern.
+                        // For now we only support literal ends; fallback to None otherwise.
+                        if let Some(pat_id) = lower_pat(&n, interner, pats, diags) {
+                            if let Pat::Literal(lit) = &pats[pat_id] {
+                                end = Some(lit.clone());
                             }
                         }
-                        i += 2;
-                    } else {
-                        i += 1;
                     }
-                    let struct_pat = Pat::Struct {
-                        path,
-                        fields,
-                        rest: false,
-                    };
-                    pat_ids.push(pats.push(struct_pat));
-                } else {
-                    if let Some(pat_id) = lower_pat(child, interner, pats, diags) {
-                        pat_ids.push(pat_id);
-                    }
-                    i += 1;
+                    _ => {}
                 }
             }
-            Some(pats.push(Pat::Or(pat_ids)))
+            Some(pats.push(Pat::Range {
+                start,
+                end,
+                inclusive,
+            }))
+        }
+        SyntaxKind::PatOr => {
+            let mut flat = Vec::new();
+            for child in node.children() {
+                if let Some(pat_id) = lower_pat(&child, interner, pats, diags) {
+                    // If the child is itself an Or pattern, flatten its alternatives.
+                    if let Pat::Or(inner) = &pats[pat_id] {
+                        flat.extend(inner.iter().copied());
+                    } else {
+                        flat.push(pat_id);
+                    }
+                }
+            }
+            Some(pats.push(Pat::Or(flat)))
         }
         SyntaxKind::PatSlice => {
             let mut elems = Vec::new();

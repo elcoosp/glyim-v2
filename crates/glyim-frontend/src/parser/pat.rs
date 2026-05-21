@@ -51,18 +51,6 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::RParen);
                 self.finish_node();
             }
-            SyntaxKind::LBracket => {
-                self.start_node(SyntaxKind::PatSlice);
-                self.bump(); // [
-                while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
-                    self.parse_pat();
-                    if self.current_kind() == SyntaxKind::Comma {
-                        self.bump();
-                    }
-                }
-                self.expect(SyntaxKind::RBracket);
-                self.finish_node();
-            }
             _ => {
                 self.parse_pat_inner();
             }
