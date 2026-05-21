@@ -482,14 +482,20 @@ pub unsafe extern "C" fn glyim_thread_available_parallelism() -> usize {
 
 // ========== Time ==========
 
+static START: OnceLock<Instant> = OnceLock::new();
+
+fn monotonic_base() -> &'static Instant {
+    START.get_or_init(|| Instant::now())
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_time_now_secs() -> u64 {
-    Instant::now().elapsed().as_secs()
+    monotonic_base().elapsed().as_secs()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_time_now_nanos() -> u64 {
-    Instant::now().elapsed().subsec_nanos() as u64
+    monotonic_base().elapsed().subsec_nanos() as u64
 }
 
 #[unsafe(no_mangle)]
