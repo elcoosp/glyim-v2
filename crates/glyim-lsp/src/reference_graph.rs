@@ -1,7 +1,7 @@
 use glyim_core::Interner;
 use glyim_hir::{Body, CrateHir, Expr, ExprId, ItemKind};
 use glyim_span::{FileId, Span};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct Reference {
@@ -11,7 +11,7 @@ pub struct Reference {
     pub kind: ReferenceKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReferenceKind {
     Call,
     TypeReference,
@@ -43,16 +43,22 @@ impl ReferenceGraph {
         self.references
             .retain(|_, refs| refs.iter().all(|r| r.file_id != file_id));
 
+        // Use a set to avoid duplicate references within this file
+        let mut seen = HashSet::new();
+
         let mut add_ref = |name: &str, span: Span, is_def: bool, kind: ReferenceKind| {
-            self.references
-                .entry(name.to_string())
-                .or_default()
-                .push(Reference {
-                    file_id,
-                    span,
-                    is_definition: is_def,
-                    kind,
-                });
+            let key = (name.to_string(), file_id, span.lo.to_usize(), span.hi.to_usize(), kind);
+            if seen.insert(key) {
+                self.references
+                    .entry(name.to_string())
+                    .or_default()
+                    .push(Reference {
+                        file_id,
+                        span,
+                        is_definition: is_def,
+                        kind,
+                    });
+            }
         };
 
         // Record definitions from items
@@ -91,27 +97,31 @@ impl ReferenceGraph {
             let expr = &body.exprs[expr_id];
             let span = body.expr_spans.get(expr_id).copied().unwrap_or(Span::DUMMY);
             match expr {
-                Expr::Path(path) => {
-                    if let Some(name) = path.as_name() {
-                        let name_str = interner.resolve(name).to_string();
-                        add_ref(&name_str, span, false, ReferenceKind::TypeReference);
+                // Do not record pure Path expressions as TypeReference to avoid overcounting
+                Expr::Path(_) => {}
+                Expr::Call { func, args } => {
+                    // If the function is a simple path, record a call reference
+                    if let Expr::Path(path) = &body.exprs[*func] {
+                        if let Some(name) = path.as_name() {
+                            let name_str = interner.resolve(name).to_string();
+                            add_ref(&name_str, span, false, ReferenceKind::Call);
+                        }
+                    } else {
+                        walk_expr(*func, body, interner, _file_id, add_ref);
                     }
-                }
-                Expr::Call { func, args: _ } => {
-                    walk_expr(*func, body, interner, _file_id, add_ref);
-                    if let Expr::Path(path) = &body.exprs[*func]
-                        && let Some(name) = path.as_name()
-                    {
-                        let name_str = interner.resolve(name).to_string();
-                        add_ref(&name_str, span, false, ReferenceKind::Call);
+                    for arg in args {
+                        walk_expr(*arg, body, interner, _file_id, add_ref);
                     }
                 }
                 Expr::MethodCall {
-                    receiver, method, ..
+                    receiver, method, args, ..
                 } => {
                     walk_expr(*receiver, body, interner, _file_id, add_ref);
                     let method_str = interner.resolve(*method).to_string();
                     add_ref(&method_str, span, false, ReferenceKind::Call);
+                    for arg in args {
+                        walk_expr(*arg, body, interner, _file_id, add_ref);
+                    }
                 }
                 Expr::Field { receiver, field } => {
                     walk_expr(*receiver, body, interner, _file_id, add_ref);
@@ -203,7 +213,6 @@ impl ReferenceGraph {
             }
         }
 
-        // Iterate bodies
         for (_, body) in hir.bodies.iter_enumerated() {
             for (expr_id, _) in body.exprs.iter_enumerated() {
                 walk_expr(expr_id, body, interner, file_id, &mut add_ref);
