@@ -523,11 +523,12 @@ impl<'a> FnCtxt<'a> {
                     span,
                 );
 
-                if target_ty != Ty::ERROR && inner_ty != Ty::ERROR {
-                    if !self.is_cast_valid(inner_ty, target_ty) {
-                        self.diagnostics
-                            .push(GlyimDiagnostic::type_error(span, "invalid cast"));
-                    }
+                if target_ty != Ty::ERROR
+                    && inner_ty != Ty::ERROR
+                    && !self.is_cast_valid(inner_ty, target_ty)
+                {
+                    self.diagnostics
+                        .push(GlyimDiagnostic::type_error(span, "invalid cast"));
                 }
 
                 let result_ty = if target_ty == Ty::ERROR {
@@ -804,10 +805,10 @@ impl<'a> FnCtxt<'a> {
         match self.ctx.ty_kind(ty) {
             TyKind::Param(pt) => {
                 let args = self.ctx.substitution_args(substs);
-                if (pt.index as usize) < args.len() {
-                    if let GenericArg::Ty(replacement) = args[pt.index as usize] {
-                        return replacement;
-                    }
+                if (pt.index as usize) < args.len()
+                    && let GenericArg::Ty(replacement) = args[pt.index as usize]
+                {
+                    return replacement;
                 }
                 ty
             }

@@ -10,6 +10,7 @@ use crate::error::{GlyipError, GlyipResult};
 use crate::lockfile::{CrateSource, LockedCrate, Lockfile};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
@@ -79,6 +80,60 @@ impl CrateIndex {
         } else {
             Ok(entry.versions.first().unwrap().clone())
         }
+    }
+
+    /// Number of entries in the index.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Load index entries from a directory of JSON files.
+    ///
+    /// Each file should be named `<crate-name>.json` and contain a serialised
+    /// [`IndexEntry`]. Non-JSON files are silently ignored. If the directory
+    /// does not exist, returns an empty index.
+    pub fn load_from_dir(dir: &Path) -> GlyipResult<Self> {
+        let mut index = Self::new();
+        if !dir.exists() {
+            return Ok(index);
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "json") {
+                let content = fs::read_to_string(&path)?;
+                let index_entry: IndexEntry = serde_json::from_str(&content).map_err(|e| {
+                    GlyipError::CacheCorrupted(format!(
+                        "invalid index entry in {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
+                index.insert(index_entry);
+            }
+        }
+        Ok(index)
+    }
+
+    /// Save all index entries to a directory as JSON files.
+    ///
+    /// Each entry is written to `<crate-name>.json`. The directory is created
+    /// if it does not exist.
+    pub fn save_to_dir(&self, dir: &Path) -> GlyipResult<()> {
+        fs::create_dir_all(dir)?;
+        for (name, entry) in &self.entries {
+            let path = dir.join(format!("{}.json", name));
+            let content = serde_json::to_string_pretty(entry).map_err(|e| {
+                GlyipError::CacheCorrupted(format!("serialize index entry '{}': {}", name, e))
+            })?;
+            fs::write(path, content)?;
+        }
+        Ok(())
     }
 }
 

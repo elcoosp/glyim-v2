@@ -125,6 +125,70 @@ impl Cache {
             Ok(None)
         }
     }
+
+    /// Return the dependency cache directory for the given build profile.
+    ///
+    /// Debug builds use `target/debug/deps`, release builds use
+    /// `target/release/deps`.
+    pub fn profile_dep_dir(&self, release: bool) -> PathBuf {
+        self.output_dir(release).join("dep")
+    }
+
+    /// Return the output directory for the given profile and optional target
+    /// triple.
+    ///
+    /// When a target triple is specified, the output is placed under
+    /// `target/<triple>/<profile>`, mirroring Cargo's layout.
+    pub fn output_dir_for_target(&self, release: bool, target: Option<&str>) -> PathBuf {
+        let profile = if release { "release" } else { "debug" };
+        if let Some(triple) = target {
+            self.target_dir.join(triple).join(profile)
+        } else {
+            self.target_dir.join(profile)
+        }
+    }
+
+    /// Return the expected path of the output binary for a given profile and
+    /// optional target triple.
+    pub fn output_binary_for_target(
+        &self,
+        name: &str,
+        release: bool,
+        target: Option<&str>,
+    ) -> PathBuf {
+        self.output_dir_for_target(release, target).join(name)
+    }
+
+    /// Store a compiled artifact in the profile-specific dependency cache.
+    ///
+    /// Artifacts are stored as `<key>.gbc` under the profile's `dep`
+    /// directory.
+    pub fn store_artifact_for_profile(
+        &self,
+        key: &str,
+        data: &[u8],
+        release: bool,
+    ) -> GlyipResult<PathBuf> {
+        let cache_dir = self.profile_dep_dir(release);
+        fs::create_dir_all(&cache_dir)?;
+        let path = cache_dir.join(format!("{}.gbc", key));
+        fs::write(&path, data)?;
+        Ok(path)
+    }
+
+    /// Retrieve a compiled artifact from the profile-specific dependency cache.
+    pub fn get_artifact_for_profile(
+        &self,
+        key: &str,
+        release: bool,
+    ) -> GlyipResult<Option<Vec<u8>>> {
+        let path = self.profile_dep_dir(release).join(format!("{}.gbc", key));
+        if path.exists() {
+            Ok(Some(fs::read(&path)?))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 /// Best-effort home directory resolution.

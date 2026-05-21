@@ -75,7 +75,7 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                     is_unsized: false,
                 })
             }
-            TyKind::Adt(adt_id, _subst) => {
+            TyKind::Adt(_adt_id, _subst) => {
                 // Delegate to simple layout computer for ADTs
                 // Full enum layout requires AdtDef integration which is complex
                 self.simple.layout_of(ty)

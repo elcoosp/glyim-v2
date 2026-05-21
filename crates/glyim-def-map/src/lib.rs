@@ -719,10 +719,10 @@ fn visibility_of_node(node: &SyntaxNode) -> Visibility {
                 if n.kind() == SyntaxKind::Visibility {
                     // Look for KwPub inside this Visibility node
                     for child in n.children_with_tokens() {
-                        if let Some(tok) = child.as_token() {
-                            if tok.kind() == SyntaxKind::KwPub {
-                                return Visibility::Public;
-                            }
+                        if let Some(tok) = child.as_token()
+                            && tok.kind() == SyntaxKind::KwPub
+                        {
+                            return Visibility::Public;
                         }
                     }
                 }

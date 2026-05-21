@@ -270,8 +270,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let field_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Tuple(subst) => {
                             let args = self.ty_ctx.substitution_args(*subst);
-                            args.iter()
-                                .nth(idx.to_raw() as usize)
+                            args.get(idx.to_raw() as usize)
                                 .and_then(|arg| {
                                     if let glyim_type::GenericArg::Ty(t) = arg {
                                         Some(*t)
@@ -302,7 +301,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
                     // Cast to field type pointer if we have a valid type
                     if field_ty != Ty::ERROR {
-                        let field_llvm_ty = self.llvm_type_for_ty(field_ty);
+                        let _field_llvm_ty = self.llvm_type_for_ty(field_ty);
                         let field_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
                         ptr = self
                             .builder

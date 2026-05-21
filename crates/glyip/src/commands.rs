@@ -127,7 +127,11 @@ pub fn cmd_build(project_dir: &Path, opts: &BuildOptions) -> GlyipResult<BuildRe
     let incremental = !cache.needs_rebuild()?;
     if incremental {
         info!("No source changes detected — skipping compilation");
-        let output = cache.output_binary(&config.package.name, opts.release);
+        let output = cache.output_binary_for_target(
+            &config.package.name,
+            opts.release,
+            opts.target.as_deref(),
+        );
         if output.exists() {
             return Ok(BuildResult {
                 output,
@@ -400,7 +404,7 @@ fn compile_source(
     };
 
     // Run the pipeline.
-    let output_dir = cache.output_dir(opts.release);
+    let output_dir = cache.output_dir_for_target(opts.release, opts.target.as_deref());
     fs::create_dir_all(&output_dir)?;
     let output_path = output_dir.join(&config.package.name);
 
