@@ -4,3 +4,4 @@ edition.workspace = true
 version.workspace = true
 [dependencies]
 glyim-core = { workspace = true }
+libc = "0.2"
