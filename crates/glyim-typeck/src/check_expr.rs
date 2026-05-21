@@ -523,11 +523,11 @@ impl<'a> FnCtxt<'a> {
                     span,
                 );
 
-                if target_ty != Ty::ERROR && inner_ty != Ty::ERROR {
-                    if !self.is_cast_valid(inner_ty, target_ty) {
-                        self.diagnostics
-                            .push(GlyimDiagnostic::type_error(span, "invalid cast"));
-                    }
+                if target_ty != Ty::ERROR && inner_ty != Ty::ERROR
+                    && !self.is_cast_valid(inner_ty, target_ty)
+                {
+                    self.diagnostics
+                        .push(GlyimDiagnostic::type_error(span, "invalid cast"));
                 }
 
                 let result_ty = if target_ty == Ty::ERROR {
@@ -768,11 +768,11 @@ impl<'a> FnCtxt<'a> {
             Expr::Range {
                 start,
                 end,
-                inclusive,
+                inclusive: _,
             } => {
                 // Type check range bounds - both must be same integer type or unbounded
                 let bound_ty = self.fresh_infer_ty();
-                let start_expr = if let Some(start_id) = start {
+                let _start_expr = if let Some(start_id) = start {
                     let (s_expr, s_ty) = self.check_expr(*start_id);
                     if s_ty != Ty::ERROR && bound_ty != Ty::ERROR {
                         self.unify(s_ty, bound_ty, span);
@@ -781,7 +781,7 @@ impl<'a> FnCtxt<'a> {
                 } else {
                     None
                 };
-                let end_expr = if let Some(end_id) = end {
+                let _end_expr = if let Some(end_id) = end {
                     let (e_expr, e_ty) = self.check_expr(*end_id);
                     if e_ty != Ty::ERROR && bound_ty != Ty::ERROR {
                         self.unify(e_ty, bound_ty, span);
@@ -826,10 +826,10 @@ impl<'a> FnCtxt<'a> {
         match self.ctx.ty_kind(ty) {
             TyKind::Param(pt) => {
                 let args = self.ctx.substitution_args(substs);
-                if (pt.index as usize) < args.len() {
-                    if let GenericArg::Ty(replacement) = args[pt.index as usize] {
-                        return replacement;
-                    }
+                if (pt.index as usize) < args.len()
+                    && let GenericArg::Ty(replacement) = args[pt.index as usize]
+                {
+                    return replacement;
                 }
                 ty
             }
