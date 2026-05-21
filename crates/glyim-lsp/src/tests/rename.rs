@@ -2,8 +2,8 @@ use crate::LspState;
 use glyim_db::Database;
 use std::path::PathBuf;
 
-#[test]
-fn test_rename_symbol_updates_all_references() {
+#[tokio::test]
+async fn test_rename_symbol_updates_all_references() {
     let db = Database::new(glyim_db::CrateConfig {
         name: "test".to_string(),
         target_triple: "x86_64-unknown-linux-gnu".to_string(),
@@ -19,9 +19,8 @@ fn old_name() -> i32 { 42 }
 fn main() { let x = old_name(); }
 "#;
     state.did_open(path.clone(), content.to_string(), 1);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Scope the read lock
     {
         let analysis = state.analysis();
         let ref_graph = analysis.reference_graph.read();
