@@ -1,5 +1,3 @@
-
-
 //! Pattern checking logic for FnCtxt.
 
 use glyim_core::def_id::AdtId;
@@ -8,10 +6,6 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{Pat, PatId};
 use glyim_span::Span;
 use glyim_type::Ty;
-use glyim_type::TyKind;
-use glyim_type::TyKind;
-use glyim_type::TyKind;
-use glyim_type::TyKind;
 use glyim_type::TyKind;
 
 use crate::check_body::FnCtxt;
@@ -121,7 +115,14 @@ impl<'a> FnCtxt<'a> {
                 let mut found_slice = false;
                 for &sub_id in elements {
                     let sub = &self.body.pats[sub_id];
-                    let is_slice = matches!(sub, Pat::Wild | Pat::Binding { subpattern: None, .. });
+                    let is_slice = matches!(
+                        sub,
+                        Pat::Wild
+                            | Pat::Binding {
+                                subpattern: None,
+                                ..
+                            }
+                    );
                     if !found_slice && is_slice {
                         slice_pat = Some(Box::new(self.check_pattern(sub_id, expected_ty)));
                         found_slice = true;
