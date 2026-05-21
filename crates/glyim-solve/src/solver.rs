@@ -362,6 +362,13 @@ fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
                     && *mut_b == glyim_core::primitives::Mutability::Not)
                     && can_coerce(ctx, *inner_a, *inner_b)
         }
+        (TyKind::Ref(_, inner_a, mut_a), TyKind::RawPtr(inner_b, mut_b)) => {
+            // &T -> *const T (Not -> Not) and &mut T -> *mut T (Mut -> Mut)
+            if *mut_a != *mut_b {
+                return false;
+            }
+            can_coerce(ctx, *inner_a, *inner_b)
+        }
         _ => false,
     }
 }
