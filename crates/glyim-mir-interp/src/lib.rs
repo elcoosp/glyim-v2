@@ -545,12 +545,7 @@ impl<'tcx> Interpreter<'tcx> {
 
         for proj in place.projection.iter() {
             match proj {
-                proj
-                ProjectionElem::Slice { .. } => {
-                    eprintln!("Slice projection not implemented in interpreter");
-                    base
-                },
-ProjectionElem::Deref => match val {
+                ProjectionElem::Deref => match val {
                     InterpValue::Ref(target) => {
                         val = self
                             .locals
@@ -559,9 +554,7 @@ ProjectionElem::Deref => match val {
                             .cloned()
                             .ok_or_else(|| {
                                 InterpError::Panic(format!(
-                                    "deref of uninitialized local {
-                ProjectionElem::Slice { .. => { tracing::warn!("Slice projection not implemented in interpreter"); base },
-}",
+                                    "deref of uninitialized local {}",
                                     target
                                 ))
                             })?;
@@ -626,11 +619,13 @@ ProjectionElem::Deref => match val {
                         }
                     }
                 }
-                ProjectionElem::Downcast(_) => {}
+                ProjectionElem::Downcast(_) => {
+                    // no change
+                }
                 ProjectionElem::Slice { .. } => {
-                    tracing::warn!("Slice projection not implemented in interpreter");
-                    value // return the base value as approximation
-                },
+                    eprintln!("Slice projection not implemented in interpreter");
+                    // return the base value as approximation
+                }
             }
         }
         Ok(val)
@@ -726,25 +721,19 @@ ProjectionElem::Deref => match val {
         }
         let (first, rest) = (&projections[0], &projections[1..]);
         match first {
-            first
-                ProjectionElem::Slice { .. } => {
-                    eprintln!("Slice projection not implemented in interpreter");
-                    base
-                },
-ProjectionElem::Field(field_idx) => {
+            ProjectionElem::Field(field_idx) => {
                 let fi = field_idx.index();
                 match base {
                     InterpValue::Aggregate(mut fields) => {
                         if fi >= fields.len() {
                             return Err(InterpError::Panic(format!(
-                                "field index { out of bounds (len {})",
+                                "field index {} out of bounds (len {})",
                                 fi,
                                 fields.len()
                             )));
                         }
                         let inner = fields[fi].clone();
-                        fields[fi] =
-                            self.write_through_projections_with_locals(inner, rest, val)?;
+                        fields[fi] = self.write_through_projections_with_locals(inner, rest, val)?;
                         Ok(InterpValue::Aggregate(fields))
                     }
                     _ => Err(InterpError::Panic(
@@ -778,8 +767,7 @@ ProjectionElem::Field(field_idx) => {
                             )));
                         }
                         let inner = elems[idx_u].clone();
-                        elems[idx_u] =
-                            self.write_through_projections_with_locals(inner, rest, val)?;
+                        elems[idx_u] = self.write_through_projections_with_locals(inner, rest, val)?;
                         Ok(InterpValue::Aggregate(elems))
                     }
                     _ => Err(InterpError::Panic(
@@ -793,6 +781,10 @@ ProjectionElem::Field(field_idx) => {
             ProjectionElem::Deref => Err(InterpError::Panic(
                 "Deref projection unexpected in write_through_projections".into(),
             )),
+            ProjectionElem::Slice { .. } => {
+                eprintln!("Slice projection not implemented in interpreter (write)");
+                Ok(base)
+            }
         }
     }
 
