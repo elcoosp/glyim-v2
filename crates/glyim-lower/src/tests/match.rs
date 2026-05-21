@@ -49,7 +49,7 @@ fn match_expr_to_switch_int() {
     let body = b.into_body(stmts, vec![]);
     let result = lower_body(&mock, &body);
     assert_mir(&ctx, &result.body)
-        .block_count(5)
+        .block_count(6)
         .block_terminator(BasicBlockIdx::from_raw(0), "SwitchInt")
         .block_terminator(BasicBlockIdx::from_raw(1), "Return");
 }

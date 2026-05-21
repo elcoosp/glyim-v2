@@ -958,9 +958,12 @@ name = "glyim-lower"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "glyim-def-map",
  "glyim-diag",
+ "glyim-frontend",
  "glyim-hir",
  "glyim-mir",
+ "glyim-solve",
  "glyim-span",
  "glyim-syntax",
  "glyim-test",
@@ -1008,6 +1011,7 @@ dependencies = [
  "glyim-test",
  "rowan",
  "smol_str",
+ "tempfile",
  "tracing",
 ]
 
@@ -1111,6 +1115,7 @@ name = "glyim-runtime"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
+ "libc",
 ]
 
 [[package]]
