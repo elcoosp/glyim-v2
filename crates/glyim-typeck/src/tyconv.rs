@@ -356,31 +356,31 @@ pub fn resolve_path_type(
     span: Span,
 ) -> Ty {
     // Check param_map first for generic params
-    if let Some(name) = path.as_name() {
-        if let Some(&ty) = param_map.get(&name) {
-            return ty;
-        }
+    if let Some(name) = path.as_name()
+        && let Some(&ty) = param_map.get(&name)
+    {
+        return ty;
     }
 
     // Check primitives
-    if let Some(name) = path.as_name() {
-        if let Some(ty) = resolve_primitive(ctx, name) {
-            return ty;
-        }
+    if let Some(name) = path.as_name()
+        && let Some(ty) = resolve_primitive(ctx, name)
+    {
+        return ty;
     }
 
     // Check ADTs (structs, enums, unions)
-    if let Some(name) = path.as_name() {
-        if let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, name) {
-            return ty;
-        }
+    if let Some(name) = path.as_name()
+        && let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, name)
+    {
+        return ty;
     }
 
     // Multi-segment paths: try to resolve fully
-    if !path.segments.is_empty() {
-        if let Some(resolved) = resolve_qualified_path(ctx, def_map, path, param_map, span, infer) {
-            return resolved;
-        }
+    if !path.segments.is_empty()
+        && let Some(resolved) = resolve_qualified_path(ctx, def_map, path, param_map, span, infer)
+    {
+        return resolved;
     }
 
     // Fallback error
@@ -411,34 +411,34 @@ fn resolve_qualified_path(
         return None;
     }
 
-    if let Some(last_name) = path.segments.last().map(|s| s.name) {
-        if let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, last_name) {
-            if let Some(args) = path.segments.last().and_then(|s| s.generic_args.as_ref()) {
-                let mut arg_tys = Vec::with_capacity(args.len());
-                for arg in args {
-                    let resolved = resolve_type_ref(
-                        ctx,
-                        infer,
-                        def_map,
-                        &mut Vec::new(),
-                        arg,
-                        &HashMap::new(),
-                        span,
-                    );
-                    arg_tys.push(GenericArg::Ty(resolved));
-                }
-                if !arg_tys
-                    .iter()
-                    .any(|a| matches!(a, GenericArg::Ty(Ty::ERROR)))
-                {
-                    let substs = ctx.intern_substitution(arg_tys);
-                    if let TyKind::Adt(adt_id, _) = ctx.ty_kind(ty) {
-                        return Some(ctx.mk_ty(TyKind::Adt(*adt_id, substs)));
-                    }
+    if let Some(last_name) = path.segments.last().map(|s| s.name)
+        && let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, last_name)
+    {
+        if let Some(args) = path.segments.last().and_then(|s| s.generic_args.as_ref()) {
+            let mut arg_tys = Vec::with_capacity(args.len());
+            for arg in args {
+                let resolved = resolve_type_ref(
+                    ctx,
+                    infer,
+                    def_map,
+                    &mut Vec::new(),
+                    arg,
+                    &HashMap::new(),
+                    span,
+                );
+                arg_tys.push(GenericArg::Ty(resolved));
+            }
+            if !arg_tys
+                .iter()
+                .any(|a| matches!(a, GenericArg::Ty(Ty::ERROR)))
+            {
+                let substs = ctx.intern_substitution(arg_tys);
+                if let TyKind::Adt(adt_id, _) = ctx.ty_kind(ty) {
+                    return Some(ctx.mk_ty(TyKind::Adt(*adt_id, substs)));
                 }
             }
-            return Some(ty);
         }
+        return Some(ty);
     }
 
     None
