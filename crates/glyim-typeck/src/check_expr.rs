@@ -290,13 +290,25 @@ impl<'a> FnCtxt<'a> {
 
                 let mut thir_arms = Vec::with_capacity(arms.len());
                 for arm in arms {
+                    
                     self.env.enter_scope();
                     let pat_thir = self.check_pattern(arm.pat, scrut_ty);
+                    let guard_thir = if let Some(guard_id) = arm.guard {
+                        Some(Box::new(self.check_expr(guard_id).0))
+                    } else {
+                        None
+                    };
                     let (body_expr, body_ty) = self.check_expr(arm.body);
                     self.env.leave_scope();
-
                     if body_ty != Ty::ERROR {
                         self.unify(body_ty, result_ty, span);
+                    }
+                    thir_arms.push(thir::MatchArm {
+                        pat: pat_thir,
+                        guard: guard_thir,
+                        body: body_expr,
+                    });
+    
                     }
                     thir_arms.push(thir::MatchArm {
                         pat: pat_thir,
