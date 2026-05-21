@@ -1,3 +1,4 @@
+#![allow(unused_unsafe)]
 use std::ptr;
 
 #[test]

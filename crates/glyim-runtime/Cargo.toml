@@ -6,3 +6,6 @@ version.workspace = true
 libc = "0.2"
 glyim-core = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+glyim-test = { workspace = true }

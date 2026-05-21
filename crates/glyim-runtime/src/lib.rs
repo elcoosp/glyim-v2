@@ -33,8 +33,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use libc;
-
 // ---------------------------------------------------------------------------
 // FFI string allocation helpers
 // ---------------------------------------------------------------------------
@@ -100,6 +98,8 @@ pub extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8 {
 
 /// Deallocate memory previously allocated by `glyim_alloc`.
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) {
     if size == 0 || ptr.is_null() {
         return;
@@ -113,6 +113,8 @@ pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) 
 
 /// Drop a value in place by calling its type-specific destructor.
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8, drop_fn: Option<DropFn>) {
     if ptr.is_null() {
         return;
@@ -137,6 +139,8 @@ pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> ! {
 /// - `ptr` must not have been already freed
 /// - Passing a null pointer is safe and results in a no-op
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_free_cstr(ptr: *mut u8) {
     if ptr.is_null() {
         return;
@@ -539,6 +543,8 @@ fn split_null_separated(data: &[u8]) -> Vec<String> {
 ///   null-separated UTF-8 data
 /// - `out_handle` must be a valid, non-null pointer
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_process_spawn(
     cmd: *const u8,
     cmd_len: usize,
@@ -822,6 +828,8 @@ unsafe fn bytes_to_string(ptr: *const u8, len: usize) -> Option<String> {
 
 // TCP functions
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_tcp_connect(addr: *const u8, addr_len: usize, port: u16) -> i32 {
     let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
         Some(s) => s,
@@ -840,6 +848,8 @@ pub unsafe extern "C" fn glyim_net_tcp_connect(addr: *const u8, addr_len: usize,
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_tcp_bind(addr: *const u8, addr_len: usize, port: u16) -> i32 {
     let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
         Some(s) => s,
@@ -858,6 +868,8 @@ pub unsafe extern "C" fn glyim_net_tcp_bind(addr: *const u8, addr_len: usize, po
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_tcp_accept(fd: i32) -> i32 {
     let fd = fd as u32;
     let mut listener_store = tcp_listeners().lock().unwrap();
@@ -878,6 +890,8 @@ pub unsafe extern "C" fn glyim_net_tcp_accept(fd: i32) -> i32 {
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_tcp_read(fd: i32, buf: *mut u8, count: usize) -> isize {
     if buf.is_null() {
         return -1;
@@ -896,6 +910,8 @@ pub unsafe extern "C" fn glyim_net_tcp_read(fd: i32, buf: *mut u8, count: usize)
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_tcp_write(fd: i32, buf: *const u8, count: usize) -> isize {
     if buf.is_null() {
         return -1;
@@ -914,6 +930,8 @@ pub unsafe extern "C" fn glyim_net_tcp_write(fd: i32, buf: *const u8, count: usi
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_tcp_local_addr(fd: i32, buf: *mut u8, buf_len: usize) -> i32 {
     let fd = fd as u32;
     let store = tcp_streams().lock().unwrap();
@@ -939,6 +957,8 @@ pub unsafe extern "C" fn glyim_net_tcp_local_addr(fd: i32, buf: *mut u8, buf_len
 
 // UDP functions
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_udp_bind(addr: *const u8, addr_len: usize, port: u16) -> i32 {
     let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
         Some(s) => s,
@@ -957,6 +977,8 @@ pub unsafe extern "C" fn glyim_net_udp_bind(addr: *const u8, addr_len: usize, po
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_udp_send_to(
     fd: i32,
     buf: *const u8,
@@ -994,6 +1016,8 @@ pub unsafe extern "C" fn glyim_net_udp_send_to(
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_udp_recv_from(
     fd: i32,
     buf: *mut u8,
@@ -1011,8 +1035,8 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
         Some(s) => s,
         None => return -1,
     };
-    let mut slice = unsafe { std::slice::from_raw_parts_mut(buf, count) };
-    let (n, addr) = match socket.recv_from(&mut slice) {
+    let slice = unsafe { std::slice::from_raw_parts_mut(buf, count) };
+    let (n, addr) = match socket.recv_from(slice) {
         Ok((n, addr)) => (n, addr),
         Err(_) => return -1,
     };
@@ -1038,6 +1062,8 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_udp_connect(
     fd: i32,
     addr: *const u8,
@@ -1069,6 +1095,8 @@ pub unsafe extern "C" fn glyim_net_udp_connect(
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_udp_send(fd: i32, buf: *const u8, count: usize) -> isize {
     if buf.is_null() {
         return -1;
@@ -1087,6 +1115,8 @@ pub unsafe extern "C" fn glyim_net_udp_send(fd: i32, buf: *const u8, count: usiz
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_net_udp_recv(fd: i32, buf: *mut u8, count: usize) -> isize {
     if buf.is_null() {
         return -1;
@@ -1130,6 +1160,8 @@ fn threads() -> &'static Mutex<ThreadStore> {
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_spawn(f: extern "C" fn(*mut u8), arg: *mut u8) -> usize {
     let arg_usize = arg as usize;
     let handle = thread::spawn(move || {
@@ -1149,6 +1181,8 @@ pub unsafe extern "C" fn glyim_thread_spawn(f: extern "C" fn(*mut u8), arg: *mut
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_join(handle: usize) -> i32 {
     let handle_id = handle;
     let mut store = threads().lock().unwrap();
@@ -1164,22 +1198,30 @@ pub unsafe extern "C" fn glyim_thread_join(handle: usize) -> i32 {
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_yield() {
     thread::yield_now();
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_sleep(secs: u64, nanos: u32) {
     let duration = Duration::new(secs, nanos);
     thread::sleep(duration);
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_park() {
     thread::park();
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_unpark(handle: usize) {
     let handle_id = handle;
     let store = threads().lock().unwrap();
@@ -1189,6 +1231,8 @@ pub unsafe extern "C" fn glyim_thread_unpark(handle: usize) {
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_current_id() -> usize {
     // Use libc::pthread_self() for a numeric thread ID (Unix).
     #[cfg(unix)]
@@ -1206,6 +1250,8 @@ pub unsafe extern "C" fn glyim_thread_current_id() -> usize {
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_thread_available_parallelism() -> usize {
     match thread::available_parallelism() {
         Ok(n) => n.get(),
@@ -1220,20 +1266,26 @@ pub unsafe extern "C" fn glyim_thread_available_parallelism() -> usize {
 static START: OnceLock<Instant> = OnceLock::new();
 
 fn monotonic_base() -> &'static Instant {
-    START.get_or_init(|| Instant::now())
+    START.get_or_init(Instant::now)
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_time_now_secs() -> u64 {
     monotonic_base().elapsed().as_secs()
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_time_now_nanos() -> u64 {
     monotonic_base().elapsed().subsec_nanos() as u64
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_time_system_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1242,6 +1294,8 @@ pub unsafe extern "C" fn glyim_time_system_secs() -> u64 {
 }
 
 #[unsafe(no_mangle)]
+/// # Safety
+/// FFI entry point.
 pub unsafe extern "C" fn glyim_time_system_nanos() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
