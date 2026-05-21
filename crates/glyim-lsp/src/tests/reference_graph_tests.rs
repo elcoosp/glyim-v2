@@ -1,8 +1,8 @@
+use super::common::{compile_to_hir, create_test_file_id};
 use crate::reference_graph::{ReferenceGraph, ReferenceKind};
-use crate::symbol_index::{SymbolIndex, SymbolInfo, SymbolKind, DefinitionLocation};
+use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
 use glyim_core::Interner;
 use glyim_span::{FileId, Span};
-use super::common::{compile_to_hir, create_test_file_id};
 
 #[test]
 fn test_find_references_on_function_finds_call_sites() {
@@ -24,7 +24,12 @@ fn bar() {
     let symbol_name = "foo";
     let refs = ref_graph.find_references(symbol_name);
     // Should have one definition and two calls
-    assert_eq!(refs.len(), 3, "Expected 3 references (1 def + 2 calls), got {}", refs.len());
+    assert_eq!(
+        refs.len(),
+        3,
+        "Expected 3 references (1 def + 2 calls), got {}",
+        refs.len()
+    );
 
     let mut def_count = 0;
     let mut call_count = 0;

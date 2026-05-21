@@ -22,7 +22,9 @@ mod symbol_index;
 mod uri_tests;
 mod workspace_symbol_tests;
 // New test modules for M10
+mod common;
 mod driver_tests;
+mod goto_definition_tests;
 mod reference_graph_tests;
 mod references_tests;
 mod rename;
@@ -30,5 +32,3 @@ mod rename_tests;
 mod server_tests;
 mod symbol_index_tests;
 mod test_utils;
-mod common;
-mod goto_definition_tests;

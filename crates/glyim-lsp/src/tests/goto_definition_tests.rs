@@ -1,8 +1,10 @@
-use crate::symbol_index::{SymbolIndex, SymbolInfo, SymbolKind, DefinitionLocation};
-use crate::goto_definition::goto_definition;
 use crate::database::FileMap;
+use crate::goto_definition::goto_definition;
+use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
 use glyim_span::{FileId, Span};
-use lsp_types::{GotoDefinitionParams, TextDocumentPositionParams, TextDocumentIdentifier, Position, Url};
+use lsp_types::{
+    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, Url,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -13,7 +15,10 @@ fn test_goto_definition_on_method_jumps_to_impl() {
     let sym = SymbolInfo {
         name: "method_name".to_string(),
         kind: SymbolKind::Function,
-        definition: DefinitionLocation { file_id, span: def_span },
+        definition: DefinitionLocation {
+            file_id,
+            span: def_span,
+        },
         type_signature: None,
         is_pub: true,
         documentation: None,

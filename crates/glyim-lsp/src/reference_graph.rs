@@ -47,7 +47,13 @@ impl ReferenceGraph {
         let mut seen = HashSet::new();
 
         let mut add_ref = |name: &str, span: Span, is_def: bool, kind: ReferenceKind| {
-            let key = (name.to_string(), file_id, span.lo.to_usize(), span.hi.to_usize(), kind);
+            let key = (
+                name.to_string(),
+                file_id,
+                span.lo.to_usize(),
+                span.hi.to_usize(),
+                kind,
+            );
             if seen.insert(key) {
                 self.references
                     .entry(name.to_string())
@@ -114,7 +120,10 @@ impl ReferenceGraph {
                     }
                 }
                 Expr::MethodCall {
-                    receiver, method, args, ..
+                    receiver,
+                    method,
+                    args,
+                    ..
                 } => {
                     walk_expr(*receiver, body, interner, _file_id, add_ref);
                     let method_str = interner.resolve(*method).to_string();

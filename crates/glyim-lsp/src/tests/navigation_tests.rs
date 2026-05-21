@@ -1,7 +1,10 @@
-use crate::symbol_index::{SymbolIndex, SymbolInfo, SymbolKind, DefinitionLocation};
 use crate::navigation::workspace_symbols;
+use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
 use glyim_span::{FileId, Span};
-use lsp_types::{WorkspaceSymbolParams, SymbolInformation, SymbolKind as LspSymbolKind, Location, Range, Position, Url};
+use lsp_types::{
+    Location, Position, Range, SymbolInformation, SymbolKind as LspSymbolKind, Url,
+    WorkspaceSymbolParams,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -15,7 +18,10 @@ fn test_workspace_symbols_returns_symbols_from_all_files() {
     let sym1 = SymbolInfo {
         name: "foo".to_string(),
         kind: SymbolKind::Function,
-        definition: DefinitionLocation { file_id: file_id1, span },
+        definition: DefinitionLocation {
+            file_id: file_id1,
+            span,
+        },
         type_signature: None,
         is_pub: true,
         documentation: None,
@@ -23,7 +29,10 @@ fn test_workspace_symbols_returns_symbols_from_all_files() {
     let sym2 = SymbolInfo {
         name: "bar".to_string(),
         kind: SymbolKind::Struct,
-        definition: DefinitionLocation { file_id: file_id2, span },
+        definition: DefinitionLocation {
+            file_id: file_id2,
+            span,
+        },
         type_signature: None,
         is_pub: true,
         documentation: None,
