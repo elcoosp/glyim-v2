@@ -207,7 +207,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ptr = loaded.into_pointer_value();
                     current_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
-                        other => panic!("Deref on non-pointer type {:?} – MIR is invalid", other),
+                        other => panic!("Deref on non-pointer type {:?
+                ProjectionElem::Slice { .. } => {
+                    tracing::warn!("Slice projection not implemented in LLVM codegen");
+                    return None;
+                },
+} – MIR is invalid", other),
                     };
                 }
                 ProjectionElem::Field(idx) => {

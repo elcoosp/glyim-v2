@@ -545,7 +545,12 @@ impl<'tcx> Interpreter<'tcx> {
 
         for proj in place.projection.iter() {
             match proj {
-                ProjectionElem::Deref => match val {
+                proj
+                ProjectionElem::Slice { .. } => {
+                    eprintln!("Slice projection not implemented in interpreter");
+                    base
+                },
+ProjectionElem::Deref => match val {
                     InterpValue::Ref(target) => {
                         val = self
                             .locals
@@ -555,7 +560,7 @@ impl<'tcx> Interpreter<'tcx> {
                             .ok_or_else(|| {
                                 InterpError::Panic(format!(
                                     "deref of uninitialized local {
-                ProjectionElem::Slice { .. } => { tracing::warn!("Slice projection not implemented in interpreter"); base },
+                ProjectionElem::Slice { .. => { tracing::warn!("Slice projection not implemented in interpreter"); base },
 }",
                                     target
                                 ))
@@ -721,13 +726,18 @@ impl<'tcx> Interpreter<'tcx> {
         }
         let (first, rest) = (&projections[0], &projections[1..]);
         match first {
-            ProjectionElem::Field(field_idx) => {
+            first
+                ProjectionElem::Slice { .. } => {
+                    eprintln!("Slice projection not implemented in interpreter");
+                    base
+                },
+ProjectionElem::Field(field_idx) => {
                 let fi = field_idx.index();
                 match base {
                     InterpValue::Aggregate(mut fields) => {
                         if fi >= fields.len() {
                             return Err(InterpError::Panic(format!(
-                                "field index {} out of bounds (len {})",
+                                "field index { out of bounds (len {})",
                                 fi,
                                 fields.len()
                             )));
