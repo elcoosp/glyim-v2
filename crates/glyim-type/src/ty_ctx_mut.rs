@@ -350,14 +350,11 @@ impl TyCtxMut {
                 return true;
             }
             // Additionally, if the field type is an ADT, we need to recursively check it.
-            match self.ty_kind(field_ty) {
-                TyKind::Adt(child_adt_id, _) => {
-                    if self.compute_adt_interior_mutability(*child_adt_id) {
-                        visiting.remove(&adt_id);
-                        return true;
-                    }
-                }
-                _ => {}
+            if let TyKind::Adt(child_adt_id, _) = self.ty_kind(field_ty)
+                && self.compute_adt_interior_mutability(*child_adt_id)
+            {
+                visiting.remove(&adt_id);
+                return true;
             }
         }
         visiting.remove(&adt_id);
