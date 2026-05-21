@@ -15,3 +15,4 @@ mod lower_type;
 mod number_suffix;
 mod pattern_lowering;
 mod type_lowering;
+mod lower_index_and_pat;

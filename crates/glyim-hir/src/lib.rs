@@ -379,6 +379,7 @@ pub enum Pat {
         rest: bool,
     },
     Tuple(Vec<PatId>),
+    Slice(Vec<PatId>),
     Or(Vec<PatId>),
     Literal(Literal),
     Range {

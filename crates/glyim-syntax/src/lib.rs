@@ -171,6 +171,7 @@ pub enum SyntaxKind {
     PatLit,
     PatRange,
     PatWild,
+    PatSlice,
     UsePath,
     UseTree,
     MacroCall,
@@ -338,6 +339,7 @@ ast_node!(PatOr, SyntaxKind::PatOr);
 ast_node!(PatLit, SyntaxKind::PatLit);
 ast_node!(PatRange, SyntaxKind::PatRange);
 ast_node!(PatWild, SyntaxKind::PatWild);
+ast_node!(PatSlice, SyntaxKind::PatSlice);
 ast_node!(UsePath, SyntaxKind::UsePath);
 ast_node!(UseTree, SyntaxKind::UseTree);
 ast_node!(MacroCall, SyntaxKind::MacroCall);
