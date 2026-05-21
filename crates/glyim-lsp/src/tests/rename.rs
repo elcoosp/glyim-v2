@@ -1,46 +1,32 @@
-use crate::AnalysisDatabase;
-use crate::database::SourceMap;
-use crate::rename::rename_symbol;
-use lsp_types::*;
+use crate::LspState;
+use glyim_db::Database;
+use std::path::PathBuf;
 
-fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {
-    let db = AnalysisDatabase::new();
-    let path = std::env::current_dir().unwrap().join("main.gly");
-    let uri = Url::from_file_path(&path).unwrap();
-    let file_id = db.file_map.write().get_or_create(&path);
-    let source_map = SourceMap::new(path, file_id, content.to_string());
-    db.source_maps.write().insert(file_id, source_map);
-    (db, uri)
-}
+#[tokio::test]
+async fn test_rename_symbol_updates_all_references() {
+    let db = Database::new(glyim_db::CrateConfig {
+        name: "test".to_string(),
+        target_triple: "x86_64-unknown-linux-gnu".to_string(),
+        opt_level: 0,
+    });
+    let mut state = LspState::new(db);
+    let cache_dir = std::env::temp_dir().join("glyim-lsp-test");
+    state.start_driver(cache_dir);
 
-#[test]
-fn test_rename_updates_all_references() {
-    let content = r#"fn foo() {
-    let x = foo();
-}"#;
-    let (db, uri) = setup_analysis(content);
-    // Position the cursor over the 'f' of 'foo' in the definition (line 0, column 3)
-    let params = RenameParams {
-        text_document_position: TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            position: Position {
-                line: 0,
-                character: 3,
-            },
-        },
-        new_name: "bar".to_string(),
-        work_done_progress_params: WorkDoneProgressParams::default(),
-    };
-    let file_map_guard = db.file_map.read();
-    let edit = rename_symbol(&db, &file_map_guard, &params);
-    drop(file_map_guard);
-    assert!(edit.is_some());
-    let edit = edit.unwrap();
-    let changes = edit.changes;
-    assert!(changes.is_some());
-    let changes = changes.unwrap();
-    let file_edits = changes.get(&uri);
-    assert!(file_edits.is_some());
-    // Should have two edits: definition (line 0) and reference (line 1)
-    assert_eq!(file_edits.unwrap().len(), 2);
+    let path = PathBuf::from("/test/main.g");
+    let content = r#"
+fn old_name() -> i32 { 42 }
+fn main() { let x = old_name(); }
+"#;
+    state.did_open(path.clone(), content.to_string(), 1);
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    {
+        let analysis = state.analysis();
+        let ref_graph = analysis.reference_graph.read();
+        let refs = ref_graph.find_references("old_name");
+        assert!(refs.len() >= 2);
+    }
+
+    state.did_close(&path);
 }

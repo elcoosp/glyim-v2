@@ -1,3 +1,5 @@
+use glyim_core::{Interner, LocalDefId};
+use glyim_hir::{Body, CrateHir, ItemKind, Pat, PatId};
 use glyim_span::{FileId, Span};
 use std::collections::HashMap;
 
@@ -56,25 +58,21 @@ impl SymbolIndex {
         }
     }
 
-    pub fn build_from_hir(
-        &mut self,
-        file_id: FileId,
-        hir: &glyim_hir::CrateHir,
-        interner: &glyim_core::Interner,
-    ) {
+    pub fn build_from_hir(&mut self, file_id: FileId, hir: &CrateHir, interner: &Interner) {
         self.clear_file(file_id);
+
         for item in hir.items.iter() {
             let name = interner.resolve(item.name).to_string();
             let kind = match item.kind {
-                glyim_hir::ItemKind::Fn(_) => SymbolKind::Function,
-                glyim_hir::ItemKind::Struct(_) => SymbolKind::Struct,
-                glyim_hir::ItemKind::Enum(_) => SymbolKind::Enum,
+                ItemKind::Fn(_) => SymbolKind::Function,
+                ItemKind::Struct(_) => SymbolKind::Struct,
+                ItemKind::Enum(_) => SymbolKind::Enum,
                 _ => continue,
             };
             let span = item.span;
             let def_loc = DefinitionLocation { file_id, span };
             let type_sig = match &item.kind {
-                glyim_hir::ItemKind::Fn(fn_item) => {
+                ItemKind::Fn(fn_item) => {
                     let params: Vec<(String, String)> = fn_item
                         .params
                         .iter()
@@ -92,21 +90,127 @@ impl SymbolIndex {
                         return_type: return_ty,
                     })
                 }
+                ItemKind::Struct(struct_item) => {
+                    let fields: Vec<(String, String)> = struct_item
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            let ty_str = format!("{:?}", f.ty);
+                            (interner.resolve(f.name).to_string(), ty_str)
+                        })
+                        .collect();
+                    Some(TypeSignature {
+                        params: fields,
+                        return_type: None,
+                    })
+                }
+                ItemKind::Enum(enum_item) => {
+                    let variants: Vec<(String, String)> = enum_item
+                        .variants
+                        .iter()
+                        .map(|v| {
+                            let fields_str = if v.fields.is_empty() {
+                                String::new()
+                            } else {
+                                let tys: Vec<String> =
+                                    v.fields.iter().map(|f| format!("{:?}", f.ty)).collect();
+                                format!("({})", tys.join(", "))
+                            };
+                            (interner.resolve(v.name).to_string(), fields_str)
+                        })
+                        .collect();
+                    Some(TypeSignature {
+                        params: variants,
+                        return_type: None,
+                    })
+                }
                 _ => None,
             };
+            let is_pub = matches!(item.visibility, glyim_core::Visibility::Public);
             let info = SymbolInfo {
                 name: name.clone(),
                 kind,
                 definition: def_loc,
                 type_signature: type_sig,
-                is_pub: matches!(item.visibility, glyim_core::Visibility::Public),
+                is_pub,
                 documentation: None,
             };
-            self.by_name.entry(name).or_default().push(info.clone());
-            self.by_file.entry(file_id).or_default().push(info.clone());
-            self.by_location
-                .insert((file_id.to_raw(), span.lo.to_usize()), info);
+            self.insert_symbol(file_id, info);
         }
+
+        for (body_id, body) in hir.bodies.iter_enumerated() {
+            let owner = hir.body_owners[body_id];
+            self.index_body(file_id, body, interner, owner);
+        }
+    }
+
+    fn index_body(
+        &mut self,
+        file_id: FileId,
+        body: &Body,
+        interner: &Interner,
+        _owner: LocalDefId,
+    ) {
+        for (pat_id, pat) in body.pats.iter_enumerated() {
+            self.index_pattern(file_id, pat_id, pat, body, interner);
+        }
+    }
+
+    fn index_pattern(
+        &mut self,
+        file_id: FileId,
+        pat_id: PatId,
+        pat: &Pat,
+        body: &Body,
+        interner: &Interner,
+    ) {
+        match pat {
+            Pat::Binding {
+                name,
+                mutability: _,
+                subpattern,
+            } => {
+                let name_str = interner.resolve(*name).to_string();
+                // HIR does not store spans for patterns; use DUMMY for now
+                let span = Span::DUMMY;
+                let def_loc = DefinitionLocation { file_id, span };
+                let info = SymbolInfo {
+                    name: name_str,
+                    kind: SymbolKind::Local,
+                    definition: def_loc,
+                    type_signature: None,
+                    is_pub: false,
+                    documentation: None,
+                };
+                self.insert_symbol(file_id, info);
+                if let Some(sub) = subpattern {
+                    self.index_pattern(file_id, *sub, pat, body, interner);
+                }
+            }
+            Pat::Struct {
+                path: _,
+                fields,
+                rest: _,
+            } => {
+                for (_, field_pat) in fields {
+                    self.index_pattern(file_id, *field_pat, pat, body, interner);
+                }
+            }
+            Pat::Tuple(pats) | Pat::Or(pats) => {
+                for p in pats {
+                    self.index_pattern(file_id, *p, pat, body, interner);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn insert_symbol(&mut self, file_id: FileId, info: SymbolInfo) {
+        let name = info.name.clone();
+        self.by_name.entry(name).or_default().push(info.clone());
+        self.by_file.entry(file_id).or_default().push(info.clone());
+        self.by_location
+            .insert((file_id.to_raw(), info.definition.span.lo.to_usize()), info);
     }
 
     pub fn lookup_by_name(&self, name: &str) -> Vec<&SymbolInfo> {
@@ -161,12 +265,6 @@ impl SymbolIndex {
 
     #[doc(hidden)]
     pub fn insert_test_symbol(&mut self, file_id: FileId, sym: SymbolInfo) {
-        self.by_name
-            .entry(sym.name.clone())
-            .or_default()
-            .push(sym.clone());
-        self.by_file.entry(file_id).or_default().push(sym.clone());
-        self.by_location
-            .insert((file_id.to_raw(), sym.definition.span.lo.to_usize()), sym);
+        self.insert_symbol(file_id, sym);
     }
 }

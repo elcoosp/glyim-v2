@@ -3,6 +3,7 @@
 pub mod code_action;
 pub mod completion;
 pub mod database;
+pub mod dep_graph;
 pub mod diagnostics;
 pub mod driver;
 pub mod folding;
