@@ -26,6 +26,7 @@ pub enum AnalysisMessage {
 pub struct AnalysisDriver {
     db: Arc<AnalysisDatabase>,
     rx: Receiver<AnalysisMessage>,
+    #[allow(unused)]
     cache_dir: PathBuf,
     dep_graph: Arc<parking_lot::RwLock<DependencyGraph>>,
     _watcher: Option<RecommendedWatcher>, // kept for drop

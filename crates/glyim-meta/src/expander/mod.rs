@@ -517,7 +517,7 @@ impl<'a> ExpanderImpl<'a> {
                                 result.push_str(text_str);
                             }
                         }
-                        TokenTree::Group(open, inner, close) => {
+                        TokenTree::Group(_open, inner, _close) => {
                             // Recursively flatten group content (ignore delimiters)
                             for inner_tt in inner {
                                 if let TokenTree::Token(kind, text) = inner_tt {

@@ -1,211 +1,248 @@
-# Ultra‑Parallel Implementation Plan for UCMS (10 Agents, ~3‑4 Weeks)
+# UCMS Vertical Sliced Implementation Plan – Fully Fledged
 
-Based on the final design, we decompose the work into **50+ granular tasks** that can be distributed across **10 agents** working in parallel. The existing `glyim-codegen` crate (with `BytecodeBackend`) is **not reused** – the CVM is a new, simpler interpreter operating on a HIR subset. However, the `CodegenBackend` trait could be implemented for the CVM later if needed, but that’s out of scope.
-
-## Crate Ownership Map
-
-| Agent | Primary Crate(s) | Secondary Crate(s) |
-|-------|------------------|--------------------|
-| A1 | `glyim-span` | – |
-| A2 | `glyim-syntax` | – |
-| A3 | `glyim-cvm` (new) – Value & List ops | – |
-| A4 | `glyim-cvm` – Intrinsics group 1 (type queries) | – |
-| A5 | `glyim-cvm` – Intrinsics group 2 (diagnostics, I/O, freshness) | – |
-| A6 | `glyim-frontend` – Fragment parser | – |
-| A7 | `glyim-type` – Rolling hash, COW, counters | – |
-| A8 | `glyim-solve` – Inference helpers | – |
-| A9 | `glyim-typeck` – Incremental retype & merging | `glyim-pipeline` (splicer) |
-| A10 | `glyim-cache` (new) – Cache & freshness store | `glyim-pipeline` (driver) |
+**Goal:** Deliver working, user-visible `comptime fn` functionality every 2 days, with maximum parallelism (10 agents).  
+**Serialization:** Only `postcard`. No `bincode`.  
+**Locked contracts:** All respected – new code is additive (new crates, new modules, no breaking changes).
 
 ---
 
-## Phase 0: Foundation (Day 1‑2, 2 agents)
+## Sprint 0: Foundation (Days 1–2)
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| `glyim-span`: add `ExpnId` chain to `Span` | A1 | `Span::with_chain()`, `push_expn()`, `call_stack()` formatter | None |
-| `glyim-syntax`: define `TokenData` and `TokenStream` | A2 | `type TokenStream = Vec<(SyntaxKind, Arc<str>, Mark)>`; `concat()`, `from_str()` | A1 (Mark) |
+**Vertical Slice:** A `comptime fn` can be parsed, type-checked as a regular function, and the CVM can evaluate a constant expression like `42` in a test.
 
-**Done:** Both agents finish in parallel, merge at end of day 2.
+### Task Decomposition
 
----
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S0-T1 | A1 | `glyim-span` | Add stable `ExpnId` based on `hash((crate_id, file_path, line, col, parent))`; add `Span::with_chain(marks: &[Mark]) -> Span`; add `call_stack_formatter` | `HygieneCtx` | `ExpnId::call_stack()`, `Span::with_chain`, formatter | None | 6 |
+| S0-T2 | A2 | `glyim-syntax` | Define `TokenStream = Vec<(SyntaxKind, Arc<str>, Mark)>`; implement `concat()`, `from_str()`, `to_string()` | None | `pub mod token_stream` | S0-T1 (Mark) | 6 |
+| S0-T3 | A3 | `glyim-cvm` (new) | Create crate, define `CvmValue` enum (Int, Uint, Bool, String, Type, TokenStream, List, Tuple). Implement `List<T>` with `len`, `get`, `push`, `map`, `fold`, `IntoIterator`. | None | `CvmValue`, `List` | S0-T2 (TokenStream) | 8 |
+| S0-T4 | A3 | `glyim-cvm` | Implement basic interpreter: evaluate HIR `Expr` for literals, variables (environment), `if`, `match`, `for` over `List`. Step budget (1e6). | `&Expr`, `Env` | `Result<CvmValue, CvmError>` | S0-T3 | 10 |
+| S0-T5 | A7 | `glyim-type` | Add `fingerprint: u128` field to `TyCtxMut`. Update on every `alloc_ty`, `new_ty_var`, `new_int_var`, `new_float_var`, `new_region_var` using `xxhash128` of operation + args. Expose `pub fn fingerprint(&self) -> u128`. | `TyCtxMut` | `fingerprint` method | None | 4 |
+| S0-T6 | A7 | `glyim-type` | Add `type_vars_created: usize` counter, increment on each `new_ty_var`, `new_int_var`, `new_float_var`. Expose `pub fn total_type_vars_created(&self) -> usize`. | `TyCtxMut` | counter and getter | None | 2 |
+| S0-T7 | A8 | `glyim-solve` | Add `pub fn unresolved_type_vars(&self, ctx: &TyCtx) -> usize` to `InferenceTable` (counts `TyVar` with `value == None`). | `InferenceTable` | `unresolved_type_vars` | S0-T6 (counter) | 4 |
+| S0-T8 | A8 | `glyim-solve` | Add `pub fn total_created(&self, ctx: &TyCtx) -> usize` (reads `ctx.total_type_vars_created()`). | `InferenceTable` | `total_created` | S0-T6 | 2 |
 
-## Phase 1: Core CVM (Day 2‑5, 1 agent)
+**Integration (end of day 2):**  
+- Merge all branches into `ucms-sprint0`.  
+- Test: `comptime fn five() -> i32 { 42 }` can be parsed, type-checked (as a regular function), and the CVM can evaluate `42` in a unit test.
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Create `glyim-cvm` crate | A3 | `Cargo.toml`, `lib.rs` | – |
-| Implement `CvmValue` enum | A3 | All variants: `Int`, `Uint`, `Bool`, `String`, `Type`, `Lifetime`, `Expr`, `TokenStream`, `Span`, `List`, `Tuple` | A2 (TokenStream) |
-| Implement `List<T>` operations | A3 | `len()`, `get()`, `push()`, `map()`, `fold()`, `for` loop support | – |
-| Implement CVM interpreter core | A3 | Stack machine, evaluation of HIR subset (literals, `if`, `match`, `for` over lists, variable binding) | – |
-
-**Agent A3** works alone for ~3 days.
-
----
-
-## Phase 2: Type System Enhancements (Day 2‑4, 2 agents)
-
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| `glyim-type`: add rolling hash field | A7 | `TyCtx` gains `fingerprint: u128`, updated on each type interning and type var creation | – |
-| `glyim-type`: implement COW persistence | A7 | Use `im::HashMap` and `im::Vector`, add `snapshot()` that returns `TyCtxSnapshot` | – |
-| `glyim-type`: add `total_type_vars_created()` | A7 | Counter increments on each `new_ty_var()`, `new_int_var()`, etc. | – |
-| `glyim-solve`: add `unresolved_type_vars()` | A8 | Count inference variables with `value == None` | A7 (uses `TyCtx`) |
-| `glyim-solve`: add `total_created()` | A8 | Return the same counter as A7 (or read from `TyCtx`) | A7 |
-
-**A7 and A8 work in parallel** on different crates. A8 depends on A7’s API, but can start after A7 provides a minimal `TyCtx` with the counter (stubbed). Coordinate via weekly sync.
+**Parallelism:** All agents work fully in parallel. A3 waits for S0-T2 but can start after day 1.
 
 ---
 
-## Phase 3: Intrinsics – Type Queries (Day 3‑6, 1 agent)
+## Sprint 1: First Expansion (Days 3–4)
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Implement `type_name` intrinsic | A4 | `extern "cvm" fn type_name(ty: Type) -> String` | A3 (CVM value passing), A7 (Type lookup) |
-| Implement `type_fields` | A4 | Returns list of `(String, Type)` for structs, `(String, List<Type>)` for enums | A3, A7 |
-| Implement `type_is_copy`, `type_is_sized` | A4 | Boolean queries | A7 |
-| Implement `type_is_enum`, `type_variants` | A4 | Enum‑specific | A7 |
-| Implement `type_generic_args` | A4 | Returns `List<CvmValue>` where each is `Type` or `Lifetime` | A3, A7 |
+**Vertical Slice:** A `comptime fn` can be called at compile time, returns a constant, and the driver splices that constant into the AST. No cache yet.
 
-**Agent A4** works on these after A3 and A7 have basic APIs.
+### Task Decomposition
 
----
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S1-T1 | A1 | `glyim-pipeline` | Create `expansion` module. Implement `ExpansionDriver` skeleton: worklist `Vec<(SyntaxNode, DefId)>`, cycle detection stack `HashSet<(DefId, u128)>`, measure `(M1, M2)` where `M1 = cst.node_count()`, `M2 = unresolved_type_vars()`. | `CST`, `TyCtx` | Driver struct with `push_work`, `pop_work`, `is_cycle` | S0-T1, S0-T7 | 8 |
+| S1-T2 | A6 | `glyim-frontend` | Implement `parse_token_stream_fragment(ts: &TokenStream, file_id: FileId) -> Result<SyntaxNode, (usize, String)>`. Accept `Expr`, `Item`, `Stmt` as root. Use existing `parse_to_syntax` with a modified root kind. | `TokenStream` | `SyntaxNode` or error index+msg | S0-T2 | 6 |
+| S1-T3 | A9 | `glyim-pipeline` | Implement `splice(original_cst: &mut SyntaxNode, macro_call_node: SyntaxNode, fragment_ts: TokenStream) -> Result<Range<usize>, SplicingError>`. Parse via S1-T2, replace node, record byte range from `Span`. | CST, call node, token stream | `Range<usize>` | S1-T2 | 6 |
+| S1-T4 | A4 | `glyim-cvm` | Implement `type_name(ty: Ty) -> String` intrinsic. Use `PrintTy` from `glyim_type`. | `Ty` | `String` | S0-T3, S0-T5 | 4 |
+| S1-T5 | A10 | `glyim-cache` | Create crate. Implement `FreshnessStore`: load/save `freshness.json` (map: u64 → u64) with atomic write (temp + rename). `fn next(&mut self, path_hash: u64) -> u64`. | Path hash | counter | None | 4 |
+| S1-T6 | A3 | `glyim-cvm` | Add `__quote` intrinsic (hidden): takes `Vec<(SyntaxKind, String)>`, returns `TokenStream` stamped with `current_mark`. Store `current_mark` in CVM context. | parts | `TokenStream` | S0-T2, S0-T1 | 4 |
+| S1-T7 | A2 | `glyim-syntax` | Implement `quote!` macro as a built‑in that expands to `__quote` call. Parse `quote! { ... }` and replace `#var` with token stream of `var`. | source | `TokenStream` | S1-T6 | 6 |
+| S1-T8 | A5 | `glyim-cvm` | Implement `emit_diagnostic(span: Span, msg: String, level: u8)` – forwards to `DiagSink`. Level: 0=error,1=warning,2=note,3=help. | args | `()` | S0-T3, S0-T1 | 3 |
+| S1-T9 | A1 | `glyim-pipeline` | Integrate driver with CVM and splicer: evaluate a macro call, splice result, update measure, loop until fixed point. | `CST`, `TyCtx` | Expanded `CST` | S1-T1, S1-T3, S0-T4 | 8 |
 
-## Phase 4: Intrinsics – Diagnostics, I/O, Freshness (Day 4‑7, 1 agent)
+**Integration (end of day 4):**  
+- Merge all.  
+- Test:  
+  ```glyim
+  comptime fn five() -> i32 { 42 }
+  fn main() { let x = five!(); assert_eq!(x, 42); }
+  ```
+  Compiles, expands `five!()` to `42`, type-checks, runs.
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Implement `emit_diagnostic` | A5 | Forwards to `DiagSink`, levels 0‑3 | A3 |
-| Implement `compile_error` | A5 | Aborts with error | A3 |
-| Implement `parse_token_stream` | A5 | Uses `glyim-frontend` (stubbed until A6 done) – returns `Result<TokenStream, String>` with offset | A6 (later) |
-| Implement `read_file` | A5 | Uses `std::fs`, capability‑checked | A3 |
-| Implement `get_env_var` | A5 | Uses `std::env`, capability‑checked | A3 |
-| Implement `fresh_name` | A5 | Uses `FreshnessStore` (A10) – returns string | A10 (later) |
-| Implement `fresh_type_var` | A5 | Creates new inference var via `TyCtx` | A7 |
-
-**Agent A5** can start early with stubs for dependencies; final integration after A6 and A10.
-
----
-
-## Phase 5: Fragment Parser & Splicing (Day 3‑6, 2 agents)
-
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| `glyim-frontend`: add `parse_token_stream_fragment()` | A6 | Parses a `TokenStream` into a `SyntaxNode` (CST fragment) | A2 |
-| `glyim-pipeline` (splicer module): implement `splice()` | A9 | Replaces macro call node with fragment, records range, returns new CST | A6 |
-
-**A6 and A9** can work in parallel: A9 writes the splicing logic assuming a `parse_fragment` function exists (stub). They integrate after both are ready.
+**Parallelism:** A1, A6, A9, A4, A10, A3, A2, A5 all work in parallel. A9 depends on S1-T2 (A6). A2 depends on S1-T6 (A3). A1 depends on S1-T3 and S0-T4.
 
 ---
 
-## Phase 6: Incremental Re‑type‑checking (Day 5‑8, 1 agent)
+## Sprint 2: Code Generation & Hygiene (Days 5–6)
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| `glyim-typeck`: implement `retype_new_nodes()` | A9 | Fresh inference table, map variables, emit equality constraints, unify with original | A7, A8, A6, A3 (value mapping) |
+**Vertical Slice:** `quote!` works; macros can generate code with hygiene; spliced code is type-checked and merged.
 
-**Agent A9** (already working on splicing) continues into this task. Can be done in parallel with caching (A10).
+### Task Decomposition
 
----
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S2-T1 | A6 | `glyim-frontend` | Extend fragment parser to accept `Item` and `Stmt` as roots (already in S1-T2, but ensure full grammar). Add error recovery: token window (10 before, 5 after) in error message. | `TokenStream` | `SyntaxNode` or rich error | S1-T2 | 4 |
+| S2-T2 | A9 | `glyim-typeck` | Implement `retype_new_nodes(cst: &SyntaxNode, old_ctx: &TyCtxMut, range: Range<usize>, macro_env: &HashMap<Name, Ty>) -> Result<TyCtxMut, Vec<GlyimDiagnostic>>`. Steps: extract fragment, create fresh `TyCtxMut` snapshot, type-check fragment, map variables, emit equality constraints, unify. | new nodes, old ctx, range, env | merged `TyCtxMut` | S0-T5, S0-T6, S0-T7 | 12 |
+| S2-T3 | A7 | `glyim-type` | Implement COW snapshot: change `TyCtxMut` internals to use `im::HashMap` for interned types and `im::Vector` for inference vars. `pub fn snapshot(&self) -> TyCtxMut` returns new context sharing data via `Arc`. | `TyCtxMut` | `TyCtxMut` snapshot | S0-T5 | 8 |
+| S2-T4 | A8 | `glyim-solve` | Add helper `pub fn unify_fresh_with_original(fresh_table: &InferenceTable, original_table: &mut InferenceTable, ctx: &mut TyCtxMut, mapping: &HashMap<TyVar, TyVar>) -> Result<(), Vec<GlyimDiagnostic>>`. | two tables, mapping | unification result | S0-T7 | 4 |
+| S2-T5 | A3 | `glyim-cvm` | Add inspection intrinsics: `token_stream_len`, `token_stream_get`, `token_tree_is_group`, `token_tree_as_group`, `token_tree_is_token`, `token_tree_as_token`, `token_kind_is_punct`, `stringify_token_stream`. | `TokenStream` etc. | various | S0-T2 | 8 |
+| S2-T6 | A5 | `glyim-cvm` | Implement `parse_token_stream` intrinsic (calls A6’s parser). If error, returns `Err(msg_with_offset)`. | `String` | `Result<TokenStream, String>` | S2-T1 | 4 |
+| S2-T7 | A9 | `glyim-pipeline` | Integrate `retype_new_nodes` into driver after splicing. Add `macro_env` capture: when calling a `comptime fn`, capture generic parameters from call site and pass as environment. | driver output | type‑checked CST | S2-T2 | 4 |
 
-## Phase 7: Caching & Freshness Store (Day 4‑8, 2 agents)
+**Integration (end of day 6):**  
+- Test:  
+  ```glyim
+  comptime fn make_add() -> TokenStream {
+      quote! { fn add(x: i32, y: i32) -> i32 { x + y } }
+  }
+  make_add!();
+  fn main() { assert_eq!(add(2, 3), 5); }
+  ```
+  Generates function, type-checks, works.
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Create `glyim-cache` crate | A10 | `Cargo.toml`, `lib.rs` | – |
-| Implement `ComptimeCache` | A10 | `CacheKey` struct, `xxhash128`, persistent storage, `--dump-cache`, `--clear-cache` | A7 (fingerprint), A2 (TokenStream serde) |
-| Implement `FreshnessStore` | A10 | `freshness.json` load/save, atomic write, per‑expansion path counters | A1 (ExpnId chain) |
-| Integrate cache into `ExpansionDriver` | A10 | Driver uses cache for lookups | A10, A3 (output serialisation) |
-
-**Agent A10** can work on caching without waiting for the driver; the driver (A1 later) will integrate.
-
----
-
-## Phase 8: Expansion Driver & Pipeline Integration (Day 6‑10, 1 agent)
-
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| `glyim-pipeline`: create `ExpansionDriver` | A1 | Worklist, state machine, cycle detection, measure `(M1, M2)`, stall detection | A7, A8, A9, A10, A3, A5 |
-| Integrate driver into main `compile_file()` | A1 | Replace old macro expansion, call `expand_until_fixed_point()` | – |
-
-**Agent A1** (who did `glyim-span` earlier) now builds the driver, using all other components.
+**Parallelism:** A6 (fragment parser), A9 (retype), A7 (COW), A8 (unify helper), A3 (inspection), A5 (parse intrinsic) all parallel. A9 depends on A7 and A8. A5 depends on A6.
 
 ---
 
-## Phase 9: Capabilities & Sandboxing (Day 7‑9, 1 agent)
+## Sprint 3: Persistent Caching & Freshness (Days 7–8)
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Attribute parsing for `#[comptime(capabilities = ...)]` | A7? | Extend `glyim-hir` to store `capabilities: CapabilitySet` | – |
-| Capability propagation (transitive closure) | A7 | Driver computes `C(F)` superset check | A1 (call graph) |
-| Enforce in CVM intrinsics | A5 | Each intrinsic checks a global mask | A5 (already in intrinsics) |
+**Vertical Slice:** Expansions are cached across compilations; `fresh_name` and `fresh_type_var` produce deterministic names; `--clear-cache` flag works.
 
-**Agent A7** (who did type enhancements) can switch to capabilities after finishing type work. Or assign a new agent (A11) if available – we have only 10, so A7 takes this.
+### Task Decomposition
 
----
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S3-T1 | A10 | `glyim-cache` | Implement `ComptimeCache` using `postcard` serialization. Cache key: `(DefId, arg_hash: u128, ty_ctx_fingerprint: u128, capability_mask: u64, mir_hash: u128)`. `arg_hash` = xxhash128 of postcard-serialized `CvmValue` args. On-disk: `target/.comptime_cache/entries/hex(key)`. Store `(output_ast: SyntaxNode, counter_value: u64)`. | macro call info | cache entry | S0-T2, S0-T5, S1-T5 | 10 |
+| S3-T2 | A10 | `glyim-cache` | Implement `fn get(&self, key) -> Option<CacheEntry>`, `fn insert(&mut self, key, entry)`, `fn clear()`, `fn dump(path: &Path)` (human-readable table). | cache operations | methods | S3-T1 | 4 |
+| S3-T3 | A1 | `glyim-pipeline` | Integrate cache into `ExpansionDriver`: on each macro call, compute key, check cache; on hit, reuse output AST and set counter; on miss, evaluate, splice, type-merge, then cache. | driver | cached expansions | S3-T1 | 6 |
+| S3-T4 | A5 | `glyim-cvm` | Implement `fresh_name(prefix: String) -> String` intrinsic: compute current `ExpnId` chain hash, call `FreshnessStore::next()`, return `format!("{}_{}_{}", prefix, path_hash, counter)`. | prefix | unique name | S1-T5, S0-T1 | 4 |
+| S3-T5 | A5 | `glyim-cvm` | Implement `fresh_type_var() -> Type` intrinsic: call `TyCtxMut::new_ty_var()` and return `Ty` handle. | none | `Type` | S0-T6 | 2 |
+| S3-T6 | A7 | `glyim-type` | Add rolling hash for CST: extend `SyntaxNode` with `hash: u128` field (stored in green node). Provide `fn update_hash(node: &mut SyntaxNode)` that recomputes hash from children and kind. On splicing, update ancestors. | `SyntaxNode` | `hash()` method | S0-T2 | 6 |
+| S3-T7 | A8 | `glyim-solve` | Add `pub fn unresolved_region_vars(&self) -> usize` to `InferenceTable`. | none | count | S0-T7 | 2 |
+| S3-T8 | A1 | `glyim-cli` | Add `--clear-cache` and `--dump-cache` flags. Implement in `main()` to call cache methods. | CLI args | cache management | S3-T2 | 2 |
 
-## Phase 10: Debugging & Observability (Day 8‑10, 2 agents)
+**Integration (end of day 8):**  
+- Recompile a macro that uses `fresh_name("tmp")` – same names generated. Second compilation hits cache, no re-evaluation.  
+- `glyip build --clear-cache` deletes cache directory.  
+- Test: `--dump-cache` prints cache entries.
 
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Step‑through mode (`--step-macros`) | A1 (or new) | Interactive REPL, source‑level breakpoints | A1 (driver) |
-| JSON logging (`--log-macros-json`) | A1 | Log events, schema | A1 |
-| `--macro-stats` summary | A1 | Print metrics | A1 |
-
-**These can be done by A1 (driver author) or by splitting to A11 (we have only 10, so A1 continues).** To keep parallelism, we can give this to A9 after they finish retype merging.
-
----
-
-## Phase 11: Testing & Stabilisation (Day 9‑12, 2 agents)
-
-| Task | Agent | Deliverable | Dependencies |
-|------|-------|-------------|--------------|
-| Unit tests for CVM intrinsics | A3 + A4 + A5 | Test each intrinsic with edge cases | All intrinsics |
-| Integration tests for splicing | A6 + A9 | `quote!` macros, code generation | A6, A9 |
-| Incremental cache tests | A10 | Persistence, fingerprinting, `--dump-cache` | A10 |
-| End‑to‑end test suite | All | Run all `run-pass` and `compile-fail` tests | Everything |
-
-**Two agents** (e.g., A3 and A10) can coordinate testing.
+**Parallelism:** A10 (cache), A1 (driver integration), A5 (fresh intrinsics), A7 (CST rolling hash), A8 (region vars), A1 (CLI) all parallel. A1 depends on A10.
 
 ---
 
-## Gantt Chart (10 agents, 12 days)
+## Sprint 4: Capabilities & Advanced Queries (Days 9–10)
+
+**Vertical Slice:** Capability system enforces sandboxing; all type query intrinsics available; macros can inspect generic arguments and create new generic parameters.
+
+### Task Decomposition
+
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S4-T1 | A7 | `glyim-hir` | Extend `FnItem` with `capabilities: CapabilitySet` (bitflags). Parse `#[comptime(capabilities = "fs, env")]` attribute in `glyim_frontend` lowering. | attribute | HIR field | None | 4 |
+| S4-T2 | A7 | `glyim-hir` | Implement static capability propagation: compute transitive closure for each `comptime fn` by walking HIR (or MIR). Report error if caller’s caps not superset of callee’s. | HIR | diagnostics | S4-T1 | 6 |
+| S4-T3 | A5 | `glyim-cvm` | Add capability mask to CVM context. Before each intrinsic, check if required capability is present; if not, call `compile_error`. | intrinsic call | enforcement | S4-T1 | 2 |
+| S4-T4 | A4 | `glyim-cvm` | Implement all remaining type intrinsics: `type_fields`, `type_is_copy`, `type_is_sized`, `type_is_enum`, `type_variants`, `type_generic_args`. Use `TyCtx` methods. | `Ty` | various | S0-T5 | 8 |
+| S4-T5 | A4 | `glyim-cvm` | Implement `type_generic_args` returning `List<GenericArg>` where `GenericArg` is a CVM enum with `Ty` and `Lifetime`. Add `is_lifetime`, `as_lifetime`. | `Ty` | `List<GenericArg>` | S0-T5 | 4 |
+| S4-T6 | A3 | `glyim-cvm` | Implement `new_generic_param(name: String) -> Type` intrinsic. Creates a new `BoundTy` (generic parameter) in `TyCtxMut`. Requires capability `generics`. | name | `Type` | S0-T5 | 4 |
+| S4-T7 | A9 | `glyim-typeck` | Extend `retype_new_nodes` to handle new generic parameters: when encountering a `ParamTy` not in `macro_env`, create a new `BoundTy` via `new_generic_param` and map it. | fragment, env | merged ctx | S4-T6, S2-T2 | 6 |
+| S4-T8 | A8 | `glyim-solve` | Add `pub fn instantiate_binder_with_placeholders` for HRTB (needed for some type queries). Reuse existing `glyim_solve::hrtb` module. | binder | placeholder instantiation | S0-T7 | 4 |
+
+**Integration (end of day 10):**  
+- Test:  
+  ```glyim
+  #[comptime(capabilities = "fs")]
+  fn read_file(path: String) -> String { ... }
+  // calling without fs fails
+  ```
+- Test:  
+  ```glyim
+  comptime fn generics_example() {
+      let t = new_generic_param("T");
+      quote! { struct MyStruct<T> { field: T } }
+  }
+  ```
+
+**Parallelism:** A7 (capabilities), A5 (enforcement), A4 (type queries), A3 (new_generic_param), A9 (retype extension), A8 (HRTB) all parallel. A9 depends on A4 and A6? No, A9 depends on S4-T6.
+
+---
+
+## Sprint 5: Debugging & Observability (Days 11–12)
+
+**Vertical Slice:** `--step-macros`, `--log-macros-json`, `--macro-stats` work; stall detection prevents infinite loops; error messages show macro call stack.
+
+### Task Decomposition
+
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S5-T1 | A1 | `glyim-pipeline` | Implement stall detection: after each iteration, compare `(M1, M2)` and CST hash (via S3-T6). If `M1` unchanged and `M2 >= previous M2` for 3 consecutive iterations, emit warning. | driver state | warning diagnostic | S3-T6 | 4 |
+| S5-T2 | A1 | `glyim-pipeline` | Add `--step-macros` interactive mode: modify CVM `eval` to yield after each HIR statement, print source line (from `Span`), wait for input (`c`/`s`/`p`/`q`). Implement in driver. | CLI flag | step‑through | S0-T4 | 8 |
+| S5-T3 | A1 | `glyim-pipeline` | Add `--log-macros-json`: write events (phase, macro name, def_id, span, duration_ms, cache_hit, generated_nodes) to `macro_log.json` using `serde_json`. | driver events | JSON file | None | 4 |
+| S5-T4 | A9 | `glyim-pipeline` | Add `--macro-stats`: collect counts (total expansions, cache hits, cache misses, time in CVM, largest expansion, unused fresh type vars) and print at end of compilation. | driver metrics | terminal output | S5-T3 | 4 |
+| S5-T5 | A6 | `glyim-frontend` | Improve error messages in fragment parser: include token window (10 before, 5 after), macro call stack from marks. Use `call_stack_formatter` from S0-T1. | parse error | rich diagnostic | S0-T1 | 4 |
+| S5-T6 | A1 | `glyim-pipeline` | Integrate improved errors into driver: when splicing fails, emit diagnostic with token window and call stack. | splicing error | diagnostic | S5-T5 | 2 |
+| S5-T7 | A10 | `glyim-cache` | Add `--dump-cache` pretty printer: print table with key (truncated), hit count, last access time. | cache file | human-readable | S3-T2 | 2 |
+
+**Integration (end of day 12):**  
+- Run `glyim --step-macros test.g` – can step through macro.  
+- Run `glyim --log-macros-json test.g` – produces `macro_log.json`.  
+- Run `glyim --macro-stats test.g` – prints summary.  
+- Write a macro that stalls – emits warning.
+
+**Parallelism:** A1 (stall, step, JSON log), A9 (stats), A6 (error DX), A10 (dump-cache) all parallel.
+
+---
+
+## Sprint 6: Testing & Stabilisation (Days 13–14)
+
+**Vertical Slice:** All existing `macro_rules!` tests pass with `comptime fn`; cache persistence works across builds; performance benchmarks.
+
+### Task Decomposition
+
+| ID | Agent | Crate | Task Description | Inputs | Outputs | Dependencies | Est. Hours |
+|----|-------|-------|------------------|--------|---------|--------------|-------------|
+| S6-T1 | A3 | `glyim-cvm` | Write unit tests for each intrinsic: `type_name`, `type_fields`, `fresh_name`, `emit_diagnostic`, `parse_token_stream`, etc. Include edge cases (empty list, error types). | intrinsics | test suite | All intrinsics | 6 |
+| S6-T2 | A4 | `glyim-cvm` | Write unit tests for type query intrinsics with various types (structs, enums, generics). | types | test suite | S4-T4 | 4 |
+| S6-T3 | A5 | `glyim-cvm` | Write unit tests for I/O and freshness intrinsics (use temp files, mock env). | I/O | test suite | S3-T4, S3-T5 | 4 |
+| S6-T4 | A10 | `glyim-cache` | Write integration tests: compile a macro, delete `target/`, recompile, verify cache hit (no re‑evaluation). Test `--clear-cache`. | cache | tests | S3-T1 | 4 |
+| S6-T5 | All | `glyim-test` | Convert all existing `macro_rules!` tests to `comptime fn`. Update test harness to use new expander. | old tests | migrated tests | All features | 12 |
+| S6-T6 | A1 | `glyim-pipeline` | Run full benchmark suite: measure expansion time for large macro-generated code (e.g., 10k lines). Compare pre/post cache. | macro | performance report | S3-T3 | 4 |
+| S6-T7 | A9 | `glyim-typeck` | Validate that unused fresh type vars emit warning. Add test. | `fresh_type_var` unused | warning | S3-T5 | 2 |
+| S6-T8 | A1 | `glyim-cli` | Deprecate old `--macro-expand` flag; point to new system. Remove `glyim-meta::Expander` from default pipeline. | CLI | removed code | All | 2 |
+
+**Integration (end of day 14):**  
+- All tests pass.  
+- `macro_rules!` no longer supported (compiler errors if used).  
+- Cache works across incremental rebuilds.  
+- Performance report shows 80%+ cache hit rate for typical workloads.
+
+**Parallelism:** A3, A4, A5 (intrinsic unit tests) in parallel; A10 (cache tests); All agents for test migration (split test files by module). A1 and A9 for final integration.
+
+---
+
+## Gantt Chart (10 agents, 14 days)
 
 ```
-Day:   1 2 3 4 5 6 7 8 9 10 11 12
-A1:    ██ [span] ░░░░░░░████████ [driver] ██████ [debug]
-A2:    ██ [syntax] ░░░░░░░░░░░░░░░░░░░░░░░░░░
-A3:    ░░████████ [CVM core] ░░░████ [intrinsics?] ██ [tests]
-A4:    ░░░░████████ [type queries] ░░░░░░██ [tests]
-A5:    ░░░░░░████████ [diag/io/fresh] ░░██ [tests]
-A6:    ░░░░████ [fragment parser] ░░░░░░░░██ [tests]
-A7:    ░░██████ [type rolling+COW] ░██ [caps] ░██ [tests]
-A8:    ░░████ [inference helpers] ░░░░░░░░██ [tests]
-A9:    ░░░░░░██████ [splicing+retype] ░██ [tests+debug?]
-A10:   ░░░░░░████████ [cache+freshness] ░██ [tests]
+Day:   1 2 3 4 5 6 7 8 9 10 11 12 13 14
+Sprint 0 → S1 → S2 → S3 → S4 → S5 → S6
+
+A1: ██[0] ██[1] ░░ ██[3] ░░ ██[5] ░░
+A2: ██[0] ██[1] ░░ ░░    ░░    ░░
+A3: ██[0] ██[1] ██[2] ░░ ██[4] ░░ ██[6]
+A4: ░░    ██[1] ░░    ██[4] ░░ ██[6]
+A5: ░░    ██[1] ██[2] ██[3] ██[4] ░░ ██[6]
+A6: ░░    ██[1] ██[2] ░░    ██[5] ░░
+A7: ██[0] ░░    ██[2] ██[3] ██[4] ░░
+A8: ██[0] ░░    ██[2] ░░    ██[4] ░░
+A9: ░░    ██[1] ██[2] ░░    ██[4] ██[5] ░░ ██[6]
+A10: ░░   ██[1] ░░    ██[3] ░░    ██[5] ██[6]
 ```
 
-**Legend:** █ = work, ░ = idle/integration, numbers = day.
+**Legend:** Sprint number in brackets. `░` = idle/integration.
 
 ---
 
-## Integration Points (Critical Merge Points)
+## Summary of Deliverables per Sprint
 
-- **End of Day 2:** A1 (span) + A2 (syntax) merged → base for token streams and hygiene.
-- **End of Day 4:** A7 (type rolling) + A8 (inference helpers) → type context ready for queries.
-- **End of Day 5:** A3 (CVM core) + A4 (type queries) → first working `type_name`.
-- **End of Day 6:** A6 (fragment parser) + A9 (splicing) → code generation works.
-- **End of Day 7:** A5 (fresh name + I/O) + A10 (freshness store) → `fresh_name` deterministic.
-- **End of Day 8:** A9 (retype merging) + A1 (driver) → fixed‑point loop operational.
-- **End of Day 10:** A1 (debug features) + A5 (capabilities) → complete system.
-- **Day 11‑12:** Testing & stabilisation.
+| Sprint | Feature | User‑Visible |
+|--------|---------|---------------|
+| 0 | Parse + evaluate constants | `comptime fn` compiles as regular function |
+| 1 | First expansion | `five!()` expands to `42` |
+| 2 | Code generation with `quote!` | `make_add!()` generates new function |
+| 3 | Caching + fresh names | Fast recompilation, deterministic names |
+| 4 | Capabilities + full type queries | Sandboxed macros, type introspection |
+| 5 | Debugging | Step‑through, logs, stats |
+| 6 | Production‑ready | All tests pass, old macros removed |
 
----
-
-## Total Parallelism Achieved
-
-- **Peak active agents:** 10 (all working simultaneously from day 3 to day 8).
-- **Total calendar time:** 12 days (2.5 weeks) – down from 11 weeks (87% reduction).
-- **Actual elapsed time with 10 agents:** ~3 weeks including final stabilisation.
-
-**This plan is ready to execute.** Each agent has a clear crate ownership and task list. The dependencies are minimal, and all integration points are planned.
+**Total calendar time:** 14 days (3 weeks).  
+**Total person‑days:** ~180 (10 agents × 14 days × 0.5 efficiency for coordination).  
+**All deliverables use `postcard` serialization, no `bincode`.**  
+**Ready to execute sprint by sprint.**

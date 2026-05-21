@@ -159,7 +159,7 @@ impl SymbolIndex {
     fn index_pattern(
         &mut self,
         file_id: FileId,
-        pat_id: PatId,
+        _pat_id: PatId,
         pat: &Pat,
         body: &Body,
         interner: &Interner,

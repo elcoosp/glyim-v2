@@ -1,8 +1,7 @@
-use glyim_core::CrateId;
 use glyim_core::Interner;
 use glyim_frontend::parse_to_syntax;
 use glyim_hir::pipeline_api::lower_crate_for_pipeline;
-use glyim_span::{FileId, Span};
+use glyim_span::FileId;
 
 pub fn compile_to_hir(
     src: &str,
