@@ -479,6 +479,7 @@ impl<'a> FnCtxt<'a> {
                 let (base_expr, base_ty) = self.check_expr(*base);
                 let (idx_expr, idx_ty) = self.check_expr(*index);
 
+                // Check that index is integer type
                 if !matches!(self.ctx.ty_kind(idx_ty), TyKind::Int(_) | TyKind::Uint(_))
                     && idx_ty != Ty::ERROR
                 {
@@ -488,6 +489,7 @@ impl<'a> FnCtxt<'a> {
                     ));
                 }
 
+                // Compute element type of the base
                 let elem_ty = match self.ctx.ty_kind(base_ty) {
                     TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => *elem_ty,
                     _ => {
@@ -625,8 +627,6 @@ impl<'a> FnCtxt<'a> {
                     }
                 };
 
-                // Get ADT definition. We extract field info immediately to avoid holding
-                // an immutable borrow across mutable self.check_expr calls.
                 let adt_def = match self.ctx.adt_def(adt_id) {
                     Some(def) => def,
                     None => {
@@ -638,19 +638,15 @@ impl<'a> FnCtxt<'a> {
                     }
                 };
 
-                // Collect field info locally: (name, ty, has_default)
-                // This breaks the borrow chain so check_expr can borrow &mut self
                 let field_infos: Vec<(Name, Ty)> =
                     adt_def.fields.iter().map(|f| (f.name, f.ty)).collect();
 
-                let mut provided_fields: std::collections::HashSet<Name> =
-                    std::collections::HashSet::new();
+                let mut provided_fields = std::collections::HashSet::new();
                 let mut thir_fields = Vec::with_capacity(fields.len());
 
                 for &(field_name, field_expr_id) in fields {
                     provided_fields.insert(field_name);
 
-                    // Find field definition in local collection
                     let expected_field_ty =
                         if let Some((_, ty)) = field_infos.iter().find(|(n, _)| *n == field_name) {
                             self.substitute_type(*ty, substs, span)
@@ -666,12 +662,9 @@ impl<'a> FnCtxt<'a> {
                     if expected_field_ty != Ty::ERROR && field_ty != Ty::ERROR {
                         self.unify(field_ty, expected_field_ty, span);
                     }
-
-                    // THIR struct fields are tuples: (Name, thir::Expr)
                     thir_fields.push((field_name, field_expr));
                 }
 
-                // Handle struct update syntax (spread)
                 let spread_expr = if let Some(spread_id) = spread {
                     let (spread_expr, spread_ty) = self.check_expr(*spread_id);
                     if spread_ty != Ty::ERROR {
@@ -679,7 +672,7 @@ impl<'a> FnCtxt<'a> {
                     }
                     Some(Box::new(spread_expr))
                 } else {
-                    // Check all required fields are provided using local collection
+                    // When there is no spread, all fields must be present.
                     for (name, _ty) in &field_infos {
                         if !provided_fields.contains(name) {
                             self.diagnostics.push(GlyimDiagnostic::type_error(
@@ -709,7 +702,6 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Closure { params: _, body: _ } => {
-                // Closure lowering is complex; return error with helpful message for now
                 self.diagnostics.push(GlyimDiagnostic::type_error(
                     span,
                     "closure type inference not yet fully implemented",
@@ -718,13 +710,11 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Assign { lhs, rhs } => {
-                // Assign is handled as a statement-level operation; return unit
                 let (_lhs_expr, lhs_ty) = self.check_expr(*lhs);
                 let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
                 if lhs_ty != Ty::ERROR && rhs_ty != Ty::ERROR {
                     self.unify(rhs_ty, lhs_ty, span);
                 }
-                // Return error node since Assign isn't in THIR ExprKind
                 (thir::Expr::err(span), Ty::UNIT)
             }
 
@@ -736,7 +726,6 @@ impl<'a> FnCtxt<'a> {
                     }
                     val_expr
                 });
-                // Return is control flow; THIR uses Break for both
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Break {
@@ -775,7 +764,6 @@ impl<'a> FnCtxt<'a> {
                 end,
                 inclusive: _,
             } => {
-                // Type check range bounds - both must be same integer type or unbounded
                 let bound_ty = self.fresh_infer_ty();
                 let _start_expr = if let Some(start_id) = start {
                     let (s_expr, s_ty) = self.check_expr(*start_id);
@@ -795,13 +783,11 @@ impl<'a> FnCtxt<'a> {
                 } else {
                     None
                 };
-                // Range type is std::ops::Range or RangeInclusive
-                // For now, use a placeholder ADT type with the bound type as generic arg
                 let range_ty = self.fresh_infer_ty();
                 let thir_expr = thir::Expr {
                     kind: thir::ExprKind::Struct {
-                        adt_id: AdtId::from_raw(0), // placeholder - resolved via def_map in real impl
-                        fields: vec![], // Range has start/end fields; simplified for now
+                        adt_id: AdtId::from_raw(0),
+                        fields: vec![],
                         spread: None,
                         variant_idx: 0,
                     },
@@ -842,7 +828,6 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    // Helper: validate cast compatibility
     fn is_cast_valid(&self, from: Ty, to: Ty) -> bool {
         use TyKind::*;
         match (self.ctx.ty_kind(from), self.ctx.ty_kind(to)) {
@@ -855,7 +840,6 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    // Helper for method call resolution
     fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
         for (_id, item) in self.hir.items.iter_enumerated() {
             if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
@@ -907,7 +891,6 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    // Helper: lookup field type with generic substitution (needs &mut self for diagnostics)
     fn lookup_field_ty_with_substs(
         &mut self,
         adt_id: AdtId,
