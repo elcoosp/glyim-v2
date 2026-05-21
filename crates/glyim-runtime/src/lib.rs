@@ -115,3 +115,5 @@ pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> ! {
 
 #[cfg(test)]
 mod tests;
+
+pub mod fs;
