@@ -1,20 +1,11 @@
-use std::sync::Arc;
-use glyim_test::harness::compiler::{PipelineCompiler, TestCompiler, CompileOutput};
-use glyim_test::mock::MockCodegen;
+use glyim_test::phase::AnalysisTester;
 use glyim_test::assert_no_errors;
 use glyim_test::assert_has_errors;
 use glyim_test::assert_diag_contains;
-use glyim_span::FileId;
-
-fn compile(src: &str) -> CompileOutput {
-    let backend = Arc::new(MockCodegen::new());
-    let compiler = PipelineCompiler::new(backend);
-    compiler.compile(src, FileId::from_raw(1), &[])
-}
 
 #[test]
 fn match_guard_uses_binding() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         fn main() {
             let x = Some(5);
@@ -24,13 +15,14 @@ fn match_guard_uses_binding() {
             }
         }
         "#,
-    );
-    assert_no_errors(&output.diagnostics);
+    )
+    .run();
+    assert_no_errors(&trace.typeck_diagnostics);
 }
 
 #[test]
 fn or_pattern_same_types() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         fn main() {
             match 1 {
@@ -39,13 +31,14 @@ fn or_pattern_same_types() {
             }
         }
         "#,
-    );
-    assert_no_errors(&output.diagnostics);
+    )
+    .run();
+    assert_no_errors(&trace.typeck_diagnostics);
 }
 
 #[test]
 fn range_pattern_integer() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         fn main() {
             match 5 {
@@ -54,13 +47,14 @@ fn range_pattern_integer() {
             }
         }
         "#,
-    );
-    assert_no_errors(&output.diagnostics);
+    )
+    .run();
+    assert_no_errors(&trace.typeck_diagnostics);
 }
 
 #[test]
 fn slice_pattern_array() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         fn main() {
             let arr = [1, 2, 3];
@@ -70,26 +64,28 @@ fn slice_pattern_array() {
             }
         }
         "#,
-    );
-    assert_no_errors(&output.diagnostics);
+    )
+    .run();
+    assert_no_errors(&trace.typeck_diagnostics);
 }
 
 #[test]
 fn index_expression_array() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         fn main() {
             let arr = [1, 2, 3];
             let x = arr[0];
         }
         "#,
-    );
-    assert_no_errors(&output.diagnostics);
+    )
+    .run();
+    assert_no_errors(&trace.typeck_diagnostics);
 }
 
 #[test]
 fn struct_literal_with_spread() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         struct S { x: i32, y: i32 }
         fn main() {
@@ -97,13 +93,14 @@ fn struct_literal_with_spread() {
             let b = S { x: 3, ..a };
         }
         "#,
-    );
-    assert_no_errors(&output.diagnostics);
+    )
+    .run();
+    assert_no_errors(&trace.typeck_diagnostics);
 }
 
 #[test]
 fn or_pattern_mismatched_types_fails() {
-    let output = compile(
+    let trace = AnalysisTester::new(
         r#"
         fn main() {
             match 1 {
@@ -112,7 +109,8 @@ fn or_pattern_mismatched_types_fails() {
             }
         }
         "#,
-    );
-    assert_has_errors(&output.diagnostics);
-    assert_diag_contains(&output.diagnostics, "mismatched types");
+    )
+    .run();
+    assert_has_errors(&trace.typeck_diagnostics);
+    assert_diag_contains(&trace.typeck_diagnostics, "mismatched types");
 }

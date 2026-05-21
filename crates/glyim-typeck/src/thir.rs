@@ -245,6 +245,11 @@ pub enum PatternKind {
         inclusive: bool,
     },
     ConstBlock(Box<Body>),
+    Slice {
+        prefix: Vec<Pattern>,
+        slice: Option<Box<Pattern>>,
+        suffix: Vec<Pattern>,
+    },
     Error,
 }
 

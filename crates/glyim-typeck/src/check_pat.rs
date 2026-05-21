@@ -90,6 +90,28 @@ impl<'a> FnCtxt<'a> {
                 }
             }
             Pat::Literal(lit) => {
+            Pat::Slice(prefix, slice, suffix) => {
+                let elem_ty = match self.ctx.ty_kind(expected_ty) {
+                    TyKind::Array(ety, _) | TyKind::Slice(ety) => *ety,
+                    _ => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            "slice pattern requires array or slice type",
+                        ));
+                        Ty::ERROR
+                    }
+                };
+                for p_id in prefix {
+                    self.check_pattern(*p_id, elem_ty);
+                }
+                if let Some(slice_id) = slice {
+                    self.check_pattern(*slice_id, expected_ty);
+                }
+                for p_id in suffix {
+                    self.check_pattern(*p_id, elem_ty);
+                }
+                thir::Pattern::err(span) // Placeholder; THIR will have proper Slice variant
+            }
                 let thir_lit = crate::unify::thir_literal(lit);
                 thir::Pattern {
                     kind: thir::PatternKind::Literal(thir_lit),
