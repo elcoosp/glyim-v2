@@ -5,11 +5,11 @@ pub use glyim_core::abi::ALIGN_MAX;
 
 use std::alloc::{self, Layout};
 use std::collections::HashMap;
-use std::net::{TcpListener, TcpStream, UdpSocket, ToSocketAddrs};
-use std::sync::{Mutex, OnceLock, Arc};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs, UdpSocket};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::io::{Read, Write};
 
 // ========== Global Resource Management ==========
 
@@ -39,24 +39,46 @@ struct ThreadStore {
 
 fn tcp_streams() -> &'static Mutex<TcpStreamStore> {
     static STREAMS: OnceLock<Mutex<TcpStreamStore>> = OnceLock::new();
-    STREAMS.get_or_init(|| Mutex::new(TcpStreamStore { next_id: 1, streams: HashMap::new() }))
+    STREAMS.get_or_init(|| {
+        Mutex::new(TcpStreamStore {
+            next_id: 1,
+            streams: HashMap::new(),
+        })
+    })
 }
 fn tcp_listeners() -> &'static Mutex<TcpListenerStore> {
     static LISTENERS: OnceLock<Mutex<TcpListenerStore>> = OnceLock::new();
-    LISTENERS.get_or_init(|| Mutex::new(TcpListenerStore { next_id: 1, listeners: HashMap::new() }))
+    LISTENERS.get_or_init(|| {
+        Mutex::new(TcpListenerStore {
+            next_id: 1,
+            listeners: HashMap::new(),
+        })
+    })
 }
 fn udp_sockets() -> &'static Mutex<UdpSocketStore> {
     static SOCKETS: OnceLock<Mutex<UdpSocketStore>> = OnceLock::new();
-    SOCKETS.get_or_init(|| Mutex::new(UdpSocketStore { next_id: 1, sockets: HashMap::new() }))
+    SOCKETS.get_or_init(|| {
+        Mutex::new(UdpSocketStore {
+            next_id: 1,
+            sockets: HashMap::new(),
+        })
+    })
 }
 fn threads() -> &'static Mutex<ThreadStore> {
     static THREADS: OnceLock<Mutex<ThreadStore>> = OnceLock::new();
-    THREADS.get_or_init(|| Mutex::new(ThreadStore { next_id: 1, infos: HashMap::new() }))
+    THREADS.get_or_init(|| {
+        Mutex::new(ThreadStore {
+            next_id: 1,
+            infos: HashMap::new(),
+        })
+    })
 }
 
 // Helper: convert raw bytes to string (assumes valid UTF-8, null-terminated or length provided)
 unsafe fn bytes_to_string(ptr: *const u8, len: usize) -> Option<String> {
-    if ptr.is_null() { return None; }
+    if ptr.is_null() {
+        return None;
+    }
     let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
     std::str::from_utf8(slice).ok().map(|s| s.to_string())
 }
@@ -80,7 +102,9 @@ pub extern "C" fn glyim_alloc(size: usize, align: usize) -> *mut u8 {
 /// Deallocate memory previously allocated by `glyim_alloc`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 || ptr.is_null() { return; }
+    if size == 0 || ptr.is_null() {
+        return;
+    }
     let layout = match Layout::from_size_align(size, align.max(1)) {
         Ok(l) => l,
         Err(_) => return,
@@ -91,7 +115,9 @@ pub unsafe extern "C" fn glyim_dealloc(ptr: *mut u8, size: usize, align: usize) 
 /// Drop a value in place by calling its type-specific destructor.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_drop_in_place(ptr: *mut u8, drop_fn: Option<DropFn>) {
-    if ptr.is_null() { return; }
+    if ptr.is_null() {
+        return;
+    }
     if let Some(drop) = drop_fn {
         unsafe { drop(ptr) }
     }
@@ -106,11 +132,7 @@ pub extern "C" fn glyim_panic(_msg: *const u8, _len: usize) -> ! {
 // ========== Networking (TCP) ==========
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_net_tcp_connect(
-    addr: *const u8,
-    addr_len: usize,
-    port: u16,
-) -> i32 {
+pub unsafe extern "C" fn glyim_net_tcp_connect(addr: *const u8, addr_len: usize, port: u16) -> i32 {
     let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
         Some(s) => s,
         None => return -1,
@@ -128,11 +150,7 @@ pub unsafe extern "C" fn glyim_net_tcp_connect(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_net_tcp_bind(
-    addr: *const u8,
-    addr_len: usize,
-    port: u16,
-) -> i32 {
+pub unsafe extern "C" fn glyim_net_tcp_bind(addr: *const u8, addr_len: usize, port: u16) -> i32 {
     let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
         Some(s) => s,
         None => return -1,
@@ -171,7 +189,9 @@ pub unsafe extern "C" fn glyim_net_tcp_accept(fd: i32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_read(fd: i32, buf: *mut u8, count: usize) -> isize {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let fd = fd as u32;
     let mut store = tcp_streams().lock().unwrap();
     let stream = match store.streams.get_mut(&fd) {
@@ -187,7 +207,9 @@ pub unsafe extern "C" fn glyim_net_tcp_read(fd: i32, buf: *mut u8, count: usize)
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_tcp_write(fd: i32, buf: *const u8, count: usize) -> isize {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let fd = fd as u32;
     let mut store = tcp_streams().lock().unwrap();
     let stream = match store.streams.get_mut(&fd) {
@@ -202,11 +224,7 @@ pub unsafe extern "C" fn glyim_net_tcp_write(fd: i32, buf: *const u8, count: usi
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_net_tcp_local_addr(
-    fd: i32,
-    buf: *mut u8,
-    buf_len: usize,
-) -> i32 {
+pub unsafe extern "C" fn glyim_net_tcp_local_addr(fd: i32, buf: *mut u8, buf_len: usize) -> i32 {
     let fd = fd as u32;
     let store = tcp_streams().lock().unwrap();
     let stream = match store.streams.get(&fd) {
@@ -219,7 +237,9 @@ pub unsafe extern "C" fn glyim_net_tcp_local_addr(
     };
     let addr_str = addr.to_string();
     let bytes = addr_str.as_bytes();
-    if bytes.len() >= buf_len { return -1; }
+    if bytes.len() >= buf_len {
+        return -1;
+    }
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
         *buf.add(bytes.len()) = 0;
@@ -230,11 +250,7 @@ pub unsafe extern "C" fn glyim_net_tcp_local_addr(
 // ========== Networking (UDP) ==========
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_net_udp_bind(
-    addr: *const u8,
-    addr_len: usize,
-    port: u16,
-) -> i32 {
+pub unsafe extern "C" fn glyim_net_udp_bind(addr: *const u8, addr_len: usize, port: u16) -> i32 {
     let addr_str = match unsafe { bytes_to_string(addr, addr_len) } {
         Some(s) => s,
         None => return -1,
@@ -260,7 +276,9 @@ pub unsafe extern "C" fn glyim_net_udp_send_to(
     dest_addr_len: usize,
     dest_port: u16,
 ) -> isize {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let fd = fd as u32;
     let addr_str = match unsafe { bytes_to_string(dest_addr, dest_addr_len) } {
         Some(s) => s,
@@ -363,7 +381,9 @@ pub unsafe extern "C" fn glyim_net_udp_connect(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_udp_send(fd: i32, buf: *const u8, count: usize) -> isize {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let fd = fd as u32;
     let mut store = udp_sockets().lock().unwrap();
     let socket = match store.sockets.get_mut(&fd) {
@@ -379,7 +399,9 @@ pub unsafe extern "C" fn glyim_net_udp_send(fd: i32, buf: *const u8, count: usiz
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_net_udp_recv(fd: i32, buf: *mut u8, count: usize) -> isize {
-    if buf.is_null() { return -1; }
+    if buf.is_null() {
+        return -1;
+    }
     let fd = fd as u32;
     let mut store = udp_sockets().lock().unwrap();
     let socket = match store.sockets.get_mut(&fd) {

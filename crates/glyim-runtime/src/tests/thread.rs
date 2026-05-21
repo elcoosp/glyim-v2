@@ -1,8 +1,8 @@
 //! Threading tests for glyim-runtime
 
 use crate::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 #[test]

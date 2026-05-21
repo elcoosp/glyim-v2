@@ -16,7 +16,14 @@ fn udp_send_recv() {
     let msg = b"ping";
     let dest_addr = b"127.0.0.1\0";
     let sent = unsafe {
-        glyim_net_udp_send_to(client_fd, msg.as_ptr(), msg.len(), dest_addr.as_ptr(), dest_addr.len() - 1, server_port)
+        glyim_net_udp_send_to(
+            client_fd,
+            msg.as_ptr(),
+            msg.len(),
+            dest_addr.as_ptr(),
+            dest_addr.len() - 1,
+            server_port,
+        )
     };
     assert_eq!(sent, msg.len() as isize);
 
@@ -35,7 +42,14 @@ fn udp_send_recv() {
     let mut src_addr_len = src_addr_buf.len();
     let mut src_port = 0;
     let recv = unsafe {
-        glyim_net_udp_recv_from(client_fd, echo_buf.as_mut_ptr(), echo_buf.len(), src_addr_buf.as_mut_ptr(), &mut src_addr_len, &mut src_port)
+        glyim_net_udp_recv_from(
+            client_fd,
+            echo_buf.as_mut_ptr(),
+            echo_buf.len(),
+            src_addr_buf.as_mut_ptr(),
+            &mut src_addr_len,
+            &mut src_port,
+        )
     };
     assert_eq!(recv, msg.len() as isize);
     assert_eq!(&echo_buf[..], msg);
@@ -49,9 +63,8 @@ fn udp_connect_send_recv() {
     let client_fd = unsafe { glyim_net_udp_bind(b"127.0.0.1\0".as_ptr(), 9, 0) };
     assert!(client_fd >= 0);
 
-    let connect_result = unsafe {
-        glyim_net_udp_connect(client_fd, b"127.0.0.1\0".as_ptr(), 9, server_port)
-    };
+    let connect_result =
+        unsafe { glyim_net_udp_connect(client_fd, b"127.0.0.1\0".as_ptr(), 9, server_port) };
     assert_eq!(connect_result, 0);
 
     let msg = b"hello";
