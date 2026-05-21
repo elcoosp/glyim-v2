@@ -19,3 +19,4 @@ mod run_cmd;
 mod target_build;
 mod test_cmd;
 mod test_command;
+mod test_discovery_tests;
