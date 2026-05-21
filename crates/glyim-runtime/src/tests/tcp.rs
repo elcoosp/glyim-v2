@@ -10,6 +10,7 @@ use std::time::Duration;
 // Helper: find an available port
 fn find_free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let test_port = listener.local_addr().unwrap().port();
     listener.local_addr().unwrap().port()
 }
 
