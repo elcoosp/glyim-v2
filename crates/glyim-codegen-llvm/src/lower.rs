@@ -211,7 +211,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     };
                 }
                 ProjectionElem::Field(idx) => {
-                    // Try layout-based offset first, fall back to index-based GEP for test fixtures
                     let layout_computer =
                         FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
 
@@ -222,14 +221,13 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                     use glyim_type::FieldIdx;
                                     offsets.get(FieldIdx::from_raw(idx.to_raw())).map(|s| s.0)
                                 }
-                                _ => None, // Fall back to index-based
+                                _ => None,
                             }
                         } else {
-                            None // Fall back to index-based
+                            None
                         };
 
                     let mut ptr = if let Some(offset) = field_offset_bytes {
-                        // Layout-based: byte-offset GEP via i8*
                         let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
                         let base_i8 = self
                             .builder
@@ -248,7 +246,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                 .expect("field offset GEP failed")
                         }
                     } else {
-                        // Fallback: index-based GEP (original behavior for tuples/structs)
                         let field_idx = idx.to_raw() as u64;
                         let i32_type = self.llvm_int_type(32);
                         let zero = i32_type.const_zero();
@@ -266,7 +263,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         }
                     };
 
-                    // Update current_ty to field type (best-effort)
                     let field_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Tuple(subst) => {
                             let args = self.ty_ctx.substitution_args(*subst);
@@ -299,7 +295,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         _ => Ty::ERROR,
                     };
 
-                    // Cast to field type pointer if we have a valid type
                     if field_ty != Ty::ERROR {
                         let _field_llvm_ty = self.llvm_type_for_ty(field_ty);
                         let field_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
@@ -310,7 +305,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             .into_pointer_value();
                         current_ty = field_ty;
                     }
-                    // If field_ty is ERROR, keep ptr as-is and current_ty unchanged (defensive)
                 }
                 ProjectionElem::Index(local_idx) => {
                     let index_ptr = self.get_local_ptr(*local_idx);
@@ -379,6 +373,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                 .expect("downcast GEP failed")
                         };
                     }
+                }
+                ProjectionElem::Slice { .. } => {
+                    eprintln!("Slice projection not implemented in LLVM codegen");
+                    // Return a null pointer as a safe placeholder
+                    return self.context.ptr_type(AddressSpace::default()).const_null();
                 }
             }
         }
@@ -670,8 +669,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 len_ty.const_int(n, false).into()
             }
             TyKind::Slice(_) => {
-                // Slice fat pointer: { data: *T, len: usize }
-                // Len is at offset 1 (second field)
                 let ptr = self.place_ptr(place);
                 let i64_ty = self.llvm_int_type(64);
                 let i32_ty = self.llvm_int_type(32);
@@ -690,13 +687,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_load(i64_ty, len_ptr, "len_load")
                     .expect("len load failed")
             }
-            // Defensive fallback for invalid MIR (e.g., test fixtures, recovery)
             TyKind::Error => {
                 tracing::warn!("Len on Ty::ERROR — emitting 0");
                 self.llvm_int_type(64).const_zero().into()
             }
             other => {
-                // In production, this would be a compiler bug. For tests/fixtures, emit 0.
                 tracing::warn!(
                     "Len on non-array/slice type {:?} — emitting 0 as safe sentinel",
                     other

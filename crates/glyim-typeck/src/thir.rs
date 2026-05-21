@@ -245,6 +245,11 @@ pub enum PatternKind {
         inclusive: bool,
     },
     ConstBlock(Box<Body>),
+    Slice {
+        prefix: Vec<Pattern>,
+        slice: Option<Box<Pattern>>,
+        suffix: Vec<Pattern>,
+    },
     Error,
 }
 
@@ -289,6 +294,12 @@ impl std::fmt::Debug for PatternKind {
                 .field("inclusive", inclusive)
                 .finish(),
             PatternKind::ConstBlock(body) => f.debug_tuple("ConstBlock").field(body).finish(),
+            PatternKind::Slice { prefix, slice, suffix } => f
+                .debug_struct("Slice")
+                .field("prefix", prefix)
+                .field("slice", slice)
+                .field("suffix", suffix)
+                .finish(),
             PatternKind::Error => write!(f, "Error"),
         }
     }
@@ -332,6 +343,11 @@ impl Clone for PatternKind {
                 inclusive: *inclusive,
             },
             PatternKind::ConstBlock(body) => PatternKind::ConstBlock(body.clone()),
+            PatternKind::Slice { prefix, slice, suffix } => PatternKind::Slice {
+                prefix: prefix.clone(),
+                slice: slice.clone(),
+                suffix: suffix.clone(),
+            },
             PatternKind::Error => PatternKind::Error,
         }
     }
