@@ -29,3 +29,4 @@ mod tuple_index;
 mod typeck_result_accessors;
 mod where_clause;
 mod while_loop;
+mod typeck_new_nodes;
