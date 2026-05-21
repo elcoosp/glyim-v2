@@ -90,7 +90,8 @@ impl<'a> FnCtxt<'a> {
                 }
             }
             Pat::Literal(lit) => {
-            Pat::Slice(prefix, slice, suffix) => {
+                        Pat::Slice(elements) => {
+                // Determine element type of scrutinee (must be array or slice)
                 let elem_ty = match self.ctx.ty_kind(expected_ty) {
                     TyKind::Array(ety, _) | TyKind::Slice(ety) => *ety,
                     _ => {
@@ -101,16 +102,47 @@ impl<'a> FnCtxt<'a> {
                         Ty::ERROR
                     }
                 };
-                for p_id in prefix {
+                // Scan elements to find the slice matcher (Wild or Binding without subpattern)
+                let mut prefix = Vec::new();
+                let mut slice_pat = None;
+                let mut suffix = Vec::new();
+                let mut found_slice = false;
+                for p_id in elements {
+                    let pat = &self.body.pats[*p_id];
+                    let is_slice_pat = match pat {
+                        Pat::Wild => true,
+                        Pat::Binding { subpattern: None, .. } => true,
+                        _ => false,
+                    };
+                    if !found_slice && is_slice_pat {
+                        slice_pat = Some(*p_id);
+                        found_slice = true;
+                    } else if !found_slice {
+                        prefix.push(*p_id);
+                    } else {
+                        suffix.push(*p_id);
+                    }
+                }
+                // Type-check subpatterns
+                for p_id in &prefix {
                     self.check_pattern(*p_id, elem_ty);
                 }
-                if let Some(slice_id) = slice {
-                    self.check_pattern(*slice_id, expected_ty);
+                if let Some(p_id) = slice_pat {
+                    self.check_pattern(p_id, expected_ty);
                 }
-                for p_id in suffix {
+                for p_id in &suffix {
                     self.check_pattern(*p_id, elem_ty);
                 }
-                thir::Pattern::err(span) // Placeholder; THIR will have proper Slice variant
+                // Build THIR pattern (placeholder with empty vectors; actual vectors would need to carry checked patterns)
+                thir::Pattern {
+                    kind: thir::PatternKind::Slice {
+                        prefix: vec![],
+                        slice: None,
+                        suffix: vec![],
+                    },
+                    ty: expected_ty,
+                    span,
+                }
             }
                 let thir_lit = crate::unify::thir_literal(lit);
                 thir::Pattern {
