@@ -28,6 +28,7 @@ fn tcp_echo_server_client() {
     thread::sleep(Duration::from_millis(100));
 
     let addr = "127.0.0.1\0";
+    std::thread::sleep(std::time::Duration::from_millis(50));
     let fd = unsafe { glyim_net_tcp_connect(addr.as_ptr(), addr.len() - 1, port) };
     assert!(fd >= 0, "tcp connect failed");
 
