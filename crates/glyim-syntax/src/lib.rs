@@ -217,7 +217,6 @@ impl SyntaxKind {
     }
 }
 
-
 /// Language type for rowan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GlyimLang;
