@@ -1,11 +1,11 @@
 mod alloc;
 mod dealloc;
 mod drop_in_place;
-mod fs_tests;
 mod env;
+mod fs_tests;
 mod panic;
+mod process;
 mod tcp;
 mod thread;
 mod time;
 mod udp;
-mod process;
