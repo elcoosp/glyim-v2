@@ -229,11 +229,12 @@ impl SyntaxKind {
         raw >= SyntaxKind::SourceFile as u16 && raw < SyntaxKind::Error as u16
     }
 
-    /// Convert from raw u16, using the TryFromPrimitive derive.
+    /// Convert from raw u16 using the TryFromPrimitive derive.
     pub fn try_from_raw(raw: u16) -> Option<Self> {
         Self::try_from(raw).ok()
     }
 }
+
 
 /// Language type for rowan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -256,7 +257,7 @@ pub type SyntaxToken = rowan::SyntaxToken<GlyimLang>;
 /// Alias for rowan::SyntaxElement with GlyimLang.
 pub type SyntaxElement = rowan::SyntaxElement<GlyimLang>;
 
-
+pub use rowan::GreenNode;
 
 pub trait AstNode {
     fn can_cast(kind: SyntaxKind) -> bool;
@@ -365,6 +366,4 @@ ast_node!(MacroPattern, SyntaxKind::MacroPattern);
 ast_node!(StructField, SyntaxKind::StructField);
 ast_node!(EnumVariant, SyntaxKind::EnumVariant);
 ast_node!(FieldList, SyntaxKind::FieldList);
-ast_node!(VariantList, SyntaxKind::VariantList);
-pub use rowan::GreenNode;
-pub use rowan::GreenToken;
+ast_node!(VariantList, SyntaxKind::VariantList);pub use rowan::GreenToken;
