@@ -46,3 +46,7 @@ mod tuple_pattern;
 mod unary_ops;
 mod unsupported_literal;
 mod r#while;
+mod or_patterns;
+mod range_patterns;
+mod guards;
+mod slice_patterns;
