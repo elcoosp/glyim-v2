@@ -162,18 +162,30 @@ impl<'a> Parser<'a> {
                 // Check for range pattern first
                 if matches!(
                     self.current_kind(),
-                    SyntaxKind::IntLit | SyntaxKind::FloatLit | SyntaxKind::StringLit | SyntaxKind::CharLit | SyntaxKind::KwTrue | SyntaxKind::KwFalse
+                    SyntaxKind::IntLit
+                        | SyntaxKind::FloatLit
+                        | SyntaxKind::StringLit
+                        | SyntaxKind::CharLit
+                        | SyntaxKind::KwTrue
+                        | SyntaxKind::KwFalse
                 ) {
                     let start_cp = self.checkpoint();
                     self.bump(); // consume start literal
-                    if matches!(self.current_kind(), SyntaxKind::DotDot | SyntaxKind::DotDotEq) {
+                    if matches!(
+                        self.current_kind(),
+                        SyntaxKind::DotDot | SyntaxKind::DotDotEq
+                    ) {
                         self.start_node_at(start_cp, SyntaxKind::PatRange);
                         let _range_op = self.current_kind();
                         self.bump(); // .. or ..=
                         // Parse end pattern (literal, path, wildcard)
                         if !matches!(
                             self.current_kind(),
-                            SyntaxKind::FatArrow | SyntaxKind::Comma | SyntaxKind::RBrace | SyntaxKind::RParen | SyntaxKind::RBracket
+                            SyntaxKind::FatArrow
+                                | SyntaxKind::Comma
+                                | SyntaxKind::RBrace
+                                | SyntaxKind::RParen
+                                | SyntaxKind::RBracket
                         ) {
                             self.parse_pat();
                         } else {
