@@ -151,7 +151,12 @@ fn pat_to_expr(
             let expr = Expr::Path(path.clone());
             Some(body.alloc_expr(expr, span))
         }
-        Pat::Tuple(_) | Pat::Slice(_) | Pat::Or(_) | Pat::Literal(_) | Pat::Range { .. } | Pat::Err => None,
+        Pat::Tuple(_)
+        | Pat::Slice(_)
+        | Pat::Or(_)
+        | Pat::Literal(_)
+        | Pat::Range { .. }
+        | Pat::Err => None,
     }
 }
 

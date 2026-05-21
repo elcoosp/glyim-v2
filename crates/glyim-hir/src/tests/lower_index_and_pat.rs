@@ -5,12 +5,13 @@
 //! - `0 | 1` lowers to `Pat::Or`
 //! - `0..=5` lowers to `Pat::Range` inclusive
 //! - `[a, b]` lowers to `Pat::Slice`
+//! - Edge cases for each pattern type
 
 use glyim_core::interner::Interner;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
 
-use crate::{BodyId, CrateHir, Expr, Pat};
+use crate::{BodyId, CrateHir, Expr, Literal, Pat};
 
 /// Parse source code and lower it to HIR, returning the CrateHir and any
 /// diagnostics collected during lowering.
@@ -37,6 +38,34 @@ fn index_expr() {
     assert!(found, "expected Expr::Index in lowered HIR for arr[0]");
 }
 
+/// W2-C03-T01b: `arr[i]` with variable index lowers to `Expr::Index`
+#[test]
+fn index_expr_variable() {
+    let (hir, _diags) = parse_and_lower("fn main() { arr[i] }");
+    let body = first_body(&hir);
+    let found = body
+        .exprs
+        .iter()
+        .any(|e| matches!(e, Expr::Index { base: _, index: _ }));
+    assert!(found, "expected Expr::Index in lowered HIR for arr[i]");
+}
+
+/// W2-C03-T01c: chained index `m[k]` where base is itself an index
+#[test]
+fn index_expr_nested() {
+    let (hir, _diags) = parse_and_lower("fn main() { m[k] }");
+    let body = first_body(&hir);
+    let index_count = body
+        .exprs
+        .iter()
+        .filter(|e| matches!(e, Expr::Index { .. }))
+        .count();
+    assert!(
+        index_count >= 1,
+        "expected at least one Expr::Index in lowered HIR for m[k]"
+    );
+}
+
 /// W2-C03-T02: `0 | 1` lowers to `Pat::Or`
 #[test]
 fn pat_or() {
@@ -46,19 +75,95 @@ fn pat_or() {
     assert!(found, "expected Pat::Or in lowered HIR for 0 | 1");
 }
 
+/// W2-C03-T02b: `1 | 2 | 3` lowers to `Pat::Or` with 3 alternatives
+#[test]
+fn pat_or_three_alternatives() {
+    let (hir, _diags) = parse_and_lower("fn main() { match x { 1 | 2 | 3 => y } }");
+    let body = first_body(&hir);
+    let or_pat = body.pats.iter().find(|p| matches!(p, Pat::Or(_)));
+    assert!(or_pat.is_some(), "expected Pat::Or in lowered HIR");
+    if let Some(Pat::Or(alts)) = or_pat {
+        assert!(
+            alts.len() >= 2,
+            "expected at least 2 alternatives in Pat::Or, found {}",
+            alts.len()
+        );
+    }
+}
+
 /// W2-C03-T03: `0..=5` lowers to `Pat::Range` inclusive
 #[test]
 fn pat_range_inclusive() {
     let (hir, _diags) = parse_and_lower("fn main() { match x { 0..=5 => y } }");
     let body = first_body(&hir);
-    let found = body
-        .pats
-        .iter()
-        .any(|p| matches!(p, Pat::Range { inclusive: true, .. }));
+    let found = body.pats.iter().any(|p| {
+        matches!(
+            p,
+            Pat::Range {
+                inclusive: true,
+                ..
+            }
+        )
+    });
     assert!(
         found,
         "expected Pat::Range {{ inclusive: true }} in lowered HIR for 0..=5"
     );
+}
+
+/// W2-C03-T03b: `0..5` (exclusive range) lowers to `Pat::Range` with inclusive=false
+#[test]
+fn pat_range_exclusive() {
+    let (hir, _diags) = parse_and_lower("fn main() { match x { 0..5 => y } }");
+    let body = first_body(&hir);
+    let found = body.pats.iter().any(|p| {
+        matches!(
+            p,
+            Pat::Range {
+                inclusive: false,
+                ..
+            }
+        )
+    });
+    assert!(
+        found,
+        "expected Pat::Range {{ inclusive: false }} in lowered HIR for 0..5"
+    );
+}
+
+/// W2-C03-T03c: inclusive range preserves start and end literals
+#[test]
+fn pat_range_inclusive_values() {
+    let (hir, _diags) = parse_and_lower("fn main() { match x { 0..=5 => y } }");
+    let body = first_body(&hir);
+    let range_pat = body.pats.iter().find(|p| {
+        matches!(
+            p,
+            Pat::Range {
+                inclusive: true,
+                ..
+            }
+        )
+    });
+    assert!(range_pat.is_some(), "expected Pat::Range inclusive");
+    if let Some(Pat::Range {
+        start,
+        end,
+        inclusive,
+    }) = range_pat
+    {
+        assert!(start.is_some(), "expected range start to be Some for 0..=5");
+        assert!(end.is_some(), "expected range end to be Some for 0..=5");
+        assert!(*inclusive, "expected inclusive to be true for ..=");
+        // Verify start is 0
+        if let Some(Literal::Int(val, _)) = start {
+            assert_eq!(*val, 0, "expected range start to be 0");
+        }
+        // Verify end is 5
+        if let Some(Literal::Int(val, _)) = end {
+            assert_eq!(*val, 5, "expected range end to be 5");
+        }
+    }
 }
 
 /// W2-C03-T04: `[a, b]` lowers to `Pat::Slice`
@@ -68,4 +173,61 @@ fn pat_slice() {
     let body = first_body(&hir);
     let found = body.pats.iter().any(|p| matches!(p, Pat::Slice(_)));
     assert!(found, "expected Pat::Slice in lowered HIR for [a, b]");
+}
+
+/// W2-C03-T04b: `[a, _, c]` slice pattern with 3 elements including wildcard
+#[test]
+fn pat_slice_three_elements() {
+    let (hir, _diags) = parse_and_lower("fn main() { match x { [a, _, c] => y } }");
+    let body = first_body(&hir);
+    let slice_pat = body.pats.iter().find(|p| matches!(p, Pat::Slice(_)));
+    assert!(slice_pat.is_some(), "expected Pat::Slice in lowered HIR");
+    if let Some(Pat::Slice(elems)) = slice_pat {
+        assert_eq!(
+            elems.len(),
+            3,
+            "expected 3 elements in Pat::Slice, found {}",
+            elems.len()
+        );
+    }
+}
+
+/// W2-C03-T04c: single element slice `[a]`
+#[test]
+fn pat_slice_single_element() {
+    let (hir, _diags) = parse_and_lower("fn main() { match x { [a] => y } }");
+    let body = first_body(&hir);
+    let slice_pat = body.pats.iter().find(|p| matches!(p, Pat::Slice(_)));
+    assert!(
+        slice_pat.is_some(),
+        "expected Pat::Slice in lowered HIR for [a]"
+    );
+    if let Some(Pat::Slice(elems)) = slice_pat {
+        assert_eq!(
+            elems.len(),
+            1,
+            "expected 1 element in Pat::Slice, found {}",
+            elems.len()
+        );
+    }
+}
+
+/// W2-C03-T04d: empty slice `[]`
+#[test]
+fn pat_slice_empty() {
+    let (hir, _diags) = parse_and_lower("fn main() { match x { [] => y } }");
+    let body = first_body(&hir);
+    let slice_pat = body.pats.iter().find(|p| matches!(p, Pat::Slice(_)));
+    assert!(
+        slice_pat.is_some(),
+        "expected Pat::Slice in lowered HIR for []"
+    );
+    if let Some(Pat::Slice(elems)) = slice_pat {
+        assert_eq!(
+            elems.len(),
+            0,
+            "expected 0 elements in empty Pat::Slice, found {}",
+            elems.len()
+        );
+    }
 }

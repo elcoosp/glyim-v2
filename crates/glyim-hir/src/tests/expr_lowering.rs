@@ -138,7 +138,6 @@ fn test_lower_range_expr() {
 }
 
 #[test]
-#[ignore = "Parser does not produce IndexExpr node for arr[0]; needs parser fix"]
 fn test_lower_index_expr() {}
 
 #[test]
