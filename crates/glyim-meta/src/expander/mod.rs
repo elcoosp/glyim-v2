@@ -376,7 +376,12 @@ impl<'a> ExpanderImpl<'a> {
             }
             BuiltinMacro::Line => {
                 // line!() expands to a line number (approximated from byte offset)
-                let line_num = call_site.lo.to_raw().checked_div(80).unwrap_or(0).saturating_add(1);
+                let line_num = call_site
+                    .lo
+                    .to_raw()
+                    .checked_div(80)
+                    .unwrap_or(0)
+                    .saturating_add(1);
                 vec![TokenTree::Token(
                     SyntaxKind::IntLit,
                     SmolStr::from(line_num.to_string()),
@@ -384,7 +389,12 @@ impl<'a> ExpanderImpl<'a> {
             }
             BuiltinMacro::Column => {
                 // column!() expands to a column number (approximated from byte offset)
-                let col_num = call_site.lo.to_raw().checked_rem(80).unwrap_or(0).saturating_add(1);
+                let col_num = call_site
+                    .lo
+                    .to_raw()
+                    .checked_rem(80)
+                    .unwrap_or(0)
+                    .saturating_add(1);
                 vec![TokenTree::Token(
                     SyntaxKind::IntLit,
                     SmolStr::from(col_num.to_string()),
@@ -397,12 +407,15 @@ impl<'a> ExpanderImpl<'a> {
                 if args_tt.len() != 1 {
                     return (
                         None,
-                        vec![GlyimDiagnostic::type_error(call_site, "env! expects one string literal argument".to_string())],
+                        vec![GlyimDiagnostic::type_error(
+                            call_site,
+                            "env! expects one string literal argument".to_string(),
+                        )],
                     );
                 }
                 match &args_tt[0] {
                     TokenTree::Token(SyntaxKind::StringLit, text) => {
-                        let var_name = &text.as_str()[1..text.len()-1]; // strip quotes
+                        let var_name = &text.as_str()[1..text.len() - 1]; // strip quotes
                         match std::env::var(var_name) {
                             Ok(val) => {
                                 let lit = SmolStr::from(format!("\"{}\"", val));
@@ -411,7 +424,10 @@ impl<'a> ExpanderImpl<'a> {
                             Err(_) => {
                                 return (
                                     None,
-                                    vec![GlyimDiagnostic::type_error(call_site, format!("environment variable '{}' not found", var_name))],
+                                    vec![GlyimDiagnostic::type_error(
+                                        call_site,
+                                        format!("environment variable '{}' not found", var_name),
+                                    )],
                                 );
                             }
                         }
@@ -419,7 +435,10 @@ impl<'a> ExpanderImpl<'a> {
                     _ => {
                         return (
                             None,
-                            vec![GlyimDiagnostic::type_error(call_site, "env! argument must be a string literal".to_string())],
+                            vec![GlyimDiagnostic::type_error(
+                                call_site,
+                                "env! argument must be a string literal".to_string(),
+                            )],
                         );
                     }
                 }
@@ -430,12 +449,15 @@ impl<'a> ExpanderImpl<'a> {
                 if args_tt.len() != 1 {
                     return (
                         None,
-                        vec![GlyimDiagnostic::type_error(call_site, "include! expects one string literal argument".to_string())],
+                        vec![GlyimDiagnostic::type_error(
+                            call_site,
+                            "include! expects one string literal argument".to_string(),
+                        )],
                     );
                 }
                 match &args_tt[0] {
                     TokenTree::Token(SyntaxKind::StringLit, text) => {
-                        let path_str = &text.as_str()[1..text.len()-1];
+                        let path_str = &text.as_str()[1..text.len() - 1];
                         // For now, resolve relative to current working directory (tests will set up temp files)
                         let path = Path::new(path_str);
                         match fs::read_to_string(path) {
@@ -447,7 +469,10 @@ impl<'a> ExpanderImpl<'a> {
                             Err(e) => {
                                 return (
                                     None,
-                                    vec![GlyimDiagnostic::type_error(call_site, format!("failed to read file '{}': {}", path_str, e))],
+                                    vec![GlyimDiagnostic::type_error(
+                                        call_site,
+                                        format!("failed to read file '{}': {}", path_str, e),
+                                    )],
                                 );
                             }
                         }
@@ -455,7 +480,10 @@ impl<'a> ExpanderImpl<'a> {
                     _ => {
                         return (
                             None,
-                            vec![GlyimDiagnostic::type_error(call_site, "include! argument must be a string literal".to_string())],
+                            vec![GlyimDiagnostic::type_error(
+                                call_site,
+                                "include! argument must be a string literal".to_string(),
+                            )],
                         );
                     }
                 }
@@ -466,7 +494,7 @@ impl<'a> ExpanderImpl<'a> {
                 let mut result = String::new();
                 for tt in &args_tt {
                     if let TokenTree::Token(SyntaxKind::StringLit, text) = tt {
-                        let s = &text.as_str()[1..text.len()-1];
+                        let s = &text.as_str()[1..text.len() - 1];
                         result.push_str(s);
                     }
                     // ignore commas and other punctuation
