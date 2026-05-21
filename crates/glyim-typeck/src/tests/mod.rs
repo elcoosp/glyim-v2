@@ -1,4 +1,5 @@
 mod assign;
+mod async_await;
 mod binary_error;
 mod binary_i32;
 mod break_continue;

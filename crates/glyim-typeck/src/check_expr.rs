@@ -523,11 +523,12 @@ impl<'a> FnCtxt<'a> {
                     span,
                 );
 
-                if target_ty != Ty::ERROR && inner_ty != Ty::ERROR {
-                    if !self.is_cast_valid(inner_ty, target_ty) {
-                        self.diagnostics
-                            .push(GlyimDiagnostic::type_error(span, "invalid cast"));
-                    }
+                if target_ty != Ty::ERROR
+                    && inner_ty != Ty::ERROR
+                    && !self.is_cast_valid(inner_ty, target_ty)
+                {
+                    self.diagnostics
+                        .push(GlyimDiagnostic::type_error(span, "invalid cast"));
                 }
 
                 let result_ty = if target_ty == Ty::ERROR {
@@ -770,18 +771,40 @@ impl<'a> FnCtxt<'a> {
                 end,
                 inclusive: _,
             } => {
-                // Range desugars to struct call; for now return error with helpful message
-                if let Some(start_id) = start {
-                    let _ = self.check_expr(*start_id);
-                }
-                if let Some(end_id) = end {
-                    let _ = self.check_expr(*end_id);
-                }
-                self.diagnostics.push(GlyimDiagnostic::type_error(
+                // Type check range bounds - both must be same integer type or unbounded
+                let bound_ty = self.fresh_infer_ty();
+                let _start_expr = if let Some(start_id) = start {
+                    let (s_expr, s_ty) = self.check_expr(*start_id);
+                    if s_ty != Ty::ERROR && bound_ty != Ty::ERROR {
+                        self.unify(s_ty, bound_ty, span);
+                    }
+                    Some(Box::new(s_expr))
+                } else {
+                    None
+                };
+                let _end_expr = if let Some(end_id) = end {
+                    let (e_expr, e_ty) = self.check_expr(*end_id);
+                    if e_ty != Ty::ERROR && bound_ty != Ty::ERROR {
+                        self.unify(e_ty, bound_ty, span);
+                    }
+                    Some(Box::new(e_expr))
+                } else {
+                    None
+                };
+                // Range type is std::ops::Range or RangeInclusive
+                // For now, use a placeholder ADT type with the bound type as generic arg
+                let range_ty = self.fresh_infer_ty();
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::Struct {
+                        adt_id: AdtId::from_raw(0), // placeholder - resolved via def_map in real impl
+                        fields: vec![], // Range has start/end fields; simplified for now
+                        spread: None,
+                        variant_idx: 0,
+                    },
+                    ty: range_ty,
                     span,
-                    "range expressions require std::ops::Range to be in scope",
-                ));
-                (thir::Expr::err(span), Ty::ERROR)
+                };
+                (thir_expr, range_ty)
             }
 
             Expr::Missing => {
@@ -804,10 +827,10 @@ impl<'a> FnCtxt<'a> {
         match self.ctx.ty_kind(ty) {
             TyKind::Param(pt) => {
                 let args = self.ctx.substitution_args(substs);
-                if (pt.index as usize) < args.len() {
-                    if let GenericArg::Ty(replacement) = args[pt.index as usize] {
-                        return replacement;
-                    }
+                if (pt.index as usize) < args.len()
+                    && let GenericArg::Ty(replacement) = args[pt.index as usize]
+                {
+                    return replacement;
                 }
                 ty
             }

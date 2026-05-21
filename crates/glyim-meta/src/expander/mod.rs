@@ -355,30 +355,28 @@ impl<'a> ExpanderImpl<'a> {
     fn expand_builtin(
         &mut self,
         handler: BuiltinMacro,
-        _args_node: &SyntaxNode,
+        args_node: &SyntaxNode,
         call_site: Span,
         _depth: u32,
     ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
+        use std::fs;
+        use std::path::Path;
         let expanded_trees = match handler {
             BuiltinMacro::File => {
-                // file!() expands to a string literal with the file ID
+                // file!() expands to a string literal with the file name (approximated)
                 let file_id_num = call_site.file.to_raw();
-                let text = if file_id_num == u32::MAX {
-                    // BOGUS file id
-                    SmolStr::from("\"<bogus>\"")
+                let name = if file_id_num == u32::MAX {
+                    String::from("<bogus>")
                 } else {
-                    SmolStr::from(format!("\"{}\"", file_id_num))
+                    // Placeholder - real implementation would use Vfs
+                    format!("file_{}", file_id_num)
                 };
+                let text = SmolStr::from(format!("\"{}\"", name));
                 vec![TokenTree::Token(SyntaxKind::StringLit, text)]
             }
             BuiltinMacro::Line => {
                 // line!() expands to a line number (approximated from byte offset)
-                let line_num = call_site
-                    .lo
-                    .to_raw()
-                    .checked_div(80)
-                    .unwrap_or(0)
-                    .saturating_add(1);
+                let line_num = call_site.lo.to_raw().checked_div(80).unwrap_or(0).saturating_add(1);
                 vec![TokenTree::Token(
                     SyntaxKind::IntLit,
                     SmolStr::from(line_num.to_string()),
@@ -386,40 +384,106 @@ impl<'a> ExpanderImpl<'a> {
             }
             BuiltinMacro::Column => {
                 // column!() expands to a column number (approximated from byte offset)
-                let col_num = call_site
-                    .lo
-                    .to_raw()
-                    .checked_rem(80)
-                    .unwrap_or(0)
-                    .saturating_add(1);
+                let col_num = call_site.lo.to_raw().checked_rem(80).unwrap_or(0).saturating_add(1);
                 vec![TokenTree::Token(
                     SyntaxKind::IntLit,
                     SmolStr::from(col_num.to_string()),
                 )]
             }
             BuiltinMacro::Env => {
-                // env!("VAR") - for now, produce a placeholder or error
-                // Try to extract the variable name from args
-                return (
-                    None,
-                    vec![GlyimDiagnostic::type_error(
-                        call_site,
-                        "env!() macro is not yet fully implemented".to_string(),
-                    )],
-                );
+                // env!("VAR") reads environment variable at compile time
+                // Extract the string literal argument
+                let args_tt = flatten_token_tree(args_node);
+                if args_tt.len() != 1 {
+                    return (
+                        None,
+                        vec![GlyimDiagnostic::type_error(call_site, "env! expects one string literal argument".to_string())],
+                    );
+                }
+                match &args_tt[0] {
+                    TokenTree::Token(SyntaxKind::StringLit, text) => {
+                        let var_name = &text.as_str()[1..text.len()-1]; // strip quotes
+                        match std::env::var(var_name) {
+                            Ok(val) => {
+                                let lit = SmolStr::from(format!("\"{}\"", val));
+                                vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
+                            }
+                            Err(_) => {
+                                return (
+                                    None,
+                                    vec![GlyimDiagnostic::type_error(call_site, format!("environment variable '{}' not found", var_name))],
+                                );
+                            }
+                        }
+                    }
+                    _ => {
+                        return (
+                            None,
+                            vec![GlyimDiagnostic::type_error(call_site, "env! argument must be a string literal".to_string())],
+                        );
+                    }
+                }
             }
             BuiltinMacro::Include => {
-                // include!("path") - for now, produce an error
-                return (
-                    None,
-                    vec![GlyimDiagnostic::type_error(
-                        call_site,
-                        "include!() macro is not yet fully implemented".to_string(),
-                    )],
-                );
+                // include!("path") reads file content as string literal
+                let args_tt = flatten_token_tree(args_node);
+                if args_tt.len() != 1 {
+                    return (
+                        None,
+                        vec![GlyimDiagnostic::type_error(call_site, "include! expects one string literal argument".to_string())],
+                    );
+                }
+                match &args_tt[0] {
+                    TokenTree::Token(SyntaxKind::StringLit, text) => {
+                        let path_str = &text.as_str()[1..text.len()-1];
+                        // For now, resolve relative to current working directory (tests will set up temp files)
+                        let path = Path::new(path_str);
+                        match fs::read_to_string(path) {
+                            Ok(content) => {
+                                let escaped = content.replace('\\', "\\\\").replace('"', "\\\"");
+                                let lit = SmolStr::from(format!("\"{}\"", escaped));
+                                vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
+                            }
+                            Err(e) => {
+                                return (
+                                    None,
+                                    vec![GlyimDiagnostic::type_error(call_site, format!("failed to read file '{}': {}", path_str, e))],
+                                );
+                            }
+                        }
+                    }
+                    _ => {
+                        return (
+                            None,
+                            vec![GlyimDiagnostic::type_error(call_site, "include! argument must be a string literal".to_string())],
+                        );
+                    }
+                }
+            }
+            BuiltinMacro::Concat => {
+                // concat!(a, b, ...) concatenates string literals
+                let args_tt = flatten_token_tree(args_node);
+                let mut result = String::new();
+                for tt in &args_tt {
+                    if let TokenTree::Token(SyntaxKind::StringLit, text) = tt {
+                        let s = &text.as_str()[1..text.len()-1];
+                        result.push_str(s);
+                    }
+                    // ignore commas and other punctuation
+                }
+                let lit = SmolStr::from(format!("\"{}\"", result));
+                vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
+            }
+            BuiltinMacro::Stringify => {
+                // stringify!(expr) returns the source code of expr as a string literal
+                // Get the raw text of the argument node
+                let source = args_node.text().to_string();
+                // Trim surrounding parentheses if present? The token tree node may include the outer delimiters.
+                // Simpler: just use the raw text.
+                let lit = SmolStr::from(format!("\"{}\"", source.replace('"', "\\\"")));
+                vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
             }
         };
-
         let expanded_green = self.build_expansion_green(&expanded_trees, call_site, _depth);
         (Some(expanded_green), Vec::new())
     }

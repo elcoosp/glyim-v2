@@ -26,6 +26,8 @@ pub enum BuiltinMacro {
     Column,
     Include,
     Env,
+    Concat,
+    Stringify,
 }
 
 #[derive(Clone, Debug)]

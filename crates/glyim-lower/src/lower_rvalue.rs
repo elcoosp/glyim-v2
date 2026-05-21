@@ -1,14 +1,12 @@
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
-use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_mir::{self, BasicBlockIdx, CastKind, LocalIdx, ProjectionElem};
-use glyim_type::*;
+use glyim_type::{self, FieldIdx, Ty, TyKind};
 use glyim_typeck::thir;
 
 impl<'a> MirBuilder<'a> {
     // ---- Statement lowering ----
-
     pub fn lower_stmt(&mut self, stmt: &thir::Stmt) {
         match stmt {
             thir::Stmt::Let {
@@ -19,7 +17,8 @@ impl<'a> MirBuilder<'a> {
                 pat,
             } => {
                 let init_local = if let Some(init_expr) = init {
-                    let temp_local = self.alloc_local(*ty, Mutability::Mut, *span);
+                    let temp_local =
+                        self.alloc_local(*ty, glyim_core::primitives::Mutability::Mut, *span);
                     self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), *span);
                     let rvalue = self.lower_expr_to_rvalue(init_expr);
                     self.push_stmt(
@@ -61,9 +60,8 @@ impl<'a> MirBuilder<'a> {
             }
             thir::Stmt::Expr { expr } => {
                 let rvalue = self.lower_expr_to_rvalue(expr);
-                // Assign to a temp so side effects are captured in MIR.
-                // Expression statements may involve function calls, borrows, etc.
-                let temp = self.alloc_local(expr.ty, Mutability::Mut, expr.span);
+                let temp =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 self.push_stmt(glyim_mir::StatementKind::StorageLive(temp), expr.span);
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(glyim_mir::Place::new(temp), rvalue),
@@ -74,7 +72,6 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Expression → Rvalue lowering ----
-
     pub fn lower_expr_to_rvalue(&mut self, expr: &thir::Expr) -> glyim_mir::Rvalue {
         match &expr.kind {
             thir::ExprKind::Literal(lit) => {
@@ -120,10 +117,10 @@ impl<'a> MirBuilder<'a> {
             } => {
                 let place = self.lower_expr_to_place(operand);
                 let borrow_kind = match mutability {
-                    Mutability::Mut => glyim_mir::BorrowKind::Mut {
+                    glyim_core::primitives::Mutability::Mut => glyim_mir::BorrowKind::Mut {
                         allow_two_phase_borrow: false,
                     },
-                    Mutability::Not => glyim_mir::BorrowKind::Shared,
+                    glyim_core::primitives::Mutability::Not => glyim_mir::BorrowKind::Shared,
                 };
                 glyim_mir::Rvalue::Ref(place, borrow_kind)
             }
@@ -133,10 +130,9 @@ impl<'a> MirBuilder<'a> {
                     mir_args.push(self.lower_expr_to_operand(arg));
                 }
                 let func_op = self.lower_expr_to_operand(func);
-
-                let dest_local = self.alloc_local(expr.ty, Mutability::Mut, expr.span);
+                let dest_local =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 let dest_place = glyim_mir::Place::new(dest_local);
-
                 let next_bb = self.new_block();
                 self.terminate(
                     glyim_mir::TerminatorKind::Call {
@@ -148,7 +144,6 @@ impl<'a> MirBuilder<'a> {
                     },
                     expr.span,
                 );
-
                 self.current_block = Some(next_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
@@ -158,16 +153,13 @@ impl<'a> MirBuilder<'a> {
                 else_branch,
             } => {
                 let cond_op = self.lower_expr_to_operand(cond);
-
                 let then_bb = self.new_block();
                 let else_bb = self.new_block();
                 let merge_bb = self.new_block();
-
-                let dest_local = self.alloc_local(expr.ty, Mutability::Mut, expr.span);
+                let dest_local =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 let dest_place = glyim_mir::Place::new(dest_local);
-
                 let targets = glyim_mir::SwitchTargets::new(Box::new([(1, then_bb)]), else_bb);
-
                 self.terminate(
                     glyim_mir::TerminatorKind::SwitchInt {
                         discr: cond_op,
@@ -176,7 +168,6 @@ impl<'a> MirBuilder<'a> {
                     },
                     expr.span,
                 );
-
                 self.current_block = Some(then_bb);
                 let then_val = self.lower_expr_to_rvalue(then_branch);
                 self.push_stmt(
@@ -187,7 +178,6 @@ impl<'a> MirBuilder<'a> {
                     glyim_mir::TerminatorKind::Goto { target: merge_bb },
                     then_branch.span,
                 );
-
                 self.current_block = Some(else_bb);
                 if let Some(else_b) = else_branch {
                     let else_val = self.lower_expr_to_rvalue(else_b);
@@ -200,7 +190,6 @@ impl<'a> MirBuilder<'a> {
                     glyim_mir::TerminatorKind::Goto { target: merge_bb },
                     expr.span,
                 );
-
                 self.current_block = Some(merge_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
@@ -210,8 +199,6 @@ impl<'a> MirBuilder<'a> {
             thir::ExprKind::Block { stmts, tail } => {
                 for stmt in stmts {
                     self.lower_stmt(stmt);
-                    // If a statement (e.g. break/continue/return) terminated the block,
-                    // skip remaining stmts and the tail — we're in dead code.
                     if self.current_block.is_none() {
                         return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
                             glyim_mir::MirConst {
@@ -236,12 +223,10 @@ impl<'a> MirBuilder<'a> {
                 let header_bb = self.new_block();
                 let body_bb = self.new_block();
                 let exit_bb = self.new_block();
-
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: header_bb },
                     expr.span,
                 );
-
                 self.current_block = Some(header_bb);
                 let cond_op = self.lower_expr_to_operand(cond);
                 let targets = glyim_mir::SwitchTargets::new(Box::new([(1, body_bb)]), exit_bb);
@@ -253,24 +238,19 @@ impl<'a> MirBuilder<'a> {
                     },
                     cond.span,
                 );
-
                 self.loop_stack.push(LoopInfo {
                     continue_bb: header_bb,
                     break_bb: exit_bb,
                 });
-
                 self.current_block = Some(body_bb);
                 let _ = self.lower_expr_to_rvalue(body);
-
                 self.loop_stack.pop();
-
                 if self.current_block.is_some() {
                     self.terminate(
                         glyim_mir::TerminatorKind::Goto { target: header_bb },
                         body.span,
                     );
                 }
-
                 self.current_block = Some(exit_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
@@ -281,29 +261,23 @@ impl<'a> MirBuilder<'a> {
             thir::ExprKind::Loop { body } => {
                 let loop_bb = self.new_block();
                 let exit_bb = self.new_block();
-
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: loop_bb },
                     expr.span,
                 );
-
                 self.loop_stack.push(LoopInfo {
                     continue_bb: loop_bb,
                     break_bb: exit_bb,
                 });
-
                 self.current_block = Some(loop_bb);
                 let _ = self.lower_expr_to_rvalue(body);
-
                 self.loop_stack.pop();
-
                 if self.current_block.is_some() {
                     self.terminate(
                         glyim_mir::TerminatorKind::Goto { target: loop_bb },
                         body.span,
                     );
                 }
-
                 self.current_block = Some(exit_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
@@ -316,21 +290,13 @@ impl<'a> MirBuilder<'a> {
                 iterable,
                 body,
             } => {
-                // For-loop lowering strategy:
-                // 1. Evaluate the iterable expression into a temp local
-                // 2. If LowerCtx provides iterator_next_fn, generate:
-                //    - Loop header: call next(&mut iter)
-                //    - SwitchInt on Option discriminant (Some vs None)
-                //    - Some branch: bind pat, lower body, goto header
-                //    - None branch: exit loop
-                // 3. If no iterator info, generate a simplified loop
-                //    (no next() call, just loop body — used for testing)
-
                 let iter_ty = iterable.ty;
                 let elem_ty = pat.ty;
-
-                // Allocate a mutable local for the iterator
-                let iter_local = self.alloc_local(iter_ty, Mutability::Mut, iterable.span);
+                let iter_local = self.alloc_local(
+                    iter_ty,
+                    glyim_core::primitives::Mutability::Mut,
+                    iterable.span,
+                );
                 self.push_stmt(
                     glyim_mir::StatementKind::StorageLive(iter_local),
                     iterable.span,
@@ -343,29 +309,23 @@ impl<'a> MirBuilder<'a> {
                     ),
                     iterable.span,
                 );
-
                 let header_bb = self.new_block();
                 let exit_bb = self.new_block();
-
-                // Jump from current block to loop header
                 self.terminate(
                     glyim_mir::TerminatorKind::Goto { target: header_bb },
                     expr.span,
                 );
-
-                // Push loop info for break/continue resolution
                 self.loop_stack.push(LoopInfo {
                     continue_bb: header_bb,
                     break_bb: exit_bb,
                 });
-
                 if let Some(iter_info) = self.ctx.iterator_next_fn(iter_ty, elem_ty) {
-                    // Full iterator protocol lowering
                     self.current_block = Some(header_bb);
-
-                    // Create &mut iter argument
-                    let ref_iter_local =
-                        self.alloc_local(iter_info.ref_iter_ty, Mutability::Mut, iterable.span);
+                    let ref_iter_local = self.alloc_local(
+                        iter_info.ref_iter_ty,
+                        glyim_core::primitives::Mutability::Mut,
+                        iterable.span,
+                    );
                     self.push_stmt(
                         glyim_mir::StatementKind::StorageLive(ref_iter_local),
                         iterable.span,
@@ -382,8 +342,6 @@ impl<'a> MirBuilder<'a> {
                         ),
                         iterable.span,
                     );
-
-                    // Call next(&mut iter) -> Option<elem>
                     let next_fn_const = glyim_mir::MirConst {
                         kind: glyim_mir::MirConstKind::Fn(iter_info.fn_def_id, iter_info.fn_substs),
                         ty: iter_info.fn_ty,
@@ -392,14 +350,15 @@ impl<'a> MirBuilder<'a> {
                     let next_fn_op = glyim_mir::Operand::Constant(next_fn_const);
                     let ref_iter_op =
                         glyim_mir::Operand::Copy(glyim_mir::Place::new(ref_iter_local));
-
-                    let option_local =
-                        self.alloc_local(iter_info.option_ty, Mutability::Mut, expr.span);
+                    let option_local = self.alloc_local(
+                        iter_info.option_ty,
+                        glyim_core::primitives::Mutability::Mut,
+                        expr.span,
+                    );
                     self.push_stmt(
                         glyim_mir::StatementKind::StorageLive(option_local),
                         expr.span,
                     );
-
                     let after_call_bb = self.new_block();
                     self.terminate(
                         glyim_mir::TerminatorKind::Call {
@@ -411,14 +370,10 @@ impl<'a> MirBuilder<'a> {
                         },
                         expr.span,
                     );
-
-                    // After call: switch on Option discriminant
                     self.current_block = Some(after_call_bb);
                     let discr_op = glyim_mir::Operand::Copy(glyim_mir::Place::new(option_local));
                     let some_bb = self.new_block();
                     let none_bb = exit_bb;
-
-                    // Option::Some = discriminant 1, Option::None = discriminant 0
                     let switch_targets =
                         glyim_mir::SwitchTargets::new(Box::new([(1, some_bb)]), none_bb);
                     self.terminate(
@@ -429,10 +384,7 @@ impl<'a> MirBuilder<'a> {
                         },
                         expr.span,
                     );
-
-                    // Some branch: extract the inner value and bind the pattern
                     self.current_block = Some(some_bb);
-                    // Read the Some payload via downcast(field 0)
                     let payload_place = {
                         let mut proj = vec![glyim_mir::ProjectionElem::Downcast(
                             glyim_mir::VariantIdx::from_raw(1),
@@ -443,7 +395,11 @@ impl<'a> MirBuilder<'a> {
                             projection: proj.into_boxed_slice(),
                         }
                     };
-                    let payload_local = self.alloc_local(elem_ty, Mutability::Not, expr.span);
+                    let payload_local = self.alloc_local(
+                        elem_ty,
+                        glyim_core::primitives::Mutability::Not,
+                        expr.span,
+                    );
                     self.push_stmt(
                         glyim_mir::StatementKind::StorageLive(payload_local),
                         expr.span,
@@ -456,11 +412,7 @@ impl<'a> MirBuilder<'a> {
                         expr.span,
                     );
                     self.bind_pattern(pat, Some(payload_local), expr.span);
-
-                    // Lower the loop body
                     let _ = self.lower_expr_to_rvalue(body);
-
-                    // Loop back to header
                     if self.current_block.is_some() {
                         self.terminate(
                             glyim_mir::TerminatorKind::Goto { target: header_bb },
@@ -468,17 +420,9 @@ impl<'a> MirBuilder<'a> {
                         );
                     }
                 } else {
-                    // Simplified lowering without iterator protocol
-                    // Generate a basic loop structure for testing/fallback
                     self.current_block = Some(header_bb);
-
-                    // Bind the pattern to a dummy (the iterable temp)
                     self.bind_pattern(pat, Some(iter_local), expr.span);
-
-                    // Lower the loop body
                     let _ = self.lower_expr_to_rvalue(body);
-
-                    // Loop back to header
                     if self.current_block.is_some() {
                         self.terminate(
                             glyim_mir::TerminatorKind::Goto { target: header_bb },
@@ -486,10 +430,8 @@ impl<'a> MirBuilder<'a> {
                         );
                     }
                 }
-
                 self.loop_stack.pop();
                 self.current_block = Some(exit_bb);
-
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
                     ty: Ty::UNIT,
@@ -521,7 +463,11 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::Index { base, index } => {
                 let base_place = self.lower_expr_to_place(base);
-                let index_local = self.alloc_local(index.ty, Mutability::Not, index.span);
+                let index_local = self.alloc_local(
+                    index.ty,
+                    glyim_core::primitives::Mutability::Not,
+                    index.span,
+                );
                 let index_rval = self.lower_expr_to_rvalue(index);
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(
@@ -610,8 +556,6 @@ impl<'a> MirBuilder<'a> {
                     ));
                     self.terminate(glyim_mir::TerminatorKind::Unreachable, expr.span);
                 }
-                // Do NOT create a new block — the current block is terminated.
-                // The caller must check current_block before emitting statements.
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
                     ty: Ty::NEVER,
@@ -629,7 +573,6 @@ impl<'a> MirBuilder<'a> {
                     ));
                     self.terminate(glyim_mir::TerminatorKind::Unreachable, expr.span);
                 }
-                // Do NOT create a new block — the current block is terminated.
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
                     ty: Ty::NEVER,
@@ -640,18 +583,6 @@ impl<'a> MirBuilder<'a> {
                 body: _thir_body,
                 captures,
             } => {
-                // Closure lowering: generate an Aggregate rvalue that
-                // constructs the closure environment struct.
-                //
-                // The closure type is TyKind::Closure(id, substs), which
-                // tells us the ClosureId and substitution. The Aggregate
-                // rvalue uses AggregateKind::Closure with one operand per
-                // captured variable.
-                //
-                // Each capture is either:
-                // - ByValue: Move the local into the closure environment
-                // - ByRef(Mutability::Not): Copy a &T reference
-                // - ByRef(Mutability::Mut): Copy a &mut T reference
                 let (closure_id, closure_substs) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
                     TyKind::Closure(id, substs) => (id, substs),
                     _ => {
@@ -668,27 +599,20 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
-
                 let mut capture_operands = Vec::with_capacity(captures.len());
                 for capture in captures {
                     let capture_local = LocalIdx::from_raw(capture.local.to_raw());
                     let operand = match capture.kind {
                         thir::CaptureKind::ByValue => {
-                            // Move the value into the closure environment
                             glyim_mir::Operand::Move(glyim_mir::Place::new(capture_local))
                         }
-                        thir::CaptureKind::ByRef(Mutability::Not) => {
-                            // Copy the shared reference into the environment
-                            glyim_mir::Operand::Copy(glyim_mir::Place::new(capture_local))
-                        }
-                        thir::CaptureKind::ByRef(Mutability::Mut) => {
-                            // Copy the mutable reference into the environment
+                        thir::CaptureKind::ByRef(glyim_core::primitives::Mutability::Not)
+                        | thir::CaptureKind::ByRef(glyim_core::primitives::Mutability::Mut) => {
                             glyim_mir::Operand::Copy(glyim_mir::Place::new(capture_local))
                         }
                     };
                     capture_operands.push(operand);
                 }
-
                 glyim_mir::Rvalue::Aggregate(
                     glyim_mir::AggregateKind::Closure(*closure_id, *closure_substs),
                     capture_operands,
@@ -714,14 +638,13 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Expression → Operand lowering ----
-
     pub fn lower_expr_to_operand(&mut self, expr: &thir::Expr) -> glyim_mir::Operand {
         match &expr.kind {
             thir::ExprKind::Literal(_) | thir::ExprKind::FnRef(_) => {
                 if let glyim_mir::Rvalue::Use(op) = self.lower_expr_to_rvalue(expr) {
                     op
                 } else {
-                    unreachable!("literal/FnRef always lowers to Rvalue::Use(Operand)")
+                    unreachable!()
                 }
             }
             thir::ExprKind::VarRef(var_id) => {
@@ -730,7 +653,8 @@ impl<'a> MirBuilder<'a> {
             }
             _ => {
                 let rvalue = self.lower_expr_to_rvalue(expr);
-                let local = self.alloc_local(expr.ty, Mutability::Mut, expr.span);
+                let local =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 let place = glyim_mir::Place::new(local);
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(place.clone(), rvalue),
@@ -742,7 +666,6 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Expression → Place lowering ----
-
     pub fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
@@ -764,7 +687,11 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::Index { base, index } => {
                 let base_place = self.lower_expr_to_place(base);
-                let index_local = self.alloc_local(index.ty, Mutability::Not, index.span);
+                let index_local = self.alloc_local(
+                    index.ty,
+                    glyim_core::primitives::Mutability::Not,
+                    index.span,
+                );
                 let index_rval = self.lower_expr_to_rvalue(index);
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(
@@ -781,7 +708,8 @@ impl<'a> MirBuilder<'a> {
             } => self.lower_expr_to_place(operand),
             _ => {
                 let rvalue = self.lower_expr_to_rvalue(expr);
-                let local = self.alloc_local(expr.ty, Mutability::Mut, expr.span);
+                let local =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 let place = glyim_mir::Place::new(local);
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(place.clone(), rvalue),
@@ -793,7 +721,6 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Pattern binding ----
-
     pub fn bind_pattern(
         &mut self,
         pat: &thir::Pattern,
@@ -801,11 +728,7 @@ impl<'a> MirBuilder<'a> {
         span: glyim_span::Span,
     ) {
         match &pat.kind {
-            thir::PatternKind::Range {
-                start: _,
-                end: _,
-                inclusive: _,
-            } => {}
+            thir::PatternKind::Range { .. } => {}
             thir::PatternKind::Binding {
                 name,
                 mutability,
@@ -833,7 +756,11 @@ impl<'a> MirBuilder<'a> {
                         let field_proj = ProjectionElem::Field(FieldIdx::from_raw(idx as u32));
                         let field_place =
                             self.place_with_projection(init_place.clone(), field_proj);
-                        let temp_local = self.alloc_local(field_pat.ty, Mutability::Not, span);
+                        let temp_local = self.alloc_local(
+                            field_pat.ty,
+                            glyim_core::primitives::Mutability::Not,
+                            span,
+                        );
                         self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
                         self.push_stmt(
                             glyim_mir::StatementKind::Assign(
@@ -865,8 +792,11 @@ impl<'a> MirBuilder<'a> {
                         let field_proj = ProjectionElem::Field(field_idx);
                         let field_place =
                             self.place_with_projection(init_place.clone(), field_proj);
-                        let temp_local =
-                            self.alloc_local(field_pat.pattern.ty, Mutability::Not, field_pat.span);
+                        let temp_local = self.alloc_local(
+                            field_pat.pattern.ty,
+                            glyim_core::primitives::Mutability::Not,
+                            field_pat.span,
+                        );
                         self.push_stmt(
                             glyim_mir::StatementKind::StorageLive(temp_local),
                             field_pat.span,
@@ -896,7 +826,6 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Literal lowering ----
-
     fn lower_literal(
         &self,
         lit: &thir::Literal,
@@ -943,7 +872,6 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Match lowering ----
-
     fn lower_match(
         &mut self,
         scrutinee: &thir::Expr,
@@ -953,43 +881,48 @@ impl<'a> MirBuilder<'a> {
     ) -> glyim_mir::Rvalue {
         let discr_op = self.lower_expr_to_operand(scrutinee);
         let merge_bb = self.new_block();
-        let dest_local = self.alloc_local(result_ty, Mutability::Mut, span);
+        let dest_local = self.alloc_local(result_ty, glyim_core::primitives::Mutability::Mut, span);
         let dest_place = glyim_mir::Place::new(dest_local);
 
+        let mut switch_targets: Vec<(u128, BasicBlockIdx)> = Vec::new();
         let mut arm_blocks: Vec<(BasicBlockIdx, &thir::MatchArm)> = Vec::new();
-        let mut targets = Vec::new();
-        for (i, arm) in arms.iter().enumerate() {
+        let otherwise_bb = self.new_block();
+
+        for arm in arms.iter() {
             let arm_bb = self.new_block();
-            if i < arms.len() - 1 {
-                let val = self.pattern_to_switch_value(&arm.pat);
-                targets.push((val, arm_bb));
-            }
             arm_blocks.push((arm_bb, arm));
+            self.collect_switch_values(&arm.pat, &mut switch_targets, arm_bb);
         }
 
-        let otherwise_bb = arm_blocks.last().map(|(bb, _)| *bb).unwrap_or(merge_bb);
-        let switch_targets =
-            glyim_mir::SwitchTargets::new(targets.into_boxed_slice(), otherwise_bb);
+        let otherwise = if switch_targets.is_empty() {
+            arm_blocks.first().map(|(bb, _)| *bb).unwrap_or(merge_bb)
+        } else {
+            otherwise_bb
+        };
 
+        let targets = glyim_mir::SwitchTargets::new(switch_targets.into_boxed_slice(), otherwise);
         self.terminate(
             glyim_mir::TerminatorKind::SwitchInt {
                 discr: discr_op,
                 switch_ty: scrutinee.ty,
-                targets: switch_targets,
+                targets,
             },
             span,
         );
 
-        for (arm_bb, arm) in arm_blocks.iter() {
+        for (i, (arm_bb, arm)) in arm_blocks.iter().enumerate() {
             self.current_block = Some(*arm_bb);
-
             if let Some(guard) = &arm.guard {
                 let guard_op = self.lower_expr_to_operand(guard);
                 let arm_body_bb = self.new_block();
-                let arm_skip_bb = self.new_block();
+                let next_arm_bb = if i + 1 < arm_blocks.len() {
+                    arm_blocks[i + 1].0
+                } else {
+                    otherwise_bb
+                };
 
                 let guard_targets =
-                    glyim_mir::SwitchTargets::new(Box::new([(1, arm_body_bb)]), arm_skip_bb);
+                    glyim_mir::SwitchTargets::new(Box::new([(1, arm_body_bb)]), next_arm_bb);
                 self.terminate(
                     glyim_mir::TerminatorKind::SwitchInt {
                         discr: guard_op,
@@ -1000,56 +933,89 @@ impl<'a> MirBuilder<'a> {
                 );
 
                 self.current_block = Some(arm_body_bb);
-                let arm_val = self.lower_expr_to_rvalue(&arm.body);
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(dest_place.clone(), arm_val),
-                    arm.body.span,
-                );
-                self.terminate(
-                    glyim_mir::TerminatorKind::Goto { target: merge_bb },
-                    arm.body.span,
-                );
-
-                self.current_block = Some(arm_skip_bb);
-                self.terminate(
-                    glyim_mir::TerminatorKind::Goto {
-                        target: otherwise_bb,
-                    },
-                    guard.span,
-                );
+                self.lower_arm_body(arm, &dest_place, merge_bb);
             } else {
-                let arm_val = self.lower_expr_to_rvalue(&arm.body);
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(dest_place.clone(), arm_val),
-                    arm.body.span,
-                );
-                self.terminate(
-                    glyim_mir::TerminatorKind::Goto { target: merge_bb },
-                    arm.body.span,
-                );
+                self.lower_arm_body(arm, &dest_place, merge_bb);
             }
+        }
+
+        if self.current_block == Some(otherwise_bb) {
+            self.terminate(glyim_mir::TerminatorKind::Unreachable, span);
         }
 
         self.current_block = Some(merge_bb);
         glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
     }
 
-    fn pattern_to_switch_value(&self, pat: &thir::Pattern) -> u128 {
+    fn collect_switch_values(
+        &self,
+        pat: &thir::Pattern,
+        targets: &mut Vec<(u128, BasicBlockIdx)>,
+        arm_bb: BasicBlockIdx,
+    ) {
         match &pat.kind {
-            thir::PatternKind::Range { .. } => u128::MAX,
-            thir::PatternKind::Literal(lit) => match lit {
-                thir::Literal::Int(v, _) => *v as u128,
-                thir::Literal::Uint(v, _) => *v,
-                thir::Literal::Bool(b) => *b as u128,
-                thir::Literal::Char(ch) => *ch as u128,
-                _ => u128::MAX,
-            },
-            _ => u128::MAX,
+            thir::PatternKind::Literal(lit) => {
+                if let Some(val) = self.literal_to_u128(lit) {
+                    targets.push((val, arm_bb));
+                }
+            }
+            thir::PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                if let (Some(s), Some(e)) = (start, end) {
+                    if let (Some(s_val), Some(e_val)) =
+                        (self.literal_to_u128(s), self.literal_to_u128(e))
+                    {
+                        let end_val = if *inclusive {
+                            e_val
+                        } else {
+                            e_val.saturating_sub(1)
+                        };
+                        for v in s_val..=end_val {
+                            targets.push((v, arm_bb));
+                        }
+                    }
+                }
+            }
+            thir::PatternKind::Or(subpats) => {
+                for sub in subpats {
+                    self.collect_switch_values(sub, targets, arm_bb);
+                }
+            }
+            _ => {}
         }
     }
 
-    // ---- Field resolution helpers ----
+    fn literal_to_u128(&self, lit: &thir::Literal) -> Option<u128> {
+        match lit {
+            thir::Literal::Int(v, _) => Some(*v as u128),
+            thir::Literal::Uint(v, _) => Some(*v),
+            thir::Literal::Bool(b) => Some(*b as u128),
+            thir::Literal::Char(ch) => Some(*ch as u128),
+            _ => None,
+        }
+    }
 
+    fn lower_arm_body(
+        &mut self,
+        arm: &thir::MatchArm,
+        dest_place: &glyim_mir::Place,
+        merge_bb: BasicBlockIdx,
+    ) {
+        let arm_val = self.lower_expr_to_rvalue(&arm.body);
+        self.push_stmt(
+            glyim_mir::StatementKind::Assign(dest_place.clone(), arm_val),
+            arm.body.span,
+        );
+        self.terminate(
+            glyim_mir::TerminatorKind::Goto { target: merge_bb },
+            arm.body.span,
+        );
+    }
+
+    // ---- Field resolution helpers ----
     fn resolve_field_index(
         &self,
         receiver_ty: Ty,
@@ -1057,26 +1023,19 @@ impl<'a> MirBuilder<'a> {
         _span: glyim_span::Span,
     ) -> Option<FieldIdx> {
         match self.ctx.ty_ctx().ty_kind(receiver_ty) {
-            TyKind::Adt(adt_id, _substs) => {
-                if let Some(idx) = self.ctx.field_index_by_name(*adt_id, 0, field_name) {
-                    return Some(idx);
-                }
-                None
-            }
+            TyKind::Adt(adt_id, _substs) => self.ctx.field_index_by_name(*adt_id, 0, field_name),
             TyKind::Tuple(_substs) => {
                 let name_str = self.ctx.ty_ctx().name_str(field_name);
-                if let Ok(idx) = name_str.parse::<u32>() {
-                    Some(FieldIdx::from_raw(idx))
-                } else {
-                    None
-                }
+                name_str
+                    .parse::<u32>()
+                    .ok()
+                    .map(|idx| FieldIdx::from_raw(idx))
             }
             _ => None,
         }
     }
 
     // ---- Place helpers ----
-
     fn place_with_projection(
         &self,
         base: glyim_mir::Place,
