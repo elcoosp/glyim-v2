@@ -191,7 +191,6 @@ pub enum SyntaxKind {
     // Macro metavariables
     MetaVar,
     MetaVarCrate,
-    PatSlice,
 }
 impl SyntaxKind {
     /// Returns true for whitespace and comment tokens.
@@ -234,7 +233,6 @@ impl SyntaxKind {
         Self::try_from(raw).ok()
     }
 }
-
 
 /// Language type for rowan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -366,4 +364,5 @@ ast_node!(MacroPattern, SyntaxKind::MacroPattern);
 ast_node!(StructField, SyntaxKind::StructField);
 ast_node!(EnumVariant, SyntaxKind::EnumVariant);
 ast_node!(FieldList, SyntaxKind::FieldList);
-ast_node!(VariantList, SyntaxKind::VariantList);pub use rowan::GreenToken;
+ast_node!(VariantList, SyntaxKind::VariantList);
+pub use rowan::GreenToken;

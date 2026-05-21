@@ -1,4 +1,3 @@
-use crate::database::FileMap;
 use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
 use glyim_span::{FileId, Span};
 

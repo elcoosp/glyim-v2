@@ -1,7 +1,6 @@
 use crate::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
 use crate::auto_trait::AutoTraitFlags;
 use crate::region::Region;
-use crate::substitution::Substitution;
 use crate::ty::TyKind;
 use crate::*;
 use glyim_core::arena::IndexVec;
