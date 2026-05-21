@@ -12,6 +12,16 @@ fn compile(src: &str) -> CompileOutput {
     compiler.compile(src, FileId::from_raw(1), &[])
 }
 
+fn print_diagnostics(output: &CompileOutput) {
+    if !output.diagnostics.is_empty() {
+        eprintln!("=== DIAGNOSTICS ===");
+        for diag in &output.diagnostics {
+            eprintln!("{:?}", diag);
+        }
+        eprintln!("==================");
+    }
+}
+
 #[test]
 fn match_guard_uses_binding() {
     let output = compile(
@@ -25,6 +35,9 @@ fn match_guard_uses_binding() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_no_errors(&output.diagnostics);
 }
 
@@ -40,6 +53,9 @@ fn or_pattern_same_types() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_no_errors(&output.diagnostics);
 }
 
@@ -55,6 +71,9 @@ fn range_pattern_integer() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_no_errors(&output.diagnostics);
 }
 
@@ -71,6 +90,9 @@ fn slice_pattern_array() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_no_errors(&output.diagnostics);
 }
 
@@ -84,6 +106,9 @@ fn index_expression_array() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_no_errors(&output.diagnostics);
 }
 
@@ -98,6 +123,9 @@ fn struct_literal_with_spread() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_no_errors(&output.diagnostics);
 }
 
@@ -113,6 +141,9 @@ fn or_pattern_mismatched_types_fails() {
         }
         "#,
     );
+    if !output.diagnostics.is_empty() {
+        print_diagnostics(&output);
+    }
     assert_has_errors(&output.diagnostics);
     assert_diag_contains(&output.diagnostics, "mismatched types");
 }
