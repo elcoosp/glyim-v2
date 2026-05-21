@@ -25,8 +25,6 @@ fn run_single_assign(body: Body, tcx: &TyCtx) -> InterpResult<()> {
     interp.run_body(&body)
 }
 
-
-
 #[test]
 fn unary_neg_on_bool_returns_error() {
     let tcx = glyim_test::test_frozen_ty_ctx();
@@ -362,7 +360,3 @@ fn switch_int_multiple_values() {
     let mut interp = Interpreter::new(&tcx);
     interp.run_body(&body).unwrap();
 }
-
-
-
-

@@ -314,7 +314,7 @@ impl<'tcx> Interpreter<'tcx> {
                             _ => {
                                 return Err(InterpError::Panic(
                                     "Len: unsupported array length kind".into(),
-                                ))
+                                ));
                             }
                         };
                         Ok(InterpValue::Int(len as i128))
@@ -348,11 +348,7 @@ impl<'tcx> Interpreter<'tcx> {
                 let len = match count_val {
                     InterpValue::Int(i) => i as usize,
                     InterpValue::Uint(u) => u as usize,
-                    _ => {
-                        return Err(InterpError::Panic(
-                            "repeat count must be integer".into(),
-                        ))
-                    }
+                    _ => return Err(InterpError::Panic("repeat count must be integer".into())),
                 };
                 let repeated = vec![val; len];
                 Ok(InterpValue::Aggregate(repeated))
@@ -869,12 +865,12 @@ impl<'tcx> Interpreter<'tcx> {
                     match &fields[1] {
                         InterpValue::Int(i) => Ok(*i as usize),
                         InterpValue::Uint(u) => Ok(*u as usize),
-                        _ => Err(InterpError::Panic(
-                            "slice length must be an integer".into(),
-                        )),
+                        _ => Err(InterpError::Panic("slice length must be an integer".into())),
                     }
                 } else {
-                    Err(InterpError::Panic("slice value must be an aggregate of at least 2 elements".into()))
+                    Err(InterpError::Panic(
+                        "slice value must be an aggregate of at least 2 elements".into(),
+                    ))
                 }
             }
             InterpValue::Ref(target) => {
@@ -882,7 +878,12 @@ impl<'tcx> Interpreter<'tcx> {
                     .locals
                     .get(*target)
                     .and_then(|opt| opt.as_ref())
-                    .ok_or_else(|| InterpError::Panic(format!("slice reference to uninitialized local {}", target)))?;
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!(
+                            "slice reference to uninitialized local {}",
+                            target
+                        ))
+                    })?;
                 self.slice_length_from_value(target_val)
             }
             _ => Err(InterpError::Panic(
