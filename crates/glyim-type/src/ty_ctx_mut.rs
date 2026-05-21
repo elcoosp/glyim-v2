@@ -24,6 +24,7 @@ pub struct TyCtxMut {
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
+    interior_mutability_cache: HashMap<AdtId, bool>,
     adt_defs: HashMap<AdtId, AdtDef>,
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
@@ -42,6 +43,7 @@ impl TyCtxMut {
             auto_trait_registry: AutoTraitRegistry::new(),
             adt_reprs: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
+            interior_mutability_cache: HashMap::new(),
             adt_defs: HashMap::new(),
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
@@ -202,7 +204,11 @@ impl TyCtxMut {
     }
 
     pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
-        self.adt_defs.insert(id, def);
+        self.adt_defs.insert(id, def.clone());
+        // Compute interior mutability for this ADT and mark if needed
+        if self.compute_adt_interior_mutability(id) {
+            self.mark_adt_interior_mutable(id);
+        }
     }
 
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
@@ -225,8 +231,6 @@ impl TyCtxMut {
     /// (field type list). Returns `error_ty()` if the ADT or field is not found.
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
-            // Use as_slice().get() to avoid debug_assert! in IndexVec::get()
-            // which panics on out-of-bounds even though the method returns Option.
             return def
                 .fields
                 .as_slice()
@@ -293,6 +297,71 @@ impl TyCtxMut {
 
     pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
         self.interior_mutable_adt_ids.insert(adt_id);
+        self.interior_mutability_cache.insert(adt_id, true);
+    }
+
+    /// Compute whether an ADT has interior mutability by recursively inspecting its fields.
+    /// Uses memoization to avoid repeated work and handles cycles (assumes false for cycles).
+    fn compute_adt_interior_mutability(&mut self, adt_id: AdtId) -> bool {
+        if let Some(&cached) = self.interior_mutability_cache.get(&adt_id) {
+            return cached;
+        }
+        // If the ADT is already marked as interior mutable (e.g., UnsafeCell), we're done.
+        if self.interior_mutable_adt_ids.contains(&adt_id) {
+            self.interior_mutability_cache.insert(adt_id, true);
+            return true;
+        }
+        // Clone the definition to avoid holding a borrow while calling mutable methods.
+        let def = match self.adt_defs.get(&adt_id) {
+            Some(def) => def.clone(),
+            None => {
+                self.interior_mutability_cache.insert(adt_id, false);
+                return false;
+            }
+        };
+        let result = self.compute_adt_interior_mutability_with_def(adt_id, &def);
+        self.interior_mutability_cache.insert(adt_id, result);
+        result
+    }
+
+    fn compute_adt_interior_mutability_with_def(&mut self, adt_id: AdtId, def: &AdtDef) -> bool {
+        let mut visiting = HashSet::new();
+        self.compute_adt_interior_mutability_rec(adt_id, def, &mut visiting)
+    }
+
+    fn compute_adt_interior_mutability_rec(
+        &mut self,
+        adt_id: AdtId,
+        def: &AdtDef,
+        visiting: &mut HashSet<AdtId>,
+    ) -> bool {
+        if visiting.contains(&adt_id) {
+            // Cycle detected: assume no interior mutability from this path.
+            return false;
+        }
+        visiting.insert(adt_id);
+        for field in def.fields.iter() {
+            let field_ty = field.ty;
+            // Flags already include interior mutability from elements (arrays, slices, tuples, etc.)
+            // because compute_flags recursively propagates HAS_INTERIOR_MUTABILITY.
+            let flags = self.ty_flags(field_ty);
+            if flags.contains(TypeFlags::HAS_INTERIOR_MUTABILITY) {
+                visiting.remove(&adt_id);
+                return true;
+            }
+            // Additionally, if the field type is an ADT, we need to recursively check it.
+            match self.ty_kind(field_ty) {
+                TyKind::Adt(child_adt_id, _) => {
+                    if self.compute_adt_interior_mutability(*child_adt_id) {
+                        visiting.remove(&adt_id);
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        visiting.remove(&adt_id);
+        false
     }
 }
 
@@ -320,7 +389,6 @@ impl TypeLookup for TyCtxMut {
     }
     fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
-            // Use as_slice().get() to avoid debug_assert! in IndexVec::get()
             return def
                 .fields
                 .as_slice()

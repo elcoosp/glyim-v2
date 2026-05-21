@@ -13,6 +13,7 @@ mod field_ty;
 mod flags;
 mod flags_compute;
 mod flags_propagation;
+mod flags_tests;
 mod fn_sig;
 mod freeze;
 mod generic_arg;
