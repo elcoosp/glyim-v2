@@ -668,7 +668,10 @@ fn test_fs_append_mode() {
     close_file(fd);
 
     let content = fs::read(&file_path).expect("read failed");
-    assert_eq!(content, b"firstsecond", "append should add after existing data");
+    assert_eq!(
+        content, b"firstsecond",
+        "append should add after existing data"
+    );
 
     cleanup(&dir);
 }
