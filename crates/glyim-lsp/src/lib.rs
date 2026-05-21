@@ -16,6 +16,7 @@ pub mod rename;
 pub mod server;
 pub mod state;
 pub mod symbol_index;
+pub mod dep_graph;
 pub mod uri; // Make database public
 
 #[cfg(test)]
