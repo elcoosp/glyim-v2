@@ -136,6 +136,8 @@ impl BytecodeBackend {
                 ProjectionElem::Deref => {
                     bc.push(OP_DEREF);
                     current_ty = Ty::ERROR; // Cannot inspect inner type without TyCtx
+                ProjectionElem::Slice { .. } => { tracing::warn!("Slice projection not implemented in codegen"); },
+
                 }
                 ProjectionElem::Field(idx) => {
                     // Always emit offset calculation for field projections

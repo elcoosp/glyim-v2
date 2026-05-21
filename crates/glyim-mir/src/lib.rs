@@ -112,7 +112,6 @@ impl Place {
         }
     }
 
-    /// [F9] Compute the type of this Place by walking the projection chain.
     pub fn ty(&self, ctx: &impl TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
         let mut ty = local_decls[self.local].ty;
 
@@ -137,7 +136,6 @@ impl Place {
                         }
                     }
                     TyKind::Adt(adt_id, _substs) => {
-                        // Use TypeLookup::field_ty to get the field type
                         ctx.field_ty(*adt_id, idx.to_raw() as usize)
                     }
                     _ => {
@@ -159,6 +157,10 @@ impl Place {
                     );
                     ty
                 }
+                ProjectionElem::Slice { start: _, end: _ } => {
+                    tracing::warn!("Place::ty(): Slice projection type approximated as base type");
+                    ty
+                }
             };
         }
         ty
@@ -171,6 +173,7 @@ pub enum ProjectionElem {
     Field(FieldIdx),
     Index(LocalIdx),
     Downcast(VariantIdx),
+    Slice { start: Place, end: Place },
 }
 
 #[derive(Clone, Debug)]
@@ -209,9 +212,7 @@ pub struct Terminator {
 
 #[derive(Clone, Debug)]
 pub enum TerminatorKind {
-    Goto {
-        target: BasicBlockIdx,
-    },
+    Goto { target: BasicBlockIdx },
     SwitchInt {
         discr: Operand,
         switch_ty: Ty,
@@ -256,10 +257,7 @@ pub struct SwitchTargets {
 
 impl SwitchTargets {
     pub fn new(branches: Box<[(u128, BasicBlockIdx)]>, otherwise: BasicBlockIdx) -> Self {
-        Self {
-            branches,
-            otherwise,
-        }
+        Self { branches, otherwise }
     }
     pub fn otherwise(&self) -> BasicBlockIdx {
         self.otherwise
@@ -303,7 +301,6 @@ pub enum CastKind {
 }
 
 impl Body {
-    /// [F2] Uses `Ty::ERROR` instead of `Ty::from_raw(0)`.
     pub fn dummy(owner: DefId) -> Self {
         let mut basic_blocks = IndexVec::new();
         let _bb0 = basic_blocks.push(BasicBlockData::new(Terminator {

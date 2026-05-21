@@ -554,7 +554,9 @@ impl<'tcx> Interpreter<'tcx> {
                             .cloned()
                             .ok_or_else(|| {
                                 InterpError::Panic(format!(
-                                    "deref of uninitialized local {}",
+                                    "deref of uninitialized local {
+                ProjectionElem::Slice { .. } => { tracing::warn!("Slice projection not implemented in interpreter"); base },
+}",
                                     target
                                 ))
                             })?;
