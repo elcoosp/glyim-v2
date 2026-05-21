@@ -1,12 +1,16 @@
 use crate::database::{AnalysisDatabase, SourceMap};
+use crate::navigation::workspace_symbols;
 use glyim_core::Interner;
 use glyim_span::FileId;
-use lsp_types::*;
-use url::Url;
+use lsp_types::{
+    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, Url,
+    WorkspaceSymbolParams,
+};
+use std::path::PathBuf;
 
 fn setup_db_with_file(path: &str, source: &str) -> (AnalysisDatabase, FileId) {
     let db = AnalysisDatabase::new();
-    let path_buf = std::path::PathBuf::from(path);
+    let path_buf = PathBuf::from(path);
     let file_id = db.file_map.write().get_or_create(&path_buf);
     let sm = SourceMap::new(path_buf.clone(), file_id, source.to_string());
     db.source_maps.write().insert(file_id, sm);
@@ -27,7 +31,7 @@ fn setup_db_with_file(path: &str, source: &str) -> (AnalysisDatabase, FileId) {
 }
 
 #[test]
-fn s11_t03_goto_definition_jumps_to_definition() {
+fn test_goto_definition_jumps_to_definition() {
     let source = "fn foo() {}\nfn bar() { foo(); }";
     let (db, _file_id) = setup_db_with_file("/test/goto.g", source);
     let file_map = db.file_map.read();
@@ -51,7 +55,7 @@ fn s11_t03_goto_definition_jumps_to_definition() {
         "goto_definition should find the definition"
     );
 
-    if let Some(GotoDefinitionResponse::Scalar(loc)) = result {
+    if let Some(lsp_types::GotoDefinitionResponse::Scalar(loc)) = result {
         assert_eq!(loc.uri, uri, "Definition should be in same file");
         assert_eq!(loc.range.start.line, 0, "Definition should be on line 0");
     } else {
@@ -60,7 +64,7 @@ fn s11_t03_goto_definition_jumps_to_definition() {
 }
 
 #[test]
-fn s11_t04_workspace_symbols_returns_matching_prefix() {
+fn test_workspace_symbols_returns_matching_prefix() {
     let source = "fn alpha() {}\nfn beta() {}\nstruct Gamma {}\n";
     let (db, _file_id) = setup_db_with_file("/test/workspace.g", source);
 
@@ -69,7 +73,7 @@ fn s11_t04_workspace_symbols_returns_matching_prefix() {
         ..Default::default()
     };
 
-    let result = crate::navigation::workspace_symbols(&db, &params);
+    let result = workspace_symbols(&db, &params);
     assert!(result.is_some(), "workspace_symbols should return results");
     let symbols = result.unwrap();
     assert!(!symbols.is_empty(), "Expected at least one symbol");
@@ -88,7 +92,7 @@ fn s11_t04_workspace_symbols_returns_matching_prefix() {
 }
 
 #[test]
-fn s11_t04_workspace_symbols_empty_query_returns_none_or_all() {
+fn test_workspace_symbols_empty_query_returns_none_or_all() {
     let source = "fn foo() {}";
     let (db, _file_id) = setup_db_with_file("/test/workspace2.g", source);
 
@@ -97,7 +101,7 @@ fn s11_t04_workspace_symbols_empty_query_returns_none_or_all() {
         ..Default::default()
     };
 
-    let result = crate::navigation::workspace_symbols(&db, &params);
+    let result = workspace_symbols(&db, &params);
     if let Some(symbols) = result {
         assert!(
             symbols.is_empty(),

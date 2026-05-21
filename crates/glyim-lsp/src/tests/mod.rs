@@ -22,7 +22,9 @@ mod symbol_index;
 mod uri_tests;
 mod workspace_symbol_tests;
 // New test modules for M10
+mod common;
 mod driver_tests;
+mod goto_definition_tests;
 mod incremental;
 mod reference_graph_tests;
 mod references_tests;
