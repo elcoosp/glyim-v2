@@ -28,3 +28,5 @@ mod trivia;
 mod unicode;
 mod visibility;
 mod where_clause;
+mod string_recovery;
+mod float_exponent;
