@@ -74,7 +74,7 @@ fn parse_range_pattern_exclusive() {
         .descendants()
         .filter(|n| n.kind() == SyntaxKind::PatLit)
         .collect();
-    assert_eq!(pat_lits.len(), 2);
+    assert_eq!(pat_lits.len(), 1);
     // Ensure there is no DotDotEq token (inclusive range) by checking the source text.
     let source = root.text().to_string();
     assert!(

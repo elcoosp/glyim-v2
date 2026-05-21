@@ -30,3 +30,4 @@ mod trivia;
 mod unicode;
 mod visibility;
 mod where_clause;
+mod pattern_parsing;

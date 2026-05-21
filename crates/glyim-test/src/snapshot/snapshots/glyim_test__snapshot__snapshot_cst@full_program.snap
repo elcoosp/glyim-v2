@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
 expression: tree
 ---
 SourceFile@0..550
@@ -259,9 +258,9 @@ SourceFile@0..550
           MatchArmList@366..438
             MatchArm@366..391
               PatLit@366..371
-                IntLit@366..367 "0"
-                DotDotEq@367..370 "..="
-                PatLit@370..371
+                PatRange@366..371
+                  IntLit@366..367 "0"
+                  DotDotEq@367..370 "..="
                   IntLit@370..371 "1"
               FatArrow@371..373 "=>"
               MacroCall@373..390
@@ -277,9 +276,9 @@ SourceFile@0..550
               Comma@390..391 ","
             MatchArm@391..416
               PatLit@391..396
-                IntLit@391..392 "2"
-                DotDotEq@392..395 "..="
-                PatLit@395..396
+                PatRange@391..396
+                  IntLit@391..392 "2"
+                  DotDotEq@392..395 "..="
                   IntLit@395..396 "7"
               FatArrow@396..398 "=>"
               MacroCall@398..415

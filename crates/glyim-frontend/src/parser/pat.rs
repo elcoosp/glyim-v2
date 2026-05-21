@@ -59,6 +59,27 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_pat_inner(&mut self) {
         match self.current_kind() {
+            SyntaxKind::LBracket => {
+                self.start_node(SyntaxKind::PatSlice);
+                self.bump(); // [
+                while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
+                    if self.current_kind() == SyntaxKind::DotDot {
+                        self.bump(); // ..
+                        // optional trailing comma after ..
+                        if self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                        }
+                        // rest pattern
+                    } else {
+                        self.parse_pat();
+                        if self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                        }
+                    }
+                }
+                self.expect(SyntaxKind::RBracket);
+                self.finish_node();
+            }
             SyntaxKind::Bang => {
                 self.start_node(SyntaxKind::NeverType);
                 self.bump(); // !
@@ -82,7 +103,6 @@ impl<'a> Parser<'a> {
                     self.start_node(SyntaxKind::PatIdent);
                     self.bump();
                     self.finish_node();
-                    return;
                 }
                 if self.current_kind() == SyntaxKind::LParen {
                     self.start_node(SyntaxKind::PatTuple);
@@ -139,23 +159,36 @@ impl<'a> Parser<'a> {
             | SyntaxKind::CharLit
             | SyntaxKind::KwTrue
             | SyntaxKind::KwFalse => {
-                self.start_node(SyntaxKind::PatLit);
-                self.bump();
-                // Check for range pattern: 0..10 or 0..=10
+                // Check for range pattern first
                 if matches!(
                     self.current_kind(),
-                    SyntaxKind::DotDot | SyntaxKind::DotDotEq
+                    SyntaxKind::IntLit | SyntaxKind::FloatLit | SyntaxKind::StringLit | SyntaxKind::CharLit | SyntaxKind::KwTrue | SyntaxKind::KwFalse
                 ) {
-                    self.bump(); // .. or ..=
-                    // Parse the end pattern (could be literal, path, or wildcard)
-                    if !matches!(
-                        self.current_kind(),
-                        SyntaxKind::FatArrow | SyntaxKind::Comma | SyntaxKind::RBrace
-                    ) {
-                        self.parse_pat();
+                    let start_cp = self.checkpoint();
+                    self.bump(); // consume start literal
+                    if matches!(self.current_kind(), SyntaxKind::DotDot | SyntaxKind::DotDotEq) {
+                        self.start_node_at(start_cp, SyntaxKind::PatRange);
+                        let _range_op = self.current_kind();
+                        self.bump(); // .. or ..=
+                        // Parse end pattern (literal, path, wildcard)
+                        if !matches!(
+                            self.current_kind(),
+                            SyntaxKind::FatArrow | SyntaxKind::Comma | SyntaxKind::RBrace | SyntaxKind::RParen | SyntaxKind::RBracket
+                        ) {
+                            self.parse_pat();
+                        } else {
+                            // No end pattern, treat as open range? For now, just create node.
+                        }
+                        self.finish_node(); // PatRange
+                        // No range, it's a simple literal pattern
+                        self.start_node_at(start_cp, SyntaxKind::PatLit);
+                        self.finish_node();
                     }
+                } else {
+                    self.start_node(SyntaxKind::PatLit);
+                    self.bump();
+                    self.finish_node();
                 }
-                self.finish_node();
             }
             _ => {
                 self.error(format!("expected pattern, found {:?}", self.current_kind()));
