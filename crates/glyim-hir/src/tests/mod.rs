@@ -1,4 +1,5 @@
 mod expr_lowering;
+mod field_access;
 mod lower_comprehensive;
 mod lower_edge;
 mod lower_enum;

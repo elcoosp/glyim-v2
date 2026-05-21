@@ -182,6 +182,19 @@ fn lower_field_or_method_with_receiver(
                 name = Some(interner.intern(t.text()));
                 break;
             }
+            // Tuple field access: `.0`, `.1`, etc. An integer after a
+            // dot is always a tuple index, never a method name.
+            glyim_syntax::SyntaxElement::Token(ref t)
+                if found_dot && t.kind() == SyntaxKind::IntLit =>
+            {
+                let field = interner.intern(t.text());
+                let expr = Expr::Field {
+                    receiver: receiver_id,
+                    field,
+                };
+                let eid = body.alloc_expr(expr, node_span(node));
+                return Some(eid);
+            }
             _ => {}
         }
     }
@@ -876,7 +889,13 @@ fn lower_method_call_expr(
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
-    let receiver = node.children().find(|c| c.kind() == SyntaxKind::PathExpr)?;
+    // Find the receiver: any expression node, not just PathExpr.
+    // This supports tuple field access like `(1, 2).0` where the
+    // receiver is a TupleExpr, as well as chained field access like
+    // `a.b.c` where the inner receiver is another FieldExpr.
+    let receiver = node
+        .children()
+        .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
     let receiver_id = lower_expr(&receiver, interner, body, diags, struct_field_map)?;
     let mut found_dot = false;
     let mut method_name = None;
@@ -1198,7 +1217,13 @@ fn lower_field_expr(
     diags: &mut Vec<GlyimDiagnostic>,
     struct_field_map: &HashMap<Name, Vec<Name>>,
 ) -> Option<ExprId> {
-    let receiver = node.children().find(|c| c.kind() == SyntaxKind::PathExpr)?;
+    // Find the receiver: any expression node, not just PathExpr.
+    // This supports tuple field access like `(1, 2).0` where the
+    // receiver is a TupleExpr, as well as chained field access like
+    // `a.b.c` where the inner receiver is another FieldExpr.
+    let receiver = node
+        .children()
+        .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
     let receiver_id = lower_expr(&receiver, interner, body, diags, struct_field_map)?;
     let mut found_dot = false;
     let mut field_name = None;
@@ -1209,6 +1234,16 @@ fn lower_field_expr(
             }
             glyim_syntax::SyntaxElement::Token(ref t)
                 if found_dot && t.kind() == SyntaxKind::Ident =>
+            {
+                field_name = Some(interner.intern(t.text()));
+                break;
+            }
+            // Tuple field access: `.0`, `.1`, etc. The integer literal
+            // is interned as a string name (e.g., "0", "1") so that
+            // typeck can distinguish tuple indices from struct fields
+            // based on the receiver's type.
+            glyim_syntax::SyntaxElement::Token(ref t)
+                if found_dot && t.kind() == SyntaxKind::IntLit =>
             {
                 field_name = Some(interner.intern(t.text()));
                 break;
