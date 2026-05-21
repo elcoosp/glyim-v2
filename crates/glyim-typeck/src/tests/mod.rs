@@ -26,7 +26,6 @@ mod struct_field;
 mod test_utils;
 mod thir_body;
 mod tuple_index;
-mod typeck_result_accessors;
+mod typeck_new_nodes;
 mod where_clause;
 mod while_loop;
-mod typeck_new_nodes;
