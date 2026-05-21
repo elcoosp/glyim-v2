@@ -311,6 +311,15 @@ pub(crate) fn lower_pat(
             }
             Some(pats.push(Pat::Or(pat_ids)))
         }
+        SyntaxKind::PatSlice => {
+            let mut elems = Vec::new();
+            for child in node.children() {
+                if let Some(pat_id) = lower_pat(&child, interner, pats, diags) {
+                    elems.push(pat_id);
+                }
+            }
+            Some(pats.push(Pat::Slice(elems)))
+        }
         SyntaxKind::PatStruct => {
             // Extract path from the parent context (UsePath before PatStruct)
             let parent = node.parent()?;

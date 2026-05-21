@@ -151,7 +151,12 @@ fn pat_to_expr(
             let expr = Expr::Path(path.clone());
             Some(body.alloc_expr(expr, span))
         }
-        Pat::Tuple(_) | Pat::Or(_) | Pat::Literal(_) | Pat::Range { .. } | Pat::Err => None,
+        Pat::Tuple(_)
+        | Pat::Slice(_)
+        | Pat::Or(_)
+        | Pat::Literal(_)
+        | Pat::Range { .. }
+        | Pat::Err => None,
     }
 }
 
@@ -1003,7 +1008,8 @@ fn lower_match_expr(
                     | SyntaxKind::PatLit
                     | SyntaxKind::PatTuple
                     | SyntaxKind::PatStruct
-                    | SyntaxKind::PatOr => {
+                    | SyntaxKind::PatOr
+                    | SyntaxKind::PatSlice => {
                         pat_id = lower_pat(&part, interner, &mut body.pats, diags)
                     }
                     _ if is_expr_node(&part) => {

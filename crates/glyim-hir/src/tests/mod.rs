@@ -5,6 +5,7 @@ mod lower_enum;
 mod lower_expr;
 mod lower_expr_tests;
 mod lower_fn;
+mod lower_index_and_pat;
 mod lower_more;
 mod lower_parser_nodes;
 mod lower_pat;
