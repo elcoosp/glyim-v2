@@ -438,7 +438,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number(&mut self) -> SyntaxKind {
-        // Radix prefixes
+        // Radix prefixes (no validation, just consume)
         if self.peek() == Some('0') {
             let next = self.peek_next();
             if next == Some('x') || next == Some('X') {
@@ -573,11 +573,14 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_string(&mut self) {
-        self.advance();
+        let start = self.pos;
+        self.advance(); // consume opening "
+        let mut terminated = false;
         while let Some(ch) = self.peek() {
             match ch {
                 '"' => {
                     self.advance();
+                    terminated = true;
                     break;
                 }
                 '\\' => {
@@ -589,14 +592,24 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+        if !terminated {
+            let end = self.pos;
+            self.diagnostics.push(GlyimDiagnostic::lex_error(
+                self.span(start, end),
+                "unterminated string literal".to_string(),
+            ));
+        }
     }
 
     fn lex_char(&mut self) {
+        let start = self.pos;
         self.advance(); // consume opening '
+        let mut terminated = false;
         while let Some(ch) = self.peek() {
             match ch {
                 '\'' => {
                     self.advance(); // consume closing '
+                    terminated = true;
                     break;
                 }
                 '\\' => {
@@ -607,6 +620,13 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
             }
+        }
+        if !terminated {
+            let end = self.pos;
+            self.diagnostics.push(GlyimDiagnostic::lex_error(
+                self.span(start, end),
+                "unterminated char literal".to_string(),
+            ));
         }
     }
 

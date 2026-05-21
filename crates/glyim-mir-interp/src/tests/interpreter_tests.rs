@@ -1,9 +1,9 @@
-use glyim_core::{BinOp, CrateId, DefId, LocalDefId, UnOp, IndexVec, IntTy, Mutability};
+use crate::{InterpError, InterpResult, InterpValue, Interpreter};
+use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability, UnOp};
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Ty, TyKind, ConstKind};
 use glyim_test::{test_ty_ctx, with_fresh_ty_ctx};
-use crate::{Interpreter, InterpValue, InterpResult, InterpError};
+use glyim_type::{ConstKind, Ty, TyKind};
 
 fn create_const_int(value: i128, ty: Ty) -> MirConst {
     MirConst {
@@ -21,11 +21,19 @@ fn create_const_bool(value: bool) -> MirConst {
     }
 }
 
-fn eval_single_rvalue(ctx: &glyim_type::TyCtx, rvalue: Rvalue, return_type: Ty) -> InterpResult<InterpValue> {
+fn eval_single_rvalue(
+    ctx: &glyim_type::TyCtx,
+    rvalue: Rvalue,
+    return_type: Ty,
+) -> InterpResult<InterpValue> {
     let mut interp = Interpreter::new(ctx);
     let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: return_type, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: return_type,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
     let statements = vec![Statement {
         kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), rvalue),
         source_info: SourceInfo::new(Span::DUMMY),
@@ -50,7 +58,9 @@ fn eval_single_rvalue(ctx: &glyim_type::TyCtx, rvalue: Rvalue, return_type: Ty) 
     };
     interp.add_function(def_id, body.clone());
     interp.run_body(&body)?;
-    interp.get_return_value().ok_or(InterpError::Panic("no return value".into()))
+    interp
+        .get_return_value()
+        .ok_or(InterpError::Panic("no return value".into()))
 }
 
 #[test]
@@ -96,8 +106,16 @@ fn test_len_array() {
     });
     let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: int_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: array_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: int_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: array_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
     let init_array = Rvalue::Aggregate(
         AggregateKind::Array(int_ty),
         vec![
@@ -112,7 +130,10 @@ fn test_len_array() {
             source_info: SourceInfo::new(Span::DUMMY),
         },
         Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Len(Place::new(LocalIdx::from_raw(1)))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Len(Place::new(LocalIdx::from_raw(1))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         },
     ];
@@ -156,9 +177,21 @@ fn test_aggregate_and_field_projection() {
     });
     let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: int_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: int_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: tuple_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: int_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: int_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: tuple_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
     let init_tuple = Rvalue::Aggregate(
         AggregateKind::Tuple,
         vec![
@@ -169,7 +202,8 @@ fn test_aggregate_and_field_projection() {
     let tuple_place = Place::new(LocalIdx::from_raw(2));
     let field_place = Place {
         local: LocalIdx::from_raw(2),
-        projection: vec![ProjectionElem::Field(glyim_type::FieldIdx::from_raw(0))].into_boxed_slice(),
+        projection: vec![ProjectionElem::Field(glyim_type::FieldIdx::from_raw(0))]
+            .into_boxed_slice(),
     };
     let statements = vec![
         Statement {
@@ -177,11 +211,17 @@ fn test_aggregate_and_field_projection() {
             source_info: SourceInfo::new(Span::DUMMY),
         },
         Statement {
-            kind: StatementKind::Assign(field_place.clone(), Rvalue::Use(Operand::Constant(create_const_int(42, int_ty)))),
+            kind: StatementKind::Assign(
+                field_place.clone(),
+                Rvalue::Use(Operand::Constant(create_const_int(42, int_ty))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         },
         Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Use(Operand::Copy(field_place))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Copy(field_place)),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         },
     ];
@@ -215,10 +255,18 @@ fn test_switch_int_multiple_targets() {
     let (ctx, int_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Int(IntTy::I32)));
     let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: int_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: int_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
     let discr_operand = Operand::Constant(create_const_int(2, int_ty));
     let targets = SwitchTargets::new(
-        Box::new([(0, BasicBlockIdx::from_raw(1)), (1, BasicBlockIdx::from_raw(2)), (2, BasicBlockIdx::from_raw(3))]),
+        Box::new([
+            (0, BasicBlockIdx::from_raw(1)),
+            (1, BasicBlockIdx::from_raw(2)),
+            (2, BasicBlockIdx::from_raw(3)),
+        ]),
         BasicBlockIdx::from_raw(4),
     );
     let terminator = Terminator {
@@ -236,34 +284,58 @@ fn test_switch_int_multiple_targets() {
     };
     let block1 = BasicBlockData {
         statements: vec![Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Use(Operand::Constant(create_const_int(0, int_ty)))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(create_const_int(0, int_ty))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         }],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let block2 = BasicBlockData {
         statements: vec![Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Use(Operand::Constant(create_const_int(1, int_ty)))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(create_const_int(1, int_ty))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         }],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let block3 = BasicBlockData {
         statements: vec![Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Use(Operand::Constant(create_const_int(2, int_ty)))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(create_const_int(2, int_ty))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         }],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let block4 = BasicBlockData {
         statements: vec![Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Use(Operand::Constant(create_const_int(3, int_ty)))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Constant(create_const_int(3, int_ty))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         }],
-        terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
         is_cleanup: false,
     };
     let mut basic_blocks = IndexVec::new();
@@ -296,15 +368,26 @@ fn test_discriminant_enum() {
     let agg = Rvalue::Aggregate(AggregateKind::Tuple, vec![disc, data]);
     let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
     let mut locals = IndexVec::new();
-    locals.push(LocalDecl { ty: int_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
-    locals.push(LocalDecl { ty: int_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) });
+    locals.push(LocalDecl {
+        ty: int_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    locals.push(LocalDecl {
+        ty: int_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
     let statements = vec![
         Statement {
             kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(1)), agg),
             source_info: SourceInfo::new(Span::DUMMY),
         },
         Statement {
-            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Discriminant(Place::new(LocalIdx::from_raw(1)))),
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Discriminant(Place::new(LocalIdx::from_raw(1))),
+            ),
             source_info: SourceInfo::new(Span::DUMMY),
         },
     ];

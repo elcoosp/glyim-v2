@@ -42,10 +42,7 @@ fn concat_args(a: &str, b: &str) -> SyntaxNode {
     );
     builder.finish_node();
     // Comma punctuation
-    builder.token(
-        GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::Comma),
-        ",",
-    );
+    builder.token(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::Comma), ",");
     // Second string literal
     builder.start_node(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::TokenTree));
     builder.token(
@@ -240,9 +237,5 @@ fn test_stringify_macro() {
     assert!(result.diagnostics.is_empty());
     let expanded = result.expanded.unwrap();
     let text = expanded.text().to_string();
-    assert!(
-        text.contains("1 + 2"),
-        "Expected '1 + 2', got {}",
-        text
-    );
+    assert!(text.contains("1 + 2"), "Expected '1 + 2', got {}", text);
 }

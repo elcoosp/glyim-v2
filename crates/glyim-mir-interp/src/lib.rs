@@ -25,6 +25,7 @@ pub struct Interpreter<'tcx> {
 
 struct CallFrame {
     body: Body,
+    #[allow(dead_code)]
     bb: BasicBlockIdx,
     locals: Vec<Option<InterpValue>>,
     return_place: Place,
@@ -75,7 +76,7 @@ impl<'tcx> Interpreter<'tcx> {
     }
 
     pub fn get_return_value(&self) -> Option<InterpValue> {
-        self.locals.get(0).and_then(|opt| opt.clone())
+        self.locals.first().and_then(|opt| opt.clone())
     }
 
     pub fn run_body(&mut self, body: &Body) -> InterpResult<()> {
@@ -844,6 +845,7 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
+    #[allow(dead_code)]
     fn array_length_from_ty(&self, ty: &glyim_type::Ty) -> InterpResult<usize> {
         let kind = self.tcx.ty_kind(*ty);
         match kind {
