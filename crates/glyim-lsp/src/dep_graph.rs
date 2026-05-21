@@ -26,7 +26,10 @@ impl DependencyGraph {
 
     /// Add a dependency: `file` depends on `dep`
     pub fn add_dep(&mut self, file: PathBuf, dep: PathBuf) {
-        self.deps.entry(file.clone()).or_default().insert(dep.clone());
+        self.deps
+            .entry(file.clone())
+            .or_default()
+            .insert(dep.clone());
         self.rev_deps.entry(dep).or_default().insert(file);
     }
 

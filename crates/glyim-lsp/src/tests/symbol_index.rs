@@ -1,11 +1,16 @@
-use crate::symbol_index::{SymbolIndex, SymbolInfo, SymbolKind, DefinitionLocation, TypeSignature};
-use glyim_span::{FileId, Span, ByteIdx, SyntaxContext};
+use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind, TypeSignature};
+use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 #[test]
 fn test_lookup_by_name_returns_correct_symbol() {
     let mut index = SymbolIndex::new();
     let file_id = FileId::from_raw(1);
-    let span = Span::new(file_id, ByteIdx::ZERO, ByteIdx::from_raw(10), SyntaxContext::ROOT);
+    let span = Span::new(
+        file_id,
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(10),
+        SyntaxContext::ROOT,
+    );
     let def_loc = DefinitionLocation { file_id, span };
     let info = SymbolInfo {
         name: "foo".to_string(),
@@ -34,7 +39,12 @@ fn test_lookup_by_name_returns_correct_symbol() {
 fn test_query_prefix_returns_matching_symbols() {
     let mut index = SymbolIndex::new();
     let file_id = FileId::from_raw(1);
-    let span = Span::new(file_id, ByteIdx::ZERO, ByteIdx::from_raw(10), SyntaxContext::ROOT);
+    let span = Span::new(
+        file_id,
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(10),
+        SyntaxContext::ROOT,
+    );
     let def_loc = DefinitionLocation { file_id, span };
 
     let foo = SymbolInfo {
@@ -84,7 +94,12 @@ fn test_query_prefix_returns_matching_symbols() {
 fn test_query_fallback_contains() {
     let mut index = SymbolIndex::new();
     let file_id = FileId::from_raw(1);
-    let span = Span::new(file_id, ByteIdx::ZERO, ByteIdx::from_raw(10), SyntaxContext::ROOT);
+    let span = Span::new(
+        file_id,
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(10),
+        SyntaxContext::ROOT,
+    );
     let def_loc = DefinitionLocation { file_id, span };
     let abc = SymbolInfo {
         name: "abc".to_string(),

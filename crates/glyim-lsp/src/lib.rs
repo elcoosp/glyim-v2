@@ -3,6 +3,7 @@
 pub mod code_action;
 pub mod completion;
 pub mod database;
+pub mod dep_graph;
 pub mod diagnostics;
 pub mod driver;
 pub mod folding;
@@ -16,7 +17,6 @@ pub mod rename;
 pub mod server;
 pub mod state;
 pub mod symbol_index;
-pub mod dep_graph;
 pub mod uri; // Make database public
 
 #[cfg(test)]

@@ -52,7 +52,11 @@ impl AnalysisDriver {
     pub async fn run(mut self) {
         while let Some(msg) = self.rx.recv().await {
             match msg {
-                AnalysisMessage::FileChanged { path, content, version: _ } => {
+                AnalysisMessage::FileChanged {
+                    path,
+                    content,
+                    version: _,
+                } => {
                     self.analyze_file(&path, &content).await;
                 }
                 AnalysisMessage::FileClosed { path } => {
@@ -96,7 +100,8 @@ impl AnalysisDriver {
         all_diagnostics.extend(parse_result.diagnostics);
         all_diagnostics.extend(def_diagnostics);
 
-        let lsp_diagnostics = crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diagnostics);
+        let lsp_diagnostics =
+            crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diagnostics);
         if lsp_diagnostics.is_empty() {
             self.db.diagnostics.write().remove(&file_id);
         } else {
@@ -105,10 +110,19 @@ impl AnalysisDriver {
             }
         }
 
-        debug!("Analyzed file {:?} with {} diagnostics", path, all_diagnostics.len());
+        debug!(
+            "Analyzed file {:?} with {} diagnostics",
+            path,
+            all_diagnostics.len()
+        );
     }
 
-    fn extract_dependencies(&self, _path: &PathBuf, _hir: &glyim_hir::CrateHir, _interner: &glyim_core::Interner) {
+    fn extract_dependencies(
+        &self,
+        _path: &PathBuf,
+        _hir: &glyim_hir::CrateHir,
+        _interner: &glyim_core::Interner,
+    ) {
         // Placeholder for dependency extraction
     }
 }
