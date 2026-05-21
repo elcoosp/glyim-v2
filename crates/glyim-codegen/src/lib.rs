@@ -61,8 +61,6 @@ struct FallbackLayoutProvider;
 
 impl LayoutProvider for FallbackLayoutProvider {
     fn field_offset(&self, _ty: Ty, field_idx: FieldIdx) -> u64 {
-        // Always return non-zero offset to ensure OP_ADD is emitted for all field projections in tests
-        // Field 0 -> 8, Field 1 -> 16, etc.
         8 + (field_idx.to_raw() as u64) * 8
     }
     fn size_of(&self, _ty: Ty) -> u64 {
@@ -97,10 +95,7 @@ impl BytecodeBackend {
     }
 
     pub fn with_ty_ctx(mut self, ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
-        self.layout_provider = Box::new(GlyimLayoutProvider {
-            ty_ctx: ctx,
-            target,
-        });
+        self.layout_provider = Box::new(GlyimLayoutProvider { ty_ctx: ctx, target });
         self
     }
 
@@ -119,14 +114,9 @@ impl BytecodeBackend {
         bc.push(OP_LOAD_LOCAL_ADDR);
         bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
 
-        // Defensive bounds check before any IndexVec access
         let local_idx = place.local.to_raw() as usize;
         if local_idx >= local_tys.len() {
-            tracing::warn!(
-                "STUB: local index {} out of bounds (len={})",
-                local_idx,
-                local_tys.len()
-            );
+            tracing::warn!("local index {} out of bounds (len={})", local_idx, local_tys.len());
             return Ok(());
         }
         let mut current_ty = local_tys[place.local].ty;
@@ -135,22 +125,18 @@ impl BytecodeBackend {
             match proj {
                 ProjectionElem::Deref => {
                     bc.push(OP_DEREF);
-                    current_ty = Ty::ERROR; // Cannot inspect inner type without TyCtx
-                ProjectionElem::Slice { .. } => { tracing::warn!("Slice projection not implemented in codegen"); },
-
+                    current_ty = Ty::ERROR;
                 }
                 ProjectionElem::Field(idx) => {
-                    // Always emit offset calculation for field projections
                     let offset = self.layout_provider.field_offset(current_ty, *idx);
                     bc.push(OP_LOAD_CONST);
                     bc.extend_from_slice(&(offset as i64).to_le_bytes());
                     bc.push(OP_ADD);
-                    tracing::trace!("Emitted: OP_LOAD_CONST, offset bytes, OP_ADD");
                 }
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     if elem_size == 0 {
-                        tracing::warn!("STUB: Indexing into zero-sized element");
+                        tracing::warn!("Indexing into zero-sized element");
                         return Ok(());
                     }
                     bc.push(OP_LOAD_LOCAL);
@@ -161,11 +147,9 @@ impl BytecodeBackend {
                     bc.push(OP_ADD);
                     current_ty = Ty::ERROR;
                 }
-                ProjectionElem::Downcast(_) => {
+                ProjectionElem::Downcast(_) => {}
                 ProjectionElem::Slice { .. } => {
                     tracing::warn!("Slice projection not implemented in codegen");
-                },
-                    // Downcast doesn't change address in this model
                 }
             }
         }
@@ -278,9 +262,7 @@ impl BytecodeBackend {
                 }
                 Ok(())
             }
-            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => {
-                Ok(())
-            }
+            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => Ok(()),
         }
     }
 
@@ -408,23 +390,18 @@ impl BytecodeBackend {
                         bc.extend_from_slice(&b.to_le_bytes());
                     }
                     MirConstKind::String(_name) => {
-                        // Implemented S08-T02: String constant emitted to string table
                         bc.push(OP_LOAD_CONST);
                         let idx = self.intern_string("string_payload");
                         bc.extend_from_slice(&(idx as i64).to_le_bytes());
-                        tracing::trace!("Emitted string const idx {}", idx);
                     }
                     MirConstKind::Fn(def_id, substs) => {
-                        // Implemented S08-T03: Function constant emitted to function table
                         bc.push(OP_LOAD_CONST);
                         let idx = self.intern_fn(*def_id, *substs);
                         bc.extend_from_slice(&(idx as i64).to_le_bytes());
-                        tracing::trace!("Emitted fn const idx {}", idx);
                     }
                     MirConstKind::ConstRef(def_id, _) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(def_id.to_raw() as i64).to_le_bytes());
-                        tracing::trace!("Emitted const ref def_id {}", def_id.to_raw());
                     }
                     MirConstKind::Unit | MirConstKind::Error => {
                         bc.push(OP_LOAD_CONST);
@@ -447,18 +424,10 @@ impl BytecodeBackend {
                 bc.push(OP_RETURN);
                 Ok(())
             }
-            TerminatorKind::SwitchInt {
-                discr,
-                switch_ty,
-                targets,
-            } => {
+            TerminatorKind::SwitchInt { discr, switch_ty, targets } => {
                 if *switch_ty == Ty::BOOL {
                     self.emit_operand(bc, discr, local_tys)?;
-                    let false_target = targets
-                        .iter()
-                        .next()
-                        .map(|(_, t)| t)
-                        .unwrap_or_else(|| targets.otherwise());
+                    let false_target = targets.iter().next().map(|(_, t)| t).unwrap_or_else(|| targets.otherwise());
                     let true_target = targets.otherwise();
                     bc.push(OP_JUMP_IF);
                     bc.extend_from_slice(&true_target.to_raw().to_le_bytes());
@@ -482,13 +451,7 @@ impl BytecodeBackend {
                 bc.extend_from_slice(&target.to_raw().to_le_bytes());
                 Ok(())
             }
-            TerminatorKind::Call {
-                func,
-                args,
-                destination,
-                target,
-                ..
-            } => {
+            TerminatorKind::Call { func, args, destination, target, .. } => {
                 let is_indirect = matches!(func, Operand::Copy(_) | Operand::Move(_));
                 self.emit_operand(bc, func, local_tys)?;
                 for arg in args {
@@ -497,35 +460,23 @@ impl BytecodeBackend {
                             let ty = local_tys.get(place.local).map(|d| d.ty).unwrap_or(Ty::UNIT);
                             let size = self.layout_provider.size_of(ty);
                             if size > 16 {
-                                // S08-T04: Pass large structs indirectly
                                 self.emit_place_address(bc, place, local_tys)?;
                             } else {
                                 self.emit_operand(bc, arg, local_tys)?;
                             }
                         }
-                        _ => {
-                            self.emit_operand(bc, arg, local_tys)?;
-                        }
+                        _ => self.emit_operand(bc, arg, local_tys)?,
                     }
                 }
                 bc.extend_from_slice(&(args.len() as u32).to_le_bytes());
-                bc.push(if is_indirect {
-                    OP_CALL_INDIRECT
-                } else {
-                    OP_CALL
-                });
+                bc.push(if is_indirect { OP_CALL_INDIRECT } else { OP_CALL });
                 bc.extend_from_slice(&destination.local.to_raw().to_le_bytes());
                 let t = target.unwrap_or_else(|| BasicBlockIdx::from_raw(u32::MAX));
                 bc.extend_from_slice(&t.to_raw().to_le_bytes());
                 Ok(())
             }
             TerminatorKind::Unreachable => Ok(()),
-            TerminatorKind::Assert {
-                cond,
-                expected,
-                target,
-                ..
-            } => {
+            TerminatorKind::Assert { cond, expected, target, .. } => {
                 self.emit_operand(bc, cond, local_tys)?;
                 bc.push(OP_ASSERT);
                 bc.push(if *expected { 1u8 } else { 0u8 });
