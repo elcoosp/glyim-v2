@@ -1,10 +1,143 @@
 [
   {
-    "id": "S14",
-    "name": "Builtin Macros – file!, line!, column!, env!, include!, concat!, stringify!",
-    "crate": "glyim-meta",
+    "id": "W1-C01",
+    "name": "Type flags, interior mutability, ADT traits",
+    "crate": "glyim-type",
     "wave": 1,
-    "scope_summary": "Replace stubs in `crates/glyim-meta/src/expander/mod.rs` (lines 200-280). Implement `file!()` to return source file path as string literal from `Span::file`. Implement `line!()` and `column!()` using `Span::lo` converted to line/column via `SourceMap` (or approximate). Implement `env!()` to read environment variable at compile time using `std::env::var`, returning string literal. Implement `include!()` to read file content as string literal (UTF-8). Implement `concat!()` for literal concatenation and `stringify!()` to convert token stream to string. Add error diagnostics for missing env var or file. Remove all `tracing::warn!` stubs.",
+    "scope_summary": "Complete `TypeFlags::HAS_INTERIOR_MUTABILITY` computation for ADTs containing `UnsafeCell`. Implement auto‑trait logic (Send/Sync/Unpin) in `auto_trait.rs`. Ensure `TyCtx::field_ty` works with `AdtDef`. Remove all stubs.",
+    "owned_crates": [
+      "glyim-type"
+    ],
+    "locked_interfaces": [
+      "glyim_type::TyCtx::ty_flags",
+      "glyim_type::TyCtx::field_ty"
+    ],
+    "tests": {
+      "W1-C01-T01": "Struct with `UnsafeCell` has `HAS_INTERIOR_MUTABILITY` flag",
+      "W1-C01-T02": "`&mut T` implements Send if `T` is Send",
+      "W1-C01-T03": "`field_ty` returns correct field type for ADT"
+    },
+    "mocking": "Use `TyCtxBuilder` to create types and check flags.",
+    "upstream": [],
+    "downstream": [
+      "W3-C02",
+      "W3-C07"
+    ]
+  },
+  {
+    "id": "W1-C02",
+    "name": "Lexer: number suffix diagnostics, radix validation, string recovery",
+    "crate": "glyim-frontend",
+    "wave": 1,
+    "scope_summary": "Replace `tracing::warn` stubs with `GlyimDiagnostic::lex_error` for invalid integer suffixes, invalid radix digits (0x, 0b, 0o), and unterminated string/char literals. Emit error but continue lexing. Add recovery for incomplete float exponent (e.g., `1e`).",
+    "owned_crates": [
+      "glyim-frontend"
+    ],
+    "locked_interfaces": [
+      "glyim_frontend::lex"
+    ],
+    "tests": {
+      "W1-C02-T01": "`42invalid` produces error and `IntLit` token",
+      "W1-C02-T02": "`0xG` produces hex digit error",
+      "W1-C02-T03": "`\"unclosed` produces error and `StringLit` token",
+      "W1-C02-T04": "`1e` produces float exponent error"
+    },
+    "mocking": "Direct `lex` calls on strings.",
+    "upstream": [],
+    "downstream": [
+      "W2-C01",
+      "W2-C02"
+    ]
+  },
+  {
+    "id": "W1-C03",
+    "name": "MIR interpreter: all missing operations",
+    "crate": "glyim-mir-interp",
+    "wave": 1,
+    "scope_summary": "Implement all missing interpreter functionality: bitwise (`&`, `|`, `^`, `<<`, `>>`), logical (`&&`, `||`), unary `Not` and `Neg`, `Len` (array/slice length), `Discriminant` (enum variant index), `SwitchInt` with >2 targets, `Aggregate` (tuples, arrays, ADTs), and nested projection writes (`write_through_projections_with_locals`). Remove all stubs.",
+    "owned_crates": [
+      "glyim-mir-interp"
+    ],
+    "locked_interfaces": [
+      "glyim_mir_interp::Interpreter::eval_rvalue",
+      "glyim_mir_interp::Interpreter::eval_binary_op",
+      "glyim_mir_interp::Interpreter::write_place"
+    ],
+    "tests": {
+      "W1-C03-T01": "`1 << 2` evaluates to 4",
+      "W1-C03-T02": "`!true` evaluates to false",
+      "W1-C03-T03": "`len([1,2,3])` returns 3",
+      "W1-C03-T04": "`match Some(5) { Some(x) => x, None => 0 }` returns 5",
+      "W1-C03-T05": "`(a, b).0 = 42` updates field"
+    },
+    "mocking": "Construct MIR bodies programmatically and run interpreter.",
+    "upstream": [],
+    "downstream": []
+  },
+  {
+    "id": "W1-C04",
+    "name": "Runtime: memory, environment, process, basic I/O",
+    "crate": "glyim-runtime",
+    "wave": 1,
+    "scope_summary": "Implement all low‑level FFI functions: `glyim_alloc`, `dealloc`, `drop_in_place`, `panic`, `free_cstr`; environment variables (`var`, `set_var`, `remove_var`, `args`, `current_dir`, `current_exe`, `home_dir`, `temp_dir`); process spawning (`spawn`, `wait`, `wait_output`, `kill`, `exit`, `abort`, `getpid`, `getppid`). Use `std::alloc`, `std::env`, `std::process`. Return negative error codes.",
+    "owned_crates": [
+      "glyim-runtime"
+    ],
+    "locked_interfaces": [
+      "glyim_runtime::glyim_alloc",
+      "glyim_runtime::glyim_env_var",
+      "glyim_runtime::glyim_process_spawn"
+    ],
+    "tests": {
+      "W1-C04-T01": "`glyim_alloc` returns non‑null aligned pointer",
+      "W1-C04-T02": "`glyim_env_var(\"HOME\")` returns string",
+      "W1-C04-T03": "`glyim_process_spawn(\"true\")` spawns and wait returns 0",
+      "W1-C04-T04": "`glyim_panic` aborts"
+    },
+    "mocking": "Integration tests calling FFI functions.",
+    "upstream": [],
+    "downstream": [
+      "W5-C04",
+      "W5-C05",
+      "W5-C06"
+    ]
+  },
+  {
+    "id": "W2-C01",
+    "name": "Parser: index expressions, or‑patterns, range patterns, slice patterns",
+    "crate": "glyim-frontend",
+    "wave": 2,
+    "scope_summary": "Add parsing support for `arr[0]` (`SyntaxKind::IndexExpr`). Add pattern parsing for `PatOr` (`|`), `PatRange` (`..`, `..=`), and `PatSlice` (`[a, b, .., c]`). Update `glyim-syntax` with new kinds. Add error recovery for malformed patterns and missing brackets.",
+    "owned_crates": [
+      "glyim-frontend",
+      "glyim-syntax"
+    ],
+    "locked_interfaces": [
+      "glyim_frontend::parse_to_syntax",
+      "glyim_syntax::SyntaxKind"
+    ],
+    "tests": {
+      "W2-C01-T01": "`arr[0]` parses as `IndexExpr`",
+      "W2-C01-T02": "`0 | 1` parses as `PatOr`",
+      "W2-C01-T03": "`0..=9` parses as `PatRange` inclusive",
+      "W2-C01-T04": "`[a, b, .., c]` parses as `PatSlice`"
+    },
+    "mocking": "Snapshot CST tests using `glyim_test::snapshot_cst`.",
+    "upstream": [
+      "W1-C02"
+    ],
+    "downstream": [
+      "W3-C02",
+      "W3-C03",
+      "W3-C04"
+    ]
+  },
+  {
+    "id": "W2-C02",
+    "name": "Builtin macros: file!, line!, column!, env!, include!, concat!, stringify!",
+    "crate": "glyim-meta",
+    "wave": 2,
+    "scope_summary": "Implement all builtin macros in `expander/mod.rs`. Use `Span` information for `file!`, `line!`, `column!`. Use `std::env::var` for `env!`. Use `std::fs::read_to_string` for `include!`. Implement token concatenation for `concat!`. Implement `stringify!` to convert token stream to string literal. Add diagnostics for missing environment variables or files.",
     "owned_crates": [
       "glyim-meta"
     ],
@@ -13,279 +146,328 @@
       "glyim_meta::BuiltinMacro"
     ],
     "tests": {
-      "S14-T01": "`file!()` expands to string literal containing source file name",
-      "S14-T02": "`line!()` expands to integer literal with current line number",
-      "S14-T03": "`env!(\"PATH\")` expands to string literal of env var value",
-      "S14-T04": "`include!(\"test.txt\")` expands to string literal of file content",
-      "S14-T05": "`concat!(\"a\", \"b\")` expands to `\"ab\"`",
-      "S14-T06": "`stringify!(1+2)` expands to `\"1 + 2\"`"
+      "W2-C02-T01": "`file!()` expands to string literal with file name",
+      "W2-C02-T02": "`line!()` expands to integer literal with correct line number",
+      "W2-C02-T03": "`env!(\"PATH\")` expands to string literal of PATH",
+      "W2-C02-T04": "`include!(\"test.txt\")` expands to file content",
+      "W2-C02-T05": "`concat!(\"a\", \"b\")` expands to `\"ab\"`",
+      "W2-C02-T06": "`stringify!(1+2)` expands to `\"1 + 2\"`"
     },
-    "mocking": "Use `glyim_span::Span` with known file/line; mock environment variables; create temporary files for include!.",
+    "mocking": "Mock `Span` with known byte offset; create temp files; set environment variables.",
     "upstream": [],
-    "downstream": [
-      "S03",
-      "S06"
-    ]
+    "downstream": []
   },
   {
-    "id": "S15",
-    "name": "MIR Interpreter – Complete Operation Coverage",
-    "crate": "glyim-mir-interp",
-    "wave": 1,
-    "scope_summary": "In `crates/glyim-mir-interp/src/lib.rs`, replace all stub warnings. Implement `eval_binary_op` for `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `And`, `Or` (lines 300-350). Implement `eval_unary_op` for `Not` on bool/integers and `Neg` on integers/floats. Implement `eval_rvalue` for `Len` (return array/slice length) and `Discriminant` (return variant index for enums). Implement `write_through_projections_with_locals` for nested field/index writes. Add support for `Aggregate` creation (arrays, tuples, ADTs). Implement `SwitchInt` with >2 targets. Add support for `Drop` terminator (just ignore for interpreter). Ensure all operations return correct `InterpValue` variants.",
-    "owned_crates": [
-      "glyim-mir-interp"
-    ],
-    "locked_interfaces": [
-      "glyim_mir_interp::Interpreter::eval_rvalue",
-      "glyim_mir_interp::Interpreter::write_place"
-    ],
-    "tests": {
-      "S15-T01": "`1 << 2` evaluates to 4",
-      "S15-T02": "`!true` evaluates to false",
-      "S15-T03": "`len([1,2,3])` evaluates to 3",
-      "S15-T04": "`match Some(5) { Some(x) => x, None => 0 }` evaluates to 5",
-      "S15-T05": "`(a, b).0 = 42` correctly updates field"
-    },
-    "mocking": "Construct MIR bodies programmatically or from test sources.",
-    "upstream": [],
-    "downstream": [
-      "S06",
-      "S07",
-      "S10"
-    ]
-  },
-  {
-    "id": "S16",
-    "name": "Pattern Matching – Or‑patterns, Guards, Ranges, Slices",
-    "crate": "glyim-lower",
+    "id": "W2-C03",
+    "name": "HIR: lower index expressions and new patterns",
+    "crate": "glyim-hir",
     "wave": 2,
-    "scope_summary": "In `crates/glyim-lower/src/lower_rvalue.rs`, replace stub for match lowering (lines 600-650). Implement decision tree for `Pat::Or` by generating a `SwitchInt` that jumps to a block that tests each subpattern. For `Pat::Range`, generate `SwitchInt` with all integer values in range (or use `icmp` chain in LLVM, but MIR should use `SwitchInt` for small ranges, else branch). For pattern guards, generate a conditional branch to guard expression before executing arm body. For slice patterns `[a, b, .., c]`, generate index checks and binds. Also in `lower_pat.rs`, ensure all patterns are lowered to THIR correctly.",
+    "scope_summary": "In `lower/lower_expr.rs`, implement lowering for `SyntaxKind::IndexExpr` to `Expr::Index`. In `lower/lower_pat.rs`, implement lowering for `PatOr`, `PatRange`, `PatSlice` to corresponding HIR pattern nodes. Ensure all pattern variants produce correct `Pat` enums.",
     "owned_crates": [
-      "glyim-lower"
+      "glyim-hir"
     ],
     "locked_interfaces": [
-      "glyim_lower::MirBuilder::lower_match"
+      "glyim_hir::lower::lower_expr",
+      "glyim_hir::lower::lower_pat"
     ],
     "tests": {
-      "S16-T01": "`match x { 0 | 1 => true, _ => false }` lowers to two‑way switch",
-      "S16-T02": "`match x { 0..=9 => true, _ => false }` generates range check",
-      "S16-T03": "`match opt { Some(x) if x > 0 => x, _ => 0 }` emits guard branch",
-      "S16-T04": "`match slice { [a, b] => a+b, _ => 0 }` binds first two elements"
+      "W2-C03-T01": "`arr[0]` lowers to `Expr::Index`",
+      "W2-C03-T02": "`0 | 1` lowers to `Pat::Or`",
+      "W2-C03-T03": "`0..=5` lowers to `Pat::Range` inclusive",
+      "W2-C03-T04": "`[a, b]` lowers to `Pat::Slice`"
     },
-    "mocking": "Use `glyim_test::phase::MirGenTester` to lower HIR to MIR and check structure.",
+    "mocking": "Parse source, then run HIR lowering and inspect result.",
     "upstream": [
-      "S03"
+      "W2-C01"
     ],
     "downstream": [
-      "S06",
-      "S10"
+      "W3-C01",
+      "W3-C05"
     ]
   },
   {
-    "id": "S17",
-    "name": "Expression Completion – Struct Literals, Try Operator, Async/Await",
+    "id": "W3-C01",
+    "name": "Type checking: match guards, or‑patterns, ranges, slices, index, range, struct/spread",
     "crate": "glyim-typeck",
-    "wave": 2,
-    "scope_summary": "In `crates/glyim-typeck/src/check_expr.rs`, replace stub for `Expr::Struct` (line 500) by implementing field resolution, type checking, and spread operator (`..base`). For `?` operator (not yet an AST node, but when encountered), desugar to `match result { Ok(v) => v, Err(e) => return Err(e.into()) }`. For `async`/`await`, if present in AST, remove stubs and implement simple desugaring to `Future` polling (or emit error that async not supported yet). Also implement `Expr::Range` type checking (inclusive/exclusive). Ensure all expression kinds produce proper THIR.",
+    "wave": 3,
+    "scope_summary": "Complete type checking for all new HIR nodes: `Expr::Index` (base array/slice, index usize), `Expr::Range` (consistent types), `Expr::Struct` (field resolution, spread), `Pat::Or` (same types, same bindings), `Pat::Range` (start/end comparable), `Pat::Slice` (scrutinee array/slice, fixed elements ≤ length). Implement match guard checking with pattern bindings in scope. Emit proper diagnostics.",
     "owned_crates": [
       "glyim-typeck"
     ],
     "locked_interfaces": [
-      "glyim_typeck::FnCtxt::check_expr"
+      "glyim_typeck::FnCtxt::check_expr",
+      "glyim_typeck::FnCtxt::check_pat",
+      "glyim_typeck::FnCtxt::check_match_arm"
     ],
     "tests": {
-      "S17-T01": "`Point { x: 1, y: 2 }` type checks and resolves fields",
-      "S17-T02": "`Point { x: 1, ..base }` copies remaining fields from base",
-      "S17-T03": "`parse()?.value` desugars to match on `Result`",
-      "S17-T04": "`1..=5` type checks as `RangeInclusive<i32>`"
+      "W3-C01-T01": "Match guard uses pattern‑bound variable",
+      "W3-C01-T02": "Or‑pattern with same types passes",
+      "W3-C01-T03": "Range pattern on integer passes",
+      "W3-C01-T04": "Slice pattern on array passes",
+      "W3-C01-T05": "Index expression on array passes",
+      "W3-C01-T06": "Struct literal with spread passes",
+      "W3-C01-T07": "Mismatched or‑pattern fails"
     },
-    "mocking": "Use `glyim_test::phase::AnalysisTester` with mock solver.",
+    "mocking": "Use `AnalysisTester` with mock solver.",
     "upstream": [
-      "S05"
+      "W2-C03"
+    ],
+    "downstream": [
+      "W4-C01",
+      "W4-C02",
+      "W4-C03",
+      "W4-C04",
+      "W4-C05"
+    ]
+  },
+  {
+    "id": "W3-C02",
+    "name": "Coercions: array→slice, &mut→&, *mut→*const",
+    "crate": "glyim-solve",
+    "wave": 3,
+    "scope_summary": "Extend `can_coerce` in `fulfill.rs` to handle `&mut T → &T`, `&T → *const T`, `&mut T → *mut T`, `[T; N] → [T]`, and `*mut T → *const T`. Update `SimpleTraitSolver::evaluate_predicate` to return `SolverResult::Proven` for `Predicate::Coerce` when `can_coerce` returns true.",
+    "owned_crates": [
+      "glyim-solve"
+    ],
+    "locked_interfaces": [
+      "glyim_solve::fulfill::can_coerce",
+      "glyim_solve::solver::SimpleTraitSolver::evaluate_predicate"
+    ],
+    "tests": {
+      "W3-C02-T01": "`&mut i32` coerces to `&i32`",
+      "W3-C02-T02": "`[1,2,3]` coerces to `&[i32]`",
+      "W3-C02-T03": "`*mut i32` coerces to `*const i32`",
+      "W3-C02-T04": "Coercion from `&i32` to `&mut i32` fails"
+    },
+    "mocking": "Use `AnalysisTester` with function calls requiring coercions.",
+    "upstream": [],
+    "downstream": [
+      "W4-C06"
+    ]
+  },
+  {
+    "id": "W3-C03",
+    "name": "HIR field access completeness",
+    "crate": "glyim-hir",
+    "wave": 3,
+    "scope_summary": "Ensure `Expr::Field` lowering uses `TyCtx::field_ty` to correctly resolve field types. Add support for tuple field access (`.0`, `.1`). Remove any remaining stubs or warnings in lower_expr for field access.",
+    "owned_crates": [
+      "glyim-hir"
+    ],
+    "locked_interfaces": [
+      "glyim_hir::lower::lower_expr",
+      "glyim_type::TyCtx::field_ty"
+    ],
+    "tests": {
+      "W3-C03-T01": "Tuple field access `tuple.0` produces correct type",
+      "W3-C03-T02": "Struct field access uses resolved field index"
+    },
+    "mocking": "Parse and lower, inspect HIR types.",
+    "upstream": [
+      "W2-C03",
+      "W1-C01"
     ],
     "downstream": []
   },
   {
-    "id": "S18",
-    "name": "Standard Library Runtime – Environment and Process Functions",
-    "crate": "glyim-runtime",
-    "wave": 3,
-    "scope_summary": "In `crates/glyim-runtime/src/lib.rs`, implement all `extern \"C\"` functions called from `.g` stdlib stubs. For environment: `glyim_env_current_dir`, `glyim_env_var`, `glyim_env_set_var`, `glyim_env_remove_var`, `glyim_env_args_count`, `glyim_env_args_get`, `glyim_env_current_exe`, `glyim_env_home_dir`, `glyim_env_temp_dir`. For process: `glyim_process_spawn`, `glyim_process_wait`, `glyim_process_wait_output`, `glyim_process_kill`, `glyim_process_exit`, `glyim_process_abort`, `glyim_process_getpid`, `glyim_process_getppid`. Use Rust's `std::env` and `std::process`. Return errors via negative integers. Add documentation and safety notes.",
+    "id": "W4-C01",
+    "name": "MIR lowering: index, or‑patterns, ranges, slices, guards, struct/spread",
+    "crate": "glyim-lower",
+    "wave": 4,
+    "scope_summary": "Complete MIR lowering for all HIR nodes: `Expr::Index` → `Place` with `ProjectionElem::Index`. `Pat::Or` → `SwitchInt` over discriminant values. `Pat::Range` → `SwitchInt` for small ranges, comparison chain for large. `Pat::Slice` → length checks and indexed binds. Match guards → conditional branch after pattern test. `Expr::Struct` → `Rvalue::Aggregate` with spread via field copies. Ensure all bindings produce correct locals.",
     "owned_crates": [
-      "glyim-runtime"
+      "glyim-lower"
     ],
     "locked_interfaces": [
-      "glyim_runtime::glyim_env_var",
-      "glyim_runtime::glyim_process_spawn"
+      "glyim_lower::MirBuilder::lower_match",
+      "glyim_lower::MirBuilder::lower_expr_to_place",
+      "glyim_lower::MirBuilder::lower_expr_to_rvalue"
     ],
     "tests": {
-      "S18-T01": "`glyim_env_var(\"HOME\")` returns home directory path",
-      "S18-T02": "`glyim_env_set_var(\"TEST\", \"1\")` sets variable",
-      "S18-T03": "`glyim_process_spawn` launches child process",
-      "S18-T04": "`glyim_process_wait` waits for child to exit"
+      "W4-C01-T01": "`arr[0]` creates `Place` with `Index` projection",
+      "W4-C01-T02": "`match x { 0 | 1 => true, _ => false }` produces two‑way switch",
+      "W4-C01-T03": "`0..=9` generates `SwitchInt` with 10 targets",
+      "W4-C01-T04": "`[a, b]` binds first two elements with index projections",
+      "W4-C01-T05": "`Some(x) if x > 0 => x` generates guard branch",
+      "W4-C01-T06": "`Point { x: 1, ..base }` generates aggregate with field copies"
     },
-    "mocking": "Integration test with actual Rust programs linking against runtime.",
-    "upstream": [],
+    "mocking": "Use `MirGenTester` to generate MIR and inspect structure.",
+    "upstream": [
+      "W3-C01"
+    ],
     "downstream": [
-      "S19",
-      "S20"
+      "W5-C01",
+      "W5-C02"
     ]
   },
   {
-    "id": "S19",
-    "name": "Standard Library Runtime – File System Functions",
+    "id": "W4-C02",
+    "name": "MIR optimizations: constant propagation, DCE, CFG simplify, unreachable elimination",
+    "crate": "glyim-opt",
+    "wave": 4,
+    "scope_summary": "Remove all stubs. Improve constant propagation across basic blocks and for aggregates. Enhance dead code elimination to handle terminators correctly. Merge single‑branch `SwitchInt` into `Goto`. Eliminate unreachable basic blocks after analysis. Ensure passes are idempotent and safe.",
+    "owned_crates": [
+      "glyim-opt"
+    ],
+    "locked_interfaces": [
+      "glyim_opt::optimize"
+    ],
+    "tests": {
+      "W4-C02-T01": "Constant propagation replaces `let x = 5; let y = x + 1` with `let y = 6`",
+      "W4-C02-T02": "DCE removes unused `let _ = 42`",
+      "W4-C02-T03": "CFG simplify merges `goto` chains",
+      "W4-C02-T04": "Unreachable block after `return` is removed"
+    },
+    "mocking": "Run optimizations on MIR and verify output.",
+    "upstream": [
+      "W4-C01"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "W5-C01",
+    "name": "Borrow checking: index projections and slice patterns",
+    "crate": "glyim-borrowck",
+    "wave": 5,
+    "scope_summary": "Update `places_conflict` in `visitor.rs` to handle `ProjectionElem::Index` (different indices do not conflict, same index does). Extend conflict detection for slice pattern bindings (disjoint elements fine, overlapping via rest conflicts). Ensure two‑phase borrows work correctly with index projections. Remove stubs.",
+    "owned_crates": [
+      "glyim-borrowck"
+    ],
+    "locked_interfaces": [
+      "glyim_borrowck::places_conflict",
+      "glyim_borrowck::check_borrows"
+    ],
+    "tests": {
+      "W5-C01-T01": "`&mut arr[0]` and `&arr[1]` do not conflict",
+      "W5-C01-T02": "`&mut arr[0]` and `&arr[0]` conflict",
+      "W5-C01-T03": "Whole array borrow conflicts with element borrow",
+      "W5-C01-T04": "Slice pattern binding `[a, b]` with disjoint borrows no conflict"
+    },
+    "mocking": "Use `MockBorrowckCtx` with custom MIR bodies.",
+    "upstream": [
+      "W4-C01"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "W5-C02",
+    "name": "LLVM backend: slice type lowering and index projection",
+    "crate": "glyim-codegen-llvm",
+    "wave": 5,
+    "scope_summary": "Implement `llvm_type_for_ty` for `TyKind::Slice` as `{ ptr, len }` struct. In `lower.rs`, handle `ProjectionElem::Index` on slices: generate `getelementptr` with element size and load. For `TyKind::Error` reaching codegen, replace stub with `panic!` (compiler bug). Remove all other stubs.",
+    "owned_crates": [
+      "glyim-codegen-llvm"
+    ],
+    "locked_interfaces": [
+      "glyim_codegen_llvm::LlvmBackend::lower_body_to_module",
+      "glyim_codegen_llvm::types::llvm_type_for_ty"
+    ],
+    "tests": {
+      "W5-C02-T01": "`[i32]` lowers to `{ i32*, i64 }`",
+      "W5-C02-T02": "`slice[0]` emits `getelementptr` and `load`",
+      "W5-C02-T03": "`TyKind::Error` panics with message"
+    },
+    "mocking": "Use `LlvmBackend::generate_ir` to inspect LLVM IR.",
+    "upstream": [
+      "W4-C01"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "W5-C03",
+    "name": "Bytecode backend: OP_INDEX, OP_FIELD, OP_REPEAT, remove stubs",
+    "crate": "glyim-codegen",
+    "wave": 5,
+    "scope_summary": "In `lib.rs`, implement `OP_INDEX` and `OP_FIELD` in `emit_place_address` (use element size multiplication for index). Implement `OP_REPEAT` for `Rvalue::Repeat`. Remove stubs for out‑of‑bounds locals and zero‑sized elements – replace with `panic!`. Ensure `emit_rvalue` for `Aggregate` works for all kinds.",
+    "owned_crates": [
+      "glyim-codegen"
+    ],
+    "locked_interfaces": [
+      "glyim_codegen::BytecodeBackend::generate_function"
+    ],
+    "tests": {
+      "W5-C03-T01": "`arr[0]` emits `OP_LOAD_LOCAL_ADDR` + offset + `OP_DEREF`",
+      "W5-C03-T02": "`[0; 5]` emits `OP_REPEAT`",
+      "W5-C03-T03": "`Point { x: 1, y: 2 }` emits `OP_AGGREGATE` with 2 fields"
+    },
+    "mocking": "Inspect bytecode output.",
+    "upstream": [
+      "W4-C01"
+    ],
+    "downstream": []
+  },
+  {
+    "id": "W5-C04",
+    "name": "Runtime: file system (fs) functions",
     "crate": "glyim-runtime",
-    "wave": 3,
-    "scope_summary": "Implement `glyim_fs_open`, `glyim_fs_read`, `glyim_fs_write`, `glyim_fs_flush`, `glyim_fs_metadata`, `glyim_fs_truncate`, `glyim_fs_rename`, `glyim_fs_remove_file`, `glyim_fs_remove_dir`, `glyim_fs_remove_dir_all`, `glyim_fs_create_dir`, `glyim_fs_create_dir_all`, `glyim_fs_canonicalize`. Use `std::fs` and `std::io`. Return file descriptors (or use `Box`ed `File` passed as pointer). For simplicity, map each opened file to a `i32` index in a global table, or return raw file handle. Handle errors via `errno`‑style return codes.",
+    "wave": 5,
+    "scope_summary": "Implement all file system FFI functions: `glyim_fs_open`, `read`, `write`, `flush`, `metadata`, `truncate`, `rename`, `remove_file`, `remove_dir`, `remove_dir_all`, `create_dir`, `create_dir_all`, `canonicalize`. Use `std::fs` and `std::io`. Maintain a global file descriptor table. Return negative error codes on failure.",
     "owned_crates": [
       "glyim-runtime"
     ],
     "locked_interfaces": [
       "glyim_runtime::glyim_fs_open",
-      "glyim_runtime::glyim_fs_read"
+      "glyim_runtime::glyim_fs_read",
+      "glyim_runtime::glyim_fs_write"
     ],
     "tests": {
-      "S19-T01": "`glyim_fs_open` returns valid fd for existing file",
-      "S19-T02": "`glyim_fs_read` reads bytes into buffer",
-      "S19-T03": "`glyim_fs_create_dir` creates directory",
-      "S19-T04": "`glyim_fs_canonicalize` resolves symlinks"
+      "W5-C04-T01": "`glyim_fs_open` returns valid fd for existing file",
+      "W5-C04-T02": "`glyim_fs_read` reads bytes into buffer",
+      "W5-C04-T03": "`glyim_fs_create_dir` creates directory",
+      "W5-C04-T04": "`glyim_fs_canonicalize` resolves symlinks"
     },
-    "mocking": "Use temporary directories and files.",
-    "upstream": [],
-    "downstream": [
-      "S20"
-    ]
+    "mocking": "Use temporary directories and files; integration tests.",
+    "upstream": [
+      "W1-C04"
+    ],
+    "downstream": []
   },
   {
-    "id": "S20",
-    "name": "Standard Library Runtime – Networking and Threading",
+    "id": "W5-C05",
+    "name": "Runtime: TCP networking",
     "crate": "glyim-runtime",
-    "wave": 4,
-    "scope_summary": "Implement TCP and UDP functions: `glyim_net_tcp_connect`, `glyim_net_tcp_bind`, `glyim_net_tcp_accept`, `glyim_net_tcp_read`, `glyim_net_tcp_write`, `glyim_net_tcp_local_addr`, `glyim_net_udp_bind`, `glyim_net_udp_send_to`, `glyim_net_udp_recv_from`, `glyim_net_udp_connect`, `glyim_net_udp_send`, `glyim_net_udp_recv`. Use `std::net`. For threading: `glyim_thread_spawn`, `glyim_thread_join`, `glyim_thread_yield`, `glyim_thread_sleep`, `glyim_thread_park`, `glyim_thread_unpark`, `glyim_thread_current_id`, `glyim_thread_available_parallelism`. Use `std::thread`. For time: `glyim_time_now_secs`, `glyim_time_now_nanos`, `glyim_time_system_secs`, `glyim_time_system_nanos`. Use `std::time::SystemTime`. All functions must be `extern \"C\"` and handle errors gracefully.",
+    "wave": 5,
+    "scope_summary": "Implement TCP functions: `glyim_net_tcp_connect`, `bind`, `accept`, `read`, `write`, `local_addr`. Use `std::net::TcpStream` and `TcpListener`. Maintain a global socket handle registry. Return negative error codes.",
     "owned_crates": [
       "glyim-runtime"
     ],
     "locked_interfaces": [
       "glyim_runtime::glyim_net_tcp_connect",
-      "glyim_runtime::glyim_thread_spawn"
+      "glyim_runtime::glyim_net_tcp_read",
+      "glyim_runtime::glyim_net_tcp_write"
     ],
     "tests": {
-      "S20-T01": "TCP echo server/client works",
-      "S20-T02": "UDP send/receive works",
-      "S20-T03": "`glyim_thread_spawn` creates joinable thread",
-      "S20-T04": "`glyim_time_now_secs` returns monotonic timestamp"
+      "W5-C05-T01": "TCP echo server/client works",
+      "W5-C05-T02": "`accept` returns new connection"
     },
-    "mocking": "Use local ports and loopback; thread tests run in separate threads.",
-    "upstream": [],
+    "mocking": "Use localhost loopback.",
+    "upstream": [
+      "W1-C04"
+    ],
     "downstream": []
   },
   {
-    "id": "S21",
-    "name": "LSP – Incremental Analysis and Symbol Indexing",
-    "crate": "glyim-lsp",
-    "wave": 4,
-    "scope_summary": "In `crates/glyim-lsp/src/driver.rs`, replace stub incremental compilation logic (line 60). Implement file change detection using file system watcher (notify) and re‑run only affected files. Maintain a dependency graph to rebuild only changed modules. In `symbol_index.rs`, replace stub `build_from_hir` (line 50) to traverse HIR and index all symbols (functions, structs, enums, fields, locals) with their spans and type signatures. Implement `lookup_by_name` and `lookup_by_location` efficiently (using hash maps). Add `query` for prefix search. Store symbol kind and documentation comments.",
-    "owned_crates": [
-      "glyim-lsp"
-    ],
-    "locked_interfaces": [
-      "glyim_lsp::AnalysisDriver::analyze_file",
-      "glyim_lsp::SymbolIndex::build_from_hir"
-    ],
-    "tests": {
-      "S21-T01": "Changing a function signature updates symbol index",
-      "S21-T02": "`lookup_by_name` returns correct symbol",
-      "S21-T03": "`query(\"foo\")` returns all symbols starting with foo",
-      "S21-T04": "Renaming a symbol updates all references"
-    },
-    "mocking": "Use `glyim_test::mock::TestDbBuilder` and simulate file changes.",
-    "upstream": [
-      "S03",
-      "S05"
-    ],
-    "downstream": [
-      "S11"
-    ]
-  },
-  {
-    "id": "S22",
-    "name": "LSP – Reference Graph and Cross‑File Navigation",
-    "crate": "glyim-lsp",
-    "wave": 4,
-    "scope_summary": "In `crates/glyim-lsp/src/reference_graph.rs`, replace stub `build_from_hir` (line 50) by walking HIR bodies and recording edges: function calls, method calls, field accesses, type references, pattern bindings, and use declarations. Use `ReferenceKind` enum to distinguish call vs read vs write. Store references in a graph that maps symbol name to list of `Reference`. Implement `find_references` that returns all locations (including definition). Support cross‑file references by merging graphs from all files. In `goto_definition.rs`, implement jumping to definition using symbol index. In `navigation.rs`, implement `workspace_symbols` by querying symbol index across all files.",
-    "owned_crates": [
-      "glyim-lsp"
-    ],
-    "locked_interfaces": [
-      "glyim_lsp::ReferenceGraph::build_from_hir",
-      "glyim_lsp::goto_definition"
-    ],
-    "tests": {
-      "S22-T01": "`find_references` on function finds all call sites",
-      "S22-T02": "`goto_definition` on method jumps to impl block",
-      "S22-T03": "`workspace_symbols` returns symbols from all files",
-      "S22-T04": "Reference graph handles cross‑file `use` imports"
-    },
-    "mocking": "Multiple source files in a virtual file system.",
-    "upstream": [
-      "S21"
-    ],
-    "downstream": [
-      "S11"
-    ]
-  },
-  {
-    "id": "S23",
-    "name": "Build Tool – Dependency Resolution and Caching",
-    "crate": "glyip",
+    "id": "W5-C06",
+    "name": "Runtime: UDP networking, threading, time",
+    "crate": "glyim-runtime",
     "wave": 5,
-    "scope_summary": "In `crates/glyip/src/dep.rs`, implement `DependencyResolver::resolve` to parse `Glyip.toml`, fetch dependencies from `CrateIndex` or local path, and produce `Lockfile`. Implement `CrateIndex` loading from a local registry cache (or HTTP index). In `cache.rs`, implement `Cache::store_artifact` and `get_artifact` to store compiled object files in `target/debug/deps`. In `fingerprint.rs`, implement `FingerprintStore::load_from_dir` and `save_to_dir` using SHA‑256 of file contents. In `commands.rs`, implement `cmd_build` to use incremental fingerprinting and only recompile changed crates. Add support for `--release` and `--target`. Implement `cmd_test` to run `cargo test`‑like test discovery and execution (using `glyim_test` harness).",
+    "scope_summary": "Implement UDP functions: `glyim_net_udp_bind`, `send_to`, `recv_from`, `connect`, `send`, `recv`. Implement threading: `glyim_thread_spawn`, `join`, `yield`, `sleep`, `park`, `unpark`, `current_id`, `available_parallelism`. Implement time: `glyim_time_now_secs`, `now_nanos`, `system_secs`, `system_nanos`. Use `std::net`, `std::thread`, `std::time`. Return negative error codes.",
     "owned_crates": [
-      "glyip"
+      "glyim-runtime"
     ],
     "locked_interfaces": [
-      "glyip::dep::DependencyResolver::resolve",
-      "glyip::fingerprint::FingerprintStore::has_changed"
+      "glyim_runtime::glyim_net_udp_send_to",
+      "glyim_runtime::glyim_thread_spawn",
+      "glyim_runtime::glyim_time_now_secs"
     ],
     "tests": {
-      "S23-T01": "`glyip build` compiles hello world",
-      "S23-T02": "Second build is incremental (no recompilation)",
-      "S23-T03": "`glyip test` runs unit tests and reports failures",
-      "S23-T04": "`glyip run` builds and executes binary"
+      "W5-C06-T01": "UDP send/recv works",
+      "W5-C06-T02": "Thread spawn and join works",
+      "W5-C06-T03": "`glyim_time_now_secs` returns monotonic timestamp"
     },
-    "mocking": "Use temporary project directories with mock registry.",
-    "upstream": [],
-    "downstream": [
-      "S13"
-    ]
-  },
-  {
-    "id": "S24",
-    "name": "AI Pilot – Complete Gate Pipeline and Orchestration",
-    "crate": "glyim-pilot",
-    "wave": 6,
-    "scope_summary": "Replace all stubs in `crates/glyim-pilot/src/gates/*.rs`. Implement `ArchitectureGate` to check `Cargo.toml` for forbidden dependencies. Implement `BannedPatternGate` to scan changed files for `todo!()`, `unwrap()`, etc. Implement `ContractGate` to check `CONTRACTS_LOCKED.md` for removed public interfaces. Implement `CoverageGate` using `cargo llvm-cov`. Implement `MutationGate` using `cargo mutants`. Implement `SelfReviewGate` by asking LLM to review diff. In `orchestrator/turn.rs`, implement the full turn processing: parse ops block, apply changes, run commit gates, auto‑fix formatting, commit, push, create PR. Implement rate limit handling with exponential backoff and provider failover. In `dispatch/wave.rs`, implement provider selection strategies (round‑robin, least‑loaded). Add comprehensive logging and metrics.",
-    "owned_crates": [
-      "glyim-pilot"
-    ],
-    "locked_interfaces": [
-      "glyim_pilot::gates::Gate::run",
-      "glyim_pilot::orchestrator::process_turn_dispatch"
-    ],
-    "tests": {
-      "S24-T01": "Architecture gate rejects dependency from frontend to type",
-      "S24-T02": "Contract gate fails when public function removed",
-      "S24-T03": "Coverage gate fails when coverage below 80%",
-      "S24-T04": "Orchestrator commits after all gates pass",
-      "S24-T05": "Rate limit handler retries after 60s then failover"
-    },
-    "mocking": "Mock commands using `tempfile` and `assert_cmd`; mock `cargo` outputs.",
+    "mocking": "Local ports, separate threads.",
     "upstream": [
-      "S12",
-      "S13",
-      "S21",
-      "S22"
+      "W1-C04"
     ],
     "downstream": []
   }

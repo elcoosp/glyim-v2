@@ -1,10 +1,4 @@
-//! Shared syntax kind enum, Rowan language definition, CST types.
-//!
-//! [F8] `try_from_raw` uses `num_enum::TryFromPrimitive` derive.
-
-pub use glyim_core::primitives::{BinOp, UnOp};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::TryFromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, num_enum::TryFromPrimitive, PartialOrd)]
 #[repr(u16)]
 pub enum SyntaxKind {
     // Keywords
@@ -196,51 +190,72 @@ pub enum SyntaxKind {
     // Macro metavariables
     MetaVar,
     MetaVarCrate,
+    PatSlice,
 }
-
 impl SyntaxKind {
-    pub fn is_trivia(self) -> bool {
+    /// Returns true for whitespace and comment tokens.
+    pub fn is_trivia(&self) -> bool {
         matches!(
             self,
-            Self::Whitespace | Self::LineComment | Self::BlockComment | Self::DocComment
+            SyntaxKind::Whitespace
+                | SyntaxKind::LineComment
+                | SyntaxKind::BlockComment
+                | SyntaxKind::DocComment
         )
-    }
-    pub fn is_keyword(self) -> bool {
-        (self as u16) >= Self::KwFn as u16 && (self as u16) <= Self::KwMacroRules as u16
-    }
-    pub fn is_literal(self) -> bool {
-        matches!(
-            self,
-            Self::IntLit | Self::FloatLit | Self::StringLit | Self::CharLit | Self::BoolLit
-        )
-    }
-    pub fn is_node(self) -> bool {
-        (self as u16) >= Self::SourceFile as u16 && (self as u16) < Self::Error as u16
     }
 
+    /// Returns true for literal tokens (integers, floats, strings, chars, booleans).
+    pub fn is_literal(&self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::IntLit
+                | SyntaxKind::FloatLit
+                | SyntaxKind::StringLit
+                | SyntaxKind::CharLit
+                | SyntaxKind::BoolLit
+        )
+    }
+
+    /// Returns true for keyword tokens.
+    pub fn is_keyword(&self) -> bool {
+        let raw = *self as u16;
+        raw >= SyntaxKind::KwFn as u16 && raw <= SyntaxKind::KwMacroRules as u16
+    }
+
+    /// Returns true for node kinds (non-terminal syntax constructs).
+    pub fn is_node(&self) -> bool {
+        let raw = *self as u16;
+        raw >= SyntaxKind::SourceFile as u16 && raw < SyntaxKind::Error as u16
+    }
+
+    /// Convert from raw u16, using the TryFromPrimitive derive.
     pub fn try_from_raw(raw: u16) -> Option<Self> {
         Self::try_from(raw).ok()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GlyimLang {}
+/// Language type for rowan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GlyimLang;
 
 impl rowan::Language for GlyimLang {
     type Kind = SyntaxKind;
     fn kind_from_raw(raw: rowan::SyntaxKind) -> Self::Kind {
-        Self::Kind::try_from_raw(raw.0).unwrap_or(Self::Kind::Error)
+        SyntaxKind::try_from(raw.0).unwrap_or(SyntaxKind::Error)
     }
     fn kind_to_raw(kind: Self::Kind) -> rowan::SyntaxKind {
         rowan::SyntaxKind(kind as u16)
     }
 }
 
+/// Alias for rowan::SyntaxNode with GlyimLang.
 pub type SyntaxNode = rowan::SyntaxNode<GlyimLang>;
+/// Alias for rowan::SyntaxToken with GlyimLang.
 pub type SyntaxToken = rowan::SyntaxToken<GlyimLang>;
+/// Alias for rowan::SyntaxElement with GlyimLang.
 pub type SyntaxElement = rowan::SyntaxElement<GlyimLang>;
-pub type GreenNode = rowan::GreenNode;
-pub type GreenToken = rowan::GreenToken;
+
+
 
 pub trait AstNode {
     fn can_cast(kind: SyntaxKind) -> bool;
@@ -349,6 +364,5 @@ ast_node!(StructField, SyntaxKind::StructField);
 ast_node!(EnumVariant, SyntaxKind::EnumVariant);
 ast_node!(FieldList, SyntaxKind::FieldList);
 ast_node!(VariantList, SyntaxKind::VariantList);
-
-#[cfg(test)]
-mod tests;
+pub use rowan::GreenNode;
+pub use rowan::GreenToken;
