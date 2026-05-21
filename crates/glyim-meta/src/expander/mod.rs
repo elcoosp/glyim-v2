@@ -497,14 +497,21 @@ impl<'a> ExpanderImpl<'a> {
                         TokenTree::Token(kind, text) => {
                             // Skip tokens that are punctuation (commas, semicolons, colons, parentheses, braces, brackets)
                             let text_str = text.as_str();
-                            if text_str == "," || text_str == ";" || text_str == ":" ||
-                               text_str == "(" || text_str == ")" || text_str == "{" ||
-                               text_str == "}" || text_str == "[" || text_str == "]" {
+                            if text_str == ","
+                                || text_str == ";"
+                                || text_str == ":"
+                                || text_str == "("
+                                || text_str == ")"
+                                || text_str == "{"
+                                || text_str == "}"
+                                || text_str == "["
+                                || text_str == "]"
+                            {
                                 continue;
                             }
                             // For string literals, strip quotes
                             if *kind == SyntaxKind::StringLit {
-                                let s = &text_str[1..text_str.len()-1];
+                                let s = &text_str[1..text_str.len() - 1];
                                 result.push_str(s);
                             } else {
                                 result.push_str(text_str);
@@ -519,7 +526,7 @@ impl<'a> ExpanderImpl<'a> {
                                         continue;
                                     }
                                     if *kind == SyntaxKind::StringLit {
-                                        let s = &text_str[1..text_str.len()-1];
+                                        let s = &text_str[1..text_str.len() - 1];
                                         result.push_str(s);
                                     } else {
                                         result.push_str(text_str);
@@ -529,11 +536,12 @@ impl<'a> ExpanderImpl<'a> {
                                     for inn in inner2 {
                                         if let TokenTree::Token(kind, text) = inn {
                                             let text_str = text.as_str();
-                                            if text_str == "," || text_str == ";" || text_str == ":" {
+                                            if text_str == "," || text_str == ";" || text_str == ":"
+                                            {
                                                 continue;
                                             }
                                             if *kind == SyntaxKind::StringLit {
-                                                let s = &text_str[1..text_str.len()-1];
+                                                let s = &text_str[1..text_str.len() - 1];
                                                 result.push_str(s);
                                             } else {
                                                 result.push_str(text_str);
