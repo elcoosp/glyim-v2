@@ -234,7 +234,6 @@ fn v13_t04_discriminant_enum() {
 #[test]
 fn v13_t05_len_array() {
     Target::initialize_all(&InitializationConfig::default());
-    let backend = LlvmBackend::new();
 
     // Import from correct modules
     use glyim_core::UintTy;
