@@ -523,7 +523,8 @@ impl<'a> FnCtxt<'a> {
                     span,
                 );
 
-                if target_ty != Ty::ERROR && inner_ty != Ty::ERROR
+                if target_ty != Ty::ERROR
+                    && inner_ty != Ty::ERROR
                     && !self.is_cast_valid(inner_ty, target_ty)
                 {
                     self.diagnostics

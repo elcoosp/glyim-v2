@@ -20,7 +20,10 @@ async fn main() {
         &result.def_map_diagnostics[..],
     ]
     .concat();
-    assert!(!all_diags.is_empty(), "expected errors for unsupported 'async' placement");
+    assert!(
+        !all_diags.is_empty(),
+        "expected errors for unsupported 'async' placement"
+    );
 }
 
 #[test]

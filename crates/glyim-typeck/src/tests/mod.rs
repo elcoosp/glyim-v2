@@ -1,4 +1,5 @@
 mod assign;
+mod async_await;
 mod binary_error;
 mod binary_i32;
 mod break_continue;
@@ -28,4 +29,3 @@ mod tuple_index;
 mod typeck_result_accessors;
 mod where_clause;
 mod while_loop;
-mod async_await;
