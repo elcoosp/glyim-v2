@@ -6,6 +6,8 @@ license.workspace = true
 description = "Language Server Protocol implementation for Glyim"
 
 [dependencies]
+notify = "6.1"
+crossbeam-channel = "0.5"
 glyim-db = { path = "../glyim-db" }
 glyim-hir = { path = "../glyim-hir" }
 glyim-diag = { path = "../glyim-diag" }
@@ -26,5 +28,6 @@ file_url = "0.3"
 glyim-def-map = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
 glyim-test = { workspace = true }
 tempfile = "3"

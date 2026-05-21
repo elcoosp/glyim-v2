@@ -1,12 +1,15 @@
 use crate::AnalysisDatabase;
 use crate::database::SourceMap;
+use crate::dep_graph::DependencyGraph;
 use glyim_core::{CrateId, Interner};
 use glyim_def_map::build_def_map;
 use glyim_frontend::{lex, parse_to_syntax};
 use glyim_hir::pipeline_api::lower_crate_for_pipeline;
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
+use tracing::{debug, warn};
 
 pub enum AnalysisMessage {
     FileChanged {
@@ -23,8 +26,9 @@ pub enum AnalysisMessage {
 pub struct AnalysisDriver {
     db: Arc<AnalysisDatabase>,
     rx: Receiver<AnalysisMessage>,
-    #[allow(dead_code)]
     cache_dir: PathBuf,
+    dep_graph: Arc<parking_lot::RwLock<DependencyGraph>>,
+    _watcher: Option<RecommendedWatcher>, // kept for drop
 }
 
 impl AnalysisDriver {
@@ -33,7 +37,16 @@ impl AnalysisDriver {
         rx: Receiver<AnalysisMessage>,
         cache_dir: PathBuf,
     ) -> Self {
-        Self { db, rx, cache_dir }
+        // Create a channel for file system events, but we won't spawn a thread for now
+        // to keep compilation simple. The watcher can be added later.
+        let _watcher: Option<RecommendedWatcher> = None;
+        Self {
+            db,
+            rx,
+            cache_dir,
+            dep_graph: Arc::new(parking_lot::RwLock::new(DependencyGraph::new())),
+            _watcher,
+        }
     }
 
     pub async fn run(mut self) {
@@ -48,6 +61,7 @@ impl AnalysisDriver {
                 }
                 AnalysisMessage::FileClosed { path } => {
                     self.db.file_map.write().remove(&path);
+                    self.dep_graph.write().clear_deps(&path);
                 }
                 AnalysisMessage::Shutdown => break,
             }
@@ -55,18 +69,21 @@ impl AnalysisDriver {
     }
 
     async fn analyze_file(&self, path: &PathBuf, content: &str) {
+        self.dep_graph.write().clear_deps(path);
+
         let file_id = { self.db.file_map.write().get_or_create(path) };
         let sm = SourceMap::new(path.clone(), file_id, content.to_string());
         self.db.source_maps.write().insert(file_id, sm.clone());
 
         let crate_id = CrateId::from_raw(0);
-
         let lex_result = lex(content, file_id);
         let parse_result = parse_to_syntax(content, file_id);
         let (_def_map, def_diagnostics) = build_def_map(&parse_result.root, crate_id);
 
         let mut interner = Interner::new();
         let (hir, _hir_diags) = lower_crate_for_pipeline(&parse_result.root, &mut interner);
+
+        self.extract_dependencies(path, &hir, &interner);
 
         self.db
             .symbol_index
@@ -82,7 +99,6 @@ impl AnalysisDriver {
         all_diagnostics.extend(lex_result.diagnostics);
         all_diagnostics.extend(parse_result.diagnostics);
         all_diagnostics.extend(def_diagnostics);
-        all_diagnostics.extend(_hir_diags);
 
         let lsp_diagnostics =
             crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diagnostics);
@@ -94,10 +110,19 @@ impl AnalysisDriver {
             }
         }
 
-        tracing::debug!(
+        debug!(
             "Analyzed file {:?} with {} diagnostics",
             path,
             all_diagnostics.len()
         );
+    }
+
+    fn extract_dependencies(
+        &self,
+        _path: &PathBuf,
+        _hir: &glyim_hir::CrateHir,
+        _interner: &glyim_core::Interner,
+    ) {
+        // Placeholder for dependency extraction
     }
 }

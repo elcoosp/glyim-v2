@@ -25,6 +25,7 @@ mod workspace_symbol_tests;
 mod common;
 mod driver_tests;
 mod goto_definition_tests;
+mod incremental;
 mod reference_graph_tests;
 mod references_tests;
 mod rename;
