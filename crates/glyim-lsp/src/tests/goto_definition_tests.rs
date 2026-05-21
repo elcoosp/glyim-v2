@@ -1,11 +1,6 @@
 use crate::database::FileMap;
-use crate::goto_definition::goto_definition;
 use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
 use glyim_span::{FileId, Span};
-use lsp_types::{
-    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, Url,
-};
-use std::path::PathBuf;
 
 #[test]
 fn test_goto_definition_on_method_jumps_to_impl() {

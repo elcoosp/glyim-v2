@@ -1,8 +1,6 @@
-use glyim_core::interner::Interner;
 use glyim_span::{ByteIdx, FileId, HygieneCtx, Span, SyntaxContext};
 use glyim_syntax::{GlyimLang, SyntaxNode};
 use rowan::Language;
-use smol_str::SmolStr;
 use std::fs;
 use tempfile::tempdir;
 

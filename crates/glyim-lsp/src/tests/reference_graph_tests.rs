@@ -1,8 +1,6 @@
 use super::common::{compile_to_hir, create_test_file_id};
 use crate::reference_graph::{ReferenceGraph, ReferenceKind};
-use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
 use glyim_core::Interner;
-use glyim_span::{FileId, Span};
 
 #[test]
 fn test_find_references_on_function_finds_call_sites() {
