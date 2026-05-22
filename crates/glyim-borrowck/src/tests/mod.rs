@@ -13,6 +13,7 @@ mod mir_builder;
 mod move_tests;
 mod partial_move;
 mod same_block;
+mod slice_patterns;
 mod test_ctx;
 mod two_phase_borrows;
 mod two_phase_reservation;
