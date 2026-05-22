@@ -12,3 +12,4 @@ mod layout;
 mod terminators;
 mod trait_objects;
 mod unary_ops;
+mod bytecode_ops;
