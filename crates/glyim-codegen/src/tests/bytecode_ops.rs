@@ -9,8 +9,8 @@
 //! - W5-C03-T06: zero-sized element panics (stub removed)
 
 use crate::{
-    BytecodeBackend, CodegenBackend, LayoutProvider, OP_ADD, OP_AGGREGATE, OP_DEREF,
-    OP_LOAD_CONST, OP_LOAD_LOCAL, OP_LOAD_LOCAL_ADDR, OP_MUL, OP_REPEAT,
+    BytecodeBackend, CodegenBackend, LayoutProvider, OP_ADD, OP_AGGREGATE, OP_DEREF, OP_LOAD_CONST,
+    OP_LOAD_LOCAL, OP_LOAD_LOCAL_ADDR, OP_MUL, OP_REPEAT,
 };
 use glyim_core::primitives::Mutability;
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId};
@@ -77,6 +77,60 @@ fn build_body(
     })
 }
 
+/// Return the number of operand bytes consumed by an opcode.
+/// For variable-length instructions (AGGREGATE, SWITCH_INT, CALL, REPEAT),
+/// returns `None` since we cannot determine the size without parsing sub-operands.
+fn opcode_operand_size(op: u8) -> Option<usize> {
+    match op {
+        0x01 => Some(8),              // OP_LOAD_CONST: i64
+        0x02..=0x06 => Some(0),      // OP_ADD..OP_REM
+        0x07..=0x0F => Some(0),      // comparison/logical/not/neg
+        0x11..=0x15 => Some(0),      // bitwise/shift
+        0x16 => Some(4),             // OP_LOAD_LOCAL: u32
+        0x17 => Some(4),             // OP_STORE_LOCAL: u32
+        0x18 => Some(0),             // OP_RETURN
+        0x19 => Some(4),             // OP_JUMP_IF: u32
+        0x1A => Some(4),             // OP_JUMP: u32
+        0x1C => Some(1),             // OP_CAST: u8 kind
+        0x1E => Some(0),             // OP_DISCRIMINANT
+        0x1F => Some(0),             // OP_LEN
+        0x21 => Some(5),             // OP_ASSERT: u8 + u32
+        0x29 => Some(4),             // OP_LOAD_LOCAL_ADDR: u32
+        0x2A => Some(0),             // OP_STORE_FIELD
+        0x2B => Some(0),             // OP_DEREF
+        0x2C => Some(0),             // OP_DROP
+        // Variable-length: cannot determine without parsing sub-operands
+        0x1B | 0x22 | 0x1D | 0x20 | 0x2D => None,
+        _ => Some(0), // Unknown opcode, assume no operands
+    }
+}
+
+/// Disassemble bytecode into a sequence of (position, opcode) pairs,
+/// properly skipping operand bytes for fixed-size instructions.
+/// Stops when encountering a variable-length instruction.
+fn disasm_opcodes(bc: &[u8]) -> Vec<(usize, u8)> {
+    let mut result = Vec::new();
+    let mut pos = 0;
+    while pos < bc.len() {
+        let op = bc[pos];
+        result.push((pos, op));
+        pos += 1;
+        match opcode_operand_size(op) {
+            Some(skip) => pos += skip,
+            None => break, // Variable-length instruction; stop parsing
+        }
+    }
+    result
+}
+
+/// Find the position of the first occurrence of an opcode in the instruction stream,
+/// properly accounting for instruction boundaries. Returns `None` if not found.
+fn find_opcode(bc: &[u8], target: u8) -> Option<usize> {
+    disasm_opcodes(bc).into_iter().find_map(|(pos, op)| {
+        if op == target { Some(pos) } else { None }
+    })
+}
+
 // ---------------------------------------------------------------------------
 // W5-C03-T01: arr[i] emits OP_LOAD_LOCAL_ADDR + offset + OP_DEREF
 // ---------------------------------------------------------------------------
@@ -107,43 +161,32 @@ fn test_index_emits_load_addr_plus_offset_plus_deref() {
         .generate_function(&body)
         .expect("generate_function should succeed");
 
-    // Verify the bytecode contains the expected opcode sequence:
+    // Verify the bytecode contains the expected opcode sequence using
+    // instruction-boundary-aware position finding:
     // OP_LOAD_LOCAL_ADDR (base of local 1)
     // OP_LOAD_LOCAL (index local 2)
     // OP_LOAD_CONST (element size)
     // OP_MUL (index * elem_size)
     // OP_ADD (base + offset)
     // OP_DEREF (dereference the computed address)
-    let la = bc
-        .iter()
-        .position(|&b| b == OP_LOAD_LOCAL_ADDR)
+    let la = find_opcode(&bc, OP_LOAD_LOCAL_ADDR)
         .expect("should contain OP_LOAD_LOCAL_ADDR");
-    let ll = bc
-        .iter()
-        .position(|&b| b == OP_LOAD_LOCAL)
+    let ll = find_opcode(&bc, OP_LOAD_LOCAL)
         .expect("should contain OP_LOAD_LOCAL");
-    let lc = bc
-        .iter()
-        .position(|&b| b == OP_LOAD_CONST)
+    let lc = find_opcode(&bc, OP_LOAD_CONST)
         .expect("should contain OP_LOAD_CONST");
-    let m = bc
-        .iter()
-        .position(|&b| b == OP_MUL)
+    let m = find_opcode(&bc, OP_MUL)
         .expect("should contain OP_MUL");
-    let a = bc
-        .iter()
-        .position(|&b| b == OP_ADD)
+    let a = find_opcode(&bc, OP_ADD)
         .expect("should contain OP_ADD");
-    let d = bc
-        .iter()
-        .position(|&b| b == OP_DEREF)
+    let d = find_opcode(&bc, OP_DEREF)
         .expect("should contain OP_DEREF");
 
-    assert!(la < ll, "OP_LOAD_LOCAL_ADDR should precede OP_LOAD_LOCAL");
-    assert!(ll < lc, "OP_LOAD_LOCAL should precede OP_LOAD_CONST");
-    assert!(lc < m, "OP_LOAD_CONST should precede OP_MUL");
-    assert!(m < a, "OP_MUL should precede OP_ADD");
-    assert!(a < d, "OP_ADD should precede OP_DEREF");
+    assert!(la < ll, "OP_LOAD_LOCAL_ADDR at {} should precede OP_LOAD_LOCAL at {}", la, ll);
+    assert!(ll < lc, "OP_LOAD_LOCAL at {} should precede OP_LOAD_CONST at {}", ll, lc);
+    assert!(lc < m, "OP_LOAD_CONST at {} should precede OP_MUL at {}", lc, m);
+    assert!(m < a, "OP_MUL at {} should precede OP_ADD at {}", m, a);
+    assert!(a < d, "OP_ADD at {} should precede OP_DEREF at {}", a, d);
 }
 
 // ---------------------------------------------------------------------------
@@ -257,26 +300,18 @@ fn test_field_access_emits_load_addr_plus_offset() {
         .expect("generate_function should succeed");
 
     // Verify: OP_LOAD_LOCAL_ADDR, then OP_LOAD_CONST (field offset), then OP_ADD, then OP_DEREF
-    let la = bc
-        .iter()
-        .position(|&b| b == OP_LOAD_LOCAL_ADDR)
+    let la = find_opcode(&bc, OP_LOAD_LOCAL_ADDR)
         .expect("should contain OP_LOAD_LOCAL_ADDR");
-    let lc = bc
-        .iter()
-        .position(|&b| b == OP_LOAD_CONST)
+    let lc = find_opcode(&bc, OP_LOAD_CONST)
         .expect("should contain OP_LOAD_CONST for field offset");
-    let a = bc
-        .iter()
-        .position(|&b| b == OP_ADD)
+    let a = find_opcode(&bc, OP_ADD)
         .expect("should contain OP_ADD for field offset addition");
-    let d = bc
-        .iter()
-        .position(|&b| b == OP_DEREF)
+    let d = find_opcode(&bc, OP_DEREF)
         .expect("should contain OP_DEREF for field read");
 
-    assert!(la < lc, "OP_LOAD_LOCAL_ADDR should precede OP_LOAD_CONST");
-    assert!(lc < a, "OP_LOAD_CONST should precede OP_ADD");
-    assert!(a < d, "OP_ADD should precede OP_DEREF");
+    assert!(la < lc, "OP_LOAD_LOCAL_ADDR at {} should precede OP_LOAD_CONST at {}", la, lc);
+    assert!(lc < a, "OP_LOAD_CONST at {} should precede OP_ADD at {}", lc, a);
+    assert!(a < d, "OP_ADD at {} should precede OP_DEREF at {}", a, d);
 }
 
 // ---------------------------------------------------------------------------

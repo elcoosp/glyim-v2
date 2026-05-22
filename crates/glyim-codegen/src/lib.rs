@@ -116,8 +116,11 @@ impl BytecodeBackend {
 
         let local_idx = place.local.to_raw() as usize;
         if local_idx >= local_tys.len() {
-            tracing::warn!("local index {} out of bounds (len={})", local_idx, local_tys.len());
-            return Ok(());
+            panic!(
+                "local index out of bounds: {} (len={})",
+                local_idx,
+                local_tys.len()
+            );
         }
         let mut current_ty = local_tys[place.local].ty;
 
@@ -136,8 +139,7 @@ impl BytecodeBackend {
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     if elem_size == 0 {
-                        tracing::warn!("Indexing into zero-sized element");
-                        return Ok(());
+                        panic!("zero-sized element: cannot index into type with zero-sized elements");
                     }
                     bc.push(OP_LOAD_LOCAL);
                     bc.extend_from_slice(&local.to_raw().to_le_bytes());
