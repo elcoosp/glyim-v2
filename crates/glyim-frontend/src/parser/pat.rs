@@ -65,11 +65,9 @@ impl<'a> Parser<'a> {
                 while self.current_kind() != SyntaxKind::RBracket && self.current().is_some() {
                     if self.current_kind() == SyntaxKind::DotDot {
                         self.bump(); // ..
-                        // optional trailing comma after ..
                         if self.current_kind() == SyntaxKind::Comma {
                             self.bump();
                         }
-                        // rest pattern
                     } else {
                         self.parse_pat();
                         if self.current_kind() == SyntaxKind::Comma {
@@ -96,60 +94,65 @@ impl<'a> Parser<'a> {
                     || next == SyntaxKind::LParen
                     || next == SyntaxKind::LBrace
                 {
+                    let outer_cp = self.checkpoint();
                     self.start_node(SyntaxKind::UsePath);
                     self.parse_path_inner();
                     self.finish_node();
-                } else {
-                    self.start_node(SyntaxKind::PatIdent);
-                    self.bump();
-                    self.finish_node();
-                }
-                if self.current_kind() == SyntaxKind::LParen {
-                    self.start_node(SyntaxKind::PatTuple);
-                    self.bump(); // (
-                    while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
-                        self.parse_pat();
-                        if self.current_kind() == SyntaxKind::Comma {
-                            self.bump();
-                        }
-                    }
-                    self.expect(SyntaxKind::RParen);
-                    self.finish_node();
-                } else if self.current_kind() == SyntaxKind::LBrace {
-                    self.start_node(SyntaxKind::PatStruct);
-                    self.bump(); // {
-                    while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
-                        if self.current_kind() == SyntaxKind::DotDot {
-                            self.bump(); // ..
-                            // trailing comma allowed after ..
+
+                    if self.current_kind() == SyntaxKind::LParen {
+                        // Wrap UsePath + PatTuple in a single PatStruct node
+                        self.start_node_at(outer_cp, SyntaxKind::PatStruct);
+                        self.start_node(SyntaxKind::PatTuple);
+                        self.bump(); // (
+                        while self.current_kind() != SyntaxKind::RParen && self.current().is_some()
+                        {
+                            self.parse_pat();
                             if self.current_kind() == SyntaxKind::Comma {
                                 self.bump();
                             }
-                        } else if self.current_kind() == SyntaxKind::Ident {
-                            let cp = self.checkpoint();
-                            self.bump(); // field name
-                            if self.current_kind() == SyntaxKind::Colon {
-                                // explicit: field_name: pattern
-                                self.start_node_at(cp, SyntaxKind::PatIdent);
-                                self.finish_node();
-                                self.bump(); // :
-                                self.parse_pat();
+                        }
+                        self.expect(SyntaxKind::RParen);
+                        self.finish_node(); // PatTuple
+                        self.finish_node(); // PatStruct
+                    } else if self.current_kind() == SyntaxKind::LBrace {
+                        // Wrap UsePath + fields in a single PatStruct node
+                        self.start_node_at(outer_cp, SyntaxKind::PatStruct);
+                        self.bump(); // {
+                        while self.current_kind() != SyntaxKind::RBrace && self.current().is_some()
+                        {
+                            if self.current_kind() == SyntaxKind::DotDot {
+                                self.bump(); // ..
+                                if self.current_kind() == SyntaxKind::Comma {
+                                    self.bump();
+                                }
+                            } else if self.current_kind() == SyntaxKind::Ident {
+                                let cp = self.checkpoint();
+                                self.bump(); // field name
+                                if self.current_kind() == SyntaxKind::Colon {
+                                    self.start_node_at(cp, SyntaxKind::PatIdent);
+                                    self.finish_node();
+                                    self.bump(); // :
+                                    self.parse_pat();
+                                } else {
+                                    self.start_node_at(cp, SyntaxKind::PatIdent);
+                                    self.finish_node();
+                                }
                             } else {
-                                // shorthand: field_name (binding)
-                                self.start_node_at(cp, SyntaxKind::PatIdent);
-                                self.finish_node();
+                                self.error("expected field pattern");
+                                if self.current().is_some() {
+                                    self.bump();
+                                }
                             }
-                        } else {
-                            self.error("expected field pattern");
-                            if self.current().is_some() {
+                            if self.current_kind() == SyntaxKind::Comma {
                                 self.bump();
                             }
                         }
-                        if self.current_kind() == SyntaxKind::Comma {
-                            self.bump();
-                        }
+                        self.expect(SyntaxKind::RBrace);
+                        self.finish_node(); // PatStruct
                     }
-                    self.expect(SyntaxKind::RBrace);
+                } else {
+                    self.start_node(SyntaxKind::PatIdent);
+                    self.bump();
                     self.finish_node();
                 }
             }
@@ -159,46 +162,30 @@ impl<'a> Parser<'a> {
             | SyntaxKind::CharLit
             | SyntaxKind::KwTrue
             | SyntaxKind::KwFalse => {
-                // Check for range pattern first
+                let start_cp = self.checkpoint();
+                self.bump(); // consume start literal
                 if matches!(
                     self.current_kind(),
-                    SyntaxKind::IntLit
-                        | SyntaxKind::FloatLit
-                        | SyntaxKind::StringLit
-                        | SyntaxKind::CharLit
-                        | SyntaxKind::KwTrue
-                        | SyntaxKind::KwFalse
+                    SyntaxKind::DotDot | SyntaxKind::DotDotEq
                 ) {
-                    let start_cp = self.checkpoint();
-                    self.bump(); // consume start literal
-                    if matches!(
+                    // Range pattern: use PatRange as the outer node
+                    self.start_node_at(start_cp, SyntaxKind::PatRange);
+                    let _range_op = self.current_kind();
+                    self.bump(); // .. or ..=
+                    if !matches!(
                         self.current_kind(),
-                        SyntaxKind::DotDot | SyntaxKind::DotDotEq
+                        SyntaxKind::FatArrow
+                            | SyntaxKind::Comma
+                            | SyntaxKind::RBrace
+                            | SyntaxKind::RParen
+                            | SyntaxKind::RBracket
                     ) {
-                        self.start_node_at(start_cp, SyntaxKind::PatRange);
-                        let _range_op = self.current_kind();
-                        self.bump(); // .. or ..=
-                        // Parse end pattern (literal, path, wildcard)
-                        if !matches!(
-                            self.current_kind(),
-                            SyntaxKind::FatArrow
-                                | SyntaxKind::Comma
-                                | SyntaxKind::RBrace
-                                | SyntaxKind::RParen
-                                | SyntaxKind::RBracket
-                        ) {
-                            self.parse_pat();
-                        } else {
-                            // No end pattern, treat as open range? For now, just create node.
-                        }
-                        self.finish_node(); // PatRange
-                        // No range, it's a simple literal pattern
-                        self.start_node_at(start_cp, SyntaxKind::PatLit);
-                        self.finish_node();
+                        self.parse_pat(); // Parses the end literal into a nested PatLit
                     }
+                    self.finish_node(); // PatRange
                 } else {
-                    self.start_node(SyntaxKind::PatLit);
-                    self.bump();
+                    // Simple literal — wrap in PatLit
+                    self.start_node_at(start_cp, SyntaxKind::PatLit);
                     self.finish_node();
                 }
             }

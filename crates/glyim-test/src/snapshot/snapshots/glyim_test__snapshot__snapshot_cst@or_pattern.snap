@@ -21,9 +21,11 @@ SourceFile@0..25
           MatchArmList@16..23
             MatchArm@16..23
               PatOr@16..19
-                IntLit@16..17 "0"
+                PatLit@16..17
+                  IntLit@16..17 "0"
                 Or@17..18 "|"
-                IntLit@18..19 "1"
+                PatLit@18..19
+                  IntLit@18..19 "1"
               FatArrow@19..21 "=>"
               Block@21..23
                 LBrace@21..22 "{"

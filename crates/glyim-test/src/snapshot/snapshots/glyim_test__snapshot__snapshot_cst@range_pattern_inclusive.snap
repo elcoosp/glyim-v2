@@ -20,10 +20,10 @@ SourceFile@0..27
           LBrace@15..16 "{"
           MatchArmList@16..25
             MatchArm@16..25
-              PatLit@16..21
-                PatRange@16..21
-                  IntLit@16..17 "0"
-                  DotDotEq@17..20 "..="
+              PatRange@16..21
+                IntLit@16..17 "0"
+                DotDotEq@17..20 "..="
+                PatLit@20..21
                   IntLit@20..21 "9"
               FatArrow@21..23 "=>"
               Block@23..25

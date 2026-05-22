@@ -257,10 +257,10 @@ SourceFile@0..550
           LBrace@365..366 "{"
           MatchArmList@366..438
             MatchArm@366..391
-              PatLit@366..371
-                PatRange@366..371
-                  IntLit@366..367 "0"
-                  DotDotEq@367..370 "..="
+              PatRange@366..371
+                IntLit@366..367 "0"
+                DotDotEq@367..370 "..="
+                PatLit@370..371
                   IntLit@370..371 "1"
               FatArrow@371..373 "=>"
               MacroCall@373..390
@@ -275,10 +275,10 @@ SourceFile@0..550
                   RParen@389..390 ")"
               Comma@390..391 ","
             MatchArm@391..416
-              PatLit@391..396
-                PatRange@391..396
-                  IntLit@391..392 "2"
-                  DotDotEq@392..395 "..="
+              PatRange@391..396
+                IntLit@391..392 "2"
+                DotDotEq@392..395 "..="
+                PatLit@395..396
                   IntLit@395..396 "7"
               FatArrow@396..398 "=>"
               MacroCall@398..415
@@ -337,15 +337,16 @@ SourceFile@0..550
         IfExpr@473..508
           KwIf@473..475 "if"
           KwLet@475..478 "let"
-          UsePath@478..490
-            Ident@478..484 "Option"
-            ColonColon@484..486 "::"
-            Ident@486..490 "Some"
-          PatTuple@490..495
-            LParen@490..491 "("
-            PatIdent@491..494
-              Ident@491..494 "val"
-            RParen@494..495 ")"
+          PatStruct@478..495
+            UsePath@478..490
+              Ident@478..484 "Option"
+              ColonColon@484..486 "::"
+              Ident@486..490 "Some"
+            PatTuple@490..495
+              LParen@490..491 "("
+              PatIdent@491..494
+                Ident@491..494 "val"
+              RParen@494..495 ")"
           Eq@495..496 "="
           PathExpr@496..497
             UsePath@496..497

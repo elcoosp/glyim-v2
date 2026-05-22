@@ -73,11 +73,15 @@ pub(crate) fn lower_block_to_expr(
                 for inner in child.children() {
                     if is_expr_node(&inner) || inner.kind() == SyntaxKind::Block {
                         expr_node = Some(inner.clone());
+                        // TODO: create is_pattern helper
                     } else if inner.kind() == SyntaxKind::PatIdent
-                        || inner.kind() == SyntaxKind::PatWild
-                        || inner.kind() == SyntaxKind::PatTuple
-                        || inner.kind() == SyntaxKind::PatStruct
-                        || inner.kind() == SyntaxKind::PatOr
+                                            || inner.kind() == SyntaxKind::PatWild
+                                            || inner.kind() == SyntaxKind::PatLit       // <--- ADDED
+                                            || inner.kind() == SyntaxKind::PatRange     // <--- ADDED
+                                            || inner.kind() == SyntaxKind::PatTuple
+                                            || inner.kind() == SyntaxKind::PatStruct
+                                            || inner.kind() == SyntaxKind::PatOr
+                                            || inner.kind() == SyntaxKind::PatSlice
                     {
                         pat_node = Some(inner);
                     }
@@ -996,7 +1000,6 @@ fn lower_ref_expr(
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
 }
-
 fn lower_match_expr(
     node: &SyntaxNode,
     interner: &mut Interner,
@@ -1025,6 +1028,7 @@ fn lower_match_expr(
                     SyntaxKind::PatIdent
                     | SyntaxKind::PatWild
                     | SyntaxKind::PatLit
+                    | SyntaxKind::PatRange  // <--- ADDED
                     | SyntaxKind::PatTuple
                     | SyntaxKind::PatStruct
                     | SyntaxKind::PatOr
@@ -1111,8 +1115,12 @@ fn lower_for_expr(
             c.kind(),
             SyntaxKind::PatIdent
                 | SyntaxKind::PatWild
+                | SyntaxKind::PatLit       // <--- ADDED
+                | SyntaxKind::PatRange     // <--- ADDED
                 | SyntaxKind::PatTuple
                 | SyntaxKind::PatStruct
+                | SyntaxKind::PatOr        // <--- ADDED
+                | SyntaxKind::PatSlice // <--- ADDED
         )
     })?;
     let iterable_node = children.find(|c| is_expr_node(c) || c.kind() == SyntaxKind::RangeExpr)?;
@@ -1128,7 +1136,6 @@ fn lower_for_expr(
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
 }
-
 fn lower_assign_expr(
     node: &SyntaxNode,
     interner: &mut Interner,

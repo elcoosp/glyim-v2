@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
 expression: tree
 ---
 SourceFile@0..127
@@ -70,15 +69,16 @@ SourceFile@0..127
           LBrace@79..80 "{"
           MatchArmList@80..125
             MatchArm@80..103
-              UsePath@80..92
-                Ident@80..86 "Option"
-                ColonColon@86..88 "::"
-                Ident@88..92 "Some"
-              PatTuple@92..97
-                LParen@92..93 "("
-                PatIdent@93..96
-                  Ident@93..96 "val"
-                RParen@96..97 ")"
+              PatStruct@80..97
+                UsePath@80..92
+                  Ident@80..86 "Option"
+                  ColonColon@86..88 "::"
+                  Ident@88..92 "Some"
+                PatTuple@92..97
+                  LParen@92..93 "("
+                  PatIdent@93..96
+                    Ident@93..96 "val"
+                  RParen@96..97 ")"
               FatArrow@97..99 "=>"
               PathExpr@99..102
                 UsePath@99..102

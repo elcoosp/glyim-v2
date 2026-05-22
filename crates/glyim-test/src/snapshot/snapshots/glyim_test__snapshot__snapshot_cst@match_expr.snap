@@ -32,16 +32,19 @@ SourceFile@0..86
           LBrace@30..31 "{"
           MatchArmList@31..84
             MatchArm@31..41
-              IntLit@31..32 "0"
+              PatLit@31..32
+                IntLit@31..32 "0"
               FatArrow@32..34 "=>"
               LitExpr@34..40
                 StringLit@34..40 "\"zero\""
               Comma@40..41 ","
             MatchArm@41..54
               PatOr@41..44
-                IntLit@41..42 "1"
+                PatLit@41..42
+                  IntLit@41..42 "1"
                 Or@42..43 "|"
-                IntLit@43..44 "2"
+                PatLit@43..44
+                  IntLit@43..44 "2"
               FatArrow@44..46 "=>"
               LitExpr@46..53
                 StringLit@46..53 "\"small\""
