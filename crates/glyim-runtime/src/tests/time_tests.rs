@@ -30,20 +30,29 @@ fn time_now_nanos_precision() {
 fn time_system_secs_epoch() {
     // Test system time is relative to UNIX epoch
     let now = SystemTime::now();
-    let since_epoch = now.duration_since(SystemTime::UNIX_EPOCH)
+    let since_epoch = now
+        .duration_since(SystemTime::UNIX_EPOCH)
         .expect("System time before epoch");
 
     // Should be a reasonable timestamp (after year 2000)
-    assert!(since_epoch.as_secs() > 946684800, "System time seems invalid");
+    assert!(
+        since_epoch.as_secs() > 946684800,
+        "System time seems invalid"
+    );
 }
 
 #[test]
 fn time_system_nanos_precision() {
     // Test system nanos component
     let now = SystemTime::now();
-    let nanos = now.duration_since(SystemTime::UNIX_EPOCH)
+    let nanos = now
+        .duration_since(SystemTime::UNIX_EPOCH)
         .expect("System time before epoch")
         .subsec_nanos();
 
-    assert!(nanos < 1_000_000_000, "System nanos out of range: {}", nanos);
+    assert!(
+        nanos < 1_000_000_000,
+        "System nanos out of range: {}",
+        nanos
+    );
 }

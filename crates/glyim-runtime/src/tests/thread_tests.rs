@@ -27,7 +27,11 @@ fn thread_yield_and_sleep() {
     let elapsed = start.elapsed();
 
     // Should have slept at least 40ms (allowing for scheduling variance)
-    assert!(elapsed >= Duration::from_millis(40), "Sleep was too short: {:?}", elapsed);
+    assert!(
+        elapsed >= Duration::from_millis(40),
+        "Sleep was too short: {:?}",
+        elapsed
+    );
 
     // Yield should not panic and should return quickly
     thread::yield_now();

@@ -1,7 +1,5 @@
 //! UDP networking tests for glyim-runtime
 use std::net::UdpSocket;
-use std::thread;
-use std::time::Duration;
 
 #[test]
 fn udp_bind_and_send_recv() {
@@ -16,7 +14,9 @@ fn udp_bind_and_send_recv() {
 
     // Send data
     let msg = b"hello glyim";
-    let sent = sender.send_to(msg, format!("127.0.0.1:{}", port)).expect("Failed to send");
+    let sent = sender
+        .send_to(msg, format!("127.0.0.1:{}", port))
+        .expect("Failed to send");
     assert_eq!(sent, msg.len());
 
     // Receive data
