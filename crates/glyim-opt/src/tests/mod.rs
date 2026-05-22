@@ -7,3 +7,5 @@ mod dce_tests;
 mod noop;
 mod testutil;
 mod unreachable_elim;
+mod constant_prop_tests;
+mod unreachable_elim_tests;
