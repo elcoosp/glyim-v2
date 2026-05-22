@@ -748,3 +748,83 @@ fn test_fs_open_path_through_file_returns_enotdir() {
 
     cleanup(&dir);
 }
+
+// ===================================================================
+// W5-C04-T01: glyim_fs_open returns valid fd for existing file
+// ===================================================================
+
+#[test]
+fn w5_c04_t01_open_returns_valid_fd() {
+    let dir = temp_dir("w5c04_open_fd");
+    let file_path = dir.join("exists.txt");
+    fs::write(&file_path, b"content").expect("failed to write test file");
+
+    let path_str = file_path.to_str().expect("non-utf8 path");
+    let fd = open_file(path_str, FS_O_RDONLY);
+    assert!(fd >= 0, "expected valid fd for existing file, got {}", fd);
+
+    // The fd should be usable for reading.
+    let mut buf = vec![0u8; 64];
+    let n = read_file(fd, &mut buf);
+    assert_eq!(n, 7, "should read 7 bytes");
+
+    let rc = close_file(fd);
+    assert_eq!(rc, FS_OK, "close should succeed");
+
+    cleanup(&dir);
+}
+
+// ===================================================================
+// W5-C04-T02: glyim_fs_read reads bytes into buffer
+// ===================================================================
+
+#[test]
+fn w5_c04_t02_read_reads_bytes_into_buffer() {
+    let dir = temp_dir("w5c04_read_buf");
+    let file_path = dir.join("data.bin");
+    let content = b"Hello Glyim FS!";
+    fs::write(&file_path, content).expect("failed to write test file");
+
+    let path_str = file_path.to_str().expect("non-utf8 path");
+    let fd = open_file(path_str, FS_O_RDONLY);
+    assert!(fd >= 0, "open should succeed");
+
+    let mut buf = vec![0u8; 256];
+    let n = read_file(fd, &mut buf);
+    assert_eq!(
+        n,
+        content.len() as isize,
+        "should read {} bytes",
+        content.len()
+    );
+    assert_eq!(
+        &buf[..content.len()],
+        content,
+        "buffer content should match"
+    );
+
+    close_file(fd);
+    cleanup(&dir);
+}
+
+// ===================================================================
+// W5-C04-T03: glyim_fs_create_dir creates directory
+// ===================================================================
+
+#[test]
+fn w5_c04_t03_create_dir_creates_directory() {
+    let dir = temp_dir("w5c04_createdir");
+    let new_dir = dir.join("new_subdir");
+    let path_str = new_dir.to_str().expect("non-utf8 path");
+
+    let rc = create_the_dir(path_str);
+    assert_eq!(rc, FS_OK, "create_dir should succeed");
+    assert!(new_dir.is_dir(), "directory should exist on disk");
+
+    // Writing a file inside the new directory proves it is usable.
+    let inner = new_dir.join("inner.txt");
+    fs::write(&inner, b"works").expect("should be able to write inside new dir");
+    assert!(inner.exists());
+
+    cleanup(&dir);
+}
