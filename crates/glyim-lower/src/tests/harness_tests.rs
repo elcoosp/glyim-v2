@@ -1,4 +1,3 @@
-use glyim_test::CompilationTrace;
 use glyim_test::harness::{TestMode, TestRunner};
 
 #[test]
