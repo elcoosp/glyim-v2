@@ -5,6 +5,7 @@ mod deep_cfg;
 mod double_mutable_borrow;
 mod drop_check;
 mod edge_cases;
+mod index;
 mod interior_mutability;
 mod loans;
 mod loops;

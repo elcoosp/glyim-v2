@@ -162,8 +162,17 @@ pub(crate) fn places_conflict(a: &Place, b: &Place) -> bool {
                 }
             }
 
-            // Two index projections — conservatively may alias
-            (ProjectionElem::Index(_), ProjectionElem::Index(_)) => continue,
+            // Index projections: conflict only if the index locals are identical.
+            // Different index locals refer to disjoint elements (e.g., arr[0] vs arr[1]).
+            (ProjectionElem::Index(l1), ProjectionElem::Index(l2)) => {
+                if l1 == l2 {
+                    // Same index local — potential overlap; continue checking rest.
+                    continue;
+                } else {
+                    // Different index locals — disjoint; no conflict.
+                    return false;
+                }
+            }
 
             // Mixed projection types at the same depth — conservatively conflict
             _ => return true,
