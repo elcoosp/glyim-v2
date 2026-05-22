@@ -8,17 +8,15 @@ fn test_struct_spread() {
             Point { x: 1, ..base }
         }
     "#;
-    let (_, mir_body) = MirGenTester::new(src)
-        .run()
-        .expect("MIR generation failed");
+    let result = MirGenTester::from_source(src).run();
+    assert!(result.is_ok(), "MIR generation failed");
+    let (_, mir_body) = result.unwrap();
 
-    // Check that we have an Aggregate Rvalue for Point with two fields
     let mut found_aggregate = false;
     for block in mir_body.basic_blocks.iter() {
         for stmt in &block.statements {
             if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
                 if let glyim_mir::Rvalue::Aggregate(_, ops) = rvalue {
-                    // Should have at least 2 operands (x and y)
                     if ops.len() >= 2 {
                         found_aggregate = true;
                     }

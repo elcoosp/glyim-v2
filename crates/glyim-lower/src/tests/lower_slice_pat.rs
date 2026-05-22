@@ -10,11 +10,8 @@ fn test_slice_pattern_binding() {
             }
         }
     "#;
-    let (_, mir_body) = MirGenTester::new(src)
-        .run()
-        .expect("MIR generation failed");
-
-    // Verify that the MIR contains at least a projection for field 0 and field 1
-    // (simplified: just ensure no panic, but we'll add a meaningful check later)
+    let result = MirGenTester::from_source(src).run();
+    assert!(result.is_ok(), "MIR generation failed");
+    let (_, mir_body) = result.unwrap();
     assert!(mir_body.basic_blocks.len() > 0, "MIR body should have basic blocks");
 }

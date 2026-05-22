@@ -10,16 +10,13 @@ fn test_match_guard() {
             }
         }
     "#;
-    let (_, mir_body) = MirGenTester::new(src)
-        .run()
-        .expect("MIR generation failed");
+    let result = MirGenTester::from_source(src).run();
+    assert!(result.is_ok(), "MIR generation failed");
+    let (_, mir_body) = result.unwrap();
 
-    // Check that there is a guard (condition) branch before the arm body.
-    // We can look for a SwitchInt on a condition that is not the discriminant.
     let mut found_guard = false;
     for block in mir_body.basic_blocks.iter() {
         if let glyim_mir::TerminatorKind::SwitchInt { .. } = &block.terminator.kind {
-            // Guards produce extra switch; at least one switch beyond the main one.
             found_guard = true;
             break;
         }

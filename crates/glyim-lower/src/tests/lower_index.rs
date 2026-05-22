@@ -1,6 +1,4 @@
 use glyim_test::phase::MirGenTester;
-use glyim_test::assert_mir;
-use glyim_test::test_frozen_ty_ctx;
 
 #[test]
 fn test_index_projection() {
@@ -10,13 +8,10 @@ fn test_index_projection() {
             arr[1]
         }
     "#;
-    let (ctx, mir_body) = MirGenTester::new(src)
-        .run()
-        .expect("MIR generation failed");
+    let result = MirGenTester::from_source(src).run();
+    assert!(result.is_ok(), "MIR generation failed");
+    let (ctx, mir_body) = result.unwrap();
 
-    // Check that there is a statement using Index projection
-    // We'll use a simple snapshot or custom inspection.
-    // For now, just verify the body has a statement with Index projection.
     let mut found_index = false;
     for block in mir_body.basic_blocks.iter() {
         for stmt in &block.statements {

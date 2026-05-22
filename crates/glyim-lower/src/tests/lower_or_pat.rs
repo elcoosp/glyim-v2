@@ -10,11 +10,10 @@ fn test_or_pattern_switch() {
             }
         }
     "#;
-    let (_, mir_body) = MirGenTester::new(src)
-        .run()
-        .expect("MIR generation failed");
+    let result = MirGenTester::from_source(src).run();
+    assert!(result.is_ok(), "MIR generation failed");
+    let (_, mir_body) = result.unwrap();
 
-    // Find a SwitchInt terminator that has two targets for values 0 and 1.
     let mut found_switch = false;
     for block in mir_body.basic_blocks.iter() {
         if let glyim_mir::TerminatorKind::SwitchInt { targets, .. } = &block.terminator.kind {
