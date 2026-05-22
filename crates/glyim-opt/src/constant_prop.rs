@@ -9,7 +9,6 @@ type BlockMap = HashMap<LocalIdx, Option<MirConst>>;
 
 /// Compare two MirConst values for equality (since MirConst does not implement PartialEq).
 fn const_eq(a: &MirConst, b: &MirConst) -> bool {
-    // Compare kind and ty (we ignore span for propagation)
     if std::mem::discriminant(&a.kind) != std::mem::discriminant(&b.kind) {
         return false;
     }
@@ -26,7 +25,7 @@ fn const_eq(a: &MirConst, b: &MirConst) -> bool {
     }
 }
 
-/// Check if two block maps are equal (used for fixed-point convergence).
+/// Check if two block maps are equal.
 fn maps_equal(a: &BlockMap, b: &BlockMap) -> bool {
     if a.len() != b.len() {
         return false;
@@ -48,8 +47,7 @@ fn maps_equal(a: &BlockMap, b: &BlockMap) -> bool {
     true
 }
 
-/// Merge two block maps at a join point. If a local has conflicting constant values
-/// from different predecessors, it becomes `None` (unknown).
+/// Merge two block maps at a join point.
 fn merge_maps(mut into: BlockMap, other: &BlockMap) -> BlockMap {
     for (local, other_val) in other {
         match into.get(local) {
@@ -57,7 +55,6 @@ fn merge_maps(mut into: BlockMap, other: &BlockMap) -> BlockMap {
                 into.insert(*local, other_val.clone());
             }
             Some(existing) => {
-                // Check equality using custom const_eq if needed
                 let equal = match (existing, other_val) {
                     (None, None) => true,
                     (Some(e), Some(o)) => const_eq(e, o),
@@ -72,7 +69,7 @@ fn merge_maps(mut into: BlockMap, other: &BlockMap) -> BlockMap {
     into
 }
 
-/// Try to evaluate an Rvalue to a constant given current known locals.
+/// Try to evaluate an Rvalue to a constant given known locals.
 fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Option<MirConst> {
     match rv {
         Rvalue::Use(op) => operand_to_const(op, locals),
@@ -193,10 +190,10 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
             if let StatementKind::Assign(place, rvalue) = &stmt.kind {
                 // Writing to a local kills previous knowledge
                 out.remove(&place.local);
-                if place.projection.is_empty()
-                    && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
-                {
-                    out.insert(place.local, Some(c));
+                if place.projection.is_empty() {
+                    if let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx) {
+                        out.insert(place.local, Some(c));
+                    }
                 }
             }
         }
@@ -227,8 +224,6 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 if let StatementKind::Assign(_place, rvalue) = &mut stmt.kind {
                     // Replace operands with constants
                     replace_in_rvalue(rvalue, map);
-                    // Fold constant expressions (e.g., 2+3 -> 5)
-                    fold_rvalue(rvalue);
                 }
             }
         }
@@ -243,9 +238,10 @@ fn replace_operand(op: &mut Operand, locals: &BlockMap) -> bool {
                 && let Some(Some(c)) = locals.get(&place.local)
             {
                 *op = Operand::Constant(c.clone());
-                return true;
+                true
+            } else {
+                false
             }
-            false
         }
         Operand::Constant(_) => false,
     }
@@ -271,67 +267,5 @@ fn replace_in_rvalue(rv: &mut Rvalue, locals: &BlockMap) -> bool {
         Rvalue::Discriminant(_) | Rvalue::Len(_) => false,
         Rvalue::Cast(_, op, _) => replace_operand(op, locals),
         Rvalue::Repeat(op, _) => replace_operand(op, locals),
-    }
-}
-
-/// Fold a binary or unary operation into a constant if all operands are constants.
-fn fold_rvalue(rv: &mut Rvalue) -> bool {
-    match rv {
-        Rvalue::BinaryOp(op, box_ops) => {
-            let left = &box_ops.0;
-            let right = &box_ops.1;
-            if let (Operand::Constant(lc), Operand::Constant(rc)) = (left, right)
-                && let (MirConstKind::Int(l_int), MirConstKind::Int(r_int)) = (&lc.kind, &rc.kind)
-            {
-                let result = match op {
-                    glyim_core::primitives::BinOp::Add => *l_int + *r_int,
-                    glyim_core::primitives::BinOp::Sub => *l_int - *r_int,
-                    glyim_core::primitives::BinOp::Mul => *l_int * *r_int,
-                    glyim_core::primitives::BinOp::Div => {
-                        if *r_int != 0 {
-                            *l_int / *r_int
-                        } else {
-                            0
-                        }
-                    }
-                    glyim_core::primitives::BinOp::Rem => {
-                        if *r_int != 0 {
-                            *l_int % *r_int
-                        } else {
-                            0
-                        }
-                    }
-                    _ => return false,
-                };
-                let result_const = MirConst {
-                    kind: MirConstKind::Int(result),
-                    ty: lc.ty,
-                    span: lc.span,
-                };
-                *rv = Rvalue::Use(Operand::Constant(result_const));
-                return true;
-            }
-            false
-        }
-        Rvalue::UnaryOp(op, operand) => {
-            if let Operand::Constant(c) = operand
-                && let MirConstKind::Int(val) = c.kind
-            {
-                let result = match op {
-                    glyim_core::primitives::UnOp::Neg => -val,
-                    glyim_core::primitives::UnOp::Not => !val,
-                    _ => return false,
-                };
-                let result_const = MirConst {
-                    kind: MirConstKind::Int(result),
-                    ty: c.ty,
-                    span: c.span,
-                };
-                *rv = Rvalue::Use(Operand::Constant(result_const));
-                return true;
-            }
-            false
-        }
-        _ => false,
     }
 }

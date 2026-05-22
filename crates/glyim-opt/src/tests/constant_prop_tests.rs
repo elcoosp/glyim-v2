@@ -89,8 +89,14 @@ fn constant_prop_single_block() {
                     assert_eq!(*op, glyim_core::primitives::BinOp::Add);
                     match (&box_ops.0, &box_ops.1) {
                         (Operand::Constant(lc), Operand::Constant(rc)) => {
-                            match &lc.kind { MirConstKind::Int(5) => {}, _ => panic!("Expected Int(5)") };
-                            match &rc.kind { MirConstKind::Int(1) => {}, _ => panic!("Expected Int(1)") };
+                            match &lc.kind {
+                                MirConstKind::Int(5) => {}
+                                _ => panic!("Expected Int(5)"),
+                            };
+                            match &rc.kind {
+                                MirConstKind::Int(1) => {}
+                                _ => panic!("Expected Int(1)"),
+                            };
                         }
                         _ => panic!("Expected constant operands"),
                     }
