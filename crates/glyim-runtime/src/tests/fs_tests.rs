@@ -675,3 +675,76 @@ fn test_fs_append_mode() {
 
     cleanup(&dir);
 }
+
+// ===================================================================
+// W5-C04-T04: glyim_fs_canonicalize resolves symlinks
+// ===================================================================
+
+#[cfg(unix)]
+#[test]
+fn w5_c04_t04_canonicalize_resolves_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let dir = temp_dir("canonicalize_symlink");
+    let real_file = dir.join("real.txt");
+    let link_file = dir.join("link.txt");
+    fs::write(&real_file, b"target").expect("write failed");
+    symlink(&real_file, &link_file).expect("symlink creation failed");
+
+    let path_str = link_file.to_str().expect("non-utf8");
+    let mut buf = vec![0u8; 1024];
+    let n = canonicalize_path(path_str, &mut buf);
+    assert!(n >= 0, "canonicalize should succeed on symlink, got {}", n);
+
+    let resolved = std::str::from_utf8(&buf[..n as usize]).expect("utf8");
+    assert!(
+        resolved.ends_with("real.txt"),
+        "canonicalize should resolve symlink to real.txt, got: {}",
+        resolved
+    );
+
+    cleanup(&dir);
+}
+
+// ===================================================================
+// Error code mapping: non-empty directory returns FS_ENOTEMPTY
+// ===================================================================
+
+#[cfg(unix)]
+#[test]
+fn test_fs_remove_dir_not_empty_returns_enotempty() {
+    let dir = temp_dir("remove_dir_enotempty");
+    let subdir = dir.join("full_dir");
+    fs::create_dir(&subdir).expect("create failed");
+    fs::write(subdir.join("file.txt"), b"content").expect("write failed");
+
+    let path_str = subdir.to_str().expect("non-utf8");
+    let rc = remove_the_dir(path_str);
+    assert_eq!(
+        rc, FS_ENOTEMPTY,
+        "expected FS_ENOTEMPTY for non-empty dir, got {}",
+        rc
+    );
+
+    cleanup(&dir);
+}
+
+// ===================================================================
+// Error code mapping: opening path through non-directory returns FS_ENOTDIR
+// ===================================================================
+
+#[cfg(unix)]
+#[test]
+fn test_fs_open_path_through_file_returns_enotdir() {
+    let dir = temp_dir("open_enotdir");
+    let file_path = dir.join("regular");
+    fs::write(&file_path, b"not a dir").expect("write failed");
+
+    // Attempt to open a path where the parent is a regular file, not a directory.
+    let nested = file_path.join("nested");
+    let path_str = nested.to_str().expect("non-utf8");
+    let fd = open_file(path_str, FS_O_RDONLY);
+    assert_eq!(fd, FS_ENOTDIR, "expected FS_ENOTDIR, got {}", fd);
+
+    cleanup(&dir);
+}

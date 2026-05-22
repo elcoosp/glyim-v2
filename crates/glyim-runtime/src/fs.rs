@@ -127,12 +127,32 @@ unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
 }
 
 /// Map an `std::io::Error` to a Glyim errno code.
+///
+/// Handles both high-level `ErrorKind` variants and raw OS error codes
+/// (on Unix) for cases not yet represented in `ErrorKind`.
 fn io_err_to_errno(err: &std::io::Error) -> i32 {
     match err.kind() {
         std::io::ErrorKind::NotFound => FS_ENOENT,
         std::io::ErrorKind::PermissionDenied => FS_EACCES,
         std::io::ErrorKind::AlreadyExists => FS_EEXIST,
-        _ => FS_EIO,
+        std::io::ErrorKind::DirectoryNotEmpty => FS_ENOTEMPTY,
+        std::io::ErrorKind::NotADirectory => FS_ENOTDIR,
+        _ => {
+            // Fallback: check raw OS error for cases not mapped to ErrorKind.
+            // This handles platforms or error conditions where the Rust std
+            // library does not yet provide a typed ErrorKind variant.
+            if let Some(raw) = err.raw_os_error() {
+                match raw {
+                    #[cfg(unix)]
+                    libc::ENOTDIR => FS_ENOTDIR,
+                    #[cfg(unix)]
+                    libc::ENOTEMPTY => FS_ENOTEMPTY,
+                    _ => FS_EIO,
+                }
+            } else {
+                FS_EIO
+            }
+        }
     }
 }
 
