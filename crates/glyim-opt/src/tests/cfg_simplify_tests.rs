@@ -25,8 +25,6 @@ fn cfg_merge_goto_chain() {
         // bb1:
         //   _0 = _1
         //   return
-        //
-        // After CFG simplify: bb0 and bb1 are merged into one block.
         let block0 = make_block(
             vec![assign_stmt(
                 Place::new(local(1)),
@@ -47,7 +45,6 @@ fn cfg_merge_goto_chain() {
 
     let optimized = optimize(&ctx, &Arc::new(body));
 
-    // Should have exactly 1 block after CFG simplification
     assert_eq!(
         optimized.body.basic_blocks.len(),
         1,
@@ -67,7 +64,6 @@ fn cfg_merge_three_block_chain() {
         ];
 
         // bb0 -> bb1 -> bb2 (all Goto)
-        // After CFG simplify: single block with all statements + return
         let block0 = make_block(
             vec![assign_stmt(
                 Place::new(local(1)),
@@ -108,19 +104,10 @@ fn cfg_no_merge_multiple_preds() {
             (bool_ty, Mutability::Mut), // _1
         ];
 
-        // bb0:
-        //   _1 = true
-        //   switchInt(_1) -> [1: bb1, otherwise: bb2]
-        // bb1:
-        //   _0 = 1
-        //   goto bb3
-        // bb2:
-        //   _0 = 2
-        //   goto bb3
-        // bb3:
-        //   return
-        //
-        // bb3 has two predecessors, so it should NOT be merged with either.
+        // bb0: _1 = true; switchInt(_1) -> [1: bb1, otherwise: bb2]
+        // bb1: _0 = 1; goto bb3
+        // bb2: _0 = 2; goto bb3
+        // bb3: return
         let block0 = make_block(
             vec![assign_stmt(
                 Place::new(local(1)),
@@ -170,12 +157,8 @@ fn unreachable_block_eliminated() {
             (i32_ty, Mutability::Mut), // _1
         ];
 
-        // bb0:
-        //   _0 = 42
-        //   return
-        // bb1:
-        //   _1 = 99     // unreachable — no predecessor
-        //   return
+        // bb0: _0 = 42; return
+        // bb1: _1 = 99; return (unreachable – no predecessor)
         let block0 = make_block(
             vec![assign_stmt(
                 Place::new(local(0)),
@@ -213,7 +196,6 @@ fn start_block_always_kept() {
             (i32_ty, Mutability::Mut), // _0 return
         ];
 
-        // Just a single block with return.
         let block0 = make_block(vec![], return_term());
 
         build_test_body(locals, vec![block0], 0, i32_ty)
@@ -228,7 +210,7 @@ fn start_block_always_kept() {
     );
 }
 
-/// Test that SwitchInt targets are correct after optimization.
+/// Test that SwitchInt targets are correct after optimization (no elimination, but remapping).
 #[test]
 fn cfg_remap_after_elimination() {
     let (ctx, body) = with_fresh_ty_ctx(|ctx| {
@@ -240,17 +222,9 @@ fn cfg_remap_after_elimination() {
             (bool_ty, Mutability::Mut), // _1
         ];
 
-        // bb0:
-        //   _1 = true
-        //   switchInt(_1) -> [1: bb1, otherwise: bb2]
-        // bb1:
-        //   _0 = 1
-        //   return
-        // bb2:
-        //   _0 = 2
-        //   return
-        //
-        // Both branches are reachable, so nothing should be eliminated.
+        // bb0: _1 = true; switchInt(_1) -> [1: bb1, otherwise: bb2]
+        // bb1: _0 = 1; return
+        // bb2: _0 = 2; return
         let block0 = make_block(
             vec![assign_stmt(
                 Place::new(local(1)),
