@@ -2459,10 +2459,16 @@ fn test_assign_field_projection() {
     };
     let mut bbs = IndexVec::new();
     bbs.push(block);
+    let mut locals = IndexVec::new();
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
     let body = Arc::new(Body {
         owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         basic_blocks: bbs,
-        locals: IndexVec::new(),
+        locals,
         arg_count: 0,
         return_ty: Ty::UNIT,
         span: Span::DUMMY,
