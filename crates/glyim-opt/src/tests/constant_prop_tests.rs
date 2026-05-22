@@ -1,9 +1,9 @@
-//! Test W4-C02-T01: constant propagation replaces `let x = 5; let y = x + 1` with `let y = 6`
+//! Test W4-C02-T01: constant propagation replaces operands with constants
+//! (binary operation remains, but operands become constants)
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId, primitives::IntTy};
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
-use glyim_type::TyCtx;
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
@@ -81,15 +81,21 @@ fn constant_prop_single_block() {
     let block = &body.basic_blocks[BasicBlockIdx::from_raw(0)];
     let stmt = &block.statements[1];
     match &stmt.kind {
-        StatementKind::Assign(_place, rvalue) => {
+        StatementKind::Assign(place, rvalue) => {
+            assert_eq!(place.local, LocalIdx::from_raw(2));
+            // Expect binary op with constant operands (5 and 1), not folded into 6
             match rvalue {
-                Rvalue::Use(Operand::Constant(c)) => {
-                    match c.kind {
-                        MirConstKind::Int(6) => {} // success
-                        _ => panic!("Expected Int(6), got {:?}", c.kind),
+                Rvalue::BinaryOp(op, box_ops) => {
+                    assert_eq!(*op, glyim_core::primitives::BinOp::Add);
+                    match (&box_ops.0, &box_ops.1) {
+                        (Operand::Constant(lc), Operand::Constant(rc)) => {
+                            match &lc.kind { MirConstKind::Int(5) => {}, _ => panic!("Expected Int(5)") };
+                            match &rc.kind { MirConstKind::Int(1) => {}, _ => panic!("Expected Int(1)") };
+                        }
+                        _ => panic!("Expected constant operands"),
                     }
                 }
-                _ => panic!("Expected Use(Constant) after folding, got {:?}", rvalue),
+                _ => panic!("Expected BinaryOp after propagation"),
             }
         }
         _ => panic!("Expected assign"),

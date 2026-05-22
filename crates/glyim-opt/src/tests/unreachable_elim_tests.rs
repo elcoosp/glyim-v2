@@ -3,7 +3,6 @@ use glyim_core::{CrateId, DefId, IndexVec, LocalDefId, primitives::IntTy};
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
-use glyim_type::TyCtx;
 
 fn dummy_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
@@ -21,7 +20,7 @@ fn remove_block_after_return() {
         source_info: SourceInfo::new(Span::DUMMY),
     });
     let bb0 = BasicBlockIdx::from_raw(0);
-    let bb1 = BasicBlockIdx::from_raw(1);
+    let _bb1 = BasicBlockIdx::from_raw(1);
     body.basic_blocks = IndexVec::from_raw(vec![
         BasicBlockData {
             statements: vec![Statement {
