@@ -9,3 +9,6 @@ mod tcp;
 mod thread;
 mod time;
 mod udp;
+mod udp_tests;
+mod thread_tests;
+mod time_tests;
