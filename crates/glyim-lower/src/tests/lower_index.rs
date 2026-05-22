@@ -1,4 +1,4 @@
-use glyim_test::phase::MirGenTester;
+use glyim_test::prelude::*;
 
 #[test]
 fn test_index_projection() {
@@ -8,9 +8,9 @@ fn test_index_projection() {
             arr[1]
         }
     "#;
-    let result = MirGenTester::from_source(src).run();
-    assert!(result.is_ok(), "MIR generation failed");
-    let (ctx, mir_body) = result.unwrap();
+    let (ctx, mir_body) = MirGenTester::new(src)
+        .run()
+        .expect("MIR generation failed");
 
     let mut found_index = false;
     for block in mir_body.basic_blocks.iter() {

@@ -1,4 +1,4 @@
-use glyim_test::phase::MirGenTester;
+use glyim_test::prelude::*;
 
 #[test]
 fn test_match_guard() {
@@ -10,9 +10,9 @@ fn test_match_guard() {
             }
         }
     "#;
-    let result = MirGenTester::from_source(src).run();
-    assert!(result.is_ok(), "MIR generation failed");
-    let (_, mir_body) = result.unwrap();
+    let (_, mir_body) = MirGenTester::new(src)
+        .run()
+        .expect("MIR generation failed");
 
     let mut found_guard = false;
     for block in mir_body.basic_blocks.iter() {
