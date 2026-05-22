@@ -74,19 +74,19 @@ fn const_prop_binary_op_operands_replaced() {
         ];
 
         // bb0:
-        //   _1 = 3
-        //   _2 = 4
-        //   _3 = _1 + _2     // operands should be replaced with constants
+        //   _1 = 5
+        //   _2 = 3
+        //   _3 = Add(_1, _2)   // should become Add(5, 3) or be folded to 8
         //   _0 = _3
         //   return
         let block0 = make_block(
             vec![
-                assign_stmt(Place::new(local(1)), const_int_rvalue(3, i32_ty)),
-                assign_stmt(Place::new(local(2)), const_int_rvalue(4, i32_ty)),
+                assign_stmt(Place::new(local(1)), const_int_rvalue(5, i32_ty)),
+                assign_stmt(Place::new(local(2)), const_int_rvalue(3, i32_ty)),
                 assign_stmt(
                     Place::new(local(3)),
                     Rvalue::BinaryOp(
-                        glyim_core::BinOp::Add,
+                        glyim_core::primitives::BinOp::Add,
                         Box::new((copy_op(local(1)), copy_op(local(2)))),
                     ),
                 ),
@@ -99,28 +99,47 @@ fn const_prop_binary_op_operands_replaced() {
     });
 
     let optimized = optimize(&ctx, &Arc::new(body));
-
     let block = &optimized.body.basic_blocks[bb(0)];
 
-    // Find the BinaryOp assignment (to _3)
-    let binop_stmt = block
+    // Either the BinaryOp still exists with constant operands, or it has been folded
+    // and the final assignment to _0 is a constant (8).
+    let has_binary_op = block
         .statements
         .iter()
-        .find(|stmt| matches!(&stmt.kind, StatementKind::Assign(_, Rvalue::BinaryOp(_, _))));
-    assert!(
-        binop_stmt.is_some(),
-        "BinaryOp assignment should still exist"
-    );
+        .any(|stmt| matches!(&stmt.kind, StatementKind::Assign(_, Rvalue::BinaryOp(_, _))));
 
-    if let StatementKind::Assign(_, Rvalue::BinaryOp(_, ops)) = &binop_stmt.unwrap().kind {
-        assert!(
-            matches!(ops.0, Operand::Constant(_)),
-            "lhs of BinaryOp should be constant after propagation"
-        );
-        assert!(
-            matches!(ops.1, Operand::Constant(_)),
-            "rhs of BinaryOp should be constant after propagation"
-        );
+    if has_binary_op {
+        let binop_stmt = block
+            .statements
+            .iter()
+            .find(|stmt| matches!(&stmt.kind, StatementKind::Assign(_, Rvalue::BinaryOp(_, _))))
+            .unwrap();
+        if let StatementKind::Assign(_, Rvalue::BinaryOp(_, ops)) = &binop_stmt.kind {
+            assert!(
+                matches!(ops.0, Operand::Constant(_)),
+                "lhs of BinaryOp should be constant after propagation"
+            );
+            assert!(
+                matches!(ops.1, Operand::Constant(_)),
+                "rhs of BinaryOp should be constant after propagation"
+            );
+        }
+    } else {
+        // Expect that the final assignment to _0 is a constant 8
+        let assign_to_0 = block
+            .statements
+            .iter()
+            .find(|stmt| matches!(&stmt.kind, StatementKind::Assign(p, _) if p.local == local(0)))
+            .expect("_0 should have an assignment");
+        if let StatementKind::Assign(_, Rvalue::Use(Operand::Constant(c))) = &assign_to_0.kind {
+            assert!(
+                matches!(c.kind, MirConstKind::Int(8)),
+                "Expected constant 8, got {:?}",
+                c.kind
+            );
+        } else {
+            panic!("_0 assignment should be Use(Constant(8)) after folding");
+        }
     }
 }
 
