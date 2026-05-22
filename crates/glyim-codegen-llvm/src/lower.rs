@@ -314,28 +314,63 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .build_load(i64_ty, index_ptr, "index_load")
                         .expect("index load failed")
                         .into_int_value();
-                    let i32_ty = self.llvm_int_type(32);
-                    let truncated = self
-                        .builder
-                        .build_int_truncate(index_val, i32_ty, "idx_trunc")
-                        .expect("idx trunc failed");
+
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) => *elem,
                         TyKind::Slice(elem) => *elem,
                         other => panic!("Index projection on non-array/slice type {:?}", other),
                     };
-                    let llvm_ty = self.llvm_type_for_ty(current_ty);
-                    ptr = unsafe {
-                        self.builder
-                            .build_in_bounds_gep(
-                                llvm_ty,
-                                ptr,
-                                &[i32_ty.const_zero(), truncated],
-                                "index_gep",
-                            )
-                            .expect("index gep failed")
-                    };
-                    current_ty = elem_ty;
+
+                    if let TyKind::Slice(_) = self.ty_ctx.ty_kind(current_ty) {
+                        // For slice: ptr points to a slice struct { ptr, len }.
+                        // Load the data pointer from field 0.
+                        let i8_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+                        let zero_i64 = i64_ty.const_zero();
+                        let field0_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(
+                                    self.llvm_type_for_ty(current_ty),
+                                    ptr,
+                                    &[zero_i64, zero_i64],
+                                    "slice_field0_gep",
+                                )
+                                .expect("slice field0 gep failed")
+                        };
+                        let data_ptr = self
+                            .builder
+                            .build_load(i8_ptr_ty, field0_ptr, "slice_data_ptr")
+                            .expect("load data ptr failed")
+                            .into_pointer_value();
+
+                        let elem_llvm_ty = self.llvm_type_for_ty(elem_ty);
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(
+                                    elem_llvm_ty,
+                                    data_ptr,
+                                    &[index_val],
+                                    "slice_elem_gep",
+                                )
+                                .expect("slice elem gep failed")
+                        };
+                        ptr = elem_ptr;
+                        current_ty = elem_ty;
+                    } else {
+                        // Array case: ptr points directly to array data.
+                        let llvm_ty = self.llvm_type_for_ty(current_ty);
+                        let zero_i64 = i64_ty.const_zero();
+                        ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(
+                                    llvm_ty,
+                                    ptr,
+                                    &[zero_i64, index_val],
+                                    "array_index_gep",
+                                )
+                                .expect("array index gep failed")
+                        };
+                        current_ty = elem_ty;
+                    }
                 }
                 ProjectionElem::Downcast(variant_idx) => {
                     let layout_computer =
@@ -375,8 +410,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     }
                 }
                 ProjectionElem::Slice { .. } => {
-                    eprintln!("Slice projection not implemented in LLVM codegen");
-                    // Return a null pointer as a safe placeholder
+                    tracing::warn!("Slice projection not implemented in LLVM codegen");
                     return self.context.ptr_type(AddressSpace::default()).const_null();
                 }
             }
@@ -385,8 +419,54 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn place_ty(&self, place: &Place) -> Ty {
-        local_ty(self.body, place.local)
+        let mut ty = local_ty(self.body, place.local);
+        for elem in place.projection.iter() {
+            match elem {
+                ProjectionElem::Deref => {
+                    match self.ty_ctx.ty_kind(ty) {
+                        TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => ty = *inner,
+                        other => panic!("Deref on non-pointer type {:?} in place_ty", other),
+                    }
+                }
+                ProjectionElem::Field(idx) => {
+                    match self.ty_ctx.ty_kind(ty) {
+                        TyKind::Tuple(subst) => {
+                            let args = self.ty_ctx.substitution_args(*subst);
+                            ty = args.get(idx.to_raw() as usize)
+                                .and_then(|arg| if let glyim_type::GenericArg::Ty(t) = arg { Some(*t) } else { None })
+                                .unwrap_or(Ty::ERROR);
+                        }
+                        TyKind::Adt(adt_id, _) => {
+                            if let Some(adt_def) = self.ty_ctx.adt_def(*adt_id) {
+                                if let Some(variant) = adt_def.variants.first() {
+                                    ty = variant.fields.iter().nth(idx.to_raw() as usize)
+                                        .map(|f| f.ty)
+                                        .unwrap_or(Ty::ERROR);
+                                } else {
+                                    ty = Ty::ERROR;
+                                }
+                            } else {
+                                ty = Ty::ERROR;
+                            }
+                        }
+                        _ => ty = Ty::ERROR,
+                    }
+                }
+                ProjectionElem::Index(_) => {
+                    match self.ty_ctx.ty_kind(ty) {
+                        TyKind::Array(elem, _) | TyKind::Slice(elem) => ty = *elem,
+                        other => panic!("Index projection on non-array/slice type {:?}", other),
+                    }
+                }
+                ProjectionElem::Downcast(_) => {}
+                ProjectionElem::Slice { .. } => {
+                    tracing::warn!("Slice projection in place_ty not implemented, keeping original type");
+                }
+            }
+        }
+        ty
     }
+
     fn emit_landingpad(&self) -> CompResult<()> {
         if let Some(personality_fn) = self.personality_fn {
             let ptr_type = self.context.ptr_type(AddressSpace::default());

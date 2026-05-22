@@ -42,3 +42,4 @@ mod switch_int;
 mod type_lowering;
 mod unary_ops;
 mod unsigned_cmp;
+mod slice_lowering;
