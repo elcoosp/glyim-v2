@@ -56,3 +56,4 @@ mod test_range_pattern;
 mod test_slice_pattern;
 mod test_guard;
 mod test_struct_spread;
+mod harness_tests;
