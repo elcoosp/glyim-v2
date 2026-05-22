@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs, UdpSocket};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -774,18 +775,21 @@ pub extern "C" fn glyim_process_getppid() -> u32 {
 // Networking (TCP & UDP)
 // ---------------------------------------------------------------------------
 
+static NEXT_SOCKET_ID: AtomicU32 = AtomicU32::new(1);
+
+fn alloc_socket_id() -> SocketId {
+    NEXT_SOCKET_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 type SocketId = u32;
 
 struct TcpStreamStore {
-    next_id: SocketId,
     streams: HashMap<SocketId, TcpStream>,
 }
 struct TcpListenerStore {
-    next_id: SocketId,
     listeners: HashMap<SocketId, TcpListener>,
 }
 struct UdpSocketStore {
-    next_id: SocketId,
     sockets: HashMap<SocketId, UdpSocket>,
 }
 
@@ -793,7 +797,6 @@ fn tcp_streams() -> &'static Mutex<TcpStreamStore> {
     static STREAMS: OnceLock<Mutex<TcpStreamStore>> = OnceLock::new();
     STREAMS.get_or_init(|| {
         Mutex::new(TcpStreamStore {
-            next_id: 1,
             streams: HashMap::new(),
         })
     })
@@ -802,7 +805,6 @@ fn tcp_listeners() -> &'static Mutex<TcpListenerStore> {
     static LISTENERS: OnceLock<Mutex<TcpListenerStore>> = OnceLock::new();
     LISTENERS.get_or_init(|| {
         Mutex::new(TcpListenerStore {
-            next_id: 1,
             listeners: HashMap::new(),
         })
     })
@@ -811,7 +813,6 @@ fn udp_sockets() -> &'static Mutex<UdpSocketStore> {
     static SOCKETS: OnceLock<Mutex<UdpSocketStore>> = OnceLock::new();
     SOCKETS.get_or_init(|| {
         Mutex::new(UdpSocketStore {
-            next_id: 1,
             sockets: HashMap::new(),
         })
     })
@@ -840,10 +841,8 @@ pub unsafe extern "C" fn glyim_net_tcp_connect(addr: *const u8, addr_len: usize,
         Ok(s) => s,
         Err(_) => return -1,
     };
-    let mut store = tcp_streams().lock().unwrap();
-    let id = store.next_id;
-    store.next_id += 1;
-    store.streams.insert(id, stream);
+    let id = alloc_socket_id();
+    tcp_streams().lock().unwrap().streams.insert(id, stream);
     id as i32
 }
 
@@ -860,10 +859,12 @@ pub unsafe extern "C" fn glyim_net_tcp_bind(addr: *const u8, addr_len: usize, po
         Ok(l) => l,
         Err(_) => return -1,
     };
-    let mut store = tcp_listeners().lock().unwrap();
-    let id = store.next_id;
-    store.next_id += 1;
-    store.listeners.insert(id, listener);
+    let id = alloc_socket_id();
+    tcp_listeners()
+        .lock()
+        .unwrap()
+        .listeners
+        .insert(id, listener);
     id as i32
 }
 
@@ -882,10 +883,8 @@ pub unsafe extern "C" fn glyim_net_tcp_accept(fd: i32) -> i32 {
         Err(_) => return -1,
     };
     drop(listener_store);
-    let mut stream_store = tcp_streams().lock().unwrap();
-    let new_id = stream_store.next_id;
-    stream_store.next_id += 1;
-    stream_store.streams.insert(new_id, stream);
+    let new_id = alloc_socket_id();
+    tcp_streams().lock().unwrap().streams.insert(new_id, stream);
     new_id as i32
 }
 
@@ -969,10 +968,8 @@ pub unsafe extern "C" fn glyim_net_udp_bind(addr: *const u8, addr_len: usize, po
         Ok(s) => s,
         Err(_) => return -1,
     };
-    let mut store = udp_sockets().lock().unwrap();
-    let id = store.next_id;
-    store.next_id += 1;
-    store.sockets.insert(id, socket);
+    let id = alloc_socket_id();
+    udp_sockets().lock().unwrap().sockets.insert(id, socket);
     id as i32
 }
 
