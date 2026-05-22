@@ -294,7 +294,11 @@ impl std::fmt::Debug for PatternKind {
                 .field("inclusive", inclusive)
                 .finish(),
             PatternKind::ConstBlock(body) => f.debug_tuple("ConstBlock").field(body).finish(),
-            PatternKind::Slice { prefix, slice, suffix } => f
+            PatternKind::Slice {
+                prefix,
+                slice,
+                suffix,
+            } => f
                 .debug_struct("Slice")
                 .field("prefix", prefix)
                 .field("slice", slice)
@@ -343,7 +347,11 @@ impl Clone for PatternKind {
                 inclusive: *inclusive,
             },
             PatternKind::ConstBlock(body) => PatternKind::ConstBlock(body.clone()),
-            PatternKind::Slice { prefix, slice, suffix } => PatternKind::Slice {
+            PatternKind::Slice {
+                prefix,
+                slice,
+                suffix,
+            } => PatternKind::Slice {
                 prefix: prefix.clone(),
                 slice: slice.clone(),
                 suffix: suffix.clone(),

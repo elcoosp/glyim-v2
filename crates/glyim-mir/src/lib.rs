@@ -135,9 +135,7 @@ impl Place {
                             ctx.error_ty()
                         }
                     }
-                    TyKind::Adt(adt_id, _substs) => {
-                        ctx.field_ty(*adt_id, idx.to_raw() as usize)
-                    }
+                    TyKind::Adt(adt_id, _substs) => ctx.field_ty(*adt_id, idx.to_raw() as usize),
                     _ => {
                         tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
                         ctx.error_ty()
@@ -212,7 +210,9 @@ pub struct Terminator {
 
 #[derive(Clone, Debug)]
 pub enum TerminatorKind {
-    Goto { target: BasicBlockIdx },
+    Goto {
+        target: BasicBlockIdx,
+    },
     SwitchInt {
         discr: Operand,
         switch_ty: Ty,
@@ -257,7 +257,10 @@ pub struct SwitchTargets {
 
 impl SwitchTargets {
     pub fn new(branches: Box<[(u128, BasicBlockIdx)]>, otherwise: BasicBlockIdx) -> Self {
-        Self { branches, otherwise }
+        Self {
+            branches,
+            otherwise,
+        }
     }
     pub fn otherwise(&self) -> BasicBlockIdx {
         self.otherwise

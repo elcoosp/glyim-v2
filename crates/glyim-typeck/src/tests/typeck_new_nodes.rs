@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use glyim_test::harness::compiler::{PipelineCompiler, TestCompiler, CompileOutput};
-use glyim_test::mock::MockCodegen;
-use glyim_test::assert_no_errors;
-use glyim_test::assert_has_errors;
-use glyim_test::assert_diag_contains;
 use glyim_span::FileId;
+use glyim_test::assert_diag_contains;
+use glyim_test::assert_has_errors;
+use glyim_test::assert_no_errors;
+use glyim_test::harness::compiler::{CompileOutput, PipelineCompiler, TestCompiler};
+use glyim_test::mock::MockCodegen;
+use std::sync::Arc;
 
 fn compile(src: &str) -> CompileOutput {
     let backend = Arc::new(MockCodegen::new());

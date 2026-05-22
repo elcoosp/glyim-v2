@@ -12,8 +12,7 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
 ) -> BasicTypeEnum<'ctx> {
     match ctx.ty_kind(ty) {
         TyKind::Error => {
-            // panic!("TyKind::Error reached LLVM codegen – type checking should have caught this")
-            //   // Error types can appear in MIR during partial compilation or test fixtures.
+            // Error types can appear in MIR during partial compilation or test fixtures.
             // Fall back to i64 to allow codegen to proceed; the program is already ill-typed.
             tracing::warn!("TyKind::Error lowered to i64");
             int_type(context, 64).into()
