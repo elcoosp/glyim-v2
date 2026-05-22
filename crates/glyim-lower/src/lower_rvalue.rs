@@ -822,11 +822,14 @@ impl<'a> MirBuilder<'a> {
                 tracing::warn!("STUB: const block pattern binding not implemented");
             }
             thir::PatternKind::Error => {}
-            thir::PatternKind::Slice { prefix: _, slice: _, suffix: _ } => {
+            thir::PatternKind::Slice {
+                prefix: _,
+                slice: _,
+                suffix: _,
+            } => {
                 // Slice pattern lowering is not yet implemented.
                 // Type checking already passed; ignoring for now.
                 tracing::debug!("Slice pattern lowering skipped (typeck only)");
-    
             }
         }
     }
