@@ -15,6 +15,7 @@ mod fnref_lowering;
 mod for_loop;
 mod for_loop_advanced;
 mod guards;
+mod harness_tests;
 mod r#loop; // file is loop.rs
 mod lower;
 mod r#match;
@@ -50,4 +51,3 @@ mod tuple_pattern;
 mod unary_ops;
 mod unsupported_literal;
 mod r#while;
-mod harness_tests;
