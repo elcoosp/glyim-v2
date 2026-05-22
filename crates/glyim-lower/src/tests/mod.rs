@@ -56,3 +56,4 @@ mod lower_range_pat;
 mod lower_slice_pat;
 mod lower_guard;
 mod lower_struct_spread;
+mod harness_tests;

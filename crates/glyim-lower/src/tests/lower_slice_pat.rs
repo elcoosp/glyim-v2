@@ -1,4 +1,4 @@
-use glyim_test::prelude::*;
+use glyim_test::phase::MirGenTester;
 
 #[test]
 fn test_slice_pattern_binding() {
