@@ -422,45 +422,51 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let mut ty = local_ty(self.body, place.local);
         for elem in place.projection.iter() {
             match elem {
-                ProjectionElem::Deref => {
-                    match self.ty_ctx.ty_kind(ty) {
-                        TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => ty = *inner,
-                        other => panic!("Deref on non-pointer type {:?} in place_ty", other),
-                    }
-                }
-                ProjectionElem::Field(idx) => {
-                    match self.ty_ctx.ty_kind(ty) {
-                        TyKind::Tuple(subst) => {
-                            let args = self.ty_ctx.substitution_args(*subst);
-                            ty = args.get(idx.to_raw() as usize)
-                                .and_then(|arg| if let glyim_type::GenericArg::Ty(t) = arg { Some(*t) } else { None })
-                                .unwrap_or(Ty::ERROR);
-                        }
-                        TyKind::Adt(adt_id, _) => {
-                            if let Some(adt_def) = self.ty_ctx.adt_def(*adt_id) {
-                                if let Some(variant) = adt_def.variants.first() {
-                                    ty = variant.fields.iter().nth(idx.to_raw() as usize)
-                                        .map(|f| f.ty)
-                                        .unwrap_or(Ty::ERROR);
+                ProjectionElem::Deref => match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => ty = *inner,
+                    other => panic!("Deref on non-pointer type {:?} in place_ty", other),
+                },
+                ProjectionElem::Field(idx) => match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Tuple(subst) => {
+                        let args = self.ty_ctx.substitution_args(*subst);
+                        ty = args
+                            .get(idx.to_raw() as usize)
+                            .and_then(|arg| {
+                                if let glyim_type::GenericArg::Ty(t) = arg {
+                                    Some(*t)
                                 } else {
-                                    ty = Ty::ERROR;
+                                    None
                                 }
+                            })
+                            .unwrap_or(Ty::ERROR);
+                    }
+                    TyKind::Adt(adt_id, _) => {
+                        if let Some(adt_def) = self.ty_ctx.adt_def(*adt_id) {
+                            if let Some(variant) = adt_def.variants.first() {
+                                ty = variant
+                                    .fields
+                                    .iter()
+                                    .nth(idx.to_raw() as usize)
+                                    .map(|f| f.ty)
+                                    .unwrap_or(Ty::ERROR);
                             } else {
                                 ty = Ty::ERROR;
                             }
+                        } else {
+                            ty = Ty::ERROR;
                         }
-                        _ => ty = Ty::ERROR,
                     }
-                }
-                ProjectionElem::Index(_) => {
-                    match self.ty_ctx.ty_kind(ty) {
-                        TyKind::Array(elem, _) | TyKind::Slice(elem) => ty = *elem,
-                        other => panic!("Index projection on non-array/slice type {:?}", other),
-                    }
-                }
+                    _ => ty = Ty::ERROR,
+                },
+                ProjectionElem::Index(_) => match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Array(elem, _) | TyKind::Slice(elem) => ty = *elem,
+                    other => panic!("Index projection on non-array/slice type {:?}", other),
+                },
                 ProjectionElem::Downcast(_) => {}
                 ProjectionElem::Slice { .. } => {
-                    tracing::warn!("Slice projection in place_ty not implemented, keeping original type");
+                    tracing::warn!(
+                        "Slice projection in place_ty not implemented, keeping original type"
+                    );
                 }
             }
         }

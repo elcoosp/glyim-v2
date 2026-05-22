@@ -733,7 +733,8 @@ impl<'tcx> Interpreter<'tcx> {
                             )));
                         }
                         let inner = fields[fi].clone();
-                        fields[fi] = self.write_through_projections_with_locals(inner, rest, val)?;
+                        fields[fi] =
+                            self.write_through_projections_with_locals(inner, rest, val)?;
                         Ok(InterpValue::Aggregate(fields))
                     }
                     _ => Err(InterpError::Panic(
@@ -767,7 +768,8 @@ impl<'tcx> Interpreter<'tcx> {
                             )));
                         }
                         let inner = elems[idx_u].clone();
-                        elems[idx_u] = self.write_through_projections_with_locals(inner, rest, val)?;
+                        elems[idx_u] =
+                            self.write_through_projections_with_locals(inner, rest, val)?;
                         Ok(InterpValue::Aggregate(elems))
                     }
                     _ => Err(InterpError::Panic(

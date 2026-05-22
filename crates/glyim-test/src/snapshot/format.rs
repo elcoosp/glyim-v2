@@ -265,7 +265,9 @@ fn format_projection_elem(elem: &glyim_mir::ProjectionElem) -> String {
         glyim_mir::ProjectionElem::Deref => "Deref".to_string(),
         glyim_mir::ProjectionElem::Field(idx) => format!("Field({})", idx.to_raw()),
         glyim_mir::ProjectionElem::Index(idx) => format!("Index(${})", idx.to_raw()),
-        glyim_mir::ProjectionElem::Downcast(variant) => format!("Downcast(variant={})", variant.to_raw()),
+        glyim_mir::ProjectionElem::Downcast(variant) => {
+            format!("Downcast(variant={})", variant.to_raw())
+        }
         glyim_mir::ProjectionElem::Slice { .. } => ".slice".to_string(),
     }
 }

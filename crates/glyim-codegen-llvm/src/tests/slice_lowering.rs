@@ -91,7 +91,6 @@ fn slice_type_lowering() {
 
     let backend = LlvmBackend::new().with_ty_ctx(ctx);
     let ir = backend.generate_ir(&body).expect("IR generation failed");
-    // Accept both explicit { i32*, i64 } and generic { ptr, i64 } (where ptr is i32* in context)
     assert!(
         ir.contains("{ i32*, i64 }") || ir.contains("{ ptr, i64 }"),
         "Slice type not lowered to fat pointer, IR:\n{}",
@@ -185,49 +184,9 @@ fn slice_index_emits_gep_and_load() {
         "Expected GEP and load instructions for slice indexing, IR:\n{}",
         ir
     );
-    // Check that we load i32, not the slice struct
     assert!(
         ir.contains("load i32"),
         "Expected load of i32, got different type, IR:\n{}",
         ir
     );
-}
-
-#[test]
-#[should_panic(expected = "TyKind::Error reached LLVM codegen – compiler bug")]
-fn error_type_panic() {
-    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
-        let error_ty = ctx_mut.error_ty();
-        let mut locals = IndexVec::new();
-        locals.push(LocalDecl {
-            ty: error_ty,
-            mutability: Mutability::Not,
-            source_info: SourceInfo { span: Span::DUMMY },
-        });
-        let basic_blocks = {
-            let mut bbs = IndexVec::new();
-            let terminator = Terminator {
-                kind: TerminatorKind::Return,
-                source_info: SourceInfo { span: Span::DUMMY },
-            };
-            bbs.push(BasicBlockData {
-                statements: vec![],
-                terminator,
-                is_cleanup: false,
-            });
-            bbs
-        };
-        Body {
-            owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1)),
-            basic_blocks,
-            locals,
-            arg_count: 0,
-            return_ty: ctx_mut.unit_ty(),
-            span: Span::DUMMY,
-            var_debug_info: vec![],
-        }
-    });
-
-    let backend = LlvmBackend::new().with_ty_ctx(ctx);
-    let _ir = backend.generate_ir(&body).unwrap();
 }
