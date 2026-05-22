@@ -35,6 +35,7 @@ mod pass_mode;
 mod repeat_lowering;
 mod rvalue_aggregate;
 mod s09_mappings;
+mod slice_lowering;
 mod stress_tests;
 mod string_constant;
 mod switch_edge_cases;

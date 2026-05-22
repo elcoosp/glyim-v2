@@ -7,5 +7,8 @@ mod panic;
 mod process;
 mod tcp;
 mod thread;
+mod thread_tests;
 mod time;
+mod time_tests;
 mod udp;
+mod udp_tests;

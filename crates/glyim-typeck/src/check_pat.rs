@@ -117,7 +117,11 @@ impl<'a> FnCtxt<'a> {
                     span,
                 }
             }
-            Pat::Range { start, end, inclusive } => {
+            Pat::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 let start_opt = start.as_ref().map(|lit| crate::unify::thir_literal(lit));
                 let end_opt = end.as_ref().map(|lit| crate::unify::thir_literal(lit));
                 let ty = expected_ty;
@@ -163,7 +167,14 @@ impl<'a> FnCtxt<'a> {
                 for &sub_id in elements {
                     let sub = &self.body.pats[sub_id];
                     // A slice‑binding pattern is a wildcard or a simple binding (no subpattern).
-                    let is_slice = matches!(sub, Pat::Wild | Pat::Binding { subpattern: None, .. });
+                    let is_slice = matches!(
+                        sub,
+                        Pat::Wild
+                            | Pat::Binding {
+                                subpattern: None,
+                                ..
+                            }
+                    );
                     if !found_slice && is_slice {
                         // This is the `..` or `rest @ ..` pattern.
                         slice_pat = Some(Box::new(self.check_pattern(sub_id, expected_ty)));
