@@ -36,9 +36,13 @@ fn maps_equal(a: &BlockMap, b: &BlockMap) -> bool {
             None => return false,
             Some(bv) => match (v, bv) {
                 (None, None) => continue,
-                (Some(c1), Some(c2)) => if !const_eq(c1, c2) { return false; }
+                (Some(c1), Some(c2)) => {
+                    if !const_eq(c1, c2) {
+                        return false;
+                    }
+                }
                 _ => return false,
-            }
+            },
         }
     }
     true
@@ -69,11 +73,7 @@ fn merge_maps(mut into: BlockMap, other: &BlockMap) -> BlockMap {
 }
 
 /// Try to evaluate an Rvalue to a constant given current known locals.
-fn evaluate_rvalue_to_const(
-    rv: &Rvalue,
-    locals: &BlockMap,
-    _ctx: &TyCtx,
-) -> Option<MirConst> {
+fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Option<MirConst> {
     match rv {
         Rvalue::Use(op) => operand_to_const(op, locals),
         Rvalue::BinaryOp(op, box_ops) => {
@@ -85,8 +85,20 @@ fn evaluate_rvalue_to_const(
                         glyim_core::primitives::BinOp::Add => l + r,
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
-                        glyim_core::primitives::BinOp::Div => if r != 0 { l / r } else { 0 },
-                        glyim_core::primitives::BinOp::Rem => if r != 0 { l % r } else { 0 },
+                        glyim_core::primitives::BinOp::Div => {
+                            if r != 0 {
+                                l / r
+                            } else {
+                                0
+                            }
+                        }
+                        glyim_core::primitives::BinOp::Rem => {
+                            if r != 0 {
+                                l % r
+                            } else {
+                                0
+                            }
+                        }
                         _ => return None,
                     };
                     Some(MirConst {
@@ -181,10 +193,10 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
             if let StatementKind::Assign(place, rvalue) = &stmt.kind {
                 // Writing to a local kills previous knowledge
                 out.remove(&place.local);
-                if place.projection.is_empty() {
-                    if let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx) {
-                        out.insert(place.local, Some(c));
-                    }
+                if place.projection.is_empty()
+                    && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
+                {
+                    out.insert(place.local, Some(c));
                 }
             }
         }
@@ -227,11 +239,11 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 fn replace_operand(op: &mut Operand, locals: &BlockMap) -> bool {
     match op {
         Operand::Copy(place) | Operand::Move(place) => {
-            if place.projection.is_empty() {
-                if let Some(Some(c)) = locals.get(&place.local) {
-                    *op = Operand::Constant(c.clone());
-                    return true;
-                }
+            if place.projection.is_empty()
+                && let Some(Some(c)) = locals.get(&place.local)
+            {
+                *op = Operand::Constant(c.clone());
+                return true;
             }
             false
         }
@@ -268,47 +280,55 @@ fn fold_rvalue(rv: &mut Rvalue) -> bool {
         Rvalue::BinaryOp(op, box_ops) => {
             let left = &box_ops.0;
             let right = &box_ops.1;
-            if let (Operand::Constant(lc), Operand::Constant(rc)) = (left, right) {
-                if let (MirConstKind::Int(l_int), MirConstKind::Int(r_int)) = (&lc.kind, &rc.kind) {
-                    let result = match op {
-                        glyim_core::primitives::BinOp::Add => *l_int + *r_int,
-                        glyim_core::primitives::BinOp::Sub => *l_int - *r_int,
-                        glyim_core::primitives::BinOp::Mul => *l_int * *r_int,
-                        glyim_core::primitives::BinOp::Div => {
-                            if *r_int != 0 { *l_int / *r_int } else { 0 }
+            if let (Operand::Constant(lc), Operand::Constant(rc)) = (left, right)
+                && let (MirConstKind::Int(l_int), MirConstKind::Int(r_int)) = (&lc.kind, &rc.kind)
+            {
+                let result = match op {
+                    glyim_core::primitives::BinOp::Add => *l_int + *r_int,
+                    glyim_core::primitives::BinOp::Sub => *l_int - *r_int,
+                    glyim_core::primitives::BinOp::Mul => *l_int * *r_int,
+                    glyim_core::primitives::BinOp::Div => {
+                        if *r_int != 0 {
+                            *l_int / *r_int
+                        } else {
+                            0
                         }
-                        glyim_core::primitives::BinOp::Rem => {
-                            if *r_int != 0 { *l_int % *r_int } else { 0 }
+                    }
+                    glyim_core::primitives::BinOp::Rem => {
+                        if *r_int != 0 {
+                            *l_int % *r_int
+                        } else {
+                            0
                         }
-                        _ => return false,
-                    };
-                    let result_const = MirConst {
-                        kind: MirConstKind::Int(result),
-                        ty: lc.ty.clone(),
-                        span: lc.span,
-                    };
-                    *rv = Rvalue::Use(Operand::Constant(result_const));
-                    return true;
-                }
+                    }
+                    _ => return false,
+                };
+                let result_const = MirConst {
+                    kind: MirConstKind::Int(result),
+                    ty: lc.ty,
+                    span: lc.span,
+                };
+                *rv = Rvalue::Use(Operand::Constant(result_const));
+                return true;
             }
             false
         }
         Rvalue::UnaryOp(op, operand) => {
-            if let Operand::Constant(c) = operand {
-                if let MirConstKind::Int(val) = c.kind {
-                    let result = match op {
-                        glyim_core::primitives::UnOp::Neg => -val,
-                        glyim_core::primitives::UnOp::Not => !val,
-                        _ => return false,
-                    };
-                    let result_const = MirConst {
-                        kind: MirConstKind::Int(result),
-                        ty: c.ty.clone(),
-                        span: c.span,
-                    };
-                    *rv = Rvalue::Use(Operand::Constant(result_const));
-                    return true;
-                }
+            if let Operand::Constant(c) = operand
+                && let MirConstKind::Int(val) = c.kind
+            {
+                let result = match op {
+                    glyim_core::primitives::UnOp::Neg => -val,
+                    glyim_core::primitives::UnOp::Not => !val,
+                    _ => return false,
+                };
+                let result_const = MirConst {
+                    kind: MirConstKind::Int(result),
+                    ty: c.ty,
+                    span: c.span,
+                };
+                *rv = Rvalue::Use(Operand::Constant(result_const));
+                return true;
             }
             false
         }
