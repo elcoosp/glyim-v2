@@ -95,7 +95,10 @@ impl BytecodeBackend {
     }
 
     pub fn with_ty_ctx(mut self, ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
-        self.layout_provider = Box::new(GlyimLayoutProvider { ty_ctx: ctx, target });
+        self.layout_provider = Box::new(GlyimLayoutProvider {
+            ty_ctx: ctx,
+            target,
+        });
         self
     }
 
@@ -139,7 +142,9 @@ impl BytecodeBackend {
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     if elem_size == 0 {
-                        panic!("zero-sized element: cannot index into type with zero-sized elements");
+                        panic!(
+                            "zero-sized element: cannot index into type with zero-sized elements"
+                        );
                     }
                     bc.push(OP_LOAD_LOCAL);
                     bc.extend_from_slice(&local.to_raw().to_le_bytes());
@@ -264,7 +269,9 @@ impl BytecodeBackend {
                 }
                 Ok(())
             }
-            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => Ok(()),
+            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => {
+                Ok(())
+            }
         }
     }
 
@@ -426,10 +433,18 @@ impl BytecodeBackend {
                 bc.push(OP_RETURN);
                 Ok(())
             }
-            TerminatorKind::SwitchInt { discr, switch_ty, targets } => {
+            TerminatorKind::SwitchInt {
+                discr,
+                switch_ty,
+                targets,
+            } => {
                 if *switch_ty == Ty::BOOL {
                     self.emit_operand(bc, discr, local_tys)?;
-                    let false_target = targets.iter().next().map(|(_, t)| t).unwrap_or_else(|| targets.otherwise());
+                    let false_target = targets
+                        .iter()
+                        .next()
+                        .map(|(_, t)| t)
+                        .unwrap_or_else(|| targets.otherwise());
                     let true_target = targets.otherwise();
                     bc.push(OP_JUMP_IF);
                     bc.extend_from_slice(&true_target.to_raw().to_le_bytes());
@@ -453,7 +468,13 @@ impl BytecodeBackend {
                 bc.extend_from_slice(&target.to_raw().to_le_bytes());
                 Ok(())
             }
-            TerminatorKind::Call { func, args, destination, target, .. } => {
+            TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                target,
+                ..
+            } => {
                 let is_indirect = matches!(func, Operand::Copy(_) | Operand::Move(_));
                 self.emit_operand(bc, func, local_tys)?;
                 for arg in args {
@@ -471,14 +492,23 @@ impl BytecodeBackend {
                     }
                 }
                 bc.extend_from_slice(&(args.len() as u32).to_le_bytes());
-                bc.push(if is_indirect { OP_CALL_INDIRECT } else { OP_CALL });
+                bc.push(if is_indirect {
+                    OP_CALL_INDIRECT
+                } else {
+                    OP_CALL
+                });
                 bc.extend_from_slice(&destination.local.to_raw().to_le_bytes());
                 let t = target.unwrap_or_else(|| BasicBlockIdx::from_raw(u32::MAX));
                 bc.extend_from_slice(&t.to_raw().to_le_bytes());
                 Ok(())
             }
             TerminatorKind::Unreachable => Ok(()),
-            TerminatorKind::Assert { cond, expected, target, .. } => {
+            TerminatorKind::Assert {
+                cond,
+                expected,
+                target,
+                ..
+            } => {
                 self.emit_operand(bc, cond, local_tys)?;
                 bc.push(OP_ASSERT);
                 bc.push(if *expected { 1u8 } else { 0u8 });

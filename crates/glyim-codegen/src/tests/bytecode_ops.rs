@@ -82,23 +82,23 @@ fn build_body(
 /// returns `None` since we cannot determine the size without parsing sub-operands.
 fn opcode_operand_size(op: u8) -> Option<usize> {
     match op {
-        0x01 => Some(8),              // OP_LOAD_CONST: i64
-        0x02..=0x06 => Some(0),      // OP_ADD..OP_REM
-        0x07..=0x0F => Some(0),      // comparison/logical/not/neg
-        0x11..=0x15 => Some(0),      // bitwise/shift
-        0x16 => Some(4),             // OP_LOAD_LOCAL: u32
-        0x17 => Some(4),             // OP_STORE_LOCAL: u32
-        0x18 => Some(0),             // OP_RETURN
-        0x19 => Some(4),             // OP_JUMP_IF: u32
-        0x1A => Some(4),             // OP_JUMP: u32
-        0x1C => Some(1),             // OP_CAST: u8 kind
-        0x1E => Some(0),             // OP_DISCRIMINANT
-        0x1F => Some(0),             // OP_LEN
-        0x21 => Some(5),             // OP_ASSERT: u8 + u32
-        0x29 => Some(4),             // OP_LOAD_LOCAL_ADDR: u32
-        0x2A => Some(0),             // OP_STORE_FIELD
-        0x2B => Some(0),             // OP_DEREF
-        0x2C => Some(0),             // OP_DROP
+        0x01 => Some(8),        // OP_LOAD_CONST: i64
+        0x02..=0x06 => Some(0), // OP_ADD..OP_REM
+        0x07..=0x0F => Some(0), // comparison/logical/not/neg
+        0x11..=0x15 => Some(0), // bitwise/shift
+        0x16 => Some(4),        // OP_LOAD_LOCAL: u32
+        0x17 => Some(4),        // OP_STORE_LOCAL: u32
+        0x18 => Some(0),        // OP_RETURN
+        0x19 => Some(4),        // OP_JUMP_IF: u32
+        0x1A => Some(4),        // OP_JUMP: u32
+        0x1C => Some(1),        // OP_CAST: u8 kind
+        0x1E => Some(0),        // OP_DISCRIMINANT
+        0x1F => Some(0),        // OP_LEN
+        0x21 => Some(5),        // OP_ASSERT: u8 + u32
+        0x29 => Some(4),        // OP_LOAD_LOCAL_ADDR: u32
+        0x2A => Some(0),        // OP_STORE_FIELD
+        0x2B => Some(0),        // OP_DEREF
+        0x2C => Some(0),        // OP_DROP
         // Variable-length: cannot determine without parsing sub-operands
         0x1B | 0x22 | 0x1D | 0x20 | 0x2D => None,
         _ => Some(0), // Unknown opcode, assume no operands
@@ -126,9 +126,9 @@ fn disasm_opcodes(bc: &[u8]) -> Vec<(usize, u8)> {
 /// Find the position of the first occurrence of an opcode in the instruction stream,
 /// properly accounting for instruction boundaries. Returns `None` if not found.
 fn find_opcode(bc: &[u8], target: u8) -> Option<usize> {
-    disasm_opcodes(bc).into_iter().find_map(|(pos, op)| {
-        if op == target { Some(pos) } else { None }
-    })
+    disasm_opcodes(bc)
+        .into_iter()
+        .find_map(|(pos, op)| if op == target { Some(pos) } else { None })
 }
 
 // ---------------------------------------------------------------------------
@@ -169,22 +169,31 @@ fn test_index_emits_load_addr_plus_offset_plus_deref() {
     // OP_MUL (index * elem_size)
     // OP_ADD (base + offset)
     // OP_DEREF (dereference the computed address)
-    let la = find_opcode(&bc, OP_LOAD_LOCAL_ADDR)
-        .expect("should contain OP_LOAD_LOCAL_ADDR");
-    let ll = find_opcode(&bc, OP_LOAD_LOCAL)
-        .expect("should contain OP_LOAD_LOCAL");
-    let lc = find_opcode(&bc, OP_LOAD_CONST)
-        .expect("should contain OP_LOAD_CONST");
-    let m = find_opcode(&bc, OP_MUL)
-        .expect("should contain OP_MUL");
-    let a = find_opcode(&bc, OP_ADD)
-        .expect("should contain OP_ADD");
-    let d = find_opcode(&bc, OP_DEREF)
-        .expect("should contain OP_DEREF");
+    let la = find_opcode(&bc, OP_LOAD_LOCAL_ADDR).expect("should contain OP_LOAD_LOCAL_ADDR");
+    let ll = find_opcode(&bc, OP_LOAD_LOCAL).expect("should contain OP_LOAD_LOCAL");
+    let lc = find_opcode(&bc, OP_LOAD_CONST).expect("should contain OP_LOAD_CONST");
+    let m = find_opcode(&bc, OP_MUL).expect("should contain OP_MUL");
+    let a = find_opcode(&bc, OP_ADD).expect("should contain OP_ADD");
+    let d = find_opcode(&bc, OP_DEREF).expect("should contain OP_DEREF");
 
-    assert!(la < ll, "OP_LOAD_LOCAL_ADDR at {} should precede OP_LOAD_LOCAL at {}", la, ll);
-    assert!(ll < lc, "OP_LOAD_LOCAL at {} should precede OP_LOAD_CONST at {}", ll, lc);
-    assert!(lc < m, "OP_LOAD_CONST at {} should precede OP_MUL at {}", lc, m);
+    assert!(
+        la < ll,
+        "OP_LOAD_LOCAL_ADDR at {} should precede OP_LOAD_LOCAL at {}",
+        la,
+        ll
+    );
+    assert!(
+        ll < lc,
+        "OP_LOAD_LOCAL at {} should precede OP_LOAD_CONST at {}",
+        ll,
+        lc
+    );
+    assert!(
+        lc < m,
+        "OP_LOAD_CONST at {} should precede OP_MUL at {}",
+        lc,
+        m
+    );
     assert!(m < a, "OP_MUL at {} should precede OP_ADD at {}", m, a);
     assert!(a < d, "OP_ADD at {} should precede OP_DEREF at {}", a, d);
 }
@@ -300,17 +309,24 @@ fn test_field_access_emits_load_addr_plus_offset() {
         .expect("generate_function should succeed");
 
     // Verify: OP_LOAD_LOCAL_ADDR, then OP_LOAD_CONST (field offset), then OP_ADD, then OP_DEREF
-    let la = find_opcode(&bc, OP_LOAD_LOCAL_ADDR)
-        .expect("should contain OP_LOAD_LOCAL_ADDR");
-    let lc = find_opcode(&bc, OP_LOAD_CONST)
-        .expect("should contain OP_LOAD_CONST for field offset");
-    let a = find_opcode(&bc, OP_ADD)
-        .expect("should contain OP_ADD for field offset addition");
-    let d = find_opcode(&bc, OP_DEREF)
-        .expect("should contain OP_DEREF for field read");
+    let la = find_opcode(&bc, OP_LOAD_LOCAL_ADDR).expect("should contain OP_LOAD_LOCAL_ADDR");
+    let lc =
+        find_opcode(&bc, OP_LOAD_CONST).expect("should contain OP_LOAD_CONST for field offset");
+    let a = find_opcode(&bc, OP_ADD).expect("should contain OP_ADD for field offset addition");
+    let d = find_opcode(&bc, OP_DEREF).expect("should contain OP_DEREF for field read");
 
-    assert!(la < lc, "OP_LOAD_LOCAL_ADDR at {} should precede OP_LOAD_CONST at {}", la, lc);
-    assert!(lc < a, "OP_LOAD_CONST at {} should precede OP_ADD at {}", lc, a);
+    assert!(
+        la < lc,
+        "OP_LOAD_LOCAL_ADDR at {} should precede OP_LOAD_CONST at {}",
+        la,
+        lc
+    );
+    assert!(
+        lc < a,
+        "OP_LOAD_CONST at {} should precede OP_ADD at {}",
+        lc,
+        a
+    );
     assert!(a < d, "OP_ADD at {} should precede OP_DEREF at {}", a, d);
 }
 
