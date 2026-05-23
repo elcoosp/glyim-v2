@@ -73,7 +73,7 @@ impl TraitSolver for MockSolver {
 
     fn iterator_next_info(
         &self,
-        _ctx: &glyim_type::TyCtx,
+        _ctx_mut: &mut glyim_type::TyCtxMut,
         _iter_ty: glyim_type::Ty,
         _elem_ty: glyim_type::Ty,
     ) -> Option<glyim_solve::SolverIteratorNextInfo> {

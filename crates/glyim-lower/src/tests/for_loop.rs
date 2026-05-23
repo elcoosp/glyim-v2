@@ -130,3 +130,7 @@ fn for_loop_fallback_when_no_iterator_info() {
     assert!(result.diagnostics.is_empty());
     assert_eq!(result.body.basic_blocks.len(), 3, "Fallback should have 3 blocks: entry, loop, exit");
 }
+
+// Note: The real TraitSolver implementation (SimpleTraitSolver) now has a non-stub
+// iterator_next_info that uses registered trait methods. To test it, register the Iterator
+// trait with a suitable next_def_id and use SimpleTraitSolver in the test.

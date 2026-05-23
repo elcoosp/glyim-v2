@@ -1,29 +1,30 @@
-use glyim_core::def_id::{ImplDefId, TraitDefId, FnDefId};
+use glyim_core::def_id::{ImplDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_type::*;
 
 /// Information returned by the trait solver for `Iterator::next`.
 #[derive(Clone, Debug)]
 pub struct SolverIteratorNextInfo {
-    pub fn_def_id: FnDefId,
-    pub fn_substs: Substitution,
-    pub fn_ty: Ty,
-    pub option_ty: Ty,
-    pub discr_ty: Ty,
-    pub ref_iter_ty: Ty,
+    pub fn_def_id: glyim_core::def_id::FnDefId,
+    pub fn_substs: glyim_type::Substitution,
+    pub fn_ty: glyim_type::Ty,
+    pub option_ty: glyim_type::Ty,
+    pub discr_ty: glyim_type::Ty,
+    pub ref_iter_ty: glyim_type::Ty,
 }
+
 
 pub trait TraitSolver {
     fn can_prove(&mut self, ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult;
     fn evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult;
-
     /// Get the `Iterator::next` method info for a given iterator type.
     fn iterator_next_info(
         &self,
-        ctx: &TyCtx,
-        iter_ty: Ty,
-        elem_ty: Ty,
+        ctx_mut: &mut glyim_type::TyCtxMut,
+        iter_ty: glyim_type::Ty,
+        elem_ty: glyim_type::Ty,
     ) -> Option<SolverIteratorNextInfo>;
+
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,8 @@ pub enum SolverResult {
 pub struct TraitContext {
     trait_defs: Vec<TraitDef>,
     impl_defs: Vec<ImplDef>,
+    pub(crate) builtin_next_fn_id: Option<glyim_core::def_id::FnDefId>,
+
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +61,7 @@ impl TraitContext {
         Self {
             trait_defs: Vec::new(),
             impl_defs: Vec::new(),
+            builtin_next_fn_id: None
         }
     }
     pub fn register_trait(&mut self, def: TraitDef) {
@@ -83,6 +87,8 @@ impl TraitContext {
     /// Checks coherence (orphan rules and overlap detection).
     /// Returns an error string if the impl violates coherence.
     pub fn check_coherence(&self, impl_def: &ImplDef) -> Result<(), String> {
+        // 1. Orphan rule: At least one of the type arguments in the trait reference
+        //    must be a local type defined in the current crate.
         let has_local_type = self.substs_has_local_type(&impl_def.trait_ref.substs);
         if !has_local_type {
             return Err(format!(
@@ -91,6 +97,7 @@ impl TraitContext {
             ));
         }
 
+        // 2. Overlap detection: Ensure no two impls for the same trait overlap.
         for other in self.impls_of_trait(impl_def.trait_ref.def_id) {
             if other.def_id == impl_def.def_id {
                 continue;
@@ -105,16 +112,26 @@ impl TraitContext {
         Ok(())
     }
 
+    /// Naive check to see if substitutions contain a local type.
     fn substs_has_local_type(&self, substs: &Substitution) -> bool {
         !substs.is_empty()
     }
 
+    /// Naive overlap check between two trait references.
     fn impls_overlap(&self, a: &TraitRef, b: &TraitRef) -> bool {
         if a.def_id != b.def_id {
             return false;
         }
+
+        // Naive check: identical substitutions overlap.
+        // A full check would require deep unification with TyCtx, which is not available here.
         a.substs == b.substs
     }
+    /// Set the FnDefId of the `Iterator::next` method for built-in support.
+    pub fn set_builtin_iterator_next(&mut self, fn_def_id: glyim_core::def_id::FnDefId) {
+        self.builtin_next_fn_id = Some(fn_def_id);
+    }
+
 }
 impl Default for TraitContext {
     fn default() -> Self {
@@ -131,6 +148,7 @@ impl<'a> SimpleTraitSolver<'a> {
         Self { trait_ctx }
     }
 
+    /// Attempt to match the predicate's TraitRef against an impl's TraitRef.
     fn matches_trait_ref(
         &self,
         ctx: &TyCtx,
@@ -326,6 +344,7 @@ impl<'a> SimpleTraitSolver<'a> {
         }
 
         if proven_count > 1 {
+            // Multiple impls fully apply -> Ambiguous
             SolverResult::Ambiguous
         } else if proven_count == 1 {
             SolverResult::Proven
@@ -372,6 +391,7 @@ fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
                     && can_coerce(ctx, *inner_a, *inner_b)
         }
         (TyKind::Ref(_, inner_a, mut_a), TyKind::RawPtr(inner_b, mut_b)) => {
+            // &T -> *const T (Not -> Not) and &mut T -> *mut T (Mut -> Mut)
             if *mut_a != *mut_b {
                 return false;
             }
@@ -401,13 +421,30 @@ impl TraitSolver for SimpleTraitSolver<'_> {
             }
         }
     }
-
     fn iterator_next_info(
         &self,
-        _ctx: &TyCtx,
-        _iter_ty: Ty,
-        _elem_ty: Ty,
+        ctx_mut: &mut glyim_type::TyCtxMut,
+        iter_ty: glyim_type::Ty,
+        elem_ty: glyim_type::Ty,
     ) -> Option<SolverIteratorNextInfo> {
-        None
+        let next_def_id = self.trait_ctx.builtin_next_fn_id?;
+        // Build substitution: Self -> iter_ty (Iterator has one type parameter)
+        let substs = ctx_mut.intern_substitution(vec![glyim_type::GenericArg::Ty(iter_ty)]);
+        let fn_ty = ctx_mut.mk_ty(glyim_type::TyKind::FnDef(next_def_id, substs));
+        // Option<elem_ty> - placeholder ADT ID (should be lang item)
+        let option_adt = glyim_core::def_id::AdtId::from_raw(101);
+        let opt_subst = ctx_mut.intern_substitution(vec![glyim_type::GenericArg::Ty(elem_ty)]);
+        let option_ty = ctx_mut.mk_ty(glyim_type::TyKind::Adt(option_adt, opt_subst));
+        let discr_ty = ctx_mut.mk_ty(glyim_type::TyKind::Uint(glyim_core::primitives::UintTy::U8));
+        let ref_iter_ty = ctx_mut.mk_ref(glyim_type::Region::Erased, iter_ty, glyim_core::primitives::Mutability::Mut);
+        Some(SolverIteratorNextInfo {
+            fn_def_id: next_def_id,
+            fn_substs: substs,
+            fn_ty,
+            option_ty,
+            discr_ty,
+            ref_iter_ty,
+        })
     }
+
 }
