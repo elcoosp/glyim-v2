@@ -156,6 +156,7 @@ impl SymbolIndex {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn index_pattern(
         &mut self,
         file_id: FileId,

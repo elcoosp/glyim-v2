@@ -54,15 +54,16 @@ impl DependencyGraph {
 
     /// Get all files that need to be re-analyzed when `file` changes.
     /// Returns a set containing the changed file and all its reverse dependencies (transitively).
+    #[allow(clippy::ptr_arg)] // &PathBuf matches the stored key type
     pub fn affected_files(&self, file: &PathBuf) -> HashSet<PathBuf> {
         let mut affected = HashSet::new();
         let mut stack = vec![file.clone()];
         while let Some(f) = stack.pop() {
-            if affected.insert(f.clone()) {
-                if let Some(dependents) = self.rev_deps.get(&f) {
-                    for dep in dependents {
-                        stack.push(dep.clone());
-                    }
+            if affected.insert(f.clone())
+                && let Some(dependents) = self.rev_deps.get(&f)
+            {
+                for dep in dependents {
+                    stack.push(dep.clone());
                 }
             }
         }

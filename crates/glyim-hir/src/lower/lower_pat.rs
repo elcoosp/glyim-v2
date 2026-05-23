@@ -93,13 +93,13 @@ pub(crate) fn lower_pat(
                         after_dot = true;
                     }
                     glyim_syntax::SyntaxElement::Node(n) => {
-                        if let Some(pat_id) = lower_pat(&n, interner, pats, diags) {
-                            if let Pat::Literal(lit) = &pats[pat_id] {
-                                if !after_dot {
-                                    start = Some(lit.clone());
-                                } else {
-                                    end = Some(lit.clone());
-                                }
+                        if let Some(pat_id) = lower_pat(&n, interner, pats, diags)
+                            && let Pat::Literal(lit) = &pats[pat_id]
+                        {
+                            if !after_dot {
+                                start = Some(lit.clone());
+                            } else {
+                                end = Some(lit.clone());
                             }
                         }
                     }
@@ -176,14 +176,13 @@ pub(crate) fn lower_pat(
                                         | SyntaxKind::PatRange
                                         | SyntaxKind::PatSlice
                                 )
+                                && let Some(pat_id) = lower_pat(&sub_n, interner, pats, diags)
                             {
-                                if let Some(pat_id) = lower_pat(&sub_n, interner, pats, diags) {
-                                    let field_name = {
-                                        let s = sub_n.text().to_string();
-                                        interner.intern(s.trim())
-                                    };
-                                    fields.push((field_name, pat_id));
-                                }
+                                let field_name = {
+                                    let s = sub_n.text().to_string();
+                                    interner.intern(s.trim())
+                                };
+                                fields.push((field_name, pat_id));
                             }
                         }
                     }
@@ -194,51 +193,51 @@ pub(crate) fn lower_pat(
                         let mut subpattern_node = None;
                         let siblings: Vec<glyim_syntax::SyntaxElement> =
                             node.children_with_tokens().collect();
-                        for i in 0..siblings.len() {
-                            if let glyim_syntax::SyntaxElement::Node(sn) = &siblings[i] {
-                                if *sn == *n {
-                                    for j in (i + 1)..siblings.len() {
-                                        match &siblings[j] {
-                                            glyim_syntax::SyntaxElement::Token(t)
-                                                if t.kind() == SyntaxKind::Colon =>
-                                            {
-                                                has_colon = true;
-                                            }
-                                            glyim_syntax::SyntaxElement::Token(t)
-                                                if t.kind().is_trivia() =>
-                                            {
-                                                continue;
-                                            }
-                                            glyim_syntax::SyntaxElement::Node(pn)
-                                                if matches!(
-                                                    pn.kind(),
-                                                    SyntaxKind::PatIdent
-                                                        | SyntaxKind::PatWild
-                                                        | SyntaxKind::PatLit
-                                                        | SyntaxKind::PatTuple
-                                                        | SyntaxKind::PatStruct
-                                                        | SyntaxKind::PatOr
-                                                        | SyntaxKind::PatRange
-                                                        | SyntaxKind::PatSlice
-                                                ) =>
-                                            {
-                                                if has_colon {
-                                                    subpattern_node = Some(pn.clone());
-                                                }
-                                                break;
-                                            }
-                                            _ => break,
+                        for (i, el) in siblings.iter().enumerate() {
+                            if let glyim_syntax::SyntaxElement::Node(sn) = el
+                                && *sn == *n
+                            {
+                                for sibling in siblings.iter().skip(i + 1) {
+                                    match sibling {
+                                        glyim_syntax::SyntaxElement::Token(t)
+                                            if t.kind() == SyntaxKind::Colon =>
+                                        {
+                                            has_colon = true;
                                         }
+                                        glyim_syntax::SyntaxElement::Token(t)
+                                            if t.kind().is_trivia() =>
+                                        {
+                                            continue;
+                                        }
+                                        glyim_syntax::SyntaxElement::Node(pn)
+                                            if matches!(
+                                                pn.kind(),
+                                                SyntaxKind::PatIdent
+                                                    | SyntaxKind::PatWild
+                                                    | SyntaxKind::PatLit
+                                                    | SyntaxKind::PatTuple
+                                                    | SyntaxKind::PatStruct
+                                                    | SyntaxKind::PatOr
+                                                    | SyntaxKind::PatRange
+                                                    | SyntaxKind::PatSlice
+                                            ) =>
+                                        {
+                                            if has_colon {
+                                                subpattern_node = Some(pn.clone());
+                                            }
+                                            break;
+                                        }
+                                        _ => break,
                                     }
-                                    break;
                                 }
+                                break;
                             }
                         }
                         if has_colon {
-                            if let Some(sub_n) = subpattern_node {
-                                if let Some(pat_id) = lower_pat(&sub_n, interner, pats, diags) {
-                                    fields.push((name, pat_id));
-                                }
+                            if let Some(sub_n) = subpattern_node
+                                && let Some(pat_id) = lower_pat(&sub_n, interner, pats, diags)
+                            {
+                                fields.push((name, pat_id));
                             }
                         } else {
                             let binding_id = pats.push(Pat::Binding {
@@ -258,10 +257,7 @@ pub(crate) fn lower_pat(
                 }
             }
 
-            let path = match path {
-                Some(p) => p,
-                None => return None,
-            };
+            let path = path?;
             Some(pats.push(Pat::Struct { path, fields, rest }))
         }
         SyntaxKind::UsePath => {

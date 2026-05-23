@@ -292,11 +292,9 @@ impl<'a> FnCtxt<'a> {
                 for arm in arms {
                     self.env.enter_scope();
                     let pat_thir = self.check_pattern(arm.pat, scrut_ty);
-                    let guard_thir = if let Some(guard_id) = arm.guard {
-                        Some(Box::new(self.check_expr(guard_id).0))
-                    } else {
-                        None
-                    };
+                    let guard_thir = arm
+                        .guard
+                        .map(|guard_id| Box::new(self.check_expr(guard_id).0));
                     let (body_expr, body_ty) = self.check_expr(arm.body);
                     self.env.leave_scope();
                     if body_ty != Ty::ERROR {

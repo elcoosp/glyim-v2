@@ -1251,6 +1251,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyim_const_eval"
+version = "0.1.0"
+dependencies = [
+ "glyim-core",
+ "glyim-diag",
+ "glyim-hir",
+ "glyim-span",
+ "glyim-test",
+ "tracing",
+]
+
+[[package]]
 name = "glyip"
 version = "0.1.0"
 dependencies = [

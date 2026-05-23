@@ -170,11 +170,10 @@ impl ReferenceGraph {
                         walk_expr(arm.body, body, interner, _file_id, add_ref);
                     }
                 }
-                Expr::Return { value } => {
-                    if let Some(val) = value {
-                        walk_expr(*val, body, interner, _file_id, add_ref);
-                    }
+                Expr::Return { value: Some(val) } => {
+                    walk_expr(*val, body, interner, _file_id, add_ref);
                 }
+                Expr::Return { value: None } => {}
                 Expr::Assign { lhs, rhs } => {
                     walk_expr(*lhs, body, interner, _file_id, add_ref);
                     walk_expr(*rhs, body, interner, _file_id, add_ref);
