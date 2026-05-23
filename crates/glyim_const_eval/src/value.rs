@@ -1,7 +1,7 @@
 //! Runtime values produced by const evaluation.
 
-use glyim_core::primitives::{IntTy, UintTy, FloatTy};
 use glyim_core::interner::Name;
+use glyim_core::primitives::{FloatTy, IntTy, UintTy};
 
 /// A value produced by constant evaluation.
 ///
@@ -27,6 +27,90 @@ pub enum ConstValue {
 }
 
 impl ConstValue {
+    /// Validate that this value fits within the range of its declared type.
+    ///
+    /// After arithmetic on `i128`/`u128` representations, the result may
+    /// exceed the range of the specific integer type (e.g., `i32`). This
+    /// method checks the range and returns `None` if the value overflows.
+    pub fn validate_range(&self) -> Option<ConstValue> {
+        match self {
+            ConstValue::Int(v, IntTy::I8) => {
+                if *v >= i8::MIN as i128 && *v <= i8::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Int(v, IntTy::I16) => {
+                if *v >= i16::MIN as i128 && *v <= i16::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Int(v, IntTy::I32) => {
+                if *v >= i32::MIN as i128 && *v <= i32::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Int(v, IntTy::I64) => {
+                if *v >= i64::MIN as i128 && *v <= i64::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Int(v, IntTy::Isize) => {
+                // Assume 64-bit target for const eval
+                if *v >= i64::MIN as i128 && *v <= i64::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Uint(v, UintTy::U8) => {
+                if *v <= u8::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Uint(v, UintTy::U16) => {
+                if *v <= u16::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Uint(v, UintTy::U32) => {
+                if *v <= u32::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Uint(v, UintTy::U64) => {
+                if *v <= u64::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            ConstValue::Uint(v, UintTy::Usize) => {
+                // Assume 64-bit target for const eval
+                if *v <= u64::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
+            // Float, Bool, Char, String, Unit don't overflow
+            _ => Some(self.clone()),
+        }
+    }
+
     /// Returns `true` if this value is a boolean.
     pub fn is_bool(&self) -> bool {
         matches!(self, ConstValue::Bool(_))

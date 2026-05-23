@@ -1,7 +1,7 @@
 //! Constant expression evaluator.
 
-use glyim_core::primitives::{BinOp, UnOp, IntTy, UintTy};
-use glyim_hir::{Body, Expr, ExprId, Literal, Pat, MatchArm};
+use glyim_core::primitives::{BinOp, IntTy, UintTy, UnOp};
+use glyim_hir::{Body, Expr, ExprId, Literal, MatchArm, Pat};
 use glyim_span::Span;
 
 use crate::{ConstEvalError, ConstEvalResult, ConstValue, MAX_EVAL_DEPTH};
@@ -53,16 +53,15 @@ impl<'a> ConstEvaluator<'a> {
 
     /// Get the span for an expression ID.
     fn expr_span(&self, expr_id: ExprId) -> Span {
-        self.body.expr_spans.get(expr_id).copied().unwrap_or(Span::DUMMY)
+        self.body
+            .expr_spans
+            .get(expr_id)
+            .copied()
+            .unwrap_or(Span::DUMMY)
     }
 
     /// Evaluate an expression node with depth tracking.
-    fn evaluate_expr(
-        &self,
-        expr: &Expr,
-        span: Span,
-        depth: u32,
-    ) -> ConstEvalResult<ConstValue> {
+    fn evaluate_expr(&self, expr: &Expr, span: Span, depth: u32) -> ConstEvalResult<ConstValue> {
         if depth >= MAX_EVAL_DEPTH {
             return Err(ConstEvalError::new(
                 "const evaluation recursion limit exceeded",
@@ -72,29 +71,15 @@ impl<'a> ConstEvaluator<'a> {
 
         match expr {
             Expr::Literal(lit) => self.eval_literal(lit, span),
-
-            Expr::Binary { op, lhs, rhs } => {
-                self.eval_binary(*op, *lhs, *rhs, span, depth)
-            }
-
-            Expr::Unary { op, expr } => {
-                self.eval_unary(*op, *expr, span, depth)
-            }
-
+            Expr::Binary { op, lhs, rhs } => self.eval_binary(*op, *lhs, *rhs, span, depth),
+            Expr::Unary { op, expr } => self.eval_unary(*op, *expr, span, depth),
             Expr::If {
                 cond,
                 then_branch,
                 else_branch,
             } => self.eval_if(*cond, *then_branch, *else_branch, span, depth),
-
-            Expr::Match { scrutinee, arms } => {
-                self.eval_match(*scrutinee, arms, span, depth)
-            }
-
-            Expr::Block { stmts, tail } => {
-                self.eval_block(stmts, *tail, depth)
-            }
-
+            Expr::Match { scrutinee, arms } => self.eval_match(*scrutinee, arms, span, depth),
+            Expr::Block { stmts, tail } => self.eval_block(stmts, *tail, depth),
             Expr::Tuple(elements) => {
                 if elements.is_empty() {
                     Ok(ConstValue::Unit)
@@ -105,17 +90,14 @@ impl<'a> ConstEvaluator<'a> {
                     ))
                 }
             }
-
             Expr::Missing => Err(ConstEvalError::new(
                 "missing expression in const evaluation",
                 span,
             )),
-
             Expr::Err => Err(ConstEvalError::new(
                 "error expression in const evaluation",
                 span,
             )),
-
             _ => Err(ConstEvalError::new(
                 "this expression kind is not supported in const evaluation",
                 span,
@@ -152,11 +134,11 @@ impl<'a> ConstEvaluator<'a> {
         self.apply_binop(op, &lhs, &rhs, span)
     }
 
-    /// Evaluate an expression at a given depth.
+    /// Evaluate an expression, incrementing the recursion depth.
     fn evaluate_at_depth(&self, expr_id: ExprId, depth: u32) -> ConstEvalResult<ConstValue> {
         let span = self.expr_span(expr_id);
         let expr = &self.body.exprs[expr_id];
-        self.evaluate_expr(expr, span, depth)
+        self.evaluate_expr(expr, span, depth + 1)
     }
 
     /// Apply a binary operator to two evaluated values.
@@ -168,69 +150,74 @@ impl<'a> ConstEvaluator<'a> {
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
         match op {
-            BinOp::Add => lhs.checked_add(rhs).ok_or_else(|| {
-                ConstEvalError::new("overflow in const addition or incompatible types", span)
-            }),
-
-            BinOp::Sub => lhs.checked_sub(rhs).ok_or_else(|| {
-                ConstEvalError::new("overflow in const subtraction or incompatible types", span)
-            }),
-
-            BinOp::Mul => lhs.checked_mul(rhs).ok_or_else(|| {
-                ConstEvalError::new("overflow in const multiplication or incompatible types", span)
-            }),
-
+            BinOp::Add => {
+                let result = lhs.checked_add(rhs).ok_or_else(|| {
+                    ConstEvalError::new("overflow in const addition or incompatible types", span)
+                })?;
+                result
+                    .validate_range()
+                    .ok_or_else(|| ConstEvalError::new("overflow in const addition", span))
+            }
+            BinOp::Sub => {
+                let result = lhs.checked_sub(rhs).ok_or_else(|| {
+                    ConstEvalError::new("overflow in const subtraction or incompatible types", span)
+                })?;
+                result
+                    .validate_range()
+                    .ok_or_else(|| ConstEvalError::new("overflow in const subtraction", span))
+            }
+            BinOp::Mul => {
+                let result = lhs.checked_mul(rhs).ok_or_else(|| {
+                    ConstEvalError::new(
+                        "overflow in const multiplication or incompatible types",
+                        span,
+                    )
+                })?;
+                result
+                    .validate_range()
+                    .ok_or_else(|| ConstEvalError::new("overflow in const multiplication", span))
+            }
             BinOp::Div => {
                 self.check_div_by_zero(lhs, rhs, span, "division")?;
-                lhs.checked_div(rhs).ok_or_else(|| {
-                    ConstEvalError::new(
-                        "overflow in const division or incompatible types",
-                        span,
-                    )
-                })
+                let result = lhs.checked_div(rhs).ok_or_else(|| {
+                    ConstEvalError::new("overflow in const division or incompatible types", span)
+                })?;
+                result
+                    .validate_range()
+                    .ok_or_else(|| ConstEvalError::new("overflow in const division", span))
             }
-
             BinOp::Rem => {
                 self.check_div_by_zero(lhs, rhs, span, "remainder")?;
-                lhs.checked_rem(rhs).ok_or_else(|| {
-                    ConstEvalError::new(
-                        "overflow in const remainder or incompatible types",
-                        span,
-                    )
-                })
+                let result = lhs.checked_rem(rhs).ok_or_else(|| {
+                    ConstEvalError::new("overflow in const remainder or incompatible types", span)
+                })?;
+                result
+                    .validate_range()
+                    .ok_or_else(|| ConstEvalError::new("overflow in const remainder", span))
             }
-
             BinOp::Eq => self.compare_eq(lhs, rhs),
             BinOp::Ne => {
                 let eq = self.compare_eq(lhs, rhs)?;
-                eq.as_bool()
-                    .map(|b| ConstValue::Bool(!b))
-                    .ok_or_else(|| {
-                        ConstEvalError::new("internal error in const != comparison", span)
-                    })
+                eq.as_bool().map(|b| ConstValue::Bool(!b)).ok_or_else(|| {
+                    ConstEvalError::new("internal error in const != comparison", span)
+                })
             }
             BinOp::Lt => self.compare_lt(lhs, rhs, span),
             BinOp::Gt => self.compare_lt(rhs, lhs, span),
             BinOp::LtEq => {
                 let gt = self.compare_lt(rhs, lhs, span)?;
-                gt.as_bool()
-                    .map(|b| ConstValue::Bool(!b))
-                    .ok_or_else(|| {
-                        ConstEvalError::new("internal error in const <= comparison", span)
-                    })
+                gt.as_bool().map(|b| ConstValue::Bool(!b)).ok_or_else(|| {
+                    ConstEvalError::new("internal error in const <= comparison", span)
+                })
             }
             BinOp::GtEq => {
                 let lt = self.compare_lt(lhs, rhs, span)?;
-                lt.as_bool()
-                    .map(|b| ConstValue::Bool(!b))
-                    .ok_or_else(|| {
-                        ConstEvalError::new("internal error in const >= comparison", span)
-                    })
+                lt.as_bool().map(|b| ConstValue::Bool(!b)).ok_or_else(|| {
+                    ConstEvalError::new("internal error in const >= comparison", span)
+                })
             }
-
             BinOp::And => self.logical_and(lhs, rhs, span),
             BinOp::Or => self.logical_or(lhs, rhs, span),
-
             BinOp::BitAnd => self.bitwise_and(lhs, rhs, span),
             BinOp::BitOr => self.bitwise_or(lhs, rhs, span),
             BinOp::BitXor => self.bitwise_xor(lhs, rhs, span),
@@ -249,12 +236,10 @@ impl<'a> ConstEvaluator<'a> {
     ) -> ConstEvalResult<()> {
         match (lhs, rhs) {
             (ConstValue::Int(_, _), ConstValue::Int(0, _))
-            | (ConstValue::Uint(_, _), ConstValue::Uint(0, _)) => {
-                Err(ConstEvalError::new(
-                    format!("{} by zero in const evaluation", op_name),
-                    span,
-                ))
-            }
+            | (ConstValue::Uint(_, _), ConstValue::Uint(0, _)) => Err(ConstEvalError::new(
+                format!("{} by zero in const evaluation", op_name),
+                span,
+            )),
             _ => Ok(()),
         }
     }
@@ -300,17 +285,15 @@ impl<'a> ConstEvaluator<'a> {
         rhs: &ConstValue,
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
-        let a = lhs.as_bool().ok_or_else(|| {
-            ConstEvalError::new("const && requires boolean operands", span)
-        })?;
+        let a = lhs
+            .as_bool()
+            .ok_or_else(|| ConstEvalError::new("const && requires boolean operands", span))?;
         if !a {
             return Ok(ConstValue::Bool(false));
         }
         rhs.as_bool()
             .map(ConstValue::Bool)
-            .ok_or_else(|| {
-                ConstEvalError::new("const && requires boolean operands", span)
-            })
+            .ok_or_else(|| ConstEvalError::new("const && requires boolean operands", span))
     }
 
     /// Logical OR with short-circuit semantics.
@@ -320,17 +303,15 @@ impl<'a> ConstEvaluator<'a> {
         rhs: &ConstValue,
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
-        let a = lhs.as_bool().ok_or_else(|| {
-            ConstEvalError::new("const || requires boolean operands", span)
-        })?;
+        let a = lhs
+            .as_bool()
+            .ok_or_else(|| ConstEvalError::new("const || requires boolean operands", span))?;
         if a {
             return Ok(ConstValue::Bool(true));
         }
         rhs.as_bool()
             .map(ConstValue::Bool)
-            .ok_or_else(|| {
-                ConstEvalError::new("const || requires boolean operands", span)
-            })
+            .ok_or_else(|| ConstEvalError::new("const || requires boolean operands", span))
     }
 
     /// Bitwise AND.
@@ -341,15 +322,9 @@ impl<'a> ConstEvaluator<'a> {
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
         match (lhs, rhs) {
-            (ConstValue::Int(a, ty), ConstValue::Int(b, _)) => {
-                Ok(ConstValue::Int(a & b, *ty))
-            }
-            (ConstValue::Uint(a, ty), ConstValue::Uint(b, _)) => {
-                Ok(ConstValue::Uint(a & b, *ty))
-            }
-            (ConstValue::Bool(a), ConstValue::Bool(b)) => {
-                Ok(ConstValue::Bool(*a && *b))
-            }
+            (ConstValue::Int(a, ty), ConstValue::Int(b, _)) => Ok(ConstValue::Int(a & b, *ty)),
+            (ConstValue::Uint(a, ty), ConstValue::Uint(b, _)) => Ok(ConstValue::Uint(a & b, *ty)),
+            (ConstValue::Bool(a), ConstValue::Bool(b)) => Ok(ConstValue::Bool(*a && *b)),
             _ => Err(ConstEvalError::new(
                 "const & requires matching integer or boolean operands",
                 span,
@@ -365,15 +340,9 @@ impl<'a> ConstEvaluator<'a> {
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
         match (lhs, rhs) {
-            (ConstValue::Int(a, ty), ConstValue::Int(b, _)) => {
-                Ok(ConstValue::Int(a | b, *ty))
-            }
-            (ConstValue::Uint(a, ty), ConstValue::Uint(b, _)) => {
-                Ok(ConstValue::Uint(a | b, *ty))
-            }
-            (ConstValue::Bool(a), ConstValue::Bool(b)) => {
-                Ok(ConstValue::Bool(*a || *b))
-            }
+            (ConstValue::Int(a, ty), ConstValue::Int(b, _)) => Ok(ConstValue::Int(a | b, *ty)),
+            (ConstValue::Uint(a, ty), ConstValue::Uint(b, _)) => Ok(ConstValue::Uint(a | b, *ty)),
+            (ConstValue::Bool(a), ConstValue::Bool(b)) => Ok(ConstValue::Bool(*a || *b)),
             _ => Err(ConstEvalError::new(
                 "const | requires matching integer or boolean operands",
                 span,
@@ -389,15 +358,9 @@ impl<'a> ConstEvaluator<'a> {
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
         match (lhs, rhs) {
-            (ConstValue::Int(a, ty), ConstValue::Int(b, _)) => {
-                Ok(ConstValue::Int(a ^ b, *ty))
-            }
-            (ConstValue::Uint(a, ty), ConstValue::Uint(b, _)) => {
-                Ok(ConstValue::Uint(a ^ b, *ty))
-            }
-            (ConstValue::Bool(a), ConstValue::Bool(b)) => {
-                Ok(ConstValue::Bool(*a ^ *b))
-            }
+            (ConstValue::Int(a, ty), ConstValue::Int(b, _)) => Ok(ConstValue::Int(a ^ b, *ty)),
+            (ConstValue::Uint(a, ty), ConstValue::Uint(b, _)) => Ok(ConstValue::Uint(a ^ b, *ty)),
+            (ConstValue::Bool(a), ConstValue::Bool(b)) => Ok(ConstValue::Bool(*a ^ *b)),
             _ => Err(ConstEvalError::new(
                 "const ^ requires matching integer or boolean operands",
                 span,
@@ -468,12 +431,14 @@ impl<'a> ConstEvaluator<'a> {
                     span,
                 )
             }),
-            UnOp::Neg => val.checked_neg().ok_or_else(|| {
-                ConstEvalError::new(
-                    "const negation overflow or incompatible type",
-                    span,
-                )
-            }),
+            UnOp::Neg => {
+                let result = val.checked_neg().ok_or_else(|| {
+                    ConstEvalError::new("const negation overflow or incompatible type", span)
+                })?;
+                result
+                    .validate_range()
+                    .ok_or_else(|| ConstEvalError::new("overflow in const negation", span))
+            }
             UnOp::Deref => Err(ConstEvalError::new(
                 "dereference is not supported in const evaluation",
                 span,
@@ -491,10 +456,9 @@ impl<'a> ConstEvaluator<'a> {
         depth: u32,
     ) -> ConstEvalResult<ConstValue> {
         let cond_val = self.evaluate_at_depth(cond_id, depth)?;
-
-        let cond_bool = cond_val.as_bool().ok_or_else(|| {
-            ConstEvalError::new("const `if` condition must be a boolean", span)
-        })?;
+        let cond_bool = cond_val
+            .as_bool()
+            .ok_or_else(|| ConstEvalError::new("const `if` condition must be a boolean", span))?;
 
         if cond_bool {
             self.evaluate_at_depth(then_id, depth)
@@ -549,9 +513,7 @@ impl<'a> ConstEvaluator<'a> {
                 Ok(false)
             }
             _ => {
-                tracing::debug!(
-                    "pattern kind not supported in const match evaluation"
-                );
+                tracing::debug!("pattern kind not supported in const match evaluation");
                 Ok(false)
             }
         }

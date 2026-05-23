@@ -190,10 +190,10 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
             if let StatementKind::Assign(place, rvalue) = &stmt.kind {
                 // Writing to a local kills previous knowledge
                 out.remove(&place.local);
-                if place.projection.is_empty() {
-                    if let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx) {
-                        out.insert(place.local, Some(c));
-                    }
+                if place.projection.is_empty()
+                    && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
+                {
+                    out.insert(place.local, Some(c));
                 }
             }
         }
@@ -217,6 +217,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
     }
 
     // Now rewrite the MIR using the final in_maps (which are the entry maps for each block)
+    #[allow(clippy::needless_range_loop)] // bb_idx indexes both in_maps and basic_blocks
     for bb_idx in 0..num_blocks {
         if let Some(map) = &in_maps[bb_idx] {
             let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];

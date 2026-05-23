@@ -973,18 +973,17 @@ impl<'a> MirBuilder<'a> {
                 end,
                 inclusive,
             } => {
-                if let (Some(s), Some(e)) = (start, end) {
-                    if let (Some(s_val), Some(e_val)) =
+                if let (Some(s), Some(e)) = (start, end)
+                    && let (Some(s_val), Some(e_val)) =
                         (self.literal_to_u128(s), self.literal_to_u128(e))
-                    {
-                        let end_val = if *inclusive {
-                            e_val
-                        } else {
-                            e_val.saturating_sub(1)
-                        };
-                        for v in s_val..=end_val {
-                            targets.push((v, arm_bb));
-                        }
+                {
+                    let end_val = if *inclusive {
+                        e_val
+                    } else {
+                        e_val.saturating_sub(1)
+                    };
+                    for v in s_val..=end_val {
+                        targets.push((v, arm_bb));
                     }
                 }
             }
@@ -1035,10 +1034,7 @@ impl<'a> MirBuilder<'a> {
             TyKind::Adt(adt_id, _substs) => self.ctx.field_index_by_name(*adt_id, 0, field_name),
             TyKind::Tuple(_substs) => {
                 let name_str = self.ctx.ty_ctx().name_str(field_name);
-                name_str
-                    .parse::<u32>()
-                    .ok()
-                    .map(|idx| FieldIdx::from_raw(idx))
+                name_str.parse::<u32>().ok().map(FieldIdx::from_raw)
             }
             _ => None,
         }

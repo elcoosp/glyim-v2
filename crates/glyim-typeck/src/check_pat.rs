@@ -122,8 +122,8 @@ impl<'a> FnCtxt<'a> {
                 end,
                 inclusive,
             } => {
-                let start_opt = start.as_ref().map(|lit| crate::unify::thir_literal(lit));
-                let end_opt = end.as_ref().map(|lit| crate::unify::thir_literal(lit));
+                let start_opt = start.as_ref().map(crate::unify::thir_literal);
+                let end_opt = end.as_ref().map(crate::unify::thir_literal);
                 let ty = expected_ty;
                 if ty != Ty::ERROR {
                     if let Some(lit) = start.as_ref() {
