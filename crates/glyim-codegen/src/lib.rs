@@ -4,7 +4,6 @@ use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_diag::CompResult;
 use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer};
-use glyim_mir::VariantIdx;
 use glyim_mir::*;
 use glyim_type::{FieldIdx, Substitution, Ty, TyCtx};
 use std::cell::RefCell;
@@ -21,9 +20,6 @@ pub trait CodegenBackend {
 pub trait LayoutProvider {
     fn field_offset(&self, ty: Ty, field_idx: FieldIdx) -> u64;
     fn size_of(&self, ty: Ty) -> u64;
-    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
-        Ty::ERROR
-    }
 }
 
 /// Real layout provider using glyim-layout.
@@ -59,7 +55,7 @@ impl LayoutProvider for GlyimLayoutProvider {
         }
     }
 
-                        fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
+        fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
         use glyim_type::TyKind;
         match self.ty_ctx.ty_kind(enum_ty) {
             TyKind::Adt(adt_id, _substs) => {
@@ -79,9 +75,6 @@ impl LayoutProvider for FallbackLayoutProvider {
     }
     fn size_of(&self, _ty: Ty) -> u64 {
         8
-    }
-    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
-        Ty::ERROR
     }
 }
 
@@ -171,9 +164,7 @@ impl BytecodeBackend {
                     bc.push(OP_ADD);
                     current_ty = Ty::ERROR;
                 }
-                ProjectionElem::Downcast(variant_idx) => {
-                    current_ty = self.layout_provider.variant_type(current_ty, *variant_idx);
-                }
+                ProjectionElem::Downcast(_) => {}
                 ProjectionElem::Slice { .. } => {
                     tracing::warn!("Slice projection not implemented in codegen");
                 }

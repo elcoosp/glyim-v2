@@ -26,6 +26,7 @@ pub struct TyCtxMut {
     interior_mutable_adt_ids: HashSet<AdtId>,
     interior_mutability_cache: HashMap<AdtId, bool>,
     adt_defs: HashMap<AdtId, AdtDef>,
+    variant_types: HashMap<AdtId, Vec<Ty>>,
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
@@ -45,6 +46,8 @@ impl TyCtxMut {
             interior_mutable_adt_ids: HashSet::new(),
             interior_mutability_cache: HashMap::new(),
             adt_defs: HashMap::new(),
+            variant_types: HashMap::new(),
+            variant_types: HashMap::new(),
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
             body_tys: HashMap::new(),
@@ -189,32 +192,9 @@ impl TyCtxMut {
         self.regions.len()
     }
 
-
-    pub fn register_adt(
-        &mut self,
-        fields: IndexVec<FieldIdx, FieldDef>,
-        kind: AdtKind,
-        variant_fields: Vec<Vec<Ty>>,
-    ) -> AdtId {
-        let mut variant_tys = Vec::with_capacity(variant_fields.len());
-        for variant_flds in &variant_fields {
-            let variant_ty = if variant_flds.is_empty() {
-                self.unit_ty()
-            } else if variant_flds.len() == 1 {
-                variant_flds[0]
-            } else {
-                let args: Vec<GenericArg> = variant_flds.iter().copied().map(GenericArg::Ty).collect();
-                let subst = self.intern_substitution(args);
-                self.mk_ty(TyKind::Tuple(subst))
-            };
-            variant_tys.push(variant_ty);
-        }
-        let id = self.next_adt_id();
-        let adt_def = AdtDef::new(fields, kind, variant_fields, variant_tys);
-        self.adt_defs.insert(id, adt_def);
-        id
+    pub fn register_adt_repr(&mut self, adt_id: AdtId, field_tys: Vec<Ty>) {
+        self.adt_reprs.insert(adt_id, AdtRepr::new(field_tys));
     }
-
 
     pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.auto_trait_registry
@@ -227,31 +207,29 @@ impl TyCtxMut {
     }
 
 
-    pub fn register_adt(
+    /// Registers an ADT with precomputed variant types.
+    /// `variant_tys` must have one entry per variant (for structs/unions, one entry).
+    pub fn register_adt_with_variants(
         &mut self,
         fields: IndexVec<FieldIdx, FieldDef>,
         kind: AdtKind,
-        variant_fields: Vec<Vec<Ty>>,
+        variant_tys: Vec<Ty>,
     ) -> AdtId {
-        let mut variant_tys = Vec::with_capacity(variant_fields.len());
-        for variant_flds in &variant_fields {
-            let variant_ty = if variant_flds.is_empty() {
-                self.unit_ty()
-            } else if variant_flds.len() == 1 {
-                variant_flds[0]
-            } else {
-                let args: Vec<GenericArg> = variant_flds.iter().copied().map(GenericArg::Ty).collect();
-                let subst = self.intern_substitution(args);
-                self.mk_ty(TyKind::Tuple(subst))
-            };
-            variant_tys.push(variant_ty);
-        }
-        let id = self.next_adt_id();
-        let adt_def = AdtDef::new(fields, kind, variant_fields, variant_tys);
+        let id = AdtId::from_raw(self.next_adt_id);
+        self.next_adt_id += 1;
+        let adt_def = AdtDef::new(fields, kind);
         self.adt_defs.insert(id, adt_def);
+        self.variant_types.insert(id, variant_tys);
         id
     }
 
+    pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
+        self.adt_defs.insert(id, def.clone());
+        // Compute interior mutability for this ADT and mark if needed
+        if self.compute_adt_interior_mutability(id) {
+            self.mark_adt_interior_mutable(id);
+        }
+    }
 
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)

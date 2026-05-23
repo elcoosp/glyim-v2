@@ -8,7 +8,6 @@ mod cast;
 mod comprehensive;
 mod constants;
 mod discriminant_len;
-mod downcast_projection;
 mod existing;
 mod layout;
 mod terminators;

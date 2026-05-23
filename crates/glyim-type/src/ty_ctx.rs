@@ -22,6 +22,7 @@ pub struct TyCtx {
     pub(crate) adt_reprs: HashMap<AdtId, AdtRepr>,
     pub(crate) interior_mutable_adt_ids: HashSet<AdtId>,
     pub adt_defs: HashMap<AdtId, AdtDef>,
+    variant_types: HashMap<AdtId, Vec<Ty>>,
     pub(crate) fn_sigs: HashMap<FnDefId, FnSig>,
     pub(crate) closure_sigs: HashMap<ClosureId, FnSig>,
     pub(crate) body_tys: HashMap<LocalDefId, Ty>,
@@ -175,13 +176,23 @@ impl TyCtx {
         self.body_tys.get(&def_id).copied()
     }
 
-    /// Returns the precomputed type of a specific variant.
+    /// Returns the type of a specific variant of an ADT (enum) by its raw index.
+    /// For structs/unions, variant_idx must be 0.
     pub fn variant_type(&self, adt_id: AdtId, variant_idx: u32) -> Ty {
-        if let Some(adt_def) = self.adt_def(adt_id) {
-            adt_def.variant_type(variant_idx)
-        } else {
-            Ty::ERROR
-        }
+        self.variant_types
+            .get(&adt_id)
+            .and_then(|vts| vts.get(variant_idx as usize).copied())
+            .unwrap_or(Ty::ERROR)
+    }
+
+
+    /// Returns the type of a specific variant of an ADT (enum) by its raw index.
+    /// For structs/unions, variant_idx must be 0.
+    pub fn variant_type(&self, adt_id: AdtId, variant_idx: u32) -> Ty {
+        self.variant_types
+            .get(&adt_id)
+            .and_then(|vts| vts.get(variant_idx as usize).copied())
+            .unwrap_or(Ty::ERROR)
     }
 
 }
