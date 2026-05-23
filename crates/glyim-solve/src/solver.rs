@@ -13,7 +13,6 @@ pub struct SolverIteratorNextInfo {
     pub ref_iter_ty: glyim_type::Ty,
 }
 
-
 pub trait TraitSolver {
     fn can_prove(&mut self, ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult;
     fn evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult;
@@ -24,7 +23,6 @@ pub trait TraitSolver {
         iter_ty: glyim_type::Ty,
         elem_ty: glyim_type::Ty,
     ) -> Option<SolverIteratorNextInfo>;
-
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,7 +36,6 @@ pub struct TraitContext {
     trait_defs: Vec<TraitDef>,
     impl_defs: Vec<ImplDef>,
     pub(crate) builtin_next_fn_id: Option<glyim_core::def_id::FnDefId>,
-
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,7 +58,7 @@ impl TraitContext {
         Self {
             trait_defs: Vec::new(),
             impl_defs: Vec::new(),
-            builtin_next_fn_id: None
+            builtin_next_fn_id: None,
         }
     }
     pub fn register_trait(&mut self, def: TraitDef) {
@@ -131,7 +128,6 @@ impl TraitContext {
     pub fn set_builtin_iterator_next(&mut self, fn_def_id: glyim_core::def_id::FnDefId) {
         self.builtin_next_fn_id = Some(fn_def_id);
     }
-
 }
 impl Default for TraitContext {
     fn default() -> Self {
@@ -436,7 +432,11 @@ impl TraitSolver for SimpleTraitSolver<'_> {
         let opt_subst = ctx_mut.intern_substitution(vec![glyim_type::GenericArg::Ty(elem_ty)]);
         let option_ty = ctx_mut.mk_ty(glyim_type::TyKind::Adt(option_adt, opt_subst));
         let discr_ty = ctx_mut.mk_ty(glyim_type::TyKind::Uint(glyim_core::primitives::UintTy::U8));
-        let ref_iter_ty = ctx_mut.mk_ref(glyim_type::Region::Erased, iter_ty, glyim_core::primitives::Mutability::Mut);
+        let ref_iter_ty = ctx_mut.mk_ref(
+            glyim_type::Region::Erased,
+            iter_ty,
+            glyim_core::primitives::Mutability::Mut,
+        );
         Some(SolverIteratorNextInfo {
             fn_def_id: next_def_id,
             fn_substs: substs,
@@ -446,5 +446,4 @@ impl TraitSolver for SimpleTraitSolver<'_> {
             ref_iter_ty,
         })
     }
-
 }

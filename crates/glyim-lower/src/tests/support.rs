@@ -1,6 +1,6 @@
+use crate::lower::{AdtDef, IteratorNextInfo, LowerCtx};
 use glyim_span::Span;
 use glyim_type::*;
-use crate::lower::{LowerCtx, AdtDef, IteratorNextInfo};
 
 pub struct MockLowerCtx<'a> {
     pub ty_ctx: &'a TyCtx,
@@ -40,6 +40,8 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
     fn pop_span(&self) {}
 
     fn iterator_next_fn(&self, iter_ty: Ty, elem_ty: Ty) -> Option<IteratorNextInfo> {
-        self.iterator_next_fn.as_ref().and_then(|f| f(iter_ty, elem_ty))
+        self.iterator_next_fn
+            .as_ref()
+            .and_then(|f| f(iter_ty, elem_ty))
     }
 }
