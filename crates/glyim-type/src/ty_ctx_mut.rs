@@ -207,7 +207,9 @@ impl TyCtxMut {
 
     pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
         // Compute variant types from variants
-        let variant_tys: Vec<Ty> = def.variants.iter()
+        let variant_tys: Vec<Ty> = def
+            .variants
+            .iter()
             .map(|variant| {
                 let field_tys: Vec<Ty> = variant.fields.iter().map(|f| f.ty).collect();
                 if field_tys.is_empty() {

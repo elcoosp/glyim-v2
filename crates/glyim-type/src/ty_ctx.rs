@@ -183,7 +183,6 @@ impl TyCtx {
             .and_then(|vts| vts.get(variant_idx as usize).copied())
             .unwrap_or(Ty::ERROR)
     }
-
 }
 
 impl TypeLookup for TyCtx {

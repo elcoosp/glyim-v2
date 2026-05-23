@@ -14,12 +14,12 @@ use crate::{
 };
 use glyim_core::primitives::Mutability;
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId};
+use glyim_mir::VariantIdx;
 use glyim_mir::{
     AggregateKind, BasicBlockData, Body, BorrowKind, LocalDecl, LocalIdx, MirConst, MirConstKind,
     Operand, Place, ProjectionElem, Rvalue, SourceInfo, Statement, StatementKind, Terminator,
     TerminatorKind,
 };
-use glyim_mir::VariantIdx;
 use glyim_span::Span;
 use glyim_type::{FieldIdx, Ty};
 use std::sync::Arc;

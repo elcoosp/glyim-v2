@@ -56,12 +56,10 @@ impl LayoutProvider for GlyimLayoutProvider {
         }
     }
 
-        fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
+    fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
         use glyim_type::TyKind;
         match self.ty_ctx.ty_kind(enum_ty) {
-            TyKind::Adt(adt_id, _substs) => {
-                self.ty_ctx.variant_type(*adt_id, variant_idx.to_raw())
-            }
+            TyKind::Adt(adt_id, _substs) => self.ty_ctx.variant_type(*adt_id, variant_idx.to_raw()),
             _ => Ty::ERROR,
         }
     }
