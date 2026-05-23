@@ -21,8 +21,7 @@ pub trait CodegenBackend {
 pub trait LayoutProvider {
     fn field_offset(&self, ty: Ty, field_idx: FieldIdx) -> u64;
     fn size_of(&self, ty: Ty) -> u64;
-    fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
-        let _ = (enum_ty, variant_idx);
+    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
         Ty::ERROR
     }
 }
@@ -64,10 +63,10 @@ impl LayoutProvider for GlyimLayoutProvider {
         use glyim_type::TyKind;
         match self.ty_ctx.ty_kind(enum_ty) {
             TyKind::Adt(_adt_id, _substs) => {
-                // For simplicity, we don't have full ADT info here.
-                // The real implementation would lookup the variant's type.
-                // For now, return error and warn.
-                tracing::warn!("STUB: variant_type not fully implemented for ADT");
+                // TODO: Implement proper variant type lookup using ADT definition.
+                // For now, this is a stub that returns Ty::ERROR.
+                // Full implementation requires access to variant field types from ADT info.
+                tracing::debug!("STUB: variant_type not implemented for ADT, returning Ty::ERROR");
                 Ty::ERROR
             }
             _ => Ty::ERROR,
