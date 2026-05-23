@@ -17,5 +17,3 @@ pub mod post_mono_checks;
 
 #[cfg(test)]
 mod tests;
-
-// TODO: Replace register_adt calls with register_adt_with_variants for enums
