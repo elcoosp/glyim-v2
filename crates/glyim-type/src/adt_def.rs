@@ -1,29 +1,36 @@
-use crate::ty::{FieldIdx, Ty};
-use glyim_core::arena::IndexVec;
-use glyim_core::interner::Name;
+//! ADT (struct/enum/union) definition storage for type context.
 
-#[derive(Clone, Debug)]
-pub struct AdtDef {
+use crate::ty::Ty;
+
+#[derive(Debug, Clone)]
+pub(crate) struct AdtDef {
+    /// For structs/unions: the list of field types.
+    /// For enums: flattened list of all fields across all variants (legacy).
+    pub fields: Vec<Ty>,
     pub kind: AdtKind,
-    pub fields: IndexVec<FieldIdx, FieldDef>,
-    pub variants: Vec<VariantDef>,
+    /// Precomputed type for each variant (indexed by variant index).
+    /// For structs/unions, length = 1.
+    pub variant_tys: Vec<Ty>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl AdtDef {
+    pub(crate) fn new(fields: Vec<Ty>, kind: AdtKind, variant_tys: Vec<Ty>) -> Self {
+        Self {
+            fields,
+            kind,
+            variant_tys,
+        }
+    }
+
+    /// Returns the type of a variant by its raw index.
+    pub(crate) fn variant_type(&self, idx: u32) -> Ty {
+        self.variant_tys.get(idx as usize).copied().unwrap_or(Ty::ERROR)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdtKind {
     Struct,
     Enum,
     Union,
-}
-
-#[derive(Clone, Debug)]
-pub struct VariantDef {
-    pub name: Name,
-    pub fields: IndexVec<FieldIdx, FieldDef>,
-}
-
-#[derive(Clone, Debug)]
-pub struct FieldDef {
-    pub name: Name,
-    pub ty: Ty,
 }

@@ -6,6 +6,7 @@ use crate::fn_sig::FnSig;
 use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
+use crate::adt_def::AdtDef;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
@@ -174,6 +175,17 @@ impl TyCtx {
     pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {
         self.body_tys.get(&def_id).copied()
     }
+
+    /// Returns the type of a specific variant of an ADT (enum) by its raw index (0-based).
+    /// For struct/unions, variant_idx must be 0.
+    pub fn variant_type(&self, adt_id: AdtId, variant_idx: u32) -> Ty {
+        if let Some(adt_def) = self.adt_def(adt_id) {
+            adt_def.variant_type(variant_idx)
+        } else {
+            Ty::ERROR
+        }
+    }
+
 }
 
 impl TypeLookup for TyCtx {

@@ -59,15 +59,11 @@ impl LayoutProvider for GlyimLayoutProvider {
         }
     }
 
-    fn variant_type(&self, enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
+            fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
         use glyim_type::TyKind;
         match self.ty_ctx.ty_kind(enum_ty) {
-            TyKind::Adt(_adt_id, _substs) => {
-                // TODO: Implement proper variant type lookup using ADT definition.
-                // For now, this is a stub that returns Ty::ERROR.
-                // Full implementation requires access to variant field types from ADT info.
-                tracing::debug!("STUB: variant_type not implemented for ADT, returning Ty::ERROR");
-                Ty::ERROR
+            TyKind::Adt(adt_id, _substs) => {
+                self.ty_ctx.variant_type(*adt_id, variant_idx.to_raw())
             }
             _ => Ty::ERROR,
         }

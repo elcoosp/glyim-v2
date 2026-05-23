@@ -72,6 +72,35 @@ impl TyCtxMut {
             "Ty::BOOL sentinel mismatch"
         );
         ctx
+
+    /// Registers an ADT with explicit variant field lists.
+    /// For structs/unions, `variant_fields` should be a vector with one entry (the fields of the struct/union).
+    /// For enums, `variant_fields` has one entry per variant, each a vector of field types.
+    pub fn register_adt_with_variants(
+        &mut self,
+        fields: Vec<Ty>,
+        kind: AdtKind,
+        variant_fields: Vec<Vec<Ty>>,
+    ) -> AdtId {
+        let mut variant_tys = Vec::with_capacity(variant_fields.len());
+        for variant_flds in variant_fields {
+            let variant_ty = if variant_flds.is_empty() {
+                self.unit_ty()
+            } else if variant_flds.len() == 1 {
+                variant_flds[0]
+            } else {
+                let args: Vec<GenericArg> = variant_flds.into_iter().map(GenericArg::Ty).collect();
+                let subst = self.intern_substitution(args);
+                self.mk_ty(TyKind::Tuple(subst))
+            };
+            variant_tys.push(variant_ty);
+        }
+        let id = self.next_adt_id();
+        let adt_def = AdtDef::new(fields, kind, variant_tys);
+        self.adt_defs.insert(id, adt_def);
+        id
+    }
+
     }
 
     fn alloc_ty_internal(&mut self, kind: TyKind) -> Ty {
