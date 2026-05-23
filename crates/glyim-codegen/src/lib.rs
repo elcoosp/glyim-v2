@@ -5,7 +5,7 @@ use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_diag::CompResult;
 use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
-use glyim_type::{FieldIdx, Substitution, Ty, TyCtx};
+use glyim_type::{FieldIdx, Substitution, Ty, TyCtx, TyKind};
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
@@ -40,7 +40,7 @@ impl LayoutProvider for GlyimLayoutProvider {
                 FieldsShape::Array { stride, count: _ } => (field_idx.to_raw() as u64) * stride.0,
             }
         } else {
-            tracing::warn!("STUB: Layout computation failed for field offset");
+            tracing::warn!("Layout computation failed for field offset");
             0
         }
     }
@@ -50,7 +50,7 @@ impl LayoutProvider for GlyimLayoutProvider {
         if let Ok(layout) = computer.layout_of(ty) {
             layout.size.0
         } else {
-            tracing::warn!("STUB: Layout computation failed for size");
+            tracing::warn!("Layout computation failed for size");
             0
         }
     }
@@ -100,6 +100,7 @@ impl BytecodeBackend {
 
     pub fn with_ty_ctx(mut self, ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
         self.ty_ctx = Some(ctx.clone());
+        self.target = Some(target.clone());
         self.layout_provider = Box::new(GlyimLayoutProvider {
             ty_ctx: ctx,
             target,
@@ -161,9 +162,7 @@ impl BytecodeBackend {
                 }
                 ProjectionElem::Downcast(_) => {}
                 ProjectionElem::Slice { .. } => {
-                    // Slice projections should not appear in a place address context.
-                    // If they do, we push a dummy value (0) and continue.
-                    tracing::debug!("Slice projection in emit_place_address (unexpected)");
+                    // Slice projections should not appear in place address; push dummy 0
                     bc.push(OP_LOAD_CONST);
                     bc.extend_from_slice(&0i64.to_le_bytes());
                 }
@@ -378,92 +377,79 @@ impl BytecodeBackend {
                 if place.projection.is_empty() {
                     bc.push(OP_LOAD_LOCAL);
                     bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
+                    return Ok(());
+                }
+
+                if let Some(ProjectionElem::Slice { start, end }) = place.projection.last() {
+                    let base_place = Place {
+                        local: place.local,
+                        projection: place.projection[..place.projection.len() - 1].into(),
+                    };
+                    let ctx = self.ty_ctx.as_ref().expect("TyCtx required");
+                    let target = self.target.as_ref().expect("TargetInfo required");
+                    let base_ty = local_tys.get(base_place.local).map(|d| d.ty).unwrap_or(Ty::ERROR);
+                    let elem_ty = match ctx.ty_kind(base_ty) {
+                        TyKind::Array(e, _) | TyKind::Slice(e) => *e,
+                        _ => {
+                            tracing::warn!("Slice projection on non-array/slice base type");
+                            return Ok(());
+                        }
+                    };
+                    let elem_size = self.layout_provider.size_of(elem_ty);
+                    if elem_size == 0 {
+                        tracing::warn!("Slice projection on zero-sized element type");
+                        return Ok(());
+                    }
+
+                    // Base address (data pointer for array, fat pointer address for slice)
+                    self.emit_place_address(bc, &base_place, local_tys)?;
+
+                    let is_slice_base = matches!(ctx.ty_kind(base_ty), TyKind::Slice(_));
+                    if is_slice_base {
+                        // Load data pointer (first word)
+                        bc.push(OP_DEREF);
+                        // Load length: base address + pointer size
+                        self.emit_place_address(bc, &base_place, local_tys)?;
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&(target.pointer_size() as i64).to_le_bytes());
+                        bc.push(OP_ADD);
+                        bc.push(OP_DEREF); // length on stack
+                    }
+
+                    let start_op = Operand::Copy(start.clone());
+                    let end_op = Operand::Copy(end.clone());
+
+                    // Compute start offset (start * elem_size)
+                    self.emit_operand(bc, &start_op, local_tys)?;
+                    bc.push(OP_LOAD_CONST);
+                    bc.extend_from_slice(&(elem_size as i64).to_le_bytes());
+                    bc.push(OP_MUL);
+
+                    // Add offset to data pointer
+                    if is_slice_base {
+                        // Stack currently: [data_ptr, len, start_offset]
+                        // Need to add start_offset to data_ptr. Re‑emit data_ptr.
+                        self.emit_place_address(bc, &base_place, local_tys)?;
+                        bc.push(OP_DEREF);
+                        bc.push(OP_ADD); // new_data_ptr = data_ptr + offset
+                        // Drop old data_ptr and len (we'll recompute length)
+                        bc.push(OP_DROP);
+                        bc.push(OP_DROP);
+                    } else {
+                        // Stack: [data_ptr, start_offset]
+                        bc.push(OP_ADD); // new_data_ptr
+                    }
+
+                    // Compute length = end - start
+                    self.emit_operand(bc, &end_op, local_tys)?;
+                    self.emit_operand(bc, &start_op, local_tys)?;
+                    bc.push(OP_SUB); // length on stack
+
                     Ok(())
                 } else {
-                    // Check if the last projection is a Slice. If so, handle specially.
-                    if let Some(ProjectionElem::Slice { start, end }) = place.projection.last() {
-                        // Compute base place (without the slice projection)
-                        let base_place = Place {
-                            local: place.local,
-                            projection: place.projection[..place.projection.len() - 1].into(),
-                        };
-                        // Emit address of base place (this yields a raw pointer to the first element)
-                        self.emit_place_address(bc, &base_place, local_tys)?;
-
-                        // Get TyCtx to inspect types
-                        let ctx = self
-                            .ty_ctx
-                            .as_ref()
-                            .expect("TyCtx required for slice projection");
-                        // Determine element type and size from the base place's type
-                        let base_ty = local_tys
-                            .get(base_place.local)
-                            .map(|d| d.ty)
-                            .unwrap_or(Ty::ERROR);
-                        let elem_ty = match ctx.ty_kind(base_ty) {
-                            TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
-                            _ => {
-                                tracing::warn!("Slice projection on non-array/slice base type");
-                                return Ok(());
-                            }
-                        };
-                        let elem_size = self.layout_provider.size_of(elem_ty);
-                        if elem_size == 0 {
-                            tracing::warn!("Slice projection on zero-sized element type");
-                            return Ok(());
-                        }
-
-                        // Compute start offset (in bytes)
-                        // FIXME: Properly evaluate start and end places. For now, assume 0 and full length.
-                        let start_val = 0i64;
-                        let byte_offset = start_val * (elem_size as i64);
-                        bc.push(OP_LOAD_CONST);
-                        bc.extend_from_slice(&byte_offset.to_le_bytes());
-                        bc.push(OP_ADD); // base_ptr + offset
-
-                        // Compute full length of the base array/slice
-                        let full_len = match ctx.ty_kind(base_ty) {
-                            TyKind::Array(_, len_const) => {
-                                if let ConstKind::Int(v) = len_const.kind {
-                                    v as i64
-                                } else {
-                                    0
-                                }
-                            }
-                            TyKind::Slice(_) => {
-                                // For a slice base, we need to load its length from memory.
-                                // In this simplified version we push a dummy length.
-                                tracing::warn!(
-                                    "Slice projection from slice base not fully implemented"
-                                );
-                                0
-                            }
-                            _ => 0,
-                        };
-                        let end_val = full_len;
-                        let length = end_val - start_val;
-                        if length < 0 {
-                            tracing::warn!("Slice with negative length");
-                            return Ok(());
-                        }
-
-                        // Push data pointer (if length == 0, push null pointer)
-                        if length == 0 {
-                            // Discard the base pointer that is currently on stack
-                            bc.push(OP_DROP);
-                            bc.push(OP_LOAD_CONST);
-                            bc.extend_from_slice(&0i64.to_le_bytes());
-                        }
-                        // Push length
-                        bc.push(OP_LOAD_CONST);
-                        bc.extend_from_slice(&length.to_le_bytes());
-
-                        Ok(())
-                    } else {
-                        self.emit_place_address(bc, place, local_tys)?;
-                        bc.push(OP_DEREF);
-                        Ok(())
-                    }
+                    self.emit_place_address(bc, place, local_tys)?;
+                    bc.push(OP_DEREF);
+                    Ok(())
                 }
             }
             Operand::Constant(mir_const) => {
@@ -620,5 +606,3 @@ impl BytecodeBackend {
 mod tests;
 
 pub mod vtable;
-
-use glyim_type::{ConstKind, TyKind};
