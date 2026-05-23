@@ -20,6 +20,7 @@ pub trait CodegenBackend {
 pub trait LayoutProvider {
     fn field_offset(&self, ty: Ty, field_idx: FieldIdx) -> u64;
     fn size_of(&self, ty: Ty) -> u64;
+    fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty;
 }
 
 /// Real layout provider using glyim-layout.
@@ -54,6 +55,14 @@ impl LayoutProvider for GlyimLayoutProvider {
             0
         }
     }
+
+    fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty {
+        use glyim_type::TyKind;
+        match self.ty_ctx.ty_kind(enum_ty) {
+            TyKind::Adt(adt_id, _substs) => self.ty_ctx.variant_type(*adt_id, variant_idx.to_raw()),
+            _ => Ty::ERROR,
+        }
+    }
 }
 
 /// Minimal fallback layout provider.
@@ -65,6 +74,9 @@ impl LayoutProvider for FallbackLayoutProvider {
     }
     fn size_of(&self, _ty: Ty) -> u64 {
         8
+    }
+    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
+        Ty::ERROR
     }
 }
 

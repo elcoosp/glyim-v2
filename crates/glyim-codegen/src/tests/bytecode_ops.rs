@@ -14,6 +14,7 @@ use crate::{
 };
 use glyim_core::primitives::Mutability;
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId};
+use glyim_mir::VariantIdx;
 use glyim_mir::{
     AggregateKind, BasicBlockData, Body, BorrowKind, LocalDecl, LocalIdx, MirConst, MirConstKind,
     Operand, Place, ProjectionElem, Rvalue, SourceInfo, Statement, StatementKind, Terminator,
@@ -372,6 +373,10 @@ impl LayoutProvider for ZeroSizeLayoutProvider {
 
     fn size_of(&self, _ty: Ty) -> u64 {
         0
+    }
+
+    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
+        Ty::ERROR
     }
 }
 
