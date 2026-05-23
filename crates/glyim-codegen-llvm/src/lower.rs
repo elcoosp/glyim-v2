@@ -410,7 +410,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     }
                 }
                 ProjectionElem::Slice { .. } => {
-                    tracing::warn!("Slice projection (subslice range) not implemented – only index projection is supported in this stream");
+                    tracing::warn!(
+                        "Slice projection (subslice range) not implemented – only index projection is supported in this stream"
+                    );
                     return self.context.ptr_type(AddressSpace::default()).const_null();
                 }
             }
