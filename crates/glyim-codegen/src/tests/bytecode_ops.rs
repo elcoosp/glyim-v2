@@ -19,6 +19,7 @@ use glyim_mir::{
     Operand, Place, ProjectionElem, Rvalue, SourceInfo, Statement, StatementKind, Terminator,
     TerminatorKind,
 };
+use glyim_mir::VariantIdx;
 use glyim_span::Span;
 use glyim_type::{FieldIdx, Ty};
 use std::sync::Arc;
@@ -372,6 +373,10 @@ impl LayoutProvider for ZeroSizeLayoutProvider {
 
     fn size_of(&self, _ty: Ty) -> u64 {
         0
+    }
+
+    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
+        Ty::ERROR
     }
 }
 

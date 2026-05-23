@@ -47,7 +47,6 @@ impl TyCtxMut {
             interior_mutability_cache: HashMap::new(),
             adt_defs: HashMap::new(),
             variant_types: HashMap::new(),
-            variant_types: HashMap::new(),
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
             body_tys: HashMap::new(),
@@ -206,26 +205,24 @@ impl TyCtxMut {
             .register_manual_impl(adt_id, auto_trait);
     }
 
-
-    /// Registers an ADT with precomputed variant types.
-    /// `variant_tys` must have one entry per variant (for structs/unions, one entry).
-    pub fn register_adt_with_variants(
-        &mut self,
-        fields: IndexVec<FieldIdx, FieldDef>,
-        kind: AdtKind,
-        variant_tys: Vec<Ty>,
-    ) -> AdtId {
-        let id = AdtId::from_raw(self.next_adt_id);
-        self.next_adt_id += 1;
-        let adt_def = AdtDef::new(fields, kind);
-        self.adt_defs.insert(id, adt_def);
-        self.variant_types.insert(id, variant_tys);
-        id
-    }
-
     pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
+        // Compute variant types from variants
+        let variant_tys: Vec<Ty> = def.variants.iter()
+            .map(|variant| {
+                let field_tys: Vec<Ty> = variant.fields.iter().map(|f| f.ty).collect();
+                if field_tys.is_empty() {
+                    self.unit_ty()
+                } else if field_tys.len() == 1 {
+                    field_tys[0]
+                } else {
+                    let args: Vec<GenericArg> = field_tys.into_iter().map(GenericArg::Ty).collect();
+                    let subst = self.intern_substitution(args);
+                    self.mk_ty(TyKind::Tuple(subst))
+                }
+            })
+            .collect();
+        self.variant_types.insert(id, variant_tys);
         self.adt_defs.insert(id, def.clone());
-        // Compute interior mutability for this ADT and mark if needed
         if self.compute_adt_interior_mutability(id) {
             self.mark_adt_interior_mutable(id);
         }
@@ -246,9 +243,6 @@ impl TyCtxMut {
         None
     }
 
-    /// Returns the type of the field at the given index in the ADT.
-    /// Checks `adt_defs` first (full definition), then falls back to `adt_reprs`
-    /// (field type list). Returns `error_ty()` if the ADT or field is not found.
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
             return def
@@ -268,32 +262,26 @@ impl TyCtxMut {
         self.error_ty()
     }
 
-    /// Register the `FnSig` for a function definition.
     pub fn register_fn_sig(&mut self, def_id: FnDefId, sig: FnSig) {
         self.fn_sigs.insert(def_id, sig);
     }
 
-    /// Retrieve the `FnSig` for a function definition, if registered.
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
     }
 
-    /// Register the `FnSig` for a closure definition.
     pub fn register_closure_sig(&mut self, closure_id: ClosureId, sig: FnSig) {
         self.closure_sigs.insert(closure_id, sig);
     }
 
-    /// Retrieve the `FnSig` for a closure definition, if registered.
     pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {
         self.closure_sigs.get(&closure_id)
     }
 
-    /// Register the return type for a body (function or closure body).
     pub fn register_body_ty(&mut self, def_id: LocalDefId, ty: Ty) {
         self.body_tys.insert(def_id, ty);
     }
 
-    /// Retrieve the return type for a body, if registered.
     pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {
         self.body_tys.get(&def_id).copied()
     }
@@ -309,6 +297,7 @@ impl TyCtxMut {
             adt_reprs: self.adt_reprs,
             interior_mutable_adt_ids: self.interior_mutable_adt_ids,
             adt_defs: self.adt_defs,
+            variant_types: self.variant_types,
             fn_sigs: self.fn_sigs,
             closure_sigs: self.closure_sigs,
             body_tys: self.body_tys,
@@ -320,18 +309,14 @@ impl TyCtxMut {
         self.interior_mutability_cache.insert(adt_id, true);
     }
 
-    /// Compute whether an ADT has interior mutability by recursively inspecting its fields.
-    /// Uses memoization to avoid repeated work and handles cycles (assumes false for cycles).
     fn compute_adt_interior_mutability(&mut self, adt_id: AdtId) -> bool {
         if let Some(&cached) = self.interior_mutability_cache.get(&adt_id) {
             return cached;
         }
-        // If the ADT is already marked as interior mutable (e.g., UnsafeCell), we're done.
         if self.interior_mutable_adt_ids.contains(&adt_id) {
             self.interior_mutability_cache.insert(adt_id, true);
             return true;
         }
-        // Clone the definition to avoid holding a borrow while calling mutable methods.
         let def = match self.adt_defs.get(&adt_id) {
             Some(def) => def.clone(),
             None => {
@@ -356,20 +341,16 @@ impl TyCtxMut {
         visiting: &mut HashSet<AdtId>,
     ) -> bool {
         if visiting.contains(&adt_id) {
-            // Cycle detected: assume no interior mutability from this path.
             return false;
         }
         visiting.insert(adt_id);
         for field in def.fields.iter() {
             let field_ty = field.ty;
-            // Flags already include interior mutability from elements (arrays, slices, tuples, etc.)
-            // because compute_flags recursively propagates HAS_INTERIOR_MUTABILITY.
             let flags = self.ty_flags(field_ty);
             if flags.contains(TypeFlags::HAS_INTERIOR_MUTABILITY) {
                 visiting.remove(&adt_id);
                 return true;
             }
-            // Additionally, if the field type is an ADT, we need to recursively check it.
             if let TyKind::Adt(child_adt_id, _) = self.ty_kind(field_ty)
                 && self.compute_adt_interior_mutability(*child_adt_id)
             {
