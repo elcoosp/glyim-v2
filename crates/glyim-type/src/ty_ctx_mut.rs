@@ -101,6 +101,35 @@ impl TyCtxMut {
         id
     }
 
+
+    /// Registers an ADT with explicit variant field lists.
+    /// `variant_fields` is a vector of vectors, each inner vector containing the field types of that variant.
+    /// For structs/unions, pass a single variant containing the fields.
+    pub fn register_adt_with_variants(
+        &mut self,
+        fields: Vec<FieldDef>,
+        kind: AdtKind,
+        variant_fields: Vec<Vec<Ty>>,
+    ) -> AdtId {
+        let mut variant_tys = Vec::with_capacity(variant_fields.len());
+        for variant_flds in variant_fields {
+            let variant_ty = if variant_flds.is_empty() {
+                self.unit_ty()
+            } else if variant_flds.len() == 1 {
+                variant_flds[0]
+            } else {
+                let args: Vec<GenericArg> = variant_flds.into_iter().map(GenericArg::Ty).collect();
+                let subst = self.intern_substitution(args);
+                self.mk_ty(TyKind::Tuple(subst))
+            };
+            variant_tys.push(variant_ty);
+        }
+        let id = self.next_adt_id();
+        let adt_def = AdtDef::new(fields, kind, variant_tys);
+        self.adt_defs.insert(id, adt_def);
+        id
+    }
+
     }
 
     fn alloc_ty_internal(&mut self, kind: TyKind) -> Ty {
