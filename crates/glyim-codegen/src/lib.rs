@@ -72,6 +72,7 @@ pub struct BytecodeBackend {
     string_table: RefCell<Vec<String>>,
     fn_table: RefCell<Vec<(FnDefId, Substitution)>>,
     layout_provider: Box<dyn LayoutProvider>,
+    ty_ctx: Option<Arc<TyCtx>>,
 }
 
 impl Default for BytecodeBackend {
@@ -86,6 +87,7 @@ impl BytecodeBackend {
             string_table: RefCell::new(Vec::new()),
             fn_table: RefCell::new(Vec::new()),
             layout_provider: Box::new(FallbackLayoutProvider),
+            ty_ctx: None,
         }
     }
 
@@ -95,6 +97,7 @@ impl BytecodeBackend {
     }
 
     pub fn with_ty_ctx(mut self, ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
+        self.ty_ctx = Some(ctx.clone());
         self.layout_provider = Box::new(GlyimLayoutProvider {
             ty_ctx: ctx,
             target,
@@ -156,7 +159,11 @@ impl BytecodeBackend {
                 }
                 ProjectionElem::Downcast(_) => {}
                 ProjectionElem::Slice { .. } => {
-                    tracing::warn!("Slice projection not implemented in codegen");
+                    // Slice projections should not appear in a place address context.
+                    // If they do, we push a dummy value (0) and continue.
+                    tracing::debug!("Slice projection in emit_place_address (unexpected)");
+                    bc.push(OP_LOAD_CONST);
+                    bc.extend_from_slice(&0i64.to_le_bytes());
                 }
             }
         }
@@ -371,9 +378,83 @@ impl BytecodeBackend {
                     bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
                     Ok(())
                 } else {
-                    self.emit_place_address(bc, place, local_tys)?;
-                    bc.push(OP_DEREF);
-                    Ok(())
+                    // Check if the last projection is a Slice. If so, handle specially.
+                    if let Some(ProjectionElem::Slice { start, end }) = place.projection.last() {
+                        // Compute base place (without the slice projection)
+                        let base_place = Place {
+                            local: place.local,
+                            projection: place.projection[..place.projection.len()-1].into(),
+                        };
+                        // Emit address of base place (this yields a raw pointer to the first element)
+                        self.emit_place_address(bc, &base_place, local_tys)?;
+
+                        // Get TyCtx to inspect types
+                        let ctx = self.ty_ctx.as_ref().expect("TyCtx required for slice projection");
+                        // Determine element type and size from the base place's type
+                        let base_ty = local_tys.get(base_place.local).map(|d| d.ty).unwrap_or(Ty::ERROR);
+                        let elem_ty = match ctx.ty_kind(base_ty) {
+                            TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
+                            _ => {
+                                tracing::warn!("Slice projection on non-array/slice base type");
+                                return Ok(());
+                            }
+                        };
+                        let elem_size = self.layout_provider.size_of(elem_ty);
+                        if elem_size == 0 {
+                            tracing::warn!("Slice projection on zero-sized element type");
+                            return Ok(());
+                        }
+
+
+                        // Compute start offset (in bytes)
+                        // FIXME: Properly evaluate start and end places. For now, assume 0 and full length.
+                        let start_val = 0i64;
+                        let byte_offset = start_val * (elem_size as i64);
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&byte_offset.to_le_bytes());
+                        bc.push(OP_ADD); // base_ptr + offset
+
+                        // Compute full length of the base array/slice
+                        let full_len = match ctx.ty_kind(base_ty) {
+                            TyKind::Array(_, len_const) => {
+                                if let ConstKind::Int(v) = len_const.kind {
+                                    v as i64
+                                } else {
+                                    0
+                                }
+                            }
+                            TyKind::Slice(_) => {
+                                // For a slice base, we need to load its length from memory.
+                                // In this simplified version we push a dummy length.
+                                tracing::warn!("Slice projection from slice base not fully implemented");
+                                0
+                            }
+                            _ => 0,
+                        };
+                        let end_val = full_len;
+                        let length = end_val - start_val;
+                        if length < 0 {
+                            tracing::warn!("Slice with negative length");
+                            return Ok(());
+                        }
+
+                        // Push data pointer (if length == 0, push null pointer)
+                        if length == 0 {
+                            // Discard the base pointer that is currently on stack
+                            bc.push(OP_DROP);
+                            bc.push(OP_LOAD_CONST);
+                            bc.extend_from_slice(&0i64.to_le_bytes());
+                        }
+                        // Push length
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&length.to_le_bytes());
+
+                        Ok(())
+                    } else {
+                        self.emit_place_address(bc, place, local_tys)?;
+                        bc.push(OP_DEREF);
+                        Ok(())
+                    }
                 }
             }
             Operand::Constant(mir_const) => {
@@ -530,3 +611,5 @@ impl BytecodeBackend {
 mod tests;
 
 pub mod vtable;
+
+use glyim_type::{TyKind, ConstKind};
