@@ -1,5 +1,3 @@
-use glyim_core::def_id::FnDefId;
-use glyim_core::interner::Name;
 use glyim_span::Span;
 use glyim_type::*;
 use crate::lower::{LowerCtx, AdtDef, IteratorNextInfo};
