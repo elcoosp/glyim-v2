@@ -383,15 +383,21 @@ impl BytecodeBackend {
                         // Compute base place (without the slice projection)
                         let base_place = Place {
                             local: place.local,
-                            projection: place.projection[..place.projection.len()-1].into(),
+                            projection: place.projection[..place.projection.len() - 1].into(),
                         };
                         // Emit address of base place (this yields a raw pointer to the first element)
                         self.emit_place_address(bc, &base_place, local_tys)?;
 
                         // Get TyCtx to inspect types
-                        let ctx = self.ty_ctx.as_ref().expect("TyCtx required for slice projection");
+                        let ctx = self
+                            .ty_ctx
+                            .as_ref()
+                            .expect("TyCtx required for slice projection");
                         // Determine element type and size from the base place's type
-                        let base_ty = local_tys.get(base_place.local).map(|d| d.ty).unwrap_or(Ty::ERROR);
+                        let base_ty = local_tys
+                            .get(base_place.local)
+                            .map(|d| d.ty)
+                            .unwrap_or(Ty::ERROR);
                         let elem_ty = match ctx.ty_kind(base_ty) {
                             TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
                             _ => {
@@ -404,7 +410,6 @@ impl BytecodeBackend {
                             tracing::warn!("Slice projection on zero-sized element type");
                             return Ok(());
                         }
-
 
                         // Compute start offset (in bytes)
                         // FIXME: Properly evaluate start and end places. For now, assume 0 and full length.
@@ -426,7 +431,9 @@ impl BytecodeBackend {
                             TyKind::Slice(_) => {
                                 // For a slice base, we need to load its length from memory.
                                 // In this simplified version we push a dummy length.
-                                tracing::warn!("Slice projection from slice base not fully implemented");
+                                tracing::warn!(
+                                    "Slice projection from slice base not fully implemented"
+                                );
                                 0
                             }
                             _ => 0,
@@ -612,4 +619,4 @@ mod tests;
 
 pub mod vtable;
 
-use glyim_type::{TyKind, ConstKind};
+use glyim_type::{ConstKind, TyKind};
