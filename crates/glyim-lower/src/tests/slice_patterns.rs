@@ -1,57 +1,62 @@
-//! Slice pattern lowering tests.
-//!
-//! The lowering implementation for `Pat::Slice` in match arms is complete.
-//! However, the frontend (parsing and type checking) does not yet support slice pattern syntax.
-//! Once the frontend is ready (streams W1-C03 and W2-C01), these tests can be enabled.
-//! The tests are ignored for now but serve as documentation and will be re-enabled later.
+use std::fs;
+use tempfile::TempDir;
+use glyim_test::mock::TestDbBuilder;
 
-use glyim_test::phase::MirGenTester;
-use glyim_test::assert_no_errors;
-
-#[test]
-#[ignore = "frontend slice pattern syntax not yet implemented (requires W1-C03 and W2-C01)"]
-fn slice_pattern_fixed_length() {
-    let src = r#"
-    fn main() {
-        let arr = [1, 2, 3];
-        match &arr[..] {
-            [a, b, c] => { let _ = a + b + c; }
-            _ => {}
-        }
-    }
-    "#;
-    let trace = MirGenTester::new(src).run().unwrap();
-    assert_no_errors(&trace.diagnostics);
+fn compile_slice_pattern(src: &str) -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
+    let temp_dir = TempDir::new().unwrap();
+    let source_path = temp_dir.path().join("test.g");
+    fs::write(&source_path, src).unwrap();
+    let output_path = temp_dir.path().join("out.o");
+    let mut db = TestDbBuilder::new()
+        .name("slice_test")
+        .target_triple("x86_64-unknown-linux-gnu")
+        .opt_level(0)
+        .file(source_path.clone(), src)
+        .build();
+    let backend = glyim_codegen_llvm::LlvmBackend::new();
+    glyim_pipeline::Pipeline::compile_file(&mut db, &source_path, &backend, &output_path)
 }
 
 #[test]
-#[ignore = "frontend slice pattern syntax not yet implemented (requires W1-C03 and W2-C01)"]
-fn slice_pattern_empty() {
-    let src = r#"
-    fn main() {
-        let arr: [i32; 0] = [];
-        match &arr[..] {
-            [] => {}
-            _ => {}
-        }
-    }
-    "#;
-    let trace = MirGenTester::new(src).run().unwrap();
-    assert_no_errors(&trace.diagnostics);
-}
-
-#[test]
-#[ignore = "frontend slice pattern syntax not yet implemented (requires W1-C03 and W2-C01)"]
-fn slice_pattern_rest_only() {
+fn slice_pattern_array() {
     let src = r#"
     fn main() {
         let arr = [1, 2, 3];
-        match &arr[..] {
-            [..] => {}
-            _ => {}
+        match arr {
+            [a, b, c] => (),
+            _ => (),
         }
     }
     "#;
-    let trace = MirGenTester::new(src).run().unwrap();
-    assert_no_errors(&trace.diagnostics);
+    match compile_slice_pattern(src) {
+        Ok(()) => (),
+        Err(diags) => {
+            for d in diags {
+                eprintln!("ERROR: {}", d.message);
+            }
+            panic!("compilation failed");
+        }
+    }
+}
+
+#[test]
+fn slice_pattern_slice_reference() {
+    let src = r#"
+    fn main() {
+        let arr = [1, 2, 3, 4];
+        match &arr[..] {
+            [a, b, .., c] => (),
+            _ => (),
+        }
+    }
+    "#;
+    match compile_slice_pattern(src) {
+        Ok(()) => (),
+        Err(diags) => {
+            for d in diags {
+                eprintln!("ERROR: {}", d.message);
+            }
+            panic!("compilation failed");
+        }
+    }
 }

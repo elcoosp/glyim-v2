@@ -975,12 +975,14 @@ dependencies = [
 name = "glyim-lower"
 version = "0.1.0"
 dependencies = [
+ "glyim-codegen-llvm",
  "glyim-core",
  "glyim-def-map",
  "glyim-diag",
  "glyim-frontend",
  "glyim-hir",
  "glyim-mir",
+ "glyim-pipeline",
  "glyim-solve",
  "glyim-span",
  "glyim-syntax",
@@ -988,6 +990,7 @@ dependencies = [
  "glyim-type",
  "glyim-typeck",
  "rowan",
+ "tempfile",
  "tracing",
 ]
 
