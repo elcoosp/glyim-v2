@@ -387,7 +387,10 @@ impl BytecodeBackend {
                     };
                     let ctx = self.ty_ctx.as_ref().expect("TyCtx required");
                     let target = self.target.as_ref().expect("TargetInfo required");
-                    let base_ty = local_tys.get(base_place.local).map(|d| d.ty).unwrap_or(Ty::ERROR);
+                    let base_ty = local_tys
+                        .get(base_place.local)
+                        .map(|d| d.ty)
+                        .unwrap_or(Ty::ERROR);
                     let elem_ty = match ctx.ty_kind(base_ty) {
                         TyKind::Array(e, _) | TyKind::Slice(e) => *e,
                         _ => {
