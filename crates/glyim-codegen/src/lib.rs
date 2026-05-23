@@ -73,6 +73,7 @@ pub struct BytecodeBackend {
     fn_table: RefCell<Vec<(FnDefId, Substitution)>>,
     layout_provider: Box<dyn LayoutProvider>,
     ty_ctx: Option<Arc<TyCtx>>,
+    target: Option<TargetInfo>,
 }
 
 impl Default for BytecodeBackend {
@@ -88,6 +89,7 @@ impl BytecodeBackend {
             fn_table: RefCell::new(Vec::new()),
             layout_provider: Box::new(FallbackLayoutProvider),
             ty_ctx: None,
+            target: None,
         }
     }
 
