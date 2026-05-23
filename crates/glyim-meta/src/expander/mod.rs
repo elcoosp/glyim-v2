@@ -560,12 +560,37 @@ impl<'a> ExpanderImpl<'a> {
                 vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
             }
             BuiltinMacro::Stringify => {
-                // stringify!(expr) returns the source code of expr as a string literal
-                // Get the raw text of the argument node
-                let source = args_node.text().to_string();
-                // Trim surrounding parentheses if present? The token tree node may include the outer delimiters.
-                // Simpler: just use the raw text.
-                let lit = SmolStr::from(format!("\"{}\"", source.replace('"', "\\\"")));
+                // stringify!(expr) returns the source code of expr as a string literal,
+                // with spaces between tokens.
+                let args_tt = flatten_token_tree(args_node);
+                // Strip outer parentheses (macro call syntax delimiters)
+                let inner = if args_tt.len() == 1 {
+                    if let TokenTree::Group(SyntaxKind::LParen, inner, SyntaxKind::RParen) =
+                        &args_tt[0]
+                    {
+                        inner.as_slice()
+                    } else {
+                        args_tt.as_slice()
+                    }
+                } else if args_tt.len() >= 2 {
+                    let first_is_lparen =
+                        matches!(&args_tt[0], TokenTree::Token(SyntaxKind::LParen, _));
+                    let last_is_rparen = matches!(
+                        args_tt.last(),
+                        Some(TokenTree::Token(SyntaxKind::RParen, _))
+                    );
+                    if first_is_lparen && last_is_rparen {
+                        &args_tt[1..args_tt.len().saturating_sub(1)]
+                    } else {
+                        args_tt.as_slice()
+                    }
+                } else {
+                    args_tt.as_slice()
+                };
+                let stringified = stringify_token_trees(inner);
+                // Escape backslashes and quotes for string literal representation
+                let escaped = stringified.replace('\\', "\\\\").replace('"', "\\\"");
+                let lit = SmolStr::from(format!("\"{}\"", escaped));
                 vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
             }
         };
@@ -647,6 +672,31 @@ impl<'a> ExpanderImpl<'a> {
             SyntaxContext::ROOT,
         )
     }
+}
+
+/// Convert token trees to a string with spaces between each token,
+/// preserving group delimiters as separate tokens.
+fn stringify_token_trees(trees: &[TokenTree]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for tree in trees {
+        match tree {
+            TokenTree::Token(_kind, text) => {
+                parts.push(text.as_str().to_string());
+            }
+            TokenTree::Group(open, inner, _close) => {
+                parts.push(delim_token_text(*open).to_string());
+                let inner_str = stringify_token_trees(inner);
+                if !inner_str.is_empty() {
+                    parts.push(inner_str);
+                }
+                parts.push(delim_token_text(*_close).to_string());
+            }
+            TokenTree::DollarCrate => {
+                parts.push("$crate".to_string());
+            }
+        }
+    }
+    parts.join(" ")
 }
 
 fn delim_token_text(kind: SyntaxKind) -> &'static str {
