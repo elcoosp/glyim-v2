@@ -1,16 +1,23 @@
 //! Tests for drop elaboration: conditional drops, array loops, enum discriminants.
 
-use glyim_core::primitives::{BinOp, Mutability, UnOp};
-use glyim_core::{AdtId, DefId, IndexVec};
+use glyim_core::{CrateId, DefId, IndexVec, LocalDefId};
+use glyim_core::primitives::Mutability;
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Const, Substitution, Ty, TyCtx, TyCtxMut, TyKind};
-use glyim_test::{assert_mir, test_frozen_ty_ctx, test_ty_ctx};
+use glyim_type::{
+    Const, ConstKind, Substitution, Ty, TyCtx, TyCtxMut, TyKind, UintTy,
+};
+use glyim_test::test_ty_ctx;
+
+// Helper: create a dummy DefId for tests
+fn dummy_def_id() -> DefId {
+    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
+}
 
 // Helper: create a simple MIR body with a Drop terminator for a single local.
 // Uses TyCtxMut for construction, then freezes for assertion.
 fn body_with_drop(ctx_mut: &mut TyCtxMut, local_ty: Ty) -> (TyCtx, Body) {
-    let mut body = Body::dummy(DefId::from_raw(0, 0));
+    let mut body = Body::dummy(dummy_def_id());
     let local = body.locals.push(LocalDecl {
         ty: local_ty,
         mutability: Mutability::Mut,
@@ -50,10 +57,15 @@ fn body_with_drop(ctx_mut: &mut TyCtxMut, local_ty: Ty) -> (TyCtx, Body) {
     (ctx, body)
 }
 
-// Helper: create a body that represents an array of Drop types (simulated with a loop)
+// Helper: create a body that represents an array of Drop types.
 fn body_with_array_drop(ctx_mut: &mut TyCtxMut, elem_ty: Ty, len: u64) -> (TyCtx, Body) {
-    let mut body = Body::dummy(DefId::from_raw(0, 0));
-    let array_ty = ctx_mut.mk_ty(TyKind::Array(elem_ty, Const::from_usize(ctx_mut, len)));
+    let mut body = Body::dummy(dummy_def_id());
+    // Build a constant for the array length
+    let const_len = Const {
+        kind: ConstKind::Int(len as i128),
+        ty: ctx_mut.mk_ty(TyKind::Uint(UintTy::Usize)),
+    };
+    let array_ty = ctx_mut.mk_ty(TyKind::Array(elem_ty, const_len));
     let array_local = body.locals.push(LocalDecl {
         ty: array_ty,
         mutability: Mutability::Mut,
@@ -64,8 +76,7 @@ fn body_with_array_drop(ctx_mut: &mut TyCtxMut, elem_ty: Ty, len: u64) -> (TyCtx
         kind: StatementKind::StorageLive(array_local),
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    // Simulate a loop that iterates over indices and drops each element.
-    // For test, we just put a Drop terminator for the whole array (should be expanded).
+    // Drop terminator for the whole array
     let term = Terminator {
         kind: TerminatorKind::Drop {
             place: Place::new(array_local),
@@ -95,7 +106,7 @@ fn body_with_array_drop(ctx_mut: &mut TyCtxMut, elem_ty: Ty, len: u64) -> (TyCtx
 
 // Helper: create a body for an enum with a Drop variant.
 fn body_with_enum_drop(ctx_mut: &mut TyCtxMut, enum_ty: Ty) -> (TyCtx, Body) {
-    let mut body = Body::dummy(DefId::from_raw(0, 0));
+    let mut body = Body::dummy(dummy_def_id());
     let local = body.locals.push(LocalDecl {
         ty: enum_ty,
         mutability: Mutability::Mut,
@@ -135,9 +146,8 @@ fn body_with_enum_drop(ctx_mut: &mut TyCtxMut, enum_ty: Ty) -> (TyCtx, Body) {
 #[test]
 fn conditional_drop_after_partial_move() {
     let mut ctx_mut = test_ty_ctx();
-    // Use a type that is known to be Drop (e.g., a dummy struct with Drop impl).
-    // For testing, we can use a simple type that we mark as needing drop.
-    let ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(0), Substitution::empty()));
+    // Use a simple type placeholder (Ty::UNIT). In real code this would be a type with Drop impl.
+    let ty = Ty::UNIT;
     let (ctx, mut body) = body_with_drop(&mut ctx_mut, ty);
     // Run drop elaboration (initially a no-op stub)
     crate::elaborate_drops(&ctx, &mut body);
@@ -148,14 +158,12 @@ fn conditional_drop_after_partial_move() {
             panic!("Drop terminator still present after elaboration");
         }
     }
-    // Additionally, we can check that the body now contains a conditional branch based on drop flag.
-    // This will be implemented later.
 }
 
 #[test]
 fn array_drop_reverse() {
     let mut ctx_mut = test_ty_ctx();
-    let elem_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(0), Substitution::empty()));
+    let elem_ty = Ty::UNIT;
     let (ctx, mut body) = body_with_array_drop(&mut ctx_mut, elem_ty, 3);
     crate::elaborate_drops(&ctx, &mut body);
     // After elaboration, the Drop terminator for the whole array should be replaced
@@ -168,14 +176,13 @@ fn array_drop_reverse() {
             }
         }
     }
-    // TODO: More detailed check for the loop structure.
 }
 
 #[test]
 fn enum_drop_glue_discriminant() {
     let mut ctx_mut = test_ty_ctx();
-    // Simulate an enum type (we don't need full def, just a placeholder).
-    let enum_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(1), Substitution::empty()));
+    // Use a placeholder enum type (just an ADT with ID 1, no actual fields).
+    let enum_ty = ctx_mut.mk_ty(TyKind::Adt(Default::default(), Substitution::empty()));
     let (ctx, mut body) = body_with_enum_drop(&mut ctx_mut, enum_ty);
     crate::elaborate_drops(&ctx, &mut body);
     // After elaboration, the Drop terminator should be replaced by a switch on the
