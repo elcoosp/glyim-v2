@@ -10,6 +10,7 @@ use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
+use glyim_span::HygieneCtx;
 use glyim_span::{FileId, Span};
 use glyim_type::{ConstKind, FieldIdx, Ty, TyCtx, TyKind};
 use inkwell::AddressSpace;
@@ -20,6 +21,7 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
+#[allow(unused_imports)]
 
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
@@ -1644,6 +1646,7 @@ pub(crate) fn lower_body<'ctx>(
     ty_ctx: &TyCtx,
     debug_info: bool,
     source_map: HashMap<FileId, (String, String)>,
+    hygiene: Option<HygieneCtx>,
 ) -> CompResult<()> {
     let fn_name = format!(
         "func_{}_{}",
@@ -1670,7 +1673,11 @@ pub(crate) fn lower_body<'ctx>(
     };
     let function = module.add_function(&fn_name, fn_type, None);
     let mut debug_ctx = if debug_info {
-        Some(DebugInfoCtx::new(context, module, source_map, true))
+        // We need to get the hygiene context from somewhere; for now pass None
+        // TODO: integrate with LlvmBackend's hygiene field
+        Some(DebugInfoCtx::new(
+            context, module, source_map, true, hygiene,
+        ))
     } else {
         None
     };

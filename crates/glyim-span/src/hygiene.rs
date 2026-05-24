@@ -32,6 +32,7 @@ struct SyntaxContextData {
     parent: SyntaxContext,
 }
 
+#[derive(Clone)]
 pub struct HygieneCtx {
     expansions: Vec<ExpnData>,
     next_expn_id: u32,

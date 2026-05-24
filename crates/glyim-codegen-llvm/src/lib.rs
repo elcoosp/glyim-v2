@@ -3,7 +3,7 @@ use glyim_core::Interner;
 use glyim_core::TargetInfo;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_mir::Body;
-use glyim_span::FileId;
+use glyim_span::{FileId, HygieneCtx};
 use glyim_type::TyCtx;
 use glyim_type::TyCtxMut;
 use inkwell::context::Context;
@@ -28,6 +28,7 @@ pub struct LlvmBackend {
     source_map: HashMap<FileId, (String, String)>,
     opt_level: u8,
     opt_for_size: bool,
+    hygiene_ctx: Option<HygieneCtx>,
 }
 
 impl Default for LlvmBackend {
@@ -50,23 +51,27 @@ impl LlvmBackend {
             source_map: HashMap::new(),
             opt_level: 0,
             opt_for_size: false,
+            hygiene_ctx: None,
         }
     }
-    /// Lower multiple MIR bodies into a single LLVM module.
+
+    pub fn with_hygiene_ctx(mut self, hygiene: HygieneCtx) -> Self {
+        self.hygiene_ctx = Some(hygiene);
+        self
+    }
+
     pub fn lower_bodies_to_module<'ctx>(
         &self,
         context: &'ctx Context,
-        bodies: &[std::sync::Arc<Body>],
+        bodies: &[Arc<Body>],
     ) -> CompResult<inkwell::module::Module<'ctx>> {
         let module = context.create_module("glyim_module");
         let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-
         let ty_ctx = self
             .ty_ctx
             .as_ref()
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
-
         for body in bodies {
             crate::lower::lower_body(
                 context,
@@ -76,10 +81,12 @@ impl LlvmBackend {
                 ty_ctx,
                 self.debug_info,
                 self.source_map.clone(),
+                self.hygiene_ctx.clone(),
             )?;
         }
         Ok(module)
     }
+
     pub fn with_target(target_triple: impl Into<String>) -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let default_ctx = TyCtxMut::new(Interner::default()).freeze();
@@ -94,6 +101,7 @@ impl LlvmBackend {
             source_map: HashMap::new(),
             opt_level: 0,
             opt_for_size: false,
+            hygiene_ctx: None,
         }
     }
 
@@ -111,6 +119,7 @@ impl LlvmBackend {
         self.source_map = map;
         self
     }
+
     pub fn with_opt_level(mut self, level: u8) -> Self {
         self.opt_level = level;
         self
@@ -120,6 +129,7 @@ impl LlvmBackend {
         self.opt_for_size = size;
         self
     }
+
     pub(crate) fn run_passes_on_module<'ctx>(
         &self,
         module: &inkwell::module::Module<'ctx>,
@@ -128,7 +138,7 @@ impl LlvmBackend {
         crate::passes::run_llvm_passes(module, target_machine, self.opt_level, self.opt_for_size)
     }
 
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub(crate) fn lower_body_to_module<'ctx>(
         &self,
         context: &'ctx Context,
@@ -149,14 +159,12 @@ impl LlvmBackend {
             ty_ctx,
             self.debug_info,
             self.source_map.clone(),
+            self.hygiene_ctx.clone(),
         )?;
         Ok(module)
     }
 
-    /// Generate LLVM IR for a single body as a string.
-    ///
-    /// Useful for testing type lowering without needing to write object files.
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub(crate) fn generate_ir(&self, body: &Body) -> CompResult<String> {
         let context = Context::create();
         let module = self.lower_body_to_module(&context, body)?;
@@ -174,12 +182,10 @@ impl CodegenBackend for LlvmBackend {
         let module = context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-
         let ty_ctx = self
             .ty_ctx
             .as_ref()
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
-
         for body in bodies.iter() {
             crate::lower::lower_body(
                 context,
@@ -189,16 +195,15 @@ impl CodegenBackend for LlvmBackend {
                 ty_ctx,
                 self.debug_info,
                 self.source_map.clone(),
+                self.hygiene_ctx.clone(),
             )?;
         }
-
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
                 "Target error: {}",
                 e
             ))]
         })?;
-
         let target_machine = target
             .create_target_machine(
                 &triple,
@@ -213,10 +218,8 @@ impl CodegenBackend for LlvmBackend {
                     "Failed to create target machine",
                 )]
             })?;
-
         self.run_passes_on_module(&module, &target_machine)
             .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
-
         target_machine
             .write_to_file(&module, inkwell::targets::FileType::Object, output)
             .map_err(|e| {
@@ -225,7 +228,6 @@ impl CodegenBackend for LlvmBackend {
                     e
                 ))]
             })?;
-
         Ok(())
     }
 
@@ -234,12 +236,10 @@ impl CodegenBackend for LlvmBackend {
         let module = context.create_module("glyim_func");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-
         let ty_ctx = self
             .ty_ctx
             .as_ref()
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
-
         crate::lower::lower_body(
             context,
             &module,
@@ -248,15 +248,14 @@ impl CodegenBackend for LlvmBackend {
             ty_ctx,
             self.debug_info,
             self.source_map.clone(),
+            self.hygiene_ctx.clone(),
         )?;
-
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
                 "Target error: {}",
                 e
             ))]
         })?;
-
         let target_machine = target
             .create_target_machine(
                 &triple,
@@ -271,10 +270,8 @@ impl CodegenBackend for LlvmBackend {
                     "Failed to create target machine",
                 )]
             })?;
-
         self.run_passes_on_module(&module, &target_machine)
             .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
-
         target_machine
             .write_to_memory_buffer(&module, inkwell::targets::FileType::Object)
             .map(|buf| buf.as_slice().to_vec())
