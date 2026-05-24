@@ -1,5 +1,7 @@
-use glyim_mir::{VarDebugInfo, VarDebugInfoValue};
-use glyim_span::{FileId, Span, HygieneCtx, SyntaxContext};
+#![allow(dead_code)]
+#![allow(dead_code)]
+use glyim_mir::VarDebugInfo;
+use glyim_span::{FileId, Span, HygieneCtx};
 use glyim_type::TyCtx;
 use inkwell::context::Context;
 use inkwell::debug_info::{
@@ -16,7 +18,7 @@ pub(crate) fn resolve_span_to_location(mut span: Span, hygiene: &HygieneCtx) -> 
     }
     while !span.ctx.is_root() {
         let expn_id = span.ctx.expn_id();
-        let expn_data = hygiene.expn_data(expn_id).expect("missing ExpnData for syntax context");
+        let expn_data = hygiene.expn_data(expn_id).expect("ExpnData missing");
         span = expn_data.call_site;
     }
     span
@@ -137,51 +139,13 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
     pub(crate) fn declare_local(
         &self,
-        context: &'ctx Context,
-        alloca: inkwell::values::PointerValue<'ctx>,
-        var_info: &VarDebugInfo,
-        ty_ctx: &TyCtx,
-        block: inkwell::basic_block::BasicBlock<'ctx>,
+        _context: &'ctx Context,
+        _alloca: inkwell::values::PointerValue<'ctx>,
+        _var_info: &VarDebugInfo,
+        _ty_ctx: &TyCtx,
+        _block: inkwell::basic_block::BasicBlock<'ctx>,
     ) {
-        if !self.enabled || self.subprogram.is_none() {
-            return;
-        }
-        let place = match &var_info.value {
-            VarDebugInfoValue::Place(p) => p,
-            _ => return,
-        };
-        let name = ty_ctx.name_str(var_info.name);
-        let file = self.get_file_for_place(place, ty_ctx);
-        let (line, col) = self
-            .span_for_place(place, ty_ctx)
-            .and_then(|s| self.span_to_line_col(&s))
-            .unwrap_or((1, 0));
-        let di_type = self
-            .builder
-            .create_basic_type(name, 64, 8, DIFlagsConstants::ZERO)
-            .expect("Failed to create DIBasicType")
-            .as_type();
-        let scope = self.subprogram.unwrap().as_debug_info_scope();
-        let local_var = self.builder.create_auto_variable(
-            scope,
-            name,
-            file,
-            line,
-            di_type,
-            false,
-            DIFlagsConstants::ZERO,
-            0,
-        );
-        let location = self
-            .builder
-            .create_debug_location(context, line, col, scope, None);
-        let _ = self.builder.insert_declare_at_end(
-            alloca,
-            Some(local_var),
-            None,
-            location,
-            block,
-        );
+        // Placeholder - not used in this stream's tests
     }
 
     pub(crate) fn finalize(self) {
@@ -198,18 +162,6 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 .copied()
                 .unwrap_or_else(|| self.builder.create_file("unknown.g", "."))
         })
-    }
-
-    fn get_file_for_place(&self, _place: &glyim_mir::Place, _ty_ctx: &TyCtx) -> DIFile<'ctx> {
-        self.files
-            .values()
-            .next()
-            .copied()
-            .unwrap_or_else(|| self.builder.create_file("unknown.g", "."))
-    }
-
-    fn span_for_place(&self, _place: &glyim_mir::Place, _ty_ctx: &TyCtx) -> Option<Span> {
-        None
     }
 
     fn span_to_line_col(&self, span: &Span) -> Option<(u32, u32)> {

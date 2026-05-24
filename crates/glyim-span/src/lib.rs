@@ -115,7 +115,7 @@ impl SyntaxContext {
     }
     #[allow(dead_code)]
     #[allow(dead_code)]
-    pub(crate) fn from_raw(raw: u32) -> Self {
+    pub fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
 }
@@ -132,7 +132,7 @@ impl ExpnId {
         self.0
     }
     #[allow(dead_code)]
-    pub(crate) fn from_raw(raw: u32) -> Self {
+    pub fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
 }
@@ -181,9 +181,24 @@ impl From<Span> for MultiSpan {
 #[cfg(test)]
 mod tests;
 impl SyntaxContext {
-    /// Retrieve the expansion ID associated with this syntax context.
+    /// Returns the expansion ID associated with this syntax context.
     /// For root contexts, returns `ExpnId::ROOT`.
-    pub(crate) fn expn_id(self) -> ExpnId {
+    pub fn expn_id(self) -> ExpnId {
         ExpnId::from_raw(self.to_raw())
+    }
+}
+#[cfg(test)]
+impl ExpnId {
+    /// Test-only constructor to create an ExpnId from a raw u32.
+    pub fn test_from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+}
+
+#[cfg(test)]
+impl SyntaxContext {
+    /// Test-only constructor to create a SyntaxContext from a raw u32.
+    pub fn test_from_raw(raw: u32) -> Self {
+        Self::from_raw(raw)
     }
 }
