@@ -1,9 +1,12 @@
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::unused_enumerate_index)]
 //! Drop elaboration: inserts drop flags and conditional branches around `Drop` terminators.
 //! Array drops are currently replaced with a direct Goto (stub) and will be implemented fully later.
 
 use std::collections::VecDeque;
 
-use glyim_core::{IndexVec, Mutability};
+use glyim_core::IndexVec;
+use glyim_core::Mutability;
 use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Ty, TyCtx, TyKind};
@@ -88,7 +91,7 @@ impl DropFlags {
     }
 
     fn create_flags(&mut self, ctx: &TyCtx, body: &mut Body) {
-        for (_orig, flag_opt) in self.flag_for_local.iter_mut().enumerate() {
+        for flag_opt in self.flag_for_local.iter_mut() {
             if flag_opt.is_some() {
                 let flag_local = body.locals.push(LocalDecl {
                     ty: ctx.bool_ty(),
@@ -171,10 +174,8 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 None
             };
             new_stmts.push(stmt);
-            if let Some(local) = local {
-                if let Some(flag) = flags.get_flag(local) {
-                    new_stmts.push(DropFlags::set_flag_stmt(flag, true, span, ctx));
-                }
+            if let Some(local) = local && let Some(flag) = flags.get_flag(local) {
+                new_stmts.push(DropFlags::set_flag_stmt(flag, true, span, ctx));
             }
         }
         block.statements = new_stmts;
@@ -265,12 +266,9 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 }
 
 fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
-    match ctx.ty_kind(ty) {
-        TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => false,
-        TyKind::Never | TyKind::Unit => false,
-        _ => true,
-    }
+    !matches!(ctx.ty_kind(ty), TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char | TyKind::Never | TyKind::Unit)
 }
+
 
 #[cfg(test)]
 mod tests {}
