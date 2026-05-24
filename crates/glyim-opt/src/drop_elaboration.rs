@@ -87,7 +87,9 @@ impl DropFlags {
                 flags[local.to_raw() as usize] = Some(LocalIdx::from_raw(0));
             }
         }
-        DropFlags { flag_for_local: flags }
+        DropFlags {
+            flag_for_local: flags,
+        }
     }
 
     fn create_flags(&mut self, ctx: &TyCtx, body: &mut Body) {
@@ -100,10 +102,13 @@ impl DropFlags {
                 });
                 *flag_opt = Some(flag_local);
                 let entry_block = &mut body.basic_blocks[BasicBlockIdx::from_raw(0)];
-                entry_block.statements.insert(0, Statement {
-                    kind: StatementKind::StorageLive(flag_local),
-                    source_info: SourceInfo::new(Span::DUMMY),
-                });
+                entry_block.statements.insert(
+                    0,
+                    Statement {
+                        kind: StatementKind::StorageLive(flag_local),
+                        source_info: SourceInfo::new(Span::DUMMY),
+                    },
+                );
                 let init = Statement {
                     kind: StatementKind::Assign(
                         Place::new(flag_local),
@@ -174,7 +179,9 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 None
             };
             new_stmts.push(stmt);
-            if let Some(local) = local && let Some(flag) = flags.get_flag(local) {
+            if let Some(local) = local
+                && let Some(flag) = flags.get_flag(local)
+            {
                 new_stmts.push(DropFlags::set_flag_stmt(flag, true, span, ctx));
             }
         }
@@ -190,7 +197,11 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
         let terminator = &old_block.terminator;
 
         let new_term = match &terminator.kind {
-            TerminatorKind::Drop { place, target, cleanup } => {
+            TerminatorKind::Drop {
+                place,
+                target,
+                cleanup,
+            } => {
                 let ty = place.ty(ctx, &body.locals);
                 if !needs_drop(ctx, ty) {
                     TerminatorKind::Goto { target: *target }
@@ -204,7 +215,12 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                         if let Some(flag_local) = flags.get_flag(local) {
                             let drop_block_idx = new_blocks.len();
                             let drop_block = BasicBlockIdx::from_raw(drop_block_idx as u32);
-                            let clear_flag = DropFlags::set_flag_stmt(flag_local, false, terminator.source_info.span, ctx);
+                            let clear_flag = DropFlags::set_flag_stmt(
+                                flag_local,
+                                false,
+                                terminator.source_info.span,
+                                ctx,
+                            );
                             let drop_block_data = BasicBlockData {
                                 statements: vec![clear_flag],
                                 terminator: Terminator {
@@ -266,9 +282,17 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 }
 
 fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
-    !matches!(ctx.ty_kind(ty), TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char | TyKind::Never | TyKind::Unit)
+    !matches!(
+        ctx.ty_kind(ty),
+        TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char
+            | TyKind::Never
+            | TyKind::Unit
+    )
 }
-
 
 #[cfg(test)]
 mod tests {}

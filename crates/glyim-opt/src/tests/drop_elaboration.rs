@@ -4,8 +4,8 @@ use glyim_core::primitives::Mutability;
 use glyim_core::{AdtId, CrateId, DefId, IndexVec, LocalDefId, UintTy};
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Const, ConstKind, Substitution, Ty, TyCtx, TyCtxMut, TyKind};
 use glyim_test::test_ty_ctx;
+use glyim_type::{Const, ConstKind, Substitution, Ty, TyCtx, TyCtxMut, TyKind};
 
 // Helper: create a dummy DefId for tests
 fn dummy_def_id() -> DefId {
@@ -179,8 +179,9 @@ fn enum_drop_glue_discriminant() {
             panic!("Drop terminator still present after elaboration");
         }
     }
-    let has_switch = body.basic_blocks.iter().any(|block| {
-        matches!(block.terminator.kind, TerminatorKind::SwitchInt { .. })
-    });
+    let has_switch = body
+        .basic_blocks
+        .iter()
+        .any(|block| matches!(block.terminator.kind, TerminatorKind::SwitchInt { .. }));
     assert!(has_switch, "Expected a SwitchInt terminator for enum drop");
 }
