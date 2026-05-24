@@ -1,4 +1,3 @@
-use glyim_span::HygieneCtx;
 use crate::abi::FullLayoutComputer;
 use crate::debug::DebugInfoCtx;
 use crate::types::llvm_type_for_ty;
@@ -11,6 +10,7 @@ use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
+use glyim_span::HygieneCtx;
 use glyim_span::{FileId, Span};
 use glyim_type::{ConstKind, FieldIdx, Ty, TyCtx, TyKind};
 use inkwell::AddressSpace;
@@ -22,7 +22,6 @@ use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntVal
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 #[allow(unused_imports)]
-
 
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
@@ -1646,7 +1645,9 @@ pub(crate) fn lower_body<'ctx>(
     target_info: TargetInfo,
     ty_ctx: &TyCtx,
     debug_info: bool,
-    source_map: HashMap<FileId, (String, String)>, hygiene: Option<HygieneCtx>) -> CompResult<()> {
+    source_map: HashMap<FileId, (String, String)>,
+    hygiene: Option<HygieneCtx>,
+) -> CompResult<()> {
     let fn_name = format!(
         "func_{}_{}",
         body.owner.krate.to_raw(),
@@ -1674,7 +1675,9 @@ pub(crate) fn lower_body<'ctx>(
     let mut debug_ctx = if debug_info {
         // We need to get the hygiene context from somewhere; for now pass None
         // TODO: integrate with LlvmBackend's hygiene field
-        Some(DebugInfoCtx::new(context, module, source_map, true, hygiene))
+        Some(DebugInfoCtx::new(
+            context, module, source_map, true, hygiene,
+        ))
     } else {
         None
     };

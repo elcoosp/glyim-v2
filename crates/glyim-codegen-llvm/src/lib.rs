@@ -68,9 +68,10 @@ impl LlvmBackend {
         let module = context.create_module("glyim_module");
         let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-        let ty_ctx = self.ty_ctx.as_ref().ok_or_else(|| {
-            vec![GlyimDiagnostic::internal_error("no TyCtx available")]
-        })?;
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
         for body in bodies {
             crate::lower::lower_body(
                 context,
@@ -146,9 +147,10 @@ impl LlvmBackend {
         let module = context.create_module("test_module");
         let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-        let ty_ctx = self.ty_ctx.as_ref().ok_or_else(|| {
-            vec![GlyimDiagnostic::internal_error("no TyCtx available")]
-        })?;
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
         crate::lower::lower_body(
             context,
             &module,
@@ -180,9 +182,10 @@ impl CodegenBackend for LlvmBackend {
         let module = context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-        let ty_ctx = self.ty_ctx.as_ref().ok_or_else(|| {
-            vec![GlyimDiagnostic::internal_error("no TyCtx available")]
-        })?;
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
         for body in bodies.iter() {
             crate::lower::lower_body(
                 context,
@@ -196,7 +199,10 @@ impl CodegenBackend for LlvmBackend {
             )?;
         }
         let target = Target::from_triple(&triple).map_err(|e| {
-            vec![GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
+            vec![GlyimDiagnostic::internal_error(format!(
+                "Target error: {}",
+                e
+            ))]
         })?;
         let target_machine = target
             .create_target_machine(
@@ -208,7 +214,9 @@ impl CodegenBackend for LlvmBackend {
                 inkwell::targets::CodeModel::Default,
             )
             .ok_or_else(|| {
-                vec![GlyimDiagnostic::internal_error("Failed to create target machine")]
+                vec![GlyimDiagnostic::internal_error(
+                    "Failed to create target machine",
+                )]
             })?;
         self.run_passes_on_module(&module, &target_machine)
             .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
@@ -228,9 +236,10 @@ impl CodegenBackend for LlvmBackend {
         let module = context.create_module("glyim_func");
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
-        let ty_ctx = self.ty_ctx.as_ref().ok_or_else(|| {
-            vec![GlyimDiagnostic::internal_error("no TyCtx available")]
-        })?;
+        let ty_ctx = self
+            .ty_ctx
+            .as_ref()
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
         crate::lower::lower_body(
             context,
             &module,
@@ -242,7 +251,10 @@ impl CodegenBackend for LlvmBackend {
             self.hygiene_ctx.clone(),
         )?;
         let target = Target::from_triple(&triple).map_err(|e| {
-            vec![GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
+            vec![GlyimDiagnostic::internal_error(format!(
+                "Target error: {}",
+                e
+            ))]
         })?;
         let target_machine = target
             .create_target_machine(
@@ -254,7 +266,9 @@ impl CodegenBackend for LlvmBackend {
                 inkwell::targets::CodeModel::Default,
             )
             .ok_or_else(|| {
-                vec![GlyimDiagnostic::internal_error("Failed to create target machine")]
+                vec![GlyimDiagnostic::internal_error(
+                    "Failed to create target machine",
+                )]
             })?;
         self.run_passes_on_module(&module, &target_machine)
             .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
