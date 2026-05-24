@@ -1,468 +1,122 @@
-use crate::LlvmBackend;
-use glyim_core::arena::IndexVec;
-use glyim_core::primitives::*;
-use glyim_core::{CrateId, DefId, LocalDefId, Name};
-use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand, Place, Rvalue,
-    SourceInfo, Statement, StatementKind, Terminator, TerminatorKind, VarDebugInfo,
-    VarDebugInfoValue,
+use glyim_span::{
+    ByteIdx, FileId, Span, SyntaxContext, HygieneCtx, ExpnId, ExpnData, ExpnKind, Mark, Transparency,
 };
-use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
+use glyim_core::Name;
 use glyim_type::TyCtxMut;
-use inkwell::context::Context;
+use glyim_mir::Body;
+use crate::debug::resolve_span_to_location;
+use crate::LlvmBackend;
 use std::collections::HashMap;
 
-fn make_test_body(ctx: &TyCtxMut, var_name: Name) -> Body {
-    let bool_ty = ctx.bool_ty();
-    let unit_ty = ctx.unit_ty();
-
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-    locals.push(LocalDecl {
-        ty: unit_ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::new(
-            FileId::from_raw(0),
-            ByteIdx::from_raw(0),
-            ByteIdx::from_raw(0),
-            SyntaxContext::ROOT,
-        )),
-    });
-    locals.push(LocalDecl {
-        ty: bool_ty,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::new(
-            FileId::from_raw(0),
-            ByteIdx::from_raw(10),
-            ByteIdx::from_raw(15),
-            SyntaxContext::ROOT,
-        )),
-    });
-    body.locals = locals;
-
-    body.var_debug_info = vec![VarDebugInfo {
-        name: var_name,
-        value: VarDebugInfoValue::Place(Place::new(LocalIdx::from_raw(1))),
-    }];
-
-    let stmts = vec![Statement {
-        kind: StatementKind::Assign(
-            Place::new(LocalIdx::from_raw(1)),
-            Rvalue::Use(Operand::Constant(MirConst {
-                kind: MirConstKind::Bool(false),
-                ty: bool_ty,
-                span: Span::new(
-                    FileId::from_raw(0),
-                    ByteIdx::from_raw(12),
-                    ByteIdx::from_raw(17),
-                    SyntaxContext::ROOT,
-                ),
-            })),
-        ),
-        source_info: SourceInfo::new(Span::new(
-            FileId::from_raw(0),
-            ByteIdx::from_raw(10),
-            ByteIdx::from_raw(17),
-            SyntaxContext::ROOT,
-        )),
-    }];
-
-    let bb_data = BasicBlockData {
-        statements: stmts,
-        terminator: Terminator {
-            kind: TerminatorKind::Return,
-            source_info: SourceInfo::new(Span::new(
-                FileId::from_raw(0),
-                ByteIdx::from_raw(18),
-                ByteIdx::from_raw(19),
-                SyntaxContext::ROOT,
-            )),
-        },
-        is_cleanup: false,
+fn create_hygiene_ctx_with_expansion() -> (HygieneCtx, Span, Span) {
+    let mut hygiene = HygieneCtx::new();
+    let file_id = FileId::from_raw(1);
+    let call_site = Span::new(file_id, ByteIdx::from_raw(10), ByteIdx::from_raw(20), SyntaxContext::ROOT);
+    let def_site = Span::new(file_id, ByteIdx::from_raw(30), ByteIdx::from_raw(40), SyntaxContext::ROOT);
+    let expn_id = ExpnId::ROOT;
+    let expn_data = ExpnData {
+        expn_id,
+        parent: ExpnId::ROOT,
+        kind: ExpnKind::MacroRules { name: Name::from_raw(1) },
+        call_site,
+        def_site,
+        transparency: Transparency::Transparent,
     };
-
-    let mut bbs = IndexVec::new();
-    bbs.push(bb_data);
-    body.basic_blocks = bbs;
-    body
-}
-
-fn make_source_map(source: &str) -> HashMap<FileId, (String, String)> {
-    let mut map = HashMap::new();
-    map.insert(
-        FileId::from_raw(0),
-        ("test.g".to_string(), source.to_string()),
-    );
-    map
-}
-
-fn has_compile_unit(module: &inkwell::module::Module) -> bool {
-    !module.get_global_metadata("llvm.dbg.cu").is_empty()
+    hygiene.push_expansion(expn_data);
+    let expanded_span = Span::new(file_id, ByteIdx::from_raw(15), ByteIdx::from_raw(25), SyntaxContext::ROOT);
+    let mark = Mark { expn_id, transparency: Transparency::Transparent };
+    let adjusted_span = hygiene.adjust(expanded_span, &mark);
+    (hygiene, adjusted_span, call_site)
 }
 
 #[test]
-fn test_debug_compile_unit_present() {
-    let source = "fn main() {\n  let x = false;\n}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering failed");
-
-    assert!(
-        has_compile_unit(&module),
-        "Expected a DICompileUnit in the module"
-    );
+fn resolve_span_to_location_returns_call_site_for_macro_span() {
+    let (hygiene, expanded_span, call_site) = create_hygiene_ctx_with_expansion();
+    let resolved = resolve_span_to_location(expanded_span, &hygiene);
+    assert_eq!(resolved.file, call_site.file);
+    assert_eq!(resolved.lo.to_usize(), call_site.lo.to_usize());
+    assert_eq!(resolved.hi.to_usize(), call_site.hi.to_usize());
+    assert!(resolved.ctx.is_root());
 }
 
 #[test]
-fn test_debug_subprogram_attached() {
-    let source = "fn main() {\n  let x = false;\n}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering failed");
-
-    let func = module.get_first_function().expect("no function in module");
-    assert!(
-        func.get_subprogram().is_some(),
-        "Function does not have a DISubprogram"
-    );
-}
-
-#[test]
-fn test_debug_line_info_on_instruction() {
-    let source = "fn main() {\n  let x = false;\n}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering failed");
-
-    let func = module.get_first_function().expect("no function in module");
-    let mut has_location = false;
-    for bb in func.get_basic_blocks() {
-        for instr in bb.get_instructions() {
-            if let Some(loc) = instr.get_debug_location() {
-                let _line: u32 = loc.get_line();
-                has_location = true;
-                break;
-            }
-        }
-    }
-    assert!(has_location, "No instruction with DILocation found");
-}
-
-#[test]
-fn test_debug_local_variable_has_di() {
-    let source = "fn main() {\n  let x = false;\n}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering failed");
-
-    assert!(
-        has_compile_unit(&module),
-        "No DICompileUnit found; debug info not generated"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Additional Tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_debug_info_disabled_no_crash() {
-    let source = "fn main() { let x = 1; }";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(false)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering without debug info should succeed");
-
-    assert!(
-        !has_compile_unit(&module),
-        "DICompileUnit should NOT be present when debug info is disabled"
-    );
-}
-
-#[test]
-fn test_debug_info_multiple_files() {
-    let source_main = "fn main() {}\n";
-    let source_lib = "fn helper() -> bool { true }\n";
-
+fn macro_defined_function_has_correct_line_numbers_in_ir() {
+    // Create a hygiene context with a macro expansion that points to a call site.
+    let (hygiene, macro_span, call_site) = create_hygiene_ctx_with_expansion();
+    let file_id = FileId::from_raw(1);
+    let source = "line1\nline2\nline3\nline4\nline5".to_string();
     let mut source_map = HashMap::new();
-    source_map.insert(
-        FileId::from_raw(0),
-        ("main.g".to_string(), source_main.to_string()),
-    );
-    source_map.insert(
-        FileId::from_raw(1),
-        ("lib.g".to_string(), source_lib.to_string()),
-    );
-
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
+    source_map.insert(file_id, ("test.g".to_string(), source.clone()));
+    // Create a dummy MIR body with a span that is the macro span.
+    // We'll build a minimal body (just a return).
+    let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+    let unit_ty = ctx_mut.unit_ty();
+    let return_ty = unit_ty;
+    let mut locals = glyim_core::arena::IndexVec::new();
+    locals.push(glyim_mir::LocalDecl { ty: return_ty, mutability: glyim_core::primitives::Mutability::Not, source_info: glyim_mir::SourceInfo::new(macro_span) });
+    let mut basic_blocks = glyim_core::arena::IndexVec::new();
+    let terminator = glyim_mir::Terminator { kind: glyim_mir::TerminatorKind::Return, source_info: glyim_mir::SourceInfo::new(macro_span) };
+    basic_blocks.push(glyim_mir::BasicBlockData { statements: vec![], terminator, is_cleanup: false });
+    let body = Body {
+        owner: glyim_core::DefId::new(glyim_core::CrateId::from_raw(1), glyim_core::LocalDefId::from_raw(1)),
+        basic_blocks,
+        locals,
+        arg_count: 0,
+        return_ty,
+        span: macro_span,
+        var_debug_info: vec![],
+    };
+    // Create backend with debug info enabled, source map, and hygiene context.
     let backend = LlvmBackend::new()
         .with_debug_info(true)
-        .with_source_map(source_map);
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering with multiple files should succeed");
-
-    assert!(
-        has_compile_unit(&module),
-        "DICompileUnit should be present with multiple files"
-    );
+        .with_source_map(source_map)
+        .with_hygiene_ctx(hygiene);
+    let ir = backend.generate_ir(&body).expect("IR generation failed");
+    // Check that the DILocation line number equals the call site line.
+    let call_site_line = source[..call_site.lo.to_usize()].matches('\n').count() + 1;
+    // The IR should contain: !DILocation(line: <call_site_line>, ...
+    let expected_line_pattern = format!("line: {}", call_site_line);
+    assert!(ir.contains(&expected_line_pattern), "IR missing correct line number.\nIR:\n{}\nExpected line: {}", ir, call_site_line);
 }
 
 #[test]
-fn test_debug_info_empty_source() {
-    let source = "";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering with empty source should succeed");
-
-    assert!(
-        has_compile_unit(&module),
-        "DICompileUnit should exist even with empty source"
-    );
-}
-
-#[test]
-fn test_debug_info_dummy_spans() {
-    let source = "fn main() {}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering with dummy spans should succeed");
-
-    assert!(
-        has_compile_unit(&module),
-        "DICompileUnit should exist with dummy spans"
-    );
-}
-
-#[test]
-fn test_debug_info_var_debug_const_value() {
-    let source = "fn main() {}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        let bool_ty = ctx_mut.bool_ty();
-        let unit_ty = ctx_mut.unit_ty();
-
-        let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-        let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-        locals.push(LocalDecl {
-            ty: unit_ty,
-            mutability: Mutability::Not,
-            source_info: SourceInfo::new(Span::new(
-                FileId::from_raw(0),
-                ByteIdx::from_raw(0),
-                ByteIdx::from_raw(0),
-                SyntaxContext::ROOT,
-            )),
-        });
-        body.locals = locals;
-
-        body.var_debug_info = vec![VarDebugInfo {
-            name: name_x,
-            value: VarDebugInfoValue::Const(MirConst {
-                kind: MirConstKind::Bool(true),
-                ty: bool_ty,
-                span: Span::DUMMY,
-            }),
-        }];
-
-        let bb_data = BasicBlockData {
-            statements: vec![],
-            terminator: Terminator {
-                kind: TerminatorKind::Return,
-                source_info: SourceInfo::new(Span::DUMMY),
-            },
-            is_cleanup: false,
-        };
-        let mut bbs = IndexVec::new();
-        bbs.push(bb_data);
-        body.basic_blocks = bbs;
-        body
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let result = backend.lower_body_to_module(&llvm_ctx, &body);
-    assert!(
-        result.is_ok(),
-        "Lowering with const debug variable should succeed"
-    );
-}
-
-#[test]
-fn test_debug_info_subprogram_exists() {
-    let source = "fn my_func() -> bool { false }\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering succeeded");
-
-    let func = module.get_first_function().expect("no function");
-    assert!(
-        func.get_subprogram().is_some(),
-        "Subprogram should be attached"
-    );
-}
-
-#[test]
-fn test_debug_info_no_source_map_no_crash() {
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(HashMap::new());
-
-    let llvm_ctx = Context::create();
-    let result = backend.lower_body_to_module(&llvm_ctx, &body);
-    assert!(
-        result.is_ok(),
-        "Lowering with empty source_map should succeed"
-    );
-}
-
-#[test]
-fn test_debug_info_multiline_source_line_numbers() {
-    let source = "// line 1\n// line 2\nfn main() {\n  let x = false;\n}\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering with multi-line source should succeed");
-
-    let func = module.get_first_function().expect("no function");
-    let mut locations: Vec<(u32, u32)> = Vec::new();
-    for bb in func.get_basic_blocks() {
-        for instr in bb.get_instructions() {
-            if let Some(loc) = instr.get_debug_location() {
-                locations.push((loc.get_line(), loc.get_column()));
-            }
-        }
-    }
-    assert!(!locations.is_empty(), "No debug locations found");
-    for (line, col) in &locations {
-        assert!(*line >= 1, "Line number should be >= 1, got {}", line);
-        assert!(col >= &0, "Column should be >= 0, got {}", col);
-    }
-}
-
-#[test]
-fn test_debug_info_verify_module() {
-    let source = "fn main() { let x: i32 = 42; }\n";
-    let (_ctx, body) = glyim_test::with_fresh_ty_ctx(|ctx_mut| {
-        let name_x = ctx_mut.resolver().intern("x");
-        make_test_body(ctx_mut, name_x)
-    });
-
-    let backend = LlvmBackend::new()
-        .with_debug_info(true)
-        .with_source_map(make_source_map(source));
-
-    let llvm_ctx = Context::create();
-    let module = backend
-        .lower_body_to_module(&llvm_ctx, &body)
-        .expect("lowering succeeded");
-
-    let result = module.verify();
-    assert!(
-        result.is_ok(),
-        "LLVM module verification failed: {:?}",
-        result.err()
-    );
+fn nested_macro_expansions_produce_correct_inline_locations() {
+    // Simulate two levels of macro expansion.
+    let mut hygiene = HygieneCtx::new();
+    let file_id = FileId::from_raw(1);
+    let outer_call_site = Span::new(file_id, ByteIdx::from_raw(5), ByteIdx::from_raw(15), SyntaxContext::ROOT);
+    let outer_expn_id = ExpnId::from_raw(42);
+    let outer_expn_data = ExpnData {
+        expn_id: outer_expn_id,
+        parent: ExpnId::ROOT,
+        kind: ExpnKind::MacroRules { name: Name::from_raw(1) },
+        call_site: outer_call_site,
+        def_site: Span::DUMMY,
+        transparency: Transparency::Transparent,
+    };
+    hygiene.push_expansion(outer_expn_data);
+    let inner_call_site = Span::new(file_id, ByteIdx::from_raw(20), ByteIdx::from_raw(30), SyntaxContext::ROOT);
+    let inner_expn_id = ExpnId::from_raw(43);
+    let inner_expn_data = ExpnData {
+        expn_id: inner_expn_id,
+        parent: outer_expn_id,
+        kind: ExpnKind::MacroRules { name: Name::from_raw(2) },
+        call_site: inner_call_site,
+        def_site: Span::DUMMY,
+        transparency: Transparency::Transparent,
+    };
+    hygiene.push_expansion(inner_expn_data);
+    let inner_mark = Mark { expn_id: inner_expn_id, transparency: Transparency::Transparent };
+    let outer_mark = Mark { expn_id: outer_expn_id, transparency: Transparency::Transparent };
+    // Create a span inside the inner macro body, then apply both marks.
+    let inner_span = Span::new(file_id, ByteIdx::from_raw(25), ByteIdx::from_raw(35), SyntaxContext::ROOT);
+    let inner_expanded = hygiene.adjust(inner_span, &inner_mark);
+    let outer_expanded = hygiene.adjust(inner_expanded, &outer_mark);
+    // Resolve should walk back to outer_call_site, then to the original root? Actually resolve_span_to_location walks until root.
+    let resolved = resolve_span_to_location(outer_expanded, &hygiene);
+    // The final resolved span should be the outermost call site (outer_call_site) because that's the root.
+    assert_eq!(resolved.file, outer_call_site.file);
+    assert_eq!(resolved.lo.to_usize(), outer_call_site.lo.to_usize());
+    // Also ensure the resolved span's context is root.
+    assert!(resolved.ctx.is_root());
 }

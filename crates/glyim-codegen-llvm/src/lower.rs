@@ -20,6 +20,8 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
+#[allow(unused_imports)]
+
 
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
@@ -1643,8 +1645,7 @@ pub(crate) fn lower_body<'ctx>(
     target_info: TargetInfo,
     ty_ctx: &TyCtx,
     debug_info: bool,
-    source_map: HashMap<FileId, (String, String)>,
-) -> CompResult<()> {
+    source_map: HashMap<FileId, (String, String)>) -> CompResult<()> {
     let fn_name = format!(
         "func_{}_{}",
         body.owner.krate.to_raw(),
@@ -1670,7 +1671,9 @@ pub(crate) fn lower_body<'ctx>(
     };
     let function = module.add_function(&fn_name, fn_type, None);
     let mut debug_ctx = if debug_info {
-        Some(DebugInfoCtx::new(context, module, source_map, true))
+        // We need to get the hygiene context from somewhere; for now pass None
+        // TODO: integrate with LlvmBackend's hygiene field
+        Some(DebugInfoCtx::new(context, module, source_map, true, None))
     } else {
         None
     };

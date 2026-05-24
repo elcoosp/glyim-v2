@@ -180,3 +180,10 @@ impl From<Span> for MultiSpan {
 
 #[cfg(test)]
 mod tests;
+impl SyntaxContext {
+    /// Retrieve the expansion ID associated with this syntax context.
+    /// For root contexts, returns `ExpnId::ROOT`.
+    pub(crate) fn expn_id(self) -> ExpnId {
+        ExpnId::from_raw(self.to_raw())
+    }
+}
