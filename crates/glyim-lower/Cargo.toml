@@ -21,3 +21,8 @@ glyim-test = { workspace = true }
 glyim-frontend = { workspace = true }
 glyim-def-map = { workspace = true }
 glyim-solve = { workspace = true }
+
+# Dev dependencies for slice pattern tests
+glyim-codegen-llvm = { workspace = true }
+glyim-pipeline = { workspace = true }
+tempfile = "3"
