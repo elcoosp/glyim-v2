@@ -9,5 +9,6 @@ glyim-type = { workspace = true }
 glyim-mir = { workspace = true }
 glyim-core = { workspace = true }
 
+tracing = { workspace = true }
 [dev-dependencies]
 glyim-test = { workspace = true }

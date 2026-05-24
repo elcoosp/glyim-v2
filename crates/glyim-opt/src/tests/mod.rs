@@ -5,6 +5,7 @@ mod constant_prop;
 mod constant_prop_tests;
 mod dce;
 mod dce_tests;
+mod drop_elaboration;
 mod noop;
 mod testutil;
 mod unreachable_elim;

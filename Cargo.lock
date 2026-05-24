@@ -1070,6 +1070,7 @@ dependencies = [
  "glyim-span",
  "glyim-test",
  "glyim-type",
+ "tracing",
 ]
 
 [[package]]

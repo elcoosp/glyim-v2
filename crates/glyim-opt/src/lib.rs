@@ -25,3 +25,11 @@ pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
 
 #[cfg(test)]
 mod tests;
+
+/// Stub for drop elaboration. Will be implemented later.
+mod drop_elaboration;
+
+/// Run drop elaboration on the MIR body.
+pub fn elaborate_drops(ctx: &TyCtx, body: &mut Body) {
+    drop_elaboration::run(ctx, body);
+}
