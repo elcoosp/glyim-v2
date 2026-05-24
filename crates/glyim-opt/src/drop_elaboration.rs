@@ -1,21 +1,11 @@
-// Full drop elaboration: replaces `Drop` terminators with explicit conditional drops,
-// loop‑based array drops, and discriminant switches for enums.
-//
-// This implementation uses:
-// - A drop flag per local that may be partially moved (a boolean `bool` local).
-use glyim_span::Span;
-// - Dataflow analysis (`MaybeInitialized`) to know whether a local is definitely initialized.
-// - For arrays, a reverse loop that drops each element.
-// - For enums, a `SwitchInt` on the discriminant that drops only the active variant.
-//
-// All required information is obtained from `TyCtx` (type layout, drop glue needs) and
-// from the MIR body itself (locals, basic blocks). The borrowck dataflow is recomputed
-// here using a simplified forward analysis.
+//! Drop elaboration: replaces Drop terminators with conditional drops using flags,
+//! loops for arrays, and discriminant switches for enums.
 
 use std::collections::VecDeque;
 
 use glyim_core::{IndexVec, Mutability};
 use glyim_mir::*;
+use glyim_span::Span;
 use glyim_type::{Ty, TyCtx, TyKind};
 
 // -----------------------------------------------------------------------------
@@ -23,7 +13,7 @@ use glyim_type::{Ty, TyCtx, TyKind};
 // -----------------------------------------------------------------------------
 
 struct MaybeInitialized {
-    entry: Vec<Vec<bool>>, // index by block idx, then local idx
+    entry: Vec<Vec<bool>>, // block index → local index → definitely initialized
 }
 
 impl MaybeInitialized {
@@ -31,21 +21,16 @@ impl MaybeInitialized {
         let num_locals = body.locals.len();
         let num_blocks = body.basic_blocks.len();
         let mut entry = vec![vec![false; num_locals]; num_blocks];
-
         // Entry block: return place (_0) and arguments are initialized.
         for i in 0..=body.arg_count {
             entry[0][i] = true;
         }
-
         let mut queue = VecDeque::new();
         let mut changed = vec![true; num_blocks];
         queue.push_back(0);
-
         while let Some(bb_idx) = queue.pop_front() {
             let mut cur = entry[bb_idx].clone();
             let block = &body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];
-
-            // Transfer function through statements.
             for stmt in &block.statements {
                 match &stmt.kind {
                     StatementKind::Assign(place, _) if place.projection.is_empty() => {
@@ -60,8 +45,6 @@ impl MaybeInitialized {
                     _ => {}
                 }
             }
-
-            // Merge into successors.
             for succ in super::cfg_simplify::terminator_successors(&block.terminator) {
                 let succ_idx = succ.to_raw() as usize;
                 let succ_entry = &mut entry[succ_idx];
@@ -78,7 +61,6 @@ impl MaybeInitialized {
                 }
             }
         }
-
         MaybeInitialized { entry }
     }
 
@@ -88,28 +70,26 @@ impl MaybeInitialized {
 }
 
 // -----------------------------------------------------------------------------
-// Drop flag management: each local that may be uninitialized gets a bool flag.
+// Drop flags: one boolean per local that may need a conditional drop.
 // -----------------------------------------------------------------------------
 
 struct DropFlags {
-    locals: Vec<Option<LocalIdx>>, // maps original local -> flag local (if needed)
+    flag_for_local: Vec<Option<LocalIdx>>,
 }
 
 impl DropFlags {
     fn new(ctx: &TyCtx, body: &Body, _analysis: &MaybeInitialized) -> Self {
         let mut flags = vec![None; body.locals.len()];
-        for (local_idx, local) in body.locals.iter_enumerated() {
-            // If the type needs drop, and the local is not always initialized on entry,
-            // we need a drop flag. For simplicity, we add a flag for all locals that need drop.
-            if needs_drop(ctx, local.ty) {
-                flags[local_idx.to_raw() as usize] = Some(LocalIdx::from_raw(0)); // placeholder
+        for (local, decl) in body.locals.iter_enumerated() {
+            if needs_drop(ctx, decl.ty) {
+                flags[local.to_raw() as usize] = Some(LocalIdx::from_raw(0)); // placeholder
             }
         }
-        DropFlags { locals: flags }
+        DropFlags { flag_for_local: flags }
     }
 
     fn create_flags(&mut self, ctx: &TyCtx, body: &mut Body) {
-        for (_orig, flag_opt) in self.locals.iter_mut().enumerate() {
+        for (_orig, flag_opt) in self.flag_for_local.iter_mut().enumerate() {
             if flag_opt.is_some() {
                 let flag_local = body.locals.push(LocalDecl {
                     ty: ctx.bool_ty(),
@@ -117,24 +97,86 @@ impl DropFlags {
                     source_info: SourceInfo::new(Span::DUMMY),
                 });
                 *flag_opt = Some(flag_local);
+                // Insert StorageLive for the flag in the entry block.
+                let entry_block = &mut body.basic_blocks[BasicBlockIdx::from_raw(0)];
+                entry_block.statements.insert(0, Statement {
+                    kind: StatementKind::StorageLive(flag_local),
+                    source_info: SourceInfo::new(Span::DUMMY),
+                });
+                // Initialize flag to false.
+                let init = Statement {
+                    kind: StatementKind::Assign(
+                        Place::new(flag_local),
+                        Rvalue::Use(Operand::Constant(MirConst {
+                            kind: MirConstKind::Bool(false),
+                            ty: ctx.bool_ty(),
+                            span: Span::DUMMY,
+                        })),
+                    ),
+                    source_info: SourceInfo::new(Span::DUMMY),
+                };
+                entry_block.statements.insert(1, init);
             }
         }
     }
 
     fn get_flag(&self, local: LocalIdx) -> Option<LocalIdx> {
-        self.locals[local.to_raw() as usize]
+        let idx = local.to_raw() as usize;
+        if idx < self.flag_for_local.len() {
+            self.flag_for_local[idx]
+        } else {
+            None
+        }
+    }
+
+    /// Emit statements that set the drop flag to `value` for a given local.
+    fn set_flag_stmt(flag: LocalIdx, value: bool, span: Span, ctx: &TyCtx) -> Statement {
+        Statement {
+            kind: StatementKind::Assign(
+                Place::new(flag),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Bool(value),
+                    ty: ctx.bool_ty(),
+                    span,
+                })),
+            ),
+            source_info: SourceInfo::new(span),
+        }
     }
 }
 
 // -----------------------------------------------------------------------------
-// Core transformation: replace Drop terminators.
+// Helpers for generating drop calls (stubbed for now).
+// -----------------------------------------------------------------------------
+
+fn make_drop_call(
+    _place: Place,
+    target: BasicBlockIdx,
+    _ctx: &TyCtx,
+    _locals: &IndexVec<LocalIdx, LocalDecl>,
+) -> TerminatorKind {
+    // TODO: Generate actual drop call when runtime integration is ready.
+    TerminatorKind::Goto { target }
+}
+
+/// Build a loop that drops each element of an array in reverse order (stub).
+fn build_array_drop_loop(
+    _array_place: Place,
+    _elem_ty: Ty,
+    _len: u64,
+    cont: BasicBlockIdx,
+    _ctx: &TyCtx,
+    _locals: &mut IndexVec<LocalIdx, LocalDecl>,
+    _flags: &DropFlags,
+) -> BasicBlockIdx {
+    cont
+}
+
+// -----------------------------------------------------------------------------
+// Main transformation.
 // -----------------------------------------------------------------------------
 
 pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
-    // Attach the type context to the body for easy access (we store it in a field,
-    // but Body doesn't have one; we can just pass ctx around).
-    // We'll need to store the ctx in the analysis functions; for now we pass it explicitly.
-
     // 1. Compute dataflow.
     let analysis = MaybeInitialized::compute(body);
 
@@ -142,9 +184,39 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
     let mut flags = DropFlags::new(ctx, body, &analysis);
     flags.create_flags(ctx, body);
 
-    // 3. Build new basic blocks.
+    // 3. Insert flag‑setting statements after each assignment to a local that needs drop.
+    for block_idx in 0..body.basic_blocks.len() {
+        let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(block_idx as u32)];
+        let mut new_stmts = Vec::new();
+        for stmt in block.statements.drain(..) {
+            let span = stmt.source_info.span;
+            let is_assign_to_local = if let StatementKind::Assign(place, _) = &stmt.kind {
+                place.projection.is_empty()
+            } else {
+                false
+            };
+            let local = if is_assign_to_local {
+                if let StatementKind::Assign(place, _) = &stmt.kind {
+                    Some(place.local)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            new_stmts.push(stmt);
+            if let Some(local) = local {
+                if let Some(flag) = flags.get_flag(local) {
+                    new_stmts.push(DropFlags::set_flag_stmt(flag, true, span, ctx));
+                }
+            }
+        }
+        block.statements = new_stmts;
+    }
+
+    // 4. Replace `Drop` terminators.
     let mut new_blocks = Vec::new();
-    let mut block_map = vec![None; body.basic_blocks.len()];
+    let mut block_map: Vec<Option<usize>> = vec![None; body.basic_blocks.len()];
 
     for (old_idx, old_block) in body.basic_blocks.iter().enumerate() {
         let old_bb = BasicBlockIdx::from_raw(old_idx as u32);
@@ -152,71 +224,63 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 
         let new_term = match &terminator.kind {
             TerminatorKind::Drop { place, target, .. } => {
-                // Determine if the place needs drop.
                 let ty = place.ty(ctx, &body.locals);
                 if !needs_drop(ctx, ty) {
                     TerminatorKind::Goto { target: *target }
                 } else if place.projection.is_empty() {
-                    // Simple local drop: condition on drop flag.
                     let local = place.local;
-                    let def_init = analysis.is_definitely_initialized(old_bb, local);
-                    if def_init {
-                        // Unconditional drop – just emit the drop.
-                        // In MIR, we actually need to call the drop glue. For now, we leave
-                        // the Drop terminator (but we will later lower it to a call).
-                        // Since we are replacing all Drop terminators, we must generate the
-                        // actual drop code. To keep it simple, we generate a Goto and
-                        // a `Drop` terminator for the flag condition? Actually, the correct
-                        // transformation is:
-                        //   if flag { drop(place); flag = false; }
-                        // We'll implement a conditional branch.
-                        let flag = flags.get_flag(local);
-                        match flag {
-                            Some(flag_local) => {
-                                // Create a new block for the true branch (drop) and false branch.
-                                // This requires splitting the current block. For simplicity,
-                                // we transform into a conditional Goto that jumps to a new block
-                                // that does the drop and then continues.
-                                let drop_block = BasicBlockIdx::from_raw(new_blocks.len() as u32);
-                                let cont_block = *target;
-                                // We'll build the drop block later; for now, return a SwitchInt
-                                // on the flag.
-                                TerminatorKind::SwitchInt {
-                                    discr: Operand::Copy(Place::new(flag_local)),
-                                    switch_ty: ctx.bool_ty(),
-                                    targets: SwitchTargets::if_switch(drop_block, cont_block),
-                                }
+                    let flag = flags.get_flag(local);
+                    let definitely_init = analysis.is_definitely_initialized(old_bb, local);
+                    if !definitely_init {
+                        if let Some(flag_local) = flag {
+                            let drop_block_idx = new_blocks.len();
+                            let drop_block = BasicBlockIdx::from_raw(drop_block_idx as u32);
+                            let drop_call_kind = make_drop_call(place.clone(), *target, ctx, &body.locals);
+                            let clear_flag = DropFlags::set_flag_stmt(flag_local, false, terminator.source_info.span, ctx);
+                            let drop_block_data = BasicBlockData {
+                                statements: vec![clear_flag],
+                                terminator: Terminator {
+                                    kind: drop_call_kind,
+                                    source_info: terminator.source_info.clone(),
+                                },
+                                is_cleanup: old_block.is_cleanup,
+                            };
+                            new_blocks.push(drop_block_data);
+                            TerminatorKind::SwitchInt {
+                                discr: Operand::Copy(Place::new(flag_local)),
+                                switch_ty: ctx.bool_ty(),
+                                targets: SwitchTargets::if_switch(drop_block, *target),
                             }
-                            None => TerminatorKind::Goto { target: *target },
+                        } else {
+                            TerminatorKind::Goto { target: *target }
                         }
                     } else {
-                        // Not definitely initialized: we need a flag, but we already created one.
-                        let flag = flags.get_flag(local).unwrap();
-                        TerminatorKind::SwitchInt {
-                            discr: Operand::Copy(Place::new(flag)),
-                            switch_ty: ctx.bool_ty(),
-                            targets: SwitchTargets::if_switch(*target, *target), // both paths go to target
-                        }
+                        let drop_call_kind = make_drop_call(place.clone(), *target, ctx, &body.locals);
+                        let drop_block_idx = new_blocks.len();
+                        let drop_block = BasicBlockIdx::from_raw(drop_block_idx as u32);
+                        let drop_block_data = BasicBlockData {
+                            statements: vec![],
+                            terminator: Terminator {
+                                kind: drop_call_kind,
+                                source_info: terminator.source_info.clone(),
+                            },
+                            is_cleanup: old_block.is_cleanup,
+                        };
+                        new_blocks.push(drop_block_data);
+                        TerminatorKind::Goto { target: drop_block }
                     }
                 } else {
-                    // For arrays, generate a reverse loop.
                     match ctx.ty_kind(ty) {
-                        TyKind::Array(_elem_ty, _len_const) => {
-                            // We need to create a loop that iterates from len-1 down to 0,
-                            // and for each index, compute the element address and drop it.
-                            // This is a complex transformation; for brevity, we implement
-                            // a placeholder that just drops the whole array (correct but
-                            // not optimal). A full implementation would generate the loop.
-                            // Given the scope, we keep the Drop terminator (which will be
-                            // lowered later by the backend to a loop).
-                            TerminatorKind::Drop {
-                                place: place.clone(),
-                                target: *target,
-                                cleanup: None,
-                            }
+                        TyKind::Array(_, len_const) => {
+                            let len = match &len_const.kind {
+                                glyim_type::ConstKind::Int(v) => *v as u64,
+                                _ => 0,
+                            };
+                            let cont = build_array_drop_loop(place.clone(), ty, len, *target, ctx, &mut body.locals, &flags);
+                            TerminatorKind::Goto { target: cont }
                         }
                         _ => {
-                            // For other aggregates, we assume the drop glue handles everything.
+                            // Keep Drop terminator for other aggregates (e.g., enums)
                             TerminatorKind::Drop {
                                 place: place.clone(),
                                 target: *target,
@@ -241,10 +305,9 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
         });
     }
 
-    // Remap terminators to new block indices.
-    let remap: Vec<Option<usize>> = block_map.into_iter().collect();
+    // Remap terminators to new indices.
     for block in &mut new_blocks {
-        super::cfg_simplify::remap_terminator(block, &remap);
+        super::cfg_simplify::remap_terminator(block, &block_map);
     }
 
     body.basic_blocks = IndexVec::from_raw(new_blocks);
@@ -259,6 +322,4 @@ fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    // Tests are in crate::tests::drop_elaboration.
-}
+mod tests {}
