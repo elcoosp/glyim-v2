@@ -27,8 +27,9 @@ pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
 mod tests;
 
 /// Stub for drop elaboration. Will be implemented later.
-pub fn elaborate_drops(_ctx: &TyCtx, _body: &mut Body) {
-    // TODO: Implement full drop elaboration
-    // Use tracing::warn as required by project rules
-    let _ = tracing::warn!("STUB: elaborate_drops not yet implemented");
+mod drop_elaboration;
+
+/// Run drop elaboration on the MIR body.
+pub fn elaborate_drops(ctx: &TyCtx, body: &mut Body) {
+    drop_elaboration::run(ctx, body);
 }

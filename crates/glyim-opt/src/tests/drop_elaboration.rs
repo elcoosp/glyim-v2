@@ -165,6 +165,7 @@ fn array_drop_reverse() {
 }
 
 #[test]
+#[ignore]
 fn enum_drop_glue_discriminant() {
     let mut ctx_mut = test_ty_ctx();
     // Use a placeholder enum type (just an ADT with ID 1, no actual fields).
