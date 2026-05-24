@@ -9,3 +9,4 @@ mod noop;
 mod testutil;
 mod unreachable_elim;
 mod unreachable_elim_tests;
+mod drop_elaboration;
