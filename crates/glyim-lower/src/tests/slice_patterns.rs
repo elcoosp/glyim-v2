@@ -3,7 +3,7 @@ use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::{IntTy, Mutability};
 use glyim_mir::{BasicBlockIdx, LocalIdx, Operand, Rvalue, StatementKind};
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtxMut, TyKind};
+use glyim_type::{TyCtxMut, TyKind};
 use glyim_typeck::thir::{
     self, Body, Expr, ExprKind, Literal, MatchArm, Pattern, PatternKind, Stmt,
 };

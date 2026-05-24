@@ -6,7 +6,7 @@ use glyim_core::interner::Interner;
 use glyim_def_map::*;
 use glyim_hir::where_clause::*;
 use glyim_hir::*;
-use glyim_solve::{SolverResult, TraitSolver};
+use glyim_solve::{SolverIteratorNextInfo, SolverResult, TraitSolver};
 use glyim_span::Span;
 use glyim_test::{assert_has_errors, assert_no_errors};
 use glyim_type::*;
@@ -107,28 +107,53 @@ fn build_simple_hir(
     (hir, body_id)
 }
 
-/// Approve‑all solver
 struct ApproveSolver;
+
 impl TraitSolver for ApproveSolver {
-    fn can_prove(&mut self, _ctx: &TyCtx, _pred: &TraitPredicate) -> SolverResult {
+    fn can_prove(&mut self, _ctx: &TyCtx, _predicate: &TraitPredicate) -> SolverResult {
         SolverResult::Proven
     }
-    fn evaluate_predicate(&mut self, _ctx: &TyCtx, _pred: &Predicate) -> SolverResult {
-        SolverResult::Proven
+
+    fn evaluate_predicate(&mut self, _ctx: &TyCtx, predicate: &Predicate) -> SolverResult {
+        match predicate {
+            Predicate::Trait(tp) => self.can_prove(_ctx, tp),
+            _ => SolverResult::Proven,
+        }
+    }
+
+    fn iterator_next_info(
+        &self,
+        _ctx_mut: &mut TyCtxMut,
+        _iter_ty: Ty,
+        _elem_ty: Ty,
+    ) -> Option<SolverIteratorNextInfo> {
+        None
     }
 }
 
-/// Solver that rejects everything
 struct RejectSolver;
+
 impl TraitSolver for RejectSolver {
-    fn can_prove(&mut self, _ctx: &TyCtx, _pred: &TraitPredicate) -> SolverResult {
+    fn can_prove(&mut self, _ctx: &TyCtx, _predicate: &TraitPredicate) -> SolverResult {
         SolverResult::DefiniteNo
     }
-    fn evaluate_predicate(&mut self, _ctx: &TyCtx, _pred: &Predicate) -> SolverResult {
-        SolverResult::DefiniteNo
+
+    fn evaluate_predicate(&mut self, _ctx: &TyCtx, predicate: &Predicate) -> SolverResult {
+        match predicate {
+            Predicate::Trait(tp) => self.can_prove(_ctx, tp),
+            _ => SolverResult::DefiniteNo,
+        }
+    }
+
+    fn iterator_next_info(
+        &self,
+        _ctx_mut: &mut TyCtxMut,
+        _iter_ty: Ty,
+        _elem_ty: Ty,
+    ) -> Option<SolverIteratorNextInfo> {
+        None
     }
 }
-
 // Helper to create a generic type param `T` at index 0
 fn ty_param(inter: &mut Interner, name: &str) -> GenericParam {
     GenericParam {

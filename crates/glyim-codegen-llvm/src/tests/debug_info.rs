@@ -567,7 +567,7 @@ fn macro_defined_function_has_correct_line_numbers_in_ir() {
     let mut source_map = HashMap::new();
     source_map.insert(file_id, ("test.g".to_string(), source.clone()));
 
-    let mut ctx_mut = TyCtxMut::new(Interner::default());
+    let ctx_mut = TyCtxMut::new(Interner::default());
     let unit_ty = ctx_mut.unit_ty();
     let return_ty = unit_ty;
     let mut locals = glyim_core::arena::IndexVec::new();
@@ -635,7 +635,7 @@ fn nested_macro_expansions_produce_correct_inline_locations() {
         transparency: Transparency::Transparent,
     };
     hygiene.push_expansion(outer_expn_data);
-    let outer_ctx = SyntaxContext::from_raw(outer_expn_id.to_raw());
+    let _outer_ctx = SyntaxContext::from_raw(outer_expn_id.to_raw());
 
     let inner_call_site = Span::new(
         file_id,
