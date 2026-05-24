@@ -53,7 +53,7 @@ fn body_with_drop(ctx_mut: TyCtxMut, local_ty: Ty) -> (TyCtx, Body) {
 }
 
 // Helper: create a body that represents an array of Drop types.
-fn body_with_array_drop(ctx_mut: TyCtxMut, elem_ty: Ty, len: u64) -> (TyCtx, Body) {
+fn body_with_array_drop(mut ctx_mut: TyCtxMut, elem_ty: Ty, len: u64) -> (TyCtx, Body) {
     let mut body = Body::dummy(dummy_def_id());
     // Build a constant for the array length
     let const_len = Const {
@@ -138,7 +138,7 @@ fn body_with_enum_drop(ctx_mut: TyCtxMut, enum_ty: Ty) -> (TyCtx, Body) {
 
 #[test]
 fn conditional_drop_after_partial_move() {
-    let ctx_mut = test_ty_ctx();
+    let mut ctx_mut = test_ty_ctx();
     let ty = Ty::UNIT;
     let (ctx, mut body) = body_with_drop(ctx_mut, ty);
     crate::elaborate_drops(&ctx, &mut body);
@@ -151,7 +151,7 @@ fn conditional_drop_after_partial_move() {
 
 #[test]
 fn array_drop_reverse() {
-    let ctx_mut = test_ty_ctx();
+    let mut ctx_mut = test_ty_ctx();
     let elem_ty = Ty::UNIT;
     let (ctx, mut body) = body_with_array_drop(ctx_mut, elem_ty, 3);
     crate::elaborate_drops(&ctx, &mut body);
@@ -166,7 +166,7 @@ fn array_drop_reverse() {
 
 #[test]
 fn enum_drop_glue_discriminant() {
-    let ctx_mut = test_ty_ctx();
+    let mut ctx_mut = test_ty_ctx();
     // Use a placeholder enum type (just an ADT with ID 1, no actual fields).
     let adt_id = AdtId::from_raw(1);
     let enum_ty = ctx_mut.mk_ty(TyKind::Adt(adt_id, Substitution::empty()));
