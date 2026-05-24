@@ -138,7 +138,7 @@ fn body_with_enum_drop(ctx_mut: TyCtxMut, enum_ty: Ty) -> (TyCtx, Body) {
 
 #[test]
 fn conditional_drop_after_partial_move() {
-    let mut ctx_mut = test_ty_ctx();
+    let ctx_mut = test_ty_ctx();
     let ty = Ty::UNIT;
     let (ctx, mut body) = body_with_drop(ctx_mut, ty);
     crate::elaborate_drops(&ctx, &mut body);
@@ -151,7 +151,7 @@ fn conditional_drop_after_partial_move() {
 
 #[test]
 fn array_drop_reverse() {
-    let mut ctx_mut = test_ty_ctx();
+    let ctx_mut = test_ty_ctx();
     let elem_ty = Ty::UNIT;
     let (ctx, mut body) = body_with_array_drop(ctx_mut, elem_ty, 3);
     crate::elaborate_drops(&ctx, &mut body);
