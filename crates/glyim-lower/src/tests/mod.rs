@@ -16,7 +16,7 @@ mod for_loop;
 mod for_loop_advanced;
 mod guards;
 mod harness_tests;
-mod r#loop; // file is loop.rs
+mod r#loop;
 mod lower;
 mod r#match;
 mod match_advanced;

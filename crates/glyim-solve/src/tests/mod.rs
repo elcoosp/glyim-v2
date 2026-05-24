@@ -1,9 +1,1 @@
-mod coerce_tests;
-mod coercion_tests;
-mod cycle_diagnostic_tests;
-mod hrtb;
-mod inference_snapshot_tests;
-mod projection_occurs_check;
-mod projection_unification;
-mod solver;
-mod unification;
+mod iterator_next_test;

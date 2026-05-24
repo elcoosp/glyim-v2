@@ -2,9 +2,27 @@ use glyim_core::def_id::{ImplDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_type::*;
 
+/// Information returned by the trait solver for `Iterator::next`.
+#[derive(Clone, Debug)]
+pub struct SolverIteratorNextInfo {
+    pub fn_def_id: glyim_core::def_id::FnDefId,
+    pub fn_substs: glyim_type::Substitution,
+    pub fn_ty: glyim_type::Ty,
+    pub option_ty: glyim_type::Ty,
+    pub discr_ty: glyim_type::Ty,
+    pub ref_iter_ty: glyim_type::Ty,
+}
+
 pub trait TraitSolver {
     fn can_prove(&mut self, ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult;
     fn evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult;
+    /// Get the `Iterator::next` method info for a given iterator type.
+    fn iterator_next_info(
+        &self,
+        ctx_mut: &mut glyim_type::TyCtxMut,
+        iter_ty: glyim_type::Ty,
+        elem_ty: glyim_type::Ty,
+    ) -> Option<SolverIteratorNextInfo>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +35,7 @@ pub enum SolverResult {
 pub struct TraitContext {
     trait_defs: Vec<TraitDef>,
     impl_defs: Vec<ImplDef>,
+    pub(crate) builtin_next_fn_id: Option<glyim_core::def_id::FnDefId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,6 +58,7 @@ impl TraitContext {
         Self {
             trait_defs: Vec::new(),
             impl_defs: Vec::new(),
+            builtin_next_fn_id: None,
         }
     }
     pub fn register_trait(&mut self, def: TraitDef) {
@@ -103,6 +123,10 @@ impl TraitContext {
         // Naive check: identical substitutions overlap.
         // A full check would require deep unification with TyCtx, which is not available here.
         a.substs == b.substs
+    }
+    /// Set the FnDefId of the `Iterator::next` method for built-in support.
+    pub fn set_builtin_iterator_next(&mut self, fn_def_id: glyim_core::def_id::FnDefId) {
+        self.builtin_next_fn_id = Some(fn_def_id);
     }
 }
 impl Default for TraitContext {
@@ -392,5 +416,34 @@ impl TraitSolver for SimpleTraitSolver<'_> {
                 }
             }
         }
+    }
+    fn iterator_next_info(
+        &self,
+        ctx_mut: &mut glyim_type::TyCtxMut,
+        iter_ty: glyim_type::Ty,
+        elem_ty: glyim_type::Ty,
+    ) -> Option<SolverIteratorNextInfo> {
+        let next_def_id = self.trait_ctx.builtin_next_fn_id?;
+        // Build substitution: Self -> iter_ty (Iterator has one type parameter)
+        let substs = ctx_mut.intern_substitution(vec![glyim_type::GenericArg::Ty(iter_ty)]);
+        let fn_ty = ctx_mut.mk_ty(glyim_type::TyKind::FnDef(next_def_id, substs));
+        // Option<elem_ty> - placeholder ADT ID (should be lang item)
+        let option_adt = glyim_core::def_id::AdtId::from_raw(101);
+        let opt_subst = ctx_mut.intern_substitution(vec![glyim_type::GenericArg::Ty(elem_ty)]);
+        let option_ty = ctx_mut.mk_ty(glyim_type::TyKind::Adt(option_adt, opt_subst));
+        let discr_ty = ctx_mut.mk_ty(glyim_type::TyKind::Uint(glyim_core::primitives::UintTy::U8));
+        let ref_iter_ty = ctx_mut.mk_ref(
+            glyim_type::Region::Erased,
+            iter_ty,
+            glyim_core::primitives::Mutability::Mut,
+        );
+        Some(SolverIteratorNextInfo {
+            fn_def_id: next_def_id,
+            fn_substs: substs,
+            fn_ty,
+            option_ty,
+            discr_ty,
+            ref_iter_ty,
+        })
     }
 }
