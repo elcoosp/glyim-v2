@@ -7,7 +7,7 @@
     "watch": "tsc --watch"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.287",
+    "@types/chrome": "^0.1.0",
     "typescript": "^5.7.2"
   }
 }
