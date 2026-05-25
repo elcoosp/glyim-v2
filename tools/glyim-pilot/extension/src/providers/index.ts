@@ -9,13 +9,12 @@ registerAdapter(new ConfigurableAdapter({
   streamingSelector: '.ds-icon-loading',
   errorSelectors: ['.error-banner', '.toast-error', '[class*="error-message"]'],
 }));
-
 registerAdapter(new ConfigurableAdapter({
   id: 'zai',
   urlPattern: /z\.ai/,
   homepageUrl: 'https://z.ai',
-  inputSelector: 'textarea',
-  assistantSelector: '.message-assistant',
+  inputSelector: '#chat-input',
+  assistantSelector: '.chat-assistant',
   streamingSelector: '.streaming, .loading',
   errorSelectors: ['[role="alert"]', '.error-message'],
 }));

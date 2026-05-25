@@ -3,16 +3,34 @@
   "name": "glyim-pilot",
   "version": "0.3.0",
   "description": "Glyim AI agent extension",
-  "permissions": ["tabs", "scripting", "storage"],
-  "host_permissions": ["https://chat.deepseek.com/*", "https://gemini.google.com/*", "https://z.ai/*", "https://grok.x.ai/*", "https://chat.mistral.ai/*"],
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "https://chat.z.ai/*",
+    "https://gemini.google.com/*",
+    "https://grok.x.ai/*",
+    "https://chat.mistral.ai/*"
+  ],
   "background": {
     "service_worker": "src/background.ts",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://chat.deepseek.com/*", "https://gemini.google.com/*", "https://z.ai/*", "https://grok.x.ai/*", "https://chat.mistral.ai/*"],
-      "js": ["src/content.ts"],
+      "matches": [
+        "https://chat.deepseek.com/*",
+        "https://chat.z.ai/*",
+        "https://gemini.google.com/*",
+        "https://grok.x.ai/*",
+        "https://chat.mistral.ai/*"
+      ],
+      "js": [
+        "src/content.ts"
+      ],
       "run_at": "document_idle"
     }
   ]

@@ -4184,7 +4184,25 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
             _ = tokio::signal::ctrl_c() => { tracing::info!("Shutting down..."); break; }
             Some(event) = event_rx.recv() => {
                 match event {
-                    ServerEvent::Connected { addr } => tracing::info!(peer = %addr, "extension connected"),
+                    ServerEvent::Connected { addr } => {
+                        tracing::info!(peer = %addr, "extension connected");
+                        // Auto-start session with the configured default provider
+                        let provider = config.defaults.provider.clone();
+                        if !provider.is_empty() {
+                            let test_msg = CliMessage::SessionStart {
+                                session_id: format!("auto-{}", uuid::Uuid::new_v4()),
+                                provider_id: provider,
+                                prompt: "Write a simple Rust function that adds two numbers".to_string(),
+                                system_prompt: "You are a helpful assistant. Output only code inside ```glyim-ops blocks.".to_string(),
+                                trace_id: None,
+                                v: PROTOCOL_VERSION,
+                            };
+                            let json = serde_json::to_string(&test_msg).unwrap();
+                            if let Err(e) = cli_sender.send(json) {
+                                tracing::error!("Failed to send auto session start: {e}");
+                            }
+                        }
+                    }
                     ServerEvent::Disconnected { addr } => tracing::info!(peer = %addr, "extension disconnected"),
                     ServerEvent::Message { msg, .. } => {
                         handle_extension_message(

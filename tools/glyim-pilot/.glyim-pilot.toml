@@ -3,7 +3,7 @@ port = 8420
 host = "127.0.0.1"
 
 [defaults]
-provider = "deepseek"
+provider = "zai"
 auto_execute = true
 max_turns = 50
 retry_on_rate_limit = true
@@ -56,4 +56,14 @@ input_selector = "textarea"
 send_selector = "button[type='submit']"
 streaming_indicator = ".ds-icon-loading"
 assistant_selector = ".ds-markdown--block"
+code_block_selector = "pre code"
+[providers.zai]
+enabled = true
+url = "https://z.ai"
+max_concurrent = 3
+rate_limit_cooldown = 60
+input_selector = "#chat-input"
+send_selector = "button[type='submit']"
+streaming_indicator = ".streaming, .loading"
+assistant_selector = ".chat-assistant"
 code_block_selector = "pre code"
