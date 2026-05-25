@@ -16,7 +16,7 @@ glyim-frontend = { path = "../glyim-frontend" }
 glyim-core = { path = "../glyim-core" }
 glyim-span = { path = "../glyim-span" }
 async-lsp = { version = "0.2", features = ["omni-trait", "stdio", "tokio"] }
-lsp-types = "0.97"
+lsp-types = "0.95.1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
