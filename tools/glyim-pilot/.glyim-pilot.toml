@@ -1,0 +1,59 @@
+[server]
+port = 8420
+host = "127.0.0.1"
+
+[defaults]
+provider = "deepseek"
+auto_execute = true
+max_turns = 50
+retry_on_rate_limit = true
+
+[execution]
+worktree_base = "../glyim-worktrees"
+require_confirmation = "never"
+max_fix_rounds = 3
+command_timeout = 120
+default_branch = "main"
+branch_version = "v0.1.0"
+
+[gates]
+level = "normal"
+
+[gates.commit]
+fmt = true
+check = true
+clippy = true
+test = false
+banned_patterns = false
+architecture = false
+contracts = false
+
+[gates.done]
+dead_code = false
+coverage = false
+mutation = false
+workspace_check = false
+
+[context]
+max_context_tokens = 15000
+
+[dispatch]
+strategy = "most_slots_first"
+fallback_on_rate_limit = true
+max_reassign_attempts = 2
+
+[limits]
+max_file_size = 10485760
+max_total_content = 52428800
+max_ops_per_block = 100
+
+[providers.deepseek]
+enabled = true
+url = "https://chat.deepseek.com"
+max_concurrent = 3
+rate_limit_cooldown = 60
+input_selector = "textarea"
+send_selector = "button[type='submit']"
+streaming_indicator = ".ds-icon-loading"
+assistant_selector = ".ds-markdown--block"
+code_block_selector = "pre code"

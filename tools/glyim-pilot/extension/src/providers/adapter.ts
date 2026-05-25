@@ -93,7 +93,37 @@ export class ConfigurableAdapter implements ProviderAdapter {
   }
 
   async submitMessage(): Promise<void> { await clickSendWhenEnabled(); }
-  isStreaming(): boolean { return document.querySelector(this.config.streamingSelector) !== null; }
+  isStreaming(): boolean {
+    // If explicit streaming selector present, assume streaming
+    if (this.config.streamingSelector && document.querySelector(this.config.streamingSelector)) {
+        return true;
+    }
+    // Get the latest assistant message container
+    const lastMsg = document.querySelector(`${this.assistantSelector}:last-of-type`);
+    if (!lastMsg) return true; // no message yet
+    // Look for a stop button (still generating)
+    const stopBtn = document.querySelector('button[aria-label="Stop"], button[aria-label*="stop"], [role="button"][aria-label*="stop"]');
+    if (stopBtn && !stopBtn.hasAttribute('disabled') && stopBtn.getAttribute('aria-disabled') !== 'true') {
+        return true;
+    }
+    // Look for copy button inside the last message – indicates completion
+    const copyBtn = lastMsg.querySelector('button[aria-label*="Copy"], button[aria-label*="copy"], [class*="copy"]');
+    if (copyBtn) {
+        return false;
+    }
+    // Look for edit/regenerate buttons
+    const editBtn = lastMsg.querySelector('button[aria-label*="Edit"], button[aria-label*="edit"]');
+    if (editBtn) return false;
+    const regenBtn = document.querySelector('button[aria-label*="Regenerate"], button[aria-label*="regen"]');
+    if (regenBtn && lastMsg.textContent?.trim()) return false;
+    // If input became enabled and there is text, assume done
+    const input = document.querySelector(this.config.inputSelector);
+    if (input && (input as HTMLInputElement).disabled === false && lastMsg.textContent?.trim()) {
+        return false;
+    }
+    // Fallback to original streaming indicator
+    return document.querySelector(this.config.streamingSelector) !== null;
+}
   getCodeBlocks(): string[] { return Array.from(document.querySelectorAll('pre code')).map(b => b.textContent ?? ''); }
 
   detectError(): ProviderError | null {

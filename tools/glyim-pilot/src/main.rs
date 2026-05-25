@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use glyim_pilot::cli::session::{handle_session_command, SessionCommands};
 use glyim_pilot::cli::{render_status_table, run_preflight};
 use glyim_pilot::config::{self, PilotConfig};
 use glyim_pilot::metrics::production_metrics;
@@ -24,6 +25,8 @@ enum Commands {
     Serve,
     Status,
     Preflight,
+    #[command(subcommand)]
+    Session(SessionCommands),
 }
 
 #[tokio::main]
@@ -45,6 +48,12 @@ async fn main() {
         Commands::Serve => run_serve(config, cli.project_root).await,
         Commands::Status => run_status(cli.project_root).await,
         Commands::Preflight => run_preflight(&config).await,
+        Commands::Session(cmd) => {
+            if let Err(e) = handle_session_command(cmd).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -79,7 +88,22 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
             _ = tokio::signal::ctrl_c() => { tracing::info!("Shutting down..."); break; }
             Some(event) = event_rx.recv() => {
                 match event {
-                    ServerEvent::Connected { addr } => tracing::info!(peer = %addr, "extension connected"),
+                    ServerEvent::Connected { addr } => {
+                        tracing::info!(peer = %addr, "extension connected");
+                        // Auto‑start a test session for DeepSeek
+                        let test_msg = CliMessage::SessionStart {
+                            session_id: "test-auto-001".to_string(),
+                            provider_id: "deepseek".to_string(),
+                            prompt: "Write a simple Rust function that adds two numbers".to_string(),
+                            system_prompt: "You are a helpful assistant. Output only code inside ```glyim-ops blocks.".to_string(),
+                            trace_id: None,
+                            v: PROTOCOL_VERSION,
+                        };
+                        let json = serde_json::to_string(&test_msg).unwrap();
+                        if let Err(e) = cli_sender.send(json) {
+                            tracing::error!("Failed to send auto session start: {e}");
+                        }
+                    }
                     ServerEvent::Disconnected { addr } => tracing::info!(peer = %addr, "extension disconnected"),
                     ServerEvent::Message { msg, .. } => {
                         handle_extension_message(

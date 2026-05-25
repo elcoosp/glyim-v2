@@ -3,11 +3,14 @@
   "version": "0.3.0",
   "description": "Browser extension for Glyim Pilot AI agent dispatch",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.4.0",
     "@types/chrome": "^0.1.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^8.0.14"
   }
 }

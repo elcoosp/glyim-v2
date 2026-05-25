@@ -4,9 +4,10 @@ registerAdapter(new ConfigurableAdapter({
   id: 'deepseek',
   urlPattern: /chat\.deepseek\.com/,
   homepageUrl: 'https://chat.deepseek.com',
-  inputSelector: "textarea[id='chat-input']",
+  inputSelector: '#root textarea',
   assistantSelector: '.ds-markdown--block',
-  streamingSelector: '.typing-indicator',
+  streamingSelector: '.ds-icon-loading',
+
   errorSelectors: ['.error-banner', '.toast-error', '[class*="error-message"]'],
 }));
 
