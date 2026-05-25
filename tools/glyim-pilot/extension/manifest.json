@@ -13,7 +13,8 @@
     "https://chat.z.ai/*",
     "https://gemini.google.com/*",
     "https://grok.x.ai/*",
-    "https://chat.mistral.ai/*"
+    "https://chat.mistral.ai/*",
+    "https://chat.qwen.ai/*"
   ],
   "background": {
     "service_worker": "src/background.ts",
@@ -26,7 +27,8 @@
         "https://chat.z.ai/*",
         "https://gemini.google.com/*",
         "https://grok.x.ai/*",
-        "https://chat.mistral.ai/*"
+        "https://chat.mistral.ai/*",
+        "https://chat.qwen.ai/*"
       ],
       "js": [
         "src/content.ts"

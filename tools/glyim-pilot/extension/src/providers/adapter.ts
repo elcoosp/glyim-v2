@@ -42,25 +42,20 @@ export function insertText(element: HTMLTextAreaElement | HTMLInputElement, text
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-// DEEPSEEK SPECIFIC SEND BUTTON SELECTOR (your exact div)
-const DEEPSEEK_SEND_SELECTOR = "#root > div > div.cb86951c > div.c3ecdb44 > div._7780f2e > div > div > div._9a2f8e4 > div.aaff8b8f > div > div > div.ec4f5d61 > div.bf38813a > div:nth-child(3) > div";
-
+// DEEPSEEK FIX: added stable send button selector
 export async function clickSendWhenEnabled(maxWaitMs = 5000): Promise<void> {
   const pollInterval = 100;
   const maxAttempts = maxWaitMs / pollInterval;
   for (let i = 0; i < maxAttempts; i++) {
-    // Standard buttons + DeepSeek's stable selector
-    const btn = document.querySelector<HTMLElement>(
-      "button[type='submit'], button[aria-label*='send'], div[class*='send-button'], div.ds-icon-button[role='button'][aria-disabled='false']"
+    const btn = document.querySelector<HTMLButtonElement>(
+      "button[type='submit'], button[aria-label*='send'], button.send-button, div.chat-prompt-send-button button.send-button, div[class*='send-button'], div.ds-icon-button[role='button'][aria-disabled='false']"
     );
-    if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
-      btn.click();
-      return;
-    }
+    if (btn && !btn.disabled && !btn.getAttribute('aria-disabled')) { btn.click(); return; }
     await new Promise(r => setTimeout(r, pollInterval));
   }
   throw new Error('send button not found or not enabled within timeout');
 }
+
 export async function setInputText(selector: string, text: string): Promise<void> {
   const element = document.querySelector<HTMLElement>(selector);
   if (!element) throw new Error(`input not found by selector: ${selector}`);
@@ -100,22 +95,17 @@ export class ConfigurableAdapter implements ProviderAdapter {
 
   async submitMessage(): Promise<void> { await clickSendWhenEnabled(); }
 
-  // ENHANCED isStreaming: detects copy button as completion
+  // DEEPSEEK FIX: copy button detection for completion
   isStreaming(): boolean {
-    // If explicit streaming selector present, assume streaming
     if (this.config.streamingSelector && document.querySelector(this.config.streamingSelector)) {
       return true;
     }
-    // Get latest assistant message
     const lastMsg = document.querySelector(`${this.assistantSelector}:last-of-type`);
     if (!lastMsg) return true;
-    // Look for copy button inside the last message – indicates completion
     const copyBtn = lastMsg.querySelector('button[aria-label*="Copy"], button[aria-label*="copy"], [class*="copy"]');
     if (copyBtn) return false;
-    // Look for stop button (still generating)
     const stopBtn = document.querySelector('button[aria-label="Stop"], button[aria-label*="stop"]');
     if (stopBtn && !stopBtn.hasAttribute('disabled')) return true;
-    // Fallback to original streaming indicator
     return document.querySelector(this.config.streamingSelector) !== null;
   }
 

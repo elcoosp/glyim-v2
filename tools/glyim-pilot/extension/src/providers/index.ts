@@ -48,3 +48,12 @@ registerAdapter(new ConfigurableAdapter({
   streamingSelector: '.loading, .streaming',
   errorSelectors: ['[role="alert"]', '.error-message'],
 }));
+registerAdapter(new ConfigurableAdapter({
+  id: 'qwen',
+  urlPattern: /chat\.qwen\.ai/,
+  homepageUrl: 'https://chat.qwen.ai',
+  inputSelector: '.message-input-textarea',
+  assistantSelector: '.qwen-chat-package-comp-new-message-item', // ← inspect and replace if needed
+  streamingSelector: '.streaming, .loading',
+  errorSelectors: ['.error-message', '[role="alert"]'],
+}));

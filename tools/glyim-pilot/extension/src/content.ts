@@ -1,20 +1,33 @@
+import { getAdapterForUrl } from './providers/adapter';
+import { StreamWatcher } from './stream_watcher';
+
+let activeWatcher: StreamWatcher | null = null;
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === 'content.checkStatus') {
-    sendResponse({ streaming: !!document.querySelector('.typing-indicator, .streaming, .loading, mat-progress-bar'), offline: !navigator.onLine });
-  }
-  if (msg.type === 'content.injectPrompt') {
-    const prompt = msg.prompt as string;
-    const input = document.querySelector<HTMLElement>('textarea, [contenteditable="true"]');
-    if (!input) { sendResponse({ success: false, error: 'input not found' }); return true; }
-    input.focus();
-    if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
-      const start = input.selectionStart ?? 0;
-      const end = input.selectionEnd ?? 0;
-      input.setRangeText(prompt, start, end, 'end');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    } else if (input.isContentEditable) {
-      document.execCommand('insertText', false, prompt);
+  if (msg.type === 'startWatcher') {
+    const adapter = getAdapterForUrl(window.location.href);
+    if (!adapter) {
+      console.error('glyim-pilot: no adapter for', window.location.href);
+      sendResponse({ error: 'no adapter' });
+      return true;
     }
+    if (activeWatcher) activeWatcher.stop();
+    const { sessionId, turn } = msg.data;
+    activeWatcher = new StreamWatcher(
+      adapter,
+      sessionId,
+      (content, turnNum) => chrome.runtime.sendMessage({ type: 'ops.ready', sessionId, content, turn: turnNum }),
+      (full, turnNum) => chrome.runtime.sendMessage({ type: 'stream.complete', sessionId, turn: turnNum, fullResponse: full }),
+      (content, pattern) => chrome.runtime.sendMessage({ type: 'error.detected', sessionId, errorType: 'dangerous_pattern', errorMessage: pattern, recoverable: true })
+    );
+    activeWatcher.start();
+    sendResponse({ success: true });
+  } else if (msg.type === 'stopWatcher') {
+    if (activeWatcher) activeWatcher.stop();
+    activeWatcher = null;
+    sendResponse({ success: true });
+  } else if (msg.type === 'resetWatcherTurn') {
+    if (activeWatcher) activeWatcher.resetForNewTurn();
     sendResponse({ success: true });
   }
   return true;
