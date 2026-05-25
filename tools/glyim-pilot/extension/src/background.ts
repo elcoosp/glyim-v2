@@ -9,6 +9,10 @@ const ws = new WsClient();
 const tabSessions = new Map<number, TabSession>();
 const watchers = new Map<number, StreamWatcher>();
 
+// DeepSeek exact selectors (from your provided DOM)
+const DEEPSEEK_INPUT_SELECTOR = "#root > div > div.cb86951c > div.c3ecdb44 > div._7780f2e > div > div > div._9a2f8e4 > div.aaff8b8f > div > div > div._24fad49 > textarea";
+const DEEPSEEK_SEND_SELECTOR = "#root > div > div.cb86951c > div.c3ecdb44 > div._7780f2e > div > div > div._9a2f8e4 > div.aaff8b8f > div > div > div.ec4f5d61 > div.bf38813a > div:nth-child(3) > div";
+
 ws.onMessage(async (msg: CliMessage) => {
   const versionError = validateMessageVersion((msg as any).v as number | undefined);
   if (versionError) console.warn(`glyim-pilot: ${versionError}`);
@@ -31,7 +35,11 @@ ws.connect();
 async function waitForInputElement(tabId: number, maxWaitMs = 10000): Promise<boolean> {
   for (let i = 0; i < maxWaitMs / 200; i++) {
     try {
-      const results = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!document.querySelector('textarea, [contenteditable="true"]') });
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (selector: string) => !!document.querySelector(selector),
+        args: [DEEPSEEK_INPUT_SELECTOR]
+      });
       if (results[0]?.result) return true;
     } catch { /* tab not ready */ }
     await new Promise(r => setTimeout(r, 200));
@@ -39,44 +47,51 @@ async function waitForInputElement(tabId: number, maxWaitMs = 10000): Promise<bo
   return false;
 }
 
-async function injectPrompt(tabId: number, prompt: string): Promise<{ success: boolean; error?: string }> {
+async function injectPrompt(tabId: number, fullPrompt: string): Promise<{ success: boolean; error?: string }> {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: (text: string) => {
-        const input = document.querySelector<HTMLElement>('textarea, [contenteditable="true"]');
+      func: (inputSelector: string, text: string, sendSelector: string) => {
+        const input = document.querySelector<HTMLElement>(inputSelector);
         if (!input) return { success: false, error: 'input element not found' };
         input.focus();
         if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
-          const start = input.selectionStart ?? 0; const end = input.selectionEnd ?? 0;
+          const start = input.selectionStart ?? 0;
+          const end = input.selectionEnd ?? 0;
           input.setRangeText(text, start, end, 'end');
           input.dispatchEvent(new Event('input', { bubbles: true }));
         } else if (input.isContentEditable) {
           document.execCommand('insertText', false, text);
         }
+        // Poll for send button (DeepSeek specific)
         const pollForSend = (): void => {
-          const btn = document.querySelector<HTMLButtonElement>("button[type='submit'], button[aria-label*='send']");
-          if (btn && !btn.disabled) { btn.click(); return; }
+          const btn = document.querySelector<HTMLElement>(sendSelector);
+          if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
+            btn.click();
+            return;
+          }
           setTimeout(pollForSend, 100);
         };
         setTimeout(pollForSend, 50);
         return { success: true };
       },
-      args: [prompt],
+      args: [DEEPSEEK_INPUT_SELECTOR, fullPrompt, DEEPSEEK_SEND_SELECTOR],
     });
     return results[0]?.result as { success: boolean; error?: string } ?? { success: false, error: 'no result' };
   } catch (e) { return { success: false, error: String(e) }; }
 }
 
 async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.start' }>) {
-  const { sessionId, providerId, prompt, traceId } = msg;
+  const { sessionId, providerId, prompt, systemPrompt, traceId } = msg;
   const adapter = getAllAdapters().find(a => a.id === providerId);
   if (!adapter) { console.warn(`glyim-pilot: no adapter for ${providerId}`); return; }
   const tab = await chrome.tabs.create({ url: adapter.homepageUrl, active: true });
   if (!tab.id) return;
   const ready = await waitForInputElement(tab.id);
   if (!ready) { ws.send({ type: 'error.detected', sessionId, errorType: 'input_not_found', errorMessage: 'Input element not found', recoverable: false, v: PROTOCOL_VERSION }); return; }
-  const result = await injectPrompt(tab.id, prompt);
+  // Combine system prompt and user prompt
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+  const result = await injectPrompt(tab.id, fullPrompt);
   if (!result.success) { ws.send({ type: 'error.detected', sessionId, errorType: 'injection_failed', errorMessage: result.error ?? 'unknown', recoverable: true, v: PROTOCOL_VERSION }); return; }
   tabSessions.set(tab.id, { tabId: tab.id, sessionId, streamId: sessionId, providerId, status: 'active', turn: 0 });
   await persistSessions();

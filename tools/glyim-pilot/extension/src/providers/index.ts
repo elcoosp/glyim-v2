@@ -7,7 +7,6 @@ registerAdapter(new ConfigurableAdapter({
   inputSelector: '#root textarea',
   assistantSelector: '.ds-markdown--block',
   streamingSelector: '.ds-icon-loading',
-
   errorSelectors: ['.error-banner', '.toast-error', '[class*="error-message"]'],
 }));
 
