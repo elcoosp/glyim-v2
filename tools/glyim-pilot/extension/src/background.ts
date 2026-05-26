@@ -81,7 +81,7 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   await persistSessions();
   ws.send({ type: 'session.ready', sessionId, providerId, tabId: tab.id, traceId, v: PROTOCOL_VERSION });
 
-  // --- Use adapter's selectors ---
+  // Use adapter's selectors (no provider‑specific branches)
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
   const completionSelector = (adapter as any).getCompletionSelector ? (adapter as any).getCompletionSelector() : "button[aria-label*='Copy'], button[aria-label*='copy']";
   const assistantSelector = adapter.assistantSelector;
@@ -96,7 +96,6 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
       const tryClick = () => {
         const btn = document.querySelector<HTMLElement>(sendSel);
         if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' && btn.offsetParent !== null) {
-          // Simulate full mouse click
           btn.scrollIntoView({ block: 'center' });
           btn.focus();
           const rect = btn.getBoundingClientRect();
@@ -111,7 +110,6 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
           btn.click();
           console.log('[injected] Send button clicked');
 
-          // MutationObserver for completion element
           const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
               if (mutation.type === 'childList') {
@@ -123,17 +121,31 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                     else completionEl = element.querySelector?.(completionSel);
                     if (completionEl) {
                       console.log('[injected] Completion detected');
-                      // Extract response using assistantSelector (no provider-specific logic)
+                      // Extract response using assistantSelector (no provider logic)
                       const responseElement = document.querySelector(asstSel);
-                      const fullResponse = responseElement ? responseElement.textContent || '' : '';
-                      console.log(`[injected] Extracted response length: ${fullResponse.length}`);
-                      window.postMessage({
-                        type: 'stream_complete',
-                        sessionId: sid,
-                        turn: turnNum,
-                        fullResponse: fullResponse
-                      }, '*');
-                      observer.disconnect();
+                      let fullResponse = responseElement ? responseElement.textContent || '' : '';
+                      // If empty, retry on next microtask (allows Monaco editor to populate)
+                      if (!fullResponse) {
+                        Promise.resolve().then(() => {
+                          const retryElement = document.querySelector(asstSel);
+                          const retryResponse = retryElement ? retryElement.textContent || '' : '';
+                          window.postMessage({
+                            type: 'stream_complete',
+                            sessionId: sid,
+                            turn: turnNum,
+                            fullResponse: retryResponse
+                          }, '*');
+                          observer.disconnect();
+                        });
+                      } else {
+                        window.postMessage({
+                          type: 'stream_complete',
+                          sessionId: sid,
+                          turn: turnNum,
+                          fullResponse: fullResponse
+                        }, '*');
+                        observer.disconnect();
+                      }
                       return;
                     }
                   }
@@ -154,45 +166,43 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   });
 }
 
+// --- Generic helper for feedback/continue/retry (no provider‑specific code) ---
+async function reinjectWatcher(tabId: number, adapter: any, sessionId: string, turn: number) {
+  const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
+  const assistantSelector = adapter.assistantSelector;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (sendSel: string, asstSel: string, sid: string, turnNum: number) => {
+      let attempts = 0;
+      const tryClick = () => {
+        const btn = document.querySelector<HTMLElement>(sendSel);
+        if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
+          btn.click();
+          return;
+        }
+        if (attempts++ < 50) setTimeout(tryClick, 200);
+      };
+      setTimeout(tryClick, 500);
+      const obs = new MutationObserver(() => {
+        const responseElement = document.querySelector(asstSel);
+        if (responseElement) {
+          const full = responseElement.textContent || '';
+          chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
+          obs.disconnect();
+        }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+    },
+    args: [sendSelector, assistantSelector, sessionId, turn],
+  });
+}
+
 async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.send' }>) {
   const entry = findSession(msg.sessionId); if (!entry) return;
   await injectPrompt(entry[0], msg.message);
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
-    const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
-    const assistantSelector = adapter.assistantSelector;
-    await chrome.scripting.executeScript({
-      target: { tabId: entry[0] },
-      func: (sendSel, asstSel, sid, turnNum) => {
-        let attempts = 0;
-        const tryClick = () => {
-          const btn = document.querySelector<HTMLElement>(sendSel);
-          if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
-            btn.click();
-            return;
-          }
-          if (attempts++ < 50) setTimeout(tryClick, 200);
-        };
-        setTimeout(tryClick, 500);
-        const obs = new MutationObserver(() => {
-          const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
-          if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
-            let full = lastMsg.textContent || '';
-            if (entry[1].providerId === 'zai' || entry[1].providerId === 'qwen') {
-              const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
-              full = codeBlock ? codeBlock.textContent || '' : '';
-            } else {
-              const pre = lastMsg.querySelector('pre:last-of-type');
-              full = pre ? pre.textContent || '' : '';
-            }
-            chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
-            obs.disconnect();
-          }
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-      },
-      args: [sendSelector, assistantSelector, entry[1].sessionId, entry[1].turn + 1],
-    });
+    await reinjectWatcher(entry[0], adapter, entry[1].sessionId, entry[1].turn + 1);
   }
   const sess = tabSessions.get(entry[0]);
   if (sess) sess.turn++;
@@ -204,40 +214,7 @@ async function handleFeedbackContinue(msg: Extract<CliMessage, { type: 'feedback
   await injectPrompt(entry[0], 'Please continue.');
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
-    const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
-    const assistantSelector = adapter.assistantSelector;
-    await chrome.scripting.executeScript({
-      target: { tabId: entry[0] },
-      func: (sendSel, asstSel, sid, turnNum) => {
-        let attempts = 0;
-        const tryClick = () => {
-          const btn = document.querySelector<HTMLElement>(sendSel);
-          if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
-            btn.click();
-            return;
-          }
-          if (attempts++ < 50) setTimeout(tryClick, 200);
-        };
-        setTimeout(tryClick, 500);
-        const obs = new MutationObserver(() => {
-          const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
-          if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
-            let full = lastMsg.textContent || '';
-            if (entry[1].providerId === 'zai' || entry[1].providerId === 'qwen') {
-              const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
-              full = codeBlock ? codeBlock.textContent || '' : '';
-            } else {
-              const pre = lastMsg.querySelector('pre:last-of-type');
-              full = pre ? pre.textContent || '' : '';
-            }
-            chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
-            obs.disconnect();
-          }
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-      },
-      args: [sendSelector, assistantSelector, entry[1].sessionId, entry[1].turn + 1],
-    });
+    await reinjectWatcher(entry[0], adapter, entry[1].sessionId, entry[1].turn + 1);
   }
   const sess = tabSessions.get(entry[0]);
   if (sess) sess.turn++;
@@ -250,40 +227,7 @@ async function handleRetryPrompt(msg: Extract<CliMessage, { type: 'retry.prompt'
   await injectPrompt(entry[0], msg.message);
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
-    const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
-    const assistantSelector = adapter.assistantSelector;
-    await chrome.scripting.executeScript({
-      target: { tabId: entry[0] },
-      func: (sendSel, asstSel, sid, turnNum) => {
-        let attempts = 0;
-        const tryClick = () => {
-          const btn = document.querySelector<HTMLElement>(sendSel);
-          if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
-            btn.click();
-            return;
-          }
-          if (attempts++ < 50) setTimeout(tryClick, 200);
-        };
-        setTimeout(tryClick, 500);
-        const obs = new MutationObserver(() => {
-          const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
-          if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
-            let full = lastMsg.textContent || '';
-            if (entry[1].providerId === 'zai' || entry[1].providerId === 'qwen') {
-              const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
-              full = codeBlock ? codeBlock.textContent || '' : '';
-            } else {
-              const pre = lastMsg.querySelector('pre:last-of-type');
-              full = pre ? pre.textContent || '' : '';
-            }
-            chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
-            obs.disconnect();
-          }
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-      },
-      args: [sendSelector, assistantSelector, entry[1].sessionId, entry[1].turn + 1],
-    });
+    await reinjectWatcher(entry[0], adapter, entry[1].sessionId, entry[1].turn + 1);
   }
   const sess = tabSessions.get(entry[0]);
   if (sess) sess.turn++;

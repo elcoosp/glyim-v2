@@ -93,7 +93,7 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
         // AUTO-START: hardcoded to deepseek
         let test_msg = CliMessage::SessionStart {
             session_id: format!("auto-{}", uuid::Uuid::new_v4()),
-            provider_id: "qwen".to_string(),
+            provider_id: "deepseek".to_string(),
             prompt: "Write a simple Rust function that adds two numbers".to_string(),
             system_prompt: "You are a helpful assistant. Output only code inside ```glyim-ops blocks.".to_string(),
             trace_id: None,
