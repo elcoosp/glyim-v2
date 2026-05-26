@@ -3,6 +3,7 @@ import { WsClient } from './ws_client';
 import { getAllAdapters } from './providers/adapter';
 import type { CliMessage, TabSession } from './types';
 import { PROTOCOL_VERSION, validateMessageVersion, serializeTabSessions, deserializeTabSessions } from './types';
+import { extractGlyimOpsBlocks } from './code_extractor';
 
 const ws = new WsClient();
 const tabSessions = new Map<number, TabSession>();
@@ -80,62 +81,89 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   await persistSessions();
   ws.send({ type: 'session.ready', sessionId, providerId, tabId: tab.id, traceId, v: PROTOCOL_VERSION });
 
-  // --- Direct injection: click send button and watch for response ---
-  // Cast adapter to any to access getSendSelector (since it's not in the interface)
+  // --- Provider-specific selectors ---
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
-  const assistantSelector = adapter.assistantSelector;
+  let assistantContainerSelector: string;
+  let copyButtonSelector = "button[aria-label*='Copy'], button[aria-label*='copy'], [class*='copy']";
 
+  if (providerId === 'deepseek') {
+    assistantContainerSelector = 'div.ds-message:last-of-type';
+  } else if (providerId === 'zai') {
+    assistantContainerSelector = '.chat-assistant:last-of-type';
+  } else if (providerId === 'qwen') {
+    assistantContainerSelector = '.message-assistant:last-of-type';
+  } else {
+    assistantContainerSelector = `${adapter.assistantSelector}:last-of-type`;
+  }
+
+  // Inject script that clicks send and watches for copy button
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: (sendSel: string, asstSel: string, sid: string, turnNum: number) => {
-      console.log(`[injected] Starting click poll for selector: ${sendSel}`);
+    func: (sendSel: string, sid: string, turnNum: number) => {
+      console.log('[injected] Script started');
 
       let clickAttempts = 0;
-      const maxClickAttempts = 50; // 10 seconds (200ms * 50)
-      const clickInterval = 200;
-
+      const maxAttempts = 50;
       const tryClick = () => {
         const btn = document.querySelector<HTMLElement>(sendSel);
-        if (btn) {
-          const disabled = btn.hasAttribute('disabled');
-          const ariaDisabled = btn.getAttribute('aria-disabled');
-          const visible = btn.offsetParent !== null;
-          console.log(`[injected] Attempt ${clickAttempts + 1}: btn found, disabled=${disabled}, aria-disabled=${ariaDisabled}, visible=${visible}`);
-          if (!disabled && ariaDisabled !== 'true' && visible) {
-            btn.click();
-            console.log('[injected] Send button clicked!');
-            return;
-          }
-        } else {
-          console.log(`[injected] Attempt ${clickAttempts + 1}: btn not found`);
-        }
-        if (clickAttempts++ < maxClickAttempts) {
-          setTimeout(tryClick, clickInterval);
-        } else {
-          console.error('[injected] Failed to click send button after 10 seconds');
-        }
-      };
-      setTimeout(tryClick, 500); // initial delay
+        if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' && btn.offsetParent !== null) {
+          btn.click();
+          console.log('[injected] Send button clicked');
 
-      // --- Response watcher (copy button detection) ---
-      const observer = new MutationObserver(() => {
-        const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
-        if (lastMsg) {
-          const copyBtn = lastMsg.querySelector('button[aria-label*="Copy"], button[aria-label*="copy"], [class*="copy"]');
-          if (copyBtn) {
-            const fullResponse = lastMsg.textContent || '';
-            chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse });
-            observer.disconnect();
-            console.log('[injected] Response complete, copy button detected');
-          }
+          const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+              if (mutation.type === 'childList') {
+                for (const node of mutation.addedNodes) {
+                  if (node.nodeType === Node.ELEMENT_NODE) {
+                    const element = node as Element;
+                    // Look for the assistant toolbar (div.ds-flex._0a3d93b)
+                    let toolbar: Element | null = null;
+                    if (element.matches?.('div.ds-flex._0a3d93b')) {
+                      toolbar = element;
+                    } else {
+                      toolbar = element.querySelector?.('div.ds-flex._0a3d93b');
+                    }
+                    if (toolbar) {
+                      console.log('[injected] Assistant toolbar detected');
+                      // Get the last assistant message container (stable class)
+                      const answers = document.querySelectorAll('.ds-assistant-message-main-content');
+                      const lastAnswer = answers[answers.length - 1];
+                      let fullResponse = '';
+                      if (lastAnswer) {
+                        const pre = lastAnswer.querySelector('pre');
+                        fullResponse = pre ? pre.textContent || '' : lastAnswer.textContent || '';
+                      }
+                      if (fullResponse) {
+                        console.log(`[injected] Extracted response length: ${fullResponse.length}`);
+                        window.postMessage({
+                          type: 'stream_complete',
+                          sessionId: sid,
+                          turn: turnNum,
+                          fullResponse: fullResponse
+                        }, '*');
+                      } else {
+                        console.warn('[injected] No response content');
+                      }
+                      observer.disconnect();
+                      return;
+                    }
+                  }
+                }
+              }
+            }
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
+          console.log('[injected] Observer started');
+          return;
         }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
+        if (clickAttempts++ < maxAttempts) setTimeout(tryClick, 200);
+        else console.error('[injected] Failed to click send button');
+      };
+      tryClick();
     },
-    args: [sendSelector, assistantSelector, sessionId, 0],
+    args: [sendSelector, sessionId, 0],
   });
 }
-
 // --- The remaining functions (unchanged from your original) ---
 async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.send' }>) {
   const entry = findSession(msg.sessionId); if (!entry) return;
@@ -287,3 +315,24 @@ async function restoreSessions() {
 }
 
 chrome.runtime.onStartup.addListener(restoreSessions);
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[bg] Received runtime message:', message);
+  if (message.type === 'stream.complete') {
+    console.log('[bg] Processing stream.complete for', message.sessionId);
+    const blocks = extractGlyimOpsBlocks(message.fullResponse);
+    console.log(`[bg] Extracted ${blocks.length} ops blocks`);
+    for (const block of blocks) {
+      const success = ws.send({
+        type: 'ops.ready',
+        sessionId: message.sessionId,
+        content: block,
+        turn: message.turn,
+        v: PROTOCOL_VERSION
+      });
+      console.log(`[bg] Sent ops.ready, success=${success}`);
+    }
+    sendResponse({ received: true });
+    return true;
+  }
+  return false;
+});

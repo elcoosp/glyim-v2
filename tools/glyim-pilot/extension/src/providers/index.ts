@@ -5,7 +5,7 @@ registerAdapter(new ConfigurableAdapter({
   homepageUrl: 'https://chat.deepseek.com',
   inputSelector: 'textarea',
   sendSelector: "div.ds-icon-button[role='button'][aria-disabled='false']:has(svg path[d^='M8.3125'])",
-  assistantSelector: '.ds-markdown--block',
+  assistantSelector: 'div.ds-message',
   streamingSelector: '.ds-icon-loading',
   errorSelectors: ['.error-banner', '.toast-error'],
 }));
