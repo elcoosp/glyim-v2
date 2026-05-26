@@ -81,21 +81,40 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   await persistSessions();
   ws.send({ type: 'session.ready', sessionId, providerId, tabId: tab.id, traceId, v: PROTOCOL_VERSION });
 
-  // --- Provider-specific selectors ---
+  // --- Provider‑specific selectors ---
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
   const completionSelector = (adapter as any).getCompletionSelector ? (adapter as any).getCompletionSelector() : "button[aria-label*='Copy'], button[aria-label*='copy']";
-  const assistantSelector = adapter.assistantSelector; // already defined
+  const assistantSelector = adapter.assistantSelector;
+
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: (sendSel: string, completionSel: string, asstSel: string, provId: string, sid: string, turnNum: number) => {
       console.log('[injected] Script started, provider:', provId);
+
       let clickAttempts = 0;
-      const maxAttempts = 50;
+      const maxAttempts = 50; // 10 seconds (200ms * 50)
+      const clickInterval = 200;
+
       const tryClick = () => {
         const btn = document.querySelector<HTMLElement>(sendSel);
         if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' && btn.offsetParent !== null) {
+          // Scroll into view and focus
+          btn.scrollIntoView({ block: 'center' });
+          btn.focus();
+          // Full mouse event sequence with coordinates
+          const rect = btn.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, clientX: centerX, clientY: centerY });
+          const mouseup = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, clientX: centerX, clientY: centerY });
+          const click = new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: centerX, clientY: centerY });
+          btn.dispatchEvent(mousedown);
+          btn.dispatchEvent(mouseup);
+          btn.dispatchEvent(click);
+          // Also call native click as fallback
           btn.click();
-          console.log('[injected] Send button clicked');
+          console.log('[injected] Send button clicked with full event simulation');
+
           const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
               if (mutation.type === 'childList') {
@@ -108,7 +127,7 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                     if (completionEl) {
                       console.log('[injected] Completion detected');
                       let fullResponse = '';
-                      if (provId === 'zai') {
+                      if (provId === 'zai' || provId === 'qwen') {
                         const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
                         fullResponse = codeBlock ? codeBlock.textContent || '' : '';
                       } else {
@@ -141,19 +160,18 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
           console.log('[injected] Observer started');
           return;
         }
-        if (clickAttempts++ < maxAttempts) setTimeout(tryClick, 200);
+        if (clickAttempts++ < maxAttempts) setTimeout(tryClick, clickInterval);
         else console.error('[injected] Failed to click send button');
       };
-      tryClick();
+      setTimeout(tryClick, 1500);
     },
     args: [sendSelector, completionSelector, assistantSelector, providerId, sessionId, 0],
   });
 }
-// --- The remaining functions (unchanged from your original) ---
+
 async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.send' }>) {
   const entry = findSession(msg.sessionId); if (!entry) return;
   await injectPrompt(entry[0], msg.message);
-  // Re-inject the click and watcher for the new turn
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
     const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
@@ -174,7 +192,14 @@ async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.sen
         const obs = new MutationObserver(() => {
           const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
           if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
-            const full = lastMsg.textContent || '';
+            let full = lastMsg.textContent || '';
+            if (entry[1].providerId === 'zai' || entry[1].providerId === 'qwen') {
+              const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
+              full = codeBlock ? codeBlock.textContent || '' : '';
+            } else {
+              const pre = lastMsg.querySelector('pre:last-of-type');
+              full = pre ? pre.textContent || '' : '';
+            }
             chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
             obs.disconnect();
           }
@@ -212,7 +237,14 @@ async function handleFeedbackContinue(msg: Extract<CliMessage, { type: 'feedback
         const obs = new MutationObserver(() => {
           const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
           if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
-            const full = lastMsg.textContent || '';
+            let full = lastMsg.textContent || '';
+            if (entry[1].providerId === 'zai' || entry[1].providerId === 'qwen') {
+              const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
+              full = codeBlock ? codeBlock.textContent || '' : '';
+            } else {
+              const pre = lastMsg.querySelector('pre:last-of-type');
+              full = pre ? pre.textContent || '' : '';
+            }
             chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
             obs.disconnect();
           }
@@ -231,8 +263,6 @@ async function handleRetryPrompt(msg: Extract<CliMessage, { type: 'retry.prompt'
   await new Promise(r => setTimeout(r, msg.delay));
   const entry = findSession(msg.sessionId); if (!entry) return;
   await injectPrompt(entry[0], msg.message);
-  // Similar re-injection can be added, but for simplicity, we'll rely on the existing watcher? Might need to add.
-  // We'll add a minimal version.
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
     const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
@@ -253,7 +283,14 @@ async function handleRetryPrompt(msg: Extract<CliMessage, { type: 'retry.prompt'
         const obs = new MutationObserver(() => {
           const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
           if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
-            const full = lastMsg.textContent || '';
+            let full = lastMsg.textContent || '';
+            if (entry[1].providerId === 'zai' || entry[1].providerId === 'qwen') {
+              const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
+              full = codeBlock ? codeBlock.textContent || '' : '';
+            } else {
+              const pre = lastMsg.querySelector('pre:last-of-type');
+              full = pre ? pre.textContent || '' : '';
+            }
             chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
             obs.disconnect();
           }

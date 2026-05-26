@@ -1,4 +1,5 @@
 import { ConfigurableAdapter, registerAdapter, setInputText } from './adapter';
+
 registerAdapter(new ConfigurableAdapter({
   id: 'deepseek',
   urlPattern: /chat\.deepseek\.com/,
@@ -28,7 +29,8 @@ registerAdapter(new ConfigurableAdapter({
   homepageUrl: 'https://chat.qwen.ai',
   inputSelector: '.message-input-textarea',
   sendSelector: "button.send-button",
-  assistantSelector: '.message-assistant',
+  assistantSelector: '.language-glyim-ops .cm-content',
   streamingSelector: '.streaming, .loading',
+  completionSelector: 'button.copy-response-button',
   errorSelectors: ['.error-message', '[role="alert"]'],
 }));

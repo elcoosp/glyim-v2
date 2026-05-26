@@ -44,23 +44,32 @@ export function insertText(element: HTMLTextAreaElement | HTMLInputElement, text
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-export async function clickSendWhenEnabled(adapter: ConfigurableAdapter, maxWaitMs = 10000): Promise<void> {
+export async function clickSendWhenEnabled(adapter: ConfigurableAdapter, maxWaitMs = 15000): Promise<void> {
   const sendSelector = adapter.getSendSelector();
-  console.log(`[adapter] clickSendWhenEnabled: polling for selector "${sendSelector}"`);
   if (!sendSelector) {
-    throw new Error('No send selector configured for this provider');
+    throw new Error(`No send selector configured for provider ${adapter.id}`);
   }
+  console.log(`[adapter] clickSendWhenEnabled: polling for selector "${sendSelector}" (max ${maxWaitMs}ms)`);
   const pollInterval = 200;
   const maxAttempts = maxWaitMs / pollInterval;
   for (let i = 0; i < maxAttempts; i++) {
     const btn = document.querySelector<HTMLElement>(sendSelector);
     if (btn) {
-      btn.click();
-      return;
+      const disabled = btn.hasAttribute('disabled');
+      const ariaDisabled = btn.getAttribute('aria-disabled');
+      const visible = btn.offsetParent !== null;
+      console.log(`[adapter] Attempt ${i + 1}: button found, disabled=${disabled}, aria-disabled=${ariaDisabled}, visible=${visible}`);
+      if (!disabled && ariaDisabled !== 'true' && visible) {
+        btn.click();
+        console.log(`[adapter] Send button clicked for ${adapter.id}`);
+        return;
+      }
+    } else {
+      console.log(`[adapter] Attempt ${i + 1}: button not found with selector "${sendSelector}"`);
     }
     await new Promise(r => setTimeout(r, pollInterval));
   }
-  throw new Error(`Send button not found or not enabled with selector: ${sendSelector}`);
+  throw new Error(`Send button not found or not enabled with selector: ${sendSelector} after ${maxWaitMs}ms`);
 }
 export async function setInputText(selector: string, text: string): Promise<void> {
   const element = document.querySelector<HTMLElement>(selector);
