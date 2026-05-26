@@ -24,6 +24,7 @@ export interface ProviderConfig {
   inputSelector: string;
   assistantSelector: string;
   streamingSelector: string;
+  completionSelector: string;
   sendSelector: string
   errorSelectors: string[];
   customSetInput?: (text: string) => Promise<void>;
@@ -92,6 +93,9 @@ export class ConfigurableAdapter implements ProviderAdapter {
   getSendSelector(): string {
     // Return the provider-specific send selector from config, or a fallback
     return this.config.sendSelector || "button[type='submit']";
+  }
+  getCompletionSelector(): string | undefined {
+    return this.config.completionSelector;
   }
   async setInput(text: string): Promise<void> {
     if (this.config.customSetInput) {

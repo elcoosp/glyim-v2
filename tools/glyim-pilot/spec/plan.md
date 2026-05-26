@@ -4490,7 +4490,7 @@ registerAdapter(new ConfigurableAdapter({
 registerAdapter(new ConfigurableAdapter({
   id: 'zai',
   urlPattern: /z\.ai/,
-  homepageUrl: 'https://z.ai',
+  homepageUrl: 'https://chat.z.ai',
   inputSelector: 'textarea',
   assistantSelector: '.message-assistant',
   streamingSelector: '.streaming, .loading',

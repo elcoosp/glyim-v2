@@ -83,25 +83,12 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
 
   // --- Provider-specific selectors ---
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
-  let assistantContainerSelector: string;
-  let copyButtonSelector = "button[aria-label*='Copy'], button[aria-label*='copy'], [class*='copy']";
-
-  if (providerId === 'deepseek') {
-    assistantContainerSelector = 'div.ds-message:last-of-type';
-  } else if (providerId === 'zai') {
-    assistantContainerSelector = '.chat-assistant:last-of-type';
-  } else if (providerId === 'qwen') {
-    assistantContainerSelector = '.message-assistant:last-of-type';
-  } else {
-    assistantContainerSelector = `${adapter.assistantSelector}:last-of-type`;
-  }
-
-  // Inject script that clicks send and watches for copy button
+  const completionSelector = (adapter as any).getCompletionSelector ? (adapter as any).getCompletionSelector() : "button[aria-label*='Copy'], button[aria-label*='copy']";
+  const assistantSelector = adapter.assistantSelector; // already defined
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: (sendSel: string, sid: string, turnNum: number) => {
-      console.log('[injected] Script started');
-
+    func: (sendSel: string, completionSel: string, asstSel: string, provId: string, sid: string, turnNum: number) => {
+      console.log('[injected] Script started, provider:', provId);
       let clickAttempts = 0;
       const maxAttempts = 50;
       const tryClick = () => {
@@ -109,29 +96,27 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
         if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' && btn.offsetParent !== null) {
           btn.click();
           console.log('[injected] Send button clicked');
-
           const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
               if (mutation.type === 'childList') {
                 for (const node of mutation.addedNodes) {
                   if (node.nodeType === Node.ELEMENT_NODE) {
                     const element = node as Element;
-                    // Look for the assistant toolbar (div.ds-flex._0a3d93b)
-                    let toolbar: Element | null = null;
-                    if (element.matches?.('div.ds-flex._0a3d93b')) {
-                      toolbar = element;
-                    } else {
-                      toolbar = element.querySelector?.('div.ds-flex._0a3d93b');
-                    }
-                    if (toolbar) {
-                      console.log('[injected] Assistant toolbar detected');
-                      // Get the last assistant message container (stable class)
-                      const answers = document.querySelectorAll('.ds-assistant-message-main-content');
-                      const lastAnswer = answers[answers.length - 1];
+                    let completionEl: Element | null = null;
+                    if (element.matches?.(completionSel)) completionEl = element;
+                    else completionEl = element.querySelector?.(completionSel);
+                    if (completionEl) {
+                      console.log('[injected] Completion detected');
                       let fullResponse = '';
-                      if (lastAnswer) {
-                        const pre = lastAnswer.querySelector('pre');
-                        fullResponse = pre ? pre.textContent || '' : lastAnswer.textContent || '';
+                      if (provId === 'zai') {
+                        const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
+                        fullResponse = codeBlock ? codeBlock.textContent || '' : '';
+                      } else {
+                        const lastAnswer = document.querySelector(asstSel);
+                        if (lastAnswer) {
+                          const pre = lastAnswer.querySelector('pre:last-of-type');
+                          fullResponse = pre ? pre.textContent || '' : '';
+                        }
                       }
                       if (fullResponse) {
                         console.log(`[injected] Extracted response length: ${fullResponse.length}`);
@@ -142,7 +127,7 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                           fullResponse: fullResponse
                         }, '*');
                       } else {
-                        console.warn('[injected] No response content');
+                        console.warn('[injected] No response content found');
                       }
                       observer.disconnect();
                       return;
@@ -161,7 +146,7 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
       };
       tryClick();
     },
-    args: [sendSelector, sessionId, 0],
+    args: [sendSelector, completionSelector, assistantSelector, providerId, sessionId, 0],
   });
 }
 // --- The remaining functions (unchanged from your original) ---

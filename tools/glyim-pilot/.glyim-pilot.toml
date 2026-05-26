@@ -59,7 +59,7 @@ assistant_selector = ".ds-markdown--block"
 code_block_selector = "pre code"
 [providers.zai]
 enabled = true
-url = "https://z.ai"
+url = "https://chat.z.ai"
 max_concurrent = 3
 rate_limit_cooldown = 60
 input_selector = "#chat-input"
