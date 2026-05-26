@@ -50,6 +50,7 @@ async function injectPrompt(tabId: number, prompt: string): Promise<{ success: b
           const end = input.selectionEnd ?? 0;
           input.setRangeText(text, start, end, 'end');
           input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
         } else if (input.isContentEditable) {
           document.execCommand('insertText', false, text);
         }
@@ -79,28 +80,44 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   await persistSessions();
   ws.send({ type: 'session.ready', sessionId, providerId, tabId: tab.id, traceId, v: PROTOCOL_VERSION });
 
-  // --- Direct injection of watcher and click (bypass content script) ---
+  // --- Direct injection: click send button and watch for response ---
+  // Cast adapter to any to access getSendSelector (since it's not in the interface)
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
   const assistantSelector = adapter.assistantSelector;
 
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: (sendSel: string, asstSel: string, sid: string, turnNum: number) => {
-      // Click send button with retries
-      let attempts = 0;
-      const maxAttempts = 20;
+      console.log(`[injected] Starting click poll for selector: ${sendSel}`);
+
+      let clickAttempts = 0;
+      const maxClickAttempts = 50; // 10 seconds (200ms * 50)
+      const clickInterval = 200;
+
       const tryClick = () => {
         const btn = document.querySelector<HTMLElement>(sendSel);
-        if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
-          btn.click();
-          console.log("[injected] Send button clicked");
-          return;
+        if (btn) {
+          const disabled = btn.hasAttribute('disabled');
+          const ariaDisabled = btn.getAttribute('aria-disabled');
+          const visible = btn.offsetParent !== null;
+          console.log(`[injected] Attempt ${clickAttempts + 1}: btn found, disabled=${disabled}, aria-disabled=${ariaDisabled}, visible=${visible}`);
+          if (!disabled && ariaDisabled !== 'true' && visible) {
+            btn.click();
+            console.log('[injected] Send button clicked!');
+            return;
+          }
+        } else {
+          console.log(`[injected] Attempt ${clickAttempts + 1}: btn not found`);
         }
-        if (attempts++ < maxAttempts) setTimeout(tryClick, 200);
+        if (clickAttempts++ < maxClickAttempts) {
+          setTimeout(tryClick, clickInterval);
+        } else {
+          console.error('[injected] Failed to click send button after 10 seconds');
+        }
       };
-      setTimeout(tryClick, 500);
+      setTimeout(tryClick, 500); // initial delay
 
-      // Watch for completion (copy button)
+      // --- Response watcher (copy button detection) ---
       const observer = new MutationObserver(() => {
         const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
         if (lastMsg) {
@@ -109,6 +126,7 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
             const fullResponse = lastMsg.textContent || '';
             chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse });
             observer.disconnect();
+            console.log('[injected] Response complete, copy button detected');
           }
         }
       });
@@ -118,15 +136,11 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   });
 }
 
-// Keep the rest of the original functions (handleFeedbackSend, etc.) unchanged
-// Include them from your previous working version
+// --- The remaining functions (unchanged from your original) ---
 async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.send' }>) {
   const entry = findSession(msg.sessionId); if (!entry) return;
   await injectPrompt(entry[0], msg.message);
-  // Re-inject watcher for new turn? For simplicity, we'll just send a message to existing injected script?
-  // For now, we'll rely on the fact that the same tab's injected script is still running.
-  // But it's not persistent. This is a limitation. You may need to re-inject.
-  // We'll add a simple re-injection for feedback.
+  // Re-inject the click and watcher for the new turn
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
     const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
@@ -141,10 +155,9 @@ async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.sen
             btn.click();
             return;
           }
-          if (attempts++ < 20) setTimeout(tryClick, 200);
+          if (attempts++ < 50) setTimeout(tryClick, 200);
         };
         setTimeout(tryClick, 500);
-        // Setup observer again
         const obs = new MutationObserver(() => {
           const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
           if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
@@ -158,7 +171,6 @@ async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.sen
       args: [sendSelector, assistantSelector, entry[1].sessionId, entry[1].turn + 1],
     });
   }
-  // Update turn count locally
   const sess = tabSessions.get(entry[0]);
   if (sess) sess.turn++;
   await persistSessions();
@@ -167,7 +179,6 @@ async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.sen
 async function handleFeedbackContinue(msg: Extract<CliMessage, { type: 'feedback.continue' }>) {
   const entry = findSession(msg.sessionId); if (!entry) return;
   await injectPrompt(entry[0], 'Please continue.');
-  // Similar re-injection as above (simplified)
   const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
   if (adapter) {
     const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
@@ -178,11 +189,11 @@ async function handleFeedbackContinue(msg: Extract<CliMessage, { type: 'feedback
         let attempts = 0;
         const tryClick = () => {
           const btn = document.querySelector<HTMLElement>(sendSel);
-          if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+          if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
             btn.click();
             return;
           }
-          if (attempts++ < 20) setTimeout(tryClick, 200);
+          if (attempts++ < 50) setTimeout(tryClick, 200);
         };
         setTimeout(tryClick, 500);
         const obs = new MutationObserver(() => {
@@ -207,7 +218,41 @@ async function handleRetryPrompt(msg: Extract<CliMessage, { type: 'retry.prompt'
   await new Promise(r => setTimeout(r, msg.delay));
   const entry = findSession(msg.sessionId); if (!entry) return;
   await injectPrompt(entry[0], msg.message);
-  // Similar re-injection as above
+  // Similar re-injection can be added, but for simplicity, we'll rely on the existing watcher? Might need to add.
+  // We'll add a minimal version.
+  const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
+  if (adapter) {
+    const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
+    const assistantSelector = adapter.assistantSelector;
+    await chrome.scripting.executeScript({
+      target: { tabId: entry[0] },
+      func: (sendSel, asstSel, sid, turnNum) => {
+        let attempts = 0;
+        const tryClick = () => {
+          const btn = document.querySelector<HTMLElement>(sendSel);
+          if (btn && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true') {
+            btn.click();
+            return;
+          }
+          if (attempts++ < 50) setTimeout(tryClick, 200);
+        };
+        setTimeout(tryClick, 500);
+        const obs = new MutationObserver(() => {
+          const lastMsg = document.querySelector(`${asstSel}:last-of-type`);
+          if (lastMsg && lastMsg.querySelector('button[aria-label*="Copy"]')) {
+            const full = lastMsg.textContent || '';
+            chrome.runtime.sendMessage({ type: 'stream.complete', sessionId: sid, turn: turnNum, fullResponse: full });
+            obs.disconnect();
+          }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+      },
+      args: [sendSelector, assistantSelector, entry[1].sessionId, entry[1].turn + 1],
+    });
+  }
+  const sess = tabSessions.get(entry[0]);
+  if (sess) sess.turn++;
+  await persistSessions();
 }
 
 async function handleSessionPause(msg: Extract<CliMessage, { type: 'session.pause' }>) {
