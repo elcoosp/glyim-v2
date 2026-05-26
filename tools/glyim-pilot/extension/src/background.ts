@@ -81,27 +81,24 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   await persistSessions();
   ws.send({ type: 'session.ready', sessionId, providerId, tabId: tab.id, traceId, v: PROTOCOL_VERSION });
 
-  // --- Provider‑specific selectors ---
+  // --- Use adapter's selectors ---
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
   const completionSelector = (adapter as any).getCompletionSelector ? (adapter as any).getCompletionSelector() : "button[aria-label*='Copy'], button[aria-label*='copy']";
   const assistantSelector = adapter.assistantSelector;
 
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: (sendSel: string, completionSel: string, asstSel: string, provId: string, sid: string, turnNum: number) => {
-      console.log('[injected] Script started, provider:', provId);
+    func: (sendSel: string, completionSel: string, asstSel: string, sid: string, turnNum: number) => {
+      console.log('[injected] Script started');
 
       let clickAttempts = 0;
-      const maxAttempts = 50; // 10 seconds (200ms * 50)
-      const clickInterval = 200;
-
+      const maxAttempts = 50;
       const tryClick = () => {
         const btn = document.querySelector<HTMLElement>(sendSel);
         if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' && btn.offsetParent !== null) {
-          // Scroll into view and focus
+          // Simulate full mouse click
           btn.scrollIntoView({ block: 'center' });
           btn.focus();
-          // Full mouse event sequence with coordinates
           const rect = btn.getBoundingClientRect();
           const centerX = rect.left + rect.width / 2;
           const centerY = rect.top + rect.height / 2;
@@ -111,10 +108,10 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
           btn.dispatchEvent(mousedown);
           btn.dispatchEvent(mouseup);
           btn.dispatchEvent(click);
-          // Also call native click as fallback
           btn.click();
-          console.log('[injected] Send button clicked with full event simulation');
+          console.log('[injected] Send button clicked');
 
+          // MutationObserver for completion element
           const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
               if (mutation.type === 'childList') {
@@ -126,28 +123,16 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                     else completionEl = element.querySelector?.(completionSel);
                     if (completionEl) {
                       console.log('[injected] Completion detected');
-                      let fullResponse = '';
-                      if (provId === 'zai' || provId === 'qwen') {
-                        const codeBlock = document.querySelector('.language-glyim-ops .cm-content');
-                        fullResponse = codeBlock ? codeBlock.textContent || '' : '';
-                      } else {
-                        const lastAnswer = document.querySelector(asstSel);
-                        if (lastAnswer) {
-                          const pre = lastAnswer.querySelector('pre:last-of-type');
-                          fullResponse = pre ? pre.textContent || '' : '';
-                        }
-                      }
-                      if (fullResponse) {
-                        console.log(`[injected] Extracted response length: ${fullResponse.length}`);
-                        window.postMessage({
-                          type: 'stream_complete',
-                          sessionId: sid,
-                          turn: turnNum,
-                          fullResponse: fullResponse
-                        }, '*');
-                      } else {
-                        console.warn('[injected] No response content found');
-                      }
+                      // Extract response using assistantSelector (no provider-specific logic)
+                      const responseElement = document.querySelector(asstSel);
+                      const fullResponse = responseElement ? responseElement.textContent || '' : '';
+                      console.log(`[injected] Extracted response length: ${fullResponse.length}`);
+                      window.postMessage({
+                        type: 'stream_complete',
+                        sessionId: sid,
+                        turn: turnNum,
+                        fullResponse: fullResponse
+                      }, '*');
                       observer.disconnect();
                       return;
                     }
@@ -160,12 +145,12 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
           console.log('[injected] Observer started');
           return;
         }
-        if (clickAttempts++ < maxAttempts) setTimeout(tryClick, clickInterval);
+        if (clickAttempts++ < maxAttempts) setTimeout(tryClick, 200);
         else console.error('[injected] Failed to click send button');
       };
       setTimeout(tryClick, 1500);
     },
-    args: [sendSelector, completionSelector, assistantSelector, providerId, sessionId, 0],
+    args: [sendSelector, completionSelector, assistantSelector, sessionId, 0],
   });
 }
 

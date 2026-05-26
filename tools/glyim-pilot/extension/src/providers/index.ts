@@ -28,9 +28,9 @@ registerAdapter(new ConfigurableAdapter({
   urlPattern: /chat\.qwen\.ai/,
   homepageUrl: 'https://chat.qwen.ai',
   inputSelector: '.message-input-textarea',
-  sendSelector: "button.send-button",
-  assistantSelector: '.language-glyim-ops .cm-content',
+  sendSelector: "button.send-button",   // works in console
+  assistantSelector: '.qwen-markdown-code-body.glyim-ops .view-lines',   // container with the final answer
   streamingSelector: '.streaming, .loading',
-  completionSelector: 'button.copy-response-button',
+  completionSelector: 'div.qwen-chat-package-comp-new-action-control-container.qwen-chat-package-comp-new-action-control-container-share.qwen-chat-package-comp-new-action-control-container-enable-hover > span > svg', // stable copy button container
   errorSelectors: ['.error-message', '[role="alert"]'],
 }));
