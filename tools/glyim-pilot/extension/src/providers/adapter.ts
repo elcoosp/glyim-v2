@@ -24,6 +24,7 @@ export interface ProviderConfig {
   inputSelector: string;
   assistantSelector: string;
   streamingSelector: string;
+  sendSelector: string
   errorSelectors: string[];
   customSetInput?: (text: string) => Promise<void>;
 }
@@ -42,20 +43,24 @@ export function insertText(element: HTMLTextAreaElement | HTMLInputElement, text
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-// DEEPSEEK FIX: added stable send button selector
-export async function clickSendWhenEnabled(maxWaitMs = 5000): Promise<void> {
-  const pollInterval = 100;
+export async function clickSendWhenEnabled(adapter: ConfigurableAdapter, maxWaitMs = 10000): Promise<void> {
+  const sendSelector = adapter.getSendSelector();
+  console.log(`[adapter] clickSendWhenEnabled: polling for selector "${sendSelector}"`);
+  if (!sendSelector) {
+    throw new Error('No send selector configured for this provider');
+  }
+  const pollInterval = 200;
   const maxAttempts = maxWaitMs / pollInterval;
   for (let i = 0; i < maxAttempts; i++) {
-    const btn = document.querySelector<HTMLButtonElement>(
-      "button[type='submit'], button[aria-label*='send'], button.send-button, div.chat-prompt-send-button button.send-button, div[class*='send-button'], div.ds-icon-button[role='button'][aria-disabled='false']"
-    );
-    if (btn && !btn.disabled && !btn.getAttribute('aria-disabled')) { btn.click(); return; }
+    const btn = document.querySelector<HTMLElement>(sendSelector);
+    if (btn) {
+      btn.click();
+      return;
+    }
     await new Promise(r => setTimeout(r, pollInterval));
   }
-  throw new Error('send button not found or not enabled within timeout');
+  throw new Error(`Send button not found or not enabled with selector: ${sendSelector}`);
 }
-
 export async function setInputText(selector: string, text: string): Promise<void> {
   const element = document.querySelector<HTMLElement>(selector);
   if (!element) throw new Error(`input not found by selector: ${selector}`);
@@ -84,7 +89,10 @@ export class ConfigurableAdapter implements ProviderAdapter {
     this.assistantSelector = config.assistantSelector;
     this.homepageUrl = config.homepageUrl;
   }
-
+  getSendSelector(): string {
+    // Return the provider-specific send selector from config, or a fallback
+    return this.config.sendSelector || "button[type='submit']";
+  }
   async setInput(text: string): Promise<void> {
     if (this.config.customSetInput) {
       await this.config.customSetInput(text);
@@ -93,9 +101,15 @@ export class ConfigurableAdapter implements ProviderAdapter {
     await setInputText(this.config.inputSelector, text);
   }
 
-  async submitMessage(): Promise<void> { await clickSendWhenEnabled(); }
-
-  // DEEPSEEK FIX: copy button detection for completion
+  async submitMessage(): Promise<void> {
+    console.log(`[adapter] submitMessage called for provider ${this.id}`);
+    const sel = this.getSendSelector();
+    console.log(`[adapter] sendSelector = "${sel}"`);
+    if (!sel) {
+      throw new Error(`No send selector for ${this.id}`);
+    }
+    await clickSendWhenEnabled(this);
+  }
   isStreaming(): boolean {
     if (this.config.streamingSelector && document.querySelector(this.config.streamingSelector)) {
       return true;

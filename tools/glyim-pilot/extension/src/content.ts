@@ -4,6 +4,7 @@ import { StreamWatcher } from './stream_watcher';
 let activeWatcher: StreamWatcher | null = null;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  console.log(msg)
   if (msg.type === 'startWatcher') {
     const adapter = getAdapterForUrl(window.location.href);
     if (!adapter) {
@@ -21,6 +22,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       (content, pattern) => chrome.runtime.sendMessage({ type: 'error.detected', sessionId, errorType: 'dangerous_pattern', errorMessage: pattern, recoverable: true })
     );
     activeWatcher.start();
+
+
+    // Call submitMessage and log any error
+    adapter.submitMessage().catch(e => {
+      console.error('[content] submitMessage failed:', e);
+    });
+
     sendResponse({ success: true });
   } else if (msg.type === 'stopWatcher') {
     if (activeWatcher) activeWatcher.stop();
