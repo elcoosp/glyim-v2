@@ -11,6 +11,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+// HTTP server dependencies
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use serde::Deserialize;
+use std::net::SocketAddr;
+
 #[derive(Parser)]
 #[command(name = "glyim-pilot", version = "0.3.0")]
 struct Cli {
@@ -68,7 +73,14 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
             tracing::error!("Server error: {e}");
         }
     });
-
+    // --- Keep the broadcast channel alive with a dummy receiver ---
+    let mut _dummy_rx = cli_sender.subscribe();
+    tokio::spawn(async move {
+        // This receiver stays alive forever; messages are ignored.
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+        }
+    });
     let persistence = Arc::new(
         StatePersistence::load(&project_root)
             .await
@@ -83,39 +95,72 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
         config.server.port
     );
 
+    // --- HTTP server for CLI commands (port 8421) ---
+    let http_sender = cli_sender.clone();
+    let app = Router::new()
+        .route("/session/start", post(session_start_handler))
+        .with_state(http_sender);
+    let http_addr = SocketAddr::from(([127, 0, 0, 1], 8421));
+    tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
+        if let Err(e) = axum::serve(listener, app).await {
+            tracing::error!("HTTP server error: {e}");
+        }
+    });
+    // ---------------------------------------------
+
     loop {
         tokio::select! {
-                _ = tokio::signal::ctrl_c() => { tracing::info!("Shutting down..."); break; }
-                Some(event) = event_rx.recv() => {
-                    match event {
-                        ServerEvent::Connected { addr } => {
-                            tracing::info!(peer = %addr, "extension connected");
-        // AUTO-START: hardcoded to deepseek
-        let test_msg = CliMessage::SessionStart {
-            session_id: format!("auto-{}", uuid::Uuid::new_v4()),
-            provider_id: "deepseek".to_string(),
-            prompt: "Write a simple Rust function that adds two numbers".to_string(),
-            system_prompt: "You are a helpful assistant. Output only code inside ```glyim-ops blocks.".to_string(),
-            trace_id: None,
-            v: PROTOCOL_VERSION,
-        };
-        let json = serde_json::to_string(&test_msg).unwrap();
-        if let Err(e) = cli_sender.send(json) {
-            tracing::error!("Failed to send auto session start: {e}");
-        }
-
-                        }
-                        ServerEvent::Disconnected { addr } => tracing::info!(peer = %addr, "extension disconnected"),
-                        ServerEvent::Message { msg, .. } => {
-                            handle_extension_message(
-                                msg, &config, &persistence, &project_root,
-                                &cli_sender, &processing, &metrics,
-                            ).await;
-                        }
+            _ = tokio::signal::ctrl_c() => { tracing::info!("Shutting down..."); break; }
+            Some(event) = event_rx.recv() => {
+                match event {
+                    ServerEvent::Connected { addr } => {
+                        tracing::info!(peer = %addr, "extension connected");
+                    }
+                    ServerEvent::Disconnected { addr } => tracing::info!(peer = %addr, "extension disconnected"),
+                    ServerEvent::Message { msg, .. } => {
+                        handle_extension_message(
+                            msg, &config, &persistence, &project_root,
+                            &cli_sender, &processing, &metrics,
+                        ).await;
                     }
                 }
             }
+        }
     }
+}
+
+/// HTTP handler for POST /session/start
+async fn session_start_handler(
+    State(sender): State<tokio::sync::broadcast::Sender<String>>,
+    Json(payload): Json<SessionStartRequest>,
+) -> impl IntoResponse {
+    let msg = CliMessage::SessionStart {
+        session_id: payload
+            .session_id
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        provider_id: payload.provider,
+        prompt: payload.prompt,
+        system_prompt: "You are a helpful assistant. Output only code inside ```glyim-ops blocks."
+            .to_string(),
+        trace_id: None,
+        v: PROTOCOL_VERSION,
+    };
+    let json = match serde_json::to_string(&msg) {
+        Ok(j) => j,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+    if let Err(e) = sender.send(json) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+    (StatusCode::OK, "Session start sent").into_response()
+}
+
+#[derive(Deserialize)]
+struct SessionStartRequest {
+    provider: String,
+    prompt: String,
+    session_id: Option<String>,
 }
 
 async fn handle_extension_message(

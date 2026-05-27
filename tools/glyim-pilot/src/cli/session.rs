@@ -1,11 +1,7 @@
 use clap::Subcommand;
-use futures_util::{SinkExt, StreamExt};
+use reqwest::Client;
 use serde_json;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use uuid::Uuid;
-
-use crate::protocol::types::PROTOCOL_VERSION;
-use crate::server::messages::CliMessage;
 
 #[derive(Subcommand)]
 pub enum SessionCommands {
@@ -35,32 +31,21 @@ pub async fn handle_session_command(cmd: SessionCommands) -> Result<(), anyhow::
             session_id,
         } => {
             let session_id = session_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-            let msg = CliMessage::SessionStart {
-                session_id,
-                provider_id: provider,
-                prompt,
-                system_prompt:
-                    "You are a helpful assistant. Output only code inside ```glyim-ops blocks."
-                        .into(),
-                trace_id: None,
-                v: PROTOCOL_VERSION,
-            };
-            let msg_json = serde_json::to_string(&msg)?;
-
-            let (mut ws, _) = connect_async("ws://127.0.0.1:8420").await?;
-            ws.send(Message::Text(msg_json.into())).await?;
-            println!("Session start sent. Waiting for response...");
-
-            tokio::time::timeout(tokio::time::Duration::from_secs(5), async {
-                if let Some(Ok(Message::Text(resp))) = ws.next().await {
-                    println!("Server response: {}", resp);
-                } else {
-                    println!("No response received (timeout or unexpected message)");
-                }
-            })
-            .await
-            .unwrap_or_else(|_| println!("No response within 5 seconds"));
-
+            let client = Client::new();
+            let resp = client
+                .post("http://127.0.0.1:8421/session/start")
+                .json(&serde_json::json!({
+                    "provider": provider,
+                    "prompt": prompt,
+                    "session_id": session_id,
+                }))
+                .send()
+                .await?;
+            if resp.status().is_success() {
+                println!("Session start sent.");
+            } else {
+                eprintln!("Failed: {}", resp.text().await?);
+            }
             Ok(())
         }
     }

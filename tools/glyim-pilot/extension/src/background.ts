@@ -9,6 +9,7 @@ const ws = new WsClient();
 const tabSessions = new Map<number, TabSession>();
 
 ws.onMessage(async (msg: CliMessage) => {
+  console.log('[bg] Received message from server:', msg);
   const versionError = validateMessageVersion((msg as any).v as number | undefined);
   if (versionError) console.warn(`glyim-pilot: ${versionError}`);
   try {

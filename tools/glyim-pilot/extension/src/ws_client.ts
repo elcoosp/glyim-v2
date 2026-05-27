@@ -45,7 +45,14 @@ export class WsClient {
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => this.doConnect(), delay);
   }
-  private startPing(): void { this.stopPing(); this.pingTimer = setInterval(() => this.send({ type: 'pong', timestamp: Date.now(), v: PROTOCOL_VERSION } as any), PING_INTERVAL); }
-  private stopPing(): void { if (this.pingTimer) clearInterval(this.pingTimer); }
+  private startPing(): void {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // Send a pong message (valid ExtensionMessage) to keep the connection alive
+        this.send({ type: 'pong', timestamp: Date.now(), v: PROTOCOL_VERSION });
+      }
+    }, 20000);
+  } private stopPing(): void { if (this.pingTimer) clearInterval(this.pingTimer); }
   private cleanup(): void { if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.stopPing(); }
 }
