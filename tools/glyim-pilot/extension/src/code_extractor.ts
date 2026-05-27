@@ -21,6 +21,11 @@ export function extractGlyimOpsBlocks(response: string): string[] {
       else break;
     } else i++;
   }
+
+  // If no blocks found but the response contains directives, treat the whole response as a block
+  if (blocks.length === 0 && (normalized.includes('::WRITE') || normalized.includes('::REPLACE'))) {
+    blocks.push(normalized);
+  }
   return blocks;
 }
 

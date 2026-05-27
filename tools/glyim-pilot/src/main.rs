@@ -6,6 +6,7 @@ use glyim_pilot::metrics::production_metrics;
 use glyim_pilot::protocol::types::PROTOCOL_VERSION;
 use glyim_pilot::server::{CliMessage, ExtensionMessage, ServerEvent, WsServer};
 use glyim_pilot::session::persistence::StatePersistence;
+use glyim_pilot::session::state::SessionState;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -73,14 +74,15 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
             tracing::error!("Server error: {e}");
         }
     });
-    // --- Keep the broadcast channel alive with a dummy receiver ---
+
+    // Keep broadcast channel alive with a dummy receiver
     let mut _dummy_rx = cli_sender.subscribe();
     tokio::spawn(async move {
-        // This receiver stays alive forever; messages are ignored.
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
         }
     });
+
     let persistence = Arc::new(
         StatePersistence::load(&project_root)
             .await
@@ -90,12 +92,12 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
     let metrics: Arc<dyn glyim_pilot::metrics::Metrics> = production_metrics().into();
 
     tracing::info!(
-        "Glym Pilot server started on ws://{}:{}",
+        "Glyim Pilot server started on ws://{}:{}",
         config.server.host,
         config.server.port
     );
 
-    // --- HTTP server for CLI commands (port 8421) ---
+    // HTTP server for CLI commands
     let http_sender = cli_sender.clone();
     let app = Router::new()
         .route("/session/start", post(session_start_handler))
@@ -107,7 +109,6 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
             tracing::error!("HTTP server error: {e}");
         }
     });
-    // ---------------------------------------------
 
     loop {
         tokio::select! {
@@ -130,19 +131,20 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
     }
 }
 
-/// HTTP handler for POST /session/start
 async fn session_start_handler(
     State(sender): State<tokio::sync::broadcast::Sender<String>>,
     Json(payload): Json<SessionStartRequest>,
 ) -> impl IntoResponse {
+    let system_prompt = payload.system_prompt.unwrap_or_else(|| {
+        "You are a helpful assistant. Output only code inside ```glyim-ops blocks.".to_string()
+    });
     let msg = CliMessage::SessionStart {
         session_id: payload
             .session_id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         provider_id: payload.provider,
         prompt: payload.prompt,
-        system_prompt: "You are a helpful assistant. Output only code inside ```glyim-ops blocks."
-            .to_string(),
+        system_prompt,
         trace_id: None,
         v: PROTOCOL_VERSION,
     };
@@ -161,8 +163,8 @@ struct SessionStartRequest {
     provider: String,
     prompt: String,
     session_id: Option<String>,
+    system_prompt: Option<String>,
 }
-
 async fn handle_extension_message(
     msg: ExtensionMessage,
     config: &Arc<PilotConfig>,
@@ -180,6 +182,7 @@ async fn handle_extension_message(
             ..
         } => {
             tracing::info!(session_id, provider_id, tab_id, "session ready");
+            // Do NOT create session state here – it will be created when we have a worktree path
         }
         ExtensionMessage::OpsReady {
             session_id,
@@ -190,20 +193,62 @@ async fn handle_extension_message(
         } => {
             let trace_id = trace_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-            let worktree_path = persistence.get_worktree_path(&session_id).await;
-            let worktree_dir = match worktree_path {
-                Some(path) => PathBuf::from(path),
-                None => {
-                    tracing::error!(session_id, "worktree_path not found");
-                    let err_msg = CliMessage::FeedbackSend {
-                        session_id: session_id.clone(),
-                        message: "Internal error: worktree path not found".into(),
-                        turn: turn + 1,
-                        trace_id: Some(trace_id),
-                        v: PROTOCOL_VERSION,
+            // Retrieve provider_id from stored session (if any) or fallback to config default
+            let provider_id = persistence
+                .all_sessions()
+                .await
+                .into_iter()
+                .find(|s| s.session_id == session_id)
+                .map(|s| s.provider_id)
+                .unwrap_or_else(|| config.defaults.provider.clone());
+
+            // Get existing worktree path – if it's empty, treat as missing
+            let worktree_dir = match persistence.get_worktree_path(&session_id).await {
+                Some(path) if !path.is_empty() => PathBuf::from(path),
+                _ => {
+                    tracing::info!(session_id, "worktree not found or empty, creating one");
+                    let stream_id = session_id.clone();
+                    let worktree_base = Path::new(&config.execution.worktree_base);
+                    let repo_root = project_root;
+                    let default_branch = &config.execution.default_branch;
+                    let branch_version = &config.execution.branch_version;
+                    let timeout = config.execution.command_timeout;
+
+                    let worktree_dir = match glyim_pilot::git_ops::create_worktree(
+                        repo_root,
+                        worktree_base,
+                        &stream_id,
+                        default_branch,
+                        branch_version,
+                        timeout,
+                    )
+                    .await
+                    {
+                        Ok(dir) => dir,
+                        Err(e) => {
+                            tracing::error!(session_id, error = %e, "failed to create worktree");
+                            let err_msg = CliMessage::FeedbackSend {
+                                session_id: session_id.clone(),
+                                message: format!("Worktree creation failed: {}", e),
+                                turn: turn + 1,
+                                trace_id: Some(trace_id.clone()),
+                                v: PROTOCOL_VERSION,
+                            };
+                            let _ = cli_sender.send(serde_json::to_string(&err_msg).unwrap());
+                            return;
+                        }
                     };
-                    let _ = cli_sender.send(serde_json::to_string(&err_msg).unwrap());
-                    return;
+
+                    // Store the session state with the real worktree path
+                    let session_state = glyim_pilot::session::state::SessionState::new(
+                        stream_id.clone(),
+                        provider_id.clone(),
+                        worktree_dir.to_string_lossy().to_string(),
+                    );
+                    if let Err(e) = persistence.add_session(session_state).await {
+                        tracing::error!("failed to save session state: {}", e);
+                    }
+                    worktree_dir
                 }
             };
 

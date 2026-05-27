@@ -270,7 +270,7 @@ chrome.runtime.onStartup.addListener(restoreSessions);
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[bg] Received runtime message:', message);
   if (message.type === 'stream.complete') {
-    console.log('[bg] Processing stream.complete for', message.sessionId);
+    console.log('[bg] Raw fullResponse:', message.fullResponse);
     const blocks = extractGlyimOpsBlocks(message.fullResponse);
     console.log(`[bg] Extracted ${blocks.length} ops blocks`);
     for (const block of blocks) {
