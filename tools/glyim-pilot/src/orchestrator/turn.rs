@@ -149,6 +149,9 @@ async fn process_turn_inner(ctx: TurnContext) -> Result<OrchestratorAction, Pilo
             ctx.config.execution.command_timeout,
         )
         .await?;
+        ctx.persistence
+            .set_pr_url(&ctx.stream_id, pr_url.clone())
+            .await?;
         return Ok(OrchestratorAction::StreamComplete {
             session_id: ctx.session_id.clone(),
             pr_url,

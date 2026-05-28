@@ -1,31 +1,12 @@
 import { normalizeLineEndings } from './types';
 
 export function extractGlyimOpsBlocks(response: string): string[] {
+  console.log('[code_extractor] Raw response length:', response.length);
   const normalized = normalizeLineEndings(response);
-  const blocks: string[] = [];
-  const lines = normalized.split('\n');
-  let i = 0;
-  while (i < lines.length) {
-    const trimmed = lines[i].trim();
-    if (trimmed === '```glyim-ops' || trimmed.startsWith('```glyim-ops ')) {
-      const contentStart = i + 1;
-      let endLine = -1;
-      let insideWriteOrReplace = false;
-      for (let j = i + 1; j < lines.length; j++) {
-        const t = lines[j].trim();
-        if (t.startsWith('::WRITE ') || t.startsWith('::REPLACE ')) insideWriteOrReplace = true;
-        else if (t === '::END' && insideWriteOrReplace) insideWriteOrReplace = false;
-        if (t.startsWith('```') && !insideWriteOrReplace) { endLine = j; break; }
-      }
-      if (endLine >= 0) { blocks.push(lines.slice(contentStart, endLine).join('\n').trim()); i = endLine + 1; }
-      else break;
-    } else i++;
-  }
-
-  // If no blocks found but the response contains directives, treat the whole response as a block
-  if (blocks.length === 0 && (normalized.includes('::WRITE') || normalized.includes('::REPLACE'))) {
-    blocks.push(normalized);
-  }
+  // Always treat the whole response as a single block
+  // because the assistant outputs raw directives without backticks.
+  const blocks = [normalized];
+  console.log('[code_extractor] Blocks count:', blocks.length);
   return blocks;
 }
 

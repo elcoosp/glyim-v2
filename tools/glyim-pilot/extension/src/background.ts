@@ -122,23 +122,11 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                     else completionEl = element.querySelector?.(completionSel);
                     if (completionEl) {
                       console.log('[injected] Completion detected');
-                      // Extract response using assistantSelector (no provider logic)
-                      const responseElement = document.querySelector(asstSel);
-                      let fullResponse = responseElement ? responseElement.textContent || '' : '';
-                      // If empty, retry on next microtask (allows Monaco editor to populate)
-                      if (!fullResponse) {
-                        Promise.resolve().then(() => {
-                          const retryElement = document.querySelector(asstSel);
-                          const retryResponse = retryElement ? retryElement.textContent || '' : '';
-                          window.postMessage({
-                            type: 'stream_complete',
-                            sessionId: sid,
-                            turn: turnNum,
-                            fullResponse: retryResponse
-                          }, '*');
-                          observer.disconnect();
-                        });
-                      } else {
+                      // Wait one frame for virtualized Monaco editor content to render
+                      requestAnimationFrame(() => {
+                        const responseElement = document.querySelector(asstSel);
+                        const fullResponse = responseElement ? responseElement.textContent || '' : '';
+                        console.log(`[injected] Extracted response length: ${fullResponse.length}`);
                         window.postMessage({
                           type: 'stream_complete',
                           sessionId: sid,
@@ -146,7 +134,7 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                           fullResponse: fullResponse
                         }, '*');
                         observer.disconnect();
-                      }
+                      });
                       return;
                     }
                   }

@@ -43,6 +43,62 @@ pub struct StatePersistence {
 }
 
 impl StatePersistence {
+    pub async fn get_session_status(&self, session_id: &str) -> Option<String> {
+        let p = self.inner.lock().await;
+        p.state.sessions.get(session_id).map(|s| {
+            match s.status {
+                crate::session::state::StreamStatus::Init => "init",
+                crate::session::state::StreamStatus::Seeding => "seeding",
+                crate::session::state::StreamStatus::Waiting => "waiting",
+                crate::session::state::StreamStatus::Streaming => "streaming",
+                crate::session::state::StreamStatus::Executing => "executing",
+                crate::session::state::StreamStatus::Feedback => "feedback",
+                crate::session::state::StreamStatus::Committing => "committing",
+                crate::session::state::StreamStatus::Committed => "committed",
+                crate::session::state::StreamStatus::Verifying => "verifying",
+                crate::session::state::StreamStatus::Reviewing => "reviewing",
+                crate::session::state::StreamStatus::Complete => "complete",
+                crate::session::state::StreamStatus::Error => "error",
+                crate::session::state::StreamStatus::Paused => "paused",
+            }
+            .to_string()
+        })
+    }
+
+    pub async fn set_pr_url(&self, stream_id: &str, pr_url: String) -> Result<(), PilotError> {
+        let mut p = self.inner.lock().await;
+        if let Some(session) = p.state.sessions.get_mut(stream_id) {
+            session.pr_url = Some(pr_url);
+            p.save().await
+        } else {
+            Err(PilotError::Session(format!(
+                "Session {} not found",
+                stream_id
+            )))
+        }
+    }
+
+    pub async fn mark_pr_merged(&self, stream_id: &str) -> Result<(), PilotError> {
+        let mut p = self.inner.lock().await;
+        if let Some(session) = p.state.sessions.get_mut(stream_id) {
+            session.pr_merged = true;
+            p.save().await
+        } else {
+            Err(PilotError::Session(format!(
+                "Session {} not found",
+                stream_id
+            )))
+        }
+    }
+
+    pub async fn get_pr_merged(&self, stream_id: &str) -> Result<bool, PilotError> {
+        let p = self.inner.lock().await;
+        if let Some(session) = p.state.sessions.get(stream_id) {
+            Ok(session.pr_merged)
+        } else {
+            Ok(false) // not merged if not present
+        }
+    }
     pub async fn load(project_root: &Path) -> Result<Self, PilotError> {
         let inner = Inner::load(project_root).await?;
         Ok(Self {

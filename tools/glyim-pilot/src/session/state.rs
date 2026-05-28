@@ -23,6 +23,8 @@ pub enum StreamStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionState {
     pub session_id: String,
+    pub pr_url: Option<String>,
+    pub pr_merged: bool,
     pub stream_id: String,
     pub provider_id: String,
     pub tab_id: Option<u64>,
@@ -56,6 +58,8 @@ impl SessionState {
             last_activity: now,
             error_message: None,
             provider_cooldown_until: None,
+            pr_url: None,
+            pr_merged: false,
         }
     }
     pub(crate) fn transition(&mut self, new_status: StreamStatus) {

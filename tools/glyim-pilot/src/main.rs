@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use glyim_pilot::cli::agent::{handle_agent_command, AgentCommands};
 use glyim_pilot::cli::session::{handle_session_command, SessionCommands};
 use glyim_pilot::cli::{render_status_table, run_preflight};
 use glyim_pilot::config::{self, PilotConfig};
@@ -6,14 +7,20 @@ use glyim_pilot::metrics::production_metrics;
 use glyim_pilot::protocol::types::PROTOCOL_VERSION;
 use glyim_pilot::server::{CliMessage, ExtensionMessage, ServerEvent, WsServer};
 use glyim_pilot::session::persistence::StatePersistence;
-use glyim_pilot::session::state::SessionState;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // HTTP server dependencies
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::extract::Path as AxumPath;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::Deserialize;
 use std::net::SocketAddr;
 
@@ -33,6 +40,8 @@ enum Commands {
     Preflight,
     #[command(subcommand)]
     Session(SessionCommands),
+    #[command(subcommand)]
+    Agent(AgentCommands),
 }
 
 #[tokio::main]
@@ -56,6 +65,12 @@ async fn main() {
         Commands::Preflight => run_preflight(&config).await,
         Commands::Session(cmd) => {
             if let Err(e) = handle_session_command(cmd).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Agent(cmd) => {
+            if let Err(e) = handle_agent_command(cmd, &config, &cli.project_root).await {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -97,11 +112,13 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
         config.server.port
     );
 
-    // HTTP server for CLI commands
-    let http_sender = cli_sender.clone();
+    // HTTP server for CLI commands – use a tuple as shared state
     let app = Router::new()
         .route("/session/start", post(session_start_handler))
-        .with_state(http_sender);
+        .route("/session/{id}/status", get(session_status_handler))
+        .route("/session/{id}/merge", post(session_merge_handler))
+        .with_state((cli_sender.clone(), persistence.clone()));
+
     let http_addr = SocketAddr::from(([127, 0, 0, 1], 8421));
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
@@ -132,7 +149,10 @@ async fn run_serve(config: Arc<PilotConfig>, project_root: PathBuf) {
 }
 
 async fn session_start_handler(
-    State(sender): State<tokio::sync::broadcast::Sender<String>>,
+    State((sender, _)): State<(
+        tokio::sync::broadcast::Sender<String>,
+        Arc<StatePersistence>,
+    )>,
     Json(payload): Json<SessionStartRequest>,
 ) -> impl IntoResponse {
     let system_prompt = payload.system_prompt.unwrap_or_else(|| {
@@ -165,6 +185,34 @@ struct SessionStartRequest {
     session_id: Option<String>,
     system_prompt: Option<String>,
 }
+
+async fn session_status_handler(
+    AxumPath(id): AxumPath<String>,
+    State((_, persistence)): State<(
+        tokio::sync::broadcast::Sender<String>,
+        Arc<StatePersistence>,
+    )>,
+) -> impl IntoResponse {
+    let status = persistence
+        .get_session_status(&id)
+        .await
+        .unwrap_or_else(|| "unknown".to_string());
+    Json(serde_json::json!({ "status": status }))
+}
+
+async fn session_merge_handler(
+    AxumPath(id): AxumPath<String>,
+    State((_, persistence)): State<(
+        tokio::sync::broadcast::Sender<String>,
+        Arc<StatePersistence>,
+    )>,
+) -> impl IntoResponse {
+    match persistence.mark_pr_merged(&id).await {
+        Ok(_) => (StatusCode::OK, "Merged".to_string()).into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
+    }
+}
+
 async fn handle_extension_message(
     msg: ExtensionMessage,
     config: &Arc<PilotConfig>,
@@ -182,7 +230,6 @@ async fn handle_extension_message(
             ..
         } => {
             tracing::info!(session_id, provider_id, tab_id, "session ready");
-            // Do NOT create session state here – it will be created when we have a worktree path
         }
         ExtensionMessage::OpsReady {
             session_id,
@@ -193,7 +240,6 @@ async fn handle_extension_message(
         } => {
             let trace_id = trace_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-            // Retrieve provider_id from stored session (if any) or fallback to config default
             let provider_id = persistence
                 .all_sessions()
                 .await
@@ -202,7 +248,6 @@ async fn handle_extension_message(
                 .map(|s| s.provider_id)
                 .unwrap_or_else(|| config.defaults.provider.clone());
 
-            // Get existing worktree path – if it's empty, treat as missing
             let worktree_dir = match persistence.get_worktree_path(&session_id).await {
                 Some(path) if !path.is_empty() => PathBuf::from(path),
                 _ => {
@@ -239,7 +284,6 @@ async fn handle_extension_message(
                         }
                     };
 
-                    // Store the session state with the real worktree path
                     let session_state = glyim_pilot::session::state::SessionState::new(
                         stream_id.clone(),
                         provider_id.clone(),

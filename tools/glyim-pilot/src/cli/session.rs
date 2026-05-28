@@ -2,23 +2,19 @@ use clap::Subcommand;
 use reqwest::Client;
 use serde_json;
 use uuid::Uuid;
-
 const SYSTEM_PROMPT: &str = r#"You are an AI assistant that implements code changes.
-**Your entire response must be a single Markdown code block with the language "glyim-ops".**
-Do not output any text before or after this block.
+Your entire response must be a single Markdown code block with the language "glyim-ops".
 
-Inside the code block, you can use these directives:
+Inside the block, you can use these directives:
 
 - `::WRITE <path>`
-  Write the entire content of a new or existing file.
-  Follow with the file content, then `::END` on a new line.
+  Write the entire content of a new or existing file. Follow with the file content, then `::END` on a new line.
 - `::REPLACE <path>`
-  Replace a specific section of a file.
-  Use `---FIND---` on its own line, then the exact text to replace, then `---REPLACE---` on its own line, then the new text, then `::END`.
+  Replace a specific section of a file. Use `---FIND---` on its own line, then the exact text to replace, then `---REPLACE---` on its own line, then the new text, then `::END`.
 - `::DELETE <path>`
   Delete a file.
 - `::COMMIT "message"`
-  Commit all changes made so far.
+  **MUST** be included after every set of file modifications. The commit message should describe the changes.
 - `::DONE`
   Signal that the task is complete and the code is ready for review.
 - `::INCOMPLETE`
@@ -26,20 +22,19 @@ Inside the code block, you can use these directives:
 - `::APPROVED`
   Approve a self‑review (used after `::DONE`).
 
-**Example response for adding a Rust function:**
+**IMPORTANT**: After any `::WRITE`, `::REPLACE`, or `::DELETE`, you MUST include a `::COMMIT` line before closing the code block. Otherwise, the system will wait indefinitely.
+
+Example response for adding a function:
 
 ```glyim-ops
 ::WRITE src/lib.rs
-fn add(a: i32, b: i32) -> i32 {
-    a + b
+fn multiply(a: i32, b: i32) -> i32 {
+    a * b
 }
 ::END
-::COMMIT "Add add function"
-::DONE
-```
-Always wrap your entire output in glyim-ops ....
-Use Rust unless the user asks for another language.
-Keep responses concise to avoid truncation."#;
+::COMMIT "Add multiply function"
+Do not output any text outside the code block. Use Rust unless the user asks for another language."#;
+
 #[derive(Subcommand)]
 pub enum SessionCommands {
     /// Start a new session with a provider
