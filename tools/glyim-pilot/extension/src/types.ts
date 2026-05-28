@@ -16,7 +16,7 @@ export interface SessionAbort { type: 'session.abort'; sessionId: string; traceI
 export interface Ping { type: 'ping'; timestamp: number; v: number; }
 export type CliMessage = SessionStart | FeedbackSend | FeedbackContinue | RetryPrompt | SessionPause | SessionAbort | Ping;
 
-export interface TabSession { tabId: number; sessionId: string; streamId: string; providerId: string; status: 'active' | 'paused' | 'error'; turn: number; }
+export interface TabSession { tabUrl: string, tabId: number; sessionId: string; streamId: string; providerId: string; status: 'active' | 'paused' | 'error'; turn: number; }
 
 export const DANGEROUS_PATTERNS: readonly string[] = ['rm -rf', 'git push', 'git reset --hard', 'cargo publish', 'sudo', 'chmod 777', 'mkfs', 'dd if='];
 

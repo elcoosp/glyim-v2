@@ -1,12 +1,14 @@
 import './providers/index';
 import { WsClient } from './ws_client';
 import { getAllAdapters } from './providers/adapter';
+import { StreamWatcher } from './stream_watcher';
 import type { CliMessage, TabSession } from './types';
 import { PROTOCOL_VERSION, validateMessageVersion, serializeTabSessions, deserializeTabSessions } from './types';
 import { extractGlyimOpsBlocks } from './code_extractor';
 
 const ws = new WsClient();
 const tabSessions = new Map<number, TabSession>();
+const watchers = new Map<number, StreamWatcher>();
 
 ws.onMessage(async (msg: CliMessage) => {
   console.log('[bg] Received message from server:', msg);
@@ -64,12 +66,57 @@ async function injectPrompt(tabId: number, prompt: string): Promise<{ success: b
   } catch (e) { return { success: false, error: String(e) }; }
 }
 
+function startWatcher(tabId: number, sessionId: string, adapter: ReturnType<typeof getAllAdapters>[0]) {
+  watchers.get(tabId)?.stop();
+  const watcher = new StreamWatcher(adapter, sessionId,
+    (content, turn) => ws.send({ type: 'ops.ready', sessionId, content, turn, v: PROTOCOL_VERSION }),
+    (full, turn) => ws.send({ type: 'stream.complete', sessionId, turn, fullResponse: full, v: PROTOCOL_VERSION }),
+    (content, pattern) => ws.send({ type: 'error.detected', sessionId, errorType: 'dangerous_pattern', errorMessage: `Dangerous: "${pattern}"`, recoverable: true, v: PROTOCOL_VERSION }),
+  );
+  watcher.start(); watchers.set(tabId, watcher);
+}
+
+// Tab recovery helper
+async function ensureTab(session: TabSession): Promise<number | null> {
+  let tabId = session.tabId;
+  try {
+    await chrome.tabs.get(tabId);
+    return tabId;
+  } catch (e) {
+    // Tab not found, try to find by URL (if stored)
+    if (session.tabUrl) {
+      const tabs = await chrome.tabs.query({ url: session.tabUrl });
+      if (tabs.length > 0) {
+        const newTab = tabs[0];
+        // Update map with new tab ID
+        tabSessions.delete(tabId);
+        tabSessions.set(newTab.id, { ...session, tabId: newTab.id });
+        return newTab.id;
+      }
+    }
+    // Create new tab
+    const adapter = getAllAdapters().find(a => a.id === session.providerId);
+    if (!adapter) return null;
+    const newTab = await chrome.tabs.create({ url: adapter.homepageUrl, active: true });
+    if (!newTab.id) return null;
+    const ready = await waitForInputElement(newTab.id);
+    if (!ready) return null;
+    // Restart watcher for the new tab
+    startWatcher(newTab.id, session.sessionId, adapter);
+    const newUrl = newTab.url || adapter.homepageUrl;
+    tabSessions.delete(tabId);
+    tabSessions.set(newTab.id, { ...session, tabId: newTab.id, tabUrl: newUrl });
+    return newTab.id;
+  }
+}
+
 async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.start' }>) {
   const { sessionId, providerId, prompt, systemPrompt, traceId } = msg;
   const adapter = getAllAdapters().find(a => a.id === providerId);
   if (!adapter) { console.warn(`glyim-pilot: no adapter for ${providerId}`); return; }
   const tab = await chrome.tabs.create({ url: adapter.homepageUrl, active: true });
   if (!tab.id) return;
+  const tabUrl = tab.url || adapter.homepageUrl;
 
   const ready = await waitForInputElement(tab.id);
   if (!ready) { ws.send({ type: 'error.detected', sessionId, errorType: 'input_not_found', errorMessage: 'Input element not found', recoverable: false, v: PROTOCOL_VERSION }); return; }
@@ -78,11 +125,19 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
   const result = await injectPrompt(tab.id, fullPrompt);
   if (!result.success) { ws.send({ type: 'error.detected', sessionId, errorType: 'injection_failed', errorMessage: result.error ?? 'unknown', recoverable: true, v: PROTOCOL_VERSION }); return; }
 
-  tabSessions.set(tab.id, { tabId: tab.id, sessionId, streamId: sessionId, providerId, status: 'active', turn: 0 });
+  tabSessions.set(tab.id, {
+    tabId: tab.id,
+    tabUrl,
+    sessionId,
+    streamId: sessionId,
+    providerId,
+    status: 'active',
+    turn: 0,
+  });
   await persistSessions();
   ws.send({ type: 'session.ready', sessionId, providerId, tabId: tab.id, traceId, v: PROTOCOL_VERSION });
 
-  // Use adapter's selectors (no provider‑specific branches)
+  // --- Direct injection: click send button and watch for response ---
   const sendSelector = (adapter as any).getSendSelector ? (adapter as any).getSendSelector() : "button[type='submit']";
   const completionSelector = (adapter as any).getCompletionSelector ? (adapter as any).getCompletionSelector() : "button[aria-label*='Copy'], button[aria-label*='copy']";
   const assistantSelector = adapter.assistantSelector;
@@ -122,7 +177,6 @@ async function handleSessionStart(msg: Extract<CliMessage, { type: 'session.star
                     else completionEl = element.querySelector?.(completionSel);
                     if (completionEl) {
                       console.log('[injected] Completion detected');
-                      // Wait one frame for virtualized Monaco editor content to render
                       requestAnimationFrame(() => {
                         const responseElement = document.querySelector(asstSel);
                         const fullResponse = responseElement ? responseElement.textContent || '' : '';
@@ -187,39 +241,51 @@ async function reinjectWatcher(tabId: number, adapter: any, sessionId: string, t
 }
 
 async function handleFeedbackSend(msg: Extract<CliMessage, { type: 'feedback.send' }>) {
-  const entry = findSession(msg.sessionId); if (!entry) return;
-  await injectPrompt(entry[0], msg.message);
-  const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
-  if (adapter) {
-    await reinjectWatcher(entry[0], adapter, entry[1].sessionId, entry[1].turn + 1);
+  const entry = findSession(msg.sessionId);
+  if (!entry) return;
+  const session = entry[1];
+  const tabId = await ensureTab(session);
+  if (!tabId) {
+    console.error(`Cannot send feedback, no tab for session ${msg.sessionId}`);
+    return;
   }
-  const sess = tabSessions.get(entry[0]);
-  if (sess) sess.turn++;
+  await injectPrompt(tabId, msg.message);
+  const adapter = getAllAdapters().find(a => a.id === session.providerId);
+  if (adapter) {
+    await reinjectWatcher(tabId, adapter, session.sessionId, session.turn + 1);
+  }
+  session.turn++;
   await persistSessions();
 }
 
 async function handleFeedbackContinue(msg: Extract<CliMessage, { type: 'feedback.continue' }>) {
-  const entry = findSession(msg.sessionId); if (!entry) return;
-  await injectPrompt(entry[0], 'Please continue.');
-  const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
+  const entry = findSession(msg.sessionId);
+  if (!entry) return;
+  const session = entry[1];
+  const tabId = await ensureTab(session);
+  if (!tabId) return;
+  await injectPrompt(tabId, 'Please continue.');
+  const adapter = getAllAdapters().find(a => a.id === session.providerId);
   if (adapter) {
-    await reinjectWatcher(entry[0], adapter, entry[1].sessionId, entry[1].turn + 1);
+    await reinjectWatcher(tabId, adapter, session.sessionId, session.turn + 1);
   }
-  const sess = tabSessions.get(entry[0]);
-  if (sess) sess.turn++;
+  session.turn++;
   await persistSessions();
 }
 
 async function handleRetryPrompt(msg: Extract<CliMessage, { type: 'retry.prompt' }>) {
   await new Promise(r => setTimeout(r, msg.delay));
-  const entry = findSession(msg.sessionId); if (!entry) return;
-  await injectPrompt(entry[0], msg.message);
-  const adapter = getAllAdapters().find(a => a.id === entry[1].providerId);
+  const entry = findSession(msg.sessionId);
+  if (!entry) return;
+  const session = entry[1];
+  const tabId = await ensureTab(session);
+  if (!tabId) return;
+  await injectPrompt(tabId, msg.message);
+  const adapter = getAllAdapters().find(a => a.id === session.providerId);
   if (adapter) {
-    await reinjectWatcher(entry[0], adapter, entry[1].sessionId, entry[1].turn + 1);
+    await reinjectWatcher(tabId, adapter, session.sessionId, session.turn + 1);
   }
-  const sess = tabSessions.get(entry[0]);
-  if (sess) sess.turn++;
+  session.turn++;
   await persistSessions();
 }
 
