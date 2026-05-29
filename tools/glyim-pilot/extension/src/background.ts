@@ -320,6 +320,44 @@ async function restoreSessions() {
   } catch (e) { console.warn('glyim-pilot: failed to restore sessions:', e); }
 }
 
+// --- Tab cycling to wake up mutation observers in background tabs ---
+let cyclingActive = false;
+let currentActiveTabId: number | null = null;
+
+async function cycleTabs() {
+  if (cyclingActive) return;
+  cyclingActive = true;
+  const sessionTabIds = Array.from(tabSessions.keys());
+  if (sessionTabIds.length === 0) {
+    cyclingActive = false;
+    return;
+  }
+
+  // Store current active tab to restore later
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  currentActiveTabId = activeTab?.id || null;
+
+  for (const tabId of sessionTabIds) {
+    try {
+      // Briefly activate the tab to trigger mutation observers
+      await chrome.tabs.update(tabId, { active: true });
+      // Give a tiny amount of time for the observer to react
+      await new Promise(r => setTimeout(r, 10));
+    } catch (e) {
+      // Tab may have been closed
+    }
+  }
+
+  // Restore original active tab
+  if (currentActiveTabId) {
+    await chrome.tabs.update(currentActiveTabId, { active: true });
+  }
+  cyclingActive = false;
+}
+
+// Start cycling every 10 seconds (adjust interval as needed)
+setInterval(cycleTabs, 10000);
+
 chrome.runtime.onStartup.addListener(restoreSessions);
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[bg] Received runtime message:', message);
