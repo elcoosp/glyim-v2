@@ -5,7 +5,7 @@ registerAdapter(new ConfigurableAdapter({
   urlPattern: /chat\.deepseek\.com/,
   homepageUrl: 'https://chat.deepseek.com',
   inputSelector: 'textarea',
-  sendSelector: "div.ds-icon-button[role='button'][aria-disabled='false']:has(svg path[d^='M8.3125'])",
+  sendSelector: "div.ds-button.ds-button--primary.ds-button--filled.ds-button--circle.ds-button--m.ds-button--icon-relative-m",
   assistantSelector: '.ds-assistant-message-main-content pre',
   streamingSelector: '.ds-icon-loading',
   completionSelector: 'div.ds-flex._0a3d93b',   // the copy toolbar
