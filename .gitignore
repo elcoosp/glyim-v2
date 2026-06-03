@@ -3,3 +3,4 @@ wr*.sh
 mutants.out
 mutants.out.old
 vst
+tools/glyim-worktrees
