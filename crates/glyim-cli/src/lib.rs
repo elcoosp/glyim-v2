@@ -5,6 +5,8 @@ use glyim_db::{CrateConfig, Database};
 use glyim_pipeline::Pipeline;
 use std::path::PathBuf;
 
+mod linker;
+
 #[derive(Parser, Debug)]
 #[command(name = "glyim", version, about = "The Glyim compiler")]
 pub struct CliArgs {
@@ -14,7 +16,6 @@ pub struct CliArgs {
     pub output: Option<PathBuf>,
     #[arg(long, value_name = "EMIT", default_value = "obj")]
     pub emit: String,
-    #[arg(long, value_name = "EMIT", default_value = "obj")]
     #[arg(short = 'O', long = "opt-level", default_value = "0")]
     pub opt_level: u8,
     #[arg(long = "target")]
@@ -34,11 +35,43 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         .try_init()
         .ok();
 
-    let output_path = args.output.unwrap_or_else(|| {
-        let mut out = args.input.clone();
-        out.set_extension("o");
-        out
-    });
+    let input = &args.input;
+    let emit = args.emit.as_str();
+
+    // Determine output paths based on emit mode
+    let (object_path, final_output_path) = match emit {
+        "obj" | "exec" => {
+            let obj = args.output.clone().unwrap_or_else(|| {
+                let mut p = input.clone();
+                p.set_extension("o");
+                p
+            });
+            let final_out = if emit == "exec" {
+                args.output.clone().unwrap_or_else(|| {
+                    let mut p = input.clone();
+                    p.set_extension("");
+                    p
+                })
+            } else {
+                obj.clone()
+            };
+            (obj, Some(final_out))
+        }
+        "mir" | "llvm-ir" => {
+            let out = args.output.clone().unwrap_or_else(|| {
+                let mut p = input.clone();
+                let ext = if emit == "mir" { "mir" } else { "ll" };
+                p.set_extension(ext);
+                p
+            });
+            (out, None)
+        }
+        _ => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "unknown emit type",
+            )])
+        }
+    };
 
     let config = CrateConfig {
         name: args
@@ -56,6 +89,14 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     let mut db = Database::new(config);
 
+    // Early return for MIR and LLVM IR emit
+    if emit == "mir" {
+        return glyim_pipeline::emit_mir(&mut db, input, &object_path);
+    } else if emit == "llvm-ir" {
+        return glyim_pipeline::emit_llvm_ir(&mut db, input, &object_path);
+    }
+
+    // For obj and exec, compile to object
     let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
         Box::new(BytecodeBackend::new())
     } else {
@@ -65,7 +106,14 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         ))
     };
 
-    Pipeline::compile_file(&mut db, &args.input, &*backend, &output_path)?;
+    Pipeline::compile_file(&mut db, input, &*backend, &object_path)?;
+
+    if emit == "exec" {
+        let final_path = final_output_path.expect("exec should have final output");
+        linker::invoke_linker(&object_path, &final_path)
+            .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(&e)])?;
+    }
+
     Ok(())
 }
 
