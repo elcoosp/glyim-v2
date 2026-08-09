@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::run_with_args;
     use crate::CliArgs;
+    use crate::run_with_args;
     use std::path::PathBuf;
 
     #[test]

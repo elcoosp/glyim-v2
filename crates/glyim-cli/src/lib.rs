@@ -69,7 +69,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         _ => {
             return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
                 "unknown emit type",
-            )])
+            )]);
         }
     };
 
