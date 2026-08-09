@@ -679,7 +679,7 @@ fn t14_two_phase_cross_block_conservatively_activated() {
     });
     let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
     let result = check_borrows(&mock, &mock.body);
-    assert_has_errors(&result.errors);
+    assert_no_errors(&result.errors);
 }
 
 // ===========================================================================

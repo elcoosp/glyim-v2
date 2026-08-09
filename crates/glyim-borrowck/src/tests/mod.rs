@@ -19,3 +19,4 @@ mod two_phase_borrows;
 mod two_phase_reservation;
 mod use_after_move;
 mod write_conflicts;
+mod u_borrowck;
