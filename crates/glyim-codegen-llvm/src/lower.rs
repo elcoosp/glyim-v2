@@ -22,7 +22,6 @@ use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntVal
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 #[allow(unused_imports)]
-
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
 }
@@ -1638,6 +1637,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_body<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,

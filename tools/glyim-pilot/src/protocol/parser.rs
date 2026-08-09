@@ -1,5 +1,3 @@
-use tracing::debug;
-
 use crate::error::PilotError;
 use crate::protocol::types::{FileOp, ParsedOps};
 
