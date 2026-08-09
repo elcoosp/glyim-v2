@@ -11,7 +11,7 @@ When users paste error logs, the LLM switches to surgical fix mode, producing a 
 - No comment lines starting with hash -- every action is prefixed by an echo.
 - No backup files -- if a tool fails, the original file is never overwritten.
 - sed is only for trivial single-line substitutions. All other changes MUST use Python with the actual strings stored in temp files, never embedded in Python source code.
-- Heredoc delimiters must be unique and must not appear as a complete line in the content being written. For each heredoc, the LLM generates a random delimiter, checks that it does not match any line of the content, and uses it.
+- Heredoc delimiters must be fixed (e.g., `'EOF'`) and must not appear as a complete line in the content being written. If the chosen delimiter appears in the content, select a different fixed delimiter (e.g., `'END_OF_FILE'`). **Do not generate random delimiters.**
 - Failures from sed, Python, or other commands are logged but do not halt the script. A compile check runs after all patches; if it fails, the failure is logged but the script continues to the end, skipping only the commit, and exits with non-zero to signal the file-watcher.
 - Never use head or tail to arbitrarily split file content across scripts. Splitting must be done only by writing complete, syntactically coherent chunks (e.g., entire functions, modules, or at logical blank lines) -- never by line count.
 - Every file written or patched must be syntactically valid (as a whole) whenever the script marks it as complete. The compile check (cargo check) serves as the final safety net, but the LLM must strive to avoid introducing bracket/delimiter mismatches in the first place.
@@ -85,14 +85,14 @@ This ensures:
 - The worktree is created once and reused.
 - Subsequent scripts in the same stream do NOT repeat worktree creation.
 
-1. Write a complete file -- use a heredoc with a safe delimiter:
+1. Write a complete file -- use a heredoc with a fixed delimiter (e.g., `'EOF'`):
 
     echo "Writing /absolute/path/to/file"
-    cat > /absolute/path/to/file << 'SAFE_UNIQUE_DELIM'
+    cat > /absolute/path/to/file << 'EOF'
     entire content here
-    SAFE_UNIQUE_DELIM
+    EOF
 
-Rule: The delimiter must be chosen by the LLM so that it does not appear as an entire line in the file content.
+Rule: The delimiter must be chosen so that it does not appear as an entire line in the file content. If `EOF` appears, use a different fixed delimiter like `'END_OF_FILE'`.
 
 1.5 Append to a shared registry file (NON‑NEGOTIABLE for tests/mod.rs)
 
@@ -102,7 +102,7 @@ NEVER use `cat >` (overwrite) on these files. ALWAYS use the safe‑append patte
 Pattern for tests/mod.rs — adds new `mod` declarations only if not already present:
 
     echo "Safely appending modules to /path/to/src/tests/mod.rs"
-    python3 - "/path/to/src/tests/mod.rs" << 'SAFE_APPEND_PYEOF'
+    python3 - "/path/to/src/tests/mod.rs" << 'EOF'
     import sys
     path = sys.argv[1]
     new_mods = ["mod my_new_module;"]
@@ -120,13 +120,13 @@ Pattern for tests/mod.rs — adds new `mod` declarations only if not already pre
         for mod_line in new_mods:
             if mod_line not in existing_lines:
                 f.write(mod_line + '\n')
-    SAFE_APPEND_PYEOF
+    EOF
 
 Pattern for adding `#[cfg(test)] mod tests;` to lib.rs (idempotent — skips if already present):
 
     echo "Ensuring #[cfg(test)] mod tests; exists in lib.rs"
     LIB_RS="/path/to/src/lib.rs"
-    python3 - "$LIB_RS" << 'LIB_MOD_PYEOF'
+    python3 - "$LIB_RS" << 'EOF'
     import sys
     path = sys.argv[1]
     with open(path, 'r') as f:
@@ -140,7 +140,7 @@ Pattern for adding `#[cfg(test)] mod tests;` to lib.rs (idempotent — skips if 
         print("Added #[cfg(test)] mod tests; to lib.rs")
     else:
         print("mod tests already present in lib.rs, skipping")
-    LIB_MOD_PYEOF
+    EOF
 
 Orphaned‑test check (run before commit):
 
@@ -163,9 +163,9 @@ Orphaned‑test check (run before commit):
 2. Start a huge file (if needed) -- with a meaningful chunk, never an arbitrary line cut.
 
     echo "Starting /path (partial -- up to end of fn foo())"
-    cat > /path << 'CHUNK_X9yZ0'
+    cat > /path << 'EOF'
     first part, complete up to a logical break
-    CHUNK_X9yZ0
+    EOF
     INCOMPLETE=true
     echo "File /path is incomplete, continuation required"
 
@@ -185,25 +185,25 @@ Choose a delimiter (pipe, at, etc.) that does not appear in the old or new text.
     fi
 
 B. Non-trivial changes (multi-line, special chars, blocks) -- Python with temp files
-The old and new strings are written to temporary files using safe heredocs. Python reads those files and performs a literal replacement (str.replace). No Python string literals contain the actual content, eliminating all quoting errors.
+The old and new strings are written to temporary files using fixed heredocs. Python reads those files and performs a literal replacement (str.replace). No Python string literals contain the actual content, eliminating all quoting errors.
 
     echo "Patching /target/file"
     OLD_TMP=$(mktemp) || { echo "ERROR: cannot create temp file"; exit 1; }
     NEW_TMP=$(mktemp)
-    cat > "$OLD_TMP" << 'OLD_DELIM_UNIQUE'
+    cat > "$OLD_TMP" << 'EOF'
     old multiline content exactly as it appears
-    OLD_DELIM_UNIQUE
-    cat > "$NEW_TMP" << 'NEW_DELIM_UNIQUE'
+    EOF
+    cat > "$NEW_TMP" << 'EOF'
     new multiline content exactly
-    NEW_DELIM_UNIQUE
-    if python3 - "$OLD_TMP" "$NEW_TMP" /target/file << 'PYEOF'
+    EOF
+    if python3 - "$OLD_TMP" "$NEW_TMP" /target/file << 'EOF'
     import sys
     with open(sys.argv[1], 'r') as f: old = f.read()
     with open(sys.argv[2], 'r') as f: new = f.read()
     with open(sys.argv[3], 'r') as f: content = f.read()
     content = content.replace(old, new)
     with open(sys.argv[3], 'w') as f: f.write(content)
-    PYEOF
+    EOF
     then
       echo "Python patch succeeded for /target/file"
       rm "$OLD_TMP" "$NEW_TMP"

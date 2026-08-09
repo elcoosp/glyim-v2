@@ -2,7 +2,7 @@ use glyim_core::primitives::*;
 use glyim_solve::InferenceTable;
 use glyim_type::*;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 pub struct Generator {
     rng: StdRng,
@@ -25,7 +25,7 @@ impl Generator {
         if depth >= self.max_depth {
             return self.leaf_ty(ctx);
         }
-        match self.rng.gen_range(0..8) {
+        match self.rng.random_range(0..8) {
             0 => ctx.bool_ty(),
             1 => ctx.never_ty(),
             2 => ctx.unit_ty(),
@@ -53,7 +53,7 @@ impl Generator {
         if depth >= self.max_depth {
             return self.leaf_ty_with_infer(ctx, infer);
         }
-        match self.rng.gen_range(0..11) {
+        match self.rng.random_range(0..11) {
             0..=7 => self.generate_ty(ctx, depth),
             8 => {
                 let var = infer.new_ty_var(ctx);
@@ -72,7 +72,7 @@ impl Generator {
     }
 
     fn leaf_ty(&mut self, ctx: &mut TyCtxMut) -> Ty {
-        match self.rng.gen_range(0..4) {
+        match self.rng.random_range(0..4) {
             0 => ctx.bool_ty(),
             1 => ctx.unit_ty(),
             2 => ctx.mk_ty(TyKind::Int(self.int_ty())),
@@ -81,7 +81,7 @@ impl Generator {
     }
 
     fn leaf_ty_with_infer(&mut self, ctx: &mut TyCtxMut, infer: &mut InferenceTable) -> Ty {
-        match self.rng.gen_range(0..6) {
+        match self.rng.random_range(0..6) {
             0 => ctx.bool_ty(),
             1 => ctx.unit_ty(),
             2 => ctx.mk_ty(TyKind::Int(self.int_ty())),
@@ -102,7 +102,7 @@ impl Generator {
     }
 
     fn int_ty(&mut self) -> IntTy {
-        match self.rng.gen_range(0..5) {
+        match self.rng.random_range(0..5) {
             0 => IntTy::I8,
             1 => IntTy::I16,
             2 => IntTy::I32,
@@ -111,7 +111,7 @@ impl Generator {
         }
     }
     fn uint_ty(&mut self) -> UintTy {
-        match self.rng.gen_range(0..5) {
+        match self.rng.random_range(0..5) {
             0 => UintTy::U8,
             1 => UintTy::U16,
             2 => UintTy::U32,
@@ -120,14 +120,14 @@ impl Generator {
         }
     }
     fn float_ty(&mut self) -> FloatTy {
-        if self.rng.gen_bool(0.5) {
+        if self.rng.random_bool(0.5) {
             FloatTy::F32
         } else {
             FloatTy::F64
         }
     }
     fn mutability(&mut self) -> Mutability {
-        if self.rng.gen_bool(0.5) {
+        if self.rng.random_bool(0.5) {
             Mutability::Mut
         } else {
             Mutability::Not

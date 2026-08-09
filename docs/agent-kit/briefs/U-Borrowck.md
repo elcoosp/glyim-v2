@@ -1,9 +1,9 @@
-You are implementing Stream U-Borrowck: Unstub Borrow Checker for the Glyim compiler.
+# Stream U-Borrowck: Unstub Borrow Checker
 
 ## Mission
 Remove all stubs in `glyim-borrowck` related to move analysis, two-phase borrow cross-block tracking, and projection conflicts. Ensure fully functional, production-ready implementations with zero stubs.
 
-## What You Own Exclusively (DO NOT touch any other files)
+## What You Own Exclusively
 - `crates/glyim-borrowck/src/move_analysis.rs`
 - `crates/glyim-borrowck/src/twophase.rs`
 - `crates/glyim-borrowck/src/visitor.rs`
@@ -57,12 +57,9 @@ With:
             _ => return true,
 ```
 
-## Execution Rules (MANDATORY: plan-to-cat-scripts skill)
-You MUST follow the `plan-to-cat-scripts` skill exactly. Output ONLY fenced bash code blocks.
-
-1. **Setup:** First script MUST set `STREAM_ID="U-Borrowck"`, `WORKTREE_DIR="../glyim-worktrees/stream-U-Borrowck"`. Use `git worktree add --detach "$WORKTREE_DIR" main`, cd into it, and `git checkout -b "stream-${STREAM_ID}/v0.1.0"`.
-2. **No `#` comments:** Every action must be logged with `echo`.
-3. **Heredocs:** MUST use the fixed delimiter `EOF`. Ensure no lines in the content are exactly `EOF`.
-4. **Patches:** For trivial single-line replacements use `sed`. For multi-line replacements, use Python with temp files (heredocs with `EOF`). No Python string literals containing the content.
-5. **Tests:** Create `crates/glyim-borrowck/src/tests/u_borrowck.rs` with unit tests for the 4 fixes. Use the Python safe-append pattern to add `mod u_borrowck;` to `crates/glyim-borrowck/src/tests/mod.rs`.
-6. **Verify:** Run `cargo check --workspace` at the end. If `COMPILE_OK=true`, run tests and commit with `stream-U-Borrowck: feat(borrowck): unstub move analysis and two-phase borrows`.
+## Verification Commands
+```bash
+cargo test -p glyim-borrowck
+cargo clippy -p glyim-borrowck -- -D warnings
+cargo check --workspace
+```

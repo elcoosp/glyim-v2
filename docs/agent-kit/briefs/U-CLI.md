@@ -1,9 +1,9 @@
-You are implementing Stream U-CLI: Unstub CLI for the Glyim compiler.
+# Stream U-CLI: Unstub CLI
 
 ## Mission
-Remove all stubs in `glyim-cli` related to emit modes and linker invocation. Fix duplicate clap attribute bug. Implement --emit mir, --emit llvm-ir, --emit exec. Create linker.rs that shells out to cc to link .o against libc.
+Remove all stubs in `glyim-cli` related to emit modes and linker invocation. Fix duplicate clap attribute bug. Implement --emit mir, --emit llvm-ir, --emit exec. Create linker.rs that shells out to cc.
 
-## What You Own Exclusively (DO NOT touch any other files)
+## What You Own Exclusively
 - `crates/glyim-cli/src/lib.rs`
 - `crates/glyim-cli/src/main.rs`
 - `crates/glyim-cli/src/linker.rs` (NEW FILE)
@@ -61,12 +61,9 @@ pub fn invoke_linker(obj_path: &std::path::Path, output_path: &std::path::Path) 
 ### 4. Wire Linker (`lib.rs` or `main.rs`)
 After `Pipeline::compile_file` generates the `.o` file, if `args.emit == "exec"`, call `linker::invoke_linker(&output_path, &final_exec_path)`.
 
-## Execution Rules (MANDATORY: plan-to-cat-scripts skill)
-You MUST follow the `plan-to-cat-scripts` skill exactly. Output ONLY fenced bash code blocks.
-
-1. **Setup:** First script MUST set `STREAM_ID="U-CLI"`, `WORKTREE_DIR="../glyim-worktrees/stream-U-CLI"`. Use `git worktree add --detach "$WORKTREE_DIR" main`, cd into it, and `git checkout -b "stream-${STREAM_ID}/v0.1.0"`.
-2. **No `#` comments:** Every action must be logged with `echo`.
-3. **Heredocs:** MUST use the fixed delimiter `EOF`. Ensure no lines in the content are exactly `EOF`.
-4. **Patches:** For trivial single-line replacements use `sed`. For multi-line replacements, use Python with temp files (heredocs with `EOF`). No Python string literals containing the content.
-5. **Tests:** Do not create a tests directory for this crate; just ensure the code compiles.
-6. **Verify:** Run `cargo check --workspace` at the end. If `COMPILE_OK=true`, run tests and commit with `stream-U-CLI: feat(cli): unstub emit modes and add linker`.
+## Verification Commands
+```bash
+cargo test -p glyim-cli
+cargo clippy -p glyim-cli -- -D warnings
+cargo check --workspace
+```
