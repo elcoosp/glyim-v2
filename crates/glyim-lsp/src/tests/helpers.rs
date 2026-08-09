@@ -1,7 +1,4 @@
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 
 pub fn make_span(file_id: FileId, lo: usize, hi: usize) -> Span {
     Span::new(

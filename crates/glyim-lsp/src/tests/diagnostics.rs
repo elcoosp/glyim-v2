@@ -1,7 +1,4 @@
 use crate::diagnostics;
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;
 use lsp_types::{DiagnosticSeverity, Range};

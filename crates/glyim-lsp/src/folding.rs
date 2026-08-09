@@ -1,6 +1,4 @@
 use crate::AnalysisDatabase;
-use std::str::FromStr;
-use lsp_types::Uri;
 use lsp_types::*;
 
 

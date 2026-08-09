@@ -1,6 +1,4 @@
 use crate::AnalysisDatabase;
-use std::str::FromStr;
-use lsp_types::Uri;
 use crate::code_action::provide_code_actions;
 use crate::completion::provide_completions;
 use crate::database::FileMap;
@@ -14,7 +12,7 @@ use crate::rename::rename_symbol;
 use async_lsp::router::Router;
 
 
-use url::Url;use lsp_types::request::{
+use lsp_types::request::{
     CodeActionRequest, Completion, DocumentSymbolRequest, FoldingRangeRequest, Formatting,
     GotoDefinition, HoverRequest, Initialize, References, Rename, Shutdown,
 };

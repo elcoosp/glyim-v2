@@ -1,7 +1,4 @@
 use crate::uri::*;
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use std::path::PathBuf;
 
 #[test]

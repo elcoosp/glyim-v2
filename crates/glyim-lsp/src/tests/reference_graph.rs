@@ -1,7 +1,4 @@
 use crate::reference_graph::{Reference, ReferenceGraph, ReferenceKind};
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 #[test]

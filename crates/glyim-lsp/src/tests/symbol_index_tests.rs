@@ -1,7 +1,4 @@
 use crate::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use glyim_core::{IndexVec, Interner, Visibility};
 use glyim_hir::*;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};

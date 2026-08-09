@@ -1,7 +1,4 @@
 use crate::database::{AnalysisDatabase, SourceMap};
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use glyim_core::Interner;
 use glyim_frontend;
 

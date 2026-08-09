@@ -1,7 +1,4 @@
 use crate::rename::rename_symbol;
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use crate::tests::test_utils::setup_test_db;
 use lsp_types::{Position, RenameParams, TextDocumentIdentifier, TextDocumentPositionParams};
 

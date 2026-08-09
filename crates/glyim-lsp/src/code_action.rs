@@ -1,6 +1,4 @@
 use crate::AnalysisDatabase;
-use std::str::FromStr;
-use lsp_types::Uri;
 use crate::database::FileMap;
 use lsp_types::*;
 use std::collections::HashSet;

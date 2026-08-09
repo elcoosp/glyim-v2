@@ -1,7 +1,4 @@
 use crate::LspState;
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use glyim_db::{CrateConfig, Database};
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
