@@ -4,8 +4,8 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-glyim-core = { workspace = true }
 rowan = { workspace = true }
+glyim-core = { workspace = true }
 num_enum = { workspace = true }
 
 [dev-dependencies]

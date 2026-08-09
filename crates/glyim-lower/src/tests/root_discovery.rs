@@ -5,6 +5,7 @@ use glyim_hir::{BodyId, CrateHir, FnItem, Item, ItemId, ItemKind, Path, StaticIt
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_syntax::{GlyimLang, SyntaxKind, SyntaxNode};
 use glyim_type::TyCtxMut;
+use rowan::GreenNodeBuilder;
 use rowan::Language;
 
 use crate::discovery::discover_mono_roots;
@@ -70,7 +71,7 @@ fn static_item(interner: &mut Interner, id: u32, name: &str) -> Item {
 }
 
 fn empty_syntax_root() -> SyntaxNode {
-    let mut builder = rowan::GreenNodeBuilder::new();
+    let mut builder = GreenNodeBuilder::new();
     let kind = GlyimLang::kind_to_raw(SyntaxKind::SourceFile);
     builder.start_node(kind);
     builder.finish_node();
@@ -83,7 +84,7 @@ fn make_ctx(interner: Interner) -> TyCtxMut {
 }
 
 fn build_attr_syntax(attr_name: &str) -> (SyntaxNode, Span) {
-    let mut builder = rowan::GreenNodeBuilder::new();
+    let mut builder = GreenNodeBuilder::new();
     let source_file_kind = GlyimLang::kind_to_raw(SyntaxKind::SourceFile);
     builder.start_node(source_file_kind);
 

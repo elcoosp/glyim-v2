@@ -1,6 +1,7 @@
 //! SHA-256 based fingerprinting for incremental compilation.
 
 use sha2::{Digest, Sha256};
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,7 +24,7 @@ impl Fingerprint {
         let metadata = fs::metadata(path)?;
         let mut hasher = Sha256::new();
         hasher.update(&content);
-        let hash = format!("{:x}", hasher.finalize());
+        let hash = hex::encode(hasher.finalize());
         Ok(Self {
             hash,
             mtime: metadata
@@ -40,7 +41,7 @@ impl Fingerprint {
     pub fn from_content(content: &[u8]) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(content);
-        let hash = format!("{:x}", hasher.finalize());
+        let hash = hex::encode(hasher.finalize());
         Self {
             hash,
             mtime: 0,
@@ -93,7 +94,7 @@ impl FingerprintStore {
         for (path, fp) in &self.fingerprints {
             let mut hasher = Sha256::new();
             hasher.update(path.to_string_lossy().as_bytes());
-            let file_name = format!("{:x}.fp", hasher.finalize());
+            let file_name = format!("{}.fp", hex::encode(hasher.finalize()));
             let fp_path = fp_dir.join(file_name);
             let content = format!(
                 "path={}\nhash={}\nmtime={}\nsize={}\n",
