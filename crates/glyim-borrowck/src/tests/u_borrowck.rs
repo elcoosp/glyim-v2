@@ -393,10 +393,13 @@ fn test_index_projection_returns_root() {
     let mut ctx_mut = test_ty_ctx();
     let u32_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
     let string_ty = ctx_mut.mk_ty(TyKind::String);
-    let array_ty = ctx_mut.mk_ty(TyKind::Array(string_ty, Const {
-        kind: ConstKind::Uint(1),
-        ty: u32_ty,
-    }));
+    let array_ty = ctx_mut.mk_ty(TyKind::Array(
+        string_ty,
+        Const {
+            kind: ConstKind::Uint(1),
+            ty: u32_ty,
+        },
+    ));
     let frozen_ctx = ctx_mut.freeze();
 
     let mut ctx = TestCtx::new(frozen_ctx);

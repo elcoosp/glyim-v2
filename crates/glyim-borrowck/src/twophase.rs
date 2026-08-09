@@ -95,9 +95,7 @@ impl ReservationAnalysis {
             }
         }
 
-        ReservationAnalysis {
-            per_block,
-        }
+        ReservationAnalysis { per_block }
     }
 
     pub fn is_reservation(&self, block: BasicBlockIdx, stmt_idx: usize) -> bool {

@@ -174,8 +174,8 @@ pub(crate) fn places_conflict(a: &Place, b: &Place) -> bool {
                 }
             }
 
-            (ProjectionElem::Field(_), ProjectionElem::Index(_)) |
-            (ProjectionElem::Index(_), ProjectionElem::Field(_)) => return false,
+            (ProjectionElem::Field(_), ProjectionElem::Index(_))
+            | (ProjectionElem::Index(_), ProjectionElem::Field(_)) => return false,
             // Mixed projection types at the same depth — conservatively conflict
             _ => return true,
         }
