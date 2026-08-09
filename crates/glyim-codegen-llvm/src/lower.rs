@@ -155,9 +155,31 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     global
                 };
                 let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                self.builder
+                let i64_type = self.context.i64_type();
+                let struct_ty = self.context.struct_type(&[ptr_type.into(), i64_type.into()], false);
+
+                let str_ptr = self.builder
                     .build_bit_cast(global.as_pointer_value(), ptr_type, "str_ptr")
                     .expect("bitcast for string constant failed")
+                    .into_pointer_value();
+
+                let len_val = i64_type.const_int(str_content.len() as u64, false);
+
+                let agg = struct_ty.const_zero();
+                let inserted_ptr = self.builder
+                    .build_insert_value(agg, str_ptr, 0, "str_ptr_insert")
+                    .expect("insert ptr failed");
+                let inserted_ptr = match inserted_ptr {
+                    inkwell::values::AggregateValueEnum::StructValue(s) => s,
+                    _ => unreachable!(),
+                };
+                let inserted_len = self.builder
+                    .build_insert_value(inserted_ptr, len_val, 1, "str_len_insert")
+                    .expect("insert len failed");
+                match inserted_len {
+                    inkwell::values::AggregateValueEnum::StructValue(s) => s.as_basic_value_enum(),
+                    _ => unreachable!(),
+                }
             }
             MirConstKind::Fn(fn_def_id, _substs) => {
                 let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
@@ -176,11 +198,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let module = self.module;
                 let global = module.get_global(&global_name).unwrap_or_else(|| {
                     let llvm_ty = self.llvm_type_for_ty(c.ty);
-                    module.add_global(
+                    let global = module.add_global(
                         llvm_ty,
                         Some(inkwell::AddressSpace::default()),
                         &global_name,
-                    )
+                    );
+                    global.set_initializer(&llvm_ty.const_zero());
+                    global.set_constant(true);
+                    global.set_linkage(inkwell::module::Linkage::Internal);
+                    global
                 });
                 let llvm_ty = self.llvm_type_for_ty(c.ty);
                 self.builder
