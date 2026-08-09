@@ -5,7 +5,7 @@ use glyim_core::TargetInfo;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
 use glyim_diag::{CompResult, GlyimDiagnostic};
-use glyim_layout::{FieldsShape, LayoutComputer, PassMode, Size, VariantsShape};
+use glyim_layout::{FieldsShape, Layout, LayoutComputer, PassMode, Size, VariantsShape};
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
@@ -154,9 +154,36 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     global
                 };
                 let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                self.builder
+                let i64_type = self.context.i64_type();
+                let struct_ty = self
+                    .context
+                    .struct_type(&[ptr_type.into(), i64_type.into()], false);
+
+                let str_ptr = self
+                    .builder
                     .build_bit_cast(global.as_pointer_value(), ptr_type, "str_ptr")
                     .expect("bitcast for string constant failed")
+                    .into_pointer_value();
+
+                let len_val = i64_type.const_int(str_content.len() as u64, false);
+
+                let agg = struct_ty.const_zero();
+                let inserted_ptr = self
+                    .builder
+                    .build_insert_value(agg, str_ptr, 0, "str_ptr_insert")
+                    .expect("insert ptr failed");
+                let inserted_ptr = match inserted_ptr {
+                    inkwell::values::AggregateValueEnum::StructValue(s) => s,
+                    _ => unreachable!(),
+                };
+                let inserted_len = self
+                    .builder
+                    .build_insert_value(inserted_ptr, len_val, 1, "str_len_insert")
+                    .expect("insert len failed");
+                match inserted_len {
+                    inkwell::values::AggregateValueEnum::StructValue(s) => s.as_basic_value_enum(),
+                    _ => unreachable!(),
+                }
             }
             MirConstKind::Fn(fn_def_id, _substs) => {
                 let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
@@ -175,11 +202,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let module = self.module;
                 let global = module.get_global(&global_name).unwrap_or_else(|| {
                     let llvm_ty = self.llvm_type_for_ty(c.ty);
-                    module.add_global(
+                    let global = module.add_global(
                         llvm_ty,
                         Some(inkwell::AddressSpace::default()),
                         &global_name,
-                    )
+                    );
+                    global.set_initializer(&llvm_ty.const_zero());
+                    global.set_constant(true);
+                    global.set_linkage(inkwell::module::Linkage::Internal);
+                    global
                 });
                 let llvm_ty = self.llvm_type_for_ty(c.ty);
                 self.builder
@@ -1083,8 +1114,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .expect("i2f failed")
                     .into()
             }
-            CastKind::PtrToPtr => val,
-            CastKind::FnPtrToPtr => val,
+            CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
+                let dest_type = self.llvm_type_for_ty(target_ty);
+                self.builder
+                    .build_bit_cast(val, dest_type, "ptr_cast")
+                    .expect("bitcast failed")
+            }
         }
     }
 
@@ -1178,8 +1213,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .builder
                 .build_bit_cast(place_ptr, ptr_type, "dealloc_ptr")
                 .expect("bitcast for dealloc failed");
-            let size = self.llvm_int_type(64).const_int(0, false);
-            let align = self.llvm_int_type(64).const_int(0, false);
+            let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+            let layout = layout_computer
+                .layout_of(place_ty)
+                .unwrap_or_else(|_| Layout::unit());
+            let size = self.llvm_int_type(64).const_int(layout.size.0, false);
+            let align = self.llvm_int_type(64).const_int(layout.align.0, false);
             self.builder
                 .build_call(
                     self.dealloc_fn,
@@ -1222,7 +1261,24 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 tracing::trace!("StorageLive({})", local.index());
             }
             StatementKind::StorageDead(local) => {
-                tracing::trace!("StorageDead({})", local.index());
+                let ty = local_ty(self.body, *local);
+                if self.type_needs_drop(ty) {
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let place = Place::new(*local);
+                    let place_ptr = self.place_ptr(&place);
+                    let i8_ptr = self
+                        .builder
+                        .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
+                        .expect("bitcast for drop failed");
+                    self.builder
+                        .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "Failed to build drop call: {:?}",
+                                e
+                            ))]
+                        })?;
+                }
             }
             StatementKind::Nop => {}
         }
@@ -1498,7 +1554,17 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .void_type()
                 .fn_type(&metadata_param_types, fn_sig.c_variadic)
         };
-        let func_val = self.lower_operand(func).into_pointer_value();
+        let direct_fn_val = match func {
+            Operand::Constant(c) => {
+                if let MirConstKind::Fn(fn_def_id, _) = &c.kind {
+                    let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
+                    self.module.get_function(&fn_name)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
         let mut llvm_args: Vec<inkwell::values::BasicValueEnum<'ctx>> = Vec::new();
         let mut sret_alloca = None;
         if is_sret {
@@ -1543,48 +1609,111 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         let metadata_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
             llvm_args.iter().map(|v| (*v).into()).collect();
         let use_invoke = cleanup.is_some();
-        let call_result = if use_invoke {
-            let normal_bb = if let Some(target_bb) = target {
-                *self.bb_map.get(target_bb).expect("target block not found")
+        let call_result = if let Some(fn_val) = direct_fn_val {
+            if use_invoke {
+                let normal_bb = if let Some(target_bb) = target {
+                    *self.bb_map.get(target_bb).expect("target block not found")
+                } else {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "invoke requires a target block",
+                    )]);
+                };
+                let cleanup_bb = if let Some(cleanup_bb_idx) = cleanup {
+                    *self
+                        .bb_map
+                        .get(cleanup_bb_idx)
+                        .expect("cleanup block not found")
+                } else {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "invoke requires a cleanup block",
+                    )]);
+                };
+                self.builder
+                    .build_invoke(fn_val, &llvm_args, normal_bb, cleanup_bb, "call")
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "invoke failed: {:?}",
+                            e
+                        ))]
+                    })?
             } else {
-                return Err(vec![GlyimDiagnostic::internal_error(
-                    "invoke requires a target block",
-                )]);
-            };
-            let cleanup_bb = if let Some(cleanup_bb_idx) = cleanup {
-                *self
-                    .bb_map
-                    .get(cleanup_bb_idx)
-                    .expect("cleanup block not found")
-            } else {
-                return Err(vec![GlyimDiagnostic::internal_error(
-                    "invoke requires a cleanup block",
-                )]);
-            };
-            self.builder
-                .build_indirect_invoke(fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call")
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "invoke failed: {:?}",
-                        e
-                    ))]
-                })?
+                self.builder
+                    .build_call(fn_val, &metadata_args, "call")
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "call failed: {:?}",
+                            e
+                        ))]
+                    })?
+            }
         } else {
-            self.builder
-                .build_indirect_call(fn_type, func_val, &metadata_args, "call")
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "call failed: {:?}",
-                        e
-                    ))]
-                })?
+            let func_val = self.lower_operand(func).into_pointer_value();
+            if use_invoke {
+                let normal_bb = if let Some(target_bb) = target {
+                    *self.bb_map.get(target_bb).expect("target block not found")
+                } else {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "invoke requires a target block",
+                    )]);
+                };
+                let cleanup_bb = if let Some(cleanup_bb_idx) = cleanup {
+                    *self
+                        .bb_map
+                        .get(cleanup_bb_idx)
+                        .expect("cleanup block not found")
+                } else {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "invoke requires a cleanup block",
+                    )]);
+                };
+                self.builder
+                    .build_indirect_invoke(
+                        fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call",
+                    )
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "invoke failed: {:?}",
+                            e
+                        ))]
+                    })?
+            } else {
+                self.builder
+                    .build_indirect_call(fn_type, func_val, &metadata_args, "call")
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "call failed: {:?}",
+                            e
+                        ))]
+                    })?
+            }
         };
+
+        let mut param_idx = 1;
         if is_sret {
             let sret_attr = self.context.create_enum_attribute(
                 inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
                 0,
             );
-            call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(1), sret_attr);
+            call_result.add_attribute(
+                inkwell::attributes::AttributeLoc::Param(param_idx),
+                sret_attr,
+            );
+            param_idx += 1;
+        }
+        for arg_abi in &fn_abi.args {
+            if let PassMode::Indirect { .. } = arg_abi.mode {
+                let byval_attr = self.context.create_enum_attribute(
+                    inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),
+                    0,
+                );
+                call_result.add_attribute(
+                    inkwell::attributes::AttributeLoc::Param(param_idx),
+                    byval_attr,
+                );
+            }
+            if !matches!(arg_abi.mode, PassMode::Ignore) {
+                param_idx += 1;
+            }
         }
         if use_invoke && let Some(target_bb) = target {
             let target_block = self.bb_map.get(target_bb).unwrap();

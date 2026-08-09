@@ -41,5 +41,6 @@ mod string_constant;
 mod switch_edge_cases;
 mod switch_int;
 mod type_lowering;
+mod u_codegen;
 mod unary_ops;
 mod unsigned_cmp;

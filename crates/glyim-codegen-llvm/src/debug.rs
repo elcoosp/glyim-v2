@@ -138,13 +138,38 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
     pub(crate) fn declare_local(
         &self,
-        _context: &'ctx Context,
-        _alloca: inkwell::values::PointerValue<'ctx>,
-        _var_info: &VarDebugInfo,
+        context: &'ctx Context,
+        alloca: inkwell::values::PointerValue<'ctx>,
+        var_info: &VarDebugInfo,
         _ty_ctx: &TyCtx,
-        _block: inkwell::basic_block::BasicBlock<'ctx>,
+        block: inkwell::basic_block::BasicBlock<'ctx>,
     ) {
-        // Placeholder - not used in this stream's tests
+        if !self.enabled || self.subprogram.is_none() {
+            return;
+        }
+
+        let file = self.get_file(FileId::from_raw(0));
+        let scope = self.subprogram.unwrap().as_debug_info_scope();
+
+        let name = _ty_ctx.name_str(var_info.name);
+        let basic_ty = self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap();
+        let divar = self.builder.create_auto_variable(
+            scope,
+            name,
+            file,
+            1,
+            basic_ty.as_type(),
+            true,
+            DIFlagsConstants::ZERO,
+            32,
+        );
+
+        let loc = self
+            .builder
+            .create_debug_location(context, 1, 1, scope, None);
+        let expr = self.builder.create_expression(vec![]);
+        self.builder
+            .insert_declare_at_end(alloca, Some(divar), Some(expr), loc, block);
     }
 
     pub(crate) fn finalize(self) {

@@ -664,7 +664,7 @@ fn nested_macro_expansions_produce_correct_inline_locations() {
     let mut source_map = HashMap::new();
     source_map.insert(file_id, ("test.g".to_string(), source.clone()));
 
-    let mut ctx_mut = TyCtxMut::new(Interner::default());
+    let ctx_mut = TyCtxMut::new(Interner::default());
     let unit_ty = ctx_mut.unit_ty();
     let return_ty = unit_ty;
     let mut locals = glyim_core::arena::IndexVec::new();

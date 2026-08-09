@@ -75,9 +75,113 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                     is_unsized: false,
                 })
             }
-            TyKind::Adt(_adt_id, _subst) => {
-                // Delegate to simple layout computer for ADTs
-                // Full enum layout requires AdtDef integration which is complex
+            TyKind::Adt(adt_id, _) => {
+                if let Some(adt_def) = self.ctx.adt_def(*adt_id) {
+                    if adt_def.variants.len() > 1 {
+                        let mut variant_layouts = Vec::with_capacity(adt_def.variants.len());
+                        for variant in &adt_def.variants {
+                            let mut field_layouts = Vec::with_capacity(variant.fields.len());
+                            for field in variant.fields.iter() {
+                                field_layouts.push(self.layout_of(field.ty)?);
+                            }
+                            let mut size = Size::ZERO;
+                            let mut align = Align::ONE;
+                            let mut offsets = glyim_core::arena::IndexVec::new();
+                            for layout in &field_layouts {
+                                let offset = size.align_to(layout.align);
+                                offsets.push(offset);
+                                size = offset + layout.size;
+                                align = align.max(layout.align);
+                            }
+                            size = size.align_to(align);
+                            variant_layouts.push(Layout {
+                                size,
+                                align,
+                                fields: FieldsShape::Arbitrary { offsets },
+                                variants: VariantsShape::Single { index: 0 },
+                                is_unsized: false,
+                            });
+                        }
+
+                        let max_size = variant_layouts.iter().map(|l| l.size.0).max().unwrap_or(0);
+                        let max_align =
+                            variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
+                        let max_align = Align::from_bytes(max_align);
+
+                        let n_variants = adt_def.variants.len() as u64;
+                        let tag_bits = if n_variants <= 1 {
+                            1
+                        } else {
+                            64 - (n_variants - 1).leading_zeros()
+                        };
+                        let tag_size_bytes = tag_bits.div_ceil(8) as u64;
+                        let tag_size = Size(tag_size_bytes);
+                        let tag_align = Align::from_bytes(tag_size_bytes);
+
+                        let mut tag_offsets: glyim_core::arena::IndexVec<
+                            glyim_type::FieldIdx,
+                            Size,
+                        > = glyim_core::arena::IndexVec::new();
+                        tag_offsets.push(Size::ZERO);
+
+                        let mut untagged_offsets = glyim_core::arena::IndexVec::new();
+                        let data_start = tag_size.align_to(tag_align);
+                        if let Some(layout) = variant_layouts.first()
+                            && let FieldsShape::Arbitrary { offsets } = &layout.fields
+                        {
+                            for offset in offsets.iter() {
+                                untagged_offsets.push(*offset + data_start);
+                            }
+                        }
+
+                        let total_size = max_size + data_start.0;
+                        let total_size = Size(total_size).align_to(max_align);
+
+                        let variants_shape = VariantsShape::Multiple {
+                            tag: glyim_type::Ty::BOOL,
+                            tag_field: 0,
+                            tag_encoding: glyim_layout::TagEncoding::Direct,
+                            tag_size,
+                            tag_align,
+                            variants: variant_layouts,
+                        };
+
+                        return Ok(Layout {
+                            size: total_size,
+                            align: max_align,
+                            fields: FieldsShape::Arbitrary {
+                                offsets: untagged_offsets,
+                            },
+                            variants: variants_shape,
+                            is_unsized: false,
+                        });
+                    } else if let Some(variant) = adt_def.variants.first() {
+                        let mut field_layouts = Vec::with_capacity(variant.fields.len());
+                        for field in variant.fields.iter() {
+                            field_layouts.push(self.layout_of(field.ty)?);
+                        }
+                        if field_layouts.is_empty() {
+                            return Ok(Layout::unit());
+                        }
+                        let mut size = Size::ZERO;
+                        let mut align = Align::ONE;
+                        let mut offsets = glyim_core::arena::IndexVec::new();
+                        for layout in &field_layouts {
+                            let offset = size.align_to(layout.align);
+                            offsets.push(offset);
+                            size = offset + layout.size;
+                            align = align.max(layout.align);
+                        }
+                        size = size.align_to(align);
+                        return Ok(Layout {
+                            size,
+                            align,
+                            fields: FieldsShape::Arbitrary { offsets },
+                            variants: VariantsShape::Single { index: 0 },
+                            is_unsized: false,
+                        });
+                    }
+                }
                 self.simple.layout_of(ty)
             }
             _ => self.simple.layout_of(ty),
