@@ -854,6 +854,7 @@ impl InferenceTable {
     }
 
     // Test helpers
+    #[allow(dead_code)]
     #[cfg(test)]
     pub(crate) fn ty_var_kind(&self, var: TyVar) -> Option<VariableKind> {
         self.ty_vars.get(var).map(|tv| tv.kind)

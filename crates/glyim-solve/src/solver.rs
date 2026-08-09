@@ -53,6 +53,7 @@ pub struct ImplDef {
     pub predicates: Vec<Predicate>,
 }
 
+#[allow(dead_code)]
 impl TraitContext {
     pub fn new() -> Self {
         Self {
