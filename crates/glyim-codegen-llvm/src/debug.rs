@@ -164,9 +164,12 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             32,
         );
 
-        let loc = self.builder.create_debug_location(context, 1, 1, scope, None);
+        let loc = self
+            .builder
+            .create_debug_location(context, 1, 1, scope, None);
         let expr = self.builder.create_expression(vec![]);
-        self.builder.insert_declare_at_end(alloca, Some(divar), Some(expr), loc, block);
+        self.builder
+            .insert_declare_at_end(alloca, Some(divar), Some(expr), loc, block);
     }
 
     pub(crate) fn finalize(self) {

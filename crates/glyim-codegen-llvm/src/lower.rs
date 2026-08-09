@@ -22,7 +22,6 @@ use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntVal
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 #[allow(unused_imports)]
-
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
 }
@@ -156,9 +155,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 };
                 let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
                 let i64_type = self.context.i64_type();
-                let struct_ty = self.context.struct_type(&[ptr_type.into(), i64_type.into()], false);
+                let struct_ty = self
+                    .context
+                    .struct_type(&[ptr_type.into(), i64_type.into()], false);
 
-                let str_ptr = self.builder
+                let str_ptr = self
+                    .builder
                     .build_bit_cast(global.as_pointer_value(), ptr_type, "str_ptr")
                     .expect("bitcast for string constant failed")
                     .into_pointer_value();
@@ -166,14 +168,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let len_val = i64_type.const_int(str_content.len() as u64, false);
 
                 let agg = struct_ty.const_zero();
-                let inserted_ptr = self.builder
+                let inserted_ptr = self
+                    .builder
                     .build_insert_value(agg, str_ptr, 0, "str_ptr_insert")
                     .expect("insert ptr failed");
                 let inserted_ptr = match inserted_ptr {
                     inkwell::values::AggregateValueEnum::StructValue(s) => s,
                     _ => unreachable!(),
                 };
-                let inserted_len = self.builder
+                let inserted_len = self
+                    .builder
                     .build_insert_value(inserted_ptr, len_val, 1, "str_len_insert")
                     .expect("insert len failed");
                 match inserted_len {
@@ -1112,7 +1116,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
             CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
                 let dest_type = self.llvm_type_for_ty(target_ty);
-                self.builder.build_bit_cast(val, dest_type, "ptr_cast").expect("bitcast failed")
+                self.builder
+                    .build_bit_cast(val, dest_type, "ptr_cast")
+                    .expect("bitcast failed")
             }
         }
     }
@@ -1208,7 +1214,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .build_bit_cast(place_ptr, ptr_type, "dealloc_ptr")
                 .expect("bitcast for dealloc failed");
             let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
-            let layout = layout_computer.layout_of(place_ty).unwrap_or_else(|_| Layout::unit());
+            let layout = layout_computer
+                .layout_of(place_ty)
+                .unwrap_or_else(|_| Layout::unit());
             let size = self.llvm_int_type(64).const_int(layout.size.0, false);
             let align = self.llvm_int_type(64).const_int(layout.align.0, false);
             self.builder
@@ -1258,7 +1266,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                     let place = Place::new(*local);
                     let place_ptr = self.place_ptr(&place);
-                    let i8_ptr = self.builder
+                    let i8_ptr = self
+                        .builder
                         .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
                         .expect("bitcast for drop failed");
                     self.builder
@@ -1658,7 +1667,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     )]);
                 };
                 self.builder
-                    .build_indirect_invoke(fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call")
+                    .build_indirect_invoke(
+                        fn_type, func_val, &llvm_args, normal_bb, cleanup_bb, "call",
+                    )
                     .map_err(|e| {
                         vec![GlyimDiagnostic::internal_error(format!(
                             "invoke failed: {:?}",
@@ -1683,7 +1694,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
                 0,
             );
-            call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(param_idx), sret_attr);
+            call_result.add_attribute(
+                inkwell::attributes::AttributeLoc::Param(param_idx),
+                sret_attr,
+            );
             param_idx += 1;
         }
         for arg_abi in &fn_abi.args {
@@ -1692,7 +1706,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),
                     0,
                 );
-                call_result.add_attribute(inkwell::attributes::AttributeLoc::Param(param_idx), byval_attr);
+                call_result.add_attribute(
+                    inkwell::attributes::AttributeLoc::Param(param_idx),
+                    byval_attr,
+                );
             }
             if !matches!(arg_abi.mode, PassMode::Ignore) {
                 param_idx += 1;
@@ -1749,6 +1766,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_body<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,

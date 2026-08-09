@@ -104,25 +104,33 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                         }
 
                         let max_size = variant_layouts.iter().map(|l| l.size.0).max().unwrap_or(0);
-                        let max_align = variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
+                        let max_align =
+                            variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
                         let max_align = Align::from_bytes(max_align);
 
                         let n_variants = adt_def.variants.len() as u64;
-                        let tag_bits = if n_variants <= 1 { 1 } else { 64 - (n_variants - 1).leading_zeros() };
-                        let tag_size_bytes = ((tag_bits + 7) / 8) as u64;
+                        let tag_bits = if n_variants <= 1 {
+                            1
+                        } else {
+                            64 - (n_variants - 1).leading_zeros()
+                        };
+                        let tag_size_bytes = tag_bits.div_ceil(8) as u64;
                         let tag_size = Size(tag_size_bytes);
                         let tag_align = Align::from_bytes(tag_size_bytes);
 
-                        let mut tag_offsets: glyim_core::arena::IndexVec<glyim_type::FieldIdx, Size> = glyim_core::arena::IndexVec::new();
+                        let mut tag_offsets: glyim_core::arena::IndexVec<
+                            glyim_type::FieldIdx,
+                            Size,
+                        > = glyim_core::arena::IndexVec::new();
                         tag_offsets.push(Size::ZERO);
 
                         let mut untagged_offsets = glyim_core::arena::IndexVec::new();
                         let data_start = tag_size.align_to(tag_align);
-                        if let Some(layout) = variant_layouts.first() {
-                            if let FieldsShape::Arbitrary { offsets } = &layout.fields {
-                                for offset in offsets.iter() {
-                                    untagged_offsets.push(*offset + data_start);
-                                }
+                        if let Some(layout) = variant_layouts.first()
+                            && let FieldsShape::Arbitrary { offsets } = &layout.fields
+                        {
+                            for offset in offsets.iter() {
+                                untagged_offsets.push(*offset + data_start);
                             }
                         }
 
@@ -141,7 +149,9 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                         return Ok(Layout {
                             size: total_size,
                             align: max_align,
-                            fields: FieldsShape::Arbitrary { offsets: untagged_offsets },
+                            fields: FieldsShape::Arbitrary {
+                                offsets: untagged_offsets,
+                            },
                             variants: variants_shape,
                             is_unsized: false,
                         });

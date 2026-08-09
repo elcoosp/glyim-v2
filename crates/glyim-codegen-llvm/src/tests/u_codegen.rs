@@ -14,13 +14,13 @@
 
 use std::collections::HashMap;
 
+use glyim_core::IntTy;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::{Mutability, TargetInfo};
 use glyim_core::{ConstDefId, CrateId, DefId, LocalDefId};
+use glyim_layout::LayoutComputer;
 use glyim_mir::*;
 use glyim_span::{FileId, Span};
-use glyim_core::IntTy;
-use glyim_layout::LayoutComputer;
 use glyim_type::{Region, Substitution, TyKind};
 use inkwell::context::Context;
 
@@ -282,13 +282,7 @@ fn test_debug_declare_local_emits_intrinsic() {
         FileId::from_raw(0),
         ("test.g".to_string(), "fn main() {}".to_string()),
     )]);
-    let mut debug_ctx = crate::debug::DebugInfoCtx::new(
-        &context,
-        &module,
-        source_map,
-        true,
-        None,
-    );
+    let mut debug_ctx = crate::debug::DebugInfoCtx::new(&context, &module, source_map, true, None);
     let fn_type = context.void_type().fn_type(&[], false);
     let func = module.add_function("test_fn", fn_type, None);
     let bb = context.append_basic_block(func, "entry");
