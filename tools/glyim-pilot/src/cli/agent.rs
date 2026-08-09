@@ -139,7 +139,7 @@ async fn wait_for_session(
     let mut unknown_start = None;
     loop {
         let resp = client
-            .get(&format!(
+            .get(format!(
                 "http://127.0.0.1:8421/session/{}/status",
                 session_id
             ))
@@ -385,7 +385,7 @@ async fn mark_merged(
 ) -> Result<(), anyhow::Error> {
     let client = Client::new();
     let resp = client
-        .post(&format!(
+        .post(format!(
             "http://127.0.0.1:8421/session/{}/merge",
             stream_id
         ))
