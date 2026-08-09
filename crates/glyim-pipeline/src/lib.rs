@@ -179,12 +179,12 @@ mod tests;
 
 pub fn emit_mir(_db: &mut Database, _input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
     tracing::warn!("STUB: emit_mir not fully implemented, writing placeholder");
-    std::fs::write(output, "MIR not yet implemented").map_err(|e| vec![GlyimDiagnostic::internal_error(&e.to_string())])?;
+    std::fs::write(output, "MIR not yet implemented").map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
     Ok(())
 }
 
 pub fn emit_llvm_ir(_db: &mut Database, _input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
     tracing::warn!("STUB: emit_llvm_ir not fully implemented, writing placeholder");
-    std::fs::write(output, "LLVM IR not yet implemented").map_err(|e| vec![GlyimDiagnostic::internal_error(&e.to_string())])?;
+    std::fs::write(output, "LLVM IR not yet implemented").map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
     Ok(())
 }

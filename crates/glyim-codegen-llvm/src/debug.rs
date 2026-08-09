@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![allow(dead_code)]
 use glyim_mir::VarDebugInfo;
 use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_type::TyCtx;
