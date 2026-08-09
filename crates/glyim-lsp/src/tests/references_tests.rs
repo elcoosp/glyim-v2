@@ -1,9 +1,12 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::database::FileMap;
 use crate::navigation::find_references;
 use crate::reference_graph::{Reference, ReferenceGraph, ReferenceKind};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
-use lsp_types::{Position, Url};
+use lsp_types::{Position, };
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -51,7 +54,7 @@ fn find_references_returns_locations() {
     let params = lsp_types::ReferenceParams {
         text_document_position: lsp_types::TextDocumentPositionParams {
             text_document: lsp_types::TextDocumentIdentifier {
-                uri: Url::from_file_path(&path).unwrap(),
+                uri: Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap(),
             },
             position: Position {
                 line: 0,

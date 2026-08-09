@@ -1,9 +1,13 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
 use crate::database::FileMap;
 use lsp_types::*;
 use std::collections::HashMap;
 
-fn find_all_occurrences(source: &str, target: &str) -> Vec<Range> {
+
+
+use url::Url;fn find_all_occurrences(source: &str, target: &str) -> Vec<Range> {
     let lines: Vec<&str> = source.lines().collect();
     let mut ranges = Vec::new();
     for (line_idx, line) in lines.iter().enumerate() {
@@ -33,7 +37,7 @@ pub fn rename_symbol(
     params: &RenameParams,
 ) -> Option<WorkspaceEdit> {
     let uri = &params.text_document_position.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let source_maps = db.source_maps.read();
     let sm = source_maps.get(&file_id)?;

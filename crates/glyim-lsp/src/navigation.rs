@@ -1,17 +1,20 @@
 #![allow(deprecated)]
 
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
 use crate::database::FileMap;
 use lsp_types::*;
 use url::Url;
 
+
 fn get_symbol_name_at_position(
     db: &AnalysisDatabase,
     file_map: &FileMap,
-    uri: &Url,
+    uri: &Uri,
     position: Position,
 ) -> Option<String> {
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let source_maps = db.source_maps.read();
     let sm = source_maps.get(&file_id)?;
@@ -39,7 +42,7 @@ pub fn goto_definition(
     params: &GotoDefinitionParams,
 ) -> Option<GotoDefinitionResponse> {
     let uri = &params.text_document_position_params.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let source_maps = db.source_maps.read();
     let sm = source_maps.get(&file_id)?;
@@ -56,7 +59,7 @@ pub fn goto_definition(
     let target_path = file_map.path(def.file_id)?;
     let target_uri = Url::from_file_path(target_path).ok()?;
     Some(GotoDefinitionResponse::Scalar(Location {
-        uri: target_uri,
+        uri: Uri::from_str(target_uri.as_str()).unwrap(),
         range: Range {
             start: Position {
                 line: start_line as u32,
@@ -94,7 +97,7 @@ pub fn find_references(
         let path = file_map.path(r.file_id)?;
         let loc_uri = Url::from_file_path(path).ok()?;
         locations.push(Location {
-            uri: loc_uri,
+            uri: Uri::from_str(loc_uri.as_str()).unwrap(),
             range: Range {
                 start: Position {
                     line: start_line as u32,
@@ -116,7 +119,7 @@ pub fn document_symbols(
     params: &DocumentSymbolParams,
 ) -> Option<DocumentSymbolResponse> {
     let uri = &params.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let source_maps = db.source_maps.read();
     let sm = source_maps.get(&file_id)?;
@@ -210,7 +213,7 @@ pub fn workspace_symbols(
             name: info.name.clone(),
             kind,
             location: Location {
-                uri,
+                uri: Uri::from_str(uri.as_str()).unwrap(),
                 range: Range {
                     start: Position {
                         line: start_line as u32,

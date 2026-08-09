@@ -1,10 +1,12 @@
 use crate::database::{AnalysisDatabase, SourceMap};
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::hover;
 use crate::symbol_index::{DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use lsp_types::{
-    HoverContents, MarkupKind, Position, TextDocumentIdentifier, TextDocumentPositionParams, Url,
-};
+    HoverContents, MarkupKind, Position, TextDocumentIdentifier, TextDocumentPositionParams, };
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -44,7 +46,7 @@ fn test_provide_hover() {
     );
     drop(index);
 
-    let uri = Url::from_file_path(&path).unwrap();
+    let uri = Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap();
     let params = lsp_types::HoverParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri },

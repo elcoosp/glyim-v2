@@ -1,13 +1,17 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
 use lsp_types::*;
 
-pub fn provide_completions(
+
+
+use url::Url;pub fn provide_completions(
     db: &AnalysisDatabase,
     file_map: &crate::database::FileMap,
     params: &CompletionParams,
 ) -> Option<CompletionResponse> {
     let uri = &params.text_document_position.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let symbol_index = db.symbol_index.read();
     let symbols = symbol_index.symbols_in_file(file_id);

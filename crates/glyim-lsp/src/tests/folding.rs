@@ -1,12 +1,15 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::database::SourceMap;
 use crate::folding::provide_folding_ranges;
 use lsp_types::*;
 
-fn setup_analysis(content: &str) -> (AnalysisDatabase, Url) {
+fn setup_analysis(content: &str) -> (AnalysisDatabase, Uri) {
     let db = AnalysisDatabase::new();
     let path = std::env::current_dir().unwrap().join("main.gly");
-    let uri = Url::from_file_path(&path).unwrap();
+    let uri = Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap();
     let file_id = db.file_map.write().get_or_create(&path);
     let source_map = SourceMap::new(path, file_id, content.to_string());
     db.source_maps.write().insert(file_id, source_map);

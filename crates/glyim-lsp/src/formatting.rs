@@ -1,7 +1,11 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
 use lsp_types::*;
 
-fn format_code(source: &str) -> String {
+
+
+use url::Url;fn format_code(source: &str) -> String {
     let mut result = String::new();
     let mut indent_level = 0;
     let chars: Vec<char> = source.chars().collect();
@@ -64,7 +68,7 @@ pub fn format_document(
     params: &DocumentFormattingParams,
 ) -> Option<Vec<TextEdit>> {
     let uri = &params.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_map = db.file_map.read();
     let file_id = file_map.get_by_path(&path)?;
     drop(file_map);

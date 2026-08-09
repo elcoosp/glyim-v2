@@ -1,13 +1,17 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
 use lsp_types::*;
 
-pub fn provide_hover(
+
+
+use url::Url;pub fn provide_hover(
     db: &AnalysisDatabase,
     file_map: &crate::database::FileMap,
     params: &HoverParams,
 ) -> Option<Hover> {
     let uri = &params.text_document_position_params.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let source_maps = db.source_maps.read();
     let sm = source_maps.get(&file_id)?;

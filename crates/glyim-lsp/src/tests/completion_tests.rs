@@ -1,4 +1,7 @@
 use crate::completion::provide_completions;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::database::AnalysisDatabase;
 use crate::database::SourceMap;
 use crate::symbol_index::{DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature};
@@ -71,7 +74,7 @@ fn setup_test_db() -> (AnalysisDatabase, FileId, PathBuf) {
 fn completion_provides_struct_fields() {
     let (db, _file_id, path) = setup_test_db();
     let file_map = db.file_map.read();
-    let uri = Url::from_file_path(&path).unwrap();
+    let uri = Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap();
     let params = CompletionParams {
         text_document_position: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri },

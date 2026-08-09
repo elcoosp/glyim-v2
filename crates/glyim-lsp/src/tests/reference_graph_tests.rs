@@ -1,4 +1,7 @@
 use super::common::{compile_to_hir, create_test_file_id};
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::reference_graph::{ReferenceGraph, ReferenceKind};
 use glyim_core::Interner;
 

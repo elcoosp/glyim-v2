@@ -1,4 +1,7 @@
 use glyim_core::Interner;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use glyim_frontend::parse_to_syntax;
 use glyim_hir::pipeline_api::lower_crate_for_pipeline;
 use glyim_span::FileId;

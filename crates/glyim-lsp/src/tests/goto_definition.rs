@@ -1,4 +1,6 @@
 use crate::goto_definition::goto_definition;
+use std::str::FromStr;
+use lsp_types::Uri;
 use crate::{
     AnalysisDatabase, DefinitionLocation, Reference, ReferenceKind, SymbolInfo, SymbolKind,
 };
@@ -49,7 +51,7 @@ fn goto_definition_returns_location() {
     let params = GotoDefinitionParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
-                uri: Url::from_file_path(&path).unwrap(),
+                uri: Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap(),
             },
             position: Position {
                 line: 0,
@@ -133,7 +135,7 @@ fn goto_definition_cross_file() {
     let params = GotoDefinitionParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
-                uri: Url::from_file_path(&path1).unwrap(),
+                uri: Uri::from_str(&Url::from_file_path(&path1).unwrap().to_string()).unwrap(),
             },
             position: Position {
                 line: 0,
@@ -146,7 +148,7 @@ fn goto_definition_cross_file() {
     let response = goto_definition(&analysis, file_map, &params);
     assert!(response.is_some());
     if let GotoDefinitionResponse::Scalar(loc) = response.unwrap() {
-        assert_eq!(loc.uri, Url::from_file_path(&path2).unwrap());
+        assert_eq!(loc.uri, Uri::from_str(&Url::from_file_path(&path2).unwrap().to_string()).unwrap());
     } else {
         panic!("Expected scalar location");
     }

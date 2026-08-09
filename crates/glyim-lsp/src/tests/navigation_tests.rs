@@ -1,10 +1,12 @@
 use crate::database::{AnalysisDatabase, SourceMap};
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::navigation::workspace_symbols;
 use glyim_core::Interner;
 use glyim_span::FileId;
 use lsp_types::{
-    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, Url,
-    WorkspaceSymbolParams,
+    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceSymbolParams,
 };
 use std::path::PathBuf;
 
@@ -36,7 +38,7 @@ fn test_goto_definition_jumps_to_definition() {
     let (db, _file_id) = setup_db_with_file("/test/goto.g", source);
     let file_map = db.file_map.read();
 
-    let uri = Url::from_file_path("/test/goto.g").unwrap();
+    let uri = Uri::from_str(&Url::from_file_path("/test/goto.g").unwrap().to_string()).unwrap();
     let params = GotoDefinitionParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },

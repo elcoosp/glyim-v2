@@ -2,6 +2,8 @@ use crate::{
     AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature,
     completion::provide_completions,
 };
+use std::str::FromStr;
+use lsp_types::Uri;
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::*;
 use std::path::PathBuf;
@@ -59,7 +61,7 @@ fn completions_include_function_name() {
         &CompletionParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: Url::from_file_path(&path).unwrap(),
+                    uri: Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap(),
                 },
                 position: Position {
                     line: 1,

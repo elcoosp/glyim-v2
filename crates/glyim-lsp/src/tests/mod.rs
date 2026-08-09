@@ -1,3 +1,6 @@
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 mod code_action;
 mod code_action_tests;
 mod completion;

@@ -43,61 +43,61 @@ members = [
 
 [workspace.dependencies]
 glyim_const_eval = { path = "crates/glyim_const_eval" }
-glyim-core            = { path = "crates/glyim-core" }
-glyim-span            = { path = "crates/glyim-span" }
-glyim-diag            = { path = "crates/glyim-diag" }
-glyim-vfs             = { path = "crates/glyim-vfs" }
-glyim-syntax          = { path = "crates/glyim-syntax" }
-glyim-frontend        = { path = "crates/glyim-frontend" }
-glyim-def-map         = { path = "crates/glyim-def-map" }
-glyim-meta            = { path = "crates/glyim-meta" }
-glyim-type            = { path = "crates/glyim-type" }
-glyim-hir             = { path = "crates/glyim-hir" }
-glyim-mir             = { path = "crates/glyim-mir" }
-glyim-layout          = { path = "crates/glyim-layout" }
-glyim-solve           = { path = "crates/glyim-solve" }
-glyim-typeck          = { path = "crates/glyim-typeck" }
-glyim-lower           = { path = "crates/glyim-lower" }
-glyim-borrowck        = { path = "crates/glyim-borrowck" }
-glyim-opt             = { path = "crates/glyim-opt" }
-glyim-mir-interp      = { path = "crates/glyim-mir-interp" }
-glyim-codegen         = { path = "crates/glyim-codegen" }
-glyim-codegen-llvm    = { path = "crates/glyim-codegen-llvm" }
-glyim-db              = { path = "crates/glyim-db" }
-glyim-pipeline        = { path = "crates/glyim-pipeline" }
-glyim-cli             = { path = "crates/glyim-cli" }
-glyim-lsp             = { path = "crates/glyim-lsp" }
-glyim-runtime         = { path = "crates/glyim-runtime" }
-glyim-test            = { path = "crates/glyim-test" }
-glyim-lang-core       = { path = "crates/glyim-lang-core" }
-glyim-lang-std        = { path = "crates/glyim-lang-std" }
-
-lasso              = "0.7.3"
-tracing            = "0.1.40"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-parking_lot        = "0.12"
-indexmap           = "2.7"
-smallvec           = "1.13"
-rowan              = "0.16.1"
-smol_str           = "0.3.6"
-rayon              = "1.12.0"
-inkwell            = "0.9.0"
-clap               = { version = "4.5", features = ["derive"] }
-insta              = "1.47"
-miette             = "7.6"
-serde              = { version = "1.0", features = ["derive"] }
-serde_json         = "1.0"
-tokio              = "1.52"
-bitflags           = "2.6"
-num_enum           = "0.7"
-fixedbitset        = "0.5.7"
-petgraph           = "0.8.0"
-regalloc2          = "0.15.1"
-anyhow             = "1.0"
-owo-colors         = "4.0"
-textwrap           = "0.16"
-dashmap            = "6.1.0"
-
+glyim-core = { path = "crates/glyim-core" }
+glyim-span = { path = "crates/glyim-span" }
+glyim-diag = { path = "crates/glyim-diag" }
+glyim-vfs = { path = "crates/glyim-vfs" }
+glyim-syntax = { path = "crates/glyim-syntax" }
+glyim-frontend = { path = "crates/glyim-frontend" }
+glyim-def-map = { path = "crates/glyim-def-map" }
+glyim-meta = { path = "crates/glyim-meta" }
+glyim-type = { path = "crates/glyim-type" }
+glyim-hir = { path = "crates/glyim-hir" }
+glyim-mir = { path = "crates/glyim-mir" }
+glyim-layout = { path = "crates/glyim-layout" }
+glyim-solve = { path = "crates/glyim-solve" }
+glyim-typeck = { path = "crates/glyim-typeck" }
+glyim-lower = { path = "crates/glyim-lower" }
+glyim-borrowck = { path = "crates/glyim-borrowck" }
+glyim-opt = { path = "crates/glyim-opt" }
+glyim-mir-interp = { path = "crates/glyim-mir-interp" }
+glyim-codegen = { path = "crates/glyim-codegen" }
+glyim-codegen-llvm = { path = "crates/glyim-codegen-llvm" }
+glyim-db = { path = "crates/glyim-db" }
+glyim-pipeline = { path = "crates/glyim-pipeline" }
+glyim-cli = { path = "crates/glyim-cli" }
+glyim-lsp = { path = "crates/glyim-lsp" }
+glyim-runtime = { path = "crates/glyim-runtime" }
+glyim-test = { path = "crates/glyim-test" }
+glyim-lang-core = { path = "crates/glyim-lang-core" }
+glyim-lang-std = { path = "crates/glyim-lang-std" }
+lasso = "0.7.3"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+parking_lot = "0.12"
+indexmap = "2.7"
+smallvec = "1.13"
+rowan = "0.16.1"
+smol_str = "0.3.6"
+rayon = "1.12.0"
+inkwell = "0.9.0"
+clap = { version = "4.5", features = ["derive"] }
+insta = "1.47"
+miette = "7.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = "1.52"
+bitflags = "2.6"
+num_enum = "0.7"
+fixedbitset = "0.5.7"
+petgraph = "0.8.0"
+regalloc2 = "0.15.1"
+anyhow = "1.0"
+owo-colors = "4.0"
+textwrap = "0.16"
+dashmap = "6.1.0"
 toml = "0.8"
 sha2 = "0.10"
 tempfile = "3"
+lsp-types = "0.97.0"
+

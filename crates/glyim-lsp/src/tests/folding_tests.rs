@@ -1,4 +1,7 @@
 use crate::folding::provide_folding_ranges;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::tests::test_utils::setup_test_db;
 use lsp_types::{FoldingRangeParams, TextDocumentIdentifier};
 

@@ -1,4 +1,7 @@
 use crate::navigation::workspace_symbols;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use crate::{AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::*;

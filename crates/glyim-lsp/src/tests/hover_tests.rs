@@ -1,4 +1,6 @@
 use crate::hover::provide_hover;
+use std::str::FromStr;
+use lsp_types::Uri;
 use crate::{AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::*;
@@ -58,7 +60,7 @@ fn hover_shows_type_signature_and_doc() {
     let params = HoverParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
-                uri: Url::from_file_path(&path).unwrap(),
+                uri: Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap(),
             },
             position: Position {
                 line: 0,

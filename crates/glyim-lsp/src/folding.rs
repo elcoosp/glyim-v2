@@ -1,7 +1,11 @@
 use crate::AnalysisDatabase;
+use std::str::FromStr;
+use lsp_types::Uri;
 use lsp_types::*;
 
-fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
+
+
+use url::Url;fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
     let lines: Vec<&str> = source.lines().collect();
     let mut ranges = Vec::new();
     let mut brace_stack: Vec<(usize, usize)> = Vec::new();
@@ -32,7 +36,7 @@ pub fn provide_folding_ranges(
     params: &FoldingRangeParams,
 ) -> Option<Vec<FoldingRange>> {
     let uri = &params.text_document.uri;
-    let path = uri.to_file_path().ok()?;
+    let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_map = db.file_map.read();
     let file_id = file_map.get_by_path(&path)?;
     drop(file_map);

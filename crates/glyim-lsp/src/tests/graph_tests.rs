@@ -1,4 +1,7 @@
 use crate::reference_graph::ReferenceGraph;
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use glyim_core::{Interner, Visibility};
 use glyim_hir::{CrateHir, FnItem, Item, ItemId, ItemKind};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};

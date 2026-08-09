@@ -1,4 +1,7 @@
 use crate::symbol_index::{DefinitionLocation, SymbolIndex, SymbolInfo, SymbolKind};
+use std::str::FromStr;
+use lsp_types::Uri;
+use url::Url;
 use glyim_span::{FileId, Span};
 
 #[test]
