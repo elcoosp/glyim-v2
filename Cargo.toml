@@ -38,11 +38,11 @@ members = [
     "crates/glyim-lang-alloc",
     "tools/glyim-pilot",
 
-    "crates/glyim_const_eval",
+    "crates/glyim-const-eval",
 ]
 
 [workspace.dependencies]
-glyim_const_eval = { path = "crates/glyim_const_eval" }
+glyim-const-eval = { path = "crates/glyim-const-eval" }
 glyim-core = { path = "crates/glyim-core" }
 glyim-span = { path = "crates/glyim-span" }
 glyim-diag = { path = "crates/glyim-diag" }
