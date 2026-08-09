@@ -13,7 +13,6 @@ use glyim_mir::{BasicBlockIdx, Body, LocalIdx, StatementKind};
 /// Result of the reservation analysis for a single loan.
 pub struct ReservationAnalysis {
     per_block: Vec<BitSet>,
-    creation_block: BasicBlockIdx,
 }
 
 impl ReservationAnalysis {
@@ -36,45 +35,70 @@ impl ReservationAnalysis {
             .map(|&len| BitSet::with_capacity(len + 1))
             .collect();
 
+        use std::collections::VecDeque;
+
+        let mut worklist: VecDeque<(BasicBlockIdx, usize)> = VecDeque::new();
+        let mut visited: BitSet = BitSet::with_capacity(body.basic_blocks.len());
+
         let block_data = &body.basic_blocks[loan_block];
         let num_stmts = block_data.statements.len();
-        let reservation = &mut per_block[loan_block.to_raw() as usize];
-
         let start_point = if loan_stmt + 1 < num_stmts {
             loan_stmt + 1
         } else {
             num_stmts
         };
-        reservation.insert(start_point);
 
-        for point in start_point..=num_stmts {
-            if point == num_stmts {
-                break;
-            }
-            let stmt = &block_data.statements[point];
-            let mut checker = LocalReadChecker::new(dest_local);
-            if let StatementKind::Assign(_, rvalue) = &stmt.kind {
-                walk_rvalue_reads(rvalue, &mut checker);
-            }
-            if checker.found() {
-                break;
-            }
-            let next = point + 1;
-            if next <= num_stmts {
-                reservation.insert(next);
+        per_block[loan_block.to_raw() as usize].insert(start_point);
+
+        if start_point < num_stmts {
+            worklist.push_back((loan_block, start_point));
+        } else {
+            for succ in crate::visitor::successor_blocks(&block_data.terminator.kind) {
+                worklist.push_back((succ, 0));
             }
         }
 
-        ReservationAnalysis {
-            per_block,
-            creation_block: loan_block,
+        while let Some((block, start_stmt)) = worklist.pop_front() {
+            let block_usize = block.to_raw() as usize;
+            if visited.contains(block_usize) {
+                continue;
+            }
+            visited.insert(block_usize);
+
+            let block_data = &body.basic_blocks[block];
+            let num_stmts = block_data.statements.len();
+            let reservation = &mut per_block[block_usize];
+
+            reservation.insert(start_stmt);
+
+            let mut activated = false;
+            for point in start_stmt..num_stmts {
+                let stmt = &block_data.statements[point];
+                let mut checker = LocalReadChecker::new(dest_local);
+                if let StatementKind::Assign(_, rvalue) = &stmt.kind {
+                    walk_rvalue_reads(rvalue, &mut checker);
+                }
+                if checker.found() {
+                    activated = true;
+                    break;
+                }
+                let next = point + 1;
+                if next <= num_stmts {
+                    reservation.insert(next);
+                }
+            }
+
+            if !activated {
+                for succ in crate::visitor::successor_blocks(&block_data.terminator.kind) {
+                    worklist.push_back((succ, 0));
+                }
+            }
         }
+
+        ReservationAnalysis { per_block }
     }
 
     pub fn is_reservation(&self, block: BasicBlockIdx, stmt_idx: usize) -> bool {
-        if block != self.creation_block {
-            return false;
-        }
         self.per_block
             .get(block.to_raw() as usize)
             .map(|bits| bits.contains(stmt_idx))
@@ -148,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cross_block_returns_false() {
+    fn test_cross_block_extends_if_not_activated() {
         let mut body = Body {
             owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
             basic_blocks: glyim_core::arena::IndexVec::new(),
@@ -201,6 +225,6 @@ mod tests {
         body.basic_blocks.push(block0);
         body.basic_blocks.push(block1);
         let analysis = ReservationAnalysis::compute(&body, BasicBlockIdx::from_raw(0), 0, local_2);
-        assert!(!analysis.is_reservation(BasicBlockIdx::from_raw(1), 0));
+        assert!(analysis.is_reservation(BasicBlockIdx::from_raw(1), 0));
     }
 }

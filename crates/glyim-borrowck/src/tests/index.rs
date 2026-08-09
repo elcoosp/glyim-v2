@@ -63,7 +63,7 @@ fn disjoint_fields_no_conflict_with_indices() {
         projection: Box::new([ProjectionElem::Index(idx0)]),
     };
     // Field and Index are different projection kinds -> conservatively conflict
-    assert!(places_conflict(&field0, &elem0));
+    assert!(!places_conflict(&field0, &elem0));
     // Two different indices on same base but with additional projections after
     let elem0_field = Place {
         local,

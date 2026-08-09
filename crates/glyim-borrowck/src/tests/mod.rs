@@ -17,5 +17,6 @@ mod slice_patterns;
 mod test_ctx;
 mod two_phase_borrows;
 mod two_phase_reservation;
+mod u_borrowck;
 mod use_after_move;
 mod write_conflicts;

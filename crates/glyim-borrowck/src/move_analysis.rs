@@ -107,6 +107,9 @@ impl MovePathArena {
 
         let mut current_idx = root_idx?;
         for proj_elem in place.projection.iter() {
+            if let ProjectionElem::Index(_) = proj_elem {
+                return Some(current_idx);
+            }
             let current = self.get(current_idx);
             let mut found = None;
             for &child_idx in &current.children {
@@ -179,7 +182,9 @@ fn build_move_paths(body: &Body, ctx: &dyn BorrowckCtx) -> MovePathArena {
 fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
     match ctx.ty_kind(ty) {
         glyim_type::TyKind::Tuple(substs) => Some(u32::from(substs.len())),
-        glyim_type::TyKind::Adt(_, substs) => Some(u32::from(substs.len())),
+        glyim_type::TyKind::Adt(adt_id, _) => {
+            ctx.adt_repr(*adt_id).map(|r| r.field_tys.len() as u32)
+        }
         glyim_type::TyKind::Array(_, _) | glyim_type::TyKind::Slice(_) => None,
         _ => None,
     }
