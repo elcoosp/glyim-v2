@@ -53,6 +53,11 @@ git ls-files --cached --others --exclude-standard -z | while IFS= read -r -d '' 
         [ "$skip" -eq 1 ] && continue
     fi
 
+    # Always skip any file under a directory named "tests" (anywhere in the path)
+    if [[ "$file" =~ (^|/)tests/ ]]; then
+        continue
+    fi
+
     mime_type=$(file -b --mime-type "$file" 2>/dev/null || echo "")
     if [[ ! "$mime_type" =~ ^text/ ]] && [[ "$mime_type" != "application/json" ]] && [[ "$mime_type" != "application/xml" ]]; then
         continue

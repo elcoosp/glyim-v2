@@ -7,9 +7,10 @@ use std::collections::VecDeque;
 
 use glyim_core::IndexVec;
 use glyim_core::Mutability;
+use glyim_core::BinOp;
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtx, TyKind};
+use glyim_type::{Ty, TyCtx, TyKind, ConstKind};
 
 // -----------------------------------------------------------------------------
 // Dataflow: which locals are definitely initialized at each program point.
@@ -205,10 +206,131 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 let ty = place.ty(ctx, &body.locals);
                 if !needs_drop(ctx, ty) {
                     TerminatorKind::Goto { target: *target }
-                } else if matches!(ctx.ty_kind(ty), TyKind::Array(_, _)) {
-                    // For arrays, we need to expand to a loop; for now stub with Goto.
-                    TerminatorKind::Goto { target: *target }
+                } else if let TyKind::Array(_elem_ty, count) = ctx.ty_kind(ty) {
+                    // Generate loop to drop each element
+                    let len = match &count.kind {
+                        ConstKind::Uint(n) => *n as u64,
+                        ConstKind::Int(n) => if *n >= 0 { *n as u64 } else { 0 },
+                        _ => 0,
+                    };
+                    if len == 0 {
+                        TerminatorKind::Goto { target: *target }
+                    } else {
+                        // We'll create new blocks for the loop.
+                        // We need to add a new local for the index.
+                        let idx_local = body.locals.push(LocalDecl {
+                            ty: count.ty,
+                            mutability: Mutability::Mut,
+                            source_info: SourceInfo::new(terminator.source_info.span),
+                        });
+                        let idx_place = Place::new(idx_local);
+
+                        // We'll create blocks: init, cond, body, exit.
+                        // We'll store the block indices as we create them.
+                        let init_block_idx = new_blocks.len();
+                        let init_block = BasicBlockIdx::from_raw(init_block_idx as u32);
+                        let cond_block_idx = init_block_idx + 1;
+                        let cond_block = BasicBlockIdx::from_raw(cond_block_idx as u32);
+                        let body_block_idx = cond_block_idx + 1;
+                        let body_block = BasicBlockIdx::from_raw(body_block_idx as u32);
+                        let exit_block_idx = body_block_idx + 1;
+                        let exit_block = BasicBlockIdx::from_raw(exit_block_idx as u32);
+
+                        // Init block: idx = len; goto cond
+                        let init_block_data = BasicBlockData {
+                            statements: vec![
+                                Statement {
+                                    kind: StatementKind::Assign(
+                                        idx_place.clone(),
+                                        Rvalue::Use(Operand::Constant(MirConst {
+                                            kind: MirConstKind::Uint(len.into()),
+                                            ty: count.ty,
+                                            span: terminator.source_info.span,
+                                        })),
+                                    ),
+                                    source_info: SourceInfo::new(terminator.source_info.span),
+                                },
+                            ],
+                            terminator: Terminator {
+                                kind: TerminatorKind::Goto { target: cond_block },
+                                source_info: terminator.source_info.clone(),
+                            },
+                            is_cleanup: old_block.is_cleanup,
+                        };
+                        new_blocks.push(init_block_data);
+
+                        // Cond block: if idx == 0 goto exit else goto body
+                        let cond_block_data = BasicBlockData {
+                            statements: vec![],
+                            terminator: Terminator {
+                                kind: TerminatorKind::SwitchInt {
+                                    discr: Operand::Copy(idx_place.clone()),
+                                    switch_ty: count.ty,
+                                    targets: SwitchTargets::new(
+                                        vec![(0, exit_block)].into_boxed_slice(),
+                                        body_block,
+                                    ),
+                                },
+                                source_info: terminator.source_info.clone(),
+                            },
+                            is_cleanup: old_block.is_cleanup,
+                        };
+                        new_blocks.push(cond_block_data);
+
+                        // Body block: decrement idx, then drop element at idx, then goto cond
+                        let dec_stmt = Statement {
+                            kind: StatementKind::Assign(
+                                idx_place.clone(),
+                                Rvalue::BinaryOp(
+                                    BinOp::Sub,
+                                    Box::new((
+                                        Operand::Copy(idx_place.clone()),
+                                        Operand::Constant(MirConst {
+                                            kind: MirConstKind::Uint(1),
+                                            ty: count.ty,
+                                            span: terminator.source_info.span,
+                                        }),
+                                    )),
+                                ),
+                            ),
+                            source_info: SourceInfo::new(terminator.source_info.span),
+                        };
+                        let elem_place = Place {
+                            local: place.local,
+                            projection: vec![
+                                ProjectionElem::Index(idx_local),
+                            ].into_boxed_slice(),
+                        };
+                        let body_block_data = BasicBlockData {
+                            statements: vec![dec_stmt],
+                            terminator: Terminator {
+                                kind: TerminatorKind::Drop {
+                                    place: elem_place,
+                                    target: cond_block,
+                                    cleanup: *cleanup,
+                                },
+                                source_info: terminator.source_info.clone(),
+                            },
+                            is_cleanup: old_block.is_cleanup,
+                        };
+                        new_blocks.push(body_block_data);
+
+                        // Exit block: goto target
+                        let exit_block_data = BasicBlockData {
+                            statements: vec![],
+                            terminator: Terminator {
+                                kind: TerminatorKind::Goto { target: *target },
+                                source_info: terminator.source_info.clone(),
+                            },
+                            is_cleanup: old_block.is_cleanup,
+                        };
+                        new_blocks.push(exit_block_data);
+
+                        // Return Goto to init block
+                        TerminatorKind::Goto { target: init_block }
+                    }
                 } else if place.projection.is_empty() {
+                    // Existing logic for non-array drops
                     let local = place.local;
                     let definitely_init = analysis.is_definitely_initialized(old_bb, local);
                     if !definitely_init {
@@ -254,8 +376,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                         }
                     }
                 } else {
-                    // For array drops (and other projections), we replace with a Goto.
-                    // This is a stub; full implementation will generate a loop.
+                    // Other projections: stub with Goto
                     TerminatorKind::Goto { target: *target }
                 }
             }
@@ -279,9 +400,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
     }
 
     body.basic_blocks = IndexVec::from_raw(new_blocks);
-}
-
-fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
+}fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
     !matches!(
         ctx.ty_kind(ty),
         TyKind::Bool

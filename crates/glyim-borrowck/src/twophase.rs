@@ -1,86 +1,123 @@
-//! Two‑phase borrow activation analysis – same block only.
-//!
-//! A two‑phase mutable borrow starts in reservation phase and becomes
-//! activated when the borrowed reference is first read. Activation can
-//! only happen within the same basic block where the borrow was created.
-//! If a two‑phase borrow crosses a block boundary, it is considered
-//! already activated (conservative, matches Rust's semantics).
+//! Two‑phase borrow activation analysis – full CFG dataflow.
 
-use crate::visitor::{LocalReadChecker, walk_rvalue_reads};
+use crate::visitor::{LocalReadChecker, successor_blocks, walk_rvalue_reads};
 use fixedbitset::FixedBitSet as BitSet;
 use glyim_mir::{BasicBlockIdx, Body, LocalIdx, StatementKind};
+use std::collections::{HashSet, VecDeque};
 
-/// Result of the reservation analysis for a single loan.
 pub struct ReservationAnalysis {
     per_block: Vec<BitSet>,
 }
 
 impl ReservationAnalysis {
-    /// Compute the reservation points for a two‑phase loan created at
-    /// `(loan_block, loan_stmt)` with destination local `dest_local`.
     pub fn compute(
         body: &Body,
         loan_block: BasicBlockIdx,
         loan_stmt: usize,
         dest_local: LocalIdx,
     ) -> Self {
+        let num_blocks = body.basic_blocks.len();
         let stmt_counts: Vec<usize> = body
             .basic_blocks
             .iter()
             .map(|b| b.statements.len())
             .collect();
+
         let mut per_block: Vec<BitSet> = stmt_counts
             .iter()
             .map(|&len| BitSet::with_capacity(len + 1))
             .collect();
-        use std::collections::{VecDeque, HashSet};
-        let mut worklist: VecDeque<(BasicBlockIdx, usize)> = VecDeque::new();
-        let mut visited: HashSet<BasicBlockIdx> = HashSet::new();
-        let block_data = &body.basic_blocks[loan_block];
-        let num_stmts = block_data.statements.len();
-        let start_point = if loan_stmt + 1 < num_stmts {
-            loan_stmt + 1
-        } else {
-            num_stmts
+
+        let mut entry_reserved: Vec<bool> = vec![false; num_blocks];
+        let mut exit_reserved: Vec<bool> = vec![false; num_blocks];
+
+        let mut worklist: VecDeque<BasicBlockIdx> = VecDeque::new();
+        let mut in_worklist: HashSet<BasicBlockIdx> = HashSet::new();
+
+        let mut enqueue = |block: BasicBlockIdx| {
+            if !in_worklist.contains(&block) {
+                in_worklist.insert(block);
+                worklist.push_back(block);
+            }
         };
-        per_block[loan_block.to_raw() as usize].insert(start_point);
-        if start_point < num_stmts {
-            worklist.push_back((loan_block, start_point));
-        } else {
-            for succ in crate::visitor::successor_blocks(&block_data.terminator.kind) {
-                worklist.push_back((succ, 0));
+
+        let transfer = |block: BasicBlockIdx,
+                        _entry: bool,
+                        start_idx: usize,
+                        start_current: bool|
+         -> (BitSet, bool) {
+            let num_stmts = stmt_counts[block.to_raw() as usize];
+            let mut bits = BitSet::with_capacity(num_stmts + 1);
+            let mut current = start_current;
+            if start_idx <= num_stmts {
+                for i in start_idx..num_stmts {
+                    if current {
+                        bits.insert(i);
+                    }
+                    let stmt = &body.basic_blocks[block].statements[i];
+                    let mut checker = LocalReadChecker::new(dest_local);
+                    if let StatementKind::Assign(_, rvalue) = &stmt.kind {
+                        walk_rvalue_reads(rvalue, &mut checker);
+                    }
+                    if checker.found() {
+                        current = false;
+                    }
+                }
+                if current {
+                    bits.insert(num_stmts);
+                }
+            }
+            let exit_state = current;
+            (bits, exit_state)
+        };
+
+        let block_data = &body.basic_blocks[loan_block];
+        let start_point = loan_stmt + 1;
+
+        let (bits, exit) = transfer(loan_block, false, start_point, true);
+        per_block[loan_block.to_raw() as usize] = bits;
+        exit_reserved[loan_block.to_raw() as usize] = exit;
+
+        if exit {
+            for succ in successor_blocks(&block_data.terminator.kind) {
+                if !entry_reserved[succ.to_raw() as usize] {
+                    entry_reserved[succ.to_raw() as usize] = true;
+                    enqueue(succ);
+                }
             }
         }
-        while let Some((block, start_stmt)) = worklist.pop_front() {
-            if !visited.insert(block) {
-                continue;
+
+        let mut preds: Vec<Vec<BasicBlockIdx>> = vec![Vec::new(); num_blocks];
+        for (i, block_data) in body.basic_blocks.iter_enumerated() {
+            for succ in successor_blocks(&block_data.terminator.kind) {
+                preds[succ.to_raw() as usize].push(i);
             }
-            let block_data = &body.basic_blocks[block];
-            let num_stmts = block_data.statements.len();
-            let reservation = &mut per_block[block.to_raw() as usize];
-            reservation.insert(start_stmt);
-            let mut activated = false;
-            for point in start_stmt..num_stmts {
-                let stmt = &block_data.statements[point];
-                let mut checker = LocalReadChecker::new(dest_local);
-                if let StatementKind::Assign(_, rvalue) = &stmt.kind {
-                    walk_rvalue_reads(rvalue, &mut checker);
-                }
-                if checker.found() {
-                    activated = true;
-                    break;
-                }
-                let next = point + 1;
-                if next <= num_stmts {
-                    reservation.insert(next);
-                }
-            }
-            if !activated {
-                for succ in crate::visitor::successor_blocks(&block_data.terminator.kind) {
-                    worklist.push_back((succ, 0));
+        }
+
+        while let Some(block) = worklist.pop_front() {
+            in_worklist.remove(&block);
+            let entry = entry_reserved[block.to_raw() as usize];
+            let (bits, exit) = transfer(block, entry, 0, entry);
+            let old_bits = &per_block[block.to_raw() as usize];
+            let old_exit = exit_reserved[block.to_raw() as usize];
+            if &bits != old_bits || exit != old_exit {
+                per_block[block.to_raw() as usize] = bits;
+                exit_reserved[block.to_raw() as usize] = exit;
+                for succ in successor_blocks(&body.basic_blocks[block].terminator.kind) {
+                    let new_entry = preds[succ.to_raw() as usize]
+                        .iter()
+                        .any(|&pred| exit_reserved[pred.to_raw() as usize]);
+                    if new_entry != entry_reserved[succ.to_raw() as usize] {
+                        entry_reserved[succ.to_raw() as usize] = new_entry;
+                        if !in_worklist.contains(&succ) {
+                            in_worklist.insert(succ);
+                            worklist.push_back(succ);
+                        }
+                    }
                 }
             }
         }
+
         ReservationAnalysis { per_block }
     }
 
@@ -106,7 +143,6 @@ mod tests {
 
     #[test]
     fn test_same_block_no_activation() {
-        // Build a fresh body from scratch – no dummy block.
         let mut body = Body {
             owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
             basic_blocks: glyim_core::arena::IndexVec::new(),
@@ -117,19 +153,17 @@ mod tests {
             var_debug_info: Vec::new(),
         };
 
-        // Add local declarations.
         let local_1 = body.locals.push(LocalDecl {
             ty: Ty::BOOL,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(Span::DUMMY),
         });
         let local_2 = body.locals.push(LocalDecl {
-            ty: Ty::ERROR, // placeholder for reference type
+            ty: Ty::ERROR,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(Span::DUMMY),
         });
 
-        // Create a borrow statement.
         let borrow_stmt = Statement {
             kind: StatementKind::Assign(
                 Place::new(local_2),
