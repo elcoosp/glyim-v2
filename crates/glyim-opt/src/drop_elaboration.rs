@@ -1,7 +1,7 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::unused_enumerate_index)]
 //! Drop elaboration: inserts drop flags and conditional branches around `Drop` terminators.
-//! Array drops are currently replaced with a direct Goto (stub) and will be implemented fully later.
+//! Array drops are replaced with a loop that drops each element.
 
 use std::collections::VecDeque;
 
@@ -226,7 +226,6 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                         let idx_place = Place::new(idx_local);
 
                         // We'll create blocks: init, cond, body, exit.
-                        // We'll store the block indices as we create them.
                         let init_block_idx = new_blocks.len();
                         let init_block = BasicBlockIdx::from_raw(init_block_idx as u32);
                         let cond_block_idx = init_block_idx + 1;
@@ -400,7 +399,9 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
     }
 
     body.basic_blocks = IndexVec::from_raw(new_blocks);
-}fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
+}
+
+fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
     !matches!(
         ctx.ty_kind(ty),
         TyKind::Bool
@@ -412,6 +413,3 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
             | TyKind::Unit
     )
 }
-
-#[cfg(test)]
-mod tests {}
