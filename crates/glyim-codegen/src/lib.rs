@@ -1,4 +1,3 @@
-
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_diag::CompResult;
@@ -245,6 +244,7 @@ pub(crate) const OP_DEREF: u8 = 0x2B;
 pub(crate) const OP_DROP: u8 = 0x2C;
 pub(crate) const OP_REPEAT: u8 = 0x2D;
 
+pub(crate) const OP_SWAP: u8 = 0x2E;
 impl CodegenBackend for BytecodeBackend {
     fn name(&self) -> &'static str {
         "bytecode"
@@ -415,49 +415,53 @@ impl BytecodeBackend {
                         return Ok(());
                     }
 
-                    // Base address (data pointer for array, fat pointer address for slice)
+                    // Emit base address
                     self.emit_place_address(bc, &base_place, local_tys)?;
-
                     let is_slice_base = matches!(ctx.ty_kind(base_ty), TyKind::Slice(_));
                     if is_slice_base {
-                        // Load data pointer (first word)
                         bc.push(OP_DEREF);
-                        // Load length: base address + pointer size
                         self.emit_place_address(bc, &base_place, local_tys)?;
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(target.pointer_size() as i64).to_le_bytes());
                         bc.push(OP_ADD);
-                        bc.push(OP_DEREF); // length on stack
+                        bc.push(OP_DEREF);
                     }
+                    // Stack: [data_ptr, len]
 
                     let start_op = Operand::Copy(start.clone());
                     let end_op = Operand::Copy(end.clone());
+                    self.emit_operand(bc, &start_op, local_tys)?;
+                    self.emit_operand(bc, &end_op, local_tys)?;
+                    // Stack: [data_ptr, len, start, end]
 
-                    // Compute start offset (start * elem_size)
+                    // Compute new_len = end - start
+                    // We need to swap to get end on top of start
+                    // Actually we have start, end on stack. SWAP -> end, start then SUB.
+                    bc.push(OP_SWAP);
+                    bc.push(OP_SUB); // [data_ptr, len, new_len]
+
+                    // Compute offset = start * elem_size
+                    // Need start again; re-emit start
                     self.emit_operand(bc, &start_op, local_tys)?;
                     bc.push(OP_LOAD_CONST);
                     bc.extend_from_slice(&(elem_size as i64).to_le_bytes());
-                    bc.push(OP_MUL);
+                    bc.push(OP_MUL); // [data_ptr, len, new_len, offset]
 
-                    // Add offset to data pointer
-                    if is_slice_base {
-                        // Stack currently: [data_ptr, len, start_offset]
-                        // Need to add start_offset to data_ptr. Re‑emit data_ptr.
-                        self.emit_place_address(bc, &base_place, local_tys)?;
-                        bc.push(OP_DEREF);
-                        bc.push(OP_ADD); // new_data_ptr = data_ptr + offset
-                        // Drop old data_ptr and len (we'll recompute length)
-                        bc.push(OP_DROP);
-                        bc.push(OP_DROP);
-                    } else {
-                        // Stack: [data_ptr, start_offset]
-                        bc.push(OP_ADD); // new_data_ptr
-                    }
+                    // Compute new_data_ptr = data_ptr + offset
+                    // We have [data_ptr, len, new_len, offset].
+                    // We need to bring data_ptr up.
+                    // We'll do: SWAP (offset and new_len) -> [data_ptr, len, offset, new_len]
+                    bc.push(OP_SWAP);
+                    // SWAP (len and offset) -> [data_ptr, offset, len, new_len]
+                    bc.push(OP_SWAP);
+                    // ADD (data_ptr + offset) -> [new_data_ptr, len, new_len]
+                    bc.push(OP_ADD);
+                    // Drop len (we don't need it)
+                    bc.push(OP_DROP); // [new_data_ptr, new_len]
 
-                    // Compute length = end - start
-                    self.emit_operand(bc, &end_op, local_tys)?;
-                    self.emit_operand(bc, &start_op, local_tys)?;
-                    bc.push(OP_SUB); // length on stack
+                    // Push tuple (new_data_ptr, new_len)
+                    bc.push(OP_AGGREGATE);
+                    bc.extend_from_slice(&2u32.to_le_bytes());
 
                     Ok(())
                 } else {
