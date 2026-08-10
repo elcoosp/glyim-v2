@@ -134,6 +134,7 @@ impl<'a> MirBuilder<'a> {
     
     
     /// Lower a closure expression: generate its MIR body and return the aggregate.
+    
     pub(crate) fn lower_closure(
         &mut self,
         thir_body: &thir::Body,
@@ -147,36 +148,16 @@ impl<'a> MirBuilder<'a> {
         use glyim_typeck::thir;
         use std::collections::HashMap;
 
-        // Create a DefId for the closure function.
+        // Create DefId for the closure.
         let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(closure_id.to_raw()));
 
-        // Build a new MIR body for the closure by creating a new builder.
-        // We need to create a new LowerCtx that knows about the captures.
-        // We'll use a custom context that implements LowerCtx and provides a mapping
-        // from capture LocalVarId to MIR LocalIdx.
-
-        // Create a new MirBuilder with a custom context.
-        // For simplicity, we'll use the same ctx but with a custom mapping.
-        // We'll implement a wrapper LowerCtx that delegates to the original but overrides
-        // the variable resolution.
-
-        // Since LowerCtx doesn't have a method to resolve variables by name, we need to
-        // use the existing mechanism: the MirBuilder's var_map maps Name -> LocalIdx.
-        // In the THIR body, captures are represented as VarRefs with LocalVarId.
-        // We need to map LocalVarId to MIR LocalIdx. We can do this by creating a
-        // new MirBuilder and populating its var_map with the capture names.
-
-        // However, the THIR body's VarRefs use LocalVarId, not Name. So we need to
-        // replace those VarRefs with the mapped LocalIdx. That's not trivial.
-
-        // For now, we'll implement a simplified version that just stores a placeholder body
-        // and returns the aggregate, but we'll include the captures in the aggregate.
-
-        // TODO: Implement full lowering of closure body.
-        // For now, we create a placeholder body that returns unit.
+        // Build a new MIR body for the closure.
         let mut closure_body = glyim_mir::Body::dummy(def_id);
         closure_body.return_ty = thir_body.return_ty;
         closure_body.span = span;
+
+        // Map original LocalVarId to MIR LocalIdx.
+        let mut var_map: HashMap<thir::LocalVarId, glyim_mir::LocalIdx> = HashMap::new();
 
         // Add capture parameters.
         for capture in captures {
@@ -184,11 +165,12 @@ impl<'a> MirBuilder<'a> {
                 thir::CaptureKind::ByValue => glyim_core::primitives::Mutability::Not,
                 thir::CaptureKind::ByRef(m) => m,
             };
-            closure_body.locals.push(LocalDecl {
+            let local = closure_body.locals.push(LocalDecl {
                 ty: capture.ty,
                 mutability,
                 source_info: SourceInfo::new(span),
             });
+            var_map.insert(capture.local, local);
         }
 
         // Add original parameters.
@@ -197,17 +179,32 @@ impl<'a> MirBuilder<'a> {
                 thir::PatternKind::Binding { mutability, .. } => *mutability,
                 _ => glyim_core::primitives::Mutability::Not,
             };
-            closure_body.locals.push(LocalDecl {
+            let local = closure_body.locals.push(LocalDecl {
                 ty: param.ty,
                 mutability,
                 source_info: SourceInfo::new(param.span),
             });
+            // We need to map the parameter's LocalVarId. We don't have it here.
+            // Instead, we'll rely on the fact that the THIR body's params are in order.
+            // We'll store them in a vector by index.
         }
 
         // Set arg_count.
         closure_body.arg_count = captures.len() + thir_body.params.len();
 
-        // Create a minimal body that returns unit.
+        // To lower the body, we need to create a MirBuilder for the closure body
+        // with a custom context that maps VarRefs to the new locals.
+        // Since we have var_map from capture local to MIR local, we need to
+        // rewrite the THIR body to replace capture VarRefs with the mapped locals.
+        // However, the THIR body is immutable; we can clone and transform.
+        // But for simplicity, we'll implement a custom lowering that uses the
+        // existing MirBuilder logic but with a different mapping.
+
+        // We'll create a new MirBuilder using the closure body and a custom LowerCtx.
+        // This is complex, so for now we'll keep the placeholder body.
+        // TODO: implement full lowering.
+
+        // For now, create a placeholder body that returns unit.
         let entry = BasicBlockIdx::from_raw(0);
         let block = BasicBlockData {
             statements: vec![],
@@ -246,31 +243,6 @@ impl<'a> MirBuilder<'a> {
 
 
 
-    /// Helper to allocate a temporary local for sret (large return types).
-    /// Returns the local index if sret is needed, otherwise None.
-    pub(crate) fn allocate_sret_local(
-        &mut self,
-        ty: Ty,
-        span: glyim_span::Span,
-    ) -> Option<glyim_mir::LocalIdx> {
-        // Heuristic: if type is an ADT with more than 2 fields or tuple > 2 elements, treat as large.
-        let is_large = match self.ctx.ty_ctx().ty_kind(ty) {
-            TyKind::Adt(adt_id, _) => {
-                if let Some(def) = self.ctx.ty_ctx().adt_def(*adt_id) {
-                    def.fields.len() > 2
-                } else {
-                    false
-                }
-            }
-            TyKind::Tuple(substs) => {
-                self.ctx.ty_ctx().substitution_args(*substs).len() > 2
-            }
-            _ => false,
-        };
-        if is_large {
-            Some(self.alloc_local(ty, glyim_core::primitives::Mutability::Mut, span))
-        } else {
-            None
-        }
-    }
+
+    
 }
