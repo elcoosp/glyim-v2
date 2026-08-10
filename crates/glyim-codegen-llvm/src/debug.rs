@@ -4,8 +4,8 @@ use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_type::TyCtx;
 use inkwell::context::Context;
 use inkwell::debug_info::{
-    AsDIScope, DIFile, DIFlagsConstants, DIScope, DISubprogram, DWARFEmissionKind,
-    DWARFSourceLanguage, DebugInfoBuilder,
+    AsDIScope, DIFile, DIFlags, DIFlagsConstants, DIScope, DISubprogram, DIType,
+    DWARFEmissionKind, DWARFSourceLanguage, DebugInfoBuilder,
 };
 use inkwell::values::FunctionValue;
 use std::collections::HashMap;
@@ -31,6 +31,7 @@ pub(crate) struct DebugInfoCtx<'ctx> {
     source_map: HashMap<FileId, (String, String)>,
     pub(crate) enabled: bool,
     hygiene: Option<HygieneCtx>,
+    type_cache: HashMap<glyim_type::Ty, DIType<'ctx>>,
 }
 
 impl<'ctx> DebugInfoCtx<'ctx> {
@@ -80,6 +81,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             source_map,
             enabled: enable,
             hygiene,
+            type_cache: HashMap::new(),
         }
     }
 
@@ -97,7 +99,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         let file = self.get_file(file_id);
         let subroutine_type =
             self.builder
-                .create_subroutine_type(file, None, &[], DIFlagsConstants::ZERO);
+                .create_subroutine_type(file, None, &[], DIFlags::ZERO);
         let subprogram = self.builder.create_function(
             self.compile_unit_scope,
             name,
@@ -108,7 +110,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             false,
             true,
             line,
-            DIFlagsConstants::ZERO,
+            DIFlags::ZERO,
             false,
         );
         func.set_subprogram(subprogram);
@@ -136,8 +138,82 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         )
     }
 
+    /// Get a debug type for a given Ty, creating it if necessary.
+    /// Returns a DIType that can be used directly in debug info.
+    pub(crate) fn debug_type_for_ty(
+        &mut self,
+        context: &'ctx Context,
+        ty: glyim_type::Ty,
+        ty_ctx: &TyCtx,
+    ) -> DIType<'ctx> {
+        use glyim_type::{TyKind, GenericArg};
+
+        if let Some(cached) = self.type_cache.get(&ty) {
+            return *cached;
+        }
+
+        let file = self.get_file(FileId::from_raw(0));
+        let di_type = match ty_ctx.ty_kind(ty) {
+            TyKind::Adt(adt_id, _) => {
+                if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
+                    let name = format!("Adt{}", adt_id.to_raw());
+                    let mut field_types = Vec::new();
+                    for field in adt_def.fields.iter() {
+                        let field_ty = self.debug_type_for_ty(context, field.ty, ty_ctx);
+                        field_types.push(field_ty);
+                    }
+                    self.builder.create_struct_type(
+                        self.compile_unit_scope,
+                        &name,
+                        file,
+                        0,                          // line
+                        0,                          // size
+                        0,                          // align
+                        0,                          // offset
+                        None,                       // template params
+                        field_types.as_slice(),     // elements
+                        0,                          // runtime version
+                        Some(self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()),
+                        "glyim",                    // unique id
+                    ).as_type()
+                } else {
+                    self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()
+                }
+            }
+            TyKind::Tuple(substs) => {
+                let args = ty_ctx.substitution_args(*substs);
+                let mut field_types = Vec::new();
+                for (i, arg) in args.iter().enumerate() {
+                    if let GenericArg::Ty(t) = arg {
+                        let field_ty = self.debug_type_for_ty(context, *t, ty_ctx);
+                        field_types.push(field_ty);
+                    }
+                }
+                self.builder.create_struct_type(
+                    self.compile_unit_scope,
+                    "tuple",
+                    file,
+                    0,
+                    0,
+                    0,
+                    0,
+                    None,
+                    field_types.as_slice(),
+                    0,
+                    Some(self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()),
+                    "glyim",
+                ).as_type()
+            }
+            _ => {
+                self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()
+            }
+        };
+        self.type_cache.insert(ty, di_type);
+        di_type
+    }
+
     pub(crate) fn declare_local(
-        &self,
+        &mut self,
         context: &'ctx Context,
         alloca: inkwell::values::PointerValue<'ctx>,
         var_info: &VarDebugInfo,
@@ -151,16 +227,17 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         let file = self.get_file(FileId::from_raw(0));
         let scope = self.subprogram.unwrap().as_debug_info_scope();
 
+        // Use debug type for the variable.
+        let basic_ty = self.debug_type_for_ty(context, ty_ctx.error_ty(), ty_ctx);
         let name = ty_ctx.name_str(var_info.name);
-        let basic_ty = self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap();
         let divar = self.builder.create_auto_variable(
             scope,
             name,
             file,
             1,
-            basic_ty.as_type(),
+            basic_ty,
             true,
-            DIFlagsConstants::ZERO,
+            DIFlags::ZERO,
             32,
         );
 
