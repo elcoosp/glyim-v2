@@ -599,21 +599,20 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
-                // Stub: just create an aggregate with captures, no body yet.
                 let mut capture_operands = Vec::with_capacity(captures.len());
                 for capture in captures {
-                    let local = LocalIdx::from_raw(capture.local.to_raw());
+                    let capture_local = LocalIdx::from_raw(capture.local.to_raw());
                     let operand = match capture.kind {
                         thir::CaptureKind::ByValue => {
-                            glyim_mir::Operand::Move(glyim_mir::Place::new(local))
+                            glyim_mir::Operand::Move(glyim_mir::Place::new(capture_local))
                         }
-                        thir::CaptureKind::ByRef(_) => {
-                            glyim_mir::Operand::Copy(glyim_mir::Place::new(local))
+                        thir::CaptureKind::ByRef(glyim_core::primitives::Mutability::Not)
+                        | thir::CaptureKind::ByRef(glyim_core::primitives::Mutability::Mut) => {
+                            glyim_mir::Operand::Copy(glyim_mir::Place::new(capture_local))
                         }
                     };
                     capture_operands.push(operand);
                 }
-                // FIXME: generate actual closure body.
                 glyim_mir::Rvalue::Aggregate(
                     glyim_mir::AggregateKind::Closure(*closure_id, *closure_substs),
                     capture_operands,
@@ -829,6 +828,7 @@ impl<'a> MirBuilder<'a> {
                 suffix: _,
             } => {
                 // Slice pattern lowering is not yet implemented.
+                // Type checking already passed; ignoring for now.
                 tracing::debug!("Slice pattern lowering skipped (typeck only)");
             }
         }
