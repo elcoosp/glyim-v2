@@ -31,6 +31,7 @@ pub struct MirBuilder<'a> {
     pub(crate) diagnostics: Vec<GlyimDiagnostic>,
     pub(crate) closure_bodies: Vec<(glyim_core::def_id::ClosureId, glyim_type::Substitution, glyim_mir::Body)>,
     pub(crate) var_map: std::collections::HashMap<Name, LocalIdx>,
+    pub(crate) capture_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
     pub(crate) current_block: Option<BasicBlockIdx>,
     /// Stack of enclosing loops for break/continue resolution.
     pub(crate) loop_stack: Vec<LoopInfo>,
@@ -58,6 +59,7 @@ impl<'a> MirBuilder<'a> {
             diagnostics: Vec::new(),
             closure_bodies: Vec::new(),
             var_map: std::collections::HashMap::new(),
+            capture_map: std::collections::HashMap::new(),
             current_block: None,
             loop_stack: Vec::new(),
         }
@@ -132,6 +134,7 @@ impl<'a> MirBuilder<'a> {
 
     /// Lower a closure expression: generate its MIR body and return an aggregate.
 
+    
     pub(crate) fn lower_closure(
         &mut self,
         thir_body: &thir::Body,
@@ -141,74 +144,61 @@ impl<'a> MirBuilder<'a> {
         span: glyim_span::Span,
     ) -> glyim_mir::Rvalue {
         use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-        use glyim_mir::{BasicBlockData, BasicBlockIdx, Rvalue, TerminatorKind};
-
-        // Create a DefId for the closure function.
+        use glyim_mir::{BasicBlockData, BasicBlockIdx, Rvalue, TerminatorKind, LocalDecl, Operand, Place, Statement, StatementKind, SourceInfo};
+        use glyim_typeck::thir;
+        
+        // Create DefId for the closure.
         let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(closure_id.to_raw()));
 
-        // Build a new MIR body for the closure.
-        let mut closure_body = glyim_mir::Body::dummy(def_id);
-        closure_body.return_ty = thir_body.return_ty;
-        closure_body.span = span;
+        // Build a new MIR body for the closure using a fresh builder.
+        let mut builder = MirBuilder::new(self.ctx, thir_body);
 
-        // Add capture parameters.
+        // Allocate locals for captures and populate capture_map.
         for capture in captures {
             let mutability = match capture.kind {
                 thir::CaptureKind::ByValue => glyim_core::primitives::Mutability::Not,
                 thir::CaptureKind::ByRef(m) => m,
             };
-            closure_body.locals.push(glyim_mir::LocalDecl {
-                ty: capture.ty,
-                mutability,
-                source_info: glyim_mir::SourceInfo::new(span),
-            });
+            let local = builder.alloc_local(capture.ty, mutability, span);
+            builder.capture_map.insert(capture.local, local);
         }
 
-        // Add original parameters.
-        for param in &thir_body.params {
-            closure_body.locals.push(glyim_mir::LocalDecl {
-                ty: param.ty,
-                mutability: glyim_core::primitives::Mutability::Not,
-                source_info: glyim_mir::SourceInfo::new(param.span),
-            });
-        }
+        // Lower the THIR body into the builder.
+        builder.lower_body(thir_body);
 
-        // Set arg_count.
-        closure_body.arg_count = captures.len() + thir_body.params.len();
+        // Extract the built body.
+        let mut closure_body = glyim_mir::Body::dummy(def_id);
+        closure_body.basic_blocks = builder.basic_blocks;
+        closure_body.locals = builder.locals;
+        closure_body.arg_count = builder.arg_count;
+        closure_body.return_ty = builder.return_ty;
+        closure_body.span = builder.span;
 
-        // In a full implementation, we would lower the THIR statements here.
-        // For now, we create a placeholder body that returns unit.
-        let entry = BasicBlockIdx::from_raw(0);
-        let block = BasicBlockData {
-            statements: vec![],
-            terminator: glyim_mir::Terminator {
-                kind: TerminatorKind::Return,
-                source_info: glyim_mir::SourceInfo::new(span),
-            },
-            is_cleanup: false,
-        };
-        closure_body.basic_blocks.push(block);
-
-        // Store the closure body in the builder's collection.
+        // Store the closure body.
         self.closure_bodies.push((closure_id, substs, closure_body));
 
-        // Build the aggregate: the closure aggregate contains the captures as operands.
-        let mut capture_operands = Vec::with_capacity(captures.len());
+        // Build the aggregate: function pointer + captures.
+        let fn_const = glyim_mir::MirConst {
+            kind: glyim_mir::MirConstKind::Fn(
+                glyim_core::def_id::FnDefId::from_raw(closure_id.to_raw()),
+                substs,
+            ),
+            ty: self.ctx.ty_ctx().error_ty(),
+            span,
+        };
+        let fn_operand = glyim_mir::Operand::Constant(fn_const);
+        let mut operands = vec![fn_operand];
         for capture in captures {
             let local = glyim_mir::LocalIdx::from_raw(capture.local.to_raw());
             let operand = match capture.kind {
-                thir::CaptureKind::ByValue => {
-                    glyim_mir::Operand::Move(glyim_mir::Place::new(local))
-                }
-                thir::CaptureKind::ByRef(_) => {
-                    glyim_mir::Operand::Copy(glyim_mir::Place::new(local))
-                }
+                thir::CaptureKind::ByValue => glyim_mir::Operand::Move(glyim_mir::Place::new(local)),
+                thir::CaptureKind::ByRef(_) => glyim_mir::Operand::Copy(glyim_mir::Place::new(local)),
             };
-            capture_operands.push(operand);
+            operands.push(operand);
         }
-        // Use AggregateKind::Closure to represent the closure value.
-        Rvalue::Aggregate(glyim_mir::AggregateKind::Closure(closure_id, substs), capture_operands)
+        Rvalue::Aggregate(glyim_mir::AggregateKind::Closure(closure_id, substs), operands)
     }
+
 
     
 

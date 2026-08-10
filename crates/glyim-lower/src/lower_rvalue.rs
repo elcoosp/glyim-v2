@@ -79,8 +79,12 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const))
             }
             thir::ExprKind::VarRef(var_id) => {
-                let local = LocalIdx::from_raw(var_id.to_raw());
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
+                if let Some(&local) = self.capture_map.get(&var_id) {
+                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
+                } else {
+                    let local = LocalIdx::from_raw(var_id.to_raw());
+                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
+                }
             }
             thir::ExprKind::FnRef(_def_id) => {
                 let (fn_def_id, substs) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
@@ -696,8 +700,12 @@ impl<'a> MirBuilder<'a> {
     pub fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
-                let local = LocalIdx::from_raw(var_id.to_raw());
-                glyim_mir::Place::new(local)
+                if let Some(&local) = self.capture_map.get(&var_id) {
+                    glyim_mir::Place::new(local)
+                } else {
+                    let local = LocalIdx::from_raw(var_id.to_raw());
+                    glyim_mir::Place::new(local)
+                }
             }
             thir::ExprKind::Field {
                 receiver,
