@@ -580,7 +580,7 @@ impl<'a> MirBuilder<'a> {
                 }))
             }
             thir::ExprKind::Closure {
-                body: thir_body,
+                body: _thir_body,
                 captures,
             } => {
                 let (closure_id, closure_substs) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
@@ -599,7 +599,25 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
-                self.lower_closure(thir_body, captures, *closure_id, *closure_substs, expr.span)
+                // Stub: just create an aggregate with captures, no body yet.
+                let mut capture_operands = Vec::with_capacity(captures.len());
+                for capture in captures {
+                    let local = LocalIdx::from_raw(capture.local.to_raw());
+                    let operand = match capture.kind {
+                        thir::CaptureKind::ByValue => {
+                            glyim_mir::Operand::Move(glyim_mir::Place::new(local))
+                        }
+                        thir::CaptureKind::ByRef(_) => {
+                            glyim_mir::Operand::Copy(glyim_mir::Place::new(local))
+                        }
+                    };
+                    capture_operands.push(operand);
+                }
+                // FIXME: generate actual closure body.
+                glyim_mir::Rvalue::Aggregate(
+                    glyim_mir::AggregateKind::Closure(*closure_id, *closure_substs),
+                    capture_operands,
+                )
             }
             thir::ExprKind::Err => {
                 self.diagnostics.push(GlyimDiagnostic::new(
@@ -811,7 +829,6 @@ impl<'a> MirBuilder<'a> {
                 suffix: _,
             } => {
                 // Slice pattern lowering is not yet implemented.
-                // Type checking already passed; ignoring for now.
                 tracing::debug!("Slice pattern lowering skipped (typeck only)");
             }
         }
