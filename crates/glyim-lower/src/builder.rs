@@ -32,6 +32,7 @@ pub struct MirBuilder<'a> {
     pub(crate) closure_bodies: Vec<(glyim_core::def_id::ClosureId, glyim_type::Substitution, glyim_mir::Body)>,
     pub(crate) var_map: std::collections::HashMap<Name, LocalIdx>,
     pub(crate) capture_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
+    pub(crate) param_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
     pub(crate) current_block: Option<BasicBlockIdx>,
     /// Stack of enclosing loops for break/continue resolution.
     pub(crate) loop_stack: Vec<LoopInfo>,
@@ -60,6 +61,7 @@ impl<'a> MirBuilder<'a> {
             closure_bodies: Vec::new(),
             var_map: std::collections::HashMap::new(),
             capture_map: std::collections::HashMap::new(),
+            param_map: std::collections::HashMap::new(),
             current_block: None,
             loop_stack: Vec::new(),
         }
@@ -135,6 +137,7 @@ impl<'a> MirBuilder<'a> {
     /// Lower a closure expression: generate its MIR body and return an aggregate.
 
     
+    
     pub(crate) fn lower_closure(
         &mut self,
         thir_body: &thir::Body,
@@ -162,6 +165,22 @@ impl<'a> MirBuilder<'a> {
             let local = builder.alloc_local(capture.ty, mutability, span);
             builder.capture_map.insert(capture.local, local);
         }
+
+        // Allocate locals for parameters and populate param_map.
+        // Assume parameter LocalVarId is sequential starting from 0.
+        for (idx, param) in thir_body.params.iter().enumerate() {
+            let mutability = match &param.pat.kind {
+                thir::PatternKind::Binding { mutability, .. } => *mutability,
+                _ => glyim_core::primitives::Mutability::Not,
+            };
+            let local = builder.alloc_local(param.ty, mutability, param.span);
+            // Use idx as LocalVarId (since they are assigned in order).
+            let var_id = thir::LocalVarId::from_raw(idx as u32);
+            builder.param_map.insert(var_id, local);
+        }
+
+        // Set arg_count to include captures + original params.
+        builder.arg_count = captures.len() + thir_body.params.len();
 
         // Lower the THIR body into the builder.
         builder.lower_body(thir_body);
@@ -198,6 +217,7 @@ impl<'a> MirBuilder<'a> {
         }
         Rvalue::Aggregate(glyim_mir::AggregateKind::Closure(closure_id, substs), operands)
     }
+
 
 
     

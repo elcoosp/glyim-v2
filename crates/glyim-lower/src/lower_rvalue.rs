@@ -81,7 +81,10 @@ impl<'a> MirBuilder<'a> {
             thir::ExprKind::VarRef(var_id) => {
                 if let Some(&local) = self.capture_map.get(&var_id) {
                     glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
+                } else if let Some(&local) = self.param_map.get(&var_id) {
+                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
                 } else {
+                    // Fallback: treat as a normal local (should not happen)
                     let local = LocalIdx::from_raw(var_id.to_raw());
                     glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
                 }
@@ -701,6 +704,8 @@ impl<'a> MirBuilder<'a> {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
                 if let Some(&local) = self.capture_map.get(&var_id) {
+                    glyim_mir::Place::new(local)
+                } else if let Some(&local) = self.param_map.get(&var_id) {
                     glyim_mir::Place::new(local)
                 } else {
                     let local = LocalIdx::from_raw(var_id.to_raw());
