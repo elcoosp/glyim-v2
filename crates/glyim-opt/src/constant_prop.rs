@@ -68,7 +68,7 @@ fn merge_maps(mut into: BlockMap, other: &BlockMap) -> BlockMap {
     into
 }
 
-fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Option<MirConst> {
+fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Option<MirConst> {
     match rv {
         Rvalue::Use(op) => operand_to_const(op, locals),
         Rvalue::BinaryOp(op, box_ops) => {

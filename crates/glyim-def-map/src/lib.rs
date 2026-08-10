@@ -766,6 +766,9 @@ pub(crate) fn is_accessible_from(
         Visibility::Inherited => is_descendant_of(from_module, defining_module, modules),
         Visibility::Module(allowed_id) => {
             let allowed = ModuleId::from_raw(allowed_id);
+            if modules.get(allowed).is_none() {
+                return false;
+            }
             from_module == allowed || is_descendant_of(from_module, allowed, modules)
         }
     }
