@@ -156,7 +156,7 @@ impl Place {
                     ty
                 }
                 ProjectionElem::Slice { start: _, end: _ } => {
-                    tracing::warn!("Place::ty(): Slice projection type approximated as base type");
+                    tracing::warn!("Place::ty(): Slice projection type approximated as base type (requires TyCtxMut)");
                     ty
                 }
             };
