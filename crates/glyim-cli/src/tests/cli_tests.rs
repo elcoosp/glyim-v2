@@ -23,9 +23,13 @@ mod tests {
 
     #[test]
     fn test_emit_mir_writes_file() {
+        use std::io::Write;
+        let mut src = tempfile::NamedTempFile::new().expect("create temp file");
+        write!(src, "fn main() {{ }}").expect("write source");
+        let src_path = src.path().to_path_buf();
         let output = PathBuf::from("test_output.mir");
         let args = CliArgs {
-            input: PathBuf::from("test.g"),
+            input: src_path,
             output: Some(output.clone()),
             emit: "mir".to_string(),
             opt_level: 0,
@@ -40,9 +44,13 @@ mod tests {
 
     #[test]
     fn test_emit_llvm_ir_writes_file() {
+        use std::io::Write;
+        let mut src = tempfile::NamedTempFile::new().expect("create temp file");
+        write!(src, "fn main() {{ }}").expect("write source");
+        let src_path = src.path().to_path_buf();
         let output = PathBuf::from("test_output.ll");
         let args = CliArgs {
-            input: PathBuf::from("test.g"),
+            input: src_path,
             output: Some(output.clone()),
             emit: "llvm-ir".to_string(),
             opt_level: 0,

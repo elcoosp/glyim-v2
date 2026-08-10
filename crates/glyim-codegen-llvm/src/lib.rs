@@ -130,6 +130,36 @@ impl LlvmBackend {
         self
     }
 
+    /// Generate LLVM IR for a single MIR body without needing to set the TyCtx in the backend.
+    pub fn emit_ir_to_string(&self, ctx: &TyCtx, body: &Body) -> CompResult<String> {
+        let context = Context::create();
+        let module = self.lower_body_to_module_with_ctx(&context, body, ctx)?;
+        Ok(module.print_to_string().to_string())
+    }
+
+    /// Lower a single body to an LLVM module using the provided TyCtx.
+    pub fn lower_body_to_module_with_ctx<'ctx>(
+        &self,
+        context: &'ctx Context,
+        body: &Body,
+        ctx: &TyCtx,
+    ) -> CompResult<inkwell::module::Module<'ctx>> {
+        let module = context.create_module("glyim_module");
+        let triple = TargetTriple::create(&self.target_triple);
+        module.set_triple(&triple);
+        crate::lower::lower_body(
+            context,
+            &module,
+            body,
+            self.target_info.clone(),
+            ctx,
+            self.debug_info,
+            self.source_map.clone(),
+            self.hygiene_ctx.clone(),
+        )?;
+        Ok(module)
+    }
+
     pub(crate) fn run_passes_on_module<'ctx>(
         &self,
         module: &inkwell::module::Module<'ctx>,

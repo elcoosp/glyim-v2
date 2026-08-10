@@ -1,4 +1,5 @@
 use glyim_codegen::CodegenBackend;
+use glyim_codegen_llvm::LlvmBackend;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoCtx;
@@ -29,7 +30,6 @@ impl Pipeline {
         let sink = DiagSink::new();
         let sink_cell = RefCell::new(sink);
 
-        // Phase 1: VFS
         let file_id = db
             .vfs()
             .add_file_from_disk(path)
@@ -39,16 +39,12 @@ impl Pipeline {
             .file_content(file_id)
             .unwrap_or_else(|| Arc::from(""));
 
-        // Phase 2: Parse
         let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
-        sink_cell
-            .borrow_mut()
-            .extend(parse_result.diagnostics.clone());
+        sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
 
-        // Phase 3: DefMap
         let (def_map, def_diagnostics) =
             glyim_def_map::build_def_map(&parse_result.root, db.krate());
         sink_cell.borrow_mut().extend(def_diagnostics);
@@ -56,12 +52,10 @@ impl Pipeline {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
 
-        // Phase 4: HIR
         let (hir, hir_diags) =
             glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
         sink_cell.borrow_mut().extend(hir_diags);
 
-        // Phase 5: Typeck
         let resolver = db.interner().clone();
         let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
         let trait_ctx = glyim_solve::TraitContext::new();
@@ -75,7 +69,6 @@ impl Pipeline {
 
         db.set_ty_ctx(ty_ctx);
 
-        // Phase 6: MIR lowering, borrow checking, optimization
         let mir_bodies_map: std::collections::HashMap<glyim_core::def_id::DefId, Arc<Body>> = {
             let ty_ctx_guard = db.ty_ctx();
             let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set after typeck");
@@ -106,7 +99,6 @@ impl Pipeline {
             bodies
         };
 
-        // Phase 7: Monomorphization — discover roots and collect items
         let (mono_roots, discovery_diags) = {
             let mut ty_ctx_mut_for_discovery = glyim_type::TyCtxMut::new(db.interner().clone());
             glyim_lower::discovery::discover_mono_roots(
@@ -127,7 +119,6 @@ impl Pipeline {
             mono_ctx.items().to_vec()
         };
 
-        // Check for errors emitted during body provider lookups
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
@@ -135,11 +126,9 @@ impl Pipeline {
         let cache = PipelineMonoCache::from_items(&mono_items);
         db.set_mono_cache(cache.symbols().to_vec());
 
-        // Phase 8: Partition into codegen units (CGUs)
         let max_cgus = compute_max_cgus();
         let cgus = partition(&mono_items, max_cgus);
 
-        // Phase 9: Parallel codegen per CGU
         let all_bodies: Vec<Arc<Body>> = if cgus.is_empty() {
             mir_bodies_map.into_values().collect()
         } else {
@@ -174,17 +163,166 @@ impl Pipeline {
     }
 }
 
+pub fn emit_mir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
+    let sink = DiagSink::new();
+    let sink_cell = RefCell::new(sink);
+
+    let file_id = db
+        .vfs()
+        .add_file_from_disk(input)
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("I/O Error: {}", e))])?;
+    let source = db
+        .vfs()
+        .file_content(file_id)
+        .unwrap_or_else(|| Arc::from(""));
+
+    let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
+    sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (def_map, def_diagnostics) =
+        glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    sink_cell.borrow_mut().extend(def_diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (hir, hir_diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
+    sink_cell.borrow_mut().extend(hir_diags);
+
+    let resolver = db.interner().clone();
+    let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
+    let trait_ctx = glyim_solve::TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (ty_ctx, typeck_result) =
+        glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
+    sink_cell.borrow_mut().extend(typeck_result.diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    db.set_ty_ctx(ty_ctx);
+
+    let ty_ctx_guard = db.ty_ctx();
+    let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set");
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let mut mir_bodies = Vec::new();
+
+    for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
+        let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
+        sink_cell.borrow_mut().extend(lower_result.diagnostics);
+        if sink_cell.borrow().has_errors() {
+            return Err(sink_cell.into_inner().into_diagnostics());
+        }
+        mir_bodies.push(lower_result.body);
+    }
+
+    let mut out = String::new();
+    for body in &mir_bodies {
+        out.push_str(&format_body(body, ty_ctx_ref));
+        out.push_str("\n\n");
+    }
+    std::fs::write(output, out).map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
+
+    Ok(())
+}
+
+pub fn emit_llvm_ir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
+    let sink = DiagSink::new();
+    let sink_cell = RefCell::new(sink);
+
+    let file_id = db
+        .vfs()
+        .add_file_from_disk(input)
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("I/O Error: {}", e))])?;
+    let source = db
+        .vfs()
+        .file_content(file_id)
+        .unwrap_or_else(|| Arc::from(""));
+
+    let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
+    sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (def_map, def_diagnostics) =
+        glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    sink_cell.borrow_mut().extend(def_diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (hir, hir_diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
+    sink_cell.borrow_mut().extend(hir_diags);
+
+    let resolver = db.interner().clone();
+    let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
+    let trait_ctx = glyim_solve::TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (ty_ctx, typeck_result) =
+        glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
+    sink_cell.borrow_mut().extend(typeck_result.diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    db.set_ty_ctx(ty_ctx);
+
+    let ty_ctx_guard = db.ty_ctx();
+    let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set");
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let mut mir_bodies = Vec::new();
+
+    for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
+        let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
+        sink_cell.borrow_mut().extend(lower_result.diagnostics);
+        if sink_cell.borrow().has_errors() {
+            return Err(sink_cell.into_inner().into_diagnostics());
+        }
+        mir_bodies.push(lower_result.body);
+    }
+
+    if mir_bodies.is_empty() {
+        return Err(vec![GlyimDiagnostic::internal_error("No MIR bodies generated")]);
+    }
+
+    let backend = LlvmBackend::new().with_debug_info(false);
+    let ir = backend
+        .emit_ir_to_string(ty_ctx_ref, &mir_bodies[0])
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("LLVM IR generation failed: {:?}", e))])?;
+    std::fs::write(output, ir).map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
+
+    Ok(())
+}
+
+fn format_body(body: &Body, ctx: &glyim_type::TyCtx) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    writeln!(s, "fn {}() {{", body.owner).unwrap();
+    for (idx, local) in body.locals.iter_enumerated() {
+        writeln!(
+            s,
+            "  ${}: {}",
+            idx.to_raw(),
+            glyim_type::PrintTy::new(local.ty, ctx)
+        )
+        .unwrap();
+    }
+    for (idx, block) in body.basic_blocks.iter_enumerated() {
+        writeln!(s, "bb{}:", idx.to_raw()).unwrap();
+        for stmt in &block.statements {
+            writeln!(s, "  {:?}", stmt.kind).unwrap();
+        }
+        writeln!(s, "  {:?}", block.terminator.kind).unwrap();
+    }
+    writeln!(s, "}}").unwrap();
+    s
+}
+
 #[cfg(test)]
 mod tests;
-
-pub fn emit_mir(_db: &mut Database, _input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
-    tracing::warn!("STUB: emit_mir not fully implemented, writing placeholder");
-    std::fs::write(output, "MIR not yet implemented").map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
-    Ok(())
-}
-
-pub fn emit_llvm_ir(_db: &mut Database, _input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
-    tracing::warn!("STUB: emit_llvm_ir not fully implemented, writing placeholder");
-    std::fs::write(output, "LLVM IR not yet implemented").map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
-    Ok(())
-}
