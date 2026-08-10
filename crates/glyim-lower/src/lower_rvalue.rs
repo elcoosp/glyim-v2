@@ -580,7 +580,7 @@ impl<'a> MirBuilder<'a> {
                 }))
             }
             thir::ExprKind::Closure {
-                body: _thir_body,
+                body: thir_body,
                 captures,
             } => {
                 let (closure_id, closure_substs) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
@@ -599,24 +599,7 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
-                let mut capture_operands = Vec::with_capacity(captures.len());
-                for capture in captures {
-                    let capture_local = LocalIdx::from_raw(capture.local.to_raw());
-                    let operand = match capture.kind {
-                        thir::CaptureKind::ByValue => {
-                            glyim_mir::Operand::Move(glyim_mir::Place::new(capture_local))
-                        }
-                        thir::CaptureKind::ByRef(glyim_core::primitives::Mutability::Not)
-                        | thir::CaptureKind::ByRef(glyim_core::primitives::Mutability::Mut) => {
-                            glyim_mir::Operand::Copy(glyim_mir::Place::new(capture_local))
-                        }
-                    };
-                    capture_operands.push(operand);
-                }
-                glyim_mir::Rvalue::Aggregate(
-                    glyim_mir::AggregateKind::Closure(*closure_id, *closure_substs),
-                    capture_operands,
-                )
+                self.lower_closure(thir_body, captures, *closure_id, *closure_substs, expr.span)
             }
             thir::ExprKind::Err => {
                 self.diagnostics.push(GlyimDiagnostic::new(

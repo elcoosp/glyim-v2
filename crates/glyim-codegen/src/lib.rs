@@ -1,4 +1,3 @@
-//! Abstract code generation backend.
 
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
@@ -568,28 +567,13 @@ impl BytecodeBackend {
             } => {
                 let is_indirect = matches!(func, Operand::Copy(_) | Operand::Move(_));
                 self.emit_operand(bc, func, local_tys)?;
-
-                // Determine if return type is large (needs sret)
-                let ret_ty = local_tys.get(destination.local).map(|d| d.ty).unwrap_or(Ty::UNIT);
-                let ret_size = self.layout_provider.size_of(ret_ty);
-                let sret = ret_size > 16;
-
-                // If sret, allocate a temporary for the return value and pass its address as first argument
-                if sret {
-                    let ret_temp_local = LocalIdx::from_raw(0); // will be replaced with actual alloca later
-                    self.emit_place_address(bc, &Place::new(ret_temp_local), local_tys)?;
-                }
-
-                // Emit arguments
                 for arg in args {
                     match arg {
                         Operand::Copy(place) | Operand::Move(place) => {
                             let ty = local_tys.get(place.local).map(|d| d.ty).unwrap_or(Ty::UNIT);
                             let size = self.layout_provider.size_of(ty);
                             if size > 16 {
-                                // byval: pass address of a temporary copy
-                                let temp_local = LocalIdx::from_raw(0); // placeholder
-                                self.emit_place_address(bc, &Place::new(temp_local), local_tys)?;
+                                self.emit_place_address(bc, place, local_tys)?;
                             } else {
                                 self.emit_operand(bc, arg, local_tys)?;
                             }
@@ -597,30 +581,12 @@ impl BytecodeBackend {
                         _ => self.emit_operand(bc, arg, local_tys)?,
                     }
                 }
-
-                // For sret, we need to adjust the number of arguments pushed
-                let total_args = args.len() + if sret { 1 } else { 0 };
-                bc.extend_from_slice(&(total_args as u32).to_le_bytes());
-
+                bc.extend_from_slice(&(args.len() as u32).to_le_bytes());
                 bc.push(if is_indirect {
                     OP_CALL_INDIRECT
                 } else {
                     OP_CALL
                 });
-
-                // If sret, store the result back to the destination
-                if sret {
-                    // The destination is a local; we need to load from the temporary
-                    // and store to the destination. But we can't do that here easily
-                    // without having the temporary. In a real implementation, we would
-                    // have allocated a temp local and then after the call, load and store.
-                    // For now, we'll just push a placeholder.
-                    // The actual store will be done by the caller's assignment.
-                    // So we just mark that the return value is in the temp.
-                    // We'll rely on the caller's assignment to load from the temp.
-                    // This is a simplified version for demonstration.
-                }
-
                 bc.extend_from_slice(&destination.local.to_raw().to_le_bytes());
                 let t = target.unwrap_or_else(|| BasicBlockIdx::from_raw(u32::MAX));
                 bc.extend_from_slice(&t.to_raw().to_le_bytes());
