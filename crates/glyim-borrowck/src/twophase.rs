@@ -29,17 +29,13 @@ impl ReservationAnalysis {
             .iter()
             .map(|b| b.statements.len())
             .collect();
-
         let mut per_block: Vec<BitSet> = stmt_counts
             .iter()
             .map(|&len| BitSet::with_capacity(len + 1))
             .collect();
-
-        use std::collections::VecDeque;
-
+        use std::collections::{VecDeque, HashSet};
         let mut worklist: VecDeque<(BasicBlockIdx, usize)> = VecDeque::new();
-        let mut visited: BitSet = BitSet::with_capacity(body.basic_blocks.len());
-
+        let mut visited: HashSet<BasicBlockIdx> = HashSet::new();
         let block_data = &body.basic_blocks[loan_block];
         let num_stmts = block_data.statements.len();
         let start_point = if loan_stmt + 1 < num_stmts {
@@ -47,9 +43,7 @@ impl ReservationAnalysis {
         } else {
             num_stmts
         };
-
         per_block[loan_block.to_raw() as usize].insert(start_point);
-
         if start_point < num_stmts {
             worklist.push_back((loan_block, start_point));
         } else {
@@ -57,20 +51,14 @@ impl ReservationAnalysis {
                 worklist.push_back((succ, 0));
             }
         }
-
         while let Some((block, start_stmt)) = worklist.pop_front() {
-            let block_usize = block.to_raw() as usize;
-            if visited.contains(block_usize) {
+            if !visited.insert(block) {
                 continue;
             }
-            visited.insert(block_usize);
-
             let block_data = &body.basic_blocks[block];
             let num_stmts = block_data.statements.len();
-            let reservation = &mut per_block[block_usize];
-
+            let reservation = &mut per_block[block.to_raw() as usize];
             reservation.insert(start_stmt);
-
             let mut activated = false;
             for point in start_stmt..num_stmts {
                 let stmt = &block_data.statements[point];
@@ -87,14 +75,12 @@ impl ReservationAnalysis {
                     reservation.insert(next);
                 }
             }
-
             if !activated {
                 for succ in crate::visitor::successor_blocks(&block_data.terminator.kind) {
                     worklist.push_back((succ, 0));
                 }
             }
         }
-
         ReservationAnalysis { per_block }
     }
 

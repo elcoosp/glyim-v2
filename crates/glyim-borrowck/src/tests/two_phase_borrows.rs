@@ -1292,3 +1292,81 @@ fn t28_two_phase_reservation_cast_read() {
     let result = check_borrows(&mock, &mock.body);
     assert_no_errors(&result.errors);
 }
+
+// === Cross-block two-phase borrow tests ===
+
+#[test]
+fn t14_two_phase_cross_block_reservation_extends() {
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let unit = ctx_mut.unit_ty();
+        let i32_ty = ctx_mut.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+        let mut_ref_ty = make_ref_ty(ctx_mut, i32_ty, true);
+        let shared_ref_ty = make_ref_ty(ctx_mut, i32_ty, false);
+        let locals = vec![
+            local_decl(unit),
+            local_decl(i32_ty),
+            local_decl(mut_ref_ty),
+            local_decl(shared_ref_ty),
+            local_decl(i32_ty),
+            local_decl(i32_ty),
+        ];
+        let mut block0 = BasicBlockData::new(dummy_terminator_goto(1));
+        block0.statements.push(assign_borrow(
+            LocalIdx::from_raw(2),
+            Place::new(LocalIdx::from_raw(1)),
+            make_two_phase_mut(),
+        ));
+        let mut block1 = BasicBlockData::new(dummy_terminator_goto(2));
+        block1.statements.push(assign_borrow(
+            LocalIdx::from_raw(3),
+            Place::new(LocalIdx::from_raw(1)),
+            BorrowKind::Shared,
+        ));
+        let mut block2 = BasicBlockData::new(dummy_terminator_return());
+        block2.statements.push(use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)));
+        block2.statements.push(use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(2)));
+        make_body_multi_blocks(locals, vec![block0, block1, block2])
+    });
+    let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+    let result = check_borrows(&mock, &mock.body);
+    assert_no_errors(&result.errors);
+}
+
+#[test]
+fn t15_two_phase_cross_block_activation_conflict() {
+    let (ctx, body) = with_fresh_ty_ctx(|ctx_mut| {
+        let unit = ctx_mut.unit_ty();
+        let i32_ty = ctx_mut.mk_ty(glyim_type::TyKind::Int(glyim_core::IntTy::I32));
+        let mut_ref_ty = make_ref_ty(ctx_mut, i32_ty, true);
+        let shared_ref_ty = make_ref_ty(ctx_mut, i32_ty, false);
+        let locals = vec![
+            local_decl(unit),
+            local_decl(i32_ty),
+            local_decl(mut_ref_ty),
+            local_decl(i32_ty),
+            local_decl(shared_ref_ty),
+            local_decl(i32_ty),
+            local_decl(i32_ty),
+        ];
+        let mut block0 = BasicBlockData::new(dummy_terminator_goto(1));
+        block0.statements.push(assign_borrow(
+            LocalIdx::from_raw(2),
+            Place::new(LocalIdx::from_raw(1)),
+            make_two_phase_mut(),
+        ));
+        block0.statements.push(use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2))); // activates
+        let mut block1 = BasicBlockData::new(dummy_terminator_goto(2));
+        block1.statements.push(assign_borrow(
+            LocalIdx::from_raw(4),
+            Place::new(LocalIdx::from_raw(1)),
+            BorrowKind::Shared,
+        ));
+        let mut block2 = BasicBlockData::new(dummy_terminator_return());
+        block2.statements.push(use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(4)));
+        block2.statements.push(use_local(LocalIdx::from_raw(6), LocalIdx::from_raw(2)));
+        make_body_multi_blocks(locals, vec![block0, block1, block2])
+    });
+    let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
+    let result = check_borrows(&mock, &mock.body);
+    assert_has_errors(&result.errors);
+}
