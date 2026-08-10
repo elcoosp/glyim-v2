@@ -6,11 +6,6 @@ use glyim_mir::*;
 use glyim_span::Span;
 use glyim_type::{Const, ConstKind, Ty, TyCtx, TyCtxMut, TyKind};
 
-// Helper: create a dummy DefId for tests
-fn dummy_def_id() -> DefId {
-    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
-}
-
 // Helper to create a body with an array of a type that needs drop.
 // Now takes a mutable context and uses it to build the types.
 fn body_with_array_drop(ctx: &mut TyCtxMut, elem_ty: Ty, len: u64) -> Body {

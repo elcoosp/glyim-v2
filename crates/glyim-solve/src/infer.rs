@@ -606,9 +606,106 @@ impl InferenceTable {
                 }
                 Ok(constraints)
             }
-            (TyKind::Dynamic(_, r_a), TyKind::Dynamic(_, r_b)) if r_a == r_b => {
-                tracing::warn!("STUB: Dynamic predicate unification not implemented");
-                Ok(Vec::new())
+            (TyKind::Dynamic(preds_a, r_a), TyKind::Dynamic(preds_b, r_b)) => {
+                if r_a != r_b {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!("region mismatch: {:?} vs {:?}", r_a, r_b),
+                    )]);
+                }
+                let preds_a = preds_a.as_ref().skip_binder();
+                let preds_b = preds_b.as_ref().skip_binder();
+                if preds_a.len() != preds_b.len() {
+                    return Err(vec![GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "dynamic type predicate count mismatch: {} vs {}",
+                            preds_a.len(),
+                            preds_b.len()
+                        ),
+                    )]);
+                }
+                let mut constraints = Vec::new();
+                for (pa, pb) in preds_a.iter().zip(preds_b.iter()) {
+                    match (pa, pb) {
+                        (Predicate::Trait(tp_a), Predicate::Trait(tp_b)) => {
+                            if tp_a.trait_ref.def_id != tp_b.trait_ref.def_id {
+                                return Err(vec![GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "trait mismatch: {:?} vs {:?}",
+                                        tp_a.trait_ref.def_id, tp_b.trait_ref.def_id
+                                    ),
+                                )]);
+                            }
+                            // Unify the substitutions - clone args to release borrow on ctx
+                            let args_a: Vec<GenericArg> = ctx.substitution_args(tp_a.trait_ref.substs).to_vec();
+                            let args_b: Vec<GenericArg> = ctx.substitution_args(tp_b.trait_ref.substs).to_vec();
+                            if args_a.len() != args_b.len() {
+                                return Err(vec![GlyimDiagnostic::type_error(
+                                    span,
+                                    "trait substitution count mismatch",
+                                )]);
+                            }
+                            for (arg_a, arg_b) in args_a.iter().zip(args_b.iter()) {
+                                match (arg_a, arg_b) {
+                                    (GenericArg::Ty(ta), GenericArg::Ty(tb)) => {
+                                        constraints.extend(
+                                            self.unify_tys(ctx, *ta, *tb, span)?
+                                        );
+                                    }
+                                    (GenericArg::Lifetime(la), GenericArg::Lifetime(lb)) => {
+                                        if la != lb {
+                                            constraints.push(Constraint::RegionEq { a: la.clone(), b: lb.clone() });
+                                        }
+                                    }
+                                    (GenericArg::Const(ca), GenericArg::Const(cb)) => {
+                                        if ca != cb {
+                                            return Err(vec![GlyimDiagnostic::type_error(
+                                                span,
+                                                format!("const mismatch: {:?} vs {:?}", ca, cb),
+                                            )]);
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(vec![GlyimDiagnostic::type_error(
+                                            span,
+                                            "mismatched generic argument kinds in dynamic trait",
+                                        )]);
+                                    }
+                                }
+                            }
+                        }
+                        (Predicate::RegionOutlives(rp_a), Predicate::RegionOutlives(rp_b)) => {
+                            if rp_a.a != rp_b.a || rp_a.b != rp_b.b {
+                                constraints.push(Constraint::RegionEq { a: rp_a.a.clone(), b: rp_b.a.clone() });
+                                constraints.push(Constraint::RegionEq { a: rp_a.b.clone(), b: rp_b.b.clone() });
+                            }
+                        }
+                        (Predicate::TypeOutlives(tp_a), Predicate::TypeOutlives(tp_b)) => {
+                            if tp_a.ty != tp_b.ty || tp_a.region != tp_b.region {
+                                constraints.push(Constraint::TypeEq { a: tp_a.ty, b: tp_b.ty });
+                                constraints.push(Constraint::RegionEq { a: tp_a.region.clone(), b: tp_b.region.clone() });
+                            }
+                        }
+                        (Predicate::WellFormed(ty_a), Predicate::WellFormed(ty_b)) => {
+                            if ty_a != ty_b {
+                                constraints.extend(self.unify_tys(ctx, *ty_a, *ty_b, span)?);
+                            }
+                        }
+                        (Predicate::Coerce(a, b), Predicate::Coerce(c, d)) => {
+                            constraints.extend(self.unify_tys(ctx, *a, *c, span)?);
+                            constraints.extend(self.unify_tys(ctx, *b, *d, span)?);
+                        }
+                        _ => {
+                            return Err(vec![GlyimDiagnostic::type_error(
+                                span,
+                                format!("predicate kind mismatch: {:?} vs {:?}", pa, pb),
+                            )]);
+                        }
+                    }
+                }
+                Ok(constraints)
             }
             (TyKind::Opaque(id_a, substs_a), TyKind::Opaque(id_b, substs_b)) => {
                 if id_a != id_b {

@@ -280,10 +280,63 @@ pub fn check_hrtb(
 
     let result = match &instantiation.value {
         Predicate::Trait(tp) => solver.can_prove(&ctx, tp),
-        Predicate::RegionOutlives(_) => crate::solver::SolverResult::Proven,
-        Predicate::TypeOutlives(_) => crate::solver::SolverResult::Proven,
-        Predicate::WellFormed(_) => crate::solver::SolverResult::Proven,
-        Predicate::Coerce(_, _) => crate::solver::SolverResult::Ambiguous,
+        Predicate::RegionOutlives(rp) => {
+            // Check that the placeholder regions satisfy outlives.
+            // For HRTB, we need to ensure that for all regions, a outlives b.
+            // A simple check: if they are the same placeholder, or one is static.
+            match (&rp.a, &rp.b) {
+                (Region::Placeholder(_), Region::Placeholder(_)) => {
+                    if rp.a == rp.b {
+                        crate::solver::SolverResult::Proven
+                    } else {
+                        // Different placeholders: need to check if one outlives the other.
+                        // For now, conservative: assume ambiguous.
+                        crate::solver::SolverResult::Ambiguous
+                    }
+                }
+                (Region::Placeholder(_), Region::Static) => crate::solver::SolverResult::Proven,
+                (Region::Static, Region::Placeholder(_)) => {
+                    // Static outlives any placeholder
+                    crate::solver::SolverResult::Proven
+                }
+                _ => crate::solver::SolverResult::Ambiguous,
+            }
+        }
+        Predicate::TypeOutlives(tp) => {
+            // Check that the type is well-formed under the placeholders.
+            // For now, just check that the type doesn't contain any unbound parameters.
+            use glyim_type::TypeFlags;
+            let flags = ctx.ty_flags(tp.ty);
+            if flags.contains(TypeFlags::HAS_TY_PARAM) || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER) {
+                // Type contains generic parameters, which may be okay if they are bound.
+                // For a placeholder, we need to ensure the type is well-formed in the universe.
+                // Conservative: return Ambiguous.
+                crate::solver::SolverResult::Ambiguous
+            } else {
+                crate::solver::SolverResult::Proven
+            }
+        }
+        Predicate::WellFormed(ty) => {
+            // Check that the type is well-formed.
+            // For HRTB, we just check that the type doesn't contain unbound params.
+            use glyim_type::TypeFlags;
+            let flags = ctx.ty_flags(*ty);
+            if flags.contains(TypeFlags::HAS_TY_PARAM) || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER) {
+                // Conservative.
+                crate::solver::SolverResult::Ambiguous
+            } else {
+                crate::solver::SolverResult::Proven
+            }
+        }
+        Predicate::Coerce(a, b) => {
+            // Check coercion validity under the placeholders.
+            // We can use the can_coerce function from the solver module.
+            if crate::solver::can_coerce(&ctx, *a, *b) {
+                crate::solver::SolverResult::Proven
+            } else {
+                crate::solver::SolverResult::Ambiguous
+            }
+        }
     };
 
     (result, ctx)

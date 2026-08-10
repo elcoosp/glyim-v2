@@ -5,16 +5,6 @@
 //! - Analyze which generic parameters are used in a function's MIR body
 //! - Replace unused parameters with a canonical placeholder (unit type)
 //! - Deduplicate mono items that differ only in unused parameters
-//!
-//! # Example
-//!
-//! ```text
-//! fn foo<T>(x: i32) -> i32 { x }
-//! ```
-//!
-//! Here `T` is unused in the body. Without polymorphization, `foo::<i32>()`
-//! and `foo::<bool>()` would generate separate mono items. With polymorphization,
-//! both map to `foo::<()>()` and share a single mono item.
 
 use glyim_mir::{
     self, AggregateKind, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKind,
@@ -24,14 +14,6 @@ use std::collections::HashSet;
 
 use crate::mono::{MonoItem, MonoItemData};
 
-/// Analyze which parameters in a substitution are actually used in a MIR body.
-///
-/// Returns a boolean vector where `used[i]` is `true` if the parameter at
-/// position `i` in the substitution appears in the body's types.
-///
-/// A parameter is considered "used" if any `TyKind::Param(ParamTy { index: i, .. })`
-/// or `ConstKind::Param(ParamConst { index: i, .. })` appears in the body's
-/// local types, rvalues, operands, or terminators.
 pub fn analyze_used_params(
     body: &glyim_mir::Body,
     ctx: &dyn TypeLookup,
@@ -40,12 +22,10 @@ pub fn analyze_used_params(
     let n = ctx.substitution_args(substs).len();
     let mut used = vec![false; n];
 
-    // Check locals
     for local in body.locals.iter() {
         mark_used_params(local.ty, ctx, &mut used);
     }
 
-    // Check statements and terminators
     for block in body.basic_blocks.iter() {
         for stmt in &block.statements {
             if let StatementKind::Assign(_, ref rvalue) = stmt.kind {
@@ -58,14 +38,6 @@ pub fn analyze_used_params(
     used
 }
 
-/// Replace unused parameters in a substitution with a canonical placeholder.
-///
-/// Unused type parameters become `Ty::UNIT`, unused const parameters become
-/// `ConstKind::Unit`. Lifetime parameters are left unchanged.
-///
-/// This produces a "polymorphized" substitution that can be used as a
-/// deduplication key: two items with different original substitutions but
-/// the same polymorphized substitution can share a single mono item.
 pub fn polymorphize_substs(
     ctx: &mut TyCtxMut,
     substs: Substitution,
@@ -93,14 +65,6 @@ pub fn polymorphize_substs(
     ctx.intern_substitution(args)
 }
 
-/// Compute the polymorphized version of a MonoItem.
-///
-/// For functions and constants, analyzes which generic parameters are used
-/// and replaces unused ones with placeholders. Statics are returned unchanged.
-///
-/// This is the core of polymorphization: two MonoItems that differ only in
-/// unused generic parameters will produce the same polymorphized MonoItem,
-/// allowing them to be deduplicated.
 pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &glyim_mir::Body) -> MonoItem {
     match item {
         MonoItem::Fn { def_id, substs } => {
@@ -126,20 +90,70 @@ pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &glyim_mir::
             }
         }
         MonoItem::Static { .. } => item.clone(),
-        MonoItem::DropGlue { .. } => item.clone(),
+        MonoItem::DropGlue { ty } => {
+            // Handle each variant separately to avoid holding a reference
+            // across mutable borrows.
+            match ctx.ty_kind(*ty) {
+                TyKind::Adt(adt_id, substs) => {
+                    if substs.is_empty() {
+                        return item.clone();
+                    }
+                    let adt_id = *adt_id;
+                    let substs = *substs;
+                    let used = analyze_used_params(body, ctx, substs);
+                    let poly_substs = polymorphize_substs(ctx, substs, &used);
+                    let new_ty = ctx.mk_ty(TyKind::Adt(adt_id, poly_substs));
+                    MonoItem::DropGlue { ty: new_ty }
+                }
+                TyKind::Tuple(substs) => {
+                    if substs.is_empty() {
+                        return item.clone();
+                    }
+                    let substs = *substs;
+                    let used = analyze_used_params(body, ctx, substs);
+                    let poly_substs = polymorphize_substs(ctx, substs, &used);
+                    let new_ty = ctx.mk_ty(TyKind::Tuple(poly_substs));
+                    MonoItem::DropGlue { ty: new_ty }
+                }
+                TyKind::Closure(id, substs) => {
+                    if substs.is_empty() {
+                        return item.clone();
+                    }
+                    let id = *id;
+                    let substs = *substs;
+                    let used = analyze_used_params(body, ctx, substs);
+                    let poly_substs = polymorphize_substs(ctx, substs, &used);
+                    let new_ty = ctx.mk_ty(TyKind::Closure(id, poly_substs));
+                    MonoItem::DropGlue { ty: new_ty }
+                }
+                TyKind::FnDef(id, substs) => {
+                    if substs.is_empty() {
+                        return item.clone();
+                    }
+                    let id = *id;
+                    let substs = *substs;
+                    let used = analyze_used_params(body, ctx, substs);
+                    let poly_substs = polymorphize_substs(ctx, substs, &used);
+                    let new_ty = ctx.mk_ty(TyKind::FnDef(id, poly_substs));
+                    MonoItem::DropGlue { ty: new_ty }
+                }
+                TyKind::Opaque(id, substs) => {
+                    if substs.is_empty() {
+                        return item.clone();
+                    }
+                    let id = *id;
+                    let substs = *substs;
+                    let used = analyze_used_params(body, ctx, substs);
+                    let poly_substs = polymorphize_substs(ctx, substs, &used);
+                    let new_ty = ctx.mk_ty(TyKind::Opaque(id, poly_substs));
+                    MonoItem::DropGlue { ty: new_ty }
+                }
+                _ => item.clone(),
+            }
+        }
     }
 }
 
-/// Deduplicate mono items based on polymorphized keys.
-///
-/// Items that differ only in unused generic parameters are merged into a
-/// single item, reducing code size. The first occurrence of each polymorphized
-/// key is kept; subsequent duplicates are dropped.
-///
-/// # Example
-///
-/// If `foo::<i32>()` and `foo::<bool>()` both have an unused type parameter `T`,
-/// they will be deduplicated to a single `foo::<()>()` mono item.
 pub fn deduplicate(ctx: &mut TyCtxMut, items: &[MonoItemData]) -> Vec<MonoItemData> {
     let mut seen: HashSet<MonoItem> = HashSet::new();
     let mut result = Vec::new();
@@ -163,7 +177,6 @@ pub fn deduplicate(ctx: &mut TyCtxMut, items: &[MonoItemData]) -> Vec<MonoItemDa
 
 // ---- Internal helpers for parameter usage analysis ----
 
-/// Walk a type and mark any `TyKind::Param` or const params as used.
 fn mark_used_params(ty: Ty, ctx: &dyn TypeLookup, used: &mut [bool]) {
     match ctx.ty_kind(ty) {
         TyKind::Param(ParamTy { index, .. }) => {
@@ -210,7 +223,6 @@ fn mark_used_params(ty: Ty, ctx: &dyn TypeLookup, used: &mut [bool]) {
     }
 }
 
-/// Walk substitution arguments and mark used params.
 fn mark_used_params_in_subst(substs: Substitution, ctx: &dyn TypeLookup, used: &mut [bool]) {
     for arg in ctx.substitution_args(substs) {
         match arg {
@@ -221,7 +233,6 @@ fn mark_used_params_in_subst(substs: Substitution, ctx: &dyn TypeLookup, used: &
     }
 }
 
-/// Walk a `glyim_type::Const` and mark used params.
 fn mark_used_params_in_const(c: &Const, ctx: &dyn TypeLookup, used: &mut [bool]) {
     if let ConstKind::Param(ParamConst { index, .. }) = &c.kind {
         let i = *index as usize;
@@ -232,7 +243,6 @@ fn mark_used_params_in_const(c: &Const, ctx: &dyn TypeLookup, used: &mut [bool])
     mark_used_params(c.ty, ctx, used);
 }
 
-/// Walk a `Predicate` and mark used params.
 fn mark_used_params_in_predicate(pred: &Predicate, ctx: &dyn TypeLookup, used: &mut [bool]) {
     match pred {
         Predicate::Trait(tp) => {
@@ -252,7 +262,6 @@ fn mark_used_params_in_predicate(pred: &Predicate, ctx: &dyn TypeLookup, used: &
     }
 }
 
-/// Walk a `MirConst` and mark used params.
 fn mark_used_params_in_mir_const(c: &glyim_mir::MirConst, ctx: &dyn TypeLookup, used: &mut [bool]) {
     mark_used_params(c.ty, ctx, used);
     match &c.kind {
@@ -263,15 +272,12 @@ fn mark_used_params_in_mir_const(c: &glyim_mir::MirConst, ctx: &dyn TypeLookup, 
     }
 }
 
-/// Walk an `Operand` and mark used params.
 fn mark_used_params_in_operand(op: &Operand, ctx: &dyn TypeLookup, used: &mut [bool]) {
     if let Operand::Constant(c) = op {
         mark_used_params_in_mir_const(c, ctx, used);
     }
-    // Copy/Move operands reference places whose types are already checked via locals
 }
 
-/// Walk an `Rvalue` and mark used params.
 fn mark_used_params_in_rvalue(rv: &Rvalue, ctx: &dyn TypeLookup, used: &mut [bool]) {
     match rv {
         Rvalue::Use(op) => mark_used_params_in_operand(op, ctx, used),
@@ -304,7 +310,6 @@ fn mark_used_params_in_rvalue(rv: &Rvalue, ctx: &dyn TypeLookup, used: &mut [boo
     }
 }
 
-/// Walk a `TerminatorKind` and mark used params.
 fn mark_used_params_in_terminator(kind: &TerminatorKind, ctx: &dyn TypeLookup, used: &mut [bool]) {
     match kind {
         TerminatorKind::Call { func, args, .. } => {
@@ -322,13 +327,7 @@ fn mark_used_params_in_terminator(kind: &TerminatorKind, ctx: &dyn TypeLookup, u
         TerminatorKind::Assert { cond, .. } => {
             mark_used_params_in_operand(cond, ctx, used);
         }
-        TerminatorKind::Drop { .. } => {
-            // Drop terminators reference places whose types are already
-            // checked via the locals analysis. If T appears in a local that
-            // is dropped, it's already marked as used. If T doesn't appear
-            // in any local, there's nothing of type T to drop, so
-            // polymorphization is safe.
-        }
+        TerminatorKind::Drop { .. } => {}
         TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {}
     }
 }

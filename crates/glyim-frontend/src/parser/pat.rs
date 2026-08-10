@@ -172,6 +172,17 @@ impl<'a> Parser<'a> {
                     self.start_node_at(start_cp, SyntaxKind::PatRange);
                     let _range_op = self.current_kind();
                     self.bump(); // .. or ..=
+                    // Validate that the endpoint is a literal, not a pattern.
+                    // We'll check if the current token is a literal; if not, emit error.
+                    let is_literal = matches!(
+                        self.current_kind(),
+                        SyntaxKind::IntLit
+                            | SyntaxKind::FloatLit
+                            | SyntaxKind::StringLit
+                            | SyntaxKind::CharLit
+                            | SyntaxKind::KwTrue
+                            | SyntaxKind::KwFalse
+                    );
                     if !matches!(
                         self.current_kind(),
                         SyntaxKind::FatArrow
@@ -180,6 +191,9 @@ impl<'a> Parser<'a> {
                             | SyntaxKind::RParen
                             | SyntaxKind::RBracket
                     ) {
+                        if !is_literal {
+                            self.error("range endpoint must be a literal");
+                        }
                         self.parse_pat(); // Parses the end literal into a nested PatLit
                     }
                     self.finish_node(); // PatRange

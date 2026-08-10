@@ -369,7 +369,7 @@ impl<'a> SimpleTraitSolver<'a> {
     }
 }
 
-fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
+pub(crate) fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
     if a == b {
         return true;
     }

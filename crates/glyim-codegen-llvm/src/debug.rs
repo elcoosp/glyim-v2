@@ -43,7 +43,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
     ) -> Self {
         let (builder, compile_unit) = module.create_debug_info_builder(
             true,
-            DWARFSourceLanguage::C,
+            DWARFSourceLanguage::Rust,
             "test.g",
             ".",
             "glyim",
