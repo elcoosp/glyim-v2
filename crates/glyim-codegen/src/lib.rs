@@ -377,6 +377,7 @@ impl BytecodeBackend {
         }
     }
 
+    
     fn emit_operand(
         &self,
         bc: &mut Vec<u8>,
@@ -434,32 +435,19 @@ impl BytecodeBackend {
                     self.emit_operand(bc, &end_op, local_tys)?;
                     // Stack: [data_ptr, len, start, end]
 
-                    // Compute new_len = end - start
-                    // We need to swap to get end on top of start
-                    // Actually we have start, end on stack. SWAP -> end, start then SUB.
                     bc.push(OP_SWAP);
                     bc.push(OP_SUB); // [data_ptr, len, new_len]
 
-                    // Compute offset = start * elem_size
-                    // Need start again; re-emit start
                     self.emit_operand(bc, &start_op, local_tys)?;
                     bc.push(OP_LOAD_CONST);
                     bc.extend_from_slice(&(elem_size as i64).to_le_bytes());
                     bc.push(OP_MUL); // [data_ptr, len, new_len, offset]
 
-                    // Compute new_data_ptr = data_ptr + offset
-                    // We have [data_ptr, len, new_len, offset].
-                    // We need to bring data_ptr up.
-                    // We'll do: SWAP (offset and new_len) -> [data_ptr, len, offset, new_len]
                     bc.push(OP_SWAP);
-                    // SWAP (len and offset) -> [data_ptr, offset, len, new_len]
                     bc.push(OP_SWAP);
-                    // ADD (data_ptr + offset) -> [new_data_ptr, len, new_len]
-                    bc.push(OP_ADD);
-                    // Drop len (we don't need it)
+                    bc.push(OP_ADD); // [new_data_ptr, len, new_len]
                     bc.push(OP_DROP); // [new_data_ptr, new_len]
 
-                    // Push tuple (new_data_ptr, new_len)
                     bc.push(OP_AGGREGATE);
                     bc.extend_from_slice(&2u32.to_le_bytes());
 
@@ -515,6 +503,7 @@ impl BytecodeBackend {
             }
         }
     }
+
 
     fn emit_terminator(
         &self,
