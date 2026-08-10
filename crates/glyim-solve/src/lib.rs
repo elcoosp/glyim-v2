@@ -12,9 +12,9 @@ pub mod hrtb;
 pub mod infer;
 pub mod solver;
 
-pub use fulfill::*;
+pub use fulfill::{FulfillmentCtx, Obligation, ObligationCause, ObligationCauseCode, OverflowError};
 pub use infer::*;
-pub use solver::*;
+pub use solver::{SimpleTraitSolver, SolverIteratorNextInfo, SolverResult, TraitContext, TraitSolver};
 
 #[cfg(test)]
 mod tests;
