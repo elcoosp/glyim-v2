@@ -148,7 +148,7 @@ impl<'a> MirBuilder<'a> {
         span: glyim_span::Span,
     ) -> glyim_mir::Rvalue {
         use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-        use glyim_mir::{BasicBlockData, BasicBlockIdx, Rvalue, TerminatorKind, LocalDecl, Operand, Place, Statement, StatementKind, SourceInfo};
+        use glyim_mir::Rvalue;
         use glyim_typeck::thir;
         
         // Create DefId for the closure.

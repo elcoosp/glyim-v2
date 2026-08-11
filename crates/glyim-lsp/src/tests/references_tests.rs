@@ -28,13 +28,13 @@ fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) 
         file_id,
         span,
         is_definition: true,
-        kind: ReferenceKind::Definition,
+        kind: ReferenceKind::Definition, def_id: None,
     };
     let use_ref = Reference {
         file_id,
         span,
         is_definition: false,
-        kind: ReferenceKind::Call,
+        kind: ReferenceKind::Call, def_id: None,
     };
     graph.insert_test_reference("foo", def_ref);
     graph.insert_test_reference("foo", use_ref);

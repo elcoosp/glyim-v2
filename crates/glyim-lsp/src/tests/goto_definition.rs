@@ -122,7 +122,7 @@ fn goto_definition_cross_file() {
         file_id: file_id1,
         span: usage_span,
         is_definition: false,
-        kind: ReferenceKind::Call,
+        kind: ReferenceKind::Call, def_id: None,
     };
     analysis
         .reference_graph

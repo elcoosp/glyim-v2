@@ -16,7 +16,6 @@ pub struct Optimized {
 
 pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     let mut body = (**body).clone();
-        slice_desugar::run(ctx, &mut body);
 constant_prop::run(ctx, &mut body);
     dce::run(ctx, &mut body);
     cfg_simplify::run(ctx, &mut body);
@@ -37,4 +36,3 @@ pub fn elaborate_drops(ctx: &TyCtx, body: &mut Body) {
 
 mod slice_desugar;
 
-pub use slice_desugar::run as desugar_slices;

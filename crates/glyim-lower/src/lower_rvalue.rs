@@ -635,7 +635,7 @@ impl<'a> MirBuilder<'a> {
                 }))
             }
         
-            thir::ExprKind::DynamicCall { receiver, method_index, args } => {
+            thir::ExprKind::DynamicCall { receiver: _, method_index: _, args: _ } => {
                 // Dynamic dispatch via vtable.
                 // Placeholder for now; full implementation will be added later.
                 self.diagnostics.push(GlyimDiagnostic::type_error(
@@ -841,14 +841,13 @@ impl<'a> MirBuilder<'a> {
                 // Do not bind anything.
             }
             thir::PatternKind::Error => {}
-            thir::PatternKind::Slice {
-                prefix: _,
-                slice: _,
-                suffix: _,
-            } => {
+            thir::PatternKind::Slice { prefix: _, slice: _, suffix: _ } => {
                 // Slice pattern lowering is not yet implemented.
-                // Type checking already passed; ignoring for now.
-                tracing::debug!("Slice pattern lowering skipped (typeck only)");
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "slice patterns are not yet implemented".to_string(),
+                ));
+                // Bind nothing to avoid unbound variables.
             }
         }
     }
