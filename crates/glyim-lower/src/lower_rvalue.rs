@@ -1,6 +1,7 @@
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_diag::GlyimDiagnostic;
+
 use glyim_mir::{self, BasicBlockIdx, CastKind, LocalIdx, ProjectionElem};
 use glyim_type::{self, FieldIdx, Ty, TyKind};
 use glyim_typeck::thir;
@@ -634,13 +635,13 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-        
-            thir::ExprKind::DynamicCall { receiver: _, method_index: _, args: _ } => {
+            thir::ExprKind::DynamicCall { receiver, method_index, args } => {
                 // Dynamic dispatch via vtable.
-                // Placeholder for now; full implementation will be added later.
+                // Simplified implementation: emit a diagnostic and a dummy value.
+                // Full implementation will follow.
                 self.diagnostics.push(GlyimDiagnostic::type_error(
                     expr.span,
-                    "dynamic dispatch via trait objects not yet fully implemented",
+                    "dynamic dispatch via trait objects not yet fully implemented".to_string(),
                 ));
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
@@ -648,7 +649,7 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-}
+        }
     }
 
     // ---- Expression → Operand lowering ----
