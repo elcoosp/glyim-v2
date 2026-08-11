@@ -833,7 +833,12 @@ impl<'a> MirBuilder<'a> {
             }
             thir::PatternKind::Literal(_) => {}
             thir::PatternKind::ConstBlock(_) => {
-                tracing::warn!("STUB: const block pattern binding not implemented");
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "const block patterns are not yet implemented".to_string(),
+                ));
+                // Fall back to wildcard to avoid unbound variables.
+                // Do not bind anything.
             }
             thir::PatternKind::Error => {}
             thir::PatternKind::Slice {
