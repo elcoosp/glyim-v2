@@ -1,5 +1,5 @@
 [package]
-name = "glyim_const_eval"
+name = "glyim-const-eval"
 edition.workspace = true
 version.workspace = true
 

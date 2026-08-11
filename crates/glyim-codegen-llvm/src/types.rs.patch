@@ -1,6 +1,0 @@
-        TyKind::Error => {
-            // Error types can appear in MIR during partial compilation or test fixtures.
-            // Fall back to i64 to allow codegen to proceed; the program is already ill-typed.
-            tracing::warn!("TyKind::Error lowered to i64");
-            int_type(context, 64).into()
-        }

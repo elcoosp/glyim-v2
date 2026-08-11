@@ -115,7 +115,9 @@ pub(crate) fn lower_block_to_expr(
                     last_has_semi = true;
                 }
             }
-            _ => {}
+            _ => unreachable!(
+            "parser produced BinaryExpr with unrecognized operator token"
+        ),
         }
     }
 
@@ -630,7 +632,12 @@ fn lower_bin_op_token(token: &SyntaxToken) -> BinOp {
         ">=" => BinOp::GtEq,
         "&&" => BinOp::And,
         "||" => BinOp::Or,
-        _ => {
+
+        "&" => BinOp::BitAnd,
+        "|" => BinOp::BitOr,
+        "^" => BinOp::BitXor,
+        "<<" => BinOp::Shl,
+        ">>" => BinOp::Shr,        _ => {
             tracing::warn!("STUB: unknown bin op {:?}", token.text());
             BinOp::Add
         }

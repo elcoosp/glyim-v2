@@ -970,6 +970,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyim-const-eval"
+version = "0.1.0"
+dependencies = [
+ "glyim-core",
+ "glyim-diag",
+ "glyim-hir",
+ "glyim-span",
+ "glyim-test",
+ "tracing",
+]
+
+[[package]]
 name = "glyim-core"
 version = "0.1.0"
 dependencies = [
@@ -1361,18 +1373,6 @@ dependencies = [
  "glyim-test",
  "parking_lot",
  "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "glyim_const_eval"
-version = "0.1.0"
-dependencies = [
- "glyim-core",
- "glyim-diag",
- "glyim-hir",
- "glyim-span",
- "glyim-test",
  "tracing",
 ]
 

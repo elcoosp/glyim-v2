@@ -97,7 +97,7 @@ impl<'a> Parser<'a> {
         ) {
             self.start_node_at(cp, SyntaxKind::BinaryExpr);
             self.bump();
-            self.parse_additive_expr();
+            self.parse_bitwise_expr();
             self.finish_node();
         }
     }
