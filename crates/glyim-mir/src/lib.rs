@@ -24,51 +24,44 @@ pub struct Body {
     pub arg_count: usize,
     pub return_ty: Ty,
     pub span: Span,
-    pub var_debug_info: Vec<VarDebugInfo>,
-}
+    pub var_debug_info: Vec<VarDebugInfo>}
 
 #[derive(Clone, Debug)]
 pub struct VarDebugInfo {
     pub name: Name,
-    pub value: VarDebugInfoValue,
-}
+    pub value: VarDebugInfoValue}
 
 #[derive(Clone, Debug)]
 pub enum VarDebugInfoValue {
     Place(Place),
-    Const(MirConst),
-}
+    Const(MirConst)}
 
 #[derive(Clone, Debug)]
 pub struct BasicBlockData {
     pub statements: Vec<Statement>,
     pub terminator: Terminator,
-    pub is_cleanup: bool,
-}
+    pub is_cleanup: bool}
 
 impl BasicBlockData {
     pub fn new(terminator: Terminator) -> Self {
         Self {
             statements: Vec::new(),
             terminator,
-            is_cleanup: false,
-        }
+            is_cleanup: false}
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct Statement {
     pub kind: StatementKind,
-    pub source_info: SourceInfo,
-}
+    pub source_info: SourceInfo}
 
 #[derive(Clone, Debug)]
 pub enum StatementKind {
     Assign(Place, Rvalue),
     StorageLive(LocalIdx),
     StorageDead(LocalIdx),
-    Nop,
-}
+    Nop}
 
 #[derive(Clone, Debug)]
 pub enum Rvalue {
@@ -79,37 +72,35 @@ pub enum Rvalue {
     Aggregate(AggregateKind, Vec<Operand>),
     Discriminant(Place),
     Len(Place),
+    
+    /// Dynamic call via vtable.
+    
     Cast(CastKind, Operand, Ty),
-    Repeat(Operand, MirConst),
-}
+    Repeat(Operand, MirConst)}
 
 #[derive(Clone, Debug)]
 pub enum AggregateKind {
     Array(Ty),
     Tuple,
     Adt(AdtId, VariantIdx, Substitution),
-    Closure(ClosureId, Substitution),
-}
+    Closure(ClosureId, Substitution)}
 
 #[derive(Clone, Debug)]
 pub enum Operand {
     Copy(Place),
     Move(Place),
-    Constant(MirConst),
-}
+    Constant(MirConst)}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Place {
     pub local: LocalIdx,
-    pub projection: Box<[ProjectionElem]>,
-}
+    pub projection: Box<[ProjectionElem]>}
 
 impl Place {
     pub fn new(local: LocalIdx) -> Self {
         Self {
             local,
-            projection: Box::new([]),
-        }
+            projection: Box::new([])}
     }
 
     pub fn ty(&self, ctx: &impl TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
@@ -171,22 +162,19 @@ pub enum ProjectionElem {
     Field(FieldIdx),
     Index(LocalIdx),
     Downcast(VariantIdx),
-    Slice { start: Place, end: Place },
-}
+    Slice { start: Place, end: Place }}
 
 #[derive(Clone, Debug)]
 pub struct LocalDecl {
     pub ty: Ty,
     pub mutability: Mutability,
-    pub source_info: SourceInfo,
-}
+    pub source_info: SourceInfo}
 
 #[derive(Clone, Debug)]
 pub struct MirConst {
     pub kind: MirConstKind,
     pub ty: Ty,
-    pub span: Span,
-}
+    pub span: Span}
 
 #[derive(Clone, Debug)]
 pub enum MirConstKind {
@@ -199,25 +187,21 @@ pub enum MirConstKind {
     Unit,
     Fn(FnDefId, Substitution),
     ConstRef(ConstDefId, Substitution),
-    Error,
-}
+    Error}
 
 #[derive(Clone, Debug)]
 pub struct Terminator {
     pub kind: TerminatorKind,
-    pub source_info: SourceInfo,
-}
+    pub source_info: SourceInfo}
 
 #[derive(Clone, Debug)]
 pub enum TerminatorKind {
     Goto {
-        target: BasicBlockIdx,
-    },
+        target: BasicBlockIdx},
     SwitchInt {
         discr: Operand,
         switch_ty: Ty,
-        targets: SwitchTargets,
-    },
+        targets: SwitchTargets},
     Return,
     Unreachable,
     Call {
@@ -225,42 +209,35 @@ pub enum TerminatorKind {
         args: Vec<Operand>,
         destination: Place,
         target: Option<BasicBlockIdx>,
-        cleanup: Option<BasicBlockIdx>,
-    },
+        cleanup: Option<BasicBlockIdx>},
     Assert {
         cond: Operand,
         expected: bool,
         target: BasicBlockIdx,
         cleanup: Option<BasicBlockIdx>,
-        msg: AssertMessage,
-    },
+        msg: AssertMessage},
     Drop {
         place: Place,
         target: BasicBlockIdx,
-        cleanup: Option<BasicBlockIdx>,
-    },
-}
+        cleanup: Option<BasicBlockIdx>}}
 
 #[derive(Clone, Debug)]
 pub enum AssertMessage {
     Overflow(BinOp),
     DivisionByZero,
     RemainderByZero,
-    BoundsCheck,
-}
+    BoundsCheck}
 
 #[derive(Clone, Debug)]
 pub struct SwitchTargets {
     branches: Box<[(u128, BasicBlockIdx)]>,
-    otherwise: BasicBlockIdx,
-}
+    otherwise: BasicBlockIdx}
 
 impl SwitchTargets {
     pub fn new(branches: Box<[(u128, BasicBlockIdx)]>, otherwise: BasicBlockIdx) -> Self {
         Self {
             branches,
-            otherwise,
-        }
+            otherwise}
     }
     pub fn otherwise(&self) -> BasicBlockIdx {
         self.otherwise
@@ -271,15 +248,13 @@ impl SwitchTargets {
     pub fn if_switch(then_bb: BasicBlockIdx, else_bb: BasicBlockIdx) -> Self {
         Self {
             branches: Box::new([(1, then_bb)]),
-            otherwise: else_bb,
-        }
+            otherwise: else_bb}
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct SourceInfo {
-    pub span: Span,
-}
+    pub span: Span}
 
 impl SourceInfo {
     pub fn new(span: Span) -> Self {
@@ -291,8 +266,7 @@ impl SourceInfo {
 pub enum BorrowKind {
     Shared,
     Unique,
-    Mut { allow_two_phase_borrow: bool },
-}
+    Mut { allow_two_phase_borrow: bool }}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CastKind {
@@ -301,6 +275,8 @@ pub enum CastKind {
     IntToFloat,
     PtrToPtr,
     FnPtrToPtr,
+    PtrToInt,
+    IntToPtr,
 }
 
 impl Body {
@@ -308,15 +284,13 @@ impl Body {
         let mut basic_blocks = IndexVec::new();
         let _bb0 = basic_blocks.push(BasicBlockData::new(Terminator {
             kind: TerminatorKind::Unreachable,
-            source_info: SourceInfo::new(Span::DUMMY),
-        }));
+            source_info: SourceInfo::new(Span::DUMMY)}));
 
         let mut locals = IndexVec::new();
         locals.push(LocalDecl {
             ty: Ty::ERROR,
             mutability: Mutability::Not,
-            source_info: SourceInfo::new(Span::DUMMY),
-        });
+            source_info: SourceInfo::new(Span::DUMMY)});
 
         Self {
             owner,
@@ -325,8 +299,7 @@ impl Body {
             arg_count: 0,
             return_ty: Ty::ERROR,
             span: Span::DUMMY,
-            var_debug_info: Vec::new(),
-        }
+            var_debug_info: Vec::new()}
     }
 
     pub fn args(&self) -> &[LocalDecl] {

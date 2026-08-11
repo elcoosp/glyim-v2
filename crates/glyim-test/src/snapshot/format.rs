@@ -146,7 +146,9 @@ fn format_cast_kind(kind: &glyim_mir::CastKind) -> String {
         glyim_mir::CastKind::IntToFloat => "IntToFloat".to_string(),
         glyim_mir::CastKind::PtrToPtr => "PtrToPtr".to_string(),
         glyim_mir::CastKind::FnPtrToPtr => "FnPtrToPtr".to_string(),
-    }
+            glyim_mir::CastKind::PtrToInt => "PtrToInt".to_string(),
+        glyim_mir::CastKind::IntToPtr => "IntToPtr".to_string(),
+}
 }
 
 fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {

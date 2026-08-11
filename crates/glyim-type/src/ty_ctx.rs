@@ -22,6 +22,7 @@ pub struct TyCtx {
     pub(crate) adt_reprs: HashMap<AdtId, AdtRepr>,
     pub(crate) interior_mutable_adt_ids: HashSet<AdtId>,
     pub adt_defs: HashMap<AdtId, AdtDef>,
+    pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
     pub(crate) variant_types: HashMap<AdtId, Vec<Ty>>,
     pub(crate) fn_sigs: HashMap<FnDefId, FnSig>,
     pub(crate) closure_sigs: HashMap<ClosureId, FnSig>,
@@ -122,13 +123,8 @@ impl TyCtx {
         self.adt_reprs.get(&adt_id)
     }
 
-    /// Returns the type of the field at the given index in the ADT.
-    /// Checks `adt_defs` first (full definition), then falls back to `adt_reprs`
-    /// (field type list). Returns `error_ty()` if the ADT or field is not found.
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
-            // Use as_slice().get() to avoid debug_assert! in IndexVec::get()
-            // which panics on out-of-bounds even though the method returns Option.
             return def
                 .fields
                 .as_slice()
@@ -161,22 +157,18 @@ impl TyCtx {
         None
     }
 
-    /// Retrieve the `FnSig` for a function definition, if registered.
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
     }
 
-    /// Retrieve the `FnSig` for a closure definition, if registered.
     pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {
         self.closure_sigs.get(&closure_id)
     }
 
-    /// Retrieve the return type for a body, if registered.
     pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {
         self.body_tys.get(&def_id).copied()
     }
 
-    /// Returns the type of a variant by its raw index.
     pub fn variant_type(&self, adt_id: AdtId, variant_idx: u32) -> Ty {
         self.variant_types
             .get(&adt_id)
@@ -209,7 +201,6 @@ impl TypeLookup for TyCtx {
     }
     fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
-            // Use as_slice().get() to avoid debug_assert! in IndexVec::get()
             return def
                 .fields
                 .as_slice()
@@ -225,5 +216,11 @@ impl TypeLookup for TyCtx {
                 .unwrap_or_else(|| self.error_ty());
         }
         self.error_ty()
+    }
+}
+impl TyCtx {
+    /// Get the trait definition by ID.
+    pub fn trait_def(&self, id: glyim_core::def_id::TraitDefId) -> Option<&crate::TraitDef> {
+        self.trait_defs.get(&id)
     }
 }

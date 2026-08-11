@@ -79,15 +79,8 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const))
             }
             thir::ExprKind::VarRef(var_id) => {
-                if let Some(&local) = self.capture_map.get(&var_id) {
-                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
-                } else if let Some(&local) = self.param_map.get(&var_id) {
-                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
-                } else {
-                    // Fallback: treat as a normal local (should not happen)
-                    let local = LocalIdx::from_raw(var_id.to_raw());
-                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
-                }
+                let local = LocalIdx::from_raw(var_id.to_raw());
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
             }
             thir::ExprKind::FnRef(_def_id) => {
                 let (fn_def_id, substs) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
@@ -132,42 +125,15 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Rvalue::Ref(place, borrow_kind)
             }
             thir::ExprKind::Call { func, args } => {
-                // Determine if sret is needed based on return type.
-                let use_sret = match self.ctx.ty_ctx().ty_kind(expr.ty) {
-                    TyKind::Adt(adt_id, _) => {
-                        if let Some(adt_def) = self.ctx.ty_ctx().adt_def(*adt_id) {
-                            adt_def.fields.len() > 2
-                        } else {
-                            false
-                        }
-                    }
-                    TyKind::Tuple(substs) => {
-                        self.ctx.ty_ctx().substitution_args(*substs).len() > 2
-                    }
-                    _ => false,
-                };
-
                 let mut mir_args = Vec::new();
-                let dest_local = if use_sret {
-                    // Allocate a temporary local for the return slot.
-                    let sret_local = self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
-                    // Pass its address as the first argument.
-                    let addr_place = glyim_mir::Place::new(sret_local);
-                    mir_args.push(glyim_mir::Operand::Copy(addr_place));
-                    sret_local
-                } else {
-                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span)
-                };
-                let dest_place = glyim_mir::Place::new(dest_local);
-
-                // Evaluate args.
                 for arg in args {
                     mir_args.push(self.lower_expr_to_operand(arg));
                 }
-
                 let func_op = self.lower_expr_to_operand(func);
+                let dest_local =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
+                let dest_place = glyim_mir::Place::new(dest_local);
                 let next_bb = self.new_block();
-
                 self.terminate(
                     glyim_mir::TerminatorKind::Call {
                         func: func_op,
@@ -668,7 +634,21 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-        }
+        
+            thir::ExprKind::DynamicCall { receiver, method_index, args } => {
+                // Dynamic dispatch via vtable.
+                // Placeholder for now; full implementation will be added later.
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    expr.span,
+                    "dynamic dispatch via trait objects not yet fully implemented",
+                ));
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Unit,
+                    ty: Ty::UNIT,
+                    span: expr.span,
+                }))
+            }
+}
     }
 
     // ---- Expression → Operand lowering ----
@@ -703,14 +683,8 @@ impl<'a> MirBuilder<'a> {
     pub fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
-                if let Some(&local) = self.capture_map.get(&var_id) {
-                    glyim_mir::Place::new(local)
-                } else if let Some(&local) = self.param_map.get(&var_id) {
-                    glyim_mir::Place::new(local)
-                } else {
-                    let local = LocalIdx::from_raw(var_id.to_raw());
-                    glyim_mir::Place::new(local)
-                }
+                let local = LocalIdx::from_raw(var_id.to_raw());
+                glyim_mir::Place::new(local)
             }
             thir::ExprKind::Field {
                 receiver,

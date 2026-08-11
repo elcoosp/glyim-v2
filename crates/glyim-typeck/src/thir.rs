@@ -84,6 +84,11 @@ pub enum ExprKind {
         func: Box<Expr>,
         args: Vec<Expr>,
     },
+    DynamicCall {
+        receiver: Box<Expr>,
+        method_index: usize,
+        args: Vec<Expr>,
+    },
     If {
         cond: Box<Expr>,
         then_branch: Box<Expr>,

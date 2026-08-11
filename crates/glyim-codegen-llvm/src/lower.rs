@@ -658,9 +658,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 }
                 result
             }
-        }
     }
-
+}
     fn lower_discriminant(&self, place: &Place) -> BasicValueEnum<'ctx> {
         let ptr = self.place_ptr(place);
         let place_ty = self.place_ty(place);
@@ -772,6 +771,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             _ => panic!("Discriminant on non-enum type {:?}", place_ty),
         }
     }
+
+
+
+        
+
 
     fn lower_len(&self, place: &Place) -> BasicValueEnum<'ctx> {
         let place_ty = self.place_ty(place);
@@ -1120,6 +1124,26 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_bit_cast(val, dest_type, "ptr_cast")
                     .expect("bitcast failed")
             }
+
+            CastKind::PtrToInt => {
+                let ptr_val = val.into_pointer_value();
+                let ptr_width = self.target_info.pointer_width();
+                let int_ty = self.llvm_int_type(ptr_width);
+                self.builder
+                    .build_ptr_to_int(ptr_val, int_ty, "ptrtoint")
+                    .expect("ptrtoint failed")
+                    .into()
+            }
+            CastKind::IntToPtr => {
+                let int_val = val.into_int_value();
+                let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+                self.builder
+                    .build_int_to_ptr(int_val, ptr_ty, "inttoptr")
+                    .expect("inttoptr failed")
+                    .into()
+            }
+
+            
         }
     }
 

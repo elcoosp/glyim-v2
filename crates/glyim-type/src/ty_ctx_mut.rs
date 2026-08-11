@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::collections::HashMap;
 use crate::adt_def::*;
 use crate::auto_trait::*;
 use crate::display::TypeLookup;
@@ -12,7 +14,6 @@ use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
 use indexmap::IndexSet;
 use smallvec::SmallVec;
-use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 pub struct TyCtxMut {
@@ -26,7 +27,10 @@ pub struct TyCtxMut {
     interior_mutable_adt_ids: HashSet<AdtId>,
     interior_mutability_cache: HashMap<AdtId, bool>,
     adt_defs: HashMap<AdtId, AdtDef>,
-    variant_types: HashMap<AdtId, Vec<Ty>>,
+
+    pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
+
+        variant_types: HashMap<AdtId, Vec<Ty>>,
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
@@ -46,6 +50,7 @@ impl TyCtxMut {
             interior_mutable_adt_ids: HashSet::new(),
             interior_mutability_cache: HashMap::new(),
             adt_defs: HashMap::new(),
+            trait_defs: HashMap::new(),
             variant_types: HashMap::new(),
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
@@ -299,6 +304,7 @@ impl TyCtxMut {
             adt_reprs: self.adt_reprs,
             interior_mutable_adt_ids: self.interior_mutable_adt_ids,
             adt_defs: self.adt_defs,
+            trait_defs: self.trait_defs.clone(),
             variant_types: self.variant_types,
             fn_sigs: self.fn_sigs,
             closure_sigs: self.closure_sigs,

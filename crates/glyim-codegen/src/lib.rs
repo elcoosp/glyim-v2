@@ -366,6 +366,8 @@ impl BytecodeBackend {
                     CastKind::IntToFloat => 2,
                     CastKind::PtrToPtr => 3,
                     CastKind::FnPtrToPtr => 4,
+                    CastKind::PtrToInt => 5,
+                    CastKind::IntToPtr => 6,
                 });
                 Ok(())
             }

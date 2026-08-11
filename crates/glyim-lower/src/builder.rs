@@ -138,6 +138,7 @@ impl<'a> MirBuilder<'a> {
 
     
     
+    #[allow(dead_code)]
     pub(crate) fn lower_closure(
         &mut self,
         thir_body: &thir::Body,

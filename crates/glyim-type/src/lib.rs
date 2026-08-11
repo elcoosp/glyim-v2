@@ -31,3 +31,17 @@ pub mod object_safety;
 
 #[cfg(test)]
 mod tests;
+
+/// Definition of a trait for the type context.
+#[derive(Clone, Debug)]
+pub struct TraitDef {
+    pub name: glyim_core::interner::Name,
+    pub methods: Vec<MethodDef>,
+}
+
+/// Definition of a method in a trait.
+#[derive(Clone, Debug)]
+pub struct MethodDef {
+    pub name: glyim_core::interner::Name,
+    pub sig: FnSig,
+}

@@ -341,7 +341,23 @@ impl<'tcx> Interpreter<'tcx> {
                         _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
                     },
                     CastKind::PtrToPtr | CastKind::FnPtrToPtr => Ok(val),
+                
+                CastKind::PtrToInt => {
+                    // Convert pointer to integer.
+                    match val {
+                        InterpValue::Ref(addr) => Ok(InterpValue::Uint(addr as u128)),
+                        _ => Err(InterpError::Panic("PtrToInt on non-reference".into())),
+                    }
                 }
+                CastKind::IntToPtr => {
+                    // Convert integer to pointer.
+                    match val {
+                        InterpValue::Uint(addr) => Ok(InterpValue::Ref(addr as usize)),
+                        InterpValue::Int(addr) if addr >= 0 => Ok(InterpValue::Ref(addr as usize)),
+                        _ => Err(InterpError::Panic("IntToPtr on non-integer".into())),
+                    }
+                }
+}
             }
             Rvalue::Repeat(operand, count_const) => {
                 let val = self.eval_operand(operand)?;
