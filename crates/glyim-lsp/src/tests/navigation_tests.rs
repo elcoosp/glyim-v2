@@ -1,14 +1,15 @@
 use crate::database::{AnalysisDatabase, SourceMap};
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use crate::navigation::workspace_symbols;
 use glyim_core::Interner;
 use glyim_span::FileId;
+use lsp_types::Uri;
 use lsp_types::{
-    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceSymbolParams,
+    GotoDefinitionParams, Position, TextDocumentIdentifier, TextDocumentPositionParams,
+    WorkspaceSymbolParams,
 };
 use std::path::PathBuf;
+use std::str::FromStr;
+use url::Url;
 
 fn setup_db_with_file(path: &str, source: &str) -> (AnalysisDatabase, FileId) {
     let db = AnalysisDatabase::new();

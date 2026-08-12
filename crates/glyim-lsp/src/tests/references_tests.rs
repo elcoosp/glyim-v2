@@ -1,14 +1,14 @@
 use crate::AnalysisDatabase;
-use std::str::FromStr;
-use lsp_types::Uri;
-use url::Url;
 use crate::database::FileMap;
 use crate::navigation::find_references;
 use crate::reference_graph::{Reference, ReferenceGraph, ReferenceKind};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
-use lsp_types::{Position, };
+use lsp_types::Position;
+use lsp_types::Uri;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
+use url::Url;
 
 fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) {
     let db = Arc::new(AnalysisDatabase::new());
@@ -28,13 +28,15 @@ fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) 
         file_id,
         span,
         is_definition: true,
-        kind: ReferenceKind::Definition, def_id: None,
+        kind: ReferenceKind::Definition,
+        def_id: None,
     };
     let use_ref = Reference {
         file_id,
         span,
         is_definition: false,
-        kind: ReferenceKind::Call, def_id: None,
+        kind: ReferenceKind::Call,
+        def_id: None,
     };
     graph.insert_test_reference("foo", def_ref);
     graph.insert_test_reference("foo", use_ref);
@@ -54,7 +56,12 @@ fn find_references_returns_locations() {
     let params = lsp_types::ReferenceParams {
         text_document_position: lsp_types::TextDocumentPositionParams {
             text_document: lsp_types::TextDocumentIdentifier {
-                uri: Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap(),
+                uri: Uri::from_str(
+                    &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+                        .unwrap()
+                        .to_string(),
+                )
+                .unwrap(),
             },
             position: Position {
                 line: 0,

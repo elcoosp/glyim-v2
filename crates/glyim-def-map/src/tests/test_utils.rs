@@ -14,7 +14,7 @@ pub fn parse_and_build(source: &str) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
 
 /// Create a Resolver for the given module in the def map.
 pub fn resolver_for<'a>(def_map: &'a CrateDefMap, module: ModuleId) -> Resolver<'a> {
-    Resolver::new(def_map, module)
+    Resolver::new(&def_map.modules, def_map.root, module)
 }
 
 /// Find a child module by name within a parent module.

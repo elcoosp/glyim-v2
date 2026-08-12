@@ -644,7 +644,11 @@ impl<'a> MirBuilder<'a> {
                 let _receiver = receiver;
                 // Lower the receiver (a fat pointer) to a temporary local so we can project into it.
                 let recv_val = self.lower_expr_to_rvalue(receiver);
-                let recv_local = self.alloc_local(receiver.ty, glyim_core::primitives::Mutability::Mut, expr.span);
+                let recv_local = self.alloc_local(
+                    receiver.ty,
+                    glyim_core::primitives::Mutability::Mut,
+                    expr.span,
+                );
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(glyim_mir::Place::new(recv_local), recv_val),
                     expr.span,
@@ -652,11 +656,21 @@ impl<'a> MirBuilder<'a> {
                 let recv_place = glyim_mir::Place::new(recv_local);
 
                 // Extract the data pointer (field 0) and vtable pointer (field 1) from the fat pointer.
-                let data_place = self.place_with_projection(recv_place.clone(), ProjectionElem::Field(FieldIdx::from_raw(0)));
-                let vtable_place = self.place_with_projection(recv_place.clone(), ProjectionElem::Field(FieldIdx::from_raw(1)));
+                let data_place = self.place_with_projection(
+                    recv_place.clone(),
+                    ProjectionElem::Field(FieldIdx::from_raw(0)),
+                );
+                let vtable_place = self.place_with_projection(
+                    recv_place.clone(),
+                    ProjectionElem::Field(FieldIdx::from_raw(1)),
+                );
 
                 // Allocate a local for the vtable pointer. Use Ty::USIZE as a pointer-sized integer.
-                let vtable_ptr_local = self.alloc_local(Ty::USIZE, glyim_core::primitives::Mutability::Mut, expr.span);
+                let vtable_ptr_local = self.alloc_local(
+                    Ty::USIZE,
+                    glyim_core::primitives::Mutability::Mut,
+                    expr.span,
+                );
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(
                         glyim_mir::Place::new(vtable_ptr_local),
@@ -667,7 +681,11 @@ impl<'a> MirBuilder<'a> {
 
                 let _method_index = method_index;
                 // Allocate a local for the method index and store the constant index.
-                let method_idx_local = self.alloc_local(Ty::USIZE, glyim_core::primitives::Mutability::Not, expr.span);
+                let method_idx_local = self.alloc_local(
+                    Ty::USIZE,
+                    glyim_core::primitives::Mutability::Not,
+                    expr.span,
+                );
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(
                         glyim_mir::Place::new(method_idx_local),
@@ -689,7 +707,11 @@ impl<'a> MirBuilder<'a> {
                 // Allocate a local for the method pointer. Use Ty::ERROR because we don't have
                 // a way to allocate a FnPtr type from an immutable TyCtx. The LLVM backend will
                 // construct the function type from the arguments and return type.
-                let method_fn_local = self.alloc_local(Ty::ERROR, glyim_core::primitives::Mutability::Mut, expr.span);
+                let method_fn_local = self.alloc_local(
+                    Ty::ERROR,
+                    glyim_core::primitives::Mutability::Mut,
+                    expr.span,
+                );
                 self.push_stmt(
                     glyim_mir::StatementKind::Assign(
                         glyim_mir::Place::new(method_fn_local),
@@ -707,7 +729,8 @@ impl<'a> MirBuilder<'a> {
                 }
 
                 // Call the method pointer.
-                let dest_local = self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
+                let dest_local =
+                    self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 let dest_place = glyim_mir::Place::new(dest_local);
                 let next_bb = self.new_block();
                 self.terminate(
@@ -917,7 +940,11 @@ impl<'a> MirBuilder<'a> {
             thir::PatternKind::Literal(_) => {}
             thir::PatternKind::ConstBlock(_) => {}
             thir::PatternKind::Error => {}
-            thir::PatternKind::Slice { prefix, slice, suffix } => {
+            thir::PatternKind::Slice {
+                prefix,
+                slice,
+                suffix,
+            } => {
                 if let Some(init) = init_local {
                     let init_place = glyim_mir::Place::new(init);
 

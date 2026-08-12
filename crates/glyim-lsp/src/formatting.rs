@@ -1,9 +1,8 @@
 use crate::AnalysisDatabase;
 use lsp_types::*;
 
-
-
-use url::Url;fn format_code(source: &str) -> String {
+use url::Url;
+fn format_code(source: &str) -> String {
     let mut result = String::new();
     let mut indent_level = 0;
     let chars: Vec<char> = source.chars().collect();

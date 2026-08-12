@@ -5,12 +5,12 @@
 
 use std::collections::VecDeque;
 
+use glyim_core::BinOp;
 use glyim_core::IndexVec;
 use glyim_core::Mutability;
-use glyim_core::BinOp;
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtx, TyKind, ConstKind};
+use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
 
 // -----------------------------------------------------------------------------
 // Dataflow: which locals are definitely initialized at each program point.
@@ -210,7 +210,13 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                     // Generate loop to drop each element
                     let len = match &count.kind {
                         ConstKind::Uint(n) => *n as u64,
-                        ConstKind::Int(n) => if *n >= 0 { *n as u64 } else { 0 },
+                        ConstKind::Int(n) => {
+                            if *n >= 0 {
+                                *n as u64
+                            } else {
+                                0
+                            }
+                        }
                         _ => 0,
                     };
                     if len == 0 {
@@ -237,19 +243,17 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 
                         // Init block: idx = len; goto cond
                         let init_block_data = BasicBlockData {
-                            statements: vec![
-                                Statement {
-                                    kind: StatementKind::Assign(
-                                        idx_place.clone(),
-                                        Rvalue::Use(Operand::Constant(MirConst {
-                                            kind: MirConstKind::Uint(len.into()),
-                                            ty: count.ty,
-                                            span: terminator.source_info.span,
-                                        })),
-                                    ),
-                                    source_info: SourceInfo::new(terminator.source_info.span),
-                                },
-                            ],
+                            statements: vec![Statement {
+                                kind: StatementKind::Assign(
+                                    idx_place.clone(),
+                                    Rvalue::Use(Operand::Constant(MirConst {
+                                        kind: MirConstKind::Uint(len.into()),
+                                        ty: count.ty,
+                                        span: terminator.source_info.span,
+                                    })),
+                                ),
+                                source_info: SourceInfo::new(terminator.source_info.span),
+                            }],
                             terminator: Terminator {
                                 kind: TerminatorKind::Goto { target: cond_block },
                                 source_info: terminator.source_info.clone(),
@@ -296,9 +300,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                         };
                         let elem_place = Place {
                             local: place.local,
-                            projection: vec![
-                                ProjectionElem::Index(idx_local),
-                            ].into_boxed_slice(),
+                            projection: vec![ProjectionElem::Index(idx_local)].into_boxed_slice(),
                         };
                         let body_block_data = BasicBlockData {
                             statements: vec![dec_stmt],

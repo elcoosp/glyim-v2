@@ -9,8 +9,8 @@ pub fn invoke_linker(
     let linker = linker.unwrap_or("cc");
     let mut cmd = std::process::Command::new(linker);
     cmd.arg(obj_path.as_os_str())
-       .arg("-o")
-       .arg(output_path.as_os_str());
+        .arg("-o")
+        .arg(output_path.as_os_str());
 
     if let Some(flags) = link_flags {
         for flag in flags.split_whitespace() {

@@ -450,7 +450,10 @@ fn compile_source(
         Box::new(glyim_codegen_llvm::LlvmBackend::new())
     } else {
         let ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
-        Box::new(glyim_codegen::BytecodeBackend::with_ty_ctx(std::sync::Arc::new(ctx), glyim_core::TargetInfo::default()))
+        Box::new(glyim_codegen::BytecodeBackend::with_ty_ctx(
+            std::sync::Arc::new(ctx),
+            glyim_core::TargetInfo::default(),
+        ))
     };
     #[cfg(not(feature = "llvm"))]
     let backend: Box<dyn glyim_codegen::CodegenBackend> = {
@@ -460,7 +463,10 @@ fn compile_source(
             );
         }
         let ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
-        Box::new(glyim_codegen::BytecodeBackend::with_ty_ctx(std::sync::Arc::new(ctx), glyim_core::TargetInfo::default()))
+        Box::new(glyim_codegen::BytecodeBackend::with_ty_ctx(
+            std::sync::Arc::new(ctx),
+            glyim_core::TargetInfo::default(),
+        ))
     };
 
     // Run the pipeline.

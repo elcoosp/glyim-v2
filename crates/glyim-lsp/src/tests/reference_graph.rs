@@ -15,7 +15,8 @@ fn test_insert_and_find() {
             SyntaxContext::ROOT,
         ),
         is_definition: true,
-        kind: ReferenceKind::Call, def_id: None,
+        kind: ReferenceKind::Call,
+        def_id: None,
     };
 
     graph.insert_test_reference("my_func", ref1);

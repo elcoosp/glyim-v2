@@ -1,12 +1,11 @@
 #![allow(deprecated)]
 
 use crate::AnalysisDatabase;
-use std::str::FromStr;
-use lsp_types::Uri;
 use crate::database::FileMap;
+use lsp_types::Uri;
 use lsp_types::*;
+use std::str::FromStr;
 use url::Url;
-
 
 fn get_symbol_name_at_position(
     db: &AnalysisDatabase,

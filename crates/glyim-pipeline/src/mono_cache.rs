@@ -102,24 +102,32 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                 ctx.mk_ty(TyKind::Array(new_inner, new_len))
             }
             TyKind::Tuple(sub) => {
-                let new_args: Vec<GenericArg> = frozen.substitution_args(sub).iter().map(|arg| {
-                    if let GenericArg::Ty(t) = arg {
-                        GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
-                    } else {
-                        arg.clone()
-                    }
-                }).collect();
+                let new_args: Vec<GenericArg> = frozen
+                    .substitution_args(sub)
+                    .iter()
+                    .map(|arg| {
+                        if let GenericArg::Ty(t) = arg {
+                            GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                        } else {
+                            arg.clone()
+                        }
+                    })
+                    .collect();
                 let new_sub = ctx.intern_substitution(new_args);
                 ctx.mk_tuple(new_sub)
             }
             TyKind::Adt(id, sub) => {
-                let new_args: Vec<GenericArg> = frozen.substitution_args(sub).iter().map(|arg| {
-                    if let GenericArg::Ty(t) = arg {
-                        GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
-                    } else {
-                        arg.clone()
-                    }
-                }).collect();
+                let new_args: Vec<GenericArg> = frozen
+                    .substitution_args(sub)
+                    .iter()
+                    .map(|arg| {
+                        if let GenericArg::Ty(t) = arg {
+                            GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                        } else {
+                            arg.clone()
+                        }
+                    })
+                    .collect();
                 let new_sub = ctx.intern_substitution(new_args);
                 ctx.mk_adt(id, new_sub)
             }

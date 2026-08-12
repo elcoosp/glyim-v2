@@ -1,11 +1,9 @@
 use glyim_codegen::CodegenBackend;
-use glyim_core::Interner;
 use glyim_core::TargetInfo;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_mir::Body;
 use glyim_span::{FileId, HygieneCtx};
 use glyim_type::TyCtx;
-use glyim_type::TyCtxMut;
 use inkwell::context::Context;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use std::collections::HashMap;
@@ -21,7 +19,7 @@ mod types;
 pub struct LlvmBackend {
     context: Context,
     target_triple: String,
-    ty_ctx: Option<TyCtx>,
+    ty_ctx_handle: Option<glyim_db::TyCtxHandle>,
     target_info: TargetInfo,
     debug_info: bool,
     source_map: HashMap<FileId, (String, String)>,
@@ -39,12 +37,27 @@ impl Default for LlvmBackend {
 impl LlvmBackend {
     pub fn new() -> Self {
         Target::initialize_all(&InitializationConfig::default());
-        let default_ctx = TyCtxMut::new(Interner::default()).freeze();
         let target_info = TargetInfo::default();
         Self {
             context: Context::create(),
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
-            ty_ctx: Some(default_ctx),
+            ty_ctx_handle: None,
+            target_info,
+            debug_info: false,
+            source_map: HashMap::new(),
+            opt_level: 0,
+            opt_for_size: false,
+            hygiene_ctx: None,
+        }
+    }
+
+    pub fn with_db(db: &glyim_db::Database) -> Self {
+        Target::initialize_all(&InitializationConfig::default());
+        let target_info = TargetInfo::default();
+        Self {
+            context: Context::create(),
+            target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            ty_ctx_handle: Some(db.ty_ctx_handle()),
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
@@ -68,9 +81,11 @@ impl LlvmBackend {
         let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
         let ty_ctx = self
-            .ty_ctx
+            .ty_ctx_handle
             .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let ty_ctx = ty_ctx.as_ref();
         for body in bodies {
             crate::lower::lower_body(
                 context,
@@ -88,13 +103,12 @@ impl LlvmBackend {
 
     pub fn with_target(target_triple: impl Into<String>) -> Self {
         Target::initialize_all(&InitializationConfig::default());
-        let default_ctx = TyCtxMut::new(Interner::default()).freeze();
         let triple = target_triple.into();
         let target_info = TargetInfo::default();
         Self {
             context: Context::create(),
             target_triple: triple,
-            ty_ctx: Some(default_ctx),
+            ty_ctx_handle: None,
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
@@ -104,8 +118,14 @@ impl LlvmBackend {
         }
     }
 
+    pub fn with_ty_ctx_handle(mut self, handle: glyim_db::TyCtxHandle) -> Self {
+        self.ty_ctx_handle = Some(handle);
+        self
+    }
+
     pub fn with_ty_ctx(mut self, ctx: TyCtx) -> Self {
-        self.ty_ctx = Some(ctx);
+        let handle = Arc::new(std::sync::RwLock::new(Some(Arc::new(ctx))));
+        self.ty_ctx_handle = Some(handle);
         self
     }
 
@@ -133,6 +153,17 @@ impl LlvmBackend {
     pub fn emit_ir_to_string(&self, ctx: &TyCtx, body: &Body) -> CompResult<String> {
         let context = Context::create();
         let module = self.lower_body_to_module_with_ctx(&context, body, ctx)?;
+        Ok(module.print_to_string().to_string())
+    }
+
+    pub fn emit_ir_to_string_with_handle(&self, body: &Body) -> CompResult<String> {
+        let context = Context::create();
+        let ty_ctx = self
+            .ty_ctx_handle
+            .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let module = self.lower_body_to_module_with_ctx(&context, body, ty_ctx.as_ref())?;
         Ok(module.print_to_string().to_string())
     }
 
@@ -177,9 +208,11 @@ impl LlvmBackend {
         let triple = inkwell::targets::TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
         let ty_ctx = self
-            .ty_ctx
+            .ty_ctx_handle
             .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let ty_ctx = ty_ctx.as_ref();
         crate::lower::lower_body(
             context,
             &module,
@@ -212,9 +245,11 @@ impl CodegenBackend for LlvmBackend {
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
         let ty_ctx = self
-            .ty_ctx
+            .ty_ctx_handle
             .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let ty_ctx = ty_ctx.as_ref();
         for body in bodies.iter() {
             crate::lower::lower_body(
                 context,
@@ -266,9 +301,11 @@ impl CodegenBackend for LlvmBackend {
         let triple = TargetTriple::create(&self.target_triple);
         module.set_triple(&triple);
         let ty_ctx = self
-            .ty_ctx
+            .ty_ctx_handle
             .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
             .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let ty_ctx = ty_ctx.as_ref();
         crate::lower::lower_body(
             context,
             &module,

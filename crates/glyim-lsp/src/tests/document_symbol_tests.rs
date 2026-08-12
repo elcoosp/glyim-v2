@@ -1,10 +1,10 @@
 use crate::navigation::document_symbols;
-use std::str::FromStr;
-use lsp_types::Uri;
 use crate::{AnalysisDatabase, DefinitionLocation, SymbolInfo, SymbolKind, TypeSignature};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
+use lsp_types::Uri;
 use lsp_types::*;
 use std::path::PathBuf;
+use std::str::FromStr;
 use url::Url;
 
 fn get_test_path(filename: &str) -> PathBuf {
@@ -76,7 +76,12 @@ fn document_symbols_returns_hierarchy() {
 
     let params = DocumentSymbolParams {
         text_document: TextDocumentIdentifier {
-            uri: Uri::from_str(&Uri::from_str(&Url::from_file_path(&path).unwrap().to_string()).unwrap().to_string()).unwrap(),
+            uri: Uri::from_str(
+                &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+                    .unwrap()
+                    .to_string(),
+            )
+            .unwrap(),
         },
         work_done_progress_params: Default::default(),
         partial_result_params: Default::default(),

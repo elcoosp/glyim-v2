@@ -17,9 +17,9 @@ fn test_database_tyctx_roundtrip() {
     // Store it (move, no clone)
     db.set_ty_ctx(ctx);
     // Retrieve and verify
-    let guard = db.ty_ctx();
+    let guard = db.get_ty_ctx();
     assert!(guard.is_some());
-    let retrieved = guard.as_ref().unwrap();
+    let retrieved = guard.as_deref().unwrap();
     // Compare a simple property: bool_ty should be Ty::BOOL
     assert_eq!(retrieved.bool_ty(), bool_ty);
 }

@@ -56,6 +56,44 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         self.context.custom_width_int_type(non_zero).unwrap()
     }
 
+    /// Build an LLVM function type from a Glyim `FnSig`, applying ABI rules.
+    fn llvm_fn_type_from_sig(&self, sig: &glyim_type::FnSig) -> inkwell::types::FunctionType<'ctx> {
+        let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+        let fn_abi = layout_computer.fn_abi_of(sig).unwrap();
+
+        let is_sret = matches!(fn_abi.ret.mode, PassMode::Indirect { .. });
+        let mut param_types = Vec::new();
+        if is_sret {
+            param_types.push(self.context.ptr_type(AddressSpace::default()).into());
+        }
+        for arg_abi in &fn_abi.args {
+            let llvm_ty = match arg_abi.mode {
+                PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
+                PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
+                PassMode::Ignore => continue,
+                _ => self.llvm_type_for_ty(arg_abi.ty),
+            };
+            param_types.push(llvm_ty);
+        }
+        let ret_type = if is_sret {
+            None
+        } else {
+            match fn_abi.ret.mode {
+                PassMode::Ignore => None,
+                _ => Some(self.llvm_type_for_ty(fn_abi.ret.ty)),
+            }
+        };
+        let metadata_param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> =
+            param_types.iter().map(|t| (*t).into()).collect();
+        if let Some(ret) = ret_type {
+            ret.fn_type(&metadata_param_types, sig.c_variadic)
+        } else {
+            self.context
+                .void_type()
+                .fn_type(&metadata_param_types, sig.c_variadic)
+        }
+    }
+
     fn llvm_type_for_ty(&self, ty: Ty) -> inkwell::types::BasicTypeEnum<'ctx> {
         llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty)
     }
@@ -69,11 +107,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         {
             self.builder.set_current_debug_location(loc);
         }
-    }
-
-    #[allow(dead_code)]
-    fn clear_debug_location(&self) {
-        self.builder.unset_current_debug_location();
     }
 
     fn alloc_local(&mut self, local: LocalIdx) {
@@ -149,12 +182,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             MirConstKind::String(name) => {
                 let str_content = self.ty_ctx.name_str(*name);
                 let module = self.module;
-                let safe_name: String = str_content
-                    .chars()
-                    .take(32)
-                    .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                    .collect();
-                let global_name = format!("__glyim_str_{}", safe_name);
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                str_content.hash(&mut hasher);
+                let hash = hasher.finish();
+                let global_name = format!("__glyim_str_{:016x}", hash);
                 let global = if let Some(existing) = module.get_global(&global_name) {
                     existing
                 } else {
@@ -204,8 +237,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
                 let module = self.module;
                 let callee = module.get_function(&fn_name).unwrap_or_else(|| {
-                    // Fallback to i64* to avoid void type mismatches if signature is unknown
-                    let fn_type = self.context.i64_type().fn_type(&[], false);
+                    let fn_type = if let Some(sig) = self.ty_ctx.fn_sig(*fn_def_id) {
+                        self.llvm_fn_type_from_sig(sig)
+                    } else {
+                        self.context.void_type().fn_type(&[], false)
+                    };
                     module.add_function(&fn_name, fn_type, None)
                 });
                 callee
@@ -214,24 +250,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .as_basic_value_enum()
             }
             MirConstKind::ConstRef(const_def_id, _substs) => {
-                let global_name = format!("__glyim_const_{}", const_def_id.to_raw());
-                let module = self.module;
-                let global = module.get_global(&global_name).unwrap_or_else(|| {
-                    let llvm_ty = self.llvm_type_for_ty(c.ty);
-                    let global = module.add_global(
-                        llvm_ty,
-                        Some(inkwell::AddressSpace::default()),
-                        &global_name,
-                    );
-                    global.set_initializer(&llvm_ty.const_zero());
-                    global.set_constant(true);
-                    global.set_linkage(inkwell::module::Linkage::Internal);
-                    global
-                });
-                let llvm_ty = self.llvm_type_for_ty(c.ty);
-                self.builder
-                    .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
-                    .expect("const ref load failed")
+                // Const evaluation must be threaded through MIR to provide the initializer.
+                // Until then, we cannot zero-initialize mutable constants safely.
+                panic!(
+                    "MirConstKind::ConstRef reached codegen without evaluated initializer: {:?}",
+                    const_def_id
+                );
             }
             MirConstKind::Error => panic!("MirConstKind::Error reached codegen"),
         }
@@ -1242,14 +1266,26 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_int_add(l.into_int_value(), r.into_int_value(), "add")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("add failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "add failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
                         .build_float_add(l.into_float_value(), r.into_float_value(), "add")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("add failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "add failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("add: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "add: mismatched types",
+                    )])
                 }
             }
             BinOp::Sub => {
@@ -1257,14 +1293,26 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_int_sub(l.into_int_value(), r.into_int_value(), "sub")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("sub failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "sub failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
                         .build_float_sub(l.into_float_value(), r.into_float_value(), "sub")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("sub failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "sub failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("sub: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "sub: mismatched types",
+                    )])
                 }
             }
             BinOp::Mul => {
@@ -1272,142 +1320,322 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_int_mul(l.into_int_value(), r.into_int_value(), "mul")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("mul failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "mul failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
                         .build_float_mul(l.into_float_value(), r.into_float_value(), "mul")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("mul failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "mul failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("mul: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "mul: mismatched types",
+                    )])
                 }
             }
             BinOp::Div => {
                 if l.is_int_value() && r.is_int_value() {
                     let result = if self.is_signed_int_ty(operand_ty) {
-                        self.builder.build_int_signed_div(l.into_int_value(), r.into_int_value(), "div")
+                        self.builder.build_int_signed_div(
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "div",
+                        )
                     } else {
-                        self.builder.build_int_unsigned_div(l.into_int_value(), r.into_int_value(), "div")
+                        self.builder.build_int_unsigned_div(
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "div",
+                        )
                     };
-                    result
-                        .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("div failed: {:?}", e))])
+                    result.map(|v| v.as_basic_value_enum()).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "div failed: {:?}",
+                            e
+                        ))]
+                    })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
                         .build_float_div(l.into_float_value(), r.into_float_value(), "div")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("div failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "div failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("div: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "div: mismatched types",
+                    )])
                 }
             }
             BinOp::Rem => {
                 if l.is_int_value() && r.is_int_value() {
                     let result = if self.is_signed_int_ty(operand_ty) {
-                        self.builder.build_int_signed_rem(l.into_int_value(), r.into_int_value(), "rem")
+                        self.builder.build_int_signed_rem(
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "rem",
+                        )
                     } else {
-                        self.builder.build_int_unsigned_rem(l.into_int_value(), r.into_int_value(), "rem")
+                        self.builder.build_int_unsigned_rem(
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "rem",
+                        )
                     };
-                    result
-                        .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("rem failed: {:?}", e))])
+                    result.map(|v| v.as_basic_value_enum()).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "rem failed: {:?}",
+                            e
+                        ))]
+                    })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
                         .build_float_rem(l.into_float_value(), r.into_float_value(), "rem")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("rem failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "rem failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("rem: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "rem: mismatched types",
+                    )])
                 }
             }
             BinOp::Eq => {
                 if l.is_int_value() && r.is_int_value() {
                     self.builder
-                        .build_int_compare(IntPredicate::EQ, l.into_int_value(), r.into_int_value(), "eq")
+                        .build_int_compare(
+                            IntPredicate::EQ,
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "eq",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("eq failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "eq failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
-                        .build_float_compare(FloatPredicate::OEQ, l.into_float_value(), r.into_float_value(), "eq")
+                        .build_float_compare(
+                            FloatPredicate::OEQ,
+                            l.into_float_value(),
+                            r.into_float_value(),
+                            "eq",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("eq failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "eq failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("eq: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "eq: mismatched types",
+                    )])
                 }
             }
             BinOp::Ne => {
                 if l.is_int_value() && r.is_int_value() {
                     self.builder
-                        .build_int_compare(IntPredicate::NE, l.into_int_value(), r.into_int_value(), "ne")
+                        .build_int_compare(
+                            IntPredicate::NE,
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "ne",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("ne failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ne failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
-                        .build_float_compare(FloatPredicate::ONE, l.into_float_value(), r.into_float_value(), "ne")
+                        .build_float_compare(
+                            FloatPredicate::ONE,
+                            l.into_float_value(),
+                            r.into_float_value(),
+                            "ne",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("ne failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ne failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("ne: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "ne: mismatched types",
+                    )])
                 }
             }
             BinOp::Lt => {
                 if l.is_int_value() && r.is_int_value() {
                     self.builder
-                        .build_int_compare(IntPredicate::SLT, l.into_int_value(), r.into_int_value(), "lt")
+                        .build_int_compare(
+                            IntPredicate::SLT,
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "lt",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("lt failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "lt failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
-                        .build_float_compare(FloatPredicate::OLT, l.into_float_value(), r.into_float_value(), "lt")
+                        .build_float_compare(
+                            FloatPredicate::OLT,
+                            l.into_float_value(),
+                            r.into_float_value(),
+                            "lt",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("lt failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "lt failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("lt: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "lt: mismatched types",
+                    )])
                 }
             }
             BinOp::Gt => {
                 if l.is_int_value() && r.is_int_value() {
                     self.builder
-                        .build_int_compare(IntPredicate::SGT, l.into_int_value(), r.into_int_value(), "gt")
+                        .build_int_compare(
+                            IntPredicate::SGT,
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "gt",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("gt failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "gt failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
-                        .build_float_compare(FloatPredicate::OGT, l.into_float_value(), r.into_float_value(), "gt")
+                        .build_float_compare(
+                            FloatPredicate::OGT,
+                            l.into_float_value(),
+                            r.into_float_value(),
+                            "gt",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("gt failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "gt failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("gt: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "gt: mismatched types",
+                    )])
                 }
             }
             BinOp::LtEq => {
                 if l.is_int_value() && r.is_int_value() {
                     self.builder
-                        .build_int_compare(IntPredicate::SLE, l.into_int_value(), r.into_int_value(), "le")
+                        .build_int_compare(
+                            IntPredicate::SLE,
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "le",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("le failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "le failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
-                        .build_float_compare(FloatPredicate::OLE, l.into_float_value(), r.into_float_value(), "le")
+                        .build_float_compare(
+                            FloatPredicate::OLE,
+                            l.into_float_value(),
+                            r.into_float_value(),
+                            "le",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("le failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "le failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("le: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "le: mismatched types",
+                    )])
                 }
             }
             BinOp::GtEq => {
                 if l.is_int_value() && r.is_int_value() {
                     self.builder
-                        .build_int_compare(IntPredicate::SGE, l.into_int_value(), r.into_int_value(), "ge")
+                        .build_int_compare(
+                            IntPredicate::SGE,
+                            l.into_int_value(),
+                            r.into_int_value(),
+                            "ge",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("ge failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ge failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else if l.is_float_value() && r.is_float_value() {
                     self.builder
-                        .build_float_compare(FloatPredicate::OGE, l.into_float_value(), r.into_float_value(), "ge")
+                        .build_float_compare(
+                            FloatPredicate::OGE,
+                            l.into_float_value(),
+                            r.into_float_value(),
+                            "ge",
+                        )
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("ge failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ge failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("ge: mismatched types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "ge: mismatched types",
+                    )])
                 }
             }
             BinOp::And => {
@@ -1415,9 +1643,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_and(l.into_int_value(), r.into_int_value(), "and")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("and failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "and failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("and: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "and: expected integer types",
+                    )])
                 }
             }
             BinOp::Or => {
@@ -1425,9 +1660,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_or(l.into_int_value(), r.into_int_value(), "or")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("or failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "or failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("or: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "or: expected integer types",
+                    )])
                 }
             }
             BinOp::BitAnd => {
@@ -1435,9 +1677,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_and(l.into_int_value(), r.into_int_value(), "bitand")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("bitand failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitand failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("bitand: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "bitand: expected integer types",
+                    )])
                 }
             }
             BinOp::BitOr => {
@@ -1445,9 +1694,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_or(l.into_int_value(), r.into_int_value(), "bitor")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("bitor failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitor failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("bitor: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "bitor: expected integer types",
+                    )])
                 }
             }
             BinOp::BitXor => {
@@ -1455,9 +1711,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_xor(l.into_int_value(), r.into_int_value(), "bitxor")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("bitxor failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitxor failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("bitxor: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "bitxor: expected integer types",
+                    )])
                 }
             }
             BinOp::Shl => {
@@ -1465,9 +1728,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_left_shift(l.into_int_value(), r.into_int_value(), "shl")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("shl failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "shl failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("shl: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "shl: expected integer types",
+                    )])
                 }
             }
             BinOp::Shr => {
@@ -1476,9 +1746,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     self.builder
                         .build_right_shift(l.into_int_value(), r.into_int_value(), signed, "shr")
                         .map(|v| v.as_basic_value_enum())
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("shr failed: {:?}", e))])
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "shr failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("shr: expected integer types")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "shr: expected integer types",
+                    )])
                 }
             }
         }
@@ -1529,7 +1806,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     )])
                 }
             }
-            UnOp::Deref => Ok(val),
+            UnOp::Deref => {
+                // If the operand is a pointer/reference, load it.
+                if val.is_pointer_value() {
+                    // We don't have the pointee type easily here without MIR type context.
+                    // Fallback: just return the pointer, it will be loaded by place_ptr if needed.
+                    Ok(val)
+                } else {
+                    Ok(val)
+                }
+            }
         }
     }
 
@@ -1630,16 +1916,30 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     if src_is_f64 == target_is_f64 {
                         Ok(float_val.as_basic_value_enum())
                     } else if !src_is_f64 && target_is_f64 {
-                        self.builder.build_float_ext(float_val, target_float_ty, "fpext")
+                        self.builder
+                            .build_float_ext(float_val, target_float_ty, "fpext")
                             .map(|v| v.as_basic_value_enum())
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("fpext failed: {:?}", e))])
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "fpext failed: {:?}",
+                                    e
+                                ))]
+                            })
                     } else {
-                        self.builder.build_float_trunc(float_val, target_float_ty, "fptrunc")
+                        self.builder
+                            .build_float_trunc(float_val, target_float_ty, "fptrunc")
                             .map(|v| v.as_basic_value_enum())
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("fptrunc failed: {:?}", e))])
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "fptrunc failed: {:?}",
+                                    e
+                                ))]
+                            })
                     }
                 } else {
-                    Err(vec![GlyimDiagnostic::internal_error("FloatToFloat cast on non-float")])
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "FloatToFloat cast on non-float",
+                    )])
                 }
             }
             CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
@@ -1719,8 +2019,14 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let case_ty = self.llvm_type_for_ty(*switch_ty).into_int_type();
 
                 if targets.iter().count() == 0 {
-                    self.builder.build_unconditional_branch(otherwise)
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch failed: {:?}", e))])?;
+                    self.builder
+                        .build_unconditional_branch(otherwise)
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "branch failed: {:?}",
+                                e
+                            ))]
+                        })?;
                 } else {
                     let mut branches = Vec::new();
                     for (val, bb) in targets.iter() {
@@ -1728,8 +2034,14 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         let bb_val = *self.bb_map.get(&bb).unwrap();
                         branches.push((const_val, bb_val));
                     }
-                    self.builder.build_switch(discr_int, otherwise, &branches)
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("switch failed: {:?}", e))])?;
+                    self.builder
+                        .build_switch(discr_int, otherwise, &branches)
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "switch failed: {:?}",
+                                e
+                            ))]
+                        })?;
                 }
                 Ok(())
             }
@@ -1741,9 +2053,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 {
                     self.builder.build_return(None).expect("return failed");
                 } else {
-                    let ret_op = glyim_mir::Operand::Move(glyim_mir::Place::new(LocalIdx::from_raw(0)));
+                    let ret_op =
+                        glyim_mir::Operand::Move(glyim_mir::Place::new(LocalIdx::from_raw(0)));
                     let val = self.lower_operand(&ret_op);
-                    self.builder.build_return(Some(&val)).expect("return failed");
+                    self.builder
+                        .build_return(Some(&val))
+                        .expect("return failed");
                 }
                 Ok(())
             }
@@ -1780,7 +2095,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 expected,
                 target,
                 cleanup,
-                msg: _,
+                msg,
             } => {
                 let cond_int = self.lower_operand(cond).into_int_value();
                 let expected_val = self
@@ -1822,20 +2137,43 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .fn_type(&[i8_ptr_ty.into(), i64_ty.into()], false);
                     module.add_function("glyim_panic", fn_ty, None)
                 });
-                let null_msg = i8_ptr_ty.const_null();
-                let zero_len = i64_ty.const_zero();
+                let msg_str = format!("assertion failed: {:?}", msg);
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                msg_str.hash(&mut hasher);
+                let hash = hasher.finish();
+                let global_name = format!("__glyim_assert_{:016x}", hash);
+                let msg_global = module.get_global(&global_name).unwrap_or_else(|| {
+                    let const_str = self.context.const_string(msg_str.as_bytes(), true);
+                    let i8_type = self.context.i8_type();
+                    let str_type = i8_type.array_type(msg_str.len() as u32 + 1);
+                    let global = module.add_global(
+                        str_type,
+                        Some(inkwell::AddressSpace::default()),
+                        &global_name,
+                    );
+                    global.set_initializer(&const_str);
+                    global.set_constant(true);
+                    global.set_linkage(inkwell::module::Linkage::Private);
+                    global
+                });
+                let msg_ptr = self
+                    .builder
+                    .build_bit_cast(msg_global.as_pointer_value(), i8_ptr_ty, "msg_ptr")
+                    .expect("bitcast failed")
+                    .into_pointer_value();
+                let msg_len = i64_ty.const_int(msg_str.len() as u64, false);
                 let panic_args: Vec<BasicMetadataValueEnum<'ctx>> =
-                    vec![null_msg.into(), zero_len.into()];
+                    vec![msg_ptr.into(), msg_len.into()];
 
                 if let Some(cleanup_bb_idx) = cleanup {
                     let cleanup_bb = *self.bb_map.get(cleanup_bb_idx).unwrap();
                     let unreachable_cont = self
                         .context
                         .append_basic_block(self.function, "assert_panic_cont");
-                    let panic_args_vals: Vec<BasicValueEnum<'ctx>> = vec![
-                        null_msg.as_basic_value_enum(),
-                        zero_len.as_basic_value_enum(),
-                    ];
+                    let panic_args_vals: Vec<BasicValueEnum<'ctx>> =
+                        vec![msg_ptr.as_basic_value_enum(), msg_len.as_basic_value_enum()];
                     self.builder
                         .build_invoke(
                             panic_fn,
@@ -1888,12 +2226,22 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let cleanup_bb = cleanup.map(|c| *self.bb_map.get(&c).unwrap());
 
                 if needs_drop || is_owning {
-                    let drop_fn = self.module.get_function("glyim_drop_in_place").unwrap_or_else(|| {
-                        let fn_type = self.context.void_type().fn_type(&[self.context.ptr_type(AddressSpace::default()).into()], false);
-                        self.module.add_function("glyim_drop_in_place", fn_type, None)
-                    });
+                    let drop_fn = self
+                        .module
+                        .get_function("glyim_drop_in_place")
+                        .unwrap_or_else(|| {
+                            let fn_type = self.context.void_type().fn_type(
+                                &[self.context.ptr_type(AddressSpace::default()).into()],
+                                false,
+                            );
+                            self.module
+                                .add_function("glyim_drop_in_place", fn_type, None)
+                        });
 
-                    let drop_arg = if matches!(self.ty_ctx.ty_kind(ty), TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _)) {
+                    let drop_arg = if matches!(
+                        self.ty_ctx.ty_kind(ty),
+                        TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _)
+                    ) {
                         let val = self.lower_operand(&Operand::Move(place.clone()));
                         val.into_pointer_value().into()
                     } else {
@@ -1903,63 +2251,134 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
 
                     if let Some(cleanup_bb) = cleanup_bb {
                         let normal_bb = self.context.append_basic_block(self.function, "drop_cont");
-                        self.builder.build_invoke(drop_fn, &args_vals, normal_bb, cleanup_bb, "drop_call")
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("invoke failed: {:?}", e))])?;
+                        self.builder
+                            .build_invoke(drop_fn, &args_vals, normal_bb, cleanup_bb, "drop_call")
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "invoke failed: {:?}",
+                                    e
+                                ))]
+                            })?;
 
                         self.builder.position_at_end(normal_bb);
                         if is_owning {
-                            let dealloc_fn = self.module.get_function("glyim_dealloc").unwrap_or_else(|| {
-                                let fn_type = self.context.void_type().fn_type(&[self.context.ptr_type(AddressSpace::default()).into(), self.llvm_int_type(64).into(), self.llvm_int_type(64).into()], false);
-                                self.module.add_function("glyim_dealloc", fn_type, None)
-                            });
+                            let dealloc_fn = self
+                                .module
+                                .get_function("glyim_dealloc")
+                                .unwrap_or_else(|| {
+                                    let fn_type = self.context.void_type().fn_type(
+                                        &[
+                                            self.context.ptr_type(AddressSpace::default()).into(),
+                                            self.llvm_int_type(64).into(),
+                                            self.llvm_int_type(64).into(),
+                                        ],
+                                        false,
+                                    );
+                                    self.module.add_function("glyim_dealloc", fn_type, None)
+                                });
                             let val = self.lower_operand(&Operand::Move(place.clone()));
                             let ptr = val.into_pointer_value();
                             let pointee_ty = match self.ty_ctx.ty_kind(ty) {
                                 TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
                                 _ => unreachable!(),
                             };
-                            let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+                            let layout_computer =
+                                FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
                             if let Ok(layout) = layout_computer.layout_of(pointee_ty) {
-                                let size_val = self.llvm_int_type(64).const_int(layout.size.0, false);
-                                let align_val = self.llvm_int_type(64).const_int(layout.align.0, false);
-                                let dealloc_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![ptr.into(), size_val.into(), align_val.into()];
-                                self.builder.build_call(dealloc_fn, &dealloc_args, "dealloc_call")
-                                    .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("dealloc call failed: {:?}", e))])?;
+                                let size_val =
+                                    self.llvm_int_type(64).const_int(layout.size.0, false);
+                                let align_val =
+                                    self.llvm_int_type(64).const_int(layout.align.0, false);
+                                let dealloc_args: Vec<BasicMetadataValueEnum<'ctx>> =
+                                    vec![ptr.into(), size_val.into(), align_val.into()];
+                                self.builder
+                                    .build_call(dealloc_fn, &dealloc_args, "dealloc_call")
+                                    .map_err(|e| {
+                                        vec![GlyimDiagnostic::internal_error(format!(
+                                            "dealloc call failed: {:?}",
+                                            e
+                                        ))]
+                                    })?;
                             }
                         }
-                        self.builder.build_unconditional_branch(target_bb)
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch failed: {:?}", e))])?;
+                        self.builder
+                            .build_unconditional_branch(target_bb)
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "branch failed: {:?}",
+                                    e
+                                ))]
+                            })?;
                     } else {
-                        let args_meta: Vec<BasicMetadataValueEnum<'ctx>> = args_vals.iter().map(|&v| v.into()).collect();
-                        self.builder.build_call(drop_fn, &args_meta, "drop_call")
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("call failed: {:?}", e))])?;
+                        let args_meta: Vec<BasicMetadataValueEnum<'ctx>> =
+                            args_vals.iter().map(|&v| v.into()).collect();
+                        self.builder
+                            .build_call(drop_fn, &args_meta, "drop_call")
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "call failed: {:?}",
+                                    e
+                                ))]
+                            })?;
 
                         if is_owning {
-                            let dealloc_fn = self.module.get_function("glyim_dealloc").unwrap_or_else(|| {
-                                let fn_type = self.context.void_type().fn_type(&[self.context.ptr_type(AddressSpace::default()).into(), self.llvm_int_type(64).into(), self.llvm_int_type(64).into()], false);
-                                self.module.add_function("glyim_dealloc", fn_type, None)
-                            });
+                            let dealloc_fn = self
+                                .module
+                                .get_function("glyim_dealloc")
+                                .unwrap_or_else(|| {
+                                    let fn_type = self.context.void_type().fn_type(
+                                        &[
+                                            self.context.ptr_type(AddressSpace::default()).into(),
+                                            self.llvm_int_type(64).into(),
+                                            self.llvm_int_type(64).into(),
+                                        ],
+                                        false,
+                                    );
+                                    self.module.add_function("glyim_dealloc", fn_type, None)
+                                });
                             let val = self.lower_operand(&Operand::Move(place.clone()));
                             let ptr = val.into_pointer_value();
                             let pointee_ty = match self.ty_ctx.ty_kind(ty) {
                                 TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
                                 _ => unreachable!(),
                             };
-                            let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+                            let layout_computer =
+                                FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
                             if let Ok(layout) = layout_computer.layout_of(pointee_ty) {
-                                let size_val = self.llvm_int_type(64).const_int(layout.size.0, false);
-                                let align_val = self.llvm_int_type(64).const_int(layout.align.0, false);
-                                let dealloc_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![ptr.into(), size_val.into(), align_val.into()];
-                                self.builder.build_call(dealloc_fn, &dealloc_args, "dealloc_call")
-                                    .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("dealloc call failed: {:?}", e))])?;
+                                let size_val =
+                                    self.llvm_int_type(64).const_int(layout.size.0, false);
+                                let align_val =
+                                    self.llvm_int_type(64).const_int(layout.align.0, false);
+                                let dealloc_args: Vec<BasicMetadataValueEnum<'ctx>> =
+                                    vec![ptr.into(), size_val.into(), align_val.into()];
+                                self.builder
+                                    .build_call(dealloc_fn, &dealloc_args, "dealloc_call")
+                                    .map_err(|e| {
+                                        vec![GlyimDiagnostic::internal_error(format!(
+                                            "dealloc call failed: {:?}",
+                                            e
+                                        ))]
+                                    })?;
                             }
                         }
-                        self.builder.build_unconditional_branch(target_bb)
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch failed: {:?}", e))])?;
+                        self.builder
+                            .build_unconditional_branch(target_bb)
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "branch failed: {:?}",
+                                    e
+                                ))]
+                            })?;
                     }
                 } else {
-                    self.builder.build_unconditional_branch(target_bb)
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch failed: {:?}", e))])?;
+                    self.builder
+                        .build_unconditional_branch(target_bb)
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "branch failed: {:?}",
+                                e
+                            ))]
+                        })?;
                 }
                 Ok(())
             }
@@ -1994,37 +2413,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 e
             ))]
         })?;
-        let mut param_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = Vec::new();
         let is_sret = matches!(fn_abi.ret.mode, PassMode::Indirect { .. });
-        if is_sret {
-            param_types.push(self.context.ptr_type(AddressSpace::default()).into());
-        }
-        for arg_abi in &fn_abi.args {
-            let llvm_ty = match arg_abi.mode {
-                PassMode::Direct => self.llvm_type_for_ty(arg_abi.ty),
-                PassMode::Indirect { .. } => self.context.ptr_type(AddressSpace::default()).into(),
-                PassMode::Ignore => continue,
-                _ => self.llvm_type_for_ty(arg_abi.ty),
-            };
-            param_types.push(llvm_ty);
-        }
-        let ret_type: Option<inkwell::types::BasicTypeEnum<'ctx>> = if is_sret {
-            None
-        } else {
-            match fn_abi.ret.mode {
-                PassMode::Ignore => None,
-                _ => Some(self.llvm_type_for_ty(fn_abi.ret.ty)),
-            }
-        };
-        let metadata_param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> =
-            param_types.iter().map(|ty| (*ty).into()).collect();
-        let fn_type = if let Some(ret) = ret_type {
-            ret.fn_type(&metadata_param_types, fn_sig.c_variadic)
-        } else {
-            self.context
-                .void_type()
-                .fn_type(&metadata_param_types, fn_sig.c_variadic)
-        };
+        let fn_type = self.llvm_fn_type_from_sig(&fn_sig);
         let direct_fn_val = match func {
             Operand::Constant(c) => {
                 if let MirConstKind::Fn(fn_def_id, _) = &c.kind {
@@ -2073,11 +2463,13 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     llvm_args.push(tmp_ptr.as_basic_value_enum());
                 }
                 PassMode::Ignore => unreachable!(),
-                PassMode::Cast { .. } | PassMode::HomogeneousAggregate { .. } | PassMode::Split { .. } => {
-                    return Err(vec![GlyimDiagnostic::internal_error(format!(
+                PassMode::Cast { .. }
+                | PassMode::HomogeneousAggregate { .. }
+                | PassMode::Split { .. } => {
+                    panic!(
                         "PassMode::{:?} not yet implemented in lower_call",
                         arg_abi.mode
-                    ))]);
+                    );
                 }
             }
             arg_idx += 1;
@@ -2283,24 +2675,21 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
     fn type_needs_drop(&self, ty: Ty) -> bool {
         match self.ty_ctx.ty_kind(ty) {
-            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => {
-                self.type_needs_drop(*inner)
-            }
+            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
             TyKind::Array(inner, _) => self.type_needs_drop(*inner),
-            TyKind::Tuple(substs) => {
-                self.ty_ctx.substitution_args(*substs).iter().any(|arg| {
-                    if let glyim_type::GenericArg::Ty(t) = arg {
-                        self.type_needs_drop(*t)
-                    } else {
-                        false
-                    }
-                })
-            }
+            TyKind::Tuple(substs) => self.ty_ctx.substitution_args(*substs).iter().any(|arg| {
+                if let glyim_type::GenericArg::Ty(t) = arg {
+                    self.type_needs_drop(*t)
+                } else {
+                    false
+                }
+            }),
             TyKind::Adt(adt_id, _) => {
                 if let Some(adt_def) = self.ty_ctx.adt_def(*adt_id) {
-                    adt_def.variants.iter().any(|v| {
-                        v.fields.iter().any(|f| self.type_needs_drop(f.ty))
-                    })
+                    adt_def
+                        .variants
+                        .iter()
+                        .any(|v| v.fields.iter().any(|f| self.type_needs_drop(f.ty)))
                 } else {
                     false
                 }
@@ -2315,15 +2704,23 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 })
             }
             TyKind::String => true,
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char | TyKind::Never | TyKind::Unit | TyKind::FnDef(_, _) | TyKind::FnPtr(_) => false,
+            TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char
+            | TyKind::Never
+            | TyKind::Unit
+            | TyKind::FnDef(_, _)
+            | TyKind::FnPtr(_) => false,
             _ => false,
         }
     }
 
     fn type_is_owning_pointer(&self, ty: Ty) -> bool {
         match self.ty_ctx.ty_kind(ty) {
-            TyKind::Ref(_, inner, glyim_core::primitives::Mutability::Mut) |
-            TyKind::RawPtr(inner, glyim_core::primitives::Mutability::Mut) => {
+            TyKind::Ref(_, inner, glyim_core::primitives::Mutability::Mut)
+            | TyKind::RawPtr(inner, glyim_core::primitives::Mutability::Mut) => {
                 !self.ty_ctx.is_copy(*inner)
             }
             _ => false,
@@ -2366,6 +2763,43 @@ pub(crate) fn lower_body<'ctx>(
         ret_llvm_ty.fn_type(&param_types, false)
     };
     let function = module.add_function(&fn_name, fn_type, None);
+
+    // Apply ABI attributes to function definition parameters
+    let layout_computer = FullLayoutComputer::new(ty_ctx, target_info.clone());
+    if let Ok(fn_abi) = layout_computer.fn_abi_of(&glyim_type::FnSig {
+        inputs: glyim_type::Substitution::empty(), // Placeholder, ideally we'd have the real sig
+        output: body.return_ty,
+        abi: glyim_core::primitives::Abi::Glyim,
+        c_variadic: false,
+        unsafety: glyim_core::primitives::Safety::Safe,
+    }) {
+        let mut param_idx = 0;
+        if matches!(fn_abi.ret.mode, glyim_layout::PassMode::Indirect { .. }) {
+            let sret_attr = context.create_enum_attribute(
+                inkwell::attributes::Attribute::get_named_enum_kind_id("sret"),
+                0,
+            );
+            function.add_attribute(
+                inkwell::attributes::AttributeLoc::Param(param_idx),
+                sret_attr,
+            );
+            param_idx += 1;
+        }
+        for arg_abi in &fn_abi.args {
+            if let glyim_layout::PassMode::Indirect { .. } = arg_abi.mode {
+                let byval_attr = context.create_enum_attribute(
+                    inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),
+                    0,
+                );
+                function.add_attribute(
+                    inkwell::attributes::AttributeLoc::Param(param_idx),
+                    byval_attr,
+                );
+            }
+            param_idx += 1;
+        }
+    }
+
     let mut debug_ctx = if debug_info {
         Some(DebugInfoCtx::new(
             context, module, source_map, true, hygiene,
@@ -2421,12 +2855,15 @@ pub(crate) fn lower_body<'ctx>(
         // routine (or a custom one shipped in glyim-runtime) will be needed
         // for other `TargetInfo` targets (e.g. macOS, or unwinding-disabled
         // embedded targets that should instead force `has_cleanup` off).
-        let personality_fn_type = context.i32_type().fn_type(&[], true); // variadic to accept the Itanium ABI's actual argument list
+        let personality_name = if target_info.triple.contains("windows") {
+            "__CxxFrameHandler3"
+        } else {
+            "__gcc_personality_v0"
+        };
+        let personality_fn_type = context.i32_type().fn_type(&[], true);
         let personality_fn = module
-            .get_function("__gcc_personality_v0")
-            .unwrap_or_else(|| {
-                module.add_function("__gcc_personality_v0", personality_fn_type, None)
-            });
+            .get_function(personality_name)
+            .unwrap_or_else(|| module.add_function(personality_name, personality_fn_type, None));
         function.set_personality_function(personality_fn);
         Some(personality_fn)
     } else {

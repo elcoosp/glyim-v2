@@ -132,7 +132,9 @@ impl ReferenceGraph {
         fn extract_path_name(expr_id: ExprId, body: &Body, interner: &Interner) -> Option<String> {
             let expr = &body.exprs[expr_id];
             match expr {
-                Expr::Path(path) => path.as_name().map(|name| interner.resolve(name).to_string()),
+                Expr::Path(path) => path
+                    .as_name()
+                    .map(|name| interner.resolve(name).to_string()),
                 Expr::Ref { expr, .. } => extract_path_name(*expr, body, interner),
                 Expr::Unary { expr, .. } => extract_path_name(*expr, body, interner),
                 Expr::Field { receiver, .. } => extract_path_name(*receiver, body, interner),
@@ -167,9 +169,25 @@ impl ReferenceGraph {
                         eprintln!("CALL function: {}", name);
                         add_ref(&name, span, false, ReferenceKind::Call);
                     }
-                    walk_expr(*func, body, interner, _file_id, add_ref, function_names, true);
+                    walk_expr(
+                        *func,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        true,
+                    );
                     for arg in args {
-                        walk_expr(*arg, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *arg,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::MethodCall {
@@ -178,33 +196,97 @@ impl ReferenceGraph {
                     args,
                     ..
                 } => {
-                    walk_expr(*receiver, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *receiver,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                     let method_str = interner.resolve(*method).to_string();
                     eprintln!("METHOD call: {}", method_str);
                     add_ref(&method_str, span, false, ReferenceKind::Call);
                     for arg in args {
-                        walk_expr(*arg, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *arg,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::Field { receiver, field } => {
-                    walk_expr(*receiver, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *receiver,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                     let field_str = interner.resolve(*field).to_string();
                     eprintln!("FIELD access: {}", field_str);
                     add_ref(&field_str, span, false, ReferenceKind::FieldAccess);
                 }
                 Expr::Binary { lhs, rhs, .. } => {
-                    walk_expr(*lhs, body, interner, _file_id, add_ref, function_names, false);
-                    walk_expr(*rhs, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *lhs,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                    walk_expr(
+                        *rhs,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::Unary { expr, .. } => {
-                    walk_expr(*expr, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *expr,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::Block { stmts, tail } => {
                     for stmt in stmts {
-                        walk_expr(*stmt, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *stmt,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                     if let Some(tail_expr) = tail {
-                        walk_expr(*tail_expr, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *tail_expr,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::If {
@@ -212,24 +294,80 @@ impl ReferenceGraph {
                     then_branch,
                     else_branch,
                 } => {
-                    walk_expr(*cond, body, interner, _file_id, add_ref, function_names, false);
-                    walk_expr(*then_branch, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *cond,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                    walk_expr(
+                        *then_branch,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                     if let Some(else_expr) = else_branch {
-                        walk_expr(*else_expr, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *else_expr,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::Match { scrutinee, arms } => {
-                    walk_expr(*scrutinee, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *scrutinee,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                     for arm in arms {
                         walk_pattern(arm.pat, body, interner, add_ref);
                         if let Some(guard) = arm.guard {
-                            walk_expr(guard, body, interner, _file_id, add_ref, function_names, false);
+                            walk_expr(
+                                guard,
+                                body,
+                                interner,
+                                _file_id,
+                                add_ref,
+                                function_names,
+                                false,
+                            );
                         }
-                        walk_expr(arm.body, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            arm.body,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::Return { value: Some(val) } => {
-                    walk_expr(*val, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *val,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::Return { value: None } => {}
                 Expr::Assign { lhs, rhs } => {
@@ -241,17 +379,49 @@ impl ReferenceGraph {
                         }
                     }
                     // Walk RHS only (not LHS to avoid duplicate use)
-                    walk_expr(*rhs, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *rhs,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::Loop { body: loop_body } => {
-                    walk_expr(*loop_body, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *loop_body,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::While {
                     cond,
                     body: loop_body,
                 } => {
-                    walk_expr(*cond, body, interner, _file_id, add_ref, function_names, false);
-                    walk_expr(*loop_body, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *cond,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                    walk_expr(
+                        *loop_body,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::For {
                     pat,
@@ -259,29 +429,85 @@ impl ReferenceGraph {
                     body: loop_body,
                 } => {
                     walk_pattern(*pat, body, interner, add_ref);
-                    walk_expr(*iterable, body, interner, _file_id, add_ref, function_names, false);
-                    walk_expr(*loop_body, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *iterable,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                    walk_expr(
+                        *loop_body,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::Struct { fields, spread, .. } => {
                     for (_, field_expr) in fields {
-                        walk_expr(*field_expr, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *field_expr,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                     if let Some(spread_expr) = spread {
-                        walk_expr(*spread_expr, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *spread_expr,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::Array(elems) | Expr::Tuple(elems) => {
                     for elem in elems {
-                        walk_expr(*elem, body, interner, _file_id, add_ref, function_names, false);
+                        walk_expr(
+                            *elem,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
                     }
                 }
                 Expr::Closure {
                     body: closure_body, ..
                 } => {
-                    walk_expr(*closure_body, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *closure_body,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
-                    walk_expr(*expr, body, interner, _file_id, add_ref, function_names, false);
+                    walk_expr(
+                        *expr,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
                 }
                 _ => {
                     // Fallback: if we don't handle a variant, we still might need to recurse.
@@ -295,7 +521,15 @@ impl ReferenceGraph {
                 walk_pattern(*param, body, interner, &mut add_ref);
             }
             for (expr_id, _) in body.exprs.iter_enumerated() {
-                walk_expr(expr_id, body, interner, file_id, &mut add_ref, function_names, false);
+                walk_expr(
+                    expr_id,
+                    body,
+                    interner,
+                    file_id,
+                    &mut add_ref,
+                    function_names,
+                    false,
+                );
             }
         }
     }

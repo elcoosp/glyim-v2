@@ -960,6 +960,7 @@ version = "0.1.0"
 dependencies = [
  "glyim-codegen",
  "glyim-core",
+ "glyim-db",
  "glyim-diag",
  "glyim-layout",
  "glyim-mir",

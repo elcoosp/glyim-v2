@@ -11,7 +11,6 @@ use crate::navigation::{document_symbols, find_references};
 use crate::rename::rename_symbol;
 use async_lsp::router::Router;
 
-
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentSymbolRequest, FoldingRangeRequest, Formatting,
     GotoDefinition, HoverRequest, Initialize, References, Rename, Shutdown,

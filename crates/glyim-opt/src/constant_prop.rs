@@ -81,14 +81,26 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
                         glyim_core::primitives::BinOp::Div => {
-                            if r != 0 { l / r } else { 0 }
+                            if r != 0 {
+                                l / r
+                            } else {
+                                0
+                            }
                         }
                         glyim_core::primitives::BinOp::Rem => {
-                            if r != 0 { l % r } else { 0 }
+                            if r != 0 {
+                                l % r
+                            } else {
+                                0
+                            }
                         }
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::Int(result), ty: left.ty, span: left.span })
+                    Some(MirConst {
+                        kind: MirConstKind::Int(result),
+                        ty: left.ty,
+                        span: left.span,
+                    })
                 }
                 (MirConstKind::Uint(l), MirConstKind::Uint(r)) => {
                     let result = match op {
@@ -96,14 +108,26 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
                         glyim_core::primitives::BinOp::Div => {
-                            if r != 0 { l / r } else { 0 }
+                            if r != 0 {
+                                l / r
+                            } else {
+                                0
+                            }
                         }
                         glyim_core::primitives::BinOp::Rem => {
-                            if r != 0 { l % r } else { 0 }
+                            if r != 0 {
+                                l % r
+                            } else {
+                                0
+                            }
                         }
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::Uint(result), ty: left.ty, span: left.span })
+                    Some(MirConst {
+                        kind: MirConstKind::Uint(result),
+                        ty: left.ty,
+                        span: left.span,
+                    })
                 }
                 (MirConstKind::Bool(l), MirConstKind::Bool(r)) => {
                     let result = match op {
@@ -113,7 +137,11 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Ne => l != r,
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::Bool(result), ty: left.ty, span: left.span })
+                    Some(MirConst {
+                        kind: MirConstKind::Bool(result),
+                        ty: left.ty,
+                        span: left.span,
+                    })
                 }
                 (MirConstKind::FloatBits(l), MirConstKind::FloatBits(r)) => {
                     let lf = f64::from_bits(l);
@@ -123,20 +151,64 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Sub => lf - rf,
                         glyim_core::primitives::BinOp::Mul => lf * rf,
                         glyim_core::primitives::BinOp::Div => {
-                            if rf != 0.0 { lf / rf } else { 0.0 }
+                            if rf != 0.0 {
+                                lf / rf
+                            } else {
+                                0.0
+                            }
                         }
-                        glyim_core::primitives::BinOp::Eq => if lf == rf { 1.0 } else { 0.0 },
-                        glyim_core::primitives::BinOp::Ne => if lf != rf { 1.0 } else { 0.0 },
-                        glyim_core::primitives::BinOp::Lt => if lf < rf { 1.0 } else { 0.0 },
-                        glyim_core::primitives::BinOp::Gt => if lf > rf { 1.0 } else { 0.0 },
-                        glyim_core::primitives::BinOp::LtEq => if lf <= rf { 1.0 } else { 0.0 },
-                        glyim_core::primitives::BinOp::GtEq => if lf >= rf { 1.0 } else { 0.0 },
+                        glyim_core::primitives::BinOp::Eq => {
+                            if lf == rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        glyim_core::primitives::BinOp::Ne => {
+                            if lf != rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        glyim_core::primitives::BinOp::Lt => {
+                            if lf < rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        glyim_core::primitives::BinOp::Gt => {
+                            if lf > rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        glyim_core::primitives::BinOp::LtEq => {
+                            if lf <= rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        glyim_core::primitives::BinOp::GtEq => {
+                            if lf >= rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
                         _ => return None,
                     };
                     // Convert result back to bits. For booleans, we produce a FloatBits of 0.0 or 1.0.
                     // This is not ideal but we keep type consistency.
                     let bits = result.to_bits();
-                    Some(MirConst { kind: MirConstKind::FloatBits(bits), ty: left.ty, span: left.span })
+                    Some(MirConst {
+                        kind: MirConstKind::FloatBits(bits),
+                        ty: left.ty,
+                        span: left.span,
+                    })
                 }
                 _ => None,
             }
@@ -150,21 +222,33 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::UnOp::Not => !v,
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::Int(result), ty: c.ty, span: c.span })
+                    Some(MirConst {
+                        kind: MirConstKind::Int(result),
+                        ty: c.ty,
+                        span: c.span,
+                    })
                 }
                 MirConstKind::Uint(v) => {
                     let result = match op {
                         glyim_core::primitives::UnOp::Not => !v,
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::Uint(result), ty: c.ty, span: c.span })
+                    Some(MirConst {
+                        kind: MirConstKind::Uint(result),
+                        ty: c.ty,
+                        span: c.span,
+                    })
                 }
                 MirConstKind::Bool(v) => {
                     let result = match op {
                         glyim_core::primitives::UnOp::Not => !v,
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::Bool(result), ty: c.ty, span: c.span })
+                    Some(MirConst {
+                        kind: MirConstKind::Bool(result),
+                        ty: c.ty,
+                        span: c.span,
+                    })
                 }
                 MirConstKind::FloatBits(v) => {
                     let f = f64::from_bits(v);
@@ -172,7 +256,11 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::UnOp::Neg => -f,
                         _ => return None,
                     };
-                    Some(MirConst { kind: MirConstKind::FloatBits(result.to_bits()), ty: c.ty, span: c.span })
+                    Some(MirConst {
+                        kind: MirConstKind::FloatBits(result.to_bits()),
+                        ty: c.ty,
+                        span: c.span,
+                    })
                 }
                 _ => None,
             }

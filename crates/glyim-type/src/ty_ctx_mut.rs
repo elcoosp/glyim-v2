@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::collections::HashMap;
 use crate::adt_def::*;
 use crate::auto_trait::*;
 use crate::display::TypeLookup;
@@ -14,6 +12,8 @@ use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
 use indexmap::IndexSet;
 use smallvec::SmallVec;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 pub struct TyCtxMut {
     types: Vec<TyKind>,
@@ -29,7 +29,7 @@ pub struct TyCtxMut {
 
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
 
-        variant_types: HashMap<AdtId, Vec<Ty>>,
+    variant_types: HashMap<AdtId, Vec<Ty>>,
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
@@ -75,16 +75,56 @@ impl TyCtxMut {
             Ty::BOOL.to_raw(),
             "Ty::BOOL sentinel mismatch"
         );
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U8)).to_raw(), Ty::U8.to_raw(), "Ty::U8 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U16)).to_raw(), Ty::U16.to_raw(), "Ty::U16 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U32)).to_raw(), Ty::U32.to_raw(), "Ty::U32 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U64)).to_raw(), Ty::U64.to_raw(), "Ty::U64 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::Usize)).to_raw(), Ty::USIZE.to_raw(), "Ty::USIZE sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I8)).to_raw(), Ty::I8.to_raw(), "Ty::I8 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I16)).to_raw(), Ty::I16.to_raw(), "Ty::I16 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I32)).to_raw(), Ty::I32.to_raw(), "Ty::I32 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I64)).to_raw(), Ty::I64.to_raw(), "Ty::I64 sentinel mismatch");
-        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::Isize)).to_raw(), Ty::ISIZE.to_raw(), "Ty::ISIZE sentinel mismatch");
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Uint(UintTy::U8)).to_raw(),
+            Ty::U8.to_raw(),
+            "Ty::U8 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Uint(UintTy::U16)).to_raw(),
+            Ty::U16.to_raw(),
+            "Ty::U16 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Uint(UintTy::U32)).to_raw(),
+            Ty::U32.to_raw(),
+            "Ty::U32 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Uint(UintTy::U64)).to_raw(),
+            Ty::U64.to_raw(),
+            "Ty::U64 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Uint(UintTy::Usize)).to_raw(),
+            Ty::USIZE.to_raw(),
+            "Ty::USIZE sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Int(IntTy::I8)).to_raw(),
+            Ty::I8.to_raw(),
+            "Ty::I8 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Int(IntTy::I16)).to_raw(),
+            Ty::I16.to_raw(),
+            "Ty::I16 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Int(IntTy::I32)).to_raw(),
+            Ty::I32.to_raw(),
+            "Ty::I32 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Int(IntTy::I64)).to_raw(),
+            Ty::I64.to_raw(),
+            "Ty::I64 sentinel mismatch"
+        );
+        assert_eq!(
+            ctx.alloc_ty_internal(TyKind::Int(IntTy::Isize)).to_raw(),
+            Ty::ISIZE.to_raw(),
+            "Ty::ISIZE sentinel mismatch"
+        );
         ctx
     }
 

@@ -40,7 +40,9 @@ impl Pipeline {
             .unwrap_or_else(|| Arc::from(""));
 
         let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
-        sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
+        sink_cell
+            .borrow_mut()
+            .extend(parse_result.diagnostics.clone());
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
@@ -70,8 +72,8 @@ impl Pipeline {
         db.set_ty_ctx(ty_ctx);
 
         let mir_bodies_map: std::collections::HashMap<glyim_core::def_id::DefId, Arc<Body>> = {
-            let ty_ctx_guard = db.ty_ctx();
-            let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set after typeck");
+            let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
+            let ty_ctx_ref = ty_ctx_guard.as_ref();
 
             let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
             let mut bodies = std::collections::HashMap::new();
@@ -111,8 +113,8 @@ impl Pipeline {
 
         let mono_items: Vec<glyim_lower::mono::MonoItemData> = {
             let mut mono_ctx = MonoCtx::new();
-            let ty_ctx_guard = db.ty_ctx();
-            let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set");
+            let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
+            let ty_ctx_ref = ty_ctx_guard.as_ref();
             let body_provider = make_mir_body_provider(&mir_bodies_map, &sink_cell, ty_ctx_ref);
             let drop_provider = make_drop_glue_provider(ty_ctx_ref);
             mono_ctx.collect(&mono_roots, &body_provider, &drop_provider);
@@ -163,7 +165,11 @@ impl Pipeline {
     }
 }
 
-pub fn emit_mir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
+pub fn emit_mir(
+    db: &mut Database,
+    input: &Path,
+    output: &Path,
+) -> Result<(), Vec<GlyimDiagnostic>> {
     let sink = DiagSink::new();
     let sink_cell = RefCell::new(sink);
 
@@ -177,13 +183,14 @@ pub fn emit_mir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Ve
         .unwrap_or_else(|| Arc::from(""));
 
     let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
-    sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
+    sink_cell
+        .borrow_mut()
+        .extend(parse_result.diagnostics.clone());
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
     }
 
-    let (def_map, def_diagnostics) =
-        glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
     sink_cell.borrow_mut().extend(def_diagnostics);
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
@@ -206,8 +213,8 @@ pub fn emit_mir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Ve
 
     db.set_ty_ctx(ty_ctx);
 
-    let ty_ctx_guard = db.ty_ctx();
-    let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set");
+    let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
+    let ty_ctx_ref = ty_ctx_guard.as_ref();
     let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
     let mut mir_bodies = Vec::new();
 
@@ -225,12 +232,17 @@ pub fn emit_mir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Ve
         out.push_str(&format_body(body, ty_ctx_ref));
         out.push_str("\n\n");
     }
-    std::fs::write(output, out).map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
+    std::fs::write(output, out)
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
 
     Ok(())
 }
 
-pub fn emit_llvm_ir(db: &mut Database, input: &Path, output: &Path) -> Result<(), Vec<GlyimDiagnostic>> {
+pub fn emit_llvm_ir(
+    db: &mut Database,
+    input: &Path,
+    output: &Path,
+) -> Result<(), Vec<GlyimDiagnostic>> {
     let sink = DiagSink::new();
     let sink_cell = RefCell::new(sink);
 
@@ -244,13 +256,14 @@ pub fn emit_llvm_ir(db: &mut Database, input: &Path, output: &Path) -> Result<()
         .unwrap_or_else(|| Arc::from(""));
 
     let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
-    sink_cell.borrow_mut().extend(parse_result.diagnostics.clone());
+    sink_cell
+        .borrow_mut()
+        .extend(parse_result.diagnostics.clone());
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
     }
 
-    let (def_map, def_diagnostics) =
-        glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
     sink_cell.borrow_mut().extend(def_diagnostics);
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
@@ -273,8 +286,8 @@ pub fn emit_llvm_ir(db: &mut Database, input: &Path, output: &Path) -> Result<()
 
     db.set_ty_ctx(ty_ctx);
 
-    let ty_ctx_guard = db.ty_ctx();
-    let ty_ctx_ref = ty_ctx_guard.as_ref().expect("ty_ctx not set");
+    let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
+    let ty_ctx_ref = ty_ctx_guard.as_ref();
     let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
     let mut mir_bodies = Vec::new();
 
@@ -288,13 +301,20 @@ pub fn emit_llvm_ir(db: &mut Database, input: &Path, output: &Path) -> Result<()
     }
 
     if mir_bodies.is_empty() {
-        return Err(vec![GlyimDiagnostic::internal_error("No MIR bodies generated")]);
+        return Err(vec![GlyimDiagnostic::internal_error(
+            "No MIR bodies generated",
+        )]);
     }
 
     let backend = LlvmBackend::new().with_debug_info(false);
     let ir = backend
         .emit_ir_to_string(ty_ctx_ref, &mir_bodies[0])
-        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("LLVM IR generation failed: {:?}", e))])?;
+        .map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "LLVM IR generation failed: {:?}",
+                e
+            ))]
+        })?;
     std::fs::write(output, ir).map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
 
     Ok(())

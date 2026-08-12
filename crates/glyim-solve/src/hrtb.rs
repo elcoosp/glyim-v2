@@ -307,7 +307,9 @@ pub fn check_hrtb(
             // For now, just check that the type doesn't contain any unbound parameters.
             use glyim_type::TypeFlags;
             let flags = ctx.ty_flags(tp.ty);
-            if flags.contains(TypeFlags::HAS_TY_PARAM) || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER) {
+            if flags.contains(TypeFlags::HAS_TY_PARAM)
+                || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER)
+            {
                 // Type contains generic parameters, which may be okay if they are bound.
                 // For a placeholder, we need to ensure the type is well-formed in the universe.
                 // Conservative: return Ambiguous.
@@ -321,7 +323,9 @@ pub fn check_hrtb(
             // For HRTB, we just check that the type doesn't contain unbound params.
             use glyim_type::TypeFlags;
             let flags = ctx.ty_flags(*ty);
-            if flags.contains(TypeFlags::HAS_TY_PARAM) || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER) {
+            if flags.contains(TypeFlags::HAS_TY_PARAM)
+                || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER)
+            {
                 // Conservative.
                 crate::solver::SolverResult::Ambiguous
             } else {

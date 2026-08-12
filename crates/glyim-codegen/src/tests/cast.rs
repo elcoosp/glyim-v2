@@ -32,7 +32,10 @@ fn emit_cast_int_to_float() {
             ),
             source_info: SourceInfo::new(Span::DUMMY),
         });
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_CAST));
 }
@@ -63,7 +66,10 @@ fn emit_cast_float_to_int() {
             ),
             source_info: SourceInfo::new(Span::DUMMY),
         });
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_CAST));
 }

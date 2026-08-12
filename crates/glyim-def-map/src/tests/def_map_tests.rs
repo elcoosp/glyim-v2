@@ -40,7 +40,7 @@ fn resolve_path(def_map: &CrateDefMap, path_str: &str) -> PerNs {
         .collect();
 
     let path = Path { kind, segments };
-    let resolver = Resolver::new(def_map, def_map.root);
+    let resolver = Resolver::new(&def_map.modules, def_map.root, def_map.root);
     resolver.resolve_path(&path)
 }
 
@@ -63,7 +63,7 @@ fn resolve_from(def_map: &CrateDefMap, module: ModuleId, path_str: &str) -> PerN
         })
         .collect();
     let path = Path { kind, segments };
-    let resolver = Resolver::new(def_map, module);
+    let resolver = Resolver::new(&def_map.modules, def_map.root, module);
     resolver.resolve_path(&path)
 }
 
@@ -211,7 +211,7 @@ fn t09_crate_path_resolution() {
             name: def_map.interner.intern("top"),
         }],
     };
-    let resolver = Resolver::new(&def_map, inner_id);
+    let resolver = Resolver::new(&def_map.modules, def_map.root, inner_id);
     let result = resolver.resolve_path(&path);
     assert!(result.values.is_some());
 }
@@ -551,10 +551,10 @@ fn t41_per_ns_is_none_when_empty() {
 fn t42_resolver_module_accessor() {
     let (def_map, diags) = build_map("fn x() {}");
     assert!(diags.is_empty());
-    let resolver = Resolver::new(&def_map, def_map.root);
+    let resolver = Resolver::new(&def_map.modules, def_map.root, def_map.root);
     assert_eq!(resolver.module(), def_map.root);
     // def_map accessor returns reference
-    let _: &CrateDefMap = resolver.def_map();
+    let _: &glyim_core::arena::IndexVec<ModuleId, ModuleData> = resolver.def_map();
 }
 
 #[test]

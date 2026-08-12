@@ -59,7 +59,10 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
                 if is_type_node(&child) {
                     inner = lower_type_ref(&child, interner);
                 } else if child.kind() == SyntaxKind::LitExpr {
-                    let text = child.first_token().map(|t| t.text().to_string()).unwrap_or_default();
+                    let text = child
+                        .first_token()
+                        .map(|t| t.text().to_string())
+                        .unwrap_or_default();
                     if let Ok(n) = text.parse::<u128>() {
                         len = Some(ConstRef::Literal(Literal::Uint(n, None)));
                     } else if let Ok(n) = text.parse::<i128>() {
@@ -96,7 +99,7 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
             }
         }
         _ => {
-            glyim_diag::stub!("unhandled type node {:?}", node.kind());
+            panic!("unhandled type node {:?}", node.kind());
         }
     }
 }

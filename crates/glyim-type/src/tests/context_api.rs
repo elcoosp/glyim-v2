@@ -18,7 +18,11 @@ fn new_creates_context_with_four_sentinels() {
 fn first_custom_type_gets_index_4() {
     let (frozen, custom) = with_fresh_ty_ctx(|c| {
         let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-        assert_eq!(ty.to_raw(), 14, "first custom type should be at index 14 (after sentinels and primitives)");
+        assert_eq!(
+            ty.to_raw(),
+            14,
+            "first custom type should be at index 14 (after sentinels and primitives)"
+        );
         ty
     });
     assert_eq!(custom.to_raw(), 14);

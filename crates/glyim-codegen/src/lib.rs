@@ -1,9 +1,9 @@
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_diag::{CompResult, GlyimDiagnostic};
-use glyim_type::{ConstKind, TyKind};
 use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
+use glyim_type::{ConstKind, TyKind};
 use glyim_type::{FieldIdx, Substitution, Ty, TyCtx};
 use std::cell::RefCell;
 use std::path::Path;
@@ -67,7 +67,6 @@ impl LayoutProvider for GlyimLayoutProvider {
         }
     }
 }
-
 
 pub struct BytecodeBackend {
     string_table: RefCell<Vec<String>>,
@@ -154,7 +153,11 @@ impl BytecodeBackend {
                 ProjectionElem::Downcast(_) => {
                     // Downcast does not change the address
                 }
-                ProjectionElem::ConstantIndex { offset, min_length: _, from_end } => {
+                ProjectionElem::ConstantIndex {
+                    offset,
+                    min_length: _,
+                    from_end,
+                } => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     let index_val = if *from_end {
                         if let Some(ctx) = self.ty_ctx.as_ref() {
@@ -166,7 +169,9 @@ impl BytecodeBackend {
                                 };
                                 n.saturating_sub(*offset)
                             } else {
-                                tracing::warn!("from_end ConstantIndex on slice not fully implemented in bytecode backend");
+                                tracing::warn!(
+                                    "from_end ConstantIndex on slice not fully implemented in bytecode backend"
+                                );
                                 *offset
                             }
                         } else {
@@ -181,7 +186,11 @@ impl BytecodeBackend {
                     bc.push(OP_ADD);
                     current_ty = Ty::ERROR;
                 }
-                ProjectionElem::Subslice { from, to: _, from_end: _ } => {
+                ProjectionElem::Subslice {
+                    from,
+                    to: _,
+                    from_end: _,
+                } => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     let byte_offset = *from * elem_size;
                     bc.push(OP_LOAD_CONST);
@@ -256,8 +265,6 @@ pub(crate) const OP_DEREF: u8 = 0x2B;
 pub(crate) const OP_DROP: u8 = 0x2C;
 pub(crate) const OP_REPEAT: u8 = 0x2D;
 
-#[allow(dead_code)]
-pub(crate) const OP_SWAP: u8 = 0x2E;
 impl CodegenBackend for BytecodeBackend {
     fn name(&self) -> &'static str {
         "bytecode"
@@ -443,7 +450,12 @@ impl BytecodeBackend {
                         bc.extend_from_slice(&b.to_le_bytes());
                     }
                     MirConstKind::String(_name) => {
-                        let str_content = self.ty_ctx.as_ref().map(|ctx| ctx.name_str(*_name)).unwrap_or("string_payload").to_string();
+                        let str_content = self
+                            .ty_ctx
+                            .as_ref()
+                            .map(|ctx| ctx.name_str(*_name))
+                            .unwrap_or("string_payload")
+                            .to_string();
                         let idx = self.intern_string(&str_content);
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(idx as i64).to_le_bytes());

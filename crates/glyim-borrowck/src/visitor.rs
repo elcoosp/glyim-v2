@@ -66,7 +66,9 @@ pub(crate) fn walk_terminator_reads(kind: &TerminatorKind, visitor: &mut dyn Rea
             }
         }
         TerminatorKind::Assert { cond, .. } => walk_operand_reads(cond, visitor),
-        TerminatorKind::Drop { place, .. } => visitor.visit_read(place),
+        TerminatorKind::Drop { .. } => {
+            // Drop is a move-out (kill), not a shared read.
+        }
     }
 }
 
@@ -175,12 +177,44 @@ pub(crate) fn places_conflict(a: &Place, b: &Place) -> bool {
             }
 
             // ConstantIndex projections: statically known offsets.
-            (ProjectionElem::ConstantIndex { offset: o1, from_end: false, .. },
-             ProjectionElem::ConstantIndex { offset: o2, from_end: false, .. }) => {
+            (
+                ProjectionElem::ConstantIndex {
+                    offset: o1,
+                    from_end: false,
+                    ..
+                },
+                ProjectionElem::ConstantIndex {
+                    offset: o2,
+                    from_end: false,
+                    ..
+                },
+            ) => {
                 if o1 != o2 {
                     return false; // provably disjoint, e.g. arr[0] vs arr[1]
                 }
                 // same offset -> keep checking the rest of the projection chain
+            }
+
+            (
+                ProjectionElem::ConstantIndex {
+                    offset: _,
+                    from_end: true,
+                    ..
+                },
+                ProjectionElem::ConstantIndex {
+                    offset: _,
+                    from_end: true,
+                    ..
+                },
+            ) => {
+                // Both from_end: true. We don't know the length statically here,
+                // so we cannot prove they are disjoint. Conservatively conflict.
+                return true;
+            }
+
+            (ProjectionElem::ConstantIndex { .. }, ProjectionElem::ConstantIndex { .. }) => {
+                // Mixed from_end: one true, one false. Conservatively conflict.
+                return true;
             }
 
             (ProjectionElem::Field(_), ProjectionElem::Index(_))

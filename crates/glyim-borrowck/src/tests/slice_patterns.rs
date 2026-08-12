@@ -37,7 +37,11 @@ fn slice_pattern_rest_overlaps_element_conflict() {
     // This test asserts the conservative behaviour (conflict) for demonstration.
     let slice_place = Place {
         local,
-        projection: Box::new([ProjectionElem::Subslice { from: 1, to: 2, from_end: false }]),
+        projection: Box::new([ProjectionElem::Subslice {
+            from: 1,
+            to: 2,
+            from_end: false,
+        }]),
     };
     let index_place = Place {
         local,

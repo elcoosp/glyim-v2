@@ -12,6 +12,7 @@ glyim-core = { workspace = true }
 glyim-type = { workspace = true }
 glyim-layout = { workspace = true }
 glyim-span = { workspace = true }
+glyim-db = { workspace = true }
 tracing = { workspace = true }
 [dev-dependencies]
 tempfile = "3"

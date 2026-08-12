@@ -69,7 +69,10 @@ fn assign_with_field_projection_emits_store_field() {
     b.basic_blocks.push(block);
     let body: Arc<Body> = Arc::new(b);
 
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bytecode = backend.generate_function(&body).unwrap();
 
     // Verify bytecode contains OP_STORE_FIELD (terminator follows it)
@@ -115,7 +118,10 @@ fn ref_with_projection_emits_addr_and_offset() {
     b.basic_blocks.push(block);
     let body: Arc<Body> = Arc::new(b);
 
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bytecode = backend.generate_function(&body).unwrap();
 
     let mut saw_load_addr = false;
@@ -168,7 +174,10 @@ fn drop_terminator_emits_op_drop() {
         span: Span::DUMMY,
         var_debug_info: vec![],
     });
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bytecode = backend.generate_function(&body).unwrap();
     assert!(
         bytecode.contains(&OP_DROP),
@@ -218,7 +227,10 @@ fn assert_terminator_emits_op_assert() {
         span: Span::DUMMY,
         var_debug_info: vec![],
     });
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bytecode = backend.generate_function(&body).unwrap();
     assert!(
         bytecode.contains(&OP_ASSERT),
@@ -246,7 +258,10 @@ fn string_constant_emits_load_const() {
             source_info: SourceInfo::new(Span::DUMMY),
         },
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bytecode = backend.generate_function(&body).unwrap();
     let mut found_load_const = false;
     for &op in &bytecode {
@@ -278,7 +293,10 @@ fn fn_constant_emits_load_const() {
             source_info: SourceInfo::new(Span::DUMMY),
         },
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bytecode = backend.generate_function(&body).unwrap();
     let mut found_load_const = false;
     for &op in &bytecode {

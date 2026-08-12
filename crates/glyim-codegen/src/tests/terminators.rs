@@ -41,7 +41,10 @@ fn emit_call() {
         },
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_CALL));
 }
@@ -68,7 +71,10 @@ fn emit_switch_int() {
         },
         source_info: SourceInfo::new(Span::DUMMY),
     };
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_SWITCH_INT));
 }
@@ -86,7 +92,10 @@ fn emit_assert() {
         cleanup: None,
         msg: glyim_mir::AssertMessage::Overflow(glyim_core::primitives::BinOp::Add),
     });
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_ASSERT));
 }
@@ -98,7 +107,10 @@ fn emit_drop_is_nop() {
         target: BasicBlockIdx::from_raw(1),
         cleanup: None,
     });
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body));
     // Should succeed (nop), no error
     assert!(result.is_ok());

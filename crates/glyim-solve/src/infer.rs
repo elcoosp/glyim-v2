@@ -639,8 +639,10 @@ impl InferenceTable {
                                 )]);
                             }
                             // Unify the substitutions - clone args to release borrow on ctx
-                            let args_a: Vec<GenericArg> = ctx.substitution_args(tp_a.trait_ref.substs).to_vec();
-                            let args_b: Vec<GenericArg> = ctx.substitution_args(tp_b.trait_ref.substs).to_vec();
+                            let args_a: Vec<GenericArg> =
+                                ctx.substitution_args(tp_a.trait_ref.substs).to_vec();
+                            let args_b: Vec<GenericArg> =
+                                ctx.substitution_args(tp_b.trait_ref.substs).to_vec();
                             if args_a.len() != args_b.len() {
                                 return Err(vec![GlyimDiagnostic::type_error(
                                     span,
@@ -650,13 +652,14 @@ impl InferenceTable {
                             for (arg_a, arg_b) in args_a.iter().zip(args_b.iter()) {
                                 match (arg_a, arg_b) {
                                     (GenericArg::Ty(ta), GenericArg::Ty(tb)) => {
-                                        constraints.extend(
-                                            self.unify_tys(ctx, *ta, *tb, span)?
-                                        );
+                                        constraints.extend(self.unify_tys(ctx, *ta, *tb, span)?);
                                     }
                                     (GenericArg::Lifetime(la), GenericArg::Lifetime(lb)) => {
                                         if la != lb {
-                                            constraints.push(Constraint::RegionEq { a: la.clone(), b: lb.clone() });
+                                            constraints.push(Constraint::RegionEq {
+                                                a: la.clone(),
+                                                b: lb.clone(),
+                                            });
                                         }
                                     }
                                     (GenericArg::Const(ca), GenericArg::Const(cb)) => {
@@ -678,14 +681,26 @@ impl InferenceTable {
                         }
                         (Predicate::RegionOutlives(rp_a), Predicate::RegionOutlives(rp_b)) => {
                             if rp_a.a != rp_b.a || rp_a.b != rp_b.b {
-                                constraints.push(Constraint::RegionEq { a: rp_a.a.clone(), b: rp_b.a.clone() });
-                                constraints.push(Constraint::RegionEq { a: rp_a.b.clone(), b: rp_b.b.clone() });
+                                constraints.push(Constraint::RegionEq {
+                                    a: rp_a.a.clone(),
+                                    b: rp_b.a.clone(),
+                                });
+                                constraints.push(Constraint::RegionEq {
+                                    a: rp_a.b.clone(),
+                                    b: rp_b.b.clone(),
+                                });
                             }
                         }
                         (Predicate::TypeOutlives(tp_a), Predicate::TypeOutlives(tp_b)) => {
                             if tp_a.ty != tp_b.ty || tp_a.region != tp_b.region {
-                                constraints.push(Constraint::TypeEq { a: tp_a.ty, b: tp_b.ty });
-                                constraints.push(Constraint::RegionEq { a: tp_a.region.clone(), b: tp_b.region.clone() });
+                                constraints.push(Constraint::TypeEq {
+                                    a: tp_a.ty,
+                                    b: tp_b.ty,
+                                });
+                                constraints.push(Constraint::RegionEq {
+                                    a: tp_a.region.clone(),
+                                    b: tp_b.region.clone(),
+                                });
                             }
                         }
                         (Predicate::WellFormed(ty_a), Predicate::WellFormed(ty_b)) => {

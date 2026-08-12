@@ -1323,8 +1323,12 @@ fn t14_two_phase_cross_block_reservation_extends() {
             BorrowKind::Shared,
         ));
         let mut block2 = BasicBlockData::new(dummy_terminator_return());
-        block2.statements.push(use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)));
-        block2.statements.push(use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(2)));
+        block2
+            .statements
+            .push(use_local(LocalIdx::from_raw(4), LocalIdx::from_raw(3)));
+        block2
+            .statements
+            .push(use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(2)));
         make_body_multi_blocks(locals, vec![block0, block1, block2])
     });
     let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };
@@ -1354,7 +1358,9 @@ fn t15_two_phase_cross_block_activation_conflict() {
             Place::new(LocalIdx::from_raw(1)),
             make_two_phase_mut(),
         ));
-        block0.statements.push(use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2))); // activates
+        block0
+            .statements
+            .push(use_local(LocalIdx::from_raw(3), LocalIdx::from_raw(2))); // activates
         let mut block1 = BasicBlockData::new(dummy_terminator_goto(2));
         block1.statements.push(assign_borrow(
             LocalIdx::from_raw(4),
@@ -1362,8 +1368,12 @@ fn t15_two_phase_cross_block_activation_conflict() {
             BorrowKind::Shared,
         ));
         let mut block2 = BasicBlockData::new(dummy_terminator_return());
-        block2.statements.push(use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(4)));
-        block2.statements.push(use_local(LocalIdx::from_raw(6), LocalIdx::from_raw(2)));
+        block2
+            .statements
+            .push(use_local(LocalIdx::from_raw(5), LocalIdx::from_raw(4)));
+        block2
+            .statements
+            .push(use_local(LocalIdx::from_raw(6), LocalIdx::from_raw(2)));
         make_body_multi_blocks(locals, vec![block0, block1, block2])
     });
     let mock = LocalMockBorrowckCtx { ty_ctx: ctx, body };

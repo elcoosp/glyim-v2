@@ -116,9 +116,9 @@ pub(crate) fn lower_block_to_expr(
                 }
             }
             _ => unreachable!(
-            "parser produced a Block with unrecognized child kind: {:?}",
-            child.kind()
-        ),
+                "parser produced a Block with unrecognized child kind: {:?}",
+                child.kind()
+            ),
         }
     }
 
@@ -608,7 +608,9 @@ fn lower_binary_expr(
     }
     let lhs_id = lower_expr(&expr_children[0], interner, body, diags, struct_field_map)?;
     let rhs_id = lower_expr(&expr_children[1], interner, body, diags, struct_field_map)?;
-    diags.push(GlyimDiagnostic::internal_error("Unrecognized binary operator token"));
+    diags.push(GlyimDiagnostic::internal_error(
+        "Unrecognized binary operator token",
+    ));
     let expr = Expr::Binary {
         op: BinOp::Add,
         lhs: lhs_id,
@@ -779,7 +781,12 @@ pub(crate) fn lower_literal(token: &SyntaxToken, interner: &mut Interner) -> Lit
         }
         SyntaxKind::StringLit => {
             let raw = token.text().trim_start_matches('"').trim_end_matches('"');
-            let processed = raw.replace("\\n", "\n").replace("\\t", "\t").replace("\\\\", "\\").replace("\\'", "'").replace("\\\"", "\"");
+            let processed = raw
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\\\\", "\\")
+                .replace("\\'", "'")
+                .replace("\\\"", "\"");
             Literal::String(interner.intern(&processed))
         }
         _ => Literal::Unit,

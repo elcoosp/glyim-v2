@@ -20,12 +20,19 @@ impl LayoutProvider for TestProvider {
 
 #[test]
 fn backend_instantiates_with_layout_provider() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     assert_eq!(backend.name(), "bytecode");
 }
 
 #[test]
 fn backend_accepts_custom_layout_provider() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default()).with_layout_provider(Box::new(TestProvider));
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    )
+    .with_layout_provider(Box::new(TestProvider));
     assert_eq!(backend.name(), "bytecode");
 }

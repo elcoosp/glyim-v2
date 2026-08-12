@@ -75,7 +75,10 @@ fn stmt(kind: StatementKind) -> Statement {
 #[test]
 fn t01_empty_function_returns_module_with_return_opcode() {
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
     let bytecode = result.unwrap();
@@ -126,7 +129,10 @@ fn t02_integer_constants_and_add_yields_loadconst_add_return() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
     let bytecode = result.unwrap();
@@ -163,7 +169,10 @@ fn t03_locals_yield_loadlocal_storelocal() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
     let bytecode = result.unwrap();
@@ -204,7 +213,10 @@ fn t04_branch_yields_jumpif_and_jump() {
         vec![local_decl(Ty::BOOL)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -218,7 +230,10 @@ fn t04_branch_yields_jumpif_and_jump() {
 #[test]
 fn t05_generate_returns_non_empty_vec_u8() {
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -233,7 +248,10 @@ fn t05_generate_returns_non_empty_vec_u8() {
 // ============================================================================
 #[test]
 fn t06_name_returns_bytecode() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     assert_eq!(backend.name(), "bytecode");
 }
 
@@ -255,7 +273,10 @@ fn t07_goto_emits_jump() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -274,7 +295,10 @@ fn t08_unreachable_emits_nothing() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -297,7 +321,10 @@ fn t09_storage_live_dead_ignored() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -318,7 +345,10 @@ fn t10_nop_emits_nothing() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -333,7 +363,10 @@ fn t10_nop_emits_nothing() {
 fn t11_generate_multiple_bodies_combines() {
     let body1 = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
     let body2 = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc1 = backend.generate_function(&body1).unwrap();
     let bc2 = backend.generate_function(&body2).unwrap();
     let mut combined = bc1;
@@ -373,7 +406,10 @@ fn t13_bool_constant_encodes_correctly() {
         vec![local_decl(Ty::BOOL)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -406,7 +442,10 @@ fn t14_stress_many_statements() {
         vec![local_decl(Ty::UNIT); num_locals],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
@@ -437,7 +476,10 @@ fn t15_call_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -458,7 +500,10 @@ fn t16_ref_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -479,7 +524,10 @@ fn t17_unary_op_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -529,7 +577,12 @@ fn t18_arithmetic_stubs_do_not_crash() {
             ],
             0,
         );
-        let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+        let backend = BytecodeBackend::with_ty_ctx(
+            std::sync::Arc::new(
+                glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze(),
+            ),
+            glyim_core::TargetInfo::default(),
+        );
         let result = backend.generate_function(&body);
         assert!(result.is_ok(), "Op {:?} failed", op);
     }
@@ -555,7 +608,10 @@ fn t19_exact_bytecode_constant_and_return() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -600,7 +656,10 @@ fn t20_switchint_false_jumps_to_false_target() {
         vec![local_decl(Ty::BOOL)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -624,7 +683,10 @@ fn t21_move_operand_works_like_copy() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -657,7 +719,10 @@ fn t22_multiple_blocks_all_processed() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -688,7 +753,10 @@ fn t23_aggregate_tuple_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -709,7 +777,10 @@ fn t24_len_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -734,7 +805,10 @@ fn t25_cast_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -755,7 +829,10 @@ fn t26_discriminant_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -787,7 +864,10 @@ fn t27_repeat_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -815,7 +895,10 @@ fn t28_assert_stub_does_not_crash() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -837,7 +920,10 @@ fn t29_drop_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -866,7 +952,10 @@ fn t30_assign_with_projection_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -895,7 +984,10 @@ fn t31_operand_with_projection_stub_does_not_crash() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -920,7 +1012,10 @@ fn t32_unsigned_constant_handled() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -945,7 +1040,10 @@ fn t33_char_constant_handled() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -970,7 +1068,10 @@ fn t34_float_constant_handled() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -995,7 +1096,10 @@ fn t35_string_constant_handled() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -1020,7 +1124,10 @@ fn t36_unit_constant_handled() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -1055,7 +1162,10 @@ fn t37_multiple_uses_of_same_constant_works() {
         vec![local_decl(Ty::UNIT), local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -1082,7 +1192,10 @@ fn t38_error_constant_handled() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -1111,7 +1224,10 @@ fn t39_switchint_non_bool_stub_does_not_crash() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -1122,7 +1238,10 @@ fn t39_switchint_non_bool_stub_does_not_crash() {
 #[test]
 fn t40_empty_function_returns_exactly_one_byte() {
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 1);
     assert_eq!(bc[0], OP_RETURN);
@@ -1172,7 +1291,10 @@ fn t41_add_exact_bytecode_sequence() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 45);
     assert_eq!(bc[0], OP_LOAD_CONST);
@@ -1204,7 +1326,10 @@ fn t42_bytecode_deterministic() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc1 = backend.generate_function(&body).unwrap();
     let bc2 = backend.generate_function(&body).unwrap();
     assert_eq!(bc1, bc2);
@@ -1215,7 +1340,10 @@ fn t42_bytecode_deterministic() {
 // ============================================================================
 #[test]
 fn t43_default_works() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     assert_eq!(backend.name(), "bytecode");
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
     let result = backend.generate_function(&body);
@@ -1243,7 +1371,10 @@ fn t44_multiple_calls_independent() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc1 = backend.generate_function(&body1).unwrap();
     let bc2 = backend.generate_function(&body2).unwrap();
     assert_ne!(bc1, bc2);
@@ -1275,7 +1406,10 @@ fn t45_function_with_args() {
         ],
         2,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -1302,7 +1436,10 @@ fn t46_char_constant_emits_unicode_scalar() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc[0], OP_LOAD_CONST);
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
@@ -1330,7 +1467,10 @@ fn t47_large_integer_constant() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val as i128, big_val);
@@ -1357,7 +1497,10 @@ fn t48_float_bits_constant() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val as u64, bits as u64);
@@ -1423,7 +1566,10 @@ fn t51_mixed_stub_rvalues() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -1448,7 +1594,10 @@ fn t52_negative_integer_constant() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, -42);
@@ -1475,7 +1624,10 @@ fn t53_minimum_i64_constant() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, i64::MIN);
@@ -1502,7 +1654,10 @@ fn t54_maximum_i64_constant() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, i64::MAX);
@@ -1528,7 +1683,10 @@ fn t55_zero_integer_constant() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, 0);
@@ -1589,7 +1747,10 @@ fn t56_complex_branch_three_targets() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert!(bc.contains(&OP_JUMP_IF));
     assert!(bc.contains(&OP_JUMP));
@@ -1625,7 +1786,10 @@ fn t58_loadlocal_midrange_index() {
             .collect(),
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 25);
     let load_idx = u32::from_le_bytes(bc[15..19].try_into().unwrap());
@@ -1696,7 +1860,10 @@ fn t59_nested_binaryop_does_not_crash() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
 }
@@ -1707,7 +1874,10 @@ fn t59_nested_binaryop_does_not_crash() {
 #[test]
 fn t60_empty_body_generates_return() {
     let body = make_body(vec![block(vec![], term(TerminatorKind::Return))], vec![], 0);
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc, vec![OP_RETURN]);
 }
@@ -1727,7 +1897,10 @@ fn t61_var_debug_info_ignored_correctly() {
             span: Span::DUMMY,
         }),
     }];
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body_val).unwrap();
     assert_eq!(bc, vec![OP_RETURN]);
 }
@@ -1752,7 +1925,10 @@ fn t62_generate_single_body_consistent_with_generate_function() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let func_bc = backend.generate_function(&body).unwrap();
     let gen_bc = backend.generate_function(&body).unwrap();
     assert_eq!(func_bc, gen_bc);
@@ -1778,7 +1954,10 @@ fn t63_bool_true_encodes_as_1() {
         vec![local_decl(Ty::BOOL)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, 1);
@@ -1804,7 +1983,10 @@ fn t64_bool_false_encodes_as_0() {
         vec![local_decl(Ty::BOOL)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, 0);
@@ -1830,7 +2012,10 @@ fn t65_uint_constant_encodes_as_i64() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val, 42);
@@ -1856,7 +2041,10 @@ fn t66_uint_max_value() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     let val = i64::from_le_bytes(bc[1..9].try_into().unwrap());
     assert_eq!(val as u64, u64::MAX);
@@ -1882,7 +2070,10 @@ fn t67_no_branch_leakage() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert!(!bc.contains(&OP_JUMP));
     assert!(!bc.contains(&OP_JUMP_IF));
@@ -1910,7 +2101,10 @@ fn t68_many_locals_stress_test() {
         vec![local_decl(Ty::UNIT); num_locals],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bc = result.unwrap();
@@ -1927,7 +2121,10 @@ fn t69_unreachable_block_yields_empty() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert!(bc.is_empty());
 }
@@ -1955,7 +2152,10 @@ fn t70_goto_loop_emits_two_jumps() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 10);
     assert_eq!(bc[0], OP_JUMP);
@@ -2007,7 +2207,12 @@ fn t71_comparison_ops_do_not_crash() {
             ],
             0,
         );
-        let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+        let backend = BytecodeBackend::with_ty_ctx(
+            std::sync::Arc::new(
+                glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze(),
+            ),
+            glyim_core::TargetInfo::default(),
+        );
         let result = backend.generate_function(&body);
         assert!(result.is_ok(), "Op {:?} failed", op);
     }
@@ -2064,7 +2269,12 @@ fn t72_bitwise_shift_ops_do_not_crash() {
             ],
             0,
         );
-        let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+        let backend = BytecodeBackend::with_ty_ctx(
+            std::sync::Arc::new(
+                glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze(),
+            ),
+            glyim_core::TargetInfo::default(),
+        );
         let result = backend.generate_function(&body);
         assert!(result.is_ok(), "Op {:?} failed", op);
     }
@@ -2104,7 +2314,10 @@ fn t73_double_assignment_chain() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 35);
 }
@@ -2140,7 +2353,10 @@ fn t74_switchint_true_targets_otherwise() {
         vec![local_decl(Ty::BOOL)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert!(bc.contains(&OP_JUMP_IF));
     assert!(bc.contains(&OP_JUMP));
@@ -2170,7 +2386,10 @@ fn t75_goto_chain_three_blocks() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 11);
 }
@@ -2199,7 +2418,10 @@ fn t76_nop_does_not_disrupt_bytecode() {
         vec![local_decl(Ty::UNIT)],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 15);
 }
@@ -2246,7 +2468,10 @@ fn t77_same_constant_repeated_correct() {
         ],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc = backend.generate_function(&body).unwrap();
     assert_eq!(bc.len(), 43);
 }
@@ -2276,7 +2501,10 @@ fn t78_generate_mixed_empty_and_nonempty() {
         vec![],
         0,
     );
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let bc_empty = backend.generate_function(&empty_body).unwrap();
     let bc_nonempty = backend.generate_function(&body_nonempty).unwrap();
     assert!(bc_empty.is_empty());
@@ -2327,7 +2555,12 @@ fn t79_no_errors_for_any_supported_terminator() {
             vec![block(vec![], term(term_kind.clone()))]
         };
         let body = make_body(blocks, vec![local_decl(Ty::BOOL)], 0);
-        let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+        let backend = BytecodeBackend::with_ty_ctx(
+            std::sync::Arc::new(
+                glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze(),
+            ),
+            glyim_core::TargetInfo::default(),
+        );
         let result = backend.generate_function(&body);
         assert!(result.is_ok(), "Terminator {:?} caused error", term_kind);
     }
@@ -2338,7 +2571,10 @@ fn t79_no_errors_for_any_supported_terminator() {
 // ============================================================================
 #[test]
 fn t80_all_opcodes_emitted_somewhere() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let body1 = make_body(
         vec![block(
             vec![
@@ -2431,7 +2667,10 @@ fn t80_all_opcodes_emitted_somewhere() {
 
 #[test]
 fn test_assign_field_projection() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let local = LocalIdx::from_raw(0);
     let field_idx = FieldIdx::from_raw(1);
     let proj = vec![ProjectionElem::Field(field_idx)];
@@ -2482,7 +2721,10 @@ fn test_assign_field_projection() {
 
 #[test]
 fn test_ref_creates_pointer() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let place = Place::new(LocalIdx::from_raw(0));
     let rvalue = Rvalue::Ref(place, BorrowKind::Shared);
     let stmt = Statement {
@@ -2517,7 +2759,10 @@ fn test_ref_creates_pointer() {
 
 #[test]
 fn test_deref_loads() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let operand = Operand::Copy(Place::new(LocalIdx::from_raw(0)));
     let rvalue = Rvalue::UnaryOp(UnOp::Deref, operand);
     let stmt = Statement {
@@ -2552,7 +2797,10 @@ fn test_deref_loads() {
 
 #[test]
 fn test_drop_calls_drop_in_place() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let target_bb = BasicBlockIdx::from_raw(1);
     let place = Place::new(LocalIdx::from_raw(0));
     let term = TerminatorKind::Drop {
@@ -2590,7 +2838,10 @@ fn test_drop_calls_drop_in_place() {
 
 #[test]
 fn test_repeat_array_constant() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let operand = Operand::Constant(MirConst {
         kind: MirConstKind::Int(42),
         ty: Ty::UNIT,
@@ -2634,7 +2885,10 @@ fn test_repeat_array_constant() {
 
 #[test]
 fn test_float_constant_emits() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let float_const = MirConst {
         kind: MirConstKind::FloatBits(3.14159_f64.to_bits()),
         ty: Ty::UNIT,

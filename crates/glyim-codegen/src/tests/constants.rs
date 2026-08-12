@@ -52,7 +52,10 @@ fn string_constant_emitted_to_string_table() {
         body
     });
 
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body));
 
     assert!(result.is_ok());
@@ -102,7 +105,10 @@ fn function_constant_emitted_to_fn_table() {
         body
     });
 
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
     let result = backend.generate_function(&Arc::new(body));
 
     assert!(result.is_ok());

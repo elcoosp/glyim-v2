@@ -385,10 +385,7 @@ async fn mark_merged(
 ) -> Result<(), anyhow::Error> {
     let client = Client::new();
     let resp = client
-        .post(format!(
-            "http://127.0.0.1:8421/session/{}/merge",
-            stream_id
-        ))
+        .post(format!("http://127.0.0.1:8421/session/{}/merge", stream_id))
         .send()
         .await?;
     if resp.status().is_success() {

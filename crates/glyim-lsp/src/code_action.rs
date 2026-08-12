@@ -3,9 +3,8 @@ use crate::database::FileMap;
 use lsp_types::*;
 use std::collections::HashSet;
 
-
-
-use url::Url;fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
+use url::Url;
+fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
     let lines: Vec<&str> = source.lines().collect();
     let mut imports = Vec::new();
     let mut used_names = HashSet::new();

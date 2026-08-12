@@ -1,9 +1,9 @@
 use crate::AnalysisDatabase;
 use crate::database::FileMap;
-use lsp_types::{Position, Range, TextEdit, WorkspaceEdit, RenameParams, Uri};
-use url::Url;
+use lsp_types::{Position, Range, RenameParams, TextEdit, Uri, WorkspaceEdit};
 use std::collections::HashMap;
 use std::str::FromStr;
+use url::Url;
 
 pub fn rename_symbol(
     db: &AnalysisDatabase,

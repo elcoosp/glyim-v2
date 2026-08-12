@@ -65,7 +65,8 @@ impl ConstValue {
                 }
             }
             ConstValue::Int(v, IntTy::Isize) => {
-                // Assume 64-bit target for const eval
+                // Note: TargetInfo is not available here in const-eval.
+                // We conservatively check against 64-bit bounds for now.
                 if *v >= i64::MIN as i128 && *v <= i64::MAX as i128 {
                     Some(self.clone())
                 } else {

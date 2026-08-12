@@ -1,9 +1,8 @@
 use crate::AnalysisDatabase;
 use lsp_types::*;
 
-
-
-use url::Url;fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
+use url::Url;
+fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
     let lines: Vec<&str> = source.lines().collect();
     let mut ranges = Vec::new();
     let mut brace_stack: Vec<(usize, usize)> = Vec::new();

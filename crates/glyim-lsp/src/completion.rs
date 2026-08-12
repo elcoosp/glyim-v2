@@ -1,9 +1,8 @@
 use crate::AnalysisDatabase;
 use lsp_types::*;
 
-
-
-use url::Url;pub fn provide_completions(
+use url::Url;
+pub fn provide_completions(
     db: &AnalysisDatabase,
     file_map: &crate::database::FileMap,
     params: &CompletionParams,

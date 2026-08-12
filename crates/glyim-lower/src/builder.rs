@@ -29,7 +29,11 @@ pub struct MirBuilder<'a> {
     pub(crate) owner: glyim_core::def_id::DefId,
     pub(crate) span: Span,
     pub(crate) diagnostics: Vec<GlyimDiagnostic>,
-    pub(crate) closure_bodies: Vec<(glyim_core::def_id::ClosureId, glyim_type::Substitution, glyim_mir::Body)>,
+    pub(crate) closure_bodies: Vec<(
+        glyim_core::def_id::ClosureId,
+        glyim_type::Substitution,
+        glyim_mir::Body,
+    )>,
     pub(crate) var_map: std::collections::HashMap<Name, LocalIdx>,
     pub(crate) capture_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
     pub(crate) param_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
@@ -133,11 +137,8 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
-
     /// Lower a closure expression: generate its MIR body and return an aggregate.
 
-    
-    
     #[allow(dead_code)]
     pub(crate) fn lower_closure(
         &mut self,
@@ -150,9 +151,12 @@ impl<'a> MirBuilder<'a> {
         use glyim_core::def_id::{CrateId, DefId, LocalDefId};
         use glyim_mir::Rvalue;
         use glyim_typeck::thir;
-        
+
         // Create DefId for the closure.
-        let def_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(closure_id.to_raw()));
+        let def_id = DefId::new(
+            CrateId::from_raw(0),
+            LocalDefId::from_raw(closure_id.to_raw()),
+        );
 
         // Build a new MIR body for the closure using a fresh builder.
         let mut builder = MirBuilder::new(self.ctx, thir_body);
@@ -211,16 +215,18 @@ impl<'a> MirBuilder<'a> {
         for capture in captures {
             let local = glyim_mir::LocalIdx::from_raw(capture.local.to_raw());
             let operand = match capture.kind {
-                thir::CaptureKind::ByValue => glyim_mir::Operand::Move(glyim_mir::Place::new(local)),
-                thir::CaptureKind::ByRef(_) => glyim_mir::Operand::Copy(glyim_mir::Place::new(local)),
+                thir::CaptureKind::ByValue => {
+                    glyim_mir::Operand::Move(glyim_mir::Place::new(local))
+                }
+                thir::CaptureKind::ByRef(_) => {
+                    glyim_mir::Operand::Copy(glyim_mir::Place::new(local))
+                }
             };
             operands.push(operand);
         }
-        Rvalue::Aggregate(glyim_mir::AggregateKind::Closure(closure_id, substs), operands)
+        Rvalue::Aggregate(
+            glyim_mir::AggregateKind::Closure(closure_id, substs),
+            operands,
+        )
     }
-
-
-
-    
-
 }

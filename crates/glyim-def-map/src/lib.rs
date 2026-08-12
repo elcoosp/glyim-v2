@@ -107,13 +107,22 @@ impl PerNs {
 }
 
 pub struct Resolver<'a> {
-    def_map: &'a CrateDefMap,
+    modules: &'a IndexVec<ModuleId, ModuleData>,
+    root: ModuleId,
     module: ModuleId,
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(def_map: &'a CrateDefMap, module: ModuleId) -> Self {
-        Self { def_map, module }
+    pub fn new(
+        modules: &'a IndexVec<ModuleId, ModuleData>,
+        root: ModuleId,
+        module: ModuleId,
+    ) -> Self {
+        Self {
+            modules,
+            root,
+            module,
+        }
     }
 
     pub fn resolve_path(&self, path: &Path) -> PerNs {
@@ -124,7 +133,7 @@ impl<'a> Resolver<'a> {
             PathKind::Super(n) => {
                 let mut module = current_module;
                 for _ in 0..n {
-                    if let Some(parent) = self.def_map.modules[module].parent {
+                    if let Some(parent) = self.modules[module].parent {
                         module = parent;
                     } else {
                         break;
@@ -134,13 +143,13 @@ impl<'a> Resolver<'a> {
                 0
             }
             PathKind::Crate => {
-                current_module = self.def_map.root;
+                current_module = self.root;
                 0
             }
         };
 
         for (i, segment) in path.segments.iter().enumerate().skip(start_idx) {
-            let module_data = &self.def_map.modules[current_module];
+            let module_data = &self.modules[current_module];
             if i == path.segments.len() - 1 {
                 let types = module_data
                     .scope
@@ -173,8 +182,8 @@ impl<'a> Resolver<'a> {
         PerNs::default()
     }
 
-    pub fn def_map(&self) -> &CrateDefMap {
-        self.def_map
+    pub fn def_map(&self) -> &IndexVec<ModuleId, ModuleData> {
+        self.modules
     }
 
     pub fn module(&self) -> ModuleId {
@@ -441,13 +450,7 @@ fn process_use_tree(
                             }
 
                             // Now resolve types/values for the inner segment
-                            let temp_def_map = CrateDefMap {
-                                root: ModuleId::from_raw(0),
-                                modules: modules.clone(),
-                                krate: CrateId::from_raw(0),
-                                interner: interner.clone(),
-                            };
-                            let resolver = Resolver::new(&temp_def_map, base_mod);
+                            let resolver = Resolver::new(modules, ModuleId::from_raw(0), base_mod);
                             let per_ns = resolver.resolve_path(&inner_p);
 
                             if let Some((id, vis)) = per_ns.types {
@@ -497,13 +500,7 @@ fn process_use_tree(
             }
 
             // Existing type/value resolution (unchanged)
-            let temp_def_map = CrateDefMap {
-                root: ModuleId::from_raw(0),
-                modules: modules.clone(),
-                krate: CrateId::from_raw(0),
-                interner: interner.clone(),
-            };
-            let resolver = Resolver::new(&temp_def_map, parent_module);
+            let resolver = Resolver::new(modules, ModuleId::from_raw(0), parent_module);
             let per_ns = resolver.resolve_path(&path);
 
             let name = path.segments.last().map(|s| s.name);

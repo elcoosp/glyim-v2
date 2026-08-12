@@ -1,10 +1,9 @@
 use crate::AnalysisDatabase;
-use std::str::FromStr;
-use lsp_types::Uri;
 use crate::database::FileMap;
+use lsp_types::Uri;
 use lsp_types::*;
+use std::str::FromStr;
 use url::Url;
-
 
 pub fn goto_definition(
     db: &AnalysisDatabase,

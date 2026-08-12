@@ -137,7 +137,10 @@ fn find_opcode(bc: &[u8], target: u8) -> Option<usize> {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_index_emits_load_addr_plus_offset_plus_deref() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
 
     let mut locals = IndexVec::new();
     locals.push(local_decl(Ty::I32, Mutability::Not)); // local 0: return
@@ -204,7 +207,10 @@ fn test_index_emits_load_addr_plus_offset_plus_deref() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_repeat_emits_op_repeat() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
 
     let mut locals = IndexVec::new();
     locals.push(local_decl(Ty::UNIT, Mutability::Not)); // local 0: return
@@ -240,7 +246,10 @@ fn test_repeat_emits_op_repeat() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_aggregate_emits_op_aggregate_with_field_count() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
 
     let mut locals = IndexVec::new();
     locals.push(local_decl(Ty::UNIT, Mutability::Not)); // local 0: return
@@ -285,7 +294,10 @@ fn test_aggregate_emits_op_aggregate_with_field_count() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_field_access_emits_load_addr_plus_offset() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
 
     let mut locals = IndexVec::new();
     locals.push(local_decl(Ty::UNIT, Mutability::Not)); // local 0: return
@@ -337,7 +349,10 @@ fn test_field_access_emits_load_addr_plus_offset() {
 #[test]
 #[should_panic(expected = "local index out of bounds")]
 fn test_oob_local_panics() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
 
     let mut locals = IndexVec::new();
     locals.push(local_decl(Ty::UNIT, Mutability::Not)); // local 0: return
@@ -385,7 +400,11 @@ impl LayoutProvider for ZeroSizeLayoutProvider {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_zero_sized_element_handled() {
-    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default()).with_layout_provider(Box::new(ZeroSizeLayoutProvider));
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    )
+    .with_layout_provider(Box::new(ZeroSizeLayoutProvider));
 
     let mut locals = IndexVec::new();
     locals.push(local_decl(Ty::UNIT, Mutability::Not)); // local 0: return
