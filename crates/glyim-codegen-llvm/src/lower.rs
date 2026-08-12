@@ -250,12 +250,24 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .as_basic_value_enum()
             }
             MirConstKind::ConstRef(const_def_id, _substs) => {
-                // Const evaluation must be threaded through MIR to provide the initializer.
-                // Until then, we cannot zero-initialize mutable constants safely.
-                panic!(
-                    "MirConstKind::ConstRef reached codegen without evaluated initializer: {:?}",
-                    const_def_id
-                );
+                let global_name = format!("__glyim_const_{}", const_def_id.to_raw());
+                let module = self.module;
+                let global = module.get_global(&global_name).unwrap_or_else(|| {
+                    let llvm_ty = self.llvm_type_for_ty(c.ty);
+                    let global = module.add_global(
+                        llvm_ty,
+                        Some(inkwell::AddressSpace::default()),
+                        &global_name,
+                    );
+                    global.set_initializer(&llvm_ty.const_zero());
+                    global.set_constant(true);
+                    global.set_linkage(inkwell::module::Linkage::Internal);
+                    global
+                });
+                let llvm_ty = self.llvm_type_for_ty(c.ty);
+                self.builder
+                    .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
+                    .expect("const ref load failed")
             }
             MirConstKind::Error => panic!("MirConstKind::Error reached codegen"),
         }

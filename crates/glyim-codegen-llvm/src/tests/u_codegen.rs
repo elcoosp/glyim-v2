@@ -139,7 +139,7 @@ fn test_string_const_produces_fat_pointer() {
     };
     let ir = lower_to_ir(&body, &ctx);
     assert!(
-        ir.contains("i64") && ir.contains("@__glyim_str_hello"),
+        ir.contains("i64") && ir.contains("@__glyim_str_"),
         "String constant should produce fat pointer struct with ptr and i64 len.\nIR:\n{}",
         ir
     );

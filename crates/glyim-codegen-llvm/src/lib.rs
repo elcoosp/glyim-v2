@@ -38,10 +38,11 @@ impl LlvmBackend {
     pub fn new() -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let target_info = TargetInfo::default();
+        let default_ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
         Self {
             context: Context::create(),
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
-            ty_ctx_handle: None,
+            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(default_ctx))))),
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
@@ -105,10 +106,11 @@ impl LlvmBackend {
         Target::initialize_all(&InitializationConfig::default());
         let triple = target_triple.into();
         let target_info = TargetInfo::default();
+        let default_ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
         Self {
             context: Context::create(),
             target_triple: triple,
-            ty_ctx_handle: None,
+            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(default_ctx))))),
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
