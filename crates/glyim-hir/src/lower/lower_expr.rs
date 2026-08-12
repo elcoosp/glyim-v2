@@ -116,7 +116,8 @@ pub(crate) fn lower_block_to_expr(
                 }
             }
             _ => unreachable!(
-            "parser produced BinaryExpr with unrecognized operator token"
+            "parser produced a Block with unrecognized child kind: {:?}",
+            child.kind()
         ),
         }
     }
@@ -607,9 +608,9 @@ fn lower_binary_expr(
     }
     let lhs_id = lower_expr(&expr_children[0], interner, body, diags, struct_field_map)?;
     let rhs_id = lower_expr(&expr_children[1], interner, body, diags, struct_field_map)?;
-    let op = BinOp::Add;
+    diags.push(GlyimDiagnostic::internal_error("Unrecognized binary operator token"));
     let expr = Expr::Binary {
-        op,
+        op: BinOp::Add,
         lhs: lhs_id,
         rhs: rhs_id,
     };
@@ -713,7 +714,7 @@ fn lower_path_expr(node: &SyntaxNode, interner: &mut Interner, body: &mut Body) 
     Some(eid)
 }
 
-fn lower_lit_expr(node: &SyntaxNode, _interner: &mut Interner, body: &mut Body) -> Option<ExprId> {
+fn lower_lit_expr(node: &SyntaxNode, interner: &mut Interner, body: &mut Body) -> Option<ExprId> {
     let lit_token = node
         .children_with_tokens()
         .filter_map(|c| c.into_token())
@@ -722,13 +723,13 @@ fn lower_lit_expr(node: &SyntaxNode, _interner: &mut Interner, body: &mut Body) 
                 || t.kind() == SyntaxKind::KwTrue
                 || t.kind() == SyntaxKind::KwFalse
         })?;
-    let lit = lower_literal(&lit_token);
+    let lit = lower_literal(&lit_token, interner);
     let expr = Expr::Literal(lit);
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
 }
 
-pub(crate) fn lower_literal(token: &SyntaxToken) -> Literal {
+pub(crate) fn lower_literal(token: &SyntaxToken, interner: &mut Interner) -> Literal {
     let text = token.text().to_string();
     match token.kind() {
         SyntaxKind::IntLit => {
@@ -776,7 +777,11 @@ pub(crate) fn lower_literal(token: &SyntaxToken) -> Literal {
                 Literal::Unit
             }
         }
-        SyntaxKind::StringLit => Literal::Unit,
+        SyntaxKind::StringLit => {
+            let raw = token.text().trim_start_matches('"').trim_end_matches('"');
+            let processed = raw.replace("\\n", "\n").replace("\\t", "\t").replace("\\\\", "\\").replace("\\'", "'").replace("\\\"", "\"");
+            Literal::String(interner.intern(&processed))
+        }
         _ => Literal::Unit,
     }
 }

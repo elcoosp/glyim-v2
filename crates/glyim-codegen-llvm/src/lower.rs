@@ -204,7 +204,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
                 let module = self.module;
                 let callee = module.get_function(&fn_name).unwrap_or_else(|| {
-                    let fn_type = self.context.void_type().fn_type(&[], false);
+                    // Fallback to i64* to avoid void type mismatches if signature is unknown
+                    let fn_type = self.context.i64_type().fn_type(&[], false);
                     module.add_function(&fn_name, fn_type, None)
                 });
                 callee
@@ -1718,19 +1719,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let case_ty = self.llvm_type_for_ty(*switch_ty).into_int_type();
 
                 if targets.iter().count() == 0 {
-                    self.builder.build_unconditional_branch(otherwise)
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch failed: {:?}", e))])?;
-                } else if targets.iter().count() <= 2 {
-                    for (i, (val, bb)) in targets.iter().enumerate() {
-                        let const_val = case_ty.const_int(val as u64, false);
-                        let bb_val = *self.bb_map.get(&bb).unwrap();
-                        let cmp = self.builder.build_int_compare(inkwell::IntPredicate::EQ, discr_int, const_val, &format!("switch_eq_{}", i))
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("cmp failed: {:?}", e))])?;
-                        let next_bb = self.context.append_basic_block(self.function, &format!("switch_next_{}", i));
-                        self.builder.build_conditional_branch(cmp, bb_val, next_bb)
-                            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("br failed: {:?}", e))])?;
-                        self.builder.position_at_end(next_bb);
-                    }
                     self.builder.build_unconditional_branch(otherwise)
                         .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("branch failed: {:?}", e))])?;
                 } else {

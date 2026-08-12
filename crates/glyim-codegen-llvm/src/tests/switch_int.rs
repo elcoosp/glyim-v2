@@ -292,8 +292,8 @@ fn v29_t03_switch_on_bool_icmp_branch() {
     let (ctx, body) = make_test_body_switch_bool();
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
     assert!(
-        ir.contains("icmp eq") || ir.contains("br i1"),
-        "Expected icmp eq or br i1 for bool switch, got:\n{}",
+        ir.contains("switch i1"),
+        "Expected LLVM switch i1 for bool switch, got:\n{}",
         ir
     );
 }

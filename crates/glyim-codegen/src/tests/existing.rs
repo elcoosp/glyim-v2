@@ -24,7 +24,7 @@ fn test_ref_succeeds() {
             source_info: glyim_mir::SourceInfo::new(glyim_span::Span::DUMMY),
         });
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body));
     assert!(result.is_ok(), "Rvalue::Ref should succeed (implemented)");
 }
@@ -53,7 +53,7 @@ fn test_call_terminator_succeeds() {
         source_info: SourceInfo::new(glyim_span::Span::DUMMY),
     };
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body));
     assert!(
         result.is_ok(),
@@ -88,7 +88,7 @@ fn test_projection_succeeds() {
             source_info: glyim_mir::SourceInfo::new(glyim_span::Span::DUMMY),
         });
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body));
     assert!(
         result.is_ok(),
@@ -99,7 +99,7 @@ fn test_projection_succeeds() {
 #[test]
 fn test_dummy_body_succeeds() {
     let body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body));
     assert!(result.is_ok(), "Dummy body should compile successfully");
 }

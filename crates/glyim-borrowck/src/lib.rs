@@ -269,14 +269,8 @@ fn check_stmt_conflicts(
                     // to the borrowed local; it uses method calls and `&mut` derived from
                     // `&UnsafeCell`. Therefore, any active loan (Shared, Mut, or Unique)
                     // conflicts with a write to an overlapping place.
-                    for (loan_idx, loan) in active_loans.iter().enumerate() {
+                    for (_loan_idx, loan) in active_loans.iter().enumerate() {
                         if places_conflict(dest, &loan.borrowed_place) {
-                            let activation = activation_cache.get(&loan_idx);
-                            let _in_reservation = if let Some(act) = activation {
-                                loan_is_in_reservation(loan, current_block, current_stmt_idx, act)
-                            } else {
-                                false
-                            };
                             let name = ctx.local_name(dest.local);
                             let msg = format!("cannot assign to `{name}` because it is borrowed",);
                             let mut diag =

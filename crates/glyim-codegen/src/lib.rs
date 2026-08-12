@@ -34,7 +34,11 @@ impl LayoutProvider for GlyimLayoutProvider {
         if let Ok(layout) = computer.layout_of(ty) {
             match layout.fields {
                 FieldsShape::Arbitrary { ref offsets } => {
-                    offsets.get(field_idx).map(|s| s.0).unwrap_or(0)
+                    if field_idx.index() < offsets.len() {
+                        offsets[field_idx].0
+                    } else {
+                        0
+                    }
                 }
                 FieldsShape::Primitive => 0,
                 FieldsShape::Array { stride, count: _ } => (field_idx.to_raw() as u64) * stride.0,
@@ -64,58 +68,29 @@ impl LayoutProvider for GlyimLayoutProvider {
     }
 }
 
-/// Minimal fallback layout provider.
-struct FallbackLayoutProvider;
-
-impl LayoutProvider for FallbackLayoutProvider {
-    fn field_offset(&self, _ty: Ty, field_idx: FieldIdx) -> u64 {
-        8 + (field_idx.to_raw() as u64) * 8
-    }
-    fn size_of(&self, _ty: Ty) -> u64 {
-        8
-    }
-    fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
-        Ty::ERROR
-    }
-}
 
 pub struct BytecodeBackend {
     string_table: RefCell<Vec<String>>,
     fn_table: RefCell<Vec<(FnDefId, Substitution)>>,
     layout_provider: Box<dyn LayoutProvider>,
     ty_ctx: Option<Arc<TyCtx>>,
-    target: Option<TargetInfo>,
-}
-
-impl Default for BytecodeBackend {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl BytecodeBackend {
-    pub fn new() -> Self {
+    pub fn with_ty_ctx(ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
         Self {
             string_table: RefCell::new(Vec::new()),
             fn_table: RefCell::new(Vec::new()),
-            layout_provider: Box::new(FallbackLayoutProvider),
+            layout_provider: Box::new(GlyimLayoutProvider {
+                ty_ctx: ctx,
+                target,
+            }),
             ty_ctx: None,
-            target: None,
         }
     }
 
     pub fn with_layout_provider(mut self, provider: Box<dyn LayoutProvider>) -> Self {
         self.layout_provider = provider;
-        self
-    }
-
-    pub fn with_ty_ctx(mut self, ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
-        self.ty_ctx = Some(ctx.clone());
-        self.target = Some(target.clone());
-        self.layout_provider = Box::new(GlyimLayoutProvider {
-            ty_ctx: ctx,
-            target,
-        });
         self
     }
 
@@ -159,16 +134,21 @@ impl BytecodeBackend {
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     if elem_size == 0 {
-                        panic!(
-                            "zero-sized element: cannot index into type with zero-sized elements"
-                        );
+                        // ZST array: offset is always 0. We must still consume the index
+                        // local from the stack perspective if we were a VM, but since we
+                        // are generating linear bytecode and the offset is 0, we can just
+                        // add 0 to the base pointer to be semantically correct and safe.
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&0i64.to_le_bytes());
+                        bc.push(OP_ADD);
+                    } else {
+                        bc.push(OP_LOAD_LOCAL);
+                        bc.extend_from_slice(&local.to_raw().to_le_bytes());
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&(elem_size as i64).to_le_bytes());
+                        bc.push(OP_MUL);
+                        bc.push(OP_ADD);
                     }
-                    bc.push(OP_LOAD_LOCAL);
-                    bc.extend_from_slice(&local.to_raw().to_le_bytes());
-                    bc.push(OP_LOAD_CONST);
-                    bc.extend_from_slice(&(elem_size as i64).to_le_bytes());
-                    bc.push(OP_MUL);
-                    bc.push(OP_ADD);
                     current_ty = Ty::ERROR;
                 }
                 ProjectionElem::Downcast(_) => {
@@ -201,8 +181,12 @@ impl BytecodeBackend {
                     bc.push(OP_ADD);
                     current_ty = Ty::ERROR;
                 }
-                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => {
-                    unimplemented!("Subslice projection in bytecode backend");
+                ProjectionElem::Subslice { from, to: _, from_end: _ } => {
+                    let elem_size = self.layout_provider.size_of(current_ty);
+                    let byte_offset = *from * elem_size;
+                    bc.push(OP_LOAD_CONST);
+                    bc.extend_from_slice(&(byte_offset as i64).to_le_bytes());
+                    bc.push(OP_ADD);
                 }
             }
         }

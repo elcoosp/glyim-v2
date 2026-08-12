@@ -102,7 +102,8 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     // For obj and exec, compile to object
     let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
-        Box::new(BytecodeBackend::new())
+        let ctx = glyim_type::TyCtxMut::new(db.interner().clone()).freeze();
+        Box::new(BytecodeBackend::with_ty_ctx(std::sync::Arc::new(ctx), glyim_core::TargetInfo::default()))
     } else {
         Box::new(LlvmBackend::with_target(
             args.target

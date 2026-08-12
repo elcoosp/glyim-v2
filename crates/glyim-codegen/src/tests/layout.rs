@@ -55,7 +55,7 @@ fn field_projection_emits_offset_bytecode() {
         body
     });
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body));
 
     assert!(result.is_ok());

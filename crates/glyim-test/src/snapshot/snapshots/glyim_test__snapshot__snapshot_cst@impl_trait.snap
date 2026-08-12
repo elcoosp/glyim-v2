@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
 expression: tree
 ---
 SourceFile@0..138
@@ -69,10 +68,11 @@ SourceFile@0..138
     ParamList@120..120
     RParen@120..121 ")"
     Arrow@121..123 "->"
-    KwImpl@123..127 "impl"
-    PathType@127..133
-      UsePath@127..133
-        Ident@127..133 "Animal"
+    ImplTraitType@123..133
+      KwImpl@123..127 "impl"
+      PathType@127..133
+        UsePath@127..133
+          Ident@127..133 "Animal"
     Block@133..138
       LBrace@133..134 "{"
       ExprStmt@134..137

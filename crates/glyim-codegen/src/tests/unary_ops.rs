@@ -35,7 +35,7 @@ fn make_unary_body(op: UnOp) -> Body {
 #[test]
 fn emit_not() {
     let body = make_unary_body(UnOp::Not);
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_NOT));
 }
@@ -43,7 +43,7 @@ fn emit_not() {
 #[test]
 fn emit_neg() {
     let body = make_unary_body(UnOp::Neg);
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_NEG));
 }

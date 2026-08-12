@@ -108,13 +108,13 @@ fn v29_t05_bool_switch_only_true_branch() {
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
 
     assert!(
-        ir.contains("icmp eq") || ir.contains("br i1"),
-        "Expected icmp or conditional branch for bool switch with only true branch, got:\n{}",
+        ir.contains("switch i1"),
+        "Expected LLVM switch for bool switch with only true branch, got:\n{}",
         ir
     );
     assert!(
-        ir.contains("switch_eq_0"),
-        "Expected 'switch_eq_0' label for bool switch icmp, got:\n{}",
+        !ir.contains("switch_eq_0"),
+        "Expected no 'switch_eq_0' label for production switch, got:\n{}",
         ir
     );
 }
@@ -133,8 +133,8 @@ fn v29_t06_bool_switch_only_false_branch() {
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
 
     assert!(
-        ir.contains("icmp eq"),
-        "Expected icmp eq for bool switch with only false branch, got:\n{}",
+        ir.contains("switch i1"),
+        "Expected LLVM switch for bool switch with only false branch, got:\n{}",
         ir
     );
 }
@@ -363,18 +363,18 @@ fn v29_t15_single_case_switch_icmp() {
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
 
     assert!(
-        ir.contains("icmp eq"),
-        "Expected icmp eq for single-case switch, got:\n{}",
+        ir.contains("switch i32"),
+        "Expected LLVM switch for single-case switch, got:\n{}",
         ir
     );
     assert!(
-        ir.contains("switch_eq"),
-        "Expected switch_eq label for single case, got:\n{}",
+        !ir.contains("switch_eq"),
+        "Expected no switch_eq label for production switch, got:\n{}",
         ir
     );
     assert!(
-        ir.contains(", 42"),
-        "Expected case value 42 in icmp, got:\n{}",
+        ir.contains("i32 42"),
+        "Expected case value 42 in switch, got:\n{}",
         ir
     );
 }
@@ -396,18 +396,18 @@ fn v29_t16_two_case_switch_icmp_ladder() {
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
 
     assert!(
-        ir.contains("icmp eq"),
-        "Expected icmp eq for 2-case small switch, got:\n{}",
+        ir.contains("switch i32"),
+        "Expected LLVM switch for 2-case small switch, got:\n{}",
         ir
     );
     assert!(
-        ir.contains("switch_eq_0"),
-        "Expected switch_eq_0 label, got:\n{}",
+        !ir.contains("switch_eq_0"),
+        "Expected no switch_eq_0 label, got:\n{}",
         ir
     );
     assert!(
-        ir.contains("switch_eq_1"),
-        "Expected switch_eq_1 label, got:\n{}",
+        !ir.contains("switch_eq_1"),
+        "Expected no switch_eq_1 label, got:\n{}",
         ir
     );
 }
@@ -429,8 +429,8 @@ fn v29_t17_switch_with_zero_case_value() {
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
 
     assert!(
-        ir.contains("icmp eq") || ir.contains("switch"),
-        "Expected icmp or switch for zero-case-value switch, got:\n{}",
+        ir.contains("switch i32"),
+        "Expected LLVM switch for zero-case-value switch, got:\n{}",
         ir
     );
 }
@@ -476,8 +476,8 @@ fn v29_t19_bool_switch_both_branches_same_block() {
     let ir = lower_and_get_ir_with_ctx(ctx, &body);
 
     assert!(
-        ir.contains("icmp eq") || ir.contains("br i1") || ir.contains("br label"),
-        "Expected branching for bool switch with same target, got:\n{}",
+        ir.contains("switch i1"),
+        "Expected LLVM switch for bool switch with same target, got:\n{}",
         ir
     );
 }

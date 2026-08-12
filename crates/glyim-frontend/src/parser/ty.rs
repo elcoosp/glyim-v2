@@ -93,6 +93,7 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::KwImpl => {
+                self.start_node(SyntaxKind::ImplTraitType);
                 self.bump(); // impl
                 loop {
                     self.parse_type();
@@ -102,6 +103,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
                 }
+                self.finish_node();
             }
             SyntaxKind::KwFn => {
                 self.start_node(SyntaxKind::FnType);

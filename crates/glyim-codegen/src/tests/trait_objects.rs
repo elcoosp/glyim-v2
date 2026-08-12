@@ -79,7 +79,7 @@ fn call_method_through_trait_object() {
         var_debug_info: vec![],
     });
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&body);
     assert!(
         result.is_ok(),
@@ -151,7 +151,7 @@ fn upcast_to_supertrait_object() {
         var_debug_info: vec![],
     });
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&body);
     assert!(
         result.is_ok(),

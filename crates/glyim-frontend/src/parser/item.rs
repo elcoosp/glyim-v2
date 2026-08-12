@@ -105,7 +105,29 @@ impl<'a> Parser<'a> {
                     self.bump(); // ABI string
                 }
                 if self.current_kind() == SyntaxKind::LBrace {
-                    self.parse_block_inner();
+                    self.bump(); // {
+                    while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                        match self.current_kind() {
+                            SyntaxKind::KwFn => self.parse_fn_def(),
+                            SyntaxKind::KwStatic => {
+                                self.start_node(SyntaxKind::StaticDef);
+                                self.bump(); // static
+                                if self.current_kind() == SyntaxKind::KwMut {
+                                    self.bump();
+                                }
+                                self.bump_expected(SyntaxKind::Ident);
+                                self.expect(SyntaxKind::Colon);
+                                self.parse_type();
+                                self.expect(SyntaxKind::Semicolon);
+                                self.finish_node();
+                            }
+                            _ => {
+                                self.error("expected fn or static in extern block");
+                                self.bump();
+                            }
+                        }
+                    }
+                    self.expect(SyntaxKind::RBrace);
                 } else {
                     self.expect(SyntaxKind::Semicolon);
                 }
@@ -413,6 +435,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::LBrace => {
                 self.bump(); // {
                 while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                    self.parse_visibility();
                     if self.current_kind() == SyntaxKind::Ident {
                         self.bump();
                         if self.current_kind() == SyntaxKind::Colon {

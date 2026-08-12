@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
 expression: tree
 ---
 SourceFile@0..225
@@ -145,37 +144,39 @@ SourceFile@0..225
         PatIdent@176..177
           Ident@176..177 "x"
         Eq@177..178 "="
-        CallExpr@178..190
-          PathExpr@178..184
-            UsePath@178..184
-              Ident@178..184 "divide"
-          LParen@184..185 "("
-          LitExpr@185..187
-            IntLit@185..187 "10"
-          Comma@187..188 ","
-          LitExpr@188..189
-            IntLit@188..189 "2"
-          RParen@189..190 ")"
-        Question@190..191 "?"
+        TryExpr@178..191
+          CallExpr@178..190
+            PathExpr@178..184
+              UsePath@178..184
+                Ident@178..184 "divide"
+            LParen@184..185 "("
+            LitExpr@185..187
+              IntLit@185..187 "10"
+            Comma@187..188 ","
+            LitExpr@188..189
+              IntLit@188..189 "2"
+            RParen@189..190 ")"
+          Question@190..191 "?"
         Semicolon@191..192 ";"
       LetStmt@192..210
         KwLet@192..195 "let"
         PatIdent@195..196
           Ident@195..196 "y"
         Eq@196..197 "="
-        CallExpr@197..208
-          PathExpr@197..203
-            UsePath@197..203
-              Ident@197..203 "divide"
-          LParen@203..204 "("
-          PathExpr@204..205
-            UsePath@204..205
-              Ident@204..205 "x"
-          Comma@205..206 ","
-          LitExpr@206..207
-            IntLit@206..207 "0"
-          RParen@207..208 ")"
-        Question@208..209 "?"
+        TryExpr@197..209
+          CallExpr@197..208
+            PathExpr@197..203
+              UsePath@197..203
+                Ident@197..203 "divide"
+            LParen@203..204 "("
+            PathExpr@204..205
+              UsePath@204..205
+                Ident@204..205 "x"
+            Comma@205..206 ","
+            LitExpr@206..207
+              IntLit@206..207 "0"
+            RParen@207..208 ")"
+          Question@208..209 "?"
         Semicolon@209..210 ";"
       ExprStmt@210..224
         CallExpr@210..224

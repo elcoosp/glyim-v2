@@ -8,6 +8,8 @@ glyim-db = { workspace = true }
 glyim-pipeline = { workspace = true }
 glyim-codegen-llvm = { workspace = true }
 glyim-codegen = { workspace = true }
+glyim-core = { workspace = true }
+glyim-type = { workspace = true }
 glyim-diag = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }

@@ -236,7 +236,9 @@ impl<'a> Parser<'a> {
                     self.finish_node();
                 }
                 SyntaxKind::Question => {
+                    self.start_node_at(cp, SyntaxKind::TryExpr);
                     self.bump();
+                    self.finish_node();
                 }
                 SyntaxKind::KwAs => {
                     self.start_node_at(cp, SyntaxKind::CastExpr);

@@ -64,7 +64,7 @@ pub(crate) fn lower_pat(
                         || t.kind() == SyntaxKind::KwTrue
                         || t.kind() == SyntaxKind::KwFalse
                 })?;
-            let lit = lower_literal(&lit_token);
+            let lit = lower_literal(&lit_token, interner);
             Some(pats.push(Pat::Literal(lit)))
         }
         SyntaxKind::PatRange => {
@@ -77,7 +77,7 @@ pub(crate) fn lower_pat(
             for child in node.children_with_tokens() {
                 match child {
                     glyim_syntax::SyntaxElement::Token(t) if t.kind().is_literal() => {
-                        let lit = lower_literal(&t);
+                        let lit = lower_literal(&t, interner);
                         if !after_dot {
                             start = Some(lit);
                         } else {

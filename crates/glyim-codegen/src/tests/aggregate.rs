@@ -35,7 +35,7 @@ fn emit_aggregate_tuple() {
             ),
             source_info: SourceInfo::new(Span::DUMMY),
         });
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let result = backend.generate_function(&Arc::new(body)).unwrap();
     assert!(result.contains(&OP_AGGREGATE));
     // Verify count field follows OP_AGGREGATE (2)

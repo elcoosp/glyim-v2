@@ -75,7 +75,7 @@ fn downcast_projection_no_extra_instruction() {
         source_info: SourceInfo::new(Span::DUMMY),
     }]);
 
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let mut bc_no = Vec::new();
     let mut bc_with = Vec::new();
 
@@ -101,7 +101,7 @@ fn downcast_with_field_emits_correct_offset() {
         .with_size(enum_ty, 32)
         .with_variant_type(enum_ty, VariantIdx::from_raw(0), variant_struct_ty);
 
-    let backend = BytecodeBackend::new().with_layout_provider(Box::new(layout_provider));
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default()).with_layout_provider(Box::new(layout_provider));
     let local = LocalIdx::from_raw(0);
     let place = Place {
         local,
@@ -149,7 +149,7 @@ fn downcast_does_not_affect_pointer_arithmetic() {
             source_info: SourceInfo::new(Span::DUMMY),
         },
     ]);
-    let backend = BytecodeBackend::new();
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default());
     let mut bc = Vec::new();
     backend
         .emit_place_address(&mut bc, &place, &local_tys)
@@ -171,7 +171,7 @@ fn downcast_before_multiple_fields_no_extra_ops() {
         .with_size(variant_ty, 24)
         .with_variant_type(Ty::ERROR, VariantIdx::from_raw(0), variant_ty);
 
-    let backend = BytecodeBackend::new().with_layout_provider(Box::new(layout_provider));
+    let backend = BytecodeBackend::with_ty_ctx(std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()), glyim_core::TargetInfo::default()).with_layout_provider(Box::new(layout_provider));
     let local = LocalIdx::from_raw(0);
     let place = Place {
         local,

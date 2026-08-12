@@ -1,9 +1,9 @@
 use glyim_core::primitives::TargetInfo;
+use glyim_layout::LayoutComputer;
 use glyim_type::{Ty, TyCtx, TyKind};
 use inkwell::context::Context;
 use inkwell::types::{BasicType, BasicTypeEnum, IntType};
 use std::num::NonZeroU32;
-
 pub(crate) fn llvm_type_for_ty<'ctx>(
     ctx: &TyCtx,
     target_info: &TargetInfo,
@@ -73,23 +73,42 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 .into()
         }
         TyKind::Adt(adt_id, _subst) => {
-            // Use AdtDef to get actual field types, not generic substitution args
-            if let Some(adt_def) = ctx.adt_def(*adt_id) {
-                // For now, handle the first variant (structs have one; enums need variant selection)
-                if let Some(variant) = adt_def.variants.first() {
-                    if variant.fields.is_empty() {
-                        return context.struct_type(&[], false).into();
+            let layout_computer = glyim_layout::SimpleLayoutComputer::new(ctx, target_info.clone());
+            if let Ok(layout) = layout_computer.layout_of(ty) {
+                match &layout.variants {
+                    glyim_layout::VariantsShape::Single { .. } => {
+                        if let Some(adt_def) = ctx.adt_def(*adt_id) {
+                            if let Some(variant) = adt_def.variants.first() {
+                                if variant.fields.is_empty() {
+                                    return context.struct_type(&[], false).into();
+                                }
+                                let mut field_types = Vec::with_capacity(variant.fields.len());
+                                for field_def in variant.fields.iter() {
+                                    field_types.push(llvm_type_for_ty(
+                                        ctx,
+                                        target_info,
+                                        context,
+                                        field_def.ty,
+                                    ));
+                                }
+                                return context.struct_type(&field_types, false).into();
+                            }
+                        }
+                        context.struct_type(&[], false).into()
                     }
-                    let mut field_types = Vec::with_capacity(variant.fields.len());
-                    for field_def in variant.fields.iter() {
-                        // Use the field's actual type from AdtDef
-                        field_types.push(llvm_type_for_ty(ctx, target_info, context, field_def.ty));
+                    glyim_layout::VariantsShape::Multiple { tag_size, .. } => {
+                        let tag_bits = (tag_size.0 * 8) as u32;
+                        let tag_ty = int_type(context, tag_bits.max(8));
+                        let payload_size = layout.size.0 - tag_size.0;
+                        let payload_ty = context.i8_type().array_type(payload_size as u32);
+                        context
+                            .struct_type(&[tag_ty.into(), payload_ty.into()], false)
+                            .into()
                     }
-                    return context.struct_type(&field_types, false).into();
                 }
+            } else {
+                context.struct_type(&[], false).into()
             }
-            // Fallback for missing AdtDef (should not happen in valid code)
-            context.struct_type(&[], false).into()
         }
         TyKind::Closure(_closure_id, subst) => {
             let args = ctx.substitution_args(*subst);

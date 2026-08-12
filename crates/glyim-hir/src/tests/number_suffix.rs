@@ -34,35 +34,40 @@ fn token_from_literal(src: &str) -> glyim_syntax::SyntaxToken {
 #[test]
 fn test_int_suffix_i32() {
     let tok = token_from_literal("42i32");
-    let lit = lower_literal(&tok);
+    let mut interner = glyim_core::Interner::default();
+    let lit = lower_literal(&tok, &mut interner);
     assert_eq!(lit, Literal::Int(42, Some(IntTy::I32)));
 }
 
 #[test]
 fn test_int_suffix_u64() {
     let tok = token_from_literal("100u64");
-    let lit = lower_literal(&tok);
+    let mut interner = glyim_core::Interner::default();
+    let lit = lower_literal(&tok, &mut interner);
     assert_eq!(lit, Literal::Uint(100, Some(UintTy::U64)));
 }
 
 #[test]
 fn test_int_hex_no_suffix() {
     let tok = token_from_literal("0x1A");
-    let lit = lower_literal(&tok);
+    let mut interner = glyim_core::Interner::default();
+    let lit = lower_literal(&tok, &mut interner);
     assert_eq!(lit, Literal::Int(26, None));
 }
 
 #[test]
 fn test_int_binary() {
     let tok = token_from_literal("0b1010");
-    let lit = lower_literal(&tok);
+    let mut interner = glyim_core::Interner::default();
+    let lit = lower_literal(&tok, &mut interner);
     assert_eq!(lit, Literal::Int(10, None));
 }
 
 #[test]
 fn test_float_suffix_f64() {
     let tok = token_from_literal("3.14f64");
-    let lit = lower_literal(&tok);
+    let mut interner = glyim_core::Interner::default();
+    let lit = lower_literal(&tok, &mut interner);
     match lit {
         Literal::Float(bits, FloatTy::F64) => {
             let val = f64::from_bits(bits);
@@ -75,7 +80,8 @@ fn test_float_suffix_f64() {
 #[test]
 fn test_float_no_suffix() {
     let tok = token_from_literal("2.71828");
-    let lit = lower_literal(&tok);
+    let mut interner = glyim_core::Interner::default();
+    let lit = lower_literal(&tok, &mut interner);
     match lit {
         Literal::Float(bits, FloatTy::F64) => {
             let val = f64::from_bits(bits);

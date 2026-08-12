@@ -29,8 +29,13 @@ impl<'a> Parser<'a> {
                 self.parse_pat_inner();
             }
             SyntaxKind::AndAnd => {
-                self.skip_token(); // skip &&
+                self.start_node(SyntaxKind::PatRef);
+                self.bump(); // &
+                self.start_node(SyntaxKind::PatRef);
+                self.bump(); // &
                 self.parse_pat_inner();
+                self.finish_node();
+                self.finish_node();
             }
             SyntaxKind::And => {
                 self.bump(); // &

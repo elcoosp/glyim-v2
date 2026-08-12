@@ -139,6 +139,8 @@ pub enum SyntaxKind {
     RefExpr,
     ClosureExpr,
     PathExpr,
+    TryExpr,
+    ImplTraitType,
     LitExpr,
     ArrayExpr,
     TupleExpr,
@@ -162,6 +164,7 @@ pub enum SyntaxKind {
     PatIdent,
     PatStruct,
     PatTuple,
+    PatRef,
     PatOr,
     PatLit,
     PatRange,
@@ -301,6 +304,8 @@ ast_node!(Block, SyntaxKind::Block);
 ast_node!(CallExpr, SyntaxKind::CallExpr);
 ast_node!(BinaryExpr, SyntaxKind::BinaryExpr);
 ast_node!(PathExpr, SyntaxKind::PathExpr);
+ast_node!(TryExpr, SyntaxKind::TryExpr);
+ast_node!(ImplTraitType, SyntaxKind::ImplTraitType);
 ast_node!(LitExpr, SyntaxKind::LitExpr);
 ast_node!(Module, SyntaxKind::Module);
 ast_node!(TypeAlias, SyntaxKind::TypeAlias);
@@ -350,6 +355,7 @@ ast_node!(GenericArgList, SyntaxKind::GenericArgList);
 ast_node!(PatIdent, SyntaxKind::PatIdent);
 ast_node!(PatStruct, SyntaxKind::PatStruct);
 ast_node!(PatTuple, SyntaxKind::PatTuple);
+ast_node!(PatRef, SyntaxKind::PatRef);
 ast_node!(PatOr, SyntaxKind::PatOr);
 ast_node!(PatLit, SyntaxKind::PatLit);
 ast_node!(PatRange, SyntaxKind::PatRange);
