@@ -106,52 +106,68 @@ impl Place {
     pub fn ty(&self, ctx: &impl TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
         let mut ty = local_decls[self.local].ty;
 
-        for elem in self.projection.iter() {
-            ty = match elem {
-                ProjectionElem::Deref => match ctx.ty_kind(ty) {
-                    TyKind::Ref(_, inner_ty, _) => *inner_ty,
-                    TyKind::RawPtr(inner_ty, _) => *inner_ty,
-                    _ => {
-                        tracing::error!("Place::ty(): Deref on non-pointer type");
-                        ctx.error_ty()
-                    }
-                },
-                ProjectionElem::Field(idx) => match ctx.ty_kind(ty) {
-                    TyKind::Tuple(substs) => {
-                        let args = ctx.substitution_args(*substs);
-                        if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
-                            *field_ty
-                        } else {
-                            tracing::error!("Place::ty(): Field index out of bounds for tuple");
-                            ctx.error_ty()
-                        }
-                    }
-                    TyKind::Adt(adt_id, _substs) => ctx.field_ty(*adt_id, idx.to_raw() as usize),
-                    _ => {
-                        tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
-                        ctx.error_ty()
-                    }
-                },
-                ProjectionElem::Index(_) => match ctx.ty_kind(ty) {
-                    TyKind::Array(inner_ty, _) => *inner_ty,
-                    TyKind::Slice(inner_ty) => *inner_ty,
-                    _ => {
-                        tracing::error!("Place::ty(): Index on non-array/slice type");
-                        ctx.error_ty()
-                    }
-                },
-                ProjectionElem::Downcast(_variant_idx) => {
-                    tracing::warn!(
-                        "Place::ty(): Downcast projection not fully implemented, returning original type"
-                    );
-                    ty
+            for elem in self.projection.iter() {
+        ty = match elem {
+            ProjectionElem::Deref => match ctx.ty_kind(ty) {
+                TyKind::Ref(_, inner_ty, _) => *inner_ty,
+                TyKind::RawPtr(inner_ty, _) => *inner_ty,
+                _ => {
+                    tracing::error!("Place::ty(): Deref on non-pointer type");
+                    ctx.error_ty()
                 }
-                ProjectionElem::Slice { start: _, end: _ } => {
-                    tracing::warn!("Place::ty(): Slice projection type approximated as base type (requires TyCtxMut)");
-                    ty
+            },
+            ProjectionElem::Field(idx) => match ctx.ty_kind(ty) {
+                TyKind::Tuple(substs) => {
+                    let args = ctx.substitution_args(*substs);
+                    if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
+                        *field_ty
+                    } else {
+                        tracing::error!("Place::ty(): Field index out of bounds for tuple");
+                        ctx.error_ty()
+                    }
                 }
-            };
-        }
+                TyKind::Adt(adt_id, _substs) => ctx.field_ty(*adt_id, idx.to_raw() as usize),
+                _ => {
+                    tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
+                    ctx.error_ty()
+                }
+            },
+            ProjectionElem::Index(_) => match ctx.ty_kind(ty) {
+                TyKind::Array(inner_ty, _) => *inner_ty,
+                TyKind::Slice(inner_ty) => *inner_ty,
+                _ => {
+                    tracing::error!("Place::ty(): Index on non-array/slice type");
+                    ctx.error_ty()
+                }
+            },
+            ProjectionElem::Downcast(_variant_idx) => {
+                tracing::warn!(
+                    "Place::ty(): Downcast projection not fully implemented, returning original type"
+                );
+                ty
+            },
+            ProjectionElem::ConstantIndex { .. } => {
+                // Constant index keeps the element type
+                match ctx.ty_kind(ty) {
+                    TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => *inner_ty,
+                    _ => {
+                        tracing::error!("Place::ty(): ConstantIndex on non-array/slice type");
+                        ctx.error_ty()
+                    }
+                }
+            },
+            ProjectionElem::Subslice { .. } => {
+                // Subslice returns the element type (actual slice type handled by desugaring)
+                match ctx.ty_kind(ty) {
+                    TyKind::Array(e, _) | TyKind::Slice(e) => *e,
+                    _ => {
+                        tracing::error!("Place::ty(): Subslice on non-array/slice type");
+                        ctx.error_ty()
+                    }
+                }
+            },
+        };
+    }
         ty
     }
 }
@@ -162,7 +178,21 @@ pub enum ProjectionElem {
     Field(FieldIdx),
     Index(LocalIdx),
     Downcast(VariantIdx),
-    Slice { start: Place, end: Place }}
+    /// Fixed index into a slice/array, used by slice patterns.
+    /// For arrays, offset is always from the start.
+    /// For slices, from_end determines direction.
+    ConstantIndex {
+        offset: u64,
+        min_length: u64,
+        from_end: bool,
+    },
+    /// Represents a subslice in a pattern: [prefix, .., suffix]
+    Subslice {
+        from: u64,
+        to: u64,
+        from_end: bool,
+    },
+}
 
 #[derive(Clone, Debug)]
 pub struct LocalDecl {

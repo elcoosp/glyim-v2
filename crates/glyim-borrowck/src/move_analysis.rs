@@ -734,7 +734,9 @@ fn describe_projection(projection: &[ProjectionElem]) -> String {
             ProjectionElem::Field(idx) => format!(".{}", idx.to_raw()),
             ProjectionElem::Index(_) => "[..]".to_string(),
             ProjectionElem::Downcast(idx) => format!(".{}", idx.to_raw()),
-            ProjectionElem::Slice { .. } => ".slice".to_string(),
+            
+            ProjectionElem::ConstantIndex { offset, min_length: _, from_end: _ } => format!("[{}]", offset),
+            ProjectionElem::Subslice { from, to, from_end: _ } => format!("[{}..{}]", from, to),
         })
         .collect()
 }

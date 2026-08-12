@@ -146,9 +146,9 @@ fn format_cast_kind(kind: &glyim_mir::CastKind) -> String {
         glyim_mir::CastKind::IntToFloat => "IntToFloat".to_string(),
         glyim_mir::CastKind::PtrToPtr => "PtrToPtr".to_string(),
         glyim_mir::CastKind::FnPtrToPtr => "FnPtrToPtr".to_string(),
-            glyim_mir::CastKind::PtrToInt => "PtrToInt".to_string(),
+        glyim_mir::CastKind::PtrToInt => "PtrToInt".to_string(),
         glyim_mir::CastKind::IntToPtr => "IntToPtr".to_string(),
-}
+    }
 }
 
 fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
@@ -270,7 +270,17 @@ fn format_projection_elem(elem: &glyim_mir::ProjectionElem) -> String {
         glyim_mir::ProjectionElem::Downcast(variant) => {
             format!("Downcast(variant={})", variant.to_raw())
         }
-        glyim_mir::ProjectionElem::Slice { .. } => ".slice".to_string(),
+        glyim_mir::ProjectionElem::ConstantIndex {
+            offset,
+            min_length,
+            from_end,
+        } => format!(
+            "ConstantIndex(offset={}, min_length={}, from_end={})",
+            offset, min_length, from_end
+        ),
+        glyim_mir::ProjectionElem::Subslice { from, to, from_end } => {
+            format!("Subslice(from={}, to={}, from_end={})", from, to, from_end)
+        }
     }
 }
 

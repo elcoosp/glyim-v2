@@ -1096,6 +1096,7 @@ name = "glyim-lower"
 version = "0.1.0"
 dependencies = [
  "glyim-codegen-llvm",
+ "glyim-const-eval",
  "glyim-core",
  "glyim-def-map",
  "glyim-diag",

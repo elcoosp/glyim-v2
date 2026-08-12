@@ -77,7 +77,10 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
             kind: AdtKind::Struct,
         })
     }
-
+    fn hir_body(&self, _owner: glyim_core::def_id::LocalDefId) -> Option<&glyim_hir::Body> {
+        // Mock context does not have a real HIR map, so return None.
+        None
+    }
     fn push_span(&self, span: Span) {
         self.span_stack.borrow_mut().push(span);
     }

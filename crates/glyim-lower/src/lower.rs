@@ -1,6 +1,7 @@
-use glyim_core::Name;
 use glyim_core::def_id::{ConstDefId, FnDefId};
+use glyim_core::{LocalDefId, Name};
 use glyim_diag::GlyimDiagnostic;
+use glyim_hir::Body;
 use glyim_span::Span;
 use glyim_type::*;
 use glyim_typeck::thir;
@@ -62,7 +63,9 @@ pub trait LowerCtx {
     ) -> Option<FieldIdx> {
         None
     }
-
+    /// Fetches the original HIR body for a given owner.
+    /// This is required for evaluating `const { ... }` patterns at compile time.
+    fn hir_body(&self, owner: LocalDefId) -> Option<&Body>;
     /// Resolve a variant by name within an ADT.
     ///
     /// Returns the variant index if found, or `None` if no variant with

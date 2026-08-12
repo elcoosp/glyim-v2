@@ -28,7 +28,15 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
     fn ty_ctx(&self) -> &TyCtx {
         self.ty_ctx
     }
-
+    fn hir_body(&self, owner: glyim_core::def_id::LocalDefId) -> Option<&glyim_hir::Body> {
+        // Iterate through body owners to find the one matching the given LocalDefId
+        for (body_id, body_owner) in self.hir.body_owners.iter_enumerated() {
+            if *body_owner == owner {
+                return self.hir.bodies.get(body_id);
+            }
+        }
+        None
+    }
     fn adt_def(&self, id: AdtId) -> AdtDef {
         if let Some(adt_def) = self.ty_ctx.adt_def(id) {
             let variants = adt_def

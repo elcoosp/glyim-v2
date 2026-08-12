@@ -23,6 +23,9 @@ impl<'a> crate::LowerCtx for LocalMockLowerCtx<'a> {
     }
     fn push_span(&self, _span: Span) {}
     fn pop_span(&self) {}
+    fn hir_body(&self, _owner: glyim_core::def_id::LocalDefId) -> Option<&glyim_hir::Body> {
+        None
+    }
 }
 
 use crate::lower_body;

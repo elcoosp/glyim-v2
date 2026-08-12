@@ -341,23 +341,16 @@ impl<'tcx> Interpreter<'tcx> {
                         _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
                     },
                     CastKind::PtrToPtr | CastKind::FnPtrToPtr => Ok(val),
-                
-                CastKind::PtrToInt => {
-                    // Convert pointer to integer.
-                    match val {
+                    CastKind::PtrToInt => match val {
                         InterpValue::Ref(addr) => Ok(InterpValue::Uint(addr as u128)),
                         _ => Err(InterpError::Panic("PtrToInt on non-reference".into())),
-                    }
-                }
-                CastKind::IntToPtr => {
-                    // Convert integer to pointer.
-                    match val {
+                    },
+                    CastKind::IntToPtr => match val {
                         InterpValue::Uint(addr) => Ok(InterpValue::Ref(addr as usize)),
                         InterpValue::Int(addr) if addr >= 0 => Ok(InterpValue::Ref(addr as usize)),
                         _ => Err(InterpError::Panic("IntToPtr on non-integer".into())),
-                    }
+                    },
                 }
-}
             }
             Rvalue::Repeat(operand, count_const) => {
                 let val = self.eval_operand(operand)?;
@@ -638,9 +631,21 @@ impl<'tcx> Interpreter<'tcx> {
                 ProjectionElem::Downcast(_) => {
                     // no change
                 }
-                ProjectionElem::Slice { .. } => {
-                    eprintln!("Slice projection not implemented in interpreter");
-                    // return the base value as approximation
+                ProjectionElem::ConstantIndex {
+                    offset,
+                    min_length: _,
+                    from_end: _,
+                } => {
+                    // For constant index, we need to compute the index value.
+                    // For simplicity, we panic for now.
+                    panic!("ConstantIndex not implemented in interpreter");
+                }
+                ProjectionElem::Subslice {
+                    from: _,
+                    to: _,
+                    from_end: _,
+                } => {
+                    panic!("Subslice not implemented in interpreter");
                 }
             }
         }
@@ -799,9 +804,21 @@ impl<'tcx> Interpreter<'tcx> {
             ProjectionElem::Deref => Err(InterpError::Panic(
                 "Deref projection unexpected in write_through_projections".into(),
             )),
-            ProjectionElem::Slice { .. } => {
-                eprintln!("Slice projection not implemented in interpreter (write)");
-                Ok(base)
+            ProjectionElem::ConstantIndex {
+                offset,
+                min_length: _,
+                from_end: _,
+            } => {
+                // For constant index, we need to compute the index value.
+                // For simplicity, we panic.
+                panic!("ConstantIndex not implemented in interpreter (write)");
+            }
+            ProjectionElem::Subslice {
+                from: _,
+                to: _,
+                from_end: _,
+            } => {
+                panic!("Subslice not implemented in interpreter (write)");
             }
         }
     }

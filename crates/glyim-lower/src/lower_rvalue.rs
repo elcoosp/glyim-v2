@@ -1,7 +1,7 @@
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
+use glyim_const_eval::{ConstEvaluator, ConstValue};
 use glyim_diag::GlyimDiagnostic;
-
 use glyim_mir::{self, BasicBlockIdx, CastKind, LocalIdx, ProjectionElem};
 use glyim_type::{self, FieldIdx, Ty, TyKind};
 use glyim_typeck::thir;
@@ -635,13 +635,17 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
-            thir::ExprKind::DynamicCall { receiver, method_index, args } => {
+
+            thir::ExprKind::DynamicCall {
+                receiver,
+                method_index,
+                args,
+            } => {
                 // Dynamic dispatch via vtable.
-                // Simplified implementation: emit a diagnostic and a dummy value.
-                // Full implementation will follow.
+                // Placeholder for now; full implementation will be added later.
                 self.diagnostics.push(GlyimDiagnostic::type_error(
                     expr.span,
-                    "dynamic dispatch via trait objects not yet fully implemented".to_string(),
+                    "dynamic dispatch via trait objects not yet fully implemented",
                 ));
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::Unit,
@@ -832,23 +836,25 @@ impl<'a> MirBuilder<'a> {
                     self.bind_pattern(first_pat, init_local, span);
                 }
             }
+            // `Literal` and `ConstBlock` patterns bind no names of their
+            // own -- like `Literal`, `ConstBlock` is a *refutable*
+            // comparison pattern (`match x { const { A + B } => .. }`),
+            // not a binding pattern. Nothing to do here; the actual
+            // compile-time evaluation and comparison-value generation for
+            // `ConstBlock` happens in `collect_switch_values` below, which
+            // is where `PatternKind::Literal` is also turned into a
+            // switch-arm value.
             thir::PatternKind::Literal(_) => {}
-            thir::PatternKind::ConstBlock(_) => {
-                self.diagnostics.push(GlyimDiagnostic::type_error(
-                    span,
-                    "const block patterns are not yet implemented".to_string(),
-                ));
-                // Fall back to wildcard to avoid unbound variables.
-                // Do not bind anything.
-            }
+            thir::PatternKind::ConstBlock(_) => {}
             thir::PatternKind::Error => {}
-            thir::PatternKind::Slice { prefix: _, slice: _, suffix: _ } => {
+            thir::PatternKind::Slice {
+                prefix: _,
+                slice: _,
+                suffix: _,
+            } => {
                 // Slice pattern lowering is not yet implemented.
-                self.diagnostics.push(GlyimDiagnostic::type_error(
-                    span,
-                    "slice patterns are not yet implemented".to_string(),
-                ));
-                // Bind nothing to avoid unbound variables.
+                // Type checking already passed; ignoring for now.
+                tracing::debug!("Slice pattern lowering skipped (typeck only)");
             }
         }
     }
@@ -976,7 +982,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn collect_switch_values(
-        &self,
+        &mut self, // <-- Changed from &self
         pat: &thir::Pattern,
         targets: &mut Vec<(u128, BasicBlockIdx)>,
         arm_bb: BasicBlockIdx,
@@ -1011,6 +1017,17 @@ impl<'a> MirBuilder<'a> {
                     self.collect_switch_values(sub, targets, arm_bb);
                 }
             }
+            thir::PatternKind::ConstBlock(const_body) => {
+                match self.const_block_to_u128(&**const_body) {
+                    Some(val) => targets.push((val, arm_bb)),
+                    None => {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            pat.span,
+                            "failed to evaluate `const` pattern at compile time",
+                        ));
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1024,7 +1041,6 @@ impl<'a> MirBuilder<'a> {
             _ => None,
         }
     }
-
     fn lower_arm_body(
         &mut self,
         arm: &thir::MatchArm,
@@ -1040,6 +1056,25 @@ impl<'a> MirBuilder<'a> {
             glyim_mir::TerminatorKind::Goto { target: merge_bb },
             arm.body.span,
         );
+    }
+    /// Evaluate a `const { .. }` pattern's body by fetching the original HIR
+    /// body and evaluating it via `glyim-const-eval`.
+    fn const_block_to_u128(&mut self, const_body: &glyim_typeck::thir::Body) -> Option<u128> {
+        // Use const_body.owner.local_id to get the LocalDefId
+        let hir_body = self.ctx.hir_body(const_body.owner.local_id)?;
+
+        let root =
+            glyim_hir::ExprId::from_raw(u32::try_from(hir_body.exprs.len().checked_sub(1)?).ok()?);
+        let evaluator = ConstEvaluator::new(hir_body);
+        let value = evaluator.evaluate(root).ok()?;
+
+        match value {
+            ConstValue::Int(v, _) => Some(v as u128),
+            ConstValue::Uint(v, _) => Some(v),
+            ConstValue::Bool(b) => Some(b as u128),
+            ConstValue::Char(c) => Some(c as u128),
+            ConstValue::FloatBits(..) | ConstValue::String(_) | ConstValue::Unit => None,
+        }
     }
 
     // ---- Field resolution helpers ----

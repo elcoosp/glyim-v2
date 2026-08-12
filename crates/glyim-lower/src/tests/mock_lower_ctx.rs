@@ -52,7 +52,9 @@ impl<'a> LowerCtx for TestLowerCtx<'a> {
             kind: AdtKind::Struct,
         }
     }
-
+    fn hir_body(&self, _owner: glyim_core::def_id::LocalDefId) -> Option<&glyim_hir::Body> {
+        None
+    }
     fn push_span(&self, _span: Span) {}
     fn pop_span(&self) {}
 

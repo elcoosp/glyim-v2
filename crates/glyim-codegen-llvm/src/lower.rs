@@ -5,7 +5,9 @@ use glyim_core::TargetInfo;
 use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
 use glyim_diag::{CompResult, GlyimDiagnostic};
-use glyim_layout::{FieldsShape, Layout, LayoutComputer, PassMode, Size, VariantsShape};
+use glyim_layout::Layout;
+use glyim_layout::{FieldsShape, LayoutComputer, PassMode, Size, TagEncoding, VariantsShape};
+use glyim_mir::VariantIdx;
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
@@ -18,9 +20,13 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue};
+use inkwell::values::{
+    AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue,
+    StructValue,
+};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
+
 #[allow(unused_imports)]
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
@@ -31,25 +37,31 @@ struct LoweringCtx<'ctx, 'a> {
     builder: Builder<'ctx>,
     function: inkwell::values::FunctionValue<'ctx>,
     module: &'a Module<'ctx>,
-    drop_fn: inkwell::values::FunctionValue<'ctx>,
-    dealloc_fn: inkwell::values::FunctionValue<'ctx>,
+    _drop_fn: inkwell::values::FunctionValue<'ctx>,
+    _dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
     target_info: TargetInfo,
     ty_ctx: &'a TyCtx,
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
-    personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
+    _personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
     debug_ctx: Option<DebugInfoCtx<'ctx>>,
+    /// The landingpad result value for the cleanup block currently being
+    /// lowered, if any. Set at the top of `lower_body`'s block loop (via
+    /// `emit_landingpad`) and consulted by `TerminatorKind::Unreachable` to
+    /// decide whether to emit `resume` instead of `unreachable`.
+    current_landingpad: Option<BasicValueEnum<'ctx>>, // <-- CHANGED FROM StructValue<'ctx>
 }
-
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn llvm_int_type(&self, bits: u32) -> inkwell::types::IntType<'ctx> {
         let non_zero = NonZeroU32::new(bits).unwrap_or_else(|| NonZeroU32::new(64).unwrap());
         self.context.custom_width_int_type(non_zero).unwrap()
     }
+
     fn llvm_type_for_ty(&self, ty: Ty) -> inkwell::types::BasicTypeEnum<'ctx> {
         llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty)
     }
+
     fn set_debug_location(&self, span: Span) {
         if span.is_dummy() {
             return;
@@ -60,7 +72,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             self.builder.set_current_debug_location(loc);
         }
     }
+
+    #[allow(dead_code)]
     fn clear_debug_location(&self) {}
+
     fn alloc_local(&mut self, local: LocalIdx) {
         let ty = local_ty(self.body, local);
         let llvm_ty = self.llvm_type_for_ty(ty);
@@ -86,9 +101,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             self.locals[local] = Some(alloca);
         }
     }
+
     fn get_local_ptr(&self, local: LocalIdx) -> PointerValue<'ctx> {
         self.locals[local].unwrap_or_else(|| panic!("local {} not allocated", local.index()))
     }
+
     fn lower_operand(&self, operand: &Operand) -> BasicValueEnum<'ctx> {
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
@@ -102,6 +119,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             Operand::Constant(c) => self.lower_const(c),
         }
     }
+
     fn lower_const(&self, c: &MirConst) -> BasicValueEnum<'ctx> {
         match &c.kind {
             MirConstKind::Int(v) => {
@@ -158,15 +176,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let struct_ty = self
                     .context
                     .struct_type(&[ptr_type.into(), i64_type.into()], false);
-
                 let str_ptr = self
                     .builder
                     .build_bit_cast(global.as_pointer_value(), ptr_type, "str_ptr")
                     .expect("bitcast for string constant failed")
                     .into_pointer_value();
-
                 let len_val = i64_type.const_int(str_content.len() as u64, false);
-
                 let agg = struct_ty.const_zero();
                 let inserted_ptr = self
                     .builder
@@ -245,12 +260,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 ProjectionElem::Field(idx) => {
                     let layout_computer =
                         FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
-
                     let field_offset_bytes =
                         if let Ok(layout) = layout_computer.layout_of(current_ty) {
                             match &layout.fields {
                                 FieldsShape::Arbitrary { offsets } => {
-                                    use glyim_type::FieldIdx;
                                     offsets.get(FieldIdx::from_raw(idx.to_raw())).map(|s| s.0)
                                 }
                                 _ => None,
@@ -258,7 +271,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         } else {
                             None
                         };
-
                     let mut ptr = if let Some(offset) = field_offset_bytes {
                         let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
                         let base_i8 = self
@@ -294,7 +306,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                 .expect("field gep failed")
                         }
                     };
-
                     let field_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Tuple(subst) => {
                             let args = self.ty_ctx.substitution_args(*subst);
@@ -326,7 +337,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         }
                         _ => Ty::ERROR,
                     };
-
                     if field_ty != Ty::ERROR {
                         let _field_llvm_ty = self.llvm_type_for_ty(field_ty);
                         let field_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
@@ -346,16 +356,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         .build_load(i64_ty, index_ptr, "index_load")
                         .expect("index load failed")
                         .into_int_value();
-
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) => *elem,
                         TyKind::Slice(elem) => *elem,
                         other => panic!("Index projection on non-array/slice type {:?}", other),
                     };
-
                     if let TyKind::Slice(_) = self.ty_ctx.ty_kind(current_ty) {
-                        // For slice: ptr points to a slice struct { ptr, len }.
-                        // Load the data pointer from field 0.
                         let i8_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
                         let zero_i64 = i64_ty.const_zero();
                         let field0_ptr = unsafe {
@@ -373,7 +379,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             .build_load(i8_ptr_ty, field0_ptr, "slice_data_ptr")
                             .expect("load data ptr failed")
                             .into_pointer_value();
-
                         let elem_llvm_ty = self.llvm_type_for_ty(elem_ty);
                         let elem_ptr = unsafe {
                             self.builder
@@ -388,7 +393,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         ptr = elem_ptr;
                         current_ty = elem_ty;
                     } else {
-                        // Array case: ptr points directly to array data.
                         let llvm_ty = self.llvm_type_for_ty(current_ty);
                         let zero_i64 = i64_ty.const_zero();
                         ptr = unsafe {
@@ -413,6 +417,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     if let VariantsShape::Multiple {
                         tag_size,
                         tag_align,
+                        tag_encoding,
                         variants,
                         ..
                     } = &layout.variants
@@ -421,7 +426,24 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         if vi >= variants.len() {
                             panic!("Variant index {} out of bounds for {:?}", vi, current_ty);
                         }
-                        let data_start = Size(tag_size.0).align_to(*tag_align).0;
+                        // For `Direct` tag encoding the variant's data starts
+                        // *after* the tag (aligned to the variant's own
+                        // alignment). For `Niche` encoding there is no
+                        // separate tag prefix at all -- every variant's
+                        // fields (including the "untagged" storage variant)
+                        // live at the same offsets, see `build_niche_layout`
+                        // in glyim-layout, which clones the untagged
+                        // variant's own field offsets directly onto the
+                        // outer enum layout.
+                        let data_start = match tag_encoding {
+                            TagEncoding::Direct => {
+                                Size(tag_size.0)
+                                    .align_to(*tag_align)
+                                    .align_to(variants[vi].align)
+                                    .0
+                            }
+                            TagEncoding::Niche { .. } => 0,
+                        };
                         let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
                         let base_i8 = self
                             .builder
@@ -441,11 +463,192 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         };
                     }
                 }
-                ProjectionElem::Slice { .. } => {
-                    tracing::warn!(
-                        "Slice projection (subslice range) not implemented – only index projection is supported in this stream"
-                    );
-                    return self.context.ptr_type(AddressSpace::default()).const_null();
+                ProjectionElem::ConstantIndex {
+                    offset,
+                    min_length: _,
+                    from_end,
+                } => {
+                    let index_val = if *from_end {
+                        let len = match self.ty_ctx.ty_kind(current_ty) {
+                            TyKind::Array(_, const_val) => {
+                                let n = match &const_val.kind {
+                                    ConstKind::Uint(n) => *n as u64,
+                                    ConstKind::Int(n) => *n as u64,
+                                    _ => 0,
+                                };
+                                self.llvm_int_type(64).const_int(n, false)
+                            }
+                            TyKind::Slice(_) => {
+                                let llvm_ty = self.llvm_type_for_ty(current_ty);
+                                let val = self
+                                    .builder
+                                    .build_load(llvm_ty, ptr, "slice_len_load")
+                                    .expect("load failed");
+                                let struct_val = match val {
+                                    BasicValueEnum::StructValue(s) => s,
+                                    _ => panic!("slice value not a struct"),
+                                };
+                                let len_val = self
+                                    .builder
+                                    .build_extract_value(struct_val, 1, "slice_len_extract")
+                                    .expect("extract failed")
+                                    .into_int_value();
+                                len_val
+                            }
+                            _ => panic!("ConstantIndex on non-array/slice type"),
+                        };
+                        let offset_val = self.llvm_int_type(64).const_int(*offset, false);
+                        self.builder
+                            .build_int_sub(len, offset_val, "sub_index")
+                            .expect("sub failed")
+                    } else {
+                        self.llvm_int_type(64).const_int(*offset, false)
+                    };
+                    let data_ptr = if let TyKind::Slice(_) = self.ty_ctx.ty_kind(current_ty) {
+                        let llvm_ty = self.llvm_type_for_ty(current_ty);
+                        let val = self
+                            .builder
+                            .build_load(llvm_ty, ptr, "slice_load")
+                            .expect("load failed");
+                        let struct_val = match val {
+                            BasicValueEnum::StructValue(s) => s,
+                            _ => panic!("slice value not a struct"),
+                        };
+                        let data_ptr = self
+                            .builder
+                            .build_extract_value(struct_val, 0, "slice_data_ptr")
+                            .expect("extract failed")
+                            .into_pointer_value();
+                        data_ptr
+                    } else {
+                        ptr
+                    };
+                    let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
+                        TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
+                        _ => panic!("ConstantIndex on non-array/slice type"),
+                    };
+                    let elem_llvm_ty = self.llvm_type_for_ty(elem_ty);
+                    ptr = unsafe {
+                        self.builder
+                            .build_in_bounds_gep(
+                                elem_llvm_ty,
+                                data_ptr,
+                                &[index_val],
+                                "const_index_gep",
+                            )
+                            .expect("const index gep failed")
+                    };
+                    current_ty = elem_ty;
+                }
+                ProjectionElem::Subslice { from, to, from_end } => {
+                    // The result of a Subslice projection is itself a
+                    // *slice value* `{ data_ptr, len }` -- even when the
+                    // base being sliced was a fixed-size array. Since
+                    // `place_ptr` can only ever hand back a single
+                    // `PointerValue` (not a pointer+length pair), we
+                    // materialize that `{ ptr, len }` value into a fresh
+                    // stack temporary here and return a pointer to *that*,
+                    // so every downstream consumer of the resulting place
+                    // (`lower_operand`'s load, further projections, etc.)
+                    // sees a real, correctly-typed slice value at the
+                    // address we return -- exactly as if it had always
+                    // lived in memory.
+                    //
+                    // INVARIANT: `Subslice` must be the terminal element of
+                    // a place's projection list. This matches how slice
+                    // patterns (`[a, b, .., z]`) produce it during pattern
+                    // lowering -- the subslice binding (`..rest`) is always
+                    // read out whole, never projected into further within
+                    // the same `Place`. `slice_desugar` (see glyim-opt)
+                    // enforces this invariant for any other Subslice uses.
+                    let (data_ptr, base_len) = match self.ty_ctx.ty_kind(current_ty) {
+                        TyKind::Slice(_) => {
+                            let llvm_ty = self.llvm_type_for_ty(current_ty);
+                            let val = self
+                                .builder
+                                .build_load(llvm_ty, ptr, "subslice_base_load")
+                                .expect("load failed");
+                            let struct_val = match val {
+                                BasicValueEnum::StructValue(s) => s,
+                                _ => panic!("slice value not a struct"),
+                            };
+                            let dp = self
+                                .builder
+                                .build_extract_value(struct_val, 0, "subslice_data_ptr")
+                                .expect("extract failed")
+                                .into_pointer_value();
+                            let ln = self
+                                .builder
+                                .build_extract_value(struct_val, 1, "subslice_len")
+                                .expect("extract failed")
+                                .into_int_value();
+                            (dp, ln)
+                        }
+                        TyKind::Array(_, const_val) => {
+                            let n = match &const_val.kind {
+                                ConstKind::Uint(n) => *n as u64,
+                                ConstKind::Int(n) => *n as u64,
+                                _ => 0,
+                            };
+                            (ptr, self.llvm_int_type(64).const_int(n, false))
+                        }
+                        other => panic!("Subslice projection on non-array/slice type {:?}", other),
+                    };
+                    let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
+                        TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
+                        _ => unreachable!(),
+                    };
+                    let i64_ty = self.llvm_int_type(64);
+                    let from_val = i64_ty.const_int(*from, false);
+                    let to_val = i64_ty.const_int(*to, false);
+                    let new_len = if *from_end {
+                        // `to` counts back from the end: subslice is
+                        // `[from .. base_len - to]`.
+                        let end_val = self
+                            .builder
+                            .build_int_sub(base_len, to_val, "subslice_end")
+                            .expect("sub failed");
+                        self.builder
+                            .build_int_sub(end_val, from_val, "subslice_len")
+                            .expect("sub failed")
+                    } else {
+                        // `to` is an absolute index: subslice is `[from .. to]`.
+                        self.builder
+                            .build_int_sub(to_val, from_val, "subslice_len")
+                            .expect("sub failed")
+                    };
+                    let elem_llvm_ty = self.llvm_type_for_ty(elem_ty);
+                    let new_data_ptr = unsafe {
+                        self.builder
+                            .build_in_bounds_gep(
+                                elem_llvm_ty,
+                                data_ptr,
+                                &[from_val],
+                                "subslice_data_ptr",
+                            )
+                            .expect("gep failed")
+                    };
+                    let ptr_ty = self.context.ptr_type(AddressSpace::default());
+                    let slice_struct_ty = self
+                        .context
+                        .struct_type(&[ptr_ty.into(), i64_ty.into()], false);
+                    let tmp = self
+                        .builder
+                        .build_alloca(slice_struct_ty, "subslice_tmp")
+                        .expect("alloca failed");
+                    let agg = slice_struct_ty.const_zero();
+                    let agg = self
+                        .builder
+                        .build_insert_value(agg, new_data_ptr, 0, "subslice_ptr_insert")
+                        .expect("insert failed");
+                    let agg = self
+                        .builder
+                        .build_insert_value(agg, new_len, 1, "subslice_len_insert")
+                        .expect("insert failed");
+                    self.builder
+                        .build_store(tmp, agg.as_basic_value_enum())
+                        .expect("store failed");
+                    ptr = tmp;
                 }
             }
         }
@@ -453,991 +656,1247 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn place_ty(&self, place: &Place) -> Ty {
-        let mut ty = local_ty(self.body, place.local);
-        for elem in place.projection.iter() {
-            match elem {
-                ProjectionElem::Deref => match self.ty_ctx.ty_kind(ty) {
-                    TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => ty = *inner,
-                    other => panic!("Deref on non-pointer type {:?} in place_ty", other),
-                },
-                ProjectionElem::Field(idx) => match self.ty_ctx.ty_kind(ty) {
-                    TyKind::Tuple(subst) => {
-                        let args = self.ty_ctx.substitution_args(*subst);
-                        ty = args
-                            .get(idx.to_raw() as usize)
-                            .and_then(|arg| {
-                                if let glyim_type::GenericArg::Ty(t) = arg {
-                                    Some(*t)
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(Ty::ERROR);
-                    }
-                    TyKind::Adt(adt_id, _) => {
-                        if let Some(adt_def) = self.ty_ctx.adt_def(*adt_id) {
-                            if let Some(variant) = adt_def.variants.first() {
-                                ty = variant
-                                    .fields
-                                    .iter()
-                                    .nth(idx.to_raw() as usize)
-                                    .map(|f| f.ty)
-                                    .unwrap_or(Ty::ERROR);
-                            } else {
-                                ty = Ty::ERROR;
-                            }
-                        } else {
-                            ty = Ty::ERROR;
-                        }
-                    }
-                    _ => ty = Ty::ERROR,
-                },
-                ProjectionElem::Index(_) => match self.ty_ctx.ty_kind(ty) {
-                    TyKind::Array(elem, _) | TyKind::Slice(elem) => ty = *elem,
-                    other => panic!("Index projection on non-array/slice type {:?}", other),
-                },
-                ProjectionElem::Downcast(_) => {}
-                ProjectionElem::Slice { .. } => {
-                    tracing::warn!(
-                        "Slice projection in place_ty not implemented, keeping original type"
-                    );
-                }
-            }
-        }
-        ty
-    }
-
-    fn emit_landingpad(&self) -> CompResult<()> {
-        if let Some(personality_fn) = self.personality_fn {
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-            let i32_type = self.context.i32_type();
-            let result_type = self
-                .context
-                .struct_type(&[ptr_type.into(), i32_type.into()], false);
-            let _pad = self
-                .builder
-                .build_landing_pad(result_type, personality_fn, &[], true, "pad")
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "landingpad: {:?}",
-                        e
-                    ))]
-                })?;
-        }
-        Ok(())
-    }
-
-    fn lower_rvalue(&mut self, rvalue: &Rvalue) -> BasicValueEnum<'ctx> {
-        match rvalue {
-            Rvalue::Use(operand) => self.lower_operand(operand),
-            Rvalue::Ref(place, _borrow_kind) => {
-                let ptr = self.place_ptr(place);
-                ptr.as_basic_value_enum()
-            }
-            Rvalue::BinaryOp(op, operands) => {
-                let lhs_val = self.lower_operand(&operands.0);
-                let rhs_val = self.lower_operand(&operands.1);
-                let operand_ty = self.operand_ty(&operands.0);
-                let is_float = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_));
-                let is_unsigned = matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Uint(_));
-                if is_float {
-                    self.lower_float_binary_op(
-                        *op,
-                        lhs_val.into_float_value(),
-                        rhs_val.into_float_value(),
-                    )
-                } else {
-                    self.lower_binary_op(
-                        *op,
-                        lhs_val.into_int_value(),
-                        rhs_val.into_int_value(),
-                        is_unsigned,
-                    )
-                }
-            }
-            Rvalue::UnaryOp(op, operand) => {
-                let val = self.lower_operand(operand);
-                let operand_ty = self.operand_ty(operand);
-                if matches!(self.ty_ctx.ty_kind(operand_ty), TyKind::Float(_)) {
-                    self.lower_float_unary_op(*op, val.into_float_value())
-                } else {
-                    self.lower_unary_op(*op, val.into_int_value())
-                }
-            }
-            Rvalue::Aggregate(kind, operands) => self.lower_aggregate(kind, operands),
-            Rvalue::Discriminant(place) => self.lower_discriminant(place),
-            Rvalue::Len(place) => self.lower_len(place),
-            Rvalue::Cast(cast_kind, operand, ty) => self.lower_cast(*cast_kind, operand, *ty),
-            Rvalue::Repeat(operand, count) => self.lower_repeat(operand, count),
-        }
-    }
-
-    fn lower_aggregate(
-        &mut self,
-        kind: &AggregateKind,
-        operands: &[Operand],
-    ) -> BasicValueEnum<'ctx> {
-        match kind {
-            AggregateKind::Tuple => {
-                let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
-                    .iter()
-                    .map(|op| self.operand_ty(op))
-                    .map(|ty| self.llvm_type_for_ty(ty))
-                    .collect();
-                let struct_ty = self.context.struct_type(&field_types, false);
-                let mut result = struct_ty.const_zero().as_basic_value_enum();
-                for (i, op) in operands.iter().enumerate() {
-                    let val = self.lower_operand(op);
-                    let agg = result.into_struct_value();
-                    let inserted = self
-                        .builder
-                        .build_insert_value(agg, val, i as u32, "insert_field")
-                        .expect("insert_value failed");
-                    result = inserted.as_basic_value_enum();
-                }
-                result
-            }
-            AggregateKind::Array(elem_ty) => {
-                let elem_llvm_ty = self.llvm_type_for_ty(*elem_ty);
-                let array_ty = elem_llvm_ty.array_type(operands.len().try_into().unwrap_or(0u32));
-                let mut result = array_ty.const_zero().as_basic_value_enum();
-                for (i, op) in operands.iter().enumerate() {
-                    let val = self.lower_operand(op);
-                    let agg = result.into_array_value();
-                    let inserted = self
-                        .builder
-                        .build_insert_value(agg, val, i as u32, "insert_elem")
-                        .expect("insert_value failed");
-                    result = inserted.as_basic_value_enum();
-                }
-                result
-            }
-            AggregateKind::Adt(_adt_id, _variant_idx, _substs) => {
-                let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
-                    .iter()
-                    .map(|op| self.operand_ty(op))
-                    .map(|ty| self.llvm_type_for_ty(ty))
-                    .collect();
-                if field_types.is_empty() {
-                    let unit_struct = self.context.struct_type(&[], false);
-                    return unit_struct.const_zero().as_basic_value_enum();
-                }
-                let struct_ty = self.context.struct_type(&field_types, false);
-                let mut result = struct_ty.const_zero().as_basic_value_enum();
-                for (i, op) in operands.iter().enumerate() {
-                    let val = self.lower_operand(op);
-                    let agg = result.into_struct_value();
-                    let inserted = self
-                        .builder
-                        .build_insert_value(agg, val, i as u32, "insert_adt_field")
-                        .expect("insert_value failed");
-                    result = inserted.as_basic_value_enum();
-                }
-                result
-            }
-            AggregateKind::Closure(_closure_id, _substs) => {
-                let field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = operands
-                    .iter()
-                    .map(|op| self.operand_ty(op))
-                    .map(|ty| self.llvm_type_for_ty(ty))
-                    .collect();
-                if field_types.is_empty() {
-                    let unit_struct = self.context.struct_type(&[], false);
-                    return unit_struct.const_zero().as_basic_value_enum();
-                }
-                let struct_ty = self.context.struct_type(&field_types, false);
-                let mut result = struct_ty.const_zero().as_basic_value_enum();
-                for (i, op) in operands.iter().enumerate() {
-                    let val = self.lower_operand(op);
-                    let agg = result.into_struct_value();
-                    let inserted = self
-                        .builder
-                        .build_insert_value(agg, val, i as u32, "insert_closure_field")
-                        .expect("insert_value failed");
-                    result = inserted.as_basic_value_enum();
-                }
-                result
-            }
-    }
-}
-    fn lower_discriminant(&self, place: &Place) -> BasicValueEnum<'ctx> {
-        let ptr = self.place_ptr(place);
-        let place_ty = self.place_ty(place);
-        match self.ty_ctx.ty_kind(place_ty) {
-            TyKind::Bool => {
-                let val = self
-                    .builder
-                    .build_load(self.llvm_int_type(1), ptr, "discr_load")
-                    .expect("discr load failed");
-                self.builder
-                    .build_int_z_extend(val.into_int_value(), self.llvm_int_type(32), "discr_ext")
-                    .expect("discr ext failed")
-                    .as_basic_value_enum()
-            }
-            TyKind::Adt(_adt_id, _subst) => {
-                let layout_computer =
-                    FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
-                let Ok(layout) = layout_computer.layout_of(place_ty) else {
-                    tracing::warn!("Failed layout for discriminant of {:?}", place_ty);
-                    return self
-                        .llvm_int_type(32)
-                        .const_int(0, false)
-                        .as_basic_value_enum();
-                };
-                match &layout.variants {
-                    VariantsShape::Single { .. } => self
-                        .llvm_int_type(32)
-                        .const_int(0, false)
-                        .as_basic_value_enum(),
-                    VariantsShape::Multiple {
-                        tag_field,
-                        tag_size,
-                        tag_encoding,
-                        ..
-                    } => {
-                        let tag_offset = match &layout.fields {
-                            FieldsShape::Arbitrary { offsets } => offsets
-                                .get(FieldIdx::from_raw(*tag_field))
-                                .map(|s| s.0)
-                                .unwrap_or(0),
-                            _ => 0,
-                        };
-                        let tag_bits = tag_size.bits() as u32;
-                        let tag_llvm_ty = self.llvm_int_type(tag_bits);
-                        let i8_ptr = self.context.ptr_type(inkwell::AddressSpace::default());
-                        let base_i8 = self
-                            .builder
-                            .build_bit_cast(ptr, i8_ptr, "discr_base_i8")
-                            .expect("bitcast failed")
-                            .into_pointer_value();
-                        let offset_val = self.llvm_int_type(64).const_int(tag_offset, false);
-                        let tag_ptr = unsafe {
-                            self.builder
-                                .build_in_bounds_gep(
-                                    self.context.i8_type(),
-                                    base_i8,
-                                    &[offset_val],
-                                    "tag_ptr",
-                                )
-                                .expect("tag GEP failed")
-                        };
-                        let raw_discr = self
-                            .builder
-                            .build_load(tag_llvm_ty, tag_ptr, "enum_discr")
-                            .expect("discriminant load failed")
-                            .into_int_value();
-                        match tag_encoding {
-                            glyim_layout::TagEncoding::Direct => raw_discr.as_basic_value_enum(),
-                            glyim_layout::TagEncoding::Niche {
-                                untagged_variant,
-                                niche_variants,
-                                niche_start,
-                            } => {
-                                let niche_start_val =
-                                    tag_llvm_ty.const_int(*niche_start as u64, false);
-                                let cmp = self
-                                    .builder
-                                    .build_int_compare(
-                                        inkwell::IntPredicate::ULT,
-                                        raw_discr,
-                                        niche_start_val,
-                                        "niche_check",
-                                    )
-                                    .expect("niche cmp failed");
-                                let sub = self
-                                    .builder
-                                    .build_int_sub(raw_discr, niche_start_val, "niche_sub")
-                                    .expect("niche sub failed");
-                                let range_start =
-                                    tag_llvm_ty.const_int(*niche_variants.start() as u64, false);
-                                let decoded = self
-                                    .builder
-                                    .build_int_add(sub, range_start, "niche_decoded")
-                                    .expect("niche add failed");
-                                self.builder
-                                    .build_select(
-                                        cmp,
-                                        tag_llvm_ty.const_int(*untagged_variant as u64, false),
-                                        decoded,
-                                        "discr_result",
-                                    )
-                                    .expect("niche select failed")
-                                    .as_basic_value_enum()
-                            }
-                        }
-                    }
-                }
-            }
-            _ => panic!("Discriminant on non-enum type {:?}", place_ty),
-        }
-    }
-
-
-
-        
-
-
-    fn lower_len(&self, place: &Place) -> BasicValueEnum<'ctx> {
-        let place_ty = self.place_ty(place);
-        match self.ty_ctx.ty_kind(place_ty) {
-            TyKind::Array(_elem, count) => {
-                let n = match &count.kind {
-                    ConstKind::Uint(n) => *n as u64,
-                    ConstKind::Int(n) if *n >= 0 => *n as u64,
-                    _ => {
-                        tracing::warn!("Len with non-integer count {:?} — emitting 0", count);
-                        0
-                    }
-                };
-                let len_ty = self.llvm_int_type(64);
-                len_ty.const_int(n, false).into()
-            }
-            TyKind::Slice(_) => {
-                let ptr = self.place_ptr(place);
-                let i64_ty = self.llvm_int_type(64);
-                let i32_ty = self.llvm_int_type(32);
-                let slice_ty = self.llvm_type_for_ty(place_ty);
-                let len_ptr = unsafe {
-                    self.builder
-                        .build_in_bounds_gep(
-                            slice_ty,
-                            ptr,
-                            &[i32_ty.const_zero(), i32_ty.const_int(1, false)],
-                            "len_gep",
-                        )
-                        .expect("len gep failed")
-                };
-                self.builder
-                    .build_load(i64_ty, len_ptr, "len_load")
-                    .expect("len load failed")
-            }
-            TyKind::Error => {
-                tracing::warn!("Len on Ty::ERROR — emitting 0");
-                self.llvm_int_type(64).const_zero().into()
-            }
-            other => {
-                tracing::warn!(
-                    "Len on non-array/slice type {:?} — emitting 0 as safe sentinel",
-                    other
-                );
-                self.llvm_int_type(64).const_zero().into()
-            }
-        }
-    }
-    fn lower_binary_op(
-        &self,
-        op: BinOp,
-        lhs: IntValue<'ctx>,
-        rhs: IntValue<'ctx>,
-        is_unsigned: bool,
-    ) -> BasicValueEnum<'ctx> {
-        match op {
-            BinOp::Add => self
-                .builder
-                .build_int_add(lhs, rhs, "add")
-                .expect("add failed")
-                .into(),
-            BinOp::Sub => self
-                .builder
-                .build_int_sub(lhs, rhs, "sub")
-                .expect("sub failed")
-                .into(),
-            BinOp::Mul => self
-                .builder
-                .build_int_mul(lhs, rhs, "mul")
-                .expect("mul failed")
-                .into(),
-            BinOp::Div => {
-                if is_unsigned {
-                    self.builder
-                        .build_int_unsigned_div(lhs, rhs, "udiv")
-                        .expect("udiv failed")
-                        .into()
-                } else {
-                    self.builder
-                        .build_int_signed_div(lhs, rhs, "sdiv")
-                        .expect("sdiv failed")
-                        .into()
-                }
-            }
-            BinOp::Rem => {
-                if is_unsigned {
-                    self.builder
-                        .build_int_unsigned_rem(lhs, rhs, "urem")
-                        .expect("urem failed")
-                        .into()
-                } else {
-                    self.builder
-                        .build_int_signed_rem(lhs, rhs, "srem")
-                        .expect("srem failed")
-                        .into()
-                }
-            }
-            BinOp::Eq => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "eq")
-                .expect("eq failed")
-                .into(),
-            BinOp::Ne => self
-                .builder
-                .build_int_compare(inkwell::IntPredicate::NE, lhs, rhs, "ne")
-                .expect("ne failed")
-                .into(),
-            BinOp::Lt => {
-                let pred = if is_unsigned {
-                    inkwell::IntPredicate::ULT
-                } else {
-                    inkwell::IntPredicate::SLT
-                };
-                self.builder
-                    .build_int_compare(pred, lhs, rhs, "lt")
-                    .expect("lt failed")
-                    .into()
-            }
-            BinOp::Gt => {
-                let pred = if is_unsigned {
-                    inkwell::IntPredicate::UGT
-                } else {
-                    inkwell::IntPredicate::SGT
-                };
-                self.builder
-                    .build_int_compare(pred, lhs, rhs, "gt")
-                    .expect("gt failed")
-                    .into()
-            }
-            BinOp::LtEq => {
-                let pred = if is_unsigned {
-                    inkwell::IntPredicate::ULE
-                } else {
-                    inkwell::IntPredicate::SLE
-                };
-                self.builder
-                    .build_int_compare(pred, lhs, rhs, "le")
-                    .expect("le failed")
-                    .into()
-            }
-            BinOp::GtEq => {
-                let pred = if is_unsigned {
-                    inkwell::IntPredicate::UGE
-                } else {
-                    inkwell::IntPredicate::SGE
-                };
-                self.builder
-                    .build_int_compare(pred, lhs, rhs, "ge")
-                    .expect("ge failed")
-                    .into()
-            }
-            BinOp::And => self
-                .builder
-                .build_and(lhs, rhs, "and")
-                .expect("and failed")
-                .into(),
-            BinOp::Or => self
-                .builder
-                .build_or(lhs, rhs, "or")
-                .expect("or failed")
-                .into(),
-            BinOp::BitAnd => self
-                .builder
-                .build_and(lhs, rhs, "bitand")
-                .expect("bitand failed")
-                .into(),
-            BinOp::BitOr => self
-                .builder
-                .build_or(lhs, rhs, "bitor")
-                .expect("bitor failed")
-                .into(),
-            BinOp::BitXor => self
-                .builder
-                .build_xor(lhs, rhs, "bitxor")
-                .expect("bitxor failed")
-                .into(),
-            BinOp::Shl => self
-                .builder
-                .build_left_shift(lhs, rhs, "shl")
-                .expect("shl failed")
-                .into(),
-            BinOp::Shr => self
-                .builder
-                .build_right_shift(lhs, rhs, !is_unsigned, "shr")
-                .expect("shr failed")
-                .into(),
-        }
-    }
-
-    fn lower_float_binary_op(
-        &self,
-        op: BinOp,
-        lhs: inkwell::values::FloatValue<'ctx>,
-        rhs: inkwell::values::FloatValue<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
-        match op {
-            BinOp::Add => self
-                .builder
-                .build_float_add(lhs, rhs, "fadd")
-                .expect("fadd failed")
-                .into(),
-            BinOp::Sub => self
-                .builder
-                .build_float_sub(lhs, rhs, "fsub")
-                .expect("fsub failed")
-                .into(),
-            BinOp::Mul => self
-                .builder
-                .build_float_mul(lhs, rhs, "fmul")
-                .expect("fmul failed")
-                .into(),
-            BinOp::Div => self
-                .builder
-                .build_float_div(lhs, rhs, "fdiv")
-                .expect("fdiv failed")
-                .into(),
-            BinOp::Rem => self
-                .builder
-                .build_float_rem(lhs, rhs, "frem")
-                .expect("frem failed")
-                .into(),
-            BinOp::Eq => self
-                .builder
-                .build_float_compare(inkwell::FloatPredicate::OEQ, lhs, rhs, "feq")
-                .expect("feq failed")
-                .into(),
-            BinOp::Ne => self
-                .builder
-                .build_float_compare(inkwell::FloatPredicate::ONE, lhs, rhs, "fne")
-                .expect("fne failed")
-                .into(),
-            BinOp::Lt => self
-                .builder
-                .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "flt")
-                .expect("flt failed")
-                .into(),
-            BinOp::Gt => self
-                .builder
-                .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "fgt")
-                .expect("fgt failed")
-                .into(),
-            BinOp::LtEq => self
-                .builder
-                .build_float_compare(inkwell::FloatPredicate::OLE, lhs, rhs, "fle")
-                .expect("fle failed")
-                .into(),
-            BinOp::GtEq => self
-                .builder
-                .build_float_compare(inkwell::FloatPredicate::OGE, lhs, rhs, "fge")
-                .expect("fge failed")
-                .into(),
-            other => panic!("Unsupported float binary op {:?}", other),
-        }
-    }
-
-    fn lower_float_unary_op(
-        &self,
-        op: UnOp,
-        val: inkwell::values::FloatValue<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
-        match op {
-            UnOp::Neg => self
-                .builder
-                .build_float_neg(val, "fneg")
-                .expect("fneg failed")
-                .into(),
-            UnOp::Not => panic!("Logical Not on float is undefined"),
-            UnOp::Deref => panic!("Deref on float is undefined"),
-        }
-    }
-
-    fn lower_unary_op(&self, op: UnOp, val: IntValue<'ctx>) -> BasicValueEnum<'ctx> {
-        match op {
-            UnOp::Not => self
-                .builder
-                .build_not(val, "not")
-                .expect("not failed")
-                .into(),
-            UnOp::Neg => self
-                .builder
-                .build_int_neg(val, "neg")
-                .expect("neg failed")
-                .into(),
-            UnOp::Deref => {
-                let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
-                let ptr = self
-                    .builder
-                    .build_int_to_ptr(val, ptr_ty, "deref_inttoptr")
-                    .expect("inttoptr failed");
-                let i64_ty = self.llvm_int_type(64);
-                self.builder
-                    .build_load(i64_ty, ptr, "deref_load")
-                    .expect("deref load failed")
-            }
-        }
-    }
-
-    fn operand_ty(&self, operand: &Operand) -> Ty {
-        match operand {
-            Operand::Copy(place) | Operand::Move(place) => self.place_ty(place),
-            Operand::Constant(c) => c.ty,
-        }
-    }
-
-    fn lower_cast(&self, kind: CastKind, operand: &Operand, target_ty: Ty) -> BasicValueEnum<'ctx> {
-        let val = self.lower_operand(operand);
-        match kind {
-            CastKind::IntToInt => {
-                let int_val = val.into_int_value();
-                let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
-                let dest_bits = dest_type.get_bit_width();
-                let src_bits = int_val.get_type().get_bit_width();
-                if src_bits < dest_bits {
-                    self.builder
-                        .build_int_s_extend(int_val, dest_type, "int_to_int_ext")
-                        .expect("ext failed")
-                        .into()
-                } else if src_bits > dest_bits {
-                    self.builder
-                        .build_int_truncate(int_val, dest_type, "int_to_int_trunc")
-                        .expect("trunc failed")
-                        .into()
-                } else {
-                    val
-                }
-            }
-            CastKind::FloatToInt => {
-                let float_val = val.into_float_value();
-                let dest_type = self.llvm_type_for_ty(target_ty).into_int_type();
-                self.builder
-                    .build_float_to_signed_int(float_val, dest_type, "float_to_int")
-                    .expect("f2i failed")
-                    .into()
-            }
-            CastKind::IntToFloat => {
-                let int_val = val.into_int_value();
-                let dest_type = self.llvm_type_for_ty(target_ty).into_float_type();
-                self.builder
-                    .build_signed_int_to_float(int_val, dest_type, "int_to_float")
-                    .expect("i2f failed")
-                    .into()
-            }
-            CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
-                let dest_type = self.llvm_type_for_ty(target_ty);
-                self.builder
-                    .build_bit_cast(val, dest_type, "ptr_cast")
-                    .expect("bitcast failed")
-            }
-
-            CastKind::PtrToInt => {
-                let ptr_val = val.into_pointer_value();
-                let ptr_width = self.target_info.pointer_width();
-                let int_ty = self.llvm_int_type(ptr_width);
-                self.builder
-                    .build_ptr_to_int(ptr_val, int_ty, "ptrtoint")
-                    .expect("ptrtoint failed")
-                    .into()
-            }
-            CastKind::IntToPtr => {
-                let int_val = val.into_int_value();
-                let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
-                self.builder
-                    .build_int_to_ptr(int_val, ptr_ty, "inttoptr")
-                    .expect("inttoptr failed")
-                    .into()
-            }
-
-            
-        }
-    }
-
-    fn lower_repeat(&self, operand: &Operand, count: &MirConst) -> BasicValueEnum<'ctx> {
-        let val = self.lower_operand(operand);
-        let n = match &count.kind {
-            MirConstKind::Uint(n) => *n as usize,
-            MirConstKind::Int(n) => *n as usize,
-            other => panic!("Repeat with non-integer count {:?}", other),
-        };
-        let elem_ty = val.get_type();
-        let array_ty = elem_ty.array_type(n.try_into().unwrap_or(0u32));
-        let mut array_val = array_ty.const_zero();
-        for i in 0..n {
-            let inserted = self
-                .builder
-                .build_insert_value(array_val, val, i as u32, "repeat_insert")
-                .expect("insert_value failed");
-            array_val = inserted.into_array_value();
-        }
-        array_val.as_basic_value_enum()
-    }
-
-    fn type_needs_drop(&self, ty: Ty) -> bool {
-        match self.ty_ctx.ty_kind(ty) {
-            TyKind::Never
-            | TyKind::Unit
-            | TyKind::Bool
-            | TyKind::Int(_)
-            | TyKind::Uint(_)
-            | TyKind::Float(_)
-            | TyKind::Char => false,
-            TyKind::Error => false,
-            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
-            TyKind::Tuple(subst) => {
-                let args = self.ty_ctx.substitution_args(*subst);
-                args.iter().any(
-                    |arg| matches!(arg, glyim_type::GenericArg::Ty(t) if self.type_needs_drop(*t)),
-                )
-            }
-            TyKind::Array(elem, _) => self.type_needs_drop(*elem),
-            TyKind::Adt(_, _) | TyKind::Closure(_, _) | TyKind::FnDef(_, _) => true,
-            TyKind::Opaque(_, _) | TyKind::Dynamic(_, _) | TyKind::Slice(_) => true,
-            TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) => {
-                panic!("Unresolved type {:?} reached codegen", ty)
-            }
-            TyKind::Projection(_) => panic!("Unresolved projection type {:?} reached codegen", ty),
-            TyKind::FnPtr(_) => false,
-            TyKind::String => true,
-        }
-    }
-
-    fn type_needs_dealloc(&self, ty: Ty) -> bool {
-        match self.ty_ctx.ty_kind(ty) {
-            TyKind::Ref(_, inner, mutability) if *mutability == Mutability::Mut => {
-                !self.ty_ctx.is_copy(*inner)
-            }
-            TyKind::RawPtr(inner, Mutability::Mut) => !self.ty_ctx.is_copy(*inner),
-            _ => false,
-        }
-    }
-
-    fn lower_drop(
-        &mut self,
-        place: &Place,
-        target: &BasicBlockIdx,
-        _cleanup: &Option<BasicBlockIdx>,
-    ) -> CompResult<()> {
-        let place_ty = self.place_ty(place);
-        let target_bb = self.bb_map.get(target).unwrap();
-        if self.type_needs_drop(place_ty) {
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-            let place_ptr = self.place_ptr(place);
-            let i8_ptr = self
-                .builder
-                .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
-                .expect("bitcast for drop failed");
-            self.builder
-                .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build drop call: {:?}",
-                        e
-                    ))]
-                })?;
-        }
-        if self.type_needs_dealloc(place_ty) {
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-            let place_ptr = self.place_ptr(place);
-            let i8_ptr = self
-                .builder
-                .build_bit_cast(place_ptr, ptr_type, "dealloc_ptr")
-                .expect("bitcast for dealloc failed");
-            let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
-            let layout = layout_computer
-                .layout_of(place_ty)
-                .unwrap_or_else(|_| Layout::unit());
-            let size = self.llvm_int_type(64).const_int(layout.size.0, false);
-            let align = self.llvm_int_type(64).const_int(layout.align.0, false);
-            self.builder
-                .build_call(
-                    self.dealloc_fn,
-                    &[i8_ptr.into(), size.into(), align.into()],
-                    "dealloc_call",
-                )
-                .map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build dealloc call: {:?}",
-                        e
-                    ))]
-                })?;
-        }
-        self.builder
-            .build_unconditional_branch(*target_bb)
-            .map_err(|e| {
-                vec![GlyimDiagnostic::internal_error(format!(
-                    "Failed to build branch after Drop: {:?}",
-                    e
-                ))]
-            })?;
-        Ok(())
+        place.ty(self.ty_ctx, &self.body.locals)
     }
 
     fn lower_statement(&mut self, stmt: &Statement) -> CompResult<()> {
+        self.set_debug_location(stmt.source_info.span);
         match &stmt.kind {
             StatementKind::Assign(place, rvalue) => {
-                self.set_debug_location(stmt.source_info.span);
-                let value = self.lower_rvalue(rvalue);
+                let expected_ty = self.place_ty(place);
+                let val = self.lower_rvalue(rvalue, expected_ty)?;
                 let ptr = self.place_ptr(place);
-                self.builder.build_store(ptr, value).map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "Failed to build store: {:?}",
-                        e
-                    ))]
-                })?;
-                self.clear_debug_location();
+                self.builder.build_store(ptr, val).expect("store failed");
+                Ok(())
             }
             StatementKind::StorageLive(local) => {
-                tracing::trace!("StorageLive({})", local.index());
+                self.alloc_local(*local);
+                Ok(())
             }
-            StatementKind::StorageDead(local) => {
-                let ty = local_ty(self.body, *local);
-                if self.type_needs_drop(ty) {
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let place = Place::new(*local);
-                    let place_ptr = self.place_ptr(&place);
-                    let i8_ptr = self
+            StatementKind::StorageDead(_local) => Ok(()),
+            StatementKind::Nop => Ok(()),
+        }
+    }
+
+    /// Lower an rvalue to a value.
+    ///
+    /// `expected_ty` is the type of the place this rvalue is being assigned
+    /// into (`Place::ty`). It is authoritative for `Aggregate` construction:
+    /// unlike deriving a struct type ad hoc from the operands' LLVM types,
+    /// `expected_ty` lets us go through `glyim-layout` and build the value
+    /// with the *exact* field offsets (and, for enums, discriminant/niche
+    /// tag) that `llvm_type_for_ty(expected_ty)` and every other place that
+    /// reads this type already assume.
+    fn lower_rvalue(&self, rvalue: &Rvalue, expected_ty: Ty) -> CompResult<BasicValueEnum<'ctx>> {
+        match rvalue {
+            Rvalue::Use(operand) => Ok(self.lower_operand(operand)),
+            Rvalue::BinaryOp(op, operands) => {
+                let (left, right) = operands.as_ref();
+                let l = self.lower_operand(left);
+                let r = self.lower_operand(right);
+                self.lower_binop(*op, l, r)
+            }
+            Rvalue::UnaryOp(op, operand) => {
+                let val = self.lower_operand(operand);
+                self.lower_unop(*op, val)
+            }
+            Rvalue::Ref(place, _borrow_kind) => {
+                let ptr = self.place_ptr(place);
+                Ok(ptr.as_basic_value_enum())
+            }
+            Rvalue::Aggregate(kind, operands) => {
+                let mut vals = Vec::new();
+                for op in operands {
+                    vals.push(self.lower_operand(op));
+                }
+                match kind {
+                    AggregateKind::Array(elem_ty) => {
+                        let llvm_elem_ty = self.llvm_type_for_ty(*elem_ty);
+                        let array_ty = llvm_elem_ty.array_type(vals.len() as u32);
+                        let mut agg: inkwell::values::AggregateValueEnum<'ctx> =
+                            array_ty.const_zero().into();
+                        for (i, val) in vals.into_iter().enumerate() {
+                            let val = if val.get_type() == llvm_elem_ty {
+                                val
+                            } else {
+                                self.builder
+                                    .build_bit_cast(val, llvm_elem_ty, "array_elem_cast")
+                                    .expect("bitcast failed")
+                            };
+                            agg = self
+                                .builder
+                                .build_insert_value(agg, val, i as u32, "array_insert")
+                                .expect("insert value failed");
+                        }
+                        Ok(agg.as_basic_value_enum())
+                    }
+                    AggregateKind::Tuple => {
+                        let llvm_tys: Vec<_> = vals.iter().map(|v| v.get_type()).collect();
+                        let struct_ty = self.context.struct_type(&llvm_tys, false);
+                        let mut agg: inkwell::values::AggregateValueEnum<'ctx> =
+                            struct_ty.const_zero().into();
+                        for (i, val) in vals.into_iter().enumerate() {
+                            agg = self
+                                .builder
+                                .build_insert_value(agg, val, i as u32, "tuple_insert")
+                                .expect("insert value failed");
+                        }
+                        Ok(agg.as_basic_value_enum())
+                    }
+                    AggregateKind::Adt(_adt_id, variant, _substs) => {
+                        self.build_layout_aggregate(expected_ty, Some(*variant), &vals)
+                    }
+                    AggregateKind::Closure(_closure_id, _substs) => {
+                        self.build_layout_aggregate(expected_ty, None, &vals)
+                    }
+                }
+            }
+            Rvalue::Discriminant(place) => self.lower_discriminant(place),
+            Rvalue::Len(place) => {
+                let ptr = self.place_ptr(place);
+                let ty = self.place_ty(place);
+                let len = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Array(_, const_val) => {
+                        let n = match &const_val.kind {
+                            ConstKind::Uint(n) => *n as u64,
+                            ConstKind::Int(n) => *n as u64,
+                            _ => 0,
+                        };
+                        self.llvm_int_type(64).const_int(n, false)
+                    }
+                    TyKind::Slice(_) => {
+                        let llvm_ty = self.llvm_type_for_ty(ty);
+                        let val = self
+                            .builder
+                            .build_load(llvm_ty, ptr, "slice_len_load")
+                            .expect("load failed");
+                        let struct_val = match val {
+                            BasicValueEnum::StructValue(s) => s,
+                            _ => {
+                                return Err(vec![GlyimDiagnostic::internal_error(
+                                    "slice value not a struct",
+                                )]);
+                            }
+                        };
+                        let len_val = self
+                            .builder
+                            .build_extract_value(struct_val, 1, "slice_len_extract")
+                            .expect("extract value failed");
+                        len_val.into_int_value()
+                    }
+                    _ => panic!("Len on non-array/slice type"),
+                };
+                Ok(len.as_basic_value_enum())
+            }
+            Rvalue::Cast(kind, operand, target_ty) => {
+                let val = self.lower_operand(operand);
+                self.lower_cast(*kind, val, *target_ty)
+            }
+            Rvalue::Repeat(operand, count_const) => {
+                let val = self.lower_operand(operand);
+                let count = match &count_const.kind {
+                    MirConstKind::Uint(n) => *n as u32,
+                    MirConstKind::Int(n) => *n as u32,
+                    _ => 0,
+                };
+                let elem_ty = val.get_type();
+                let array_ty = elem_ty.array_type(count);
+                let mut agg: inkwell::values::AggregateValueEnum<'ctx> =
+                    array_ty.const_zero().into();
+                for i in 0..count {
+                    agg = self
                         .builder
-                        .build_bit_cast(place_ptr, ptr_type, "drop_ptr")
-                        .expect("bitcast for drop failed");
-                    self.builder
-                        .build_call(self.drop_fn, &[i8_ptr.into()], "drop_call")
+                        .build_insert_value(agg, val, i, "repeat_insert")
+                        .expect("insert value failed");
+                }
+                Ok(agg.as_basic_value_enum())
+            }
+        }
+    }
+
+    /// Construct an ADT (struct/enum variant) or closure aggregate value
+    /// using real layout information from `glyim-layout`, rather than an
+    /// ad hoc struct built purely from the operands' own LLVM types.
+    ///
+    /// This matters for two reasons:
+    /// 1. The ad hoc struct type built from `vals.iter().map(|v|
+    ///    v.get_type())` is a completely different (and differently laid
+    ///    out) LLVM type than `llvm_type_for_ty(expected_ty)`, which is
+    ///    what the destination place's memory was allocated/typed as.
+    ///    Storing one shape into memory typed for the other is undefined
+    ///    behavior.
+    /// 2. For enums, it silently dropped the discriminant/niche tag
+    ///    entirely -- constructing *any* multi-variant enum value produced
+    ///    a value with no tag and the wrong size, guaranteed to be
+    ///    misread by anything that later matches on it (`SwitchInt` over
+    ///    `Rvalue::Discriminant`) or downcasts it.
+    ///
+    /// We build the value by allocating a temporary of the *canonical*
+    /// LLVM type, storing each field (and the tag, if this is an enum) at
+    /// its correct byte offset via `i8`-GEP, then loading the whole thing
+    /// back out as the SSA value `lower_rvalue` is expected to return.
+    fn build_layout_aggregate(
+        &self,
+        agg_ty: Ty,
+        variant: Option<VariantIdx>,
+        vals: &[BasicValueEnum<'ctx>],
+    ) -> CompResult<BasicValueEnum<'ctx>> {
+        let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+        let layout = layout_computer.layout_of(agg_ty).map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "layout error building aggregate: {:?}",
+                e
+            ))]
+        })?;
+        let llvm_ty = self.llvm_type_for_ty(agg_ty);
+        let tmp = self.builder.build_alloca(llvm_ty, "agg_tmp").map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "alloca failed: {:?}",
+                e
+            ))]
+        })?;
+        let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());
+        let base_i8 = self
+            .builder
+            .build_bit_cast(tmp, i8_ptr_ty, "agg_base_i8")
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "bitcast failed: {:?}",
+                    e
+                ))]
+            })?
+            .into_pointer_value();
+
+        // Resolve which field-offset table to use for storing operands, and
+        // (for enums) write the discriminant/niche tag.
+        let (field_shape, base_offset): (FieldsShape, u64) = match &layout.variants {
+            VariantsShape::Single { .. } => (layout.fields.clone(), 0),
+            VariantsShape::Multiple {
+                tag_field,
+                tag_encoding,
+                variants,
+                tag_size,
+                tag_align,
+                ..
+            } => {
+                let vidx = variant.map(|v| v.to_raw() as usize).unwrap_or(0);
+                let variant_layout = variants.get(vidx).ok_or_else(|| {
+                    vec![GlyimDiagnostic::internal_error(
+                        "variant index out of bounds building aggregate",
+                    )]
+                })?;
+                match tag_encoding {
+                    TagEncoding::Direct => {
+                        // Tag lives at offset 0; variant data starts right
+                        // after it, aligned to the variant's own alignment
+                        // (mirrors `direct_tag_encoding` in glyim-layout).
+                        let tag_bits = (tag_size.0 * 8).max(8) as u32;
+                        let tag_llvm_ty = self.llvm_int_type(tag_bits);
+                        let tag_ptr_raw = unsafe {
+                            self.builder.build_in_bounds_gep(
+                                self.context.i8_type(),
+                                base_i8,
+                                &[self.llvm_int_type(64).const_int(0, false)],
+                                "tag_ptr_raw",
+                            )
+                        }
                         .map_err(|e| {
                             vec![GlyimDiagnostic::internal_error(format!(
-                                "Failed to build drop call: {:?}",
+                                "GEP failed: {:?}",
                                 e
                             ))]
                         })?;
+                        let discr_value = tag_llvm_ty.const_int(vidx as u64, false);
+                        self.builder
+                            .build_store(tag_ptr_raw, discr_value)
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "store tag failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        let data_start = Size(tag_size.0)
+                            .align_to(*tag_align)
+                            .align_to(variant_layout.align)
+                            .0;
+                        (variant_layout.fields.clone(), data_start)
+                    }
+                    TagEncoding::Niche {
+                        untagged_variant,
+                        niche_variants,
+                        niche_start,
+                    } => {
+                        if vidx != *untagged_variant as usize {
+                            // Write `niche_start + (vidx - niche_variants.start())`
+                            // into the tag field's slot. That slot's offset
+                            // comes from the *outer* enum layout's own
+                            // `fields`, which `build_niche_layout` (in
+                            // glyim-layout) sets to the untagged variant's
+                            // field offsets directly -- there is no separate
+                            // tag prefix for niche encoding.
+                            let rel = vidx as u128 - *niche_variants.start() as u128;
+                            let niche_value = niche_start.wrapping_add(rel);
+                            let tag_offset = match &layout.fields {
+                                FieldsShape::Arbitrary { offsets } => offsets
+                                    .get(FieldIdx::from_raw(*tag_field))
+                                    .map(|s| s.0)
+                                    .unwrap_or(0),
+                                _ => 0,
+                            };
+                            let tag_bits = (tag_size.0 * 8).max(8) as u32;
+                            let tag_llvm_ty = self.llvm_int_type(tag_bits);
+                            let tag_ptr_raw = unsafe {
+                                self.builder.build_in_bounds_gep(
+                                    self.context.i8_type(),
+                                    base_i8,
+                                    &[self.llvm_int_type(64).const_int(tag_offset, false)],
+                                    "niche_ptr_raw",
+                                )
+                            }
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "GEP failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                            // `niche_value`/`niche_start` are u128 so that
+                            // pointer- or char-sized niches can be encoded
+                            // without loss; truncate to the tag's actual
+                            // width when storing.
+                            let niche_lo = (niche_value & u128::from(u64::MAX)) as u64;
+                            let discr_value = tag_llvm_ty.const_int(niche_lo, false);
+                            self.builder
+                                .build_store(tag_ptr_raw, discr_value)
+                                .map_err(|e| {
+                                    vec![GlyimDiagnostic::internal_error(format!(
+                                        "store niche failed: {:?}",
+                                        e
+                                    ))]
+                                })?;
+                        }
+                        // Data fields for every variant (including the
+                        // untagged one) live at the same offsets -- no
+                        // separate tag prefix.
+                        (variant_layout.fields.clone(), 0)
+                    }
                 }
             }
-            StatementKind::Nop => {}
+        };
+
+        let offsets: Vec<u64> = match &field_shape {
+            FieldsShape::Arbitrary { offsets } => offsets.iter().map(|s| s.0).collect(),
+            FieldsShape::Primitive => vec![0],
+            FieldsShape::Array { stride, count } => (0..*count).map(|i| i * stride.0).collect(),
+        };
+        for (i, val) in vals.iter().enumerate() {
+            let byte_offset = base_offset + offsets.get(i).copied().unwrap_or(0);
+            let field_ptr_raw = unsafe {
+                self.builder.build_in_bounds_gep(
+                    self.context.i8_type(),
+                    base_i8,
+                    &[self.llvm_int_type(64).const_int(byte_offset, false)],
+                    "agg_field_raw",
+                )
+            }
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "GEP failed: {:?}",
+                    e
+                ))]
+            })?;
+            let field_ptr = self
+                .builder
+                .build_bit_cast(
+                    field_ptr_raw,
+                    self.context.ptr_type(AddressSpace::default()),
+                    "agg_field_ptr",
+                )
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "bitcast failed: {:?}",
+                        e
+                    ))]
+                })?
+                .into_pointer_value();
+            self.builder.build_store(field_ptr, *val).map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "store field failed: {:?}",
+                    e
+                ))]
+            })?;
         }
-        Ok(())
+        self.builder
+            .build_load(llvm_ty, tmp, "agg_load")
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "load failed: {:?}",
+                    e
+                ))]
+            })
     }
 
-    #[allow(unused_variables)]
+    /// Read the discriminant of an enum place using its real layout,
+    /// handling both `Direct` and niche-optimized tag encodings.
+    ///
+    /// The previous implementation loaded the *whole* place as a struct and
+    /// blindly extracted field 0, which happened to work only for `Direct`
+    /// encoding where `llvm_type_for_ty` puts the tag first, and was
+    /// simply wrong for niche encoding (there is no explicit tag field to
+    /// extract at all -- the discriminant must be *computed* from the
+    /// niche field's value).
+    fn lower_discriminant(&self, place: &Place) -> CompResult<BasicValueEnum<'ctx>> {
+        let ptr = self.place_ptr(place);
+        let ty = self.place_ty(place);
+        let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+        let layout = layout_computer.layout_of(ty).map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "layout error for discriminant: {:?}",
+                e
+            ))]
+        })?;
+        let i64_ty = self.llvm_int_type(64);
+        match &layout.variants {
+            VariantsShape::Single { index } => {
+                Ok(i64_ty.const_int(*index as u64, false).as_basic_value_enum())
+            }
+            VariantsShape::Multiple {
+                tag_field,
+                tag_encoding,
+                tag_size,
+                ..
+            } => {
+                let tag_offset = match &layout.fields {
+                    FieldsShape::Arbitrary { offsets } => offsets
+                        .get(FieldIdx::from_raw(*tag_field))
+                        .map(|s| s.0)
+                        .unwrap_or(0),
+                    _ => 0,
+                };
+                let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());
+                let base_i8 = self
+                    .builder
+                    .build_bit_cast(ptr, i8_ptr_ty, "discr_base_i8")
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "bitcast failed: {:?}",
+                            e
+                        ))]
+                    })?
+                    .into_pointer_value();
+                let offset_val = i64_ty.const_int(tag_offset, false);
+                let tag_ptr = unsafe {
+                    self.builder.build_in_bounds_gep(
+                        self.context.i8_type(),
+                        base_i8,
+                        &[offset_val],
+                        "discr_tag_ptr",
+                    )
+                }
+                .map_err(|e| {
+                    vec![GlyimDiagnostic::internal_error(format!(
+                        "GEP failed: {:?}",
+                        e
+                    ))]
+                })?;
+                let tag_bits = (tag_size.0 * 8).max(8) as u32;
+                let tag_llvm_ty = self.llvm_int_type(tag_bits);
+                let tag_val = self
+                    .builder
+                    .build_load(tag_llvm_ty, tag_ptr, "discr_tag_load")
+                    .map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "load failed: {:?}",
+                            e
+                        ))]
+                    })?
+                    .into_int_value();
+                let tag64 = if tag_bits < 64 {
+                    self.builder
+                        .build_int_z_extend(tag_val, i64_ty, "discr_zext")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "zext failed: {:?}",
+                                e
+                            ))]
+                        })?
+                } else {
+                    tag_val
+                };
+                match tag_encoding {
+                    TagEncoding::Direct => Ok(tag64.as_basic_value_enum()),
+                    TagEncoding::Niche {
+                        untagged_variant,
+                        niche_variants,
+                        niche_start,
+                    } => {
+                        // Map the raw niche-field value back to a variant
+                        // ordinal:
+                        //   in [niche_start, niche_start + niche_len) -> that variant
+                        //   otherwise                                 -> untagged_variant
+                        let niche_len = (*niche_variants.end() as u128
+                            - *niche_variants.start() as u128
+                            + 1) as u64;
+                        let start_lo = (*niche_start & u128::from(u64::MAX)) as u64;
+                        let start_val = i64_ty.const_int(start_lo, false);
+                        let end_val = i64_ty.const_int(start_lo.wrapping_add(niche_len), false);
+                        let ge_start = self
+                            .builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::UGE,
+                                tag64,
+                                start_val,
+                                "niche_ge",
+                            )
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "cmp failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        let lt_end = self
+                            .builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::ULT,
+                                tag64,
+                                end_val,
+                                "niche_lt",
+                            )
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "cmp failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        let in_range = self
+                            .builder
+                            .build_and(ge_start, lt_end, "niche_in_range")
+                            .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "and failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                        let rel = self
+                            .builder
+                            .build_int_sub(tag64, start_val, "niche_rel")
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "sub failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        let variant_from_niche = self
+                            .builder
+                            .build_int_add(
+                                rel,
+                                i64_ty.const_int(*niche_variants.start() as u64, false),
+                                "niche_variant",
+                            )
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "add failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        let untagged_val = i64_ty.const_int(*untagged_variant as u64, false);
+                        let result = self
+                            .builder
+                            .build_select(
+                                in_range,
+                                variant_from_niche,
+                                untagged_val,
+                                "discr_select",
+                            )
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "select failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        Ok(result)
+                    }
+                }
+            }
+        }
+    }
+
+    fn lower_binop(
+        &self,
+        op: BinOp,
+        l: BasicValueEnum<'ctx>,
+        r: BasicValueEnum<'ctx>,
+    ) -> CompResult<BasicValueEnum<'ctx>> {
+        use inkwell::FloatPredicate;
+        use inkwell::IntPredicate;
+        let (l_int, r_int) = (l.into_int_value(), r.into_int_value());
+        let (l_float, r_float) = (l.into_float_value(), r.into_float_value());
+        match op {
+            BinOp::Add => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_add(l_int, r_int, "add")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "add failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_add(l_float, r_float, "add")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "add failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "add: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Sub => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_sub(l_int, r_int, "sub")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "sub failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_sub(l_float, r_float, "sub")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "sub failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "sub: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Mul => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_mul(l_int, r_int, "mul")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "mul failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_mul(l_float, r_float, "mul")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "mul failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "mul: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Div => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_signed_div(l_int, r_int, "div")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "div failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_div(l_float, r_float, "div")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "div failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "div: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Rem => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_signed_rem(l_int, r_int, "rem")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "rem failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_rem(l_float, r_float, "rem")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "rem failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "rem: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Eq => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_compare(IntPredicate::EQ, l_int, r_int, "eq")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "eq failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_compare(FloatPredicate::OEQ, l_float, r_float, "eq")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "eq failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "eq: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Ne => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_compare(IntPredicate::NE, l_int, r_int, "ne")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ne failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_compare(FloatPredicate::ONE, l_float, r_float, "ne")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ne failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "ne: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Lt => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_compare(IntPredicate::SLT, l_int, r_int, "lt")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "lt failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_compare(FloatPredicate::OLT, l_float, r_float, "lt")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "lt failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "lt: mismatched types",
+                    )])
+                }
+            }
+            BinOp::Gt => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_compare(IntPredicate::SGT, l_int, r_int, "gt")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "gt failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_compare(FloatPredicate::OGT, l_float, r_float, "gt")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "gt failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "gt: mismatched types",
+                    )])
+                }
+            }
+            BinOp::LtEq => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_compare(IntPredicate::SLE, l_int, r_int, "le")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "le failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_compare(FloatPredicate::OLE, l_float, r_float, "le")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "le failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "le: mismatched types",
+                    )])
+                }
+            }
+            BinOp::GtEq => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_int_compare(IntPredicate::SGE, l_int, r_int, "ge")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ge failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if l.is_float_value() && r.is_float_value() {
+                    self.builder
+                        .build_float_compare(FloatPredicate::OGE, l_float, r_float, "ge")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ge failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "ge: mismatched types",
+                    )])
+                }
+            }
+            BinOp::And => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_and(l_int, r_int, "and")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "and failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "and: expected integer types",
+                    )])
+                }
+            }
+            BinOp::Or => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_or(l_int, r_int, "or")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "or failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "or: expected integer types",
+                    )])
+                }
+            }
+            BinOp::BitAnd => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_and(l_int, r_int, "bitand")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitand failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "bitand: expected integer types",
+                    )])
+                }
+            }
+            BinOp::BitOr => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_or(l_int, r_int, "bitor")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitor failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "bitor: expected integer types",
+                    )])
+                }
+            }
+            BinOp::BitXor => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_xor(l_int, r_int, "bitxor")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitxor failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "bitxor: expected integer types",
+                    )])
+                }
+            }
+            BinOp::Shl => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_left_shift(l_int, r_int, "shl")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "shl failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "shl: expected integer types",
+                    )])
+                }
+            }
+            BinOp::Shr => {
+                if l.is_int_value() && r.is_int_value() {
+                    self.builder
+                        .build_right_shift(l_int, r_int, false, "shr")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "shr failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "shr: expected integer types",
+                    )])
+                }
+            }
+        }
+    }
+
+    fn lower_unop(&self, op: UnOp, val: BasicValueEnum<'ctx>) -> CompResult<BasicValueEnum<'ctx>> {
+        match op {
+            UnOp::Not => {
+                if val.is_int_value() {
+                    self.builder
+                        .build_not(val.into_int_value(), "not")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "not failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "not: expected integer type",
+                    )])
+                }
+            }
+            UnOp::Neg => {
+                if val.is_int_value() {
+                    self.builder
+                        .build_int_neg(val.into_int_value(), "neg")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "neg failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else if val.is_float_value() {
+                    self.builder
+                        .build_float_neg(val.into_float_value(), "neg")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "neg failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "neg: expected numeric type",
+                    )])
+                }
+            }
+            UnOp::Deref => Ok(val),
+        }
+    }
+
+    fn lower_cast(
+        &self,
+        kind: CastKind,
+        val: BasicValueEnum<'ctx>,
+        target_ty: Ty,
+    ) -> CompResult<BasicValueEnum<'ctx>> {
+        let target_llvm_ty = self.llvm_type_for_ty(target_ty);
+        match kind {
+            CastKind::IntToInt => {
+                if val.get_type() == target_llvm_ty {
+                    Ok(val)
+                } else if val.is_int_value() && target_llvm_ty.is_int_type() {
+                    let int_val = val.into_int_value();
+                    let target_bits = target_llvm_ty.into_int_type().get_bit_width();
+                    let src_bits = int_val.get_type().get_bit_width();
+                    if target_bits == src_bits {
+                        Ok(int_val.as_basic_value_enum())
+                    } else if target_bits > src_bits {
+                        self.builder
+                            .build_int_z_extend(int_val, target_llvm_ty.into_int_type(), "zext")
+                            .map(|v| v.as_basic_value_enum())
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "zext failed: {:?}",
+                                    e
+                                ))]
+                            })
+                    } else {
+                        self.builder
+                            .build_int_truncate(int_val, target_llvm_ty.into_int_type(), "trunc")
+                            .map(|v| v.as_basic_value_enum())
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "trunc failed: {:?}",
+                                    e
+                                ))]
+                            })
+                    }
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "IntToInt cast on non-integer",
+                    )])
+                }
+            }
+            CastKind::FloatToInt => {
+                if val.is_float_value() && target_llvm_ty.is_int_type() {
+                    let float_val = val.into_float_value();
+                    self.builder
+                        .build_float_to_signed_int(
+                            float_val,
+                            target_llvm_ty.into_int_type(),
+                            "fptosi",
+                        )
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "fptosi failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "FloatToInt cast on non-float",
+                    )])
+                }
+            }
+            CastKind::IntToFloat => {
+                if val.is_int_value() && target_llvm_ty.is_float_type() {
+                    let int_val = val.into_int_value();
+                    self.builder
+                        .build_signed_int_to_float(
+                            int_val,
+                            target_llvm_ty.into_float_type(),
+                            "sitofp",
+                        )
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "sitofp failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "IntToFloat cast on non-int",
+                    )])
+                }
+            }
+            CastKind::PtrToPtr | CastKind::FnPtrToPtr => {
+                if val.is_pointer_value() && target_llvm_ty.is_pointer_type() {
+                    self.builder
+                        .build_bit_cast(val, target_llvm_ty, "bitcast")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "bitcast failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "PtrToPtr cast on non-pointer",
+                    )])
+                }
+            }
+            CastKind::PtrToInt => {
+                if val.is_pointer_value() && target_llvm_ty.is_int_type() {
+                    let ptr_val = val.into_pointer_value();
+                    self.builder
+                        .build_ptr_to_int(ptr_val, target_llvm_ty.into_int_type(), "ptrtoint")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "ptrtoint failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "PtrToInt cast on non-pointer",
+                    )])
+                }
+            }
+            CastKind::IntToPtr => {
+                if val.is_int_value() && target_llvm_ty.is_pointer_type() {
+                    let int_val = val.into_int_value();
+                    self.builder
+                        .build_int_to_ptr(int_val, target_llvm_ty.into_pointer_type(), "inttoptr")
+                        .map(|v| v.as_basic_value_enum())
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "inttoptr failed: {:?}",
+                                e
+                            ))]
+                        })
+                } else {
+                    Err(vec![GlyimDiagnostic::internal_error(
+                        "IntToPtr cast on non-int",
+                    )])
+                }
+            }
+        }
+    }
+
     fn lower_terminator(&mut self, terminator: &Terminator) -> CompResult<()> {
+        self.set_debug_location(terminator.source_info.span);
         match &terminator.kind {
             TerminatorKind::Goto { target } => {
                 let target_bb = self.bb_map.get(target).unwrap();
                 self.builder
                     .build_unconditional_branch(*target_bb)
-                    .map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "branch failed: {:?}",
-                            e
-                        ))]
-                    })?;
-            }
-            TerminatorKind::Return => {
-                let return_place = Place::new(LocalIdx::from_raw(0));
-                let ret_place_ptr = self.place_ptr(&return_place);
-                if let Some(ret_type) = self.function.get_type().get_return_type() {
-                    let ret_val = self
-                        .builder
-                        .build_load(ret_type, ret_place_ptr, "ret_val")
-                        .expect("load ret failed");
-                    self.builder.build_return(Some(&ret_val)).map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "return failed: {:?}",
-                            e
-                        ))]
-                    })?;
-                } else {
-                    self.builder.build_return(None).map_err(|e| {
-                        vec![GlyimDiagnostic::internal_error(format!(
-                            "return failed: {:?}",
-                            e
-                        ))]
-                    })?;
-                }
-            }
-            TerminatorKind::Unreachable => {
-                self.builder.build_unreachable().map_err(|e| {
-                    vec![GlyimDiagnostic::internal_error(format!(
-                        "unreachable failed: {:?}",
-                        e
-                    ))]
-                })?;
+                    .expect("branch failed");
+                Ok(())
             }
             TerminatorKind::SwitchInt {
                 discr,
-                switch_ty,
+                switch_ty: _,
                 targets,
             } => {
                 let discr_val = self.lower_operand(discr);
                 let discr_int = discr_val.into_int_value();
-                let n_cases = targets.iter().count();
-                if n_cases == 0 {
-                    let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-                    self.builder
-                        .build_unconditional_branch(*default_bb)
-                        .map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
-                    return Ok(());
+                let mut branches = Vec::new();
+                for (val, bb) in targets.iter() {
+                    let const_val = self.llvm_int_type(64).const_int(val as u64, false);
+                    let bb_val = *self.bb_map.get(&bb).unwrap();
+                    branches.push((const_val, bb_val));
                 }
-                if n_cases == 1 {
-                    let (value, target_bb_idx) = targets.iter().next().unwrap();
-                    let target_bb = self.bb_map.get(&target_bb_idx).unwrap();
-                    let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-                    let value_const = discr_int.get_type().const_int(value as u64, false);
-                    let label = if matches!(self.ty_ctx.ty_kind(*switch_ty), TyKind::Bool) {
-                        "bool_eq"
-                    } else {
-                        "switch_eq"
-                    };
-                    let cmp = self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::EQ, discr_int, value_const, label)
-                        .expect("icmp failed");
+                let otherwise = *self.bb_map.get(&targets.otherwise()).unwrap();
+                self.builder
+                    .build_switch(discr_int, otherwise, &branches)
+                    .expect("switch failed");
+                Ok(())
+            }
+            TerminatorKind::Return => {
+                self.builder.build_return(None).expect("return failed");
+                Ok(())
+            }
+            TerminatorKind::Unreachable => {
+                // If we're at the end of a cleanup block that has an active
+                // landingpad, "falling off the end" means "nothing local
+                // wanted to catch/handle this unwind" -- the correct action
+                // is to resume unwinding (`resume`), not to assert
+                // unreachable (which would be undefined behavior the very
+                // first time a destructor actually runs during a panic).
+                if let Some(lp) = self.current_landingpad {
+                    self.builder.build_resume(lp).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "resume failed: {:?}",
+                            e
+                        ))]
+                    })?;
+                } else {
                     self.builder
-                        .build_conditional_branch(cmp, *target_bb, *default_bb)
-                        .expect("conditional branch failed");
-                    return Ok(());
+                        .build_unreachable()
+                        .expect("unreachable failed");
                 }
-                if n_cases == 2 {
-                    let cases: Vec<_> = targets.iter().collect();
-                    let (val0, bb0_idx) = cases[0];
-                    let (val1, bb1_idx) = cases[1];
-                    let target0 = self.bb_map.get(&bb0_idx).unwrap();
-                    let target1 = self.bb_map.get(&bb1_idx).unwrap();
-                    let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-                    let val0_const = discr_int.get_type().const_int(val0 as u64, false);
-                    let cmp0 = self
-                        .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::EQ,
-                            discr_int,
-                            val0_const,
-                            "switch_eq_0",
-                        )
-                        .expect("icmp0 failed");
-                    let next_bb = self
-                        .context
-                        .append_basic_block(self.function, "switch_next");
-                    self.builder
-                        .build_conditional_branch(cmp0, *target0, next_bb)
-                        .expect("conditional branch0 failed");
-                    self.builder.position_at_end(next_bb);
-                    let val1_const = discr_int.get_type().const_int(val1 as u64, false);
-                    let cmp1 = self
-                        .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::EQ,
-                            discr_int,
-                            val1_const,
-                            "switch_eq_1",
-                        )
-                        .expect("icmp1 failed");
-                    self.builder
-                        .build_conditional_branch(cmp1, *target1, *default_bb)
-                        .expect("conditional branch1 failed");
-                    return Ok(());
-                }
-                let default_bb = self.bb_map.get(&targets.otherwise()).unwrap();
-                let mut cases = Vec::new();
-                for (value, target_bb_idx) in targets.iter() {
-                    let value_const = discr_int.get_type().const_int(value as u64, false);
-                    let target_bb = self.bb_map.get(&target_bb_idx).unwrap();
-                    cases.push((value_const, *target_bb));
-                }
-                let _switch = self
-                    .builder
-                    .build_switch(discr_int, *default_bb, &cases)
-                    .map_err(|e| vec![GlyimDiagnostic::internal_error(e.to_string())])?;
+                Ok(())
             }
             TerminatorKind::Call {
                 func,
@@ -1445,9 +1904,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 destination,
                 target,
                 cleanup,
-            } => {
-                self.lower_call(func, args, destination, target, cleanup)?;
-            }
+            } => self.lower_call(func, args, destination, target, cleanup),
             TerminatorKind::Assert {
                 cond,
                 expected,
@@ -1455,8 +1912,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 cleanup,
                 msg: _,
             } => {
-                let cond_val = self.lower_operand(cond);
-                let cond_int = cond_val.into_int_value();
+                let cond_int = self.lower_operand(cond).into_int_value();
                 let expected_val = self
                     .llvm_int_type(1)
                     .const_int(if *expected { 1 } else { 0 }, false);
@@ -1469,37 +1925,77 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         "assert_check",
                     )
                     .expect("assert cmp failed");
-                let target_bb = self.bb_map.get(target).unwrap();
+                let target_bb = *self.bb_map.get(target).unwrap();
                 let fail_bb = self
                     .context
                     .append_basic_block(self.function, "assert_fail");
                 self.builder
-                    .build_conditional_branch(cmp, *target_bb, fail_bb)
+                    .build_conditional_branch(cmp, target_bb, fail_bb)
                     .expect("assert br failed");
                 self.builder.position_at_end(fail_bb);
+
+                // Route assertion failure through the runtime panic entry
+                // point rather than a bare `llvm.trap`, so that (a) it goes
+                // through the same path as any other panic, and (b) when a
+                // cleanup block exists we can `invoke` it, giving unwinding
+                // builds a real unwind edge to run destructors on before the
+                // process aborts. `glyim_panic` is `-> !`, so the "normal"
+                // continuation of the invoke is never actually reached, but
+                // LLVM's `invoke` still requires one.
                 let module = self.module;
-                let trap_fn_name = "llvm.trap";
-                let trap_fn = module.get_function(trap_fn_name).unwrap_or_else(|| {
-                    module.add_function(
-                        trap_fn_name,
-                        self.context.void_type().fn_type(&[], false),
-                        None,
-                    )
+                let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());
+                let i64_ty = self.llvm_int_type(64);
+                let panic_fn = module.get_function("glyim_panic").unwrap_or_else(|| {
+                    let fn_ty = self
+                        .context
+                        .void_type()
+                        .fn_type(&[i8_ptr_ty.into(), i64_ty.into()], false);
+                    module.add_function("glyim_panic", fn_ty, None)
                 });
-                self.builder
-                    .build_call(trap_fn, &[], "trap_call")
-                    .expect("trap call failed");
+                let null_msg = i8_ptr_ty.const_null();
+                let zero_len = i64_ty.const_zero();
+                let panic_args: Vec<BasicMetadataValueEnum<'ctx>> =
+                    vec![null_msg.into(), zero_len.into()];
+
                 if let Some(cleanup_bb_idx) = cleanup {
-                    let cleanup_bb = self.bb_map.get(cleanup_bb_idx).unwrap();
+                    let cleanup_bb = *self.bb_map.get(cleanup_bb_idx).unwrap();
+                    let unreachable_cont = self
+                        .context
+                        .append_basic_block(self.function, "assert_panic_cont");
+                    let panic_args_vals: Vec<BasicValueEnum<'ctx>> = vec![
+                        null_msg.as_basic_value_enum(),
+                        zero_len.as_basic_value_enum(),
+                    ];
                     self.builder
-                        .build_unconditional_branch(*cleanup_bb)
+                        .build_invoke(
+                            panic_fn,
+                            &panic_args_vals,
+                            unreachable_cont,
+                            cleanup_bb,
+                            "panic_call",
+                        )
                         .map_err(|e| {
                             vec![GlyimDiagnostic::internal_error(format!(
-                                "branch to cleanup failed: {:?}",
+                                "invoke failed: {:?}",
                                 e
                             ))]
                         })?;
+                    self.builder.position_at_end(unreachable_cont);
+                    self.builder.build_unreachable().map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "unreachable failed: {:?}",
+                            e
+                        ))]
+                    })?;
                 } else {
+                    self.builder
+                        .build_call(panic_fn, &panic_args, "panic_call")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "call failed: {:?}",
+                                e
+                            ))]
+                        })?;
                     self.builder.build_unreachable().map_err(|e| {
                         vec![GlyimDiagnostic::internal_error(format!(
                             "unreachable failed: {:?}",
@@ -1507,16 +2003,74 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         ))]
                     })?;
                 }
+                Ok(())
             }
             TerminatorKind::Drop {
                 place,
                 target,
                 cleanup,
             } => {
-                self.lower_drop(place, target, cleanup)?;
+                let ptr = self.place_ptr(place);
+                let ty = self.place_ty(place);
+                if self.type_needs_drop(ty) {
+                    let drop_fn = self
+                        .module
+                        .get_function("glyim_drop_in_place")
+                        .unwrap_or_else(|| {
+                            let fn_type = self.context.void_type().fn_type(
+                                &[self.context.ptr_type(AddressSpace::default()).into()],
+                                false,
+                            );
+                            self.module
+                                .add_function("glyim_drop_in_place", fn_type, None)
+                        });
+                    let args_vals: Vec<BasicValueEnum<'ctx>> = vec![ptr.into()];
+                    if cleanup.is_some() {
+                        let normal_bb = *self.bb_map.get(target).unwrap();
+                        let cleanup_bb = *self.bb_map.get(cleanup.as_ref().unwrap()).unwrap();
+                        self.builder
+                            .build_invoke(drop_fn, &args_vals, normal_bb, cleanup_bb, "drop_call")
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "invoke failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                    } else {
+                        let args_meta: Vec<BasicMetadataValueEnum<'ctx>> =
+                            args_vals.iter().map(|&v| v.into()).collect();
+                        self.builder
+                            .build_call(drop_fn, &args_meta, "drop_call")
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "call failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        let target_bb = *self.bb_map.get(target).unwrap();
+                        self.builder
+                            .build_unconditional_branch(target_bb)
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "branch failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                    }
+                } else {
+                    let target_bb = *self.bb_map.get(target).unwrap();
+                    self.builder
+                        .build_unconditional_branch(target_bb)
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "branch failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                }
+                Ok(())
             }
         }
-        Ok(())
     }
 
     fn lower_call(
@@ -1711,7 +2265,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     })?
             }
         };
-
         let mut param_idx = 1;
         if is_sret {
             let sret_attr = self.context.create_enum_attribute(
@@ -1788,6 +2341,55 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
         Ok(())
     }
+
+    fn operand_ty(&self, operand: &Operand) -> Ty {
+        match operand {
+            Operand::Copy(place) | Operand::Move(place) => self.place_ty(place),
+            Operand::Constant(c) => c.ty,
+        }
+    }
+
+    /// Emit a landingpad instruction for the cleanup block currently being
+    /// positioned at, and record its value in `self.current_landingpad`.
+    ///
+    /// Glyim has no user-visible `catch` construct (panics are always fatal
+    /// -- see `glyim_panic` in glyim-runtime), so every landingpad we emit
+    /// is a pure *cleanup* landingpad: it doesn't filter by exception type
+    /// at all (`clauses = &[]`, `is_cleanup = true`), it just gives us a
+    /// legal place for the unwinder to hand control back to us so that any
+    /// `Drop` terminators already present in this cleanup block (emitted by
+    /// `glyim-opt::drop_elaboration`) get to run before we `resume` the
+    /// unwind (see `TerminatorKind::Unreachable` above).
+    fn emit_landingpad(&mut self) -> CompResult<()> {
+        let Some(personality_fn) = self._personality_fn else {
+            self.current_landingpad = None;
+            return Ok(());
+        };
+        let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());
+        let i32_ty = self.context.i32_type();
+        let landingpad_ty = self
+            .context
+            .struct_type(&[i8_ptr_ty.into(), i32_ty.into()], false);
+        let landingpad = self
+            .builder
+            .build_landing_pad(landingpad_ty, personality_fn, &[], true, "lpad")
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "landingpad failed: {:?}",
+                    e
+                ))]
+            })?;
+
+        self.current_landingpad = Some(landingpad);
+        Ok(())
+    }
+    fn type_needs_drop(&self, ty: Ty) -> bool {
+        match self.ty_ctx.ty_kind(ty) {
+            glyim_type::TyKind::Adt(_, _) => true,
+            glyim_type::TyKind::Closure(_, _) => true,
+            _ => false,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1826,8 +2428,6 @@ pub(crate) fn lower_body<'ctx>(
     };
     let function = module.add_function(&fn_name, fn_type, None);
     let mut debug_ctx = if debug_info {
-        // We need to get the hygiene context from somewhere; for now pass None
-        // TODO: integrate with LlvmBackend's hygiene field
         Some(DebugInfoCtx::new(
             context, module, source_map, true, hygiene,
         ))
@@ -1870,8 +2470,24 @@ pub(crate) fn lower_body<'ctx>(
         .unwrap_or_else(|| module.add_function("glyim_dealloc", dealloc_fn_type, None));
     let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
     let personality_fn = if has_cleanup {
-        let personality_fn_type = context.void_type().fn_type(&[], false);
-        let personality_fn = module.add_function("__glyim_personality", personality_fn_type, None);
+        // `__gcc_personality_v0` is the Itanium-ABI personality routine
+        // provided by libgcc on Linux/glibc targets, which is what the
+        // build's linker (see glyim-cli/src/linker.rs, which shells out to
+        // `cc`) will already be able to resolve at link time without any
+        // extra runtime support. This is declared, not defined, here: we
+        // are relying on the platform's unwinder library to supply it,
+        // exactly like a C/C++ program compiled with `-fexceptions` would.
+        //
+        // NOTE: this is Linux/glibc-specific. A different personality
+        // routine (or a custom one shipped in glyim-runtime) will be needed
+        // for other `TargetInfo` targets (e.g. macOS, or unwinding-disabled
+        // embedded targets that should instead force `has_cleanup` off).
+        let personality_fn_type = context.i32_type().fn_type(&[], true); // variadic to accept the Itanium ABI's actual argument list
+        let personality_fn = module
+            .get_function("__gcc_personality_v0")
+            .unwrap_or_else(|| {
+                module.add_function("__gcc_personality_v0", personality_fn_type, None)
+            });
         function.set_personality_function(personality_fn);
         Some(personality_fn)
     } else {
@@ -1882,15 +2498,16 @@ pub(crate) fn lower_body<'ctx>(
         builder,
         function,
         module,
-        drop_fn,
-        dealloc_fn,
+        _drop_fn: drop_fn,
+        _dealloc_fn: dealloc_fn,
         body,
         target_info,
         ty_ctx,
         locals,
         bb_map,
-        personality_fn,
+        _personality_fn: personality_fn,
         debug_ctx,
+        current_landingpad: None,
     };
     for (local_idx, _local_decl) in body.locals.iter_enumerated() {
         lowering_ctx.alloc_local(local_idx);
@@ -1898,6 +2515,10 @@ pub(crate) fn lower_body<'ctx>(
     for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
         let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
         lowering_ctx.builder.position_at_end(*llvm_bb);
+        // Reset per-block: a landingpad value from a previous cleanup block
+        // must never leak into a block that isn't itself a fresh cleanup
+        // landing pad.
+        lowering_ctx.current_landingpad = None;
         if bb_data.is_cleanup {
             lowering_ctx.emit_landingpad()?;
         }

@@ -14,6 +14,7 @@ glyim-mir = { workspace = true }
 glyim-typeck = { workspace = true }
 glyim-span = { workspace = true }
 glyim-diag = { workspace = true }
+glyim-const-eval = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

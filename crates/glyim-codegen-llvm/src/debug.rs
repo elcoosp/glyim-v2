@@ -158,20 +158,21 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
         let file = self.get_file(FileId::from_raw(0));
         let di_type = match ty_ctx.ty_kind(ty) {
-            TyKind::Adt(adt_id, _) => {
+            TyKind::Adt(adt_id, substs) => {
                 if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
-                    // For now, only handle structs (single variant)
+                    let name = format!("Adt{}", adt_id.to_raw());
+                    // Use layout to get field types and offsets
+                    let layout = layout_computer.layout_of(ty).unwrap_or_else(|_| Layout::unit());
+                    let size_bits = layout.size.0 * 8;
+                    let align_bits = layout.align.0 * 8;
+                    // For structs (single variant), emit a struct type with fields in order
                     if adt_def.variants.len() == 1 {
                         let variant = &adt_def.variants[0];
-                        let name = format!("Adt{}", adt_id.to_raw());
                         let mut field_types = Vec::new();
                         for field in variant.fields.iter() {
                             let field_ty = self.debug_type_for_ty(context, field.ty, ty_ctx);
                             field_types.push(field_ty);
                         }
-                        let layout = layout_computer.layout_of(ty).unwrap_or_else(|_| Layout::unit());
-                        let size_bits = layout.size.0 * 8;
-                        let align_bits = layout.align.0 * 8;
                         self.builder.create_struct_type(
                             self.compile_unit_scope,
                             &name,
@@ -187,7 +188,24 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             "glyim",
                         ).as_type()
                     } else {
-                        self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()
+                        // For enums, emit a union with discriminant and variants.
+                        // For simplicity, emit a struct with tag and byte array for now.
+                        let tag_ty = self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type();
+                        let data_ty = self.builder.create_basic_type("i8", 8, 0x05, 0).unwrap().as_type();
+                        self.builder.create_struct_type(
+                            self.compile_unit_scope,
+                            &format!("{}_enum", name),
+                            file,
+                            0,
+                            size_bits.try_into().unwrap(),
+                            align_bits.try_into().unwrap(),
+                            0,
+                            None,
+                            &[tag_ty, data_ty],
+                            0,
+                            Some(self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()),
+                            "glyim",
+                        ).as_type()
                     }
                 } else {
                     self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type()

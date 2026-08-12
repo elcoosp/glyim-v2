@@ -44,9 +44,9 @@ pub(crate) fn run_llvm_passes<'ctx>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use inkwell::OptimizationLevel;
     use inkwell::context::Context;
     use inkwell::targets::{Target, TargetMachine};
-    use inkwell::OptimizationLevel;
     use std::sync::Once;
 
     static INIT: Once = Once::new();
@@ -56,8 +56,7 @@ mod tests {
             Target::initialize_all(&inkwell::targets::InitializationConfig::default());
         });
     }
-
-    fn create_test_module(ctx: &Context) -> (Module, TargetMachine) {
+    fn create_test_module(ctx: &Context) -> (Module<'_>, TargetMachine) {
         init_targets();
         let module = ctx.create_module("test");
         let triple = inkwell::targets::TargetTriple::create("x86_64-unknown-linux-gnu");
