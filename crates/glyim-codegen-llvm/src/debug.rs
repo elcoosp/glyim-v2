@@ -19,8 +19,10 @@ pub(crate) fn resolve_span_to_location(mut span: Span, hygiene: &HygieneCtx) -> 
     }
     while !span.ctx.is_root() {
         let expn_id = span.ctx.expn_id();
-        let expn_data = hygiene.expn_data(expn_id).expect("ExpnData missing");
-        span = expn_data.call_site;
+        match hygiene.expn_data(expn_id) {
+            Some(expn_data) => span = expn_data.call_site,
+            None => break,
+        }
     }
     span
 }
@@ -158,7 +160,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
         let file = self.get_file(FileId::from_raw(0));
         let di_type = match ty_ctx.ty_kind(ty) {
-            TyKind::Adt(adt_id, substs) => {
+            TyKind::Adt(adt_id, _substs) => {
                 if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
                     let name = format!("Adt{}", adt_id.to_raw());
                     // Use layout to get field types and offsets
@@ -188,9 +190,14 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             "glyim",
                         ).as_type()
                     } else {
-                        // For enums, emit a union with discriminant and variants.
-                        // For simplicity, emit a struct with tag and byte array for now.
-                        let tag_ty = self.builder.create_basic_type("i32", 32, 0x05, 0).unwrap().as_type();
+                        // For enums, emit a struct with tag and byte array.
+                        // Use the correct tag width from layout.
+                        let tag_bits = if let glyim_layout::VariantsShape::Multiple { tag_size, .. } = &layout.variants {
+                            (tag_size.0 * 8).max(8) as u64
+                        } else {
+                            32
+                        };
+                        let tag_ty = self.builder.create_basic_type("tag", tag_bits, 0x05, 0).unwrap().as_type();
                         let data_ty = self.builder.create_basic_type("i8", 8, 0x05, 0).unwrap().as_type();
                         self.builder.create_struct_type(
                             self.compile_unit_scope,
@@ -245,9 +252,9 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                     glyim_type::ConstKind::Int(n) if *n >= 0 => *n as u64,
                     _ => 0,
                 };
-                let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
+                let _elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 self.builder.create_array_type(
-                    elem_di,
+                    _elem_di,
                     count_val.try_into().unwrap(),
                     0,
                     &[]
@@ -255,7 +262,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             }
             TyKind::Slice(elem_ty) => {
                 // For slice, we can create a struct with two fields: data pointer and length.
-                let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
+                let _elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 let ptr_ty = self.builder.create_basic_type("i8*", 64, 0x02, 0).unwrap().as_type();
                 let len_ty = self.builder.create_basic_type("usize", 64, 0x04, 0).unwrap().as_type();
                 self.builder.create_struct_type(
@@ -286,6 +293,8 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         context: &'ctx Context,
         alloca: inkwell::values::PointerValue<'ctx>,
         var_info: &VarDebugInfo,
+        ty: glyim_type::Ty,
+        span: glyim_span::Span,
         ty_ctx: &TyCtx,
         block: inkwell::basic_block::BasicBlock<'ctx>,
     ) {
@@ -297,13 +306,17 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         let scope = self.subprogram.unwrap().as_debug_info_scope();
 
         // Use debug type for the variable.
-        let basic_ty = self.debug_type_for_ty(context, ty_ctx.error_ty(), ty_ctx);
+        let basic_ty = self.debug_type_for_ty(context, ty, ty_ctx);
         let name = ty_ctx.name_str(var_info.name);
+
+        // Extract line and column from the variable's declaration span.
+        let (line, col) = self.span_to_line_col(&span).unwrap_or((1, 1));
+
         let divar = self.builder.create_auto_variable(
             scope,
             name,
             file,
-            1,
+            line,
             basic_ty,
             true,
             DIFlags::ZERO,
@@ -312,7 +325,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
         let loc = self
             .builder
-            .create_debug_location(context, 1, 1, scope, None);
+            .create_debug_location(context, line, col, scope, None);
         let expr = self.builder.create_expression(vec![]);
 
         self.builder
@@ -346,7 +359,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             return None;
         }
         let prefix = &source[..offset];
-        let line = prefix.lines().count() as u32;
+        let line = prefix.matches('\n').count() as u32 + 1;
         let last_line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
         let col = (offset - last_line_start) as u32;
         Some((line, col))

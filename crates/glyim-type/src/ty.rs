@@ -32,6 +32,16 @@ impl Ty {
     pub const NEVER: Ty = Ty::from_raw(1);
     pub const UNIT: Ty = Ty::from_raw(2);
     pub const BOOL: Ty = Ty::from_raw(3);
+    pub const U8: Ty = Ty::from_raw(4);
+    pub const U16: Ty = Ty::from_raw(5);
+    pub const U32: Ty = Ty::from_raw(6);
+    pub const U64: Ty = Ty::from_raw(7);
+    pub const USIZE: Ty = Ty::from_raw(8);
+    pub const I8: Ty = Ty::from_raw(9);
+    pub const I16: Ty = Ty::from_raw(10);
+    pub const I32: Ty = Ty::from_raw(11);
+    pub const I64: Ty = Ty::from_raw(12);
+    pub const ISIZE: Ty = Ty::from_raw(13);
 }
 
 impl fmt::Debug for Ty {

@@ -29,6 +29,7 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             SyntaxKind::Star => {
+                self.start_node(SyntaxKind::RawPtrType);
                 self.bump(); // *
                 if self.current_kind() == SyntaxKind::KwConst
                     || self.current_kind() == SyntaxKind::KwMut
@@ -36,6 +37,7 @@ impl<'a> Parser<'a> {
                     self.bump();
                 }
                 self.parse_type();
+                self.finish_node();
             }
             SyntaxKind::LBracket => {
                 let cp = self.checkpoint();

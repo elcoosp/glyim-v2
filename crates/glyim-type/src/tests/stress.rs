@@ -12,13 +12,13 @@ fn allocate_1000_types() {
         let mut count = 0usize;
         for i in 0..1000u32 {
             let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-            assert_eq!(ty.to_raw(), 4 + i);
+            assert_eq!(ty.to_raw(), 14 + i);
             count += 1;
         }
         count
     });
     assert_eq!(count, 1000);
-    let last = Ty::from_raw(4 + 999);
+    let last = Ty::from_raw(14 + 999);
     assert!(matches!(frozen.ty_kind(last), TyKind::Int(IntTy::I32)));
 }
 

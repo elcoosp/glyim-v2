@@ -275,6 +275,7 @@ fn compute_move_dataflow(
     let mut dead_in: Vec<BitSet> = (0..num_blocks)
         .map(|_| BitSet::with_capacity(num_paths))
         .collect();
+    #[allow(dead_code)]
     let mut dead_out: Vec<BitSet> = (0..num_blocks)
         .map(|_| BitSet::with_capacity(num_paths))
         .collect();

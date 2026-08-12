@@ -82,13 +82,13 @@ impl<'a> ConstEvaluator<'a> {
             Expr::Block { stmts, tail } => self.eval_block(stmts, *tail, depth),
             Expr::Tuple(elements) => {
                 if elements.is_empty() {
-                    Ok(ConstValue::Unit)
-                } else {
-                    Err(ConstEvalError::new(
-                        "non-unit tuple expressions are not supported in const evaluation",
-                        span,
-                    ))
+                    return Ok(ConstValue::Unit);
                 }
+                let mut values = Vec::with_capacity(elements.len());
+                for &elem_id in elements {
+                    values.push(self.evaluate_at_depth(elem_id, depth)?);
+                }
+                Ok(ConstValue::Tuple(values))
             }
             Expr::Missing => Err(ConstEvalError::new(
                 "missing expression in const evaluation",
@@ -511,6 +511,21 @@ impl<'a> ConstEvaluator<'a> {
                     }
                 }
                 Ok(false)
+            }
+            Pat::Tuple(pats) => {
+                if let ConstValue::Tuple(vals) = value {
+                    if pats.len() != vals.len() {
+                        return Ok(false);
+                    }
+                    for (p, v) in pats.iter().zip(vals.iter()) {
+                        if !self.pattern_matches(p, v)? {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
             }
             _ => {
                 tracing::debug!("pattern kind not supported in const match evaluation");

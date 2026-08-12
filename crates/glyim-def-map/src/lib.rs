@@ -838,6 +838,21 @@ fn validate_import_visibility(
                 ));
             }
         }
+
+        // Check macro namespace items
+        for (name, def_id, vis, span) in &scope.macros {
+            if let Some(&defining_mod) = def_to_module.get(def_id)
+                && !is_accessible_from(*vis, defining_mod, module_id, modules)
+            {
+                diagnostics.push(GlyimDiagnostic::parse_error(
+                    *span,
+                    format!(
+                        "macro `{}` is private and not accessible from this module",
+                        interner.resolve(*name)
+                    ),
+                ));
+            }
+        }
     }
 }
 

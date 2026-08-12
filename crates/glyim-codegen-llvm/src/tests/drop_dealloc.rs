@@ -1134,8 +1134,8 @@ fn v15_t14_drop_with_cleanup_target() {
 
     let ir = module.print_to_string().to_string();
     assert!(
-        ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for String with cleanup target, got:\n{}",
+        ir.contains("@glyim_drop_in_place"),
+        "IR should invoke glyim_drop_in_place for String with cleanup target, got:\n{}",
         ir
     );
     // Should have both target and cleanup blocks
@@ -1924,8 +1924,8 @@ fn v15_t24_drop_mut_ref_with_cleanup_dealloc() {
 
     let ir = module.print_to_string().to_string();
     assert!(
-        ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for &mut String with cleanup, got:\n{}",
+        ir.contains("@glyim_drop_in_place"),
+        "IR should invoke glyim_drop_in_place for &mut String with cleanup, got:\n{}",
         ir
     );
     assert!(

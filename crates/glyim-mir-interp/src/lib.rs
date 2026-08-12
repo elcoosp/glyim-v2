@@ -331,6 +331,13 @@ impl<'tcx> Interpreter<'tcx> {
             Rvalue::Cast(kind, operand, _target_ty) => {
                 let val = self.eval_operand(operand)?;
                 match kind {
+                    &glyim_mir::CastKind::FloatToFloat => {
+                        if let InterpValue::Float(a) = val {
+                            Ok(InterpValue::Float(a))
+                        } else {
+                            Err(InterpError::Panic("expected float for FloatToFloat".into()))
+                        }
+                    }
                     CastKind::IntToInt => Ok(val),
                     CastKind::IntToFloat => match val {
                         InterpValue::Int(i) => Ok(InterpValue::Float(i as f64)),
@@ -632,7 +639,7 @@ impl<'tcx> Interpreter<'tcx> {
                     // no change
                 }
                 ProjectionElem::ConstantIndex {
-                    offset,
+                    offset: _,
                     min_length: _,
                     from_end: _,
                 } => {
@@ -805,7 +812,7 @@ impl<'tcx> Interpreter<'tcx> {
                 "Deref projection unexpected in write_through_projections".into(),
             )),
             ProjectionElem::ConstantIndex {
-                offset,
+                offset: _,
                 min_length: _,
                 from_end: _,
             } => {

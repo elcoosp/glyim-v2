@@ -191,14 +191,25 @@ pub(crate) fn compute_stmt_liveness(
     for i in (0..num_stmts).rev() {
         let mut current = liveness[i + 1].clone();
         let stmt = &block_data.statements[i];
-        if let StatementKind::Assign(place, rvalue) = &stmt.kind {
-            // Kill: the destination is defined here.
-            current.remove(place.local.to_raw() as usize);
-            // Gen: all locals read by the rvalue.
-            {
-                // Note: `gen` is a reserved keyword in edition 2024
-                let mut liveness_gen = LivenessGen { live: &mut current };
-                walk_rvalue_reads(rvalue, &mut liveness_gen);
+        match &stmt.kind {
+            StatementKind::Assign(place, rvalue) => {
+                // Kill: the destination is defined here.
+                current.remove(place.local.to_raw() as usize);
+                // Gen: all locals read by the rvalue.
+                {
+                    // Note: `gen` is a reserved keyword in edition 2024
+                    let mut liveness_gen = LivenessGen { live: &mut current };
+                    walk_rvalue_reads(rvalue, &mut liveness_gen);
+                }
+            }
+            StatementKind::StorageDead(local) => {
+                // The local's storage ends here -- it cannot be live *before* this
+                // point via this path (kill it), even if it appeared live from a
+                // later use, since that use is invalid once storage is gone.
+                current.remove(local.to_raw() as usize);
+            }
+            StatementKind::StorageLive(_) | StatementKind::Nop => {
+                // No liveness effect.
             }
         }
         liveness[i] = current;

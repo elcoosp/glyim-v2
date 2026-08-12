@@ -303,6 +303,7 @@ pub enum CastKind {
     IntToInt,
     FloatToInt,
     IntToFloat,
+    FloatToFloat,
     PtrToPtr,
     FnPtrToPtr,
     PtrToInt,

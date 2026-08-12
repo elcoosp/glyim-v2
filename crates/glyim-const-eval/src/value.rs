@@ -24,6 +24,8 @@ pub enum ConstValue {
     String(Name),
     /// Unit value `()`.
     Unit,
+    /// Tuple value.
+    Tuple(Vec<ConstValue>),
 }
 
 impl ConstValue {
@@ -106,7 +108,7 @@ impl ConstValue {
                     None
                 }
             }
-            // Float, Bool, Char, String, Unit don't overflow
+            // Float, Bool, Char, String, Unit, Tuple don't overflow
             _ => Some(self.clone()),
         }
     }

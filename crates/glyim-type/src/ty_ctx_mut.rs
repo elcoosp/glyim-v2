@@ -11,10 +11,9 @@ use crate::ty::*;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::Mutability;
+use glyim_core::primitives::{IntTy, Mutability, UintTy};
 use indexmap::IndexSet;
 use smallvec::SmallVec;
-use std::marker::PhantomData;
 
 pub struct TyCtxMut {
     types: Vec<TyKind>,
@@ -34,7 +33,6 @@ pub struct TyCtxMut {
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
-    _not_send_sync: PhantomData<*const ()>,
 }
 
 impl TyCtxMut {
@@ -55,7 +53,6 @@ impl TyCtxMut {
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
             body_tys: HashMap::new(),
-            _not_send_sync: PhantomData,
         };
         // sentinels
         assert_eq!(
@@ -78,6 +75,16 @@ impl TyCtxMut {
             Ty::BOOL.to_raw(),
             "Ty::BOOL sentinel mismatch"
         );
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U8)).to_raw(), Ty::U8.to_raw(), "Ty::U8 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U16)).to_raw(), Ty::U16.to_raw(), "Ty::U16 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U32)).to_raw(), Ty::U32.to_raw(), "Ty::U32 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::U64)).to_raw(), Ty::U64.to_raw(), "Ty::U64 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Uint(UintTy::Usize)).to_raw(), Ty::USIZE.to_raw(), "Ty::USIZE sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I8)).to_raw(), Ty::I8.to_raw(), "Ty::I8 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I16)).to_raw(), Ty::I16.to_raw(), "Ty::I16 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I32)).to_raw(), Ty::I32.to_raw(), "Ty::I32 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::I64)).to_raw(), Ty::I64.to_raw(), "Ty::I64 sentinel mismatch");
+        assert_eq!(ctx.alloc_ty_internal(TyKind::Int(IntTy::Isize)).to_raw(), Ty::ISIZE.to_raw(), "Ty::ISIZE sentinel mismatch");
         ctx
     }
 
@@ -293,7 +300,26 @@ impl TyCtxMut {
         self.body_tys.get(&def_id).copied()
     }
 
-    pub fn freeze(self) -> super::ty_ctx::TyCtx {
+    pub fn freeze(&self) -> super::ty_ctx::TyCtx {
+        super::ty_ctx::TyCtx {
+            types: self.types.clone(),
+            type_flags: self.type_flags.clone(),
+            substitution_data: self.substitution_data.iter().cloned().collect(),
+            regions: self.regions.clone(),
+            resolver: self.resolver.clone(),
+            auto_trait_registry: self.auto_trait_registry.clone(),
+            adt_reprs: self.adt_reprs.clone(),
+            interior_mutable_adt_ids: self.interior_mutable_adt_ids.clone(),
+            adt_defs: self.adt_defs.clone(),
+            trait_defs: self.trait_defs.clone(),
+            variant_types: self.variant_types.clone(),
+            fn_sigs: self.fn_sigs.clone(),
+            closure_sigs: self.closure_sigs.clone(),
+            body_tys: self.body_tys.clone(),
+        }
+    }
+
+    pub fn freeze_owned(self) -> super::ty_ctx::TyCtx {
         super::ty_ctx::TyCtx {
             types: self.types,
             type_flags: self.type_flags,

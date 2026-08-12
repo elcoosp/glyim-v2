@@ -12,7 +12,8 @@ use glyim_mir::{
 };
 use glyim_span::Span;
 use glyim_type::{
-    AdtDef, AdtKind, FieldIdx, GenericArg, ParamTy, Substitution, Ty, TyCtx, TyCtxMut, TyKind,
+    AdtDef, AdtKind, ConstKind, FieldIdx, GenericArg, ParamTy, Substitution, Ty, TyCtx, TyCtxMut,
+    TyKind,
 };
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -57,48 +58,94 @@ pub(crate) fn build_mono_cache(
 }
 
 pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx) -> Body {
-    let mut ty_map = Vec::new();
-    for arg in ty_ctx.substitution_args(*substs) {
-        match arg {
-            GenericArg::Ty(ty) => ty_map.push(*ty),
-            _ => ty_map.push(ty_ctx.error_ty()),
-        }
-    }
+    // To perform recursive substitution, we need a mutable context to allocate new types.
+    // We create a fresh `TyCtxMut` from the interner for this purpose.
+    // This is safe because substitution only reads from the frozen `ty_ctx` and writes new types
+    // to the mutable context.
+    let mut sub_ctx = TyCtxMut::new(ty_ctx.resolver().clone());
 
-    fn replace_ty(ty: Ty, ty_map: &[Ty], ty_ctx: &TyCtx) -> Ty {
-        match ty_ctx.ty_kind(ty) {
-            TyKind::Param(ParamTy { index, .. }) if (*index as usize) < ty_map.len() => {
-                ty_map[*index as usize]
+    fn substitute_ty(ty: Ty, substs: &Substitution, ctx: &mut TyCtxMut, frozen: &TyCtx) -> Ty {
+        match frozen.ty_kind(ty).clone() {
+            TyKind::Param(ParamTy { index, .. }) => {
+                let args = frozen.substitution_args(*substs);
+                if let Some(GenericArg::Ty(t)) = args.get(index as usize) {
+                    *t
+                } else {
+                    frozen.error_ty()
+                }
             }
-            TyKind::Param(_) => ty_ctx.error_ty(),
+            TyKind::Ref(r, inner, m) => {
+                let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                ctx.mk_ref(r, new_inner, m)
+            }
+            TyKind::RawPtr(inner, m) => {
+                let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                ctx.mk_ty(TyKind::RawPtr(new_inner, m))
+            }
+            TyKind::Slice(inner) => {
+                let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                ctx.mk_ty(TyKind::Slice(new_inner))
+            }
+            TyKind::Array(inner, len) => {
+                let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                // Substitute const length if it's a param
+                let new_len = {
+                    let mut new_len = len.clone();
+                    if let ConstKind::Param(p) = &len.kind {
+                        let args = frozen.substitution_args(*substs);
+                        if let Some(GenericArg::Const(c)) = args.get(p.index as usize) {
+                            new_len = c.clone();
+                        }
+                    }
+                    new_len
+                };
+                ctx.mk_ty(TyKind::Array(new_inner, new_len))
+            }
+            TyKind::Tuple(sub) => {
+                let new_args: Vec<GenericArg> = frozen.substitution_args(sub).iter().map(|arg| {
+                    if let GenericArg::Ty(t) = arg {
+                        GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                    } else {
+                        arg.clone()
+                    }
+                }).collect();
+                let new_sub = ctx.intern_substitution(new_args);
+                ctx.mk_tuple(new_sub)
+            }
+            TyKind::Adt(id, sub) => {
+                let new_args: Vec<GenericArg> = frozen.substitution_args(sub).iter().map(|arg| {
+                    if let GenericArg::Ty(t) = arg {
+                        GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                    } else {
+                        arg.clone()
+                    }
+                }).collect();
+                let new_sub = ctx.intern_substitution(new_args);
+                ctx.mk_adt(id, new_sub)
+            }
             _ => ty,
         }
     }
 
     let mut new_locals = body.locals.clone();
     for local in new_locals.iter_mut() {
-        local.ty = replace_ty(local.ty, &ty_map, ty_ctx);
+        local.ty = substitute_ty(local.ty, substs, &mut sub_ctx, ty_ctx);
     }
 
     let mut new_blocks = body.basic_blocks.clone();
     for block_data in new_blocks.iter_mut() {
         for stmt in &mut block_data.statements {
-            match &mut stmt.kind {
-                StatementKind::Assign(_, rvalue) => match rvalue {
+            if let StatementKind::Assign(_, rvalue) = &mut stmt.kind {
+                match rvalue {
                     Rvalue::Cast(_, _, target_ty) => {
-                        *target_ty = replace_ty(*target_ty, &ty_map, ty_ctx);
+                        *target_ty = substitute_ty(*target_ty, substs, &mut sub_ctx, ty_ctx);
                     }
                     Rvalue::Repeat(_, const_val) => {
-                        const_val.ty = replace_ty(const_val.ty, &ty_map, ty_ctx);
+                        const_val.ty = substitute_ty(const_val.ty, substs, &mut sub_ctx, ty_ctx);
                     }
                     _ => {}
-                },
-                _ => {}
+                }
             }
-        }
-        match &mut block_data.terminator.kind {
-            TerminatorKind::Call { .. } => {}
-            _ => {}
         }
     }
 
@@ -107,7 +154,7 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
         basic_blocks: new_blocks,
         locals: new_locals,
         arg_count: body.arg_count,
-        return_ty: replace_ty(body.return_ty, &ty_map, ty_ctx),
+        return_ty: substitute_ty(body.return_ty, substs, &mut sub_ctx, ty_ctx),
         span: body.span,
         var_debug_info: body.var_debug_info.clone(),
     }

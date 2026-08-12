@@ -3,7 +3,7 @@ use glyim_core::path::PathKind;
 use glyim_core::primitives::*;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::{ConstRef, Path as HirPath, PathSegment, TypeRef};
+use crate::{ConstRef, Literal, Path as HirPath, PathSegment, TypeRef};
 
 use super::is_type_node;
 
@@ -59,7 +59,14 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
                 if is_type_node(&child) {
                     inner = lower_type_ref(&child, interner);
                 } else if child.kind() == SyntaxKind::LitExpr {
-                    len = Some(ConstRef::Error);
+                    let text = child.first_token().map(|t| t.text().to_string()).unwrap_or_default();
+                    if let Ok(n) = text.parse::<u128>() {
+                        len = Some(ConstRef::Literal(Literal::Uint(n, None)));
+                    } else if let Ok(n) = text.parse::<i128>() {
+                        len = Some(ConstRef::Literal(Literal::Int(n, None)));
+                    } else {
+                        len = Some(ConstRef::Error);
+                    }
                 }
             }
             let inner = inner?;
@@ -89,8 +96,7 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
             }
         }
         _ => {
-            tracing::warn!("STUB: unhandled type node {:?}", node.kind());
-            None
+            glyim_diag::stub!("unhandled type node {:?}", node.kind());
         }
     }
 }

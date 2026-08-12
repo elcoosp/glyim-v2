@@ -4,7 +4,7 @@ use glyim_core::primitives::Mutability;
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId};
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{Const, ConstKind, Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{Const, ConstKind, Ty, TyCtxMut, TyKind};
 
 // Helper to create a body with an array of a type that needs drop.
 // Now takes a mutable context and uses it to build the types.

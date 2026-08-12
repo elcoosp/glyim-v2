@@ -957,18 +957,23 @@ impl InferenceTable {
         self.ty_vars.get(var).map(|tv| tv.kind)
     }
     #[cfg(test)]
+    #[allow(dead_code)]
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub(crate) fn set_ty_var_value(&mut self, var: TyVar, value: Ty) {
         if let Some(tv) = self.ty_vars.get_mut(var) {
             tv.value = Some(value);
         }
     }
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn set_int_var_value(&mut self, var: IntVar, value: Ty) {
         if let Some(iv) = self.int_vars.get_mut(var) {
             iv.value = Some(value);
         }
     }
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn set_float_var_value(&mut self, var: FloatVar, value: Ty) {
         if let Some(fv) = self.float_vars.get_mut(var) {
             fv.value = Some(value);

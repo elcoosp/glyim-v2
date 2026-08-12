@@ -22,6 +22,10 @@ pub struct CliArgs {
     pub target: Option<String>,
     #[arg(long = "backend", default_value = "llvm")]
     pub backend: String,
+    #[arg(long = "linker")]
+    pub linker: Option<String>,
+    #[arg(long = "link-flags")]
+    pub link_flags: Option<String>,
 }
 
 pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
@@ -110,8 +114,13 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     if emit == "exec" {
         let final_path = final_output_path.expect("exec should have final output");
-        linker::invoke_linker(&object_path, &final_path)
-            .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(&e)])?;
+        linker::invoke_linker(
+            &object_path,
+            &final_path,
+            args.linker.as_deref(),
+            args.link_flags.as_deref(),
+        )
+        .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(&e)])?;
     }
 
     Ok(())

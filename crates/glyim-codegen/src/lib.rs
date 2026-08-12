@@ -1,9 +1,10 @@
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
-use glyim_diag::CompResult;
+use glyim_diag::{CompResult, GlyimDiagnostic};
+use glyim_type::{ConstKind, TyKind};
 use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
-use glyim_type::{FieldIdx, Substitution, Ty, TyCtx, TyKind};
+use glyim_type::{FieldIdx, Substitution, Ty, TyCtx};
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
@@ -174,15 +175,23 @@ impl BytecodeBackend {
                     // Downcast does not change the address
                 }
                 ProjectionElem::ConstantIndex { offset, min_length: _, from_end } => {
-                    // For constant index, we compute offset = index * elem_size
-                    // For simplicity, we treat as a normal index with a constant value.
-                    // In a full implementation, we would compute the actual address.
-                    // For now, we just push a constant offset and add.
                     let elem_size = self.layout_provider.size_of(current_ty);
                     let index_val = if *from_end {
-                        // We would need the length to compute len - offset, but we don't have it here.
-                        // Fallback: use offset as is (will be wrong for from_end).
-                        *offset
+                        if let Some(ctx) = self.ty_ctx.as_ref() {
+                            if let TyKind::Array(_, const_val) = ctx.ty_kind(current_ty) {
+                                let n = match &const_val.kind {
+                                    ConstKind::Uint(n) => *n as u64,
+                                    ConstKind::Int(n) => *n as u64,
+                                    _ => 0,
+                                };
+                                n.saturating_sub(*offset)
+                            } else {
+                                tracing::warn!("from_end ConstantIndex on slice not fully implemented in bytecode backend");
+                                *offset
+                            }
+                        } else {
+                            *offset
+                        }
                     } else {
                         *offset
                     };
@@ -192,15 +201,8 @@ impl BytecodeBackend {
                     bc.push(OP_ADD);
                     current_ty = Ty::ERROR;
                 }
-                ProjectionElem::Subslice { from, to, from_end } => {
-                    // Subslice creates a new slice value. For address, we need to compute the start pointer.
-                    // For now, we just ignore and emit a warning.
-                    tracing::warn!("Subslice projection in bytecode backend: not fully implemented");
-                    // Push a dummy offset (0) to keep stack balanced.
-                    bc.push(OP_LOAD_CONST);
-                    bc.extend_from_slice(&0i64.to_le_bytes());
-                    bc.push(OP_ADD);
-                    current_ty = Ty::ERROR;
+                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => {
+                    unimplemented!("Subslice projection in bytecode backend");
                 }
             }
         }
@@ -270,16 +272,26 @@ pub(crate) const OP_DEREF: u8 = 0x2B;
 pub(crate) const OP_DROP: u8 = 0x2C;
 pub(crate) const OP_REPEAT: u8 = 0x2D;
 
+#[allow(dead_code)]
 pub(crate) const OP_SWAP: u8 = 0x2E;
 impl CodegenBackend for BytecodeBackend {
     fn name(&self) -> &'static str {
         "bytecode"
     }
 
-    fn generate(&self, bodies: &[Arc<Body>], _output: &Path) -> CompResult<()> {
+    fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()> {
+        let mut module_bytes: Vec<u8> = Vec::new();
         for body in bodies {
-            let _ = self.generate_function(body)?;
+            let fn_bytes = self.generate_function(body)?;
+            module_bytes.extend_from_slice(&fn_bytes);
         }
+        std::fs::write(output, &module_bytes).map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!(
+                "failed to write bytecode output to {}: {}",
+                output.display(),
+                e
+            ))]
+        })?;
         Ok(())
     }
 
@@ -394,6 +406,7 @@ impl BytecodeBackend {
                     CastKind::FnPtrToPtr => 4,
                     CastKind::PtrToInt => 5,
                     CastKind::IntToPtr => 6,
+                    CastKind::FloatToFloat => 7,
                 });
                 Ok(())
             }
@@ -446,8 +459,9 @@ impl BytecodeBackend {
                         bc.extend_from_slice(&b.to_le_bytes());
                     }
                     MirConstKind::String(_name) => {
+                        let str_content = self.ty_ctx.as_ref().map(|ctx| ctx.name_str(*_name)).unwrap_or("string_payload").to_string();
+                        let idx = self.intern_string(&str_content);
                         bc.push(OP_LOAD_CONST);
-                        let idx = self.intern_string("string_payload");
                         bc.extend_from_slice(&(idx as i64).to_le_bytes());
                     }
                     MirConstKind::Fn(def_id, substs) => {

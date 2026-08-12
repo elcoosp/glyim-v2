@@ -113,8 +113,8 @@ fn v29_t05_bool_switch_only_true_branch() {
         ir
     );
     assert!(
-        ir.contains("bool_eq"),
-        "Expected 'bool_eq' label for bool switch icmp, got:\n{}",
+        ir.contains("switch_eq_0"),
+        "Expected 'switch_eq_0' label for bool switch icmp, got:\n{}",
         ir
     );
 }

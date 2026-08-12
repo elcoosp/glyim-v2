@@ -297,7 +297,7 @@ fn test_debug_declare_local_emits_intrinsic() {
         name: ctx.resolver().intern("test_var"),
         value: VarDebugInfoValue::Place(Place::new(LocalIdx::from_raw(0))),
     };
-    debug_ctx.declare_local(&context, alloca, &var_info, &ctx, bb);
+    debug_ctx.declare_local(&context, alloca, &var_info, ctx.bool_ty(), glyim_span::Span::DUMMY, &ctx, bb);
     debug_ctx.finalize();
     let ir = module.print_to_string().to_string();
     assert!(

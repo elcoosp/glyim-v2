@@ -13,7 +13,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 mod abi;
-mod abi_passmode;
 mod debug;
 mod lower;
 mod passes;

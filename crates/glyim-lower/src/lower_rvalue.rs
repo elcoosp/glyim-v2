@@ -492,7 +492,7 @@ impl<'a> MirBuilder<'a> {
                     (TyKind::Int(_), TyKind::Int(_)) => CastKind::IntToInt,
                     (TyKind::Float(_), TyKind::Int(_)) => CastKind::FloatToInt,
                     (TyKind::Int(_), TyKind::Float(_)) => CastKind::IntToFloat,
-                    (TyKind::Float(_), TyKind::Float(_)) => CastKind::IntToFloat,
+                    (TyKind::Float(_), TyKind::Float(_)) => CastKind::FloatToFloat,
                     _ => CastKind::PtrToPtr,
                 };
                 glyim_mir::Rvalue::Cast(cast_kind, operand, target_ty)
@@ -641,17 +641,87 @@ impl<'a> MirBuilder<'a> {
                 method_index,
                 args,
             } => {
-                // Dynamic dispatch via vtable.
-                // Placeholder for now; full implementation will be added later.
-                self.diagnostics.push(GlyimDiagnostic::type_error(
+                let _receiver = receiver;
+                // Lower the receiver (a fat pointer) to a temporary local so we can project into it.
+                let recv_val = self.lower_expr_to_rvalue(receiver);
+                let recv_local = self.alloc_local(receiver.ty, glyim_core::primitives::Mutability::Mut, expr.span);
+                self.push_stmt(
+                    glyim_mir::StatementKind::Assign(glyim_mir::Place::new(recv_local), recv_val),
                     expr.span,
-                    "dynamic dispatch via trait objects not yet fully implemented",
-                ));
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
-                    kind: glyim_mir::MirConstKind::Unit,
-                    ty: Ty::UNIT,
-                    span: expr.span,
-                }))
+                );
+                let recv_place = glyim_mir::Place::new(recv_local);
+
+                // Extract the data pointer (field 0) and vtable pointer (field 1) from the fat pointer.
+                let data_place = self.place_with_projection(recv_place.clone(), ProjectionElem::Field(FieldIdx::from_raw(0)));
+                let vtable_place = self.place_with_projection(recv_place.clone(), ProjectionElem::Field(FieldIdx::from_raw(1)));
+
+                // Allocate a local for the vtable pointer. Use Ty::USIZE as a pointer-sized integer.
+                let vtable_ptr_local = self.alloc_local(Ty::USIZE, glyim_core::primitives::Mutability::Mut, expr.span);
+                self.push_stmt(
+                    glyim_mir::StatementKind::Assign(
+                        glyim_mir::Place::new(vtable_ptr_local),
+                        glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(vtable_place)),
+                    ),
+                    expr.span,
+                );
+
+                let _method_index = method_index;
+                // Allocate a local for the method index and store the constant index.
+                let method_idx_local = self.alloc_local(Ty::USIZE, glyim_core::primitives::Mutability::Not, expr.span);
+                self.push_stmt(
+                    glyim_mir::StatementKind::Assign(
+                        glyim_mir::Place::new(method_idx_local),
+                        glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                            kind: glyim_mir::MirConstKind::Uint(*method_index as u128),
+                            ty: Ty::USIZE,
+                            span: expr.span,
+                        })),
+                    ),
+                    expr.span,
+                );
+
+                // Project into the vtable to get the method pointer.
+                let method_ptr_place = self.place_with_projection(
+                    glyim_mir::Place::new(vtable_ptr_local),
+                    ProjectionElem::Index(method_idx_local),
+                );
+
+                // Allocate a local for the method pointer. Use Ty::ERROR because we don't have
+                // a way to allocate a FnPtr type from an immutable TyCtx. The LLVM backend will
+                // construct the function type from the arguments and return type.
+                let method_fn_local = self.alloc_local(Ty::ERROR, glyim_core::primitives::Mutability::Mut, expr.span);
+                self.push_stmt(
+                    glyim_mir::StatementKind::Assign(
+                        glyim_mir::Place::new(method_fn_local),
+                        glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(method_ptr_place)),
+                    ),
+                    expr.span,
+                );
+
+                let _args = args;
+                // Prepare arguments: data pointer is the receiver (self), followed by the rest of the args.
+                let mut mir_args = Vec::with_capacity(args.len() + 1);
+                mir_args.push(glyim_mir::Operand::Copy(data_place));
+                for arg in args {
+                    mir_args.push(self.lower_expr_to_operand(arg));
+                }
+
+                // Call the method pointer.
+                let dest_local = self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
+                let dest_place = glyim_mir::Place::new(dest_local);
+                let next_bb = self.new_block();
+                self.terminate(
+                    glyim_mir::TerminatorKind::Call {
+                        func: glyim_mir::Operand::Move(glyim_mir::Place::new(method_fn_local)),
+                        args: mir_args,
+                        destination: dest_place.clone(),
+                        target: Some(next_bb),
+                        cleanup: None,
+                    },
+                    expr.span,
+                );
+                self.current_block = Some(next_bb);
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
         }
     }
@@ -847,14 +917,79 @@ impl<'a> MirBuilder<'a> {
             thir::PatternKind::Literal(_) => {}
             thir::PatternKind::ConstBlock(_) => {}
             thir::PatternKind::Error => {}
-            thir::PatternKind::Slice {
-                prefix: _,
-                slice: _,
-                suffix: _,
-            } => {
-                // Slice pattern lowering is not yet implemented.
-                // Type checking already passed; ignoring for now.
-                tracing::debug!("Slice pattern lowering skipped (typeck only)");
+            thir::PatternKind::Slice { prefix, slice, suffix } => {
+                if let Some(init) = init_local {
+                    let init_place = glyim_mir::Place::new(init);
+
+                    for (i, sub_pat) in prefix.iter().enumerate() {
+                        let proj = ProjectionElem::ConstantIndex {
+                            offset: i as u64,
+                            min_length: (prefix.len() + suffix.len()) as u64,
+                            from_end: false,
+                        };
+                        let elem_place = self.place_with_projection(init_place.clone(), proj);
+                        let temp_local = self.alloc_local(
+                            sub_pat.ty,
+                            glyim_core::primitives::Mutability::Not,
+                            span,
+                        );
+                        self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
+                        self.push_stmt(
+                            glyim_mir::StatementKind::Assign(
+                                glyim_mir::Place::new(temp_local),
+                                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(elem_place)),
+                            ),
+                            span,
+                        );
+                        self.bind_pattern(sub_pat, Some(temp_local), span);
+                    }
+
+                    for (i, sub_pat) in suffix.iter().enumerate() {
+                        let proj = ProjectionElem::ConstantIndex {
+                            offset: (suffix.len() - i) as u64,
+                            min_length: (prefix.len() + suffix.len()) as u64,
+                            from_end: true,
+                        };
+                        let elem_place = self.place_with_projection(init_place.clone(), proj);
+                        let temp_local = self.alloc_local(
+                            sub_pat.ty,
+                            glyim_core::primitives::Mutability::Not,
+                            span,
+                        );
+                        self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
+                        self.push_stmt(
+                            glyim_mir::StatementKind::Assign(
+                                glyim_mir::Place::new(temp_local),
+                                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(elem_place)),
+                            ),
+                            span,
+                        );
+                        self.bind_pattern(sub_pat, Some(temp_local), span);
+                    }
+
+                    if let Some(rest_pat) = slice {
+                        let proj = ProjectionElem::Subslice {
+                            from: prefix.len() as u64,
+                            to: suffix.len() as u64,
+                            from_end: true,
+                        };
+                        let rest_place = self.place_with_projection(init_place.clone(), proj);
+                        let temp_local = self.alloc_local(
+                            rest_pat.ty,
+                            glyim_core::primitives::Mutability::Not,
+                            span,
+                        );
+                        self.push_stmt(glyim_mir::StatementKind::StorageLive(temp_local), span);
+                        self.push_stmt(
+                            glyim_mir::StatementKind::Assign(
+                                glyim_mir::Place::new(temp_local),
+                                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(rest_place)),
+                            ),
+                            span,
+                        );
+                        self.bind_pattern(rest_pat, Some(temp_local), span);
+                    }
+                }
             }
         }
     }
@@ -1074,6 +1209,7 @@ impl<'a> MirBuilder<'a> {
             ConstValue::Bool(b) => Some(b as u128),
             ConstValue::Char(c) => Some(c as u128),
             ConstValue::FloatBits(..) | ConstValue::String(_) | ConstValue::Unit => None,
+            ConstValue::Tuple(_) => None,
         }
     }
 

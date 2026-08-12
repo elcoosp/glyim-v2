@@ -118,6 +118,14 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                         let tag_size = Size(tag_size_bytes);
                         let tag_align = Align::from_bytes(tag_size_bytes);
 
+                        let tag_ty = if n_variants <= 256 {
+                            glyim_type::Ty::U8
+                        } else if n_variants <= 65536 {
+                            glyim_type::Ty::U16
+                        } else {
+                            glyim_type::Ty::U32
+                        };
+
                         let mut tag_offsets: glyim_core::arena::IndexVec<
                             glyim_type::FieldIdx,
                             Size,
@@ -138,7 +146,7 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                         let total_size = Size(total_size).align_to(max_align);
 
                         let variants_shape = VariantsShape::Multiple {
-                            tag: glyim_type::Ty::BOOL,
+                            tag: tag_ty,
                             tag_field: 0,
                             tag_encoding: glyim_layout::TagEncoding::Direct,
                             tag_size,

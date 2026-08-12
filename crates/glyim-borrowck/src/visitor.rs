@@ -174,6 +174,15 @@ pub(crate) fn places_conflict(a: &Place, b: &Place) -> bool {
                 }
             }
 
+            // ConstantIndex projections: statically known offsets.
+            (ProjectionElem::ConstantIndex { offset: o1, from_end: false, .. },
+             ProjectionElem::ConstantIndex { offset: o2, from_end: false, .. }) => {
+                if o1 != o2 {
+                    return false; // provably disjoint, e.g. arr[0] vs arr[1]
+                }
+                // same offset -> keep checking the rest of the projection chain
+            }
+
             (ProjectionElem::Field(_), ProjectionElem::Index(_))
             | (ProjectionElem::Index(_), ProjectionElem::Field(_)) => return false,
             // Mixed projection types at the same depth — conservatively conflict

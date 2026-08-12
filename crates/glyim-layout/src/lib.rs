@@ -623,6 +623,23 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
                 }
             }
             TyKind::Slice(_) => return Err(LayoutError::Unsized(ty)),
+            TyKind::String => {
+                let raw_size = self.target.pointer_size();
+                Layout {
+                    size: Size::bytes(raw_size.saturating_mul(2)),
+                    align: ptr_align,
+                    fields: FieldsShape::Arbitrary {
+                        offsets: {
+                            let mut off = IndexVec::new();
+                            off.push(Size::ZERO);
+                            off.push(Size::bytes(raw_size));
+                            off
+                        },
+                    },
+                    variants: VariantsShape::Single { index: 0 },
+                    is_unsized: false,
+                }
+            }
             TyKind::Tuple(substs) => return self.layout_tuple(*substs),
             TyKind::Array(inner, count) => return self.layout_array(*inner, count, ty),
             TyKind::Adt(adt_id, substs) => return self.layout_adt(*adt_id, *substs, ty),
@@ -631,8 +648,39 @@ impl LayoutComputer for SimpleLayoutComputer<'_> {
             TyKind::Param(_) | TyKind::Bound(_, _) => return Err(LayoutError::UnknownType(ty)),
             TyKind::Opaque(_, _) => return Err(LayoutError::UnknownType(ty)),
             TyKind::Projection(_) => return Err(LayoutError::UnknownType(ty)),
-            TyKind::Closure(_, _) => return Err(LayoutError::UnknownType(ty)),
-            TyKind::String => return Err(LayoutError::Unsized(ty)),
+            TyKind::Closure(_, substs) => {
+                let args = self.ctx.substitution_args(*substs);
+                if args.is_empty() {
+                    return Ok(Layout::unit());
+                }
+                let mut field_layouts = Vec::with_capacity(args.len());
+                for arg in args {
+                    if let glyim_type::GenericArg::Ty(t) = arg {
+                        field_layouts.push(self.layout_of(*t)?);
+                    }
+                }
+                if field_layouts.is_empty() {
+                    return Ok(Layout::unit());
+                }
+                let mut size = Size::ZERO;
+                let mut align = Align::ONE;
+                let mut offsets = glyim_core::arena::IndexVec::new();
+                for layout in &field_layouts {
+                    let offset = size.align_to(layout.align);
+                    offsets.push(offset);
+                    size = offset + layout.size;
+                    align = align.max(layout.align);
+                }
+                size = size.align_to(align);
+                Layout {
+                    size,
+                    align,
+                    fields: FieldsShape::Arbitrary { offsets },
+                    variants: VariantsShape::Single { index: 0 },
+                    is_unsized: false,
+                }
+            }
+            // TyKind::String is handled above alongside TyKind::Slice
             TyKind::FnDef(_, _) => return Err(LayoutError::UnknownType(ty)),
         };
         if layout.align.0 > ALIGN_MAX {

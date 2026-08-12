@@ -148,6 +148,7 @@ pub enum SyntaxKind {
     ContinueExpr,
     ReturnExpr,
     AssignExpr,
+    RawPtrType,
     PathType,
     FnType,
     DynType,

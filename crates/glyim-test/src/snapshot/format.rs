@@ -148,6 +148,7 @@ fn format_cast_kind(kind: &glyim_mir::CastKind) -> String {
         glyim_mir::CastKind::FnPtrToPtr => "FnPtrToPtr".to_string(),
         glyim_mir::CastKind::PtrToInt => "PtrToInt".to_string(),
         glyim_mir::CastKind::IntToPtr => "IntToPtr".to_string(),
+        glyim_mir::CastKind::FloatToFloat => "FloatToFloat".to_string(),
     }
 }
 

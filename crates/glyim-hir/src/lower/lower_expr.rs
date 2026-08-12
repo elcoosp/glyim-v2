@@ -637,10 +637,13 @@ fn lower_bin_op_token(token: &SyntaxToken) -> BinOp {
         "|" => BinOp::BitOr,
         "^" => BinOp::BitXor,
         "<<" => BinOp::Shl,
-        ">>" => BinOp::Shr,        _ => {
-            tracing::warn!("STUB: unknown bin op {:?}", token.text());
-            BinOp::Add
-        }
+        ">>" => BinOp::Shr,
+        other => unreachable!(
+            "parser produced a binary-expr node with unrecognized operator \
+             token {:?} -- parser and HIR lowering are out of sync, this is \
+             a compiler bug, not a user error",
+            other
+        ),
     }
 }
 

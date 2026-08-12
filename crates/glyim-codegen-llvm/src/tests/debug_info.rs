@@ -27,6 +27,7 @@ fn make_test_body(ctx: &TyCtxMut, var_name: Name) -> Body {
     let unit_ty = ctx.unit_ty();
 
     let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
+    body.return_ty = unit_ty;
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
     locals.push(LocalDecl {
         ty: unit_ty,
