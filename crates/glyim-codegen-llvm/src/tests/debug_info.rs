@@ -603,7 +603,8 @@ fn macro_defined_function_has_correct_line_numbers_in_ir() {
     let backend = LlvmBackend::new()
         .with_debug_info(true)
         .with_source_map(source_map)
-        .with_hygiene_ctx(hygiene);
+        .with_hygiene_ctx(hygiene)
+        .with_ty_ctx(ctx_mut.freeze());
     let ir = backend.generate_ir(&body).expect("IR generation failed");
     let call_site_line = source[..call_site.lo.to_usize()].matches('\n').count() + 1;
     let expected_line_pattern = format!("line: {}", call_site_line);
@@ -700,7 +701,8 @@ fn nested_macro_expansions_produce_correct_inline_locations() {
     let backend = LlvmBackend::new()
         .with_debug_info(true)
         .with_source_map(source_map)
-        .with_hygiene_ctx(hygiene);
+        .with_hygiene_ctx(hygiene)
+        .with_ty_ctx(ctx_mut.freeze());
     let ir = backend.generate_ir(&body).expect("IR generation failed");
     let outer_call_site_line = source[..outer_call_site.lo.to_usize()]
         .matches('\n')

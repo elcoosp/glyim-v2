@@ -536,14 +536,9 @@ impl BytecodeBackend {
                 self.emit_operand(bc, func, local_tys)?;
                 for arg in args {
                     match arg {
-                        Operand::Copy(place) | Operand::Move(place) => {
-                            let ty = local_tys.get(place.local).map(|d| d.ty).unwrap_or(Ty::UNIT);
-                            let size = self.layout_provider.size_of(ty);
-                            if size > 16 {
-                                self.emit_place_address(bc, place, local_tys)?;
-                            } else {
-                                self.emit_operand(bc, arg, local_tys)?;
-                            }
+                        Operand::Copy(_) | Operand::Move(_) => {
+                            // Bytecode backend is a stack machine; always pass by value if possible
+                            self.emit_operand(bc, arg, local_tys)?;
                         }
                         _ => self.emit_operand(bc, arg, local_tys)?,
                     }

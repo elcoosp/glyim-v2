@@ -108,8 +108,15 @@ pub struct ImplMethod {
 }
 
 #[derive(Clone, Debug)]
+pub struct AssociatedTy {
+    pub name: Name,
+    pub bounds: Vec<TypeRef>,
+    pub default: Option<TypeRef>,
+}
+
+#[derive(Clone, Debug)]
 pub struct TraitItem {
-    pub associated_types: Vec<Name>,
+    pub associated_types: Vec<AssociatedTy>,
     pub methods: Vec<TraitMethod>,
     pub generic_params: Vec<GenericParam>,
     pub where_clauses: Vec<crate::where_clause::WhereClause>,

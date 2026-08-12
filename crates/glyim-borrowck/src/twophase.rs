@@ -42,7 +42,6 @@ impl ReservationAnalysis {
         };
 
         let transfer = |block: BasicBlockIdx,
-                        _entry: bool,
                         start_idx: usize,
                         start_current: bool|
          -> (BitSet, bool) {
@@ -74,7 +73,7 @@ impl ReservationAnalysis {
         let block_data = &body.basic_blocks[loan_block];
         let start_point = loan_stmt + 1;
 
-        let (bits, exit) = transfer(loan_block, false, start_point, true);
+        let (bits, exit) = transfer(loan_block, start_point, true);
         per_block[loan_block.to_raw() as usize] = bits;
         exit_reserved[loan_block.to_raw() as usize] = exit;
 
@@ -97,7 +96,7 @@ impl ReservationAnalysis {
         while let Some(block) = worklist.pop_front() {
             in_worklist.remove(&block);
             let entry = entry_reserved[block.to_raw() as usize];
-            let (bits, exit) = transfer(block, entry, 0, entry);
+            let (bits, exit) = transfer(block, 0, entry);
             let old_bits = &per_block[block.to_raw() as usize];
             let old_exit = exit_reserved[block.to_raw() as usize];
             if &bits != old_bits || exit != old_exit {
