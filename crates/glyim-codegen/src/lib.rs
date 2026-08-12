@@ -420,7 +420,7 @@ impl BytecodeBackend {
                 if place.projection.is_empty() {
                     bc.push(OP_LOAD_LOCAL);
                     bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
-                    return Ok(());
+                    Ok(())
                 } else {
                     self.emit_place_address(bc, place, local_tys)?;
                     bc.push(OP_DEREF);

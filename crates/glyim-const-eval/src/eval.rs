@@ -98,24 +98,78 @@ impl<'a> ConstEvaluator<'a> {
                 "error expression in const evaluation",
                 span,
             )),
-            Expr::Path(_) => Err(ConstEvalError::new("path expressions not yet supported in const eval", span)),
-            Expr::Call { .. } => Err(ConstEvalError::new("function calls not supported in const eval", span)),
-            Expr::MethodCall { .. } => Err(ConstEvalError::new("method calls not supported in const eval", span)),
-            Expr::Field { .. } => Err(ConstEvalError::new("field access not supported in const eval", span)),
-            Expr::Index { .. } => Err(ConstEvalError::new("index access not supported in const eval", span)),
-            Expr::Ref { .. } => Err(ConstEvalError::new("references not supported in const eval", span)),
-            Expr::Assign { .. } => Err(ConstEvalError::new("assignment not supported in const eval", span)),
-            Expr::Return { .. } => Err(ConstEvalError::new("return not supported in const eval", span)),
-            Expr::Break { .. } => Err(ConstEvalError::new("break not supported in const eval", span)),
-            Expr::Continue => Err(ConstEvalError::new("continue not supported in const eval", span)),
-            Expr::Closure { .. } => Err(ConstEvalError::new("closures not supported in const eval", span)),
-            Expr::Array(_) => Err(ConstEvalError::new("arrays not supported in const eval", span)),
-            Expr::Struct { .. } => Err(ConstEvalError::new("structs not supported in const eval", span)),
-            Expr::Range { .. } => Err(ConstEvalError::new("ranges not supported in const eval", span)),
-            Expr::Cast { .. } => Err(ConstEvalError::new("casts not supported in const eval", span)),
-            Expr::While { .. } => Err(ConstEvalError::new("while loops not supported in const eval", span)),
-            Expr::Loop { .. } => Err(ConstEvalError::new("loops not supported in const eval", span)),
-            Expr::For { .. } => Err(ConstEvalError::new("for loops not supported in const eval", span)),
+            Expr::Path(_) => Err(ConstEvalError::new(
+                "path expressions not yet supported in const eval",
+                span,
+            )),
+            Expr::Call { .. } => Err(ConstEvalError::new(
+                "function calls not supported in const eval",
+                span,
+            )),
+            Expr::MethodCall { .. } => Err(ConstEvalError::new(
+                "method calls not supported in const eval",
+                span,
+            )),
+            Expr::Field { .. } => Err(ConstEvalError::new(
+                "field access not supported in const eval",
+                span,
+            )),
+            Expr::Index { .. } => Err(ConstEvalError::new(
+                "index access not supported in const eval",
+                span,
+            )),
+            Expr::Ref { .. } => Err(ConstEvalError::new(
+                "references not supported in const eval",
+                span,
+            )),
+            Expr::Assign { .. } => Err(ConstEvalError::new(
+                "assignment not supported in const eval",
+                span,
+            )),
+            Expr::Return { .. } => Err(ConstEvalError::new(
+                "return not supported in const eval",
+                span,
+            )),
+            Expr::Break { .. } => Err(ConstEvalError::new(
+                "break not supported in const eval",
+                span,
+            )),
+            Expr::Continue => Err(ConstEvalError::new(
+                "continue not supported in const eval",
+                span,
+            )),
+            Expr::Closure { .. } => Err(ConstEvalError::new(
+                "closures not supported in const eval",
+                span,
+            )),
+            Expr::Array(_) => Err(ConstEvalError::new(
+                "arrays not supported in const eval",
+                span,
+            )),
+            Expr::Struct { .. } => Err(ConstEvalError::new(
+                "structs not supported in const eval",
+                span,
+            )),
+            Expr::Range { .. } => Err(ConstEvalError::new(
+                "ranges not supported in const eval",
+                span,
+            )),
+            Expr::Cast { .. } => Err(ConstEvalError::new(
+                "casts not supported in const eval",
+                span,
+            )),
+            Expr::While { .. } => Err(ConstEvalError::new(
+                "while loops not supported in const eval",
+                span,
+            )),
+            Expr::Loop { .. } => Err(ConstEvalError::new(
+                "loops not supported in const eval",
+                span,
+            )),
+            Expr::For { .. } => Err(ConstEvalError::new(
+                "for loops not supported in const eval",
+                span,
+            )),
         }
     }
 
@@ -559,15 +613,35 @@ impl<'a> ConstEvaluator<'a> {
             }
             Pat::Path(_) => Ok(false),
             Pat::Slice(_) => Ok(false),
-            Pat::Range { start, end, inclusive } => {
-                let start_val = if let Some(s) = start { self.eval_literal(s, Span::DUMMY)? } else { return Ok(false); };
-                let end_val = if let Some(e) = end { self.eval_literal(e, Span::DUMMY)? } else { return Ok(false); };
-
-                let ge_start = !self.compare_lt(value, &start_val, Span::DUMMY)?.as_bool().unwrap_or(false);
-                let le_end = if *inclusive {
-                    !self.compare_lt(&end_val, value, Span::DUMMY)?.as_bool().unwrap_or(false)
+            Pat::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                let start_val = if let Some(s) = start {
+                    self.eval_literal(s, Span::DUMMY)?
                 } else {
-                    self.compare_lt(value, &end_val, Span::DUMMY)?.as_bool().unwrap_or(false)
+                    return Ok(false);
+                };
+                let end_val = if let Some(e) = end {
+                    self.eval_literal(e, Span::DUMMY)?
+                } else {
+                    return Ok(false);
+                };
+
+                let ge_start = !self
+                    .compare_lt(value, &start_val, Span::DUMMY)?
+                    .as_bool()
+                    .unwrap_or(false);
+                let le_end = if *inclusive {
+                    !self
+                        .compare_lt(&end_val, value, Span::DUMMY)?
+                        .as_bool()
+                        .unwrap_or(false)
+                } else {
+                    self.compare_lt(value, &end_val, Span::DUMMY)?
+                        .as_bool()
+                        .unwrap_or(false)
                 };
                 Ok(ge_start && le_end)
             }

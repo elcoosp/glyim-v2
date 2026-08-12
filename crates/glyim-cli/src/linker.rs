@@ -21,13 +21,13 @@ pub fn invoke_linker(
     if cfg!(target_os = "windows") {
         // MSVC defaults
         cmd.arg(obj_path.as_os_str())
-           .arg("/OUT:")
-           .arg(output_path.as_os_str());
+            .arg("/OUT:")
+            .arg(output_path.as_os_str());
     } else {
         // GCC/Clang defaults
         cmd.arg(obj_path.as_os_str())
-           .arg("-o")
-           .arg(output_path.as_os_str());
+            .arg("-o")
+            .arg(output_path.as_os_str());
     }
 
     if let Some(flags) = link_flags {

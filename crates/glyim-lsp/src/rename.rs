@@ -119,6 +119,7 @@ pub fn rename_symbol(
     if edits.is_empty() {
         return None;
     }
+    #[allow(clippy::mutable_key_type)]
     let mut changes = HashMap::new();
     changes.insert(uri.clone(), edits);
     Some(WorkspaceEdit {

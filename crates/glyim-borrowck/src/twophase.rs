@@ -41,34 +41,32 @@ impl ReservationAnalysis {
             }
         };
 
-        let transfer = |block: BasicBlockIdx,
-                        start_idx: usize,
-                        start_current: bool|
-         -> (BitSet, bool) {
-            let num_stmts = stmt_counts[block.to_raw() as usize];
-            let mut bits = BitSet::with_capacity(num_stmts + 1);
-            let mut current = start_current;
-            if start_idx <= num_stmts {
-                for i in start_idx..num_stmts {
+        let transfer =
+            |block: BasicBlockIdx, start_idx: usize, start_current: bool| -> (BitSet, bool) {
+                let num_stmts = stmt_counts[block.to_raw() as usize];
+                let mut bits = BitSet::with_capacity(num_stmts + 1);
+                let mut current = start_current;
+                if start_idx <= num_stmts {
+                    for i in start_idx..num_stmts {
+                        if current {
+                            bits.insert(i);
+                        }
+                        let stmt = &body.basic_blocks[block].statements[i];
+                        let mut checker = LocalReadChecker::new(dest_local);
+                        if let StatementKind::Assign(_, rvalue) = &stmt.kind {
+                            walk_rvalue_reads(rvalue, &mut checker);
+                        }
+                        if checker.found() {
+                            current = false;
+                        }
+                    }
                     if current {
-                        bits.insert(i);
-                    }
-                    let stmt = &body.basic_blocks[block].statements[i];
-                    let mut checker = LocalReadChecker::new(dest_local);
-                    if let StatementKind::Assign(_, rvalue) = &stmt.kind {
-                        walk_rvalue_reads(rvalue, &mut checker);
-                    }
-                    if checker.found() {
-                        current = false;
+                        bits.insert(num_stmts);
                     }
                 }
-                if current {
-                    bits.insert(num_stmts);
-                }
-            }
-            let exit_state = current;
-            (bits, exit_state)
-        };
+                let exit_state = current;
+                (bits, exit_state)
+            };
 
         let block_data = &body.basic_blocks[loan_block];
         let start_point = loan_stmt + 1;

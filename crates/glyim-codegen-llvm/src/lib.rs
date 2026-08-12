@@ -42,7 +42,9 @@ impl LlvmBackend {
         Self {
             context: Context::create(),
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
-            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(default_ctx))))),
+            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(
+                default_ctx,
+            ))))),
             target_info,
             debug_info: false,
             source_map: HashMap::new(),
@@ -110,7 +112,9 @@ impl LlvmBackend {
         Self {
             context: Context::create(),
             target_triple: triple,
-            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(default_ctx))))),
+            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(
+                default_ctx,
+            ))))),
             target_info,
             debug_info: false,
             source_map: HashMap::new(),

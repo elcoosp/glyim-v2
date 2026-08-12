@@ -1180,7 +1180,7 @@ impl<'a> MirBuilder<'a> {
                 }
             }
             thir::PatternKind::ConstBlock(const_body) => {
-                match self.const_block_to_u128(&**const_body) {
+                match self.const_block_to_u128(const_body) {
                     Some(val) => targets.push((val, arm_bb)),
                     None => {
                         self.diagnostics.push(GlyimDiagnostic::type_error(

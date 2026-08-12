@@ -321,10 +321,10 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
         for stmt in &block.statements {
             if let StatementKind::Assign(place, rvalue) = &stmt.kind {
                 out.remove(&place.local);
-                if place.projection.is_empty() {
-                    if let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx) {
-                        out.insert(place.local, Some(c));
-                    }
+                if place.projection.is_empty()
+                    && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
+                {
+                    out.insert(place.local, Some(c));
                 }
             }
         }
@@ -360,11 +360,11 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 fn replace_operand(op: &mut Operand, locals: &BlockMap) -> bool {
     match op {
         Operand::Copy(place) | Operand::Move(place) => {
-            if place.projection.is_empty() {
-                if let Some(Some(c)) = locals.get(&place.local) {
-                    *op = Operand::Constant(c.clone());
-                    return true;
-                }
+            if place.projection.is_empty()
+                && let Some(Some(c)) = locals.get(&place.local)
+            {
+                *op = Operand::Constant(c.clone());
+                return true;
             }
             false
         }

@@ -39,7 +39,7 @@ impl TyCtx {
     }
 
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
-        if sub.len() == 0 {
+        if sub.is_empty() {
             return &[];
         }
         &self.substitution_data[sub.index() as usize]

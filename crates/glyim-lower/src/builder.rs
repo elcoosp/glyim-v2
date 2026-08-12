@@ -138,7 +138,6 @@ impl<'a> MirBuilder<'a> {
     }
 
     /// Lower a closure expression: generate its MIR body and return an aggregate.
-
     #[allow(dead_code)]
     pub(crate) fn lower_closure(
         &mut self,

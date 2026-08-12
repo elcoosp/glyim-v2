@@ -154,8 +154,10 @@ async fn wait_for_session(
             if status == "unknown" {
                 if unknown_start.is_none() {
                     unknown_start = Some(std::time::Instant::now());
-                } else if unknown_start.unwrap().elapsed() > Duration::from_secs(600) {
-                    anyhow::bail!("Session never started (status unknown for 10 minutes)");
+                } else if let Some(start) = unknown_start {
+                    if start.elapsed() > Duration::from_secs(600) {
+                        anyhow::bail!("Session never started (status unknown for 10 minutes)");
+                    }
                 }
             } else {
                 unknown_start = None;

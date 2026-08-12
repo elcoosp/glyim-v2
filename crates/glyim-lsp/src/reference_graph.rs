@@ -371,12 +371,12 @@ impl ReferenceGraph {
                 }
                 Expr::Return { value: None } => {}
                 Expr::Assign { lhs, rhs } => {
-                    if let Expr::Path(path) = &body.exprs[*lhs] {
-                        if let Some(name) = path.as_name() {
-                            let name_str = interner.resolve(name).to_string();
-                            eprintln!("ASSIGN LHS definition: {}", name_str);
-                            add_ref(&name_str, span, true, ReferenceKind::Variable);
-                        }
+                    if let Expr::Path(path) = &body.exprs[*lhs]
+                        && let Some(name) = path.as_name()
+                    {
+                        let name_str = interner.resolve(name).to_string();
+                        eprintln!("ASSIGN LHS definition: {}", name_str);
+                        add_ref(&name_str, span, true, ReferenceKind::Variable);
                     }
                     // Walk RHS only (not LHS to avoid duplicate use)
                     walk_expr(

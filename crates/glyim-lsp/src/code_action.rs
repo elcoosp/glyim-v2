@@ -82,6 +82,7 @@ pub fn provide_code_actions(
             kind: Some(CodeActionKind::QUICKFIX),
             edit: Some(WorkspaceEdit {
                 changes: Some({
+                    #[allow(clippy::mutable_key_type)]
                     let mut map = std::collections::HashMap::new();
                     map.insert(uri.clone(), vec![edit]);
                     map
