@@ -46,16 +46,12 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             if args.is_empty() {
                 return Ok(context.struct_type(&[], false).into());
             }
-            let mut field_types = Vec::with_capacity(args.len());
-            for arg in args {
-                if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t)?);
-                }
-            }
-            if field_types.is_empty() {
+            let layout_computer = glyim_layout::SimpleLayoutComputer::new(ctx, target_info.clone());
+            let layout = layout_computer.layout_of(ty).unwrap_or_else(|_| glyim_layout::Layout::unit());
+            if layout.size.0 == 0 {
                 return Ok(context.struct_type(&[], false).into());
             }
-            context.struct_type(&field_types, false).into()
+            opaque_sized_type(context, layout.size.0, layout.align.0)
         }
         TyKind::Array(elem, count) => {
             let elem_llvm = llvm_type_for_ty(ctx, target_info, context, *elem)?;
@@ -73,59 +69,27 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 .struct_type(&[ptr_ty.into(), len_ty.into()], false)
                 .into()
         }
-        TyKind::Adt(adt_id, _subst) => {
+        TyKind::Adt(_adt_id, _subst) => {
             let layout_computer = glyim_layout::SimpleLayoutComputer::new(ctx, target_info.clone());
             if let Ok(layout) = layout_computer.layout_of(ty) {
-                match &layout.variants {
-                    glyim_layout::VariantsShape::Single { .. } => {
-                        if let Some(adt_def) = ctx.adt_def(*adt_id) {
-                            if let Some(variant) = adt_def.variants.first() {
-                                if variant.fields.is_empty() {
-                                    return Ok(context.struct_type(&[], false).into());
-                                }
-                                let mut field_types = Vec::with_capacity(variant.fields.len());
-                                for field_def in variant.fields.iter() {
-                                    field_types.push(llvm_type_for_ty(
-                                        ctx,
-                                        target_info,
-                                        context,
-                                        field_def.ty,
-                                    )?);
-                                }
-                                return Ok(context.struct_type(&field_types, false).into());
-                            }
-                        }
-                        context.struct_type(&[], false).into()
-                    }
-                    glyim_layout::VariantsShape::Multiple { tag_size, .. } => {
-                        let tag_bits = (tag_size.0 * 8) as u32;
-                        let tag_ty = int_type(context, tag_bits.max(8));
-                        let payload_size = layout.size.0 - tag_size.0;
-                        let payload_ty = context.i8_type().array_type(payload_size as u32);
-                        context
-                            .struct_type(&[tag_ty.into(), payload_ty.into()], false)
-                            .into()
-                    }
+                if layout.size.0 == 0 {
+                    return Ok(context.struct_type(&[], false).into());
                 }
+                opaque_sized_type(context, layout.size.0, layout.align.0)
             } else {
                 context.struct_type(&[], false).into()
             }
         }
-        TyKind::Closure(_closure_id, subst) => {
-            let args = ctx.substitution_args(*subst);
-            if args.is_empty() {
-                return Ok(context.struct_type(&[], false).into());
-            }
-            let mut field_types = Vec::with_capacity(args.len());
-            for arg in args {
-                if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t)?);
+        TyKind::Closure(_closure_id, _subst) => {
+            let layout_computer = glyim_layout::SimpleLayoutComputer::new(ctx, target_info.clone());
+            if let Ok(layout) = layout_computer.layout_of(ty) {
+                if layout.size.0 == 0 {
+                    return Ok(context.struct_type(&[], false).into());
                 }
+                opaque_sized_type(context, layout.size.0, layout.align.0)
+            } else {
+                context.struct_type(&[], false).into()
             }
-            if field_types.is_empty() {
-                return Ok(context.struct_type(&[], false).into());
-            }
-            context.struct_type(&field_types, false).into()
         }
         TyKind::Dynamic(..) => {
             let ptr_ty = context.ptr_type(inkwell::AddressSpace::default());
@@ -133,21 +97,16 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 .struct_type(&[ptr_ty.into(), ptr_ty.into()], false)
                 .into()
         }
-        TyKind::Opaque(_, subst) => {
-            let args = ctx.substitution_args(*subst);
-            if args.is_empty() {
-                return Ok(context.struct_type(&[], false).into());
-            }
-            let mut field_types = Vec::with_capacity(args.len());
-            for arg in args {
-                if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t)?);
+        TyKind::Opaque(_, _subst) => {
+            let layout_computer = glyim_layout::SimpleLayoutComputer::new(ctx, target_info.clone());
+            if let Ok(layout) = layout_computer.layout_of(ty) {
+                if layout.size.0 == 0 {
+                    return Ok(context.struct_type(&[], false).into());
                 }
+                opaque_sized_type(context, layout.size.0, layout.align.0)
+            } else {
+                context.struct_type(&[], false).into()
             }
-            if field_types.is_empty() {
-                return Ok(context.struct_type(&[], false).into());
-            }
-            context.struct_type(&field_types, false).into()
         }
         TyKind::Projection(_) => {
             panic!("TyKind::Projection reached LLVM codegen – type normalization incomplete")
@@ -167,7 +126,55 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inkwell::context::Context;
+
+    #[test]
+    fn test_opaque_sized_type() {
+        let context = Context::create();
+        let ty = opaque_sized_type(&context, 24, 8);
+        assert!(ty.is_struct_type());
+        // We don't assert exact size here because StructType::size_of() can return None
+        // without a TargetData layout attached to the context.
+
+        let ty = opaque_sized_type(&context, 10, 4);
+        assert!(ty.is_struct_type());
+
+        let ty = opaque_sized_type(&context, 0, 1);
+        assert!(ty.is_struct_type());
+    }
+}
+
 fn int_type<'ctx>(context: &'ctx Context, bits: u32) -> IntType<'ctx> {
     let non_zero = NonZeroU32::new(bits).unwrap_or_else(|| NonZeroU32::new(64).unwrap());
     context.custom_width_int_type(non_zero).unwrap()
+}
+
+/// Creates an opaque LLVM type of exactly the given size and alignment.
+/// This is used for aggregate types (structs, tuples, enums) where the internal
+/// LLVM struct layout might not match the compiler's layout due to padding.
+/// By using an opaque block of the correct size and alignment, we can safely
+/// use byte-offset GEPs to access fields, matching the behavior of `build_layout_aggregate`.
+pub(crate) fn opaque_sized_type<'ctx>(context: &'ctx Context, size: u64, align: u64) -> BasicTypeEnum<'ctx> {
+    let align = align.max(1);
+    let align_ty: BasicTypeEnum<'ctx> = match align {
+        1 => context.i8_type().into(),
+        2 => context.i16_type().into(),
+        4 => context.i32_type().into(),
+        8 => context.i64_type().into(),
+        16 => context.struct_type(&[context.i64_type().into(), context.i64_type().into()], false).into(),
+        _ => {
+            // Fallback to i8 array, alignment might be wrong but at least size is correct
+            return context.i8_type().array_type(size as u32).into();
+        }
+    };
+    let num_elems = size / align;
+    let remainder = size % align;
+    let mut fields: Vec<BasicTypeEnum<'ctx>> = vec![align_ty.array_type(num_elems as u32).into()];
+    if remainder > 0 {
+        fields.push(context.i8_type().array_type(remainder as u32).into());
+    }
+    context.struct_type(&fields, false).into()
 }

@@ -772,17 +772,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         Ok(agg.as_basic_value_enum())
                     }
                     AggregateKind::Tuple => {
-                        let llvm_tys: Vec<_> = vals.iter().map(|v| v.get_type()).collect();
-                        let struct_ty = self.context.struct_type(&llvm_tys, false);
-                        let mut agg: inkwell::values::AggregateValueEnum<'ctx> =
-                            struct_ty.const_zero().into();
-                        for (i, val) in vals.into_iter().enumerate() {
-                            agg = self
-                                .builder
-                                .build_insert_value(agg, val, i as u32, "tuple_insert")
-                                .expect("insert value failed");
-                        }
-                        Ok(agg.as_basic_value_enum())
+                        self.build_layout_aggregate(expected_ty, None, &vals)
                     }
                     AggregateKind::Adt(_adt_id, variant, _substs) => {
                         self.build_layout_aggregate(expected_ty, Some(*variant), &vals)

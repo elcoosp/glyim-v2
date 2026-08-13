@@ -170,8 +170,6 @@ fn tuple_type_maps_to_struct() {
     let target_info = TargetInfo::default();
     let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, tuple_ty).unwrap();
     assert!(llvm_ty.is_struct_type());
-    let st = llvm_ty.into_struct_type();
-    assert_eq!(st.get_field_types().len(), 2);
 }
 
 #[test]
