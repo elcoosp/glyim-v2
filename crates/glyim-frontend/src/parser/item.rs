@@ -769,6 +769,16 @@ impl<'a> Parser<'a> {
             self.bump(); // *
         }
 
+        // Handle alias `as`
+        if self.current_kind() == SyntaxKind::KwAs {
+            self.bump(); // as
+            if self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Underscore {
+                self.bump();
+            } else {
+                self.error("expected identifier or `_` after `as`");
+            }
+        }
+
         // Handle nested imports `{a, b, c}`
         if self.current_kind() == SyntaxKind::LBrace {
             self.bump(); // {

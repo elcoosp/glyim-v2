@@ -260,6 +260,22 @@ fn import_all_public_for_modules(
     }
 }
 
+/// Extracts an alias from a `use foo as bar;` declaration.
+/// Returns `Some(Name)` for `as bar`, `Some(_)` for `as _`, and `None` if no alias is present.
+fn extract_alias_from_use_tree(node: &SyntaxNode, interner: &Interner) -> Option<Name> {
+    let mut found_as = false;
+    for elem in node.children_with_tokens() {
+        if let Some(token) = elem.as_token() {
+            if token.kind() == SyntaxKind::KwAs {
+                found_as = true;
+            } else if found_as && token.kind() == SyntaxKind::Ident {
+                return Some(interner.intern(token.text()));
+            }
+        }
+    }
+    None
+}
+
 /// Extract a `Path` from a syntax node (UseTree or PathExpr).
 fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Path> {
     let mut segments: Vec<PathSegment> = Vec::new();
@@ -428,20 +444,22 @@ fn process_use_tree(
                         if let (Some(base_mod), Some(inner_p)) = (base_module, inner_path)
                             && inner_p.segments.len() == 1
                         {
-                            let name = inner_p.segments[0].name;
+                            let orig_name = inner_p.segments[0].name;
+                            let inner_alias = extract_alias_from_use_tree(&child, interner);
+                            let bind_name = inner_alias.unwrap_or(orig_name);
 
                             // Handle submodule import (e.g. `use std::io::{self, Read}` => `io` itself)
                             if let Some(child_mod_id) = modules[base_mod]
                                 .children
                                 .iter()
-                                .find(|(n, _)| *n == name)
+                                .find(|(n, _)| *n == orig_name)
                                 .map(|(_, id)| *id)
                             {
                                 let module_data = &modules[child_mod_id];
                                 let def_id = module_data.def_id;
                                 let vis = module_data.visibility;
                                 modules[parent_module].scope.declare(
-                                    name,
+                                    bind_name,
                                     def_id,
                                     vis,
                                     node_span(&child),
@@ -455,7 +473,7 @@ fn process_use_tree(
 
                             if let Some((id, vis)) = per_ns.types {
                                 modules[parent_module].scope.declare(
-                                    name,
+                                    bind_name,
                                     id,
                                     vis,
                                     node_span(&child),
@@ -464,7 +482,7 @@ fn process_use_tree(
                             }
                             if let Some((id, vis)) = per_ns.values {
                                 modules[parent_module].scope.declare(
-                                    name,
+                                    bind_name,
                                     id,
                                     vis,
                                     node_span(&child),
@@ -483,12 +501,15 @@ fn process_use_tree(
     if let Some(path_node) = use_path_node {
         let path = extract_path_from_syntax(&path_node, interner);
         if let Some(path) = path {
+            let alias = extract_alias_from_use_tree(node, interner);
+
             // NEW: Handle module import (e.g. `use std::io;` where `io` is a module)
             if let Some(mod_id) = resolve_module_path_for_modules(modules, parent_module, &path) {
                 let module_data = &modules[mod_id];
                 let def_id = module_data.def_id;
                 let vis = module_data.visibility;
-                if let Some(name) = path.segments.last().map(|s| s.name) {
+                let name = alias.or_else(|| path.segments.last().map(|s| s.name));
+                if let Some(name) = name {
                     modules[parent_module].scope.declare(
                         name,
                         def_id,
@@ -503,7 +524,7 @@ fn process_use_tree(
             let resolver = Resolver::new(modules, ModuleId::from_raw(0), parent_module);
             let per_ns = resolver.resolve_path(&path);
 
-            let name = path.segments.last().map(|s| s.name);
+            let name = alias.or_else(|| path.segments.last().map(|s| s.name));
 
             if let Some(name) = name {
                 if let Some((id, vis)) = per_ns.types {

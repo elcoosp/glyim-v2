@@ -29,10 +29,12 @@ mod tests {
         let mut src = tempfile::NamedTempFile::new().expect("create temp file");
         write!(src, "fn main() {{ }}").expect("write source");
         let src_path = src.path().to_path_buf();
-        let output = PathBuf::from("test_output.mir");
+        let output = src_path.with_extension("mir");
+        let _ = std::fs::remove_file(&output);
+
         let args = CliArgs {
-            input: src_path,
-            output: Some(output.clone()),
+            input: src_path.clone(),
+            output: None, // Use default output path
             emit: "mir".to_string(),
             opt_level: 0,
             target: None,
@@ -41,8 +43,8 @@ mod tests {
             link_flags: None,
         };
         let result = run_with_args(args);
-        assert!(result.is_ok());
-        assert!(output.exists());
+        assert!(result.is_ok(), "emit_mir failed: {:?}", result.err());
+        assert!(output.exists(), "MIR file was not written to {:?}", output);
         std::fs::remove_file(&output).ok();
     }
 
