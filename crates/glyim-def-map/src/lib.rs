@@ -386,12 +386,13 @@ fn process_use_decl(
     parent_module: ModuleId,
     modules: &mut IndexVec<ModuleId, ModuleData>,
     interner: &Interner,
+    use_vis: Visibility,
 ) {
     let use_tree = match node.children().find(|n| n.kind() == SyntaxKind::UseTree) {
         Some(t) => t,
         None => return,
     };
-    process_use_tree(&use_tree, parent_module, modules, interner);
+    process_use_tree(&use_tree, parent_module, modules, interner, use_vis);
 }
 
 fn process_use_tree(
@@ -399,6 +400,7 @@ fn process_use_tree(
     parent_module: ModuleId,
     modules: &mut IndexVec<ModuleId, ModuleData>,
     interner: &Interner,
+    use_vis: Visibility,
 ) {
     // Check all children (nodes and tokens) for special markers
     let has_glob = node
@@ -457,11 +459,10 @@ fn process_use_tree(
                             {
                                 let module_data = &modules[child_mod_id];
                                 let def_id = module_data.def_id;
-                                let vis = module_data.visibility.clone();
                                 modules[parent_module].scope.declare(
                                     bind_name,
                                     def_id,
-                                    vis,
+                                    use_vis.clone(),
                                     node_span(&child),
                                     Namespace::Types,
                                 );
@@ -471,20 +472,20 @@ fn process_use_tree(
                             let resolver = Resolver::new(modules, ModuleId::from_raw(0), base_mod);
                             let per_ns = resolver.resolve_path(&inner_p);
 
-                            if let Some((id, vis)) = per_ns.types {
+                            if let Some((id, _)) = per_ns.types {
                                 modules[parent_module].scope.declare(
                                     bind_name,
                                     id,
-                                    vis,
+                                    use_vis.clone(),
                                     node_span(&child),
                                     Namespace::Types,
                                 );
                             }
-                            if let Some((id, vis)) = per_ns.values {
+                            if let Some((id, _)) = per_ns.values {
                                 modules[parent_module].scope.declare(
                                     bind_name,
                                     id,
-                                    vis,
+                                    use_vis.clone(),
                                     node_span(&child),
                                     Namespace::Values,
                                 );
@@ -507,13 +508,12 @@ fn process_use_tree(
             if let Some(mod_id) = resolve_module_path_for_modules(modules, parent_module, &path) {
                 let module_data = &modules[mod_id];
                 let def_id = module_data.def_id;
-                let vis = module_data.visibility.clone();
                 let name = alias.or_else(|| path.segments.last().map(|s| s.name));
                 if let Some(name) = name {
                     modules[parent_module].scope.declare(
                         name,
                         def_id,
-                        vis,
+                        use_vis.clone(),
                         node_span(node),
                         Namespace::Types,
                     );
@@ -527,29 +527,29 @@ fn process_use_tree(
             let name = alias.or_else(|| path.segments.last().map(|s| s.name));
 
             if let Some(name) = name {
-                if let Some((id, vis)) = per_ns.types {
+                if let Some((id, _)) = per_ns.types {
                     modules[parent_module].scope.declare(
                         name,
                         id,
-                        vis,
+                        use_vis.clone(),
                         node_span(node),
                         Namespace::Types,
                     );
                 }
-                if let Some((id, vis)) = per_ns.values {
+                if let Some((id, _)) = per_ns.values {
                     modules[parent_module].scope.declare(
                         name,
                         id,
-                        vis,
+                        use_vis.clone(),
                         node_span(node),
                         Namespace::Values,
                     );
                 }
-                if let Some((id, vis)) = per_ns.macros {
+                if let Some((id, _)) = per_ns.macros {
                     modules[parent_module].scope.declare(
                         name,
                         id,
-                        vis,
+                        use_vis.clone(),
                         node_span(node),
                         Namespace::Macros,
                     );
@@ -661,7 +661,8 @@ fn collect_items(
             }
 
             SyntaxKind::UseDecl => {
-                process_use_decl(&child, parent_module, modules, interner);
+                let vis = visibility_of_node(&child, interner);
+                process_use_decl(&child, parent_module, modules, interner, vis);
             }
 
             // Other syntax kinds (comments, expressions inside blocks, etc.) are

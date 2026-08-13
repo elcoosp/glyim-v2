@@ -37,7 +37,8 @@ fn u08_t01_std_io_read_imports_read() {
     assert!(resolved.is_some(), "Read should be in root scope");
 
     let (_id, vis) = resolved.unwrap();
-    assert_eq!(vis, Visibility::Public, "Read should be public");
+    // `use std::io::Read;` without `pub` makes the binding private (Inherited)
+    assert_eq!(vis, Visibility::Inherited, "Read should be inherited (private) by default use");
 }
 
 #[test]
