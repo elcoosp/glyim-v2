@@ -686,10 +686,30 @@ fn extract_module_name(module_node: &SyntaxNode) -> String {
 
 /// Extract the name of an item (e.g., function, struct) from its syntax node.
 /// For `ImplDef`, we generate a synthetic unique name because impls have no inherent name.
+/// For `ExternBlock` (used for `extern crate`), handle `as` aliasing.
 fn extract_ident(node: &SyntaxNode) -> String {
     if node.kind() == SyntaxKind::ImplDef {
         let offset = u32::from(node.text_range().start());
         return format!("__impl_{}", offset);
+    }
+    if node.kind() == SyntaxKind::ExternBlock {
+        let mut found_as = false;
+        let mut last_ident = None;
+        for child in node.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                if token.kind() == SyntaxKind::KwAs {
+                    found_as = true;
+                } else if token.kind() == SyntaxKind::Ident {
+                    last_ident = Some(token.text().to_string());
+                    if found_as {
+                        return last_ident.unwrap();
+                    }
+                }
+            }
+        }
+        if let Some(name) = last_ident {
+            return name;
+        }
     }
     for child in node.children_with_tokens() {
         if let Some(token) = child.as_token()

@@ -104,7 +104,14 @@ impl<'a> Parser<'a> {
                 if self.current_kind() == SyntaxKind::StringLit {
                     self.bump(); // ABI string
                 }
-                if self.current_kind() == SyntaxKind::LBrace {
+                if self.current_kind() == SyntaxKind::KwCrate {
+                    self.bump(); // crate
+                    self.bump_expected(SyntaxKind::Ident); // crate name
+                    if self.current_kind() == SyntaxKind::KwAs {
+                        self.bump(); // as
+                        self.bump_expected(SyntaxKind::Ident); // alias
+                    }
+                } else if self.current_kind() == SyntaxKind::LBrace {
                     self.bump(); // {
                     while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
                         match self.current_kind() {
