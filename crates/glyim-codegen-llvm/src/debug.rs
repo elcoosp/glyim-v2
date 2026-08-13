@@ -407,10 +407,17 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         }
         let file_id = span.file;
         let (_path, source) = self.source_map.get(&file_id)?;
-        let offset: usize = span.lo.to_usize();
-        if offset >= source.len() {
+        let mut offset: usize = span.lo.to_usize();
+
+        if offset > source.len() {
             return None;
         }
+
+        // Walk backward to the nearest UTF-8 character boundary
+        while offset > 0 && !source.is_char_boundary(offset) {
+            offset -= 1;
+        }
+
         let prefix = &source[..offset];
         let line = prefix.matches('\n').count() as u32 + 1;
         let last_line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
