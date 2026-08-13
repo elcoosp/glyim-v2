@@ -77,6 +77,11 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         }
     };
 
+    let target_triple = args
+        .target
+        .clone()
+        .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string());
+
     let config = CrateConfig {
         name: args
             .input
@@ -84,10 +89,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             .unwrap_or_default()
             .to_string_lossy()
             .to_string(),
-        target_triple: args
-            .target
-            .clone()
-            .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string()),
+        target_triple: target_triple.clone(),
         opt_level: args.opt_level,
     };
 
@@ -101,14 +103,20 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
     }
 
     // For obj and exec, compile to object
+    let target_info = glyim_core::TargetInfo::from_triple(&target_triple);
     let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
         let ctx = glyim_type::TyCtxMut::new(db.interner().clone()).freeze();
         Box::new(BytecodeBackend::with_ty_ctx(
             std::sync::Arc::new(ctx),
-            glyim_core::TargetInfo::default(),
+            target_info,
         ))
     } else {
-        Box::new(LlvmBackend::with_db(&db))
+        Box::new(
+            LlvmBackend::with_db(&db)
+                .with_target(&target_triple)
+                .with_opt_level(args.opt_level)
+                .with_opt_for_size(false)
+        )
     };
 
     Pipeline::compile_file(&mut db, input, &*backend, &object_path)?;

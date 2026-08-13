@@ -1,21 +1,22 @@
 use glyim_core::primitives::TargetInfo;
+use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_layout::LayoutComputer;
 use glyim_type::{Ty, TyCtx, TyKind};
 use inkwell::context::Context;
 use inkwell::types::{BasicType, BasicTypeEnum, IntType};
 use std::num::NonZeroU32;
+
 pub(crate) fn llvm_type_for_ty<'ctx>(
     ctx: &TyCtx,
     target_info: &TargetInfo,
     context: &'ctx Context,
     ty: Ty,
-) -> BasicTypeEnum<'ctx> {
-    match ctx.ty_kind(ty) {
+) -> CompResult<BasicTypeEnum<'ctx>> {
+    Ok(match ctx.ty_kind(ty) {
         TyKind::Error => {
-            // Error types can appear in MIR during partial compilation or test fixtures.
-            // Fall back to i64 to allow codegen to proceed; the program is already ill-typed.
-            tracing::warn!("TyKind::Error lowered to i64");
-            int_type(context, 64).into()
+            return Err(vec![GlyimDiagnostic::internal_error(
+                "Attempted to lower TyKind::Error to LLVM. Type checking failed to resolve this type.",
+            )]);
         }
         TyKind::Never | TyKind::Unit => context.struct_type(&[], false).into(),
         TyKind::Bool => int_type(context, 1).into(),
@@ -43,21 +44,21 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
         TyKind::Tuple(subst) => {
             let args = ctx.substitution_args(*subst);
             if args.is_empty() {
-                return context.struct_type(&[], false).into();
+                return Ok(context.struct_type(&[], false).into());
             }
             let mut field_types = Vec::with_capacity(args.len());
             for arg in args {
                 if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t));
+                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t)?);
                 }
             }
             if field_types.is_empty() {
-                return context.struct_type(&[], false).into();
+                return Ok(context.struct_type(&[], false).into());
             }
             context.struct_type(&field_types, false).into()
         }
         TyKind::Array(elem, count) => {
-            let elem_llvm = llvm_type_for_ty(ctx, target_info, context, *elem);
+            let elem_llvm = llvm_type_for_ty(ctx, target_info, context, *elem)?;
             let n = match &count.kind {
                 glyim_type::ConstKind::Uint(n) => *n as u32,
                 glyim_type::ConstKind::Int(n) => *n as u32,
@@ -80,7 +81,7 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                         if let Some(adt_def) = ctx.adt_def(*adt_id) {
                             if let Some(variant) = adt_def.variants.first() {
                                 if variant.fields.is_empty() {
-                                    return context.struct_type(&[], false).into();
+                                    return Ok(context.struct_type(&[], false).into());
                                 }
                                 let mut field_types = Vec::with_capacity(variant.fields.len());
                                 for field_def in variant.fields.iter() {
@@ -89,9 +90,9 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                                         target_info,
                                         context,
                                         field_def.ty,
-                                    ));
+                                    )?);
                                 }
-                                return context.struct_type(&field_types, false).into();
+                                return Ok(context.struct_type(&field_types, false).into());
                             }
                         }
                         context.struct_type(&[], false).into()
@@ -113,21 +114,20 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
         TyKind::Closure(_closure_id, subst) => {
             let args = ctx.substitution_args(*subst);
             if args.is_empty() {
-                return context.struct_type(&[], false).into();
+                return Ok(context.struct_type(&[], false).into());
             }
             let mut field_types = Vec::with_capacity(args.len());
             for arg in args {
                 if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t));
+                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t)?);
                 }
             }
             if field_types.is_empty() {
-                return context.struct_type(&[], false).into();
+                return Ok(context.struct_type(&[], false).into());
             }
             context.struct_type(&field_types, false).into()
         }
         TyKind::Dynamic(..) => {
-            // Trait object fat pointer: { data: *T, vtable: *const VTable }
             let ptr_ty = context.ptr_type(inkwell::AddressSpace::default());
             context
                 .struct_type(&[ptr_ty.into(), ptr_ty.into()], false)
@@ -136,16 +136,16 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
         TyKind::Opaque(_, subst) => {
             let args = ctx.substitution_args(*subst);
             if args.is_empty() {
-                return context.struct_type(&[], false).into();
+                return Ok(context.struct_type(&[], false).into());
             }
             let mut field_types = Vec::with_capacity(args.len());
             for arg in args {
                 if let glyim_type::GenericArg::Ty(t) = arg {
-                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t));
+                    field_types.push(llvm_type_for_ty(ctx, target_info, context, *t)?);
                 }
             }
             if field_types.is_empty() {
-                return context.struct_type(&[], false).into();
+                return Ok(context.struct_type(&[], false).into());
             }
             context.struct_type(&field_types, false).into()
         }
@@ -164,7 +164,7 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             "TyKind::Infer({:?}) reached LLVM codegen – type inference incomplete",
             var
         ),
-    }
+    })
 }
 
 fn int_type<'ctx>(context: &'ctx Context, bits: u32) -> IntType<'ctx> {

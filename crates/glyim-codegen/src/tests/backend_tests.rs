@@ -1,6 +1,7 @@
 use crate::{
     BytecodeBackend, CodegenBackend, OP_ADD, OP_DEREF, OP_DROP, OP_JUMP, OP_JUMP_IF, OP_LOAD_CONST,
     OP_LOAD_LOCAL, OP_LOAD_LOCAL_ADDR, OP_REPEAT, OP_RETURN, OP_STORE_FIELD, OP_STORE_LOCAL,
+    OP_TRAP,
 };
 use glyim_core::{
     IndexVec,
@@ -302,7 +303,7 @@ fn t08_unreachable_emits_nothing() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    assert!(bytecode.is_empty());
+    assert_eq!(bytecode, vec![OP_TRAP]);
 }
 
 // ============================================================================
@@ -2112,10 +2113,10 @@ fn t68_many_locals_stress_test() {
 }
 
 // ============================================================================
-// S07-T69: Block with no Return terminator (Unreachable) yields empty bytecode
+// S07-T69: Block with no Return terminator (Unreachable) yields OP_TRAP
 // ============================================================================
 #[test]
-fn t69_unreachable_block_yields_empty() {
+fn t69_unreachable_block_yields_trap() {
     let body = make_body(
         vec![block(vec![], term(TerminatorKind::Unreachable))],
         vec![],
@@ -2126,7 +2127,7 @@ fn t69_unreachable_block_yields_empty() {
         glyim_core::TargetInfo::default(),
     );
     let bc = backend.generate_function(&body).unwrap();
-    assert!(bc.is_empty());
+    assert_eq!(bc, vec![OP_TRAP]);
 }
 
 // ============================================================================
@@ -2507,7 +2508,7 @@ fn t78_generate_mixed_empty_and_nonempty() {
     );
     let bc_empty = backend.generate_function(&empty_body).unwrap();
     let bc_nonempty = backend.generate_function(&body_nonempty).unwrap();
-    assert!(bc_empty.is_empty());
+    assert_eq!(bc_empty, vec![OP_TRAP]);
     assert_eq!(bc_nonempty.len(), 15);
 }
 

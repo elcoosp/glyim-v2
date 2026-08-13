@@ -67,7 +67,7 @@ fn s08_t06_generate_function_with_body() {
 
 #[test]
 fn s08_t07_with_target_constructor() {
-    let backend = LlvmBackend::with_target("aarch64-unknown-linux-gnu");
+    let backend = LlvmBackend::default().with_target("aarch64-unknown-linux-gnu");
     assert_eq!(backend.name(), "llvm");
     // Verify it doesn't crash on generate
     let output = std::path::Path::new("/tmp/glyim_test_aarch64.o");
@@ -213,7 +213,7 @@ fn s08_t15_generate_function_different_owners() {
 #[test]
 fn s08_t16_generate_with_invalid_triple() {
     // This test verifies that an invalid triple produces an error, not a panic.
-    let backend = LlvmBackend::with_target("nonexistent-unknown-unknown");
+    let backend = LlvmBackend::default().with_target("nonexistent-unknown-unknown");
     let output = std::path::Path::new("/tmp/glyim_test_invalid_triple.o");
     let bodies: Vec<std::sync::Arc<glyim_mir::Body>> = vec![];
     let result = backend.generate(&bodies, output);
@@ -335,10 +335,10 @@ fn s08_t28_different_owners_produce_different_output() {
 
 #[test]
 fn s08_t29_name_after_with_target() {
-    let backend = LlvmBackend::with_target("x86_64-unknown-linux-gnu");
+    let backend = LlvmBackend::default().with_target("x86_64-unknown-linux-gnu");
     assert_eq!(backend.name(), "llvm");
     // Also test after another target
-    let backend2 = LlvmBackend::with_target("wasm32-unknown-unknown");
+    let backend2 = LlvmBackend::default().with_target("wasm32-unknown-unknown");
     assert_eq!(backend2.name(), "llvm");
 }
 
@@ -378,7 +378,7 @@ fn s08_t31_multiple_backends_independent() {
 
 #[test]
 fn s08_t32_wasm_triple_produces_wasm_object() {
-    let backend = LlvmBackend::with_target("wasm32-unknown-unknown");
+    let backend = LlvmBackend::default().with_target("wasm32-unknown-unknown");
     let output = std::path::Path::new("/tmp/glyim_test_wasm.o");
     let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
         glyim_core::CrateId::from_raw(0),
@@ -441,7 +441,7 @@ fn s08_t34_codegen_backend_trait_object_safe() {
 #[test]
 fn s08_t35_with_target_empty_string() {
     // Empty target triple should not panic, but likely cause error on generate.
-    let backend = LlvmBackend::with_target("");
+    let backend = LlvmBackend::default().with_target("");
     assert_eq!(backend.name(), "llvm");
     let output = std::path::Path::new("/tmp/glyim_test_empty_triple.o");
     let bodies: Vec<std::sync::Arc<glyim_mir::Body>> = vec![];

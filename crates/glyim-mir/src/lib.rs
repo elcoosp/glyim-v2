@@ -347,7 +347,7 @@ impl Body {
 
         let mut locals = IndexVec::new();
         locals.push(LocalDecl {
-            ty: Ty::ERROR,
+            ty: Ty::UNIT,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(Span::DUMMY),
         });
@@ -357,7 +357,7 @@ impl Body {
             basic_blocks,
             locals,
             arg_count: 0,
-            return_ty: Ty::ERROR,
+            return_ty: Ty::UNIT,
             span: Span::DUMMY,
             var_debug_info: Vec::new(),
         }

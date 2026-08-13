@@ -6,13 +6,16 @@ use glyim_type::*;
 use inkwell::context::Context;
 
 #[test]
-fn error_type_maps_to_i64() {
+fn error_type_maps_to_err() {
     let ctx = test_frozen_ty_ctx();
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::ERROR);
-    assert!(llvm_ty.is_int_type(), "Error type should map to int type");
-    assert_eq!(llvm_ty.into_int_type().get_bit_width(), 64);
+    let result = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::ERROR);
+    assert!(result.is_err(), "Error type should result in an Err");
+    let errs = result.unwrap_err();
+    assert_eq!(errs.len(), 1);
+    assert_eq!(errs[0].code.category, glyim_diag::ErrorCategory::Internal);
+    assert!(errs[0].message.contains("TyKind::Error"));
 }
 
 #[test]
@@ -20,7 +23,7 @@ fn never_type_maps_to_empty_struct() {
     let ctx = test_frozen_ty_ctx();
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::NEVER);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::NEVER).unwrap();
     assert!(
         llvm_ty.is_struct_type(),
         "Never type should map to struct type"
@@ -33,7 +36,7 @@ fn unit_type_maps_to_empty_struct() {
     let ctx = test_frozen_ty_ctx();
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::UNIT);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::UNIT).unwrap();
     assert!(
         llvm_ty.is_struct_type(),
         "Unit type should map to struct type"
@@ -46,7 +49,7 @@ fn bool_type_maps_to_i1() {
     let ctx = test_frozen_ty_ctx();
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::BOOL);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, Ty::BOOL).unwrap();
     assert!(llvm_ty.is_int_type());
     assert_eq!(llvm_ty.into_int_type().get_bit_width(), 1);
 }
@@ -56,7 +59,7 @@ fn i32_type_maps_to_i32() {
     let (ctx, i32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Int(IntTy::I32)));
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, i32_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, i32_ty).unwrap();
     assert!(llvm_ty.is_int_type());
     assert_eq!(llvm_ty.into_int_type().get_bit_width(), 32);
 }
@@ -66,7 +69,7 @@ fn u8_type_maps_to_i8() {
     let (ctx, u8_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Uint(UintTy::U8)));
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, u8_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, u8_ty).unwrap();
     assert!(llvm_ty.is_int_type());
     assert_eq!(llvm_ty.into_int_type().get_bit_width(), 8);
 }
@@ -76,7 +79,7 @@ fn float_f32_maps_to_f32() {
     let (ctx, f32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Float(FloatTy::F32)));
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, f32_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, f32_ty).unwrap();
     assert!(llvm_ty.is_float_type(), "F32 type should map to float type");
 }
 
@@ -85,7 +88,7 @@ fn float_f64_maps_to_f64() {
     let (ctx, f64_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Float(FloatTy::F64)));
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, f64_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, f64_ty).unwrap();
     assert!(llvm_ty.is_float_type(), "F64 type should map to float type");
 }
 
@@ -94,7 +97,7 @@ fn char_type_maps_to_i32() {
     let (ctx, char_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::Char));
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, char_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, char_ty).unwrap();
     assert!(llvm_ty.is_int_type());
     assert_eq!(llvm_ty.into_int_type().get_bit_width(), 32);
 }
@@ -104,7 +107,7 @@ fn string_type_maps_to_ptr() {
     let (ctx, string_ty) = with_fresh_ty_ctx(|c| c.mk_ty(TyKind::String));
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, string_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, string_ty).unwrap();
     assert!(
         llvm_ty.is_struct_type(),
         "String type should map to fat pointer struct"
@@ -119,7 +122,7 @@ fn ref_type_maps_to_ptr() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, ref_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, ref_ty).unwrap();
     assert!(llvm_ty.is_pointer_type());
 }
 
@@ -131,7 +134,7 @@ fn raw_ptr_type_maps_to_ptr() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, ptr_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, ptr_ty).unwrap();
     assert!(llvm_ty.is_pointer_type());
 }
 
@@ -151,7 +154,7 @@ fn fn_ptr_type_maps_to_ptr() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, fn_ptr_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, fn_ptr_ty).unwrap();
     assert!(llvm_ty.is_pointer_type());
 }
 
@@ -165,7 +168,7 @@ fn tuple_type_maps_to_struct() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, tuple_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, tuple_ty).unwrap();
     assert!(llvm_ty.is_struct_type());
     let st = llvm_ty.into_struct_type();
     assert_eq!(st.get_field_types().len(), 2);
@@ -179,7 +182,7 @@ fn empty_tuple_maps_to_empty_struct() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, et);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, et).unwrap();
     assert!(llvm_ty.is_struct_type());
     assert_eq!(llvm_ty.into_struct_type().get_field_types().len(), 0);
 }
@@ -196,7 +199,7 @@ fn array_type_maps_to_llvm_array() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, array_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, array_ty).unwrap();
     assert!(
         llvm_ty.is_array_type(),
         "Array type should map to LLVM array type"
@@ -211,7 +214,7 @@ fn slice_type_maps_to_fat_ptr() {
     });
     let context = Context::create();
     let target_info = TargetInfo::default();
-    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, slice_ty);
+    let llvm_ty = crate::types::llvm_type_for_ty(&ctx, &target_info, &context, slice_ty).unwrap();
     assert!(
         llvm_ty.is_struct_type(),
         "Slice should map to struct (fat pointer)"

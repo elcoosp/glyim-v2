@@ -48,7 +48,7 @@ struct LoweringCtx<'ctx, 'a> {
     /// lowered, if any. Set at the top of `lower_body`'s block loop (via
     /// `emit_landingpad`) and consulted by `TerminatorKind::Unreachable` to
     /// decide whether to emit `resume` instead of `unreachable`.
-    current_landingpad: Option<BasicValueEnum<'ctx>>, // <-- CHANGED FROM StructValue<'ctx>
+    current_landingpad: Option<BasicValueEnum<'ctx>>,
 }
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn llvm_int_type(&self, bits: u32) -> inkwell::types::IntType<'ctx> {
@@ -95,7 +95,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
 
     fn llvm_type_for_ty(&self, ty: Ty) -> inkwell::types::BasicTypeEnum<'ctx> {
-        llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty)
+        match llvm_type_for_ty(self.ty_ctx, &self.target_info, self.context, ty) {
+            Ok(t) => t,
+            Err(e) => panic!("Codegen error: {:?}", e),
+        }
     }
 
     fn set_debug_location(&self, span: Span) {
@@ -736,7 +739,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
             Rvalue::UnaryOp(op, operand) => {
                 let val = self.lower_operand(operand);
-                self.lower_unop(*op, val)
+                self.lower_unop(*op, operand, val)
             }
             Rvalue::Ref(place, _borrow_kind) => {
                 let ptr = self.place_ptr(place);
@@ -1772,7 +1775,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
         }
     }
-    fn lower_unop(&self, op: UnOp, val: BasicValueEnum<'ctx>) -> CompResult<BasicValueEnum<'ctx>> {
+    fn lower_unop(&self, op: UnOp, operand: &Operand, val: BasicValueEnum<'ctx>) -> CompResult<BasicValueEnum<'ctx>> {
         match op {
             UnOp::Not => {
                 if val.is_int_value() {
@@ -1819,11 +1822,21 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 }
             }
             UnOp::Deref => {
-                // If the operand is a pointer/reference, load it.
-                if val.is_pointer_value() {
-                    // We don't have the pointee type easily here without MIR type context.
-                    // Fallback: just return the pointer, it will be loaded by place_ptr if needed.
-                    Ok(val)
+                let ty = self.operand_ty(operand);
+                let inner_ty = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
+                    _ => Ty::ERROR,
+                };
+                if val.is_pointer_value() && inner_ty != Ty::ERROR {
+                    let llvm_ty = self.llvm_type_for_ty(inner_ty);
+                    self.builder
+                        .build_load(llvm_ty, val.into_pointer_value(), "deref_load")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "deref load failed: {:?}",
+                                e
+                            ))]
+                        })
                 } else {
                     Ok(val)
                 }
@@ -2238,16 +2251,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let cleanup_bb = cleanup.map(|c| *self.bb_map.get(&c).unwrap());
 
                 if needs_drop || is_owning {
-                    let drop_fn = self
-                        .module
-                        .get_function("glyim_drop_in_place")
-                        .unwrap_or_else(|| {
+                    let drop_fn = self.module.get_function("glyim_drop_in_place").unwrap_or_else(|| {
                             let fn_type = self.context.void_type().fn_type(
                                 &[self.context.ptr_type(AddressSpace::default()).into()],
                                 false,
                             );
-                            self.module
-                                .add_function("glyim_drop_in_place", fn_type, None)
+                            self.module.add_function("glyim_drop_in_place", fn_type, None)
                         });
 
                     let drop_arg = if matches!(
@@ -2475,13 +2484,56 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     llvm_args.push(tmp_ptr.as_basic_value_enum());
                 }
                 PassMode::Ignore => unreachable!(),
-                PassMode::Cast { .. }
-                | PassMode::HomogeneousAggregate { .. }
-                | PassMode::Split { .. } => {
-                    panic!(
-                        "PassMode::{:?} not yet implemented in lower_call",
-                        arg_abi.mode
-                    );
+                PassMode::Cast { .. } => {
+                    let layout = layout_computer.layout_of(arg_abi.ty).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "Layout error in Cast: {:?}",
+                            e
+                        ))]
+                    })?;
+                    let size_bits = layout.size.0 * 8;
+                    let cast_ty = self.llvm_int_type(size_bits as u32);
+                    let cast_ptr = self
+                        .builder
+                        .build_alloca(cast_ty, "arg_cast")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "alloca failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                    self.builder.build_store(cast_ptr, arg_val).map_err(|e| {
+                        vec![GlyimDiagnostic::internal_error(format!(
+                            "store failed: {:?}",
+                            e
+                        ))]
+                    })?;
+                    let casted_val = self
+                        .builder
+                        .build_load(cast_ty, cast_ptr, "arg_casted")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "load failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                    llvm_args.push(casted_val);
+                }
+                PassMode::HomogeneousAggregate { .. } | PassMode::Split { .. } => {
+                    let struct_val = arg_val.into_struct_value();
+                    let num_fields = struct_val.get_type().count_fields();
+                    for i in 0..num_fields {
+                        let field_val = self
+                            .builder
+                            .build_extract_value(struct_val, i, "agg_field")
+                            .map_err(|e| {
+                                vec![GlyimDiagnostic::internal_error(format!(
+                                    "extract failed: {:?}",
+                                    e
+                                ))]
+                            })?;
+                        llvm_args.push(field_val);
+                    }
                 }
             }
             arg_idx += 1;
@@ -2756,13 +2808,13 @@ pub(crate) fn lower_body<'ctx>(
         body.owner.krate.to_raw(),
         body.owner.local_id.to_raw()
     );
-    let ret_llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, body.return_ty);
+    let ret_llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, body.return_ty)?;
     let void_type = context.void_type();
     let mut param_types = Vec::new();
     for i in 1..=body.arg_count {
         let local_idx = LocalIdx::from_raw(i as u32);
         if let Some(local_decl) = body.locals.get(local_idx) {
-            let param_ty = llvm_type_for_ty(ty_ctx, &target_info, context, local_decl.ty);
+            let param_ty = llvm_type_for_ty(ty_ctx, &target_info, context, local_decl.ty)?;
             param_types.push(param_ty.into());
         }
     }

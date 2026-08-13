@@ -6,20 +6,26 @@ pub struct TargetInfo {
 }
 
 impl TargetInfo {
-    pub fn aarch64() -> Self {
+    pub fn from_triple(triple: &str) -> Self {
+        let pointer_width = if triple.contains("64") { 64 } else { 32 };
+        let abi = if triple.starts_with("aarch64") {
+            TargetAbi::AArch64AAPCS
+        } else {
+            TargetAbi::X86_64SystemV
+        };
         Self {
-            pointer_width: 64,
-            triple: "aarch64-unknown-linux-gnu".to_string(),
-            abi: TargetAbi::AArch64AAPCS,
+            pointer_width,
+            triple: triple.to_string(),
+            abi,
         }
     }
 
+    pub fn aarch64() -> Self {
+        Self::from_triple("aarch64-unknown-linux-gnu")
+    }
+
     pub fn x86_64() -> Self {
-        Self {
-            pointer_width: 64,
-            triple: "x86_64-unknown-linux-gnu".to_string(),
-            abi: TargetAbi::X86_64SystemV,
-        }
+        Self::from_triple("x86_64-unknown-linux-gnu")
     }
     pub fn pointer_width(&self) -> u32 {
         self.pointer_width

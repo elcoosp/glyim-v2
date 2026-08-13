@@ -1937,6 +1937,7 @@ fn v15_t24_drop_mut_ref_with_cleanup_dealloc() {
 
 /// V15-T25: Drop of Error type → no drop needed.
 #[test]
+#[should_panic(expected = "Attempted to lower TyKind::Error to LLVM")]
 fn v15_t25_drop_error_type() {
     Target::initialize_all(&InitializationConfig::default());
 

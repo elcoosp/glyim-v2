@@ -1,9 +1,10 @@
 use crate::LlvmBackend;
 use glyim_codegen::CodegenBackend;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
+use glyim_core::primitives::Mutability;
 use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, LocalIdx, Operand, Place, SourceInfo, SwitchTargets,
-    Terminator, TerminatorKind,
+    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, Operand, Place, SourceInfo,
+    SwitchTargets, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_type::Ty;
@@ -53,6 +54,13 @@ fn v12_t03_switch_int_on_integer() {
     let backend = LlvmBackend::new();
     let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
 
+    // Add a local with an integer type to switch on
+    body.locals.push(LocalDecl {
+        ty: Ty::BOOL,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
     let _bb0 = body.basic_blocks.push(BasicBlockData::new(Terminator {
         kind: TerminatorKind::Goto {
             target: BasicBlockIdx::from_raw(1),
@@ -62,8 +70,8 @@ fn v12_t03_switch_int_on_integer() {
 
     let _bb1 = body.basic_blocks.push(BasicBlockData::new(Terminator {
         kind: TerminatorKind::SwitchInt {
-            discr: Operand::Copy(Place::new(LocalIdx::from_raw(0))),
-            switch_ty: Ty::ERROR,
+            discr: Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+            switch_ty: Ty::BOOL,
             targets: SwitchTargets::if_switch(
                 BasicBlockIdx::from_raw(2),
                 BasicBlockIdx::from_raw(3),

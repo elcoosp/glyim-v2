@@ -11,7 +11,7 @@ fn s09_t01_bool_emits_as_int() {
     let target_info = TargetInfo::default();
     let context = Context::create();
     // Using Ty::BOOL sentinel - guaranteed to exist and be a valid Ty
-    let llvm_ty = llvm_type_for_ty(&ctx, &target_info, &context, Ty::BOOL);
+    let llvm_ty = llvm_type_for_ty(&ctx, &target_info, &context, Ty::BOOL).unwrap();
     assert!(llvm_ty.is_int_type());
 }
 
@@ -22,6 +22,6 @@ fn s09_t02_unit_emits_as_struct() {
     let target_info = TargetInfo::default();
     let context = Context::create();
     // Using Ty::UNIT sentinel
-    let llvm_ty = llvm_type_for_ty(&ctx, &target_info, &context, Ty::UNIT);
+    let llvm_ty = llvm_type_for_ty(&ctx, &target_info, &context, Ty::UNIT).unwrap();
     assert!(llvm_ty.is_struct_type());
 }

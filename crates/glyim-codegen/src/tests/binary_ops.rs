@@ -48,7 +48,7 @@ fn emit_add() {
         glyim_core::TargetInfo::default(),
     );
     let result = backend.generate_function(&Arc::new(body)).unwrap();
-    // OP_LOAD_CONST + 3i64, OP_LOAD_CONST + 5i64, OP_ADD, OP_STORE_LOCAL + 1, OP_RETURN
+    // OP_LOAD_CONST + 3i64, OP_LOAD_CONST + 5i64, OP_ADD, OP_STORE_LOCAL + 1, OP_TRAP
     // OP_LOAD_CONST(0x01) + 3i64, OP_LOAD_CONST + 5i64, OP_ADD(0x02), OP_STORE_LOCAL(0x17) + 1u32
     let mut expected = Vec::new();
     expected.push(0x01); // OP_LOAD_CONST
@@ -58,7 +58,8 @@ fn emit_add() {
     expected.push(0x02); // OP_ADD
     expected.push(0x17); // OP_STORE_LOCAL
     expected.extend_from_slice(&1u32.to_le_bytes());
-    // Note: dummy body has Unreachable terminator, so no OP_RETURN
+    // Note: dummy body has Unreachable terminator, which now emits OP_TRAP
+    expected.push(OP_TRAP);
     assert_eq!(result, expected);
 }
 

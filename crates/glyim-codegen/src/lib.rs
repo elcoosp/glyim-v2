@@ -81,10 +81,10 @@ impl BytecodeBackend {
             string_table: RefCell::new(Vec::new()),
             fn_table: RefCell::new(Vec::new()),
             layout_provider: Box::new(GlyimLayoutProvider {
-                ty_ctx: ctx,
-                target,
+                ty_ctx: ctx.clone(),
+                target: target.clone(),
             }),
-            ty_ctx: None,
+            ty_ctx: Some(ctx),
         }
     }
 
@@ -122,7 +122,10 @@ impl BytecodeBackend {
             match proj {
                 ProjectionElem::Deref => {
                     bc.push(OP_DEREF);
-                    current_ty = Ty::ERROR;
+                    current_ty = match self.ty_ctx.as_ref().map(|c| c.ty_kind(current_ty)).unwrap_or(&glyim_type::TyKind::Error) {
+                        glyim_type::TyKind::Ref(_, inner, _) | glyim_type::TyKind::RawPtr(inner, _) => *inner,
+                        _ => Ty::ERROR,
+                    };
                 }
                 ProjectionElem::Field(idx) => {
                     let offset = self.layout_provider.field_offset(current_ty, *idx);
@@ -148,7 +151,10 @@ impl BytecodeBackend {
                         bc.push(OP_MUL);
                         bc.push(OP_ADD);
                     }
-                    current_ty = Ty::ERROR;
+                    current_ty = match self.ty_ctx.as_ref().map(|c| c.ty_kind(current_ty)).unwrap_or(&glyim_type::TyKind::Error) {
+                        glyim_type::TyKind::Array(elem, _) | glyim_type::TyKind::Slice(elem) => *elem,
+                        _ => Ty::ERROR,
+                    };
                 }
                 ProjectionElem::Downcast(_) => {
                     // Downcast does not change the address
@@ -264,6 +270,7 @@ pub(crate) const OP_STORE_FIELD: u8 = 0x2A;
 pub(crate) const OP_DEREF: u8 = 0x2B;
 pub(crate) const OP_DROP: u8 = 0x2C;
 pub(crate) const OP_REPEAT: u8 = 0x2D;
+pub(crate) const OP_TRAP: u8 = 0xFF;
 
 impl CodegenBackend for BytecodeBackend {
     fn name(&self) -> &'static str {
@@ -554,7 +561,10 @@ impl BytecodeBackend {
                 bc.extend_from_slice(&t.to_raw().to_le_bytes());
                 Ok(())
             }
-            TerminatorKind::Unreachable => Ok(()),
+            TerminatorKind::Unreachable => {
+                bc.push(OP_TRAP);
+                Ok(())
+            }
             TerminatorKind::Assert {
                 cond,
                 expected,

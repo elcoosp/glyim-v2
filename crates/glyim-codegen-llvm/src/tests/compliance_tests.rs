@@ -31,7 +31,7 @@ fn s08_t41_generate_returns_error_for_invalid_path() {
 
 #[test]
 fn s08_t42_generate_function_error_for_invalid_triple() {
-    let backend = LlvmBackend::with_target("nonexistent-triple-unknown");
+    let backend = LlvmBackend::default().with_target("nonexistent-triple-unknown");
     let body = std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
         glyim_core::CrateId::from_raw(0),
         glyim_core::LocalDefId::from_raw(9999),
@@ -89,8 +89,8 @@ fn s08_t45_generate_function_memory_buffer_not_leaked() {
 fn s08_t46_with_target_reuses_initialization() {
     // Calling with_target multiple times should not re-initialize LLVM targets unnecessarily,
     // but at least it should not crash.
-    let b1 = LlvmBackend::with_target("x86_64-unknown-linux-gnu");
-    let b2 = LlvmBackend::with_target("aarch64-unknown-linux-gnu");
+    let b1 = LlvmBackend::default().with_target("x86_64-unknown-linux-gnu");
+    let b2 = LlvmBackend::default().with_target("aarch64-unknown-linux-gnu");
     assert_eq!(b1.name(), "llvm");
     assert_eq!(b2.name(), "llvm");
     // Both should be usable

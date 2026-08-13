@@ -104,24 +104,9 @@ impl LlvmBackend {
         Ok(module)
     }
 
-    pub fn with_target(target_triple: impl Into<String>) -> Self {
-        Target::initialize_all(&InitializationConfig::default());
-        let triple = target_triple.into();
-        let target_info = TargetInfo::default();
-        let default_ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
-        Self {
-            context: Context::create(),
-            target_triple: triple,
-            ty_ctx_handle: Some(Arc::new(std::sync::RwLock::new(Some(Arc::new(
-                default_ctx,
-            ))))),
-            target_info,
-            debug_info: false,
-            source_map: HashMap::new(),
-            opt_level: 0,
-            opt_for_size: false,
-            hygiene_ctx: None,
-        }
+    pub fn with_target(mut self, target_triple: impl Into<String>) -> Self {
+        self.target_triple = target_triple.into();
+        self
     }
 
     pub fn with_ty_ctx_handle(mut self, handle: glyim_db::TyCtxHandle) -> Self {
@@ -274,12 +259,18 @@ impl CodegenBackend for LlvmBackend {
                 e
             ))]
         })?;
+        let opt_level = match self.opt_level {
+            0 => inkwell::OptimizationLevel::None,
+            1 => inkwell::OptimizationLevel::Less,
+            2 => inkwell::OptimizationLevel::Default,
+            _ => inkwell::OptimizationLevel::Aggressive,
+        };
         let target_machine = target
             .create_target_machine(
                 &triple,
                 "generic",
                 "",
-                inkwell::OptimizationLevel::Default,
+                opt_level,
                 inkwell::targets::RelocMode::Default,
                 inkwell::targets::CodeModel::Default,
             )
@@ -328,12 +319,18 @@ impl CodegenBackend for LlvmBackend {
                 e
             ))]
         })?;
+        let opt_level = match self.opt_level {
+            0 => inkwell::OptimizationLevel::None,
+            1 => inkwell::OptimizationLevel::Less,
+            2 => inkwell::OptimizationLevel::Default,
+            _ => inkwell::OptimizationLevel::Aggressive,
+        };
         let target_machine = target
             .create_target_machine(
                 &triple,
                 "generic",
                 "",
-                inkwell::OptimizationLevel::Default,
+                opt_level,
                 inkwell::targets::RelocMode::Default,
                 inkwell::targets::CodeModel::Default,
             )
