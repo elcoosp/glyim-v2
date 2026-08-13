@@ -244,4 +244,101 @@ mod tests {
         let analysis = ReservationAnalysis::compute(&body, BasicBlockIdx::from_raw(0), 0, local_2);
         assert!(analysis.is_reservation(BasicBlockIdx::from_raw(1), 0));
     }
+
+    #[test]
+    fn test_multiple_loans_index_alignment() {
+        let mut body = Body {
+            owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            basic_blocks: glyim_core::arena::IndexVec::new(),
+            locals: glyim_core::arena::IndexVec::new(),
+            arg_count: 0,
+            return_ty: Ty::UNIT,
+            span: Span::DUMMY,
+            var_debug_info: Vec::new(),
+        };
+
+        let local_1 = body.locals.push(LocalDecl {
+            ty: Ty::BOOL,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let local_2 = body.locals.push(LocalDecl {
+            ty: Ty::ERROR,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let local_3 = body.locals.push(LocalDecl {
+            ty: Ty::ERROR,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let local_4 = body.locals.push(LocalDecl {
+            ty: Ty::ERROR,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        let borrow_stmt_1 = Statement {
+            kind: StatementKind::Assign(
+                Place::new(local_2),
+                Rvalue::Ref(
+                    Place::new(local_1),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: true,
+                    },
+                ),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+        let borrow_stmt_2 = Statement {
+            kind: StatementKind::Assign(
+                Place::new(local_3),
+                Rvalue::Ref(
+                    Place::new(local_1),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: true,
+                    },
+                ),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+        let borrow_stmt_3 = Statement {
+            kind: StatementKind::Assign(
+                Place::new(local_4),
+                Rvalue::Ref(
+                    Place::new(local_1),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: true,
+                    },
+                ),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+
+        let block = BasicBlockData {
+            statements: vec![borrow_stmt_1, borrow_stmt_2, borrow_stmt_3],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            is_cleanup: false,
+        };
+        body.basic_blocks.push(block);
+
+        let loans = crate::collect_loans(&body);
+        assert_eq!(loans.len(), 3);
+        assert_eq!(loans[0].index, 0);
+        assert_eq!(loans[1].index, 1);
+        assert_eq!(loans[2].index, 2);
+
+        // Test that the activation cache is keyed by global index
+        let analysis = ReservationAnalysis::compute(
+            &body,
+            BasicBlockIdx::from_raw(0),
+            1, // loan 1
+            local_3,
+        );
+        // Loan 1 is in reservation at stmt 2
+        assert!(analysis.is_reservation(BasicBlockIdx::from_raw(0), 2));
+    }
 }

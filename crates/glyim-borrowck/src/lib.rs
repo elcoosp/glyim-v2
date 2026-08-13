@@ -63,6 +63,8 @@ pub trait BorrowckCtx {
 /// A loan represents a borrow of a place at a particular program point.
 #[derive(Clone, Debug)]
 struct Loan {
+    /// The global index of this loan, used for consistent cache lookups.
+    index: usize,
     /// The local that holds the reference (destination of the `Rvalue::Ref`).
     dest_local: LocalIdx,
     /// The full place that was borrowed (including projections like field access).
@@ -81,7 +83,9 @@ fn collect_loans(body: &Body) -> Vec<Loan> {
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
             if let StatementKind::Assign(dest, Rvalue::Ref(borrowed, kind)) = &stmt.kind {
+                let index = loans.len();
                 loans.push(Loan {
+                    index,
                     dest_local: dest.local,
                     borrowed_place: borrowed.clone(),
                     kind: *kind,
@@ -180,9 +184,9 @@ fn check_stmt_conflicts(
                 Rvalue::Ref(borrowed, kind) => {
                     // Creating a new borrow — check if it conflicts with
                     // any *already active* loan on the same place.
-                    for (loan_idx, loan) in active_loans.iter().enumerate() {
+                    for loan in active_loans.iter().copied() {
                         if places_conflict(borrowed, &loan.borrowed_place) {
-                            let activation = activation_cache.get(&loan_idx);
+                            let activation = activation_cache.get(&loan.index);
                             let in_reservation = if let Some(act) = activation {
                                 loan_is_in_reservation(loan, current_block, current_stmt_idx, act)
                             } else {
@@ -226,9 +230,9 @@ fn check_stmt_conflicts(
                     }
 
                     for place in &read_places {
-                        for (loan_idx, loan) in active_loans.iter().enumerate() {
+                        for loan in active_loans.iter().copied() {
                             if places_conflict(place, &loan.borrowed_place) {
-                                let activation = activation_cache.get(&loan_idx);
+                                let activation = activation_cache.get(&loan.index);
                                 let in_reservation = if let Some(act) = activation {
                                     loan_is_in_reservation(
                                         loan,
