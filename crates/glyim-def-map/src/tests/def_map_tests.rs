@@ -86,9 +86,9 @@ fn t02_single_fn_appears_in_scope() {
     assert!(diags.is_empty());
     let scope = root_scope(&def_map);
     assert_eq!(scope.values.len(), 1);
-    let (name, _, vis, _) = scope.values[0];
-    assert_eq!(name, def_map.interner.intern("hello"));
-    assert_eq!(vis, Visibility::Inherited);
+    let (name, _, vis, _) = &scope.values[0];
+    assert_eq!(*name, def_map.interner.intern("hello"));
+    assert_eq!(*vis, Visibility::Inherited);
     assert!(scope.types.is_empty());
 }
 

@@ -125,7 +125,9 @@ fn un_ops() {
 #[test]
 fn visibility_variants() {
     let _ = Visibility::Public;
-    let _ = Visibility::Module(5);
+    let _ = Visibility::PubCrate;
+    let _ = Visibility::PubSuper;
+    let _ = Visibility::PubIn(vec![]);
     let _ = Visibility::Inherited;
 }
 

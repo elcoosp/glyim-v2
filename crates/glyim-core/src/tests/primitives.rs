@@ -75,7 +75,7 @@ fn unop() {
 #[test]
 fn visibility_struct_kind() {
     assert!(matches!(Visibility::Public, Visibility::Public));
-    assert!(matches!(Visibility::Module(5), Visibility::Module(5)));
+    assert!(matches!(Visibility::PubCrate, Visibility::PubCrate));
     assert!(matches!(Visibility::Inherited, Visibility::Inherited));
     assert!(matches!(StructKind::Unit, StructKind::Unit));
     assert!(matches!(StructKind::Tuple, StructKind::Tuple));

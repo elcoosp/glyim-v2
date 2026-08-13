@@ -59,7 +59,7 @@ impl ItemScope {
             .iter()
             .chain(self.values.iter())
             .find(|(n, _, _, _)| *n == name)
-            .map(|(_, id, vis, _)| (*id, *vis))
+            .map(|(_, id, vis, _)| (*id, vis.clone()))
     }
 
     pub fn declare(
@@ -162,11 +162,11 @@ impl<'a> Resolver<'a> {
                     .iter()
                     .find(|(n, _, _, _)| *n == segment.name);
                 let mut result = PerNs::default();
-                if let Some(&(_, tid, tvis, _)) = types {
-                    result.types = Some((tid, tvis));
+                if let Some((_, tid, tvis, _)) = types {
+                    result.types = Some((*tid, tvis.clone()));
                 }
-                if let Some(&(_, vid, vvis, _)) = values {
-                    result.values = Some((vid, vvis));
+                if let Some((_, vid, vvis, _)) = values {
+                    result.values = Some((*vid, vvis.clone()));
                 }
                 return result;
             } else if let Some((_, child_id)) = module_data
@@ -457,7 +457,7 @@ fn process_use_tree(
                             {
                                 let module_data = &modules[child_mod_id];
                                 let def_id = module_data.def_id;
-                                let vis = module_data.visibility;
+                                let vis = module_data.visibility.clone();
                                 modules[parent_module].scope.declare(
                                     bind_name,
                                     def_id,
@@ -507,7 +507,7 @@ fn process_use_tree(
             if let Some(mod_id) = resolve_module_path_for_modules(modules, parent_module, &path) {
                 let module_data = &modules[mod_id];
                 let def_id = module_data.def_id;
-                let vis = module_data.visibility;
+                let vis = module_data.visibility.clone();
                 let name = alias.or_else(|| path.segments.last().map(|s| s.name));
                 if let Some(name) = name {
                     modules[parent_module].scope.declare(
@@ -577,7 +577,7 @@ fn collect_items(
                 let name_str = extract_module_name(&child);
                 let name = interner.intern(&name_str);
                 let span = node_span(&child);
-                let vis = visibility_of_node(&child);
+                let vis = visibility_of_node(&child, interner);
                 let is_dup = modules[parent_module]
                     .children
                     .iter()
@@ -595,7 +595,7 @@ fn collect_items(
                         origin: ModuleOrigin::Inline { span },
                         span,
                         def_id: LocalDefId::from_raw(*def_counter),
-                        visibility: vis,
+                        visibility: vis.clone(),
                     });
                     *def_counter += 1;
                     modules[parent_module].children.push((name, child_module));
@@ -637,7 +637,7 @@ fn collect_items(
                 if let Some(ns) = namespace_for_kind(child.kind()) {
                     let name_str = extract_ident(&child);
                     let name = interner.intern(&name_str);
-                    let vis = visibility_of_node(&child);
+                    let vis = visibility_of_node(&child, interner);
                     let id = LocalDefId::from_raw(*def_counter);
                     *def_counter += 1;
                     let span = node_span(&child);
@@ -715,8 +715,9 @@ fn namespace_for_kind(kind: SyntaxKind) -> Option<Namespace> {
     }
 }
 
-/// Extract visibility by looking for a `KwPub` token among the node's preceding siblings.
-fn visibility_of_node(node: &SyntaxNode) -> Visibility {
+/// Extract visibility by looking for a `Visibility` node among the node's preceding siblings.
+/// Supports `pub`, `pub(crate)`, `pub(super)`, `pub(self)`, and `pub(in path)`.
+fn visibility_of_node(node: &SyntaxNode, interner: &Interner) -> Visibility {
     let mut prev = node.prev_sibling_or_token();
     while let Some(sibling) = prev {
         match sibling {
@@ -735,16 +736,50 @@ fn visibility_of_node(node: &SyntaxNode) -> Visibility {
             }
             SyntaxElement::Node(n) => {
                 if n.kind() == SyntaxKind::Visibility {
-                    // Look for KwPub inside this Visibility node
-                    for child in n.children_with_tokens() {
-                        if let Some(tok) = child.as_token()
-                            && tok.kind() == SyntaxKind::KwPub
-                        {
+                    let is_pub = n
+                        .children_with_tokens()
+                        .any(|e| e.kind() == SyntaxKind::KwPub);
+
+                    if is_pub {
+                        let has_paren = n
+                            .children_with_tokens()
+                            .any(|e| e.kind() == SyntaxKind::LParen);
+
+                        if !has_paren {
                             return Visibility::Public;
+                        }
+
+                        let has_crate = n.children_with_tokens().any(|e| e.kind() == SyntaxKind::KwCrate);
+                        let has_super = n.children_with_tokens().any(|e| e.kind() == SyntaxKind::KwSuper);
+                        let has_self = n.children_with_tokens().any(|e| e.kind() == SyntaxKind::KwSelf);
+
+                        if has_crate {
+                            return Visibility::PubCrate;
+                        } else if has_super {
+                            return Visibility::PubSuper;
+                        } else if has_self {
+                            return Visibility::Inherited;
+                        } else {
+                            // pub(in path)
+                            let mut path_segments = Vec::new();
+                            for child in n.children() {
+                                if child.kind() == SyntaxKind::UsePath {
+                                    for p_child in child.children_with_tokens() {
+                                        if let Some(tok) = p_child.as_token()
+                                            && tok.kind() == SyntaxKind::Ident
+                                        {
+                                            path_segments.push(interner.intern(tok.text()));
+                                        }
+                                    }
+                                }
+                            }
+                            if !path_segments.is_empty() {
+                                return Visibility::PubIn(path_segments);
+                            }
                         }
                     }
                 }
-                break; // Stop scanning after a node that's not a Visibility node
+                break;
             }
         }
     }
@@ -781,14 +816,33 @@ pub(crate) fn is_accessible_from(
 ) -> bool {
     match vis {
         Visibility::Public => true,
-        Visibility::Inherited => is_descendant_of(from_module, defining_module, modules),
-        Visibility::Module(allowed_id) => {
-            let allowed = ModuleId::from_raw(allowed_id);
-            if modules.get(allowed).is_none() {
-                return false;
-            }
-            from_module == allowed || is_descendant_of(from_module, allowed, modules)
+        Visibility::PubCrate => {
+            // Accessible from anywhere in the same crate.
+            // Since def-map is per-crate, this is always true.
+            true
         }
+        Visibility::PubSuper => {
+            // Accessible from the parent module of the defining module and its descendants.
+            if let Some(parent) = modules[defining_module].parent {
+                from_module == parent || is_descendant_of(from_module, parent, modules)
+            } else {
+                // If defining_module is the root, pub(super) is equivalent to pub(crate) or private.
+                true
+            }
+        }
+        Visibility::PubIn(path) => {
+            // Resolve the path relative to the defining module's parent (as per Rust rules)
+            let start_module = modules[defining_module].parent.unwrap_or(defining_module);
+            if let Some(target_mod) = resolve_module_path_for_modules(modules, start_module, &glyim_core::path::Path {
+                segments: path.iter().map(|n| glyim_core::path::PathSegment { name: *n }).collect(),
+                kind: glyim_core::path::PathKind::Plain,
+            }) {
+                from_module == target_mod || is_descendant_of(from_module, target_mod, modules)
+            } else {
+                false
+            }
+        }
+        Visibility::Inherited => is_descendant_of(from_module, defining_module, modules),
     }
 }
 
@@ -830,7 +884,7 @@ fn validate_import_visibility(
         // Check type namespace items
         for (name, def_id, vis, span) in &scope.types {
             if let Some(&defining_mod) = def_to_module.get(def_id)
-                && !is_accessible_from(*vis, defining_mod, module_id, modules)
+                && !is_accessible_from(vis.clone(), defining_mod, module_id, modules)
             {
                 diagnostics.push(GlyimDiagnostic::parse_error(
                     *span,
@@ -845,7 +899,7 @@ fn validate_import_visibility(
         // Check value namespace items
         for (name, def_id, vis, span) in &scope.values {
             if let Some(&defining_mod) = def_to_module.get(def_id)
-                && !is_accessible_from(*vis, defining_mod, module_id, modules)
+                && !is_accessible_from(vis.clone(), defining_mod, module_id, modules)
             {
                 diagnostics.push(GlyimDiagnostic::parse_error(
                     *span,
@@ -860,7 +914,7 @@ fn validate_import_visibility(
         // Check macro namespace items
         for (name, def_id, vis, span) in &scope.macros {
             if let Some(&defining_mod) = def_to_module.get(def_id)
-                && !is_accessible_from(*vis, defining_mod, module_id, modules)
+                && !is_accessible_from(vis.clone(), defining_mod, module_id, modules)
             {
                 diagnostics.push(GlyimDiagnostic::parse_error(
                     *span,

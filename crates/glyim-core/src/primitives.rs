@@ -211,10 +211,14 @@ pub enum UnOp {
     Deref,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+use crate::interner::Name;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Visibility {
     Public,
-    Module(u32),
+    PubCrate,
+    PubSuper,
+    PubIn(Vec<Name>),
     Inherited,
 }
 

@@ -492,7 +492,7 @@ fn test_module_with_items() {
         .values
         .iter()
         .find(|(n, _, _, _)| *n == connect_name)
-        .map(|(_, _, v, _)| *v);
+        .map(|(_, _, v, _)| v.clone());
     assert_eq!(
         connect_vis,
         Some(Visibility::Inherited),
@@ -505,7 +505,7 @@ fn test_module_with_items() {
         .values
         .iter()
         .find(|(n, _, _, _)| *n == disconnect_name)
-        .map(|(_, _, v, _)| *v);
+        .map(|(_, _, v, _)| v.clone());
     assert_eq!(
         disconnect_vis,
         Some(Visibility::Public),
