@@ -2623,9 +2623,19 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         }
         for arg_abi in &fn_abi.args {
             if let PassMode::Indirect { .. } = arg_abi.mode {
-                let byval_attr = self.context.create_enum_attribute(
+                let llvm_ty = self.llvm_type_for_ty(arg_abi.ty);
+                let any_ty = match llvm_ty {
+                    inkwell::types::BasicTypeEnum::ArrayType(t) => inkwell::types::AnyTypeEnum::ArrayType(t),
+                    inkwell::types::BasicTypeEnum::FloatType(t) => inkwell::types::AnyTypeEnum::FloatType(t),
+                    inkwell::types::BasicTypeEnum::IntType(t) => inkwell::types::AnyTypeEnum::IntType(t),
+                    inkwell::types::BasicTypeEnum::PointerType(t) => inkwell::types::AnyTypeEnum::PointerType(t),
+                    inkwell::types::BasicTypeEnum::StructType(t) => inkwell::types::AnyTypeEnum::StructType(t),
+                    inkwell::types::BasicTypeEnum::VectorType(t) => inkwell::types::AnyTypeEnum::VectorType(t),
+                    inkwell::types::BasicTypeEnum::ScalableVectorType(t) => inkwell::types::AnyTypeEnum::ScalableVectorType(t),
+                };
+                let byval_attr = self.context.create_type_attribute(
                     inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),
-                    0,
+                    any_ty,
                 );
                 call_result.add_attribute(
                     inkwell::attributes::AttributeLoc::Param(param_idx),
@@ -2819,14 +2829,17 @@ pub(crate) fn lower_body<'ctx>(
     let function = module.add_function(&fn_name, fn_type, None);
 
     // Apply ABI attributes to function definition parameters
+    // Use the real FnSig from TyCtx if available, otherwise fallback to an empty one.
     let layout_computer = FullLayoutComputer::new(ty_ctx, target_info.clone());
-    if let Ok(fn_abi) = layout_computer.fn_abi_of(&glyim_type::FnSig {
-        inputs: glyim_type::Substitution::empty(), // Placeholder, ideally we'd have the real sig
+    let fn_def_id = glyim_core::def_id::FnDefId::from_raw(body.owner.local_id.to_raw());
+    let fn_sig = ty_ctx.fn_sig(fn_def_id).cloned().unwrap_or(glyim_type::FnSig {
+        inputs: glyim_type::Substitution::empty(),
         output: body.return_ty,
         abi: glyim_core::primitives::Abi::Glyim,
         c_variadic: false,
         unsafety: glyim_core::primitives::Safety::Safe,
-    }) {
+    });
+    if let Ok(fn_abi) = layout_computer.fn_abi_of(&fn_sig) {
         let mut param_idx = 0;
         if matches!(fn_abi.ret.mode, glyim_layout::PassMode::Indirect { .. }) {
             let sret_attr = context.create_enum_attribute(
@@ -2841,9 +2854,20 @@ pub(crate) fn lower_body<'ctx>(
         }
         for arg_abi in &fn_abi.args {
             if let glyim_layout::PassMode::Indirect { .. } = arg_abi.mode {
-                let byval_attr = context.create_enum_attribute(
+                let llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, arg_abi.ty)
+                    .unwrap_or(context.i8_type().into());
+                let any_ty = match llvm_ty {
+                    inkwell::types::BasicTypeEnum::ArrayType(t) => inkwell::types::AnyTypeEnum::ArrayType(t),
+                    inkwell::types::BasicTypeEnum::FloatType(t) => inkwell::types::AnyTypeEnum::FloatType(t),
+                    inkwell::types::BasicTypeEnum::IntType(t) => inkwell::types::AnyTypeEnum::IntType(t),
+                    inkwell::types::BasicTypeEnum::PointerType(t) => inkwell::types::AnyTypeEnum::PointerType(t),
+                    inkwell::types::BasicTypeEnum::StructType(t) => inkwell::types::AnyTypeEnum::StructType(t),
+                    inkwell::types::BasicTypeEnum::VectorType(t) => inkwell::types::AnyTypeEnum::VectorType(t),
+                    inkwell::types::BasicTypeEnum::ScalableVectorType(t) => inkwell::types::AnyTypeEnum::ScalableVectorType(t),
+                };
+                let byval_attr = context.create_type_attribute(
                     inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),
-                    0,
+                    any_ty,
                 );
                 function.add_attribute(
                     inkwell::attributes::AttributeLoc::Param(param_idx),
