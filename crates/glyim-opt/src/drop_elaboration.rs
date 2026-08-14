@@ -487,3 +487,4 @@ fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
     needs_drop_rec(ctx, ty, &mut visited)
 }
 
+// TODO: Implement per-projection MaybeInitialized dataflow

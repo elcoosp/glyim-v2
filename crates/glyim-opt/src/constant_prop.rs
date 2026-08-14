@@ -3,8 +3,9 @@
 //! Supports Int, Uint, Bool, Char, and Float constants.
 
 use glyim_mir::*;
+use glyim_span::Span;
 use glyim_type::TyCtx;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 type BlockMap = HashMap<LocalIdx, Option<MirConst>>;
 
@@ -33,15 +34,17 @@ fn maps_equal(a: &BlockMap, b: &BlockMap) -> bool {
     for (k, v) in a {
         match b.get(k) {
             None => return false,
-            Some(bv) => match (v, bv) {
-                (None, None) => continue,
-                (Some(c1), Some(c2)) => {
-                    if !const_eq(c1, c2) {
-                        return false;
+            Some(bv) => {
+                match (v, bv) {
+                    (None, None) => continue,
+                    (Some(c1), Some(c2)) => {
+                        if !const_eq(c1, c2) {
+                            return false;
+                        }
                     }
+                    _ => return false,
                 }
-                _ => return false,
-            },
+            }
         }
     }
     true
@@ -68,7 +71,20 @@ fn merge_maps(mut into: BlockMap, other: &BlockMap) -> BlockMap {
     into
 }
 
-fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Option<MirConst> {
+fn operand_to_const(op: &Operand, locals: &BlockMap) -> Option<MirConst> {
+    match op {
+        Operand::Constant(c) => Some(c.clone()),
+        Operand::Copy(place) | Operand::Move(place) => {
+            if place.projection.is_empty() {
+                locals.get(&place.local).and_then(|opt| opt.clone())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Option<MirConst> {
     match rv {
         Rvalue::Use(op) => operand_to_const(op, locals),
         Rvalue::BinaryOp(op, box_ops) => {
@@ -81,18 +97,10 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
                         glyim_core::primitives::BinOp::Div => {
-                            if r != 0 {
-                                l / r
-                            } else {
-                                0
-                            }
+                            if r != 0 { l / r } else { 0 }
                         }
                         glyim_core::primitives::BinOp::Rem => {
-                            if r != 0 {
-                                l % r
-                            } else {
-                                0
-                            }
+                            if r != 0 { l % r } else { 0 }
                         }
                         _ => return None,
                     };
@@ -108,18 +116,10 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
                         glyim_core::primitives::BinOp::Div => {
-                            if r != 0 {
-                                l / r
-                            } else {
-                                0
-                            }
+                            if r != 0 { l / r } else { 0 }
                         }
                         glyim_core::primitives::BinOp::Rem => {
-                            if r != 0 {
-                                l % r
-                            } else {
-                                0
-                            }
+                            if r != 0 { l % r } else { 0 }
                         }
                         _ => return None,
                     };
@@ -151,61 +151,30 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                         glyim_core::primitives::BinOp::Sub => lf - rf,
                         glyim_core::primitives::BinOp::Mul => lf * rf,
                         glyim_core::primitives::BinOp::Div => {
-                            if rf != 0.0 {
-                                lf / rf
-                            } else {
-                                0.0
-                            }
+                            if rf != 0.0 { lf / rf } else { 0.0 }
                         }
                         glyim_core::primitives::BinOp::Eq => {
-                            if lf == rf {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            if lf == rf { 1.0 } else { 0.0 }
                         }
                         glyim_core::primitives::BinOp::Ne => {
-                            if lf != rf {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            if lf != rf { 1.0 } else { 0.0 }
                         }
                         glyim_core::primitives::BinOp::Lt => {
-                            if lf < rf {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            if lf < rf { 1.0 } else { 0.0 }
                         }
                         glyim_core::primitives::BinOp::Gt => {
-                            if lf > rf {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            if lf > rf { 1.0 } else { 0.0 }
                         }
                         glyim_core::primitives::BinOp::LtEq => {
-                            if lf <= rf {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            if lf <= rf { 1.0 } else { 0.0 }
                         }
                         glyim_core::primitives::BinOp::GtEq => {
-                            if lf >= rf {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            if lf >= rf { 1.0 } else { 0.0 }
                         }
                         _ => return None,
                     };
-                    // Convert result back to bits. For booleans, we produce a FloatBits of 0.0 or 1.0.
-                    // This is not ideal but we keep type consistency.
-                    let bits = result.to_bits();
                     Some(MirConst {
-                        kind: MirConstKind::FloatBits(bits),
+                        kind: MirConstKind::FloatBits(result.to_bits()),
                         ty: left.ty,
                         span: left.span,
                     })
@@ -265,96 +234,31 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, _ctx: &TyCtx) -> Opt
                 _ => None,
             }
         }
+        Rvalue::Aggregate(kind, operands) => {
+            let mut field_consts = Vec::new();
+            for op in operands {
+                if let Some(c) = operand_to_const(op, locals) {
+                    field_consts.push(c);
+                } else {
+                    return None;
+                }
+            }
+            match kind {
+                AggregateKind::Tuple => {
+                    if field_consts.is_empty() {
+                        return Some(MirConst {
+                            kind: MirConstKind::Unit,
+                            ty: ctx.unit_ty(),
+                            span: Span::DUMMY,
+                        });
+                    }
+                    None
+                }
+                _ => None,
+            }
+        }
+        Rvalue::Cast(_, op, _) => operand_to_const(op, locals),
         _ => None,
-    }
-}
-
-fn operand_to_const(op: &Operand, locals: &BlockMap) -> Option<MirConst> {
-    match op {
-        Operand::Constant(c) => Some(c.clone()),
-        Operand::Copy(place) | Operand::Move(place) => {
-            if place.projection.is_empty() {
-                locals.get(&place.local).and_then(|opt| opt.clone())
-            } else {
-                None
-            }
-        }
-    }
-}
-
-pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
-    let num_blocks = body.basic_blocks.len();
-    if num_blocks == 0 {
-        return;
-    }
-
-    let mut preds = vec![Vec::new(); num_blocks];
-    for i in 0..num_blocks {
-        let bb = BasicBlockIdx::from_raw(i as u32);
-        let block = &body.basic_blocks[bb];
-        for succ in super::cfg_simplify::terminator_successors(&block.terminator) {
-            let succ_idx = succ.to_raw() as usize;
-            if succ_idx < num_blocks {
-                preds[succ_idx].push(i);
-            }
-        }
-    }
-
-    let mut in_maps: Vec<Option<BlockMap>> = vec![None; num_blocks];
-    let mut worklist = VecDeque::new();
-    in_maps[0] = Some(BlockMap::new());
-    worklist.push_back(0);
-
-    while let Some(bb_idx) = worklist.pop_front() {
-        let mut incoming = BlockMap::new();
-        for &pred_idx in &preds[bb_idx] {
-            if let Some(ref pred_out) = in_maps[pred_idx] {
-                incoming = merge_maps(incoming, pred_out);
-            }
-        }
-        if preds[bb_idx].is_empty() && bb_idx != 0 {
-            continue;
-        }
-
-        let mut out = incoming.clone();
-        let block = &body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];
-        for stmt in &block.statements {
-            if let StatementKind::Assign(place, rvalue) = &stmt.kind {
-                out.remove(&place.local);
-                if place.projection.is_empty()
-                    && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
-                {
-                    out.insert(place.local, Some(c));
-                }
-            }
-        }
-
-        let changed = match &in_maps[bb_idx] {
-            None => true,
-            Some(old) => !maps_equal(old, &out),
-        };
-        if changed {
-            in_maps[bb_idx] = Some(out);
-            let term = &body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)].terminator;
-            for succ in super::cfg_simplify::terminator_successors(term) {
-                let succ_idx = succ.to_raw() as usize;
-                if !worklist.contains(&succ_idx) {
-                    worklist.push_back(succ_idx);
-                }
-            }
-        }
-    }
-
-    #[allow(clippy::needless_range_loop)]
-    for bb_idx in 0..num_blocks {
-        if let Some(map) = &in_maps[bb_idx] {
-            let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];
-            for stmt in &mut block.statements {
-                if let StatementKind::Assign(_place, rvalue) = &mut stmt.kind {
-                    replace_in_rvalue(rvalue, map);
-                }
-            }
-        }
     }
 }
 
@@ -393,5 +297,78 @@ fn replace_in_rvalue(rv: &mut Rvalue, locals: &BlockMap) -> bool {
         Rvalue::Discriminant(_) | Rvalue::Len(_) => false,
         Rvalue::Cast(_, op, _) => replace_operand(op, locals),
         Rvalue::Repeat(op, _) => replace_operand(op, locals),
+    }
+}
+
+pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
+    let num_blocks = body.basic_blocks.len();
+    if num_blocks == 0 {
+        return;
+    }
+
+    let mut preds = vec![Vec::new(); num_blocks];
+    for i in 0..num_blocks {
+        let bb = BasicBlockIdx::from_raw(i as u32);
+        let block = &body.basic_blocks[bb];
+        for succ in super::cfg_simplify::terminator_successors(&block.terminator) {
+            let succ_idx = succ.to_raw() as usize;
+            if succ_idx < num_blocks {
+                preds[succ_idx].push(i);
+            }
+        }
+    }
+
+    let mut in_maps: Vec<Option<BlockMap>> = vec![None; num_blocks];
+    let mut changed = true;
+    let mut iteration = 0;
+    const MAX_ITERATIONS: usize = 1000;
+
+    while changed && iteration < MAX_ITERATIONS {
+        changed = false;
+        iteration += 1;
+        for bb_idx in 0..num_blocks {
+            let mut incoming = BlockMap::new();
+            for &pred_idx in &preds[bb_idx] {
+                if let Some(ref pred_out) = in_maps[pred_idx] {
+                    incoming = merge_maps(incoming, pred_out);
+                }
+            }
+            if preds[bb_idx].is_empty() && bb_idx != 0 {
+                continue;
+            }
+
+            let mut out = incoming.clone();
+            let block = &body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];
+            for stmt in &block.statements {
+                if let StatementKind::Assign(place, rvalue) = &stmt.kind {
+                    out.remove(&place.local);
+                    if place.projection.is_empty()
+                        && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
+                    {
+                        out.insert(place.local, Some(c));
+                    }
+                }
+            }
+
+            let changed_this = match &in_maps[bb_idx] {
+                None => true,
+                Some(old) => !maps_equal(old, &out),
+            };
+            if changed_this {
+                in_maps[bb_idx] = Some(out);
+                changed = true;
+            }
+        }
+    }
+
+    for bb_idx in 0..num_blocks {
+        if let Some(map) = &in_maps[bb_idx] {
+            let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];
+            for stmt in &mut block.statements {
+                if let StatementKind::Assign(_place, rvalue) = &mut stmt.kind {
+                    replace_in_rvalue(rvalue, map);
+                }
+            }
+        }
     }
 }
