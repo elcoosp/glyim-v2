@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use glyim_core::def_id::DefId;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
-use glyim_solve::{InferenceTable, Obligation};
+use glyim_solve::{InferenceTable, Obligation, TraitContext};
 use glyim_type::{Ty, TyCtxMut};
 
 use crate::env::LocalEnv;
@@ -23,5 +23,6 @@ pub struct FnCtxt<'a> {
     pub return_ty: Ty,
     pub owner: DefId,
     pub expr_cache: HashMap<ExprId, (thir::Expr, Ty)>,
+    pub trait_ctx: &'a TraitContext,
     pub def_map: &'a glyim_def_map::CrateDefMap,
 }

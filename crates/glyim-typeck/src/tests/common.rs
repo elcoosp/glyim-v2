@@ -3,7 +3,7 @@ use glyim_core::interner::Name;
 /// Common utilities for typeck tests.
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
-use glyim_solve::InferenceTable;
+use glyim_solve::{TraitContext, InferenceTable};
 use glyim_span::Span;
 use glyim_type::{Ty, TyCtxMut};
 use once_cell::sync::Lazy;
@@ -47,6 +47,7 @@ pub fn check_function_body(
     let mut obligations = Vec::new();
     let env = LocalEnv::new();
 
+    let trait_ctx = TraitContext::new();
     let fn_ctxt = FnCtxt {
         ctx,
         infer,
@@ -59,7 +60,8 @@ pub fn check_function_body(
         owner,
         expr_cache: HashMap::new(),
         def_map,
-    };
+                trait_ctx: &trait_ctx,
+        };
 
     let thir_body = fn_ctxt.check(params);
     (thir_body, diagnostics)

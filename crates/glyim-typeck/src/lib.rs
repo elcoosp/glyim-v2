@@ -15,7 +15,7 @@ use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::ItemKind;
-use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause};
+use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
     GenericArg, ImplPolarity, Predicate, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut,
@@ -50,6 +50,7 @@ pub fn typeck_crate(
     let mut diagnostics = Vec::new();
     let mut infer = InferenceTable::new();
     let mut all_obligations: Vec<Obligation> = Vec::new();
+    let trait_ctx = TraitContext::new();
     let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
 
     let local_krate = def_map.krate;
@@ -139,6 +140,7 @@ pub fn typeck_crate(
                         &mut thir_bodies,
                         local_def_id,
                         def_map,
+                        &trait_ctx,
                     );
                 }
             }
@@ -196,6 +198,7 @@ pub fn typeck_crate(
                             &mut thir_bodies,
                             local_def_id,
                             def_map,
+                            &trait_ctx,
                         );
                     } else {
                         diagnostics.push(GlyimDiagnostic::type_error(
@@ -249,6 +252,7 @@ fn check_body(
     thir_bodies: &mut Vec<(LocalDefId, thir::Body)>,
     local_def_id: LocalDefId,
     def_map: &glyim_def_map::CrateDefMap,
+    trait_ctx: &TraitContext,
 ) {
     let body = &hir.bodies[body_id];
     let env = env::LocalEnv::new();
@@ -265,6 +269,7 @@ fn check_body(
         owner,
         expr_cache: Default::default(),
         def_map,
+            trait_ctx,
     };
 
     let thir_body = fn_ctxt.check(params);
