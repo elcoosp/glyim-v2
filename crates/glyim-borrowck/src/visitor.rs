@@ -219,13 +219,135 @@ pub(crate) fn places_conflict(a: &Place, b: &Place) -> bool {
 
             (ProjectionElem::Field(_), ProjectionElem::Index(_))
             | (ProjectionElem::Index(_), ProjectionElem::Field(_)) => return false,
-            // Mixed projection types at the same depth — conservatively conflict
+
+            // Subslice vs Subslice (both from_end: false)
+            (
+                ProjectionElem::Subslice { from: f1, to: t1, from_end: false },
+                ProjectionElem::Subslice { from: f2, to: t2, from_end: false },
+            ) => {
+                // Check if [f1, t1) and [f2, t2) overlap
+                if f1 < t2 && f2 < t1 {
+                    continue; // Overlap, keep checking rest
+                } else {
+                    return false; // Disjoint
+                }
+            }
+
+            // Subslice vs ConstantIndex (both from_end: false)
+            (
+                ProjectionElem::Subslice { from, to, from_end: false },
+                ProjectionElem::ConstantIndex { offset, from_end: false, .. },
+            ) |
+            (
+                ProjectionElem::ConstantIndex { offset, from_end: false, .. },
+                ProjectionElem::Subslice { from, to, from_end: false },
+            ) => {
+                if *offset >= *from && *offset < *to {
+                    continue; // Index is inside subslice
+                } else {
+                    return false; // Disjoint
+                }
+            }
+
+            // Subslice with from_end: true or mixed, or other mixed projection types
+            // at the same depth — conservatively conflict without full type info.
             _ => return true,
         }
     }
 
     // One projection is a prefix of the other — they overlap
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_mir::{LocalIdx, Place, ProjectionElem};
+    use glyim_type::FieldIdx;
+
+    fn make_place(local: u32, projections: &[ProjectionElem]) -> Place {
+        Place {
+            local: LocalIdx::from_raw(local),
+            projection: projections.iter().cloned().collect(),
+        }
+    }
+
+    #[test]
+    fn test_constant_index_disjoint() {
+        let p1 = make_place(0, &[
+            ProjectionElem::ConstantIndex { offset: 0, min_length: 0, from_end: false },
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::ConstantIndex { offset: 1, min_length: 0, from_end: false },
+        ]);
+        assert!(!places_conflict(&p1, &p2));
+    }
+
+    #[test]
+    fn test_constant_index_overlap() {
+        let p1 = make_place(0, &[
+            ProjectionElem::ConstantIndex { offset: 0, min_length: 0, from_end: false },
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::ConstantIndex { offset: 0, min_length: 0, from_end: false },
+        ]);
+        assert!(places_conflict(&p1, &p2));
+    }
+
+    #[test]
+    fn test_subslice_disjoint() {
+        let p1 = make_place(0, &[
+            ProjectionElem::Subslice { from: 0, to: 2, from_end: false },
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::Subslice { from: 3, to: 5, from_end: false },
+        ]);
+        assert!(!places_conflict(&p1, &p2));
+    }
+
+    #[test]
+    fn test_subslice_overlap() {
+        let p1 = make_place(0, &[
+            ProjectionElem::Subslice { from: 0, to: 3, from_end: false },
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::Subslice { from: 2, to: 5, from_end: false },
+        ]);
+        assert!(places_conflict(&p1, &p2));
+    }
+
+    #[test]
+    fn test_subslice_vs_constant_index_disjoint() {
+        let p1 = make_place(0, &[
+            ProjectionElem::Subslice { from: 0, to: 2, from_end: false },
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::ConstantIndex { offset: 3, min_length: 0, from_end: false },
+        ]);
+        assert!(!places_conflict(&p1, &p2));
+    }
+
+    #[test]
+    fn test_subslice_vs_constant_index_overlap() {
+        let p1 = make_place(0, &[
+            ProjectionElem::Subslice { from: 0, to: 3, from_end: false },
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::ConstantIndex { offset: 2, min_length: 0, from_end: false },
+        ]);
+        assert!(places_conflict(&p1, &p2));
+    }
+
+    #[test]
+    fn test_field_vs_index_disjoint() {
+        let p1 = make_place(0, &[
+            ProjectionElem::Field(FieldIdx::from_raw(0)),
+        ]);
+        let p2 = make_place(0, &[
+            ProjectionElem::Index(LocalIdx::from_raw(1)),
+        ]);
+        assert!(!places_conflict(&p1, &p2));
+    }
 }
 
 // ---------------------------------------------------------------------------
