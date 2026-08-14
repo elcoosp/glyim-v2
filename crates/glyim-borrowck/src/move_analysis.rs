@@ -128,10 +128,7 @@ impl MovePathArena {
                             let mut new_proj = self
                                 .get(current_idx)
                                 .place
-                                .projection
-                                .iter()
-                                .cloned()
-                                .collect::<Vec<_>>();
+                                .projection.to_vec();
                             new_proj.push(ProjectionElem::Downcast(*variant_idx));
                             let new_path = MovePath {
                                 place: Place {
@@ -191,10 +188,7 @@ impl MovePathArena {
                             let mut new_proj = self
                                 .get(current_idx)
                                 .place
-                                .projection
-                                .iter()
-                                .cloned()
-                                .collect::<Vec<_>>();
+                                .projection.to_vec();
                             new_proj.push(ProjectionElem::ConstantIndex {
                                 offset: *offset,
                                 min_length: 0,

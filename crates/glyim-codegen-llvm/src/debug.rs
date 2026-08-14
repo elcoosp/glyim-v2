@@ -198,7 +198,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             if let glyim_layout::VariantsShape::Multiple { tag_size, .. } =
                                 &layout.variants
                             {
-                                (tag_size.0 * 8).max(8) as u64
+                                (tag_size.0 * 8).max(8)
                             } else {
                                 32
                             };
@@ -247,7 +247,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 let args = ty_ctx.substitution_args(*substs);
                 let mut field_types = Vec::new();
                 let mut name_parts = Vec::new();
-                for (_i, arg) in args.iter().enumerate() {
+                for arg in args.iter() {
                     if let GenericArg::Ty(t) = arg {
                         let field_ty = self.debug_type_for_ty(context, *t, ty_ctx);
                         field_types.push(field_ty);

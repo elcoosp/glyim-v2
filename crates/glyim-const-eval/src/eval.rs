@@ -177,14 +177,12 @@ impl<'a> ConstEvaluator<'a> {
             }
             Expr::Assign { lhs, rhs } => {
                 let val = self.evaluate_at_depth(*rhs, depth)?;
-                if let Expr::Path(p) = &self.body.exprs[*lhs] {
-                    if let Some(name) = p.as_name() {
-                        if let Some(scope) = self.env.last_mut() {
+                if let Expr::Path(p) = &self.body.exprs[*lhs]
+                    && let Some(name) = p.as_name()
+                        && let Some(scope) = self.env.last_mut() {
                             scope.insert(name, val.clone());
                             return Ok(ConstValue::Unit);
                         }
-                    }
-                }
                 Err(ConstEvalError::new(
                     "assignment to non-path in const eval",
                     span,

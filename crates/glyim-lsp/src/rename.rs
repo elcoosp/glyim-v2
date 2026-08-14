@@ -41,11 +41,11 @@ pub fn rename_symbol(
         // We have semantic references, use them.
         let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
         for r in references {
-            if let Some(ref_path) = file_map.path(r.file_id) {
-                if let Ok(ref_url) = Url::from_file_path(ref_path) {
-                    let ref_uri = Uri::from_str(&ref_url.to_string()).ok()?;
-                    if let Some(sm_ref) = source_maps.get(&r.file_id) {
-                        if let Some(((start_line, start_col), (end_line, end_col))) =
+            if let Some(ref_path) = file_map.path(r.file_id)
+                && let Ok(ref_url) = Url::from_file_path(ref_path) {
+                    let ref_uri = Uri::from_str(ref_url.as_ref()).ok()?;
+                    if let Some(sm_ref) = source_maps.get(&r.file_id)
+                        && let Some(((start_line, start_col), (end_line, end_col))) =
                             sm_ref.span_to_position(r.span.lo.to_usize(), r.span.hi.to_usize())
                         {
                             let range = Range {
@@ -62,11 +62,9 @@ pub fn rename_symbol(
                                 range,
                                 new_text: params.new_name.clone(),
                             };
-                            changes.entry(ref_uri).or_insert_with(Vec::new).push(edit);
+                            changes.entry(ref_uri).or_default().push(edit);
                         }
-                    }
                 }
-            }
         }
         if changes.is_empty() {
             return None;

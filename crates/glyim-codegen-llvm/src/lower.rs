@@ -277,9 +277,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .expect("const ref load failed"))
             }
             MirConstKind::Error => {
-                return Err(vec![GlyimDiagnostic::internal_error(
+                Err(vec![GlyimDiagnostic::internal_error(
                     "internal compiler error: MirConstKind::Error reached codegen",
-                )]);
+                )])
             }
         }
     }
@@ -546,12 +546,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                     BasicValueEnum::StructValue(s) => s,
                                     _ => panic!("slice value not a struct"),
                                 };
-                                let len_val = self
+                                
+                                self
                                     .builder
                                     .build_extract_value(struct_val, 1, "slice_len_extract")
                                     .expect("extract failed")
-                                    .into_int_value();
-                                len_val
+                                    .into_int_value()
                             }
                             _ => {
                                 return Err(vec![GlyimDiagnostic::internal_error(format!(
@@ -577,12 +577,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             BasicValueEnum::StructValue(s) => s,
                             _ => panic!("slice value not a struct"),
                         };
-                        let data_ptr = self
+                        
+                        self
                             .builder
                             .build_extract_value(struct_val, 0, "slice_data_ptr")
                             .expect("extract failed")
-                            .into_pointer_value();
-                        data_ptr
+                            .into_pointer_value()
                     } else {
                         ptr
                     };
