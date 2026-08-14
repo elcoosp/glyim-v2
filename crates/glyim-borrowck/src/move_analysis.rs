@@ -185,8 +185,51 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
         glyim_type::TyKind::Adt(adt_id, _) => {
             ctx.adt_repr(*adt_id).map(|r| r.field_tys.len() as u32)
         }
-        glyim_type::TyKind::Array(_, _) | glyim_type::TyKind::Slice(_) => None,
+        glyim_type::TyKind::Array(_, len) => {
+            // For arrays, the number of "fields" for move tracking is the array length.
+            // We can only enumerate this if the length is a resolved constant.
+            match &len.kind {
+                glyim_type::ConstKind::Uint(n) => Some(*n as u32),
+                glyim_type::ConstKind::Int(n) => Some(*n as u32),
+                _ => None, // Unresolved or generic length
+            }
+        }
+        glyim_type::TyKind::Slice(_) => {
+            // Slices are unsized and do not have a statically known field count.
+            None
+        }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::primitives::UintTy;
+    use glyim_type::{Const, ConstKind, TyCtxMut, TyKind};
+
+    #[test]
+    fn test_count_fields_array() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+        let elem_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
+        let count = Const {
+            kind: ConstKind::Uint(5),
+            ty: ctx_mut.mk_ty(TyKind::Uint(UintTy::Usize)),
+        };
+        let array_ty = ctx_mut.mk_ty(TyKind::Array(elem_ty, count));
+        let ctx = ctx_mut.freeze();
+
+        assert_eq!(count_fields(array_ty, &ctx), Some(5));
+    }
+
+    #[test]
+    fn test_count_fields_slice() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+        let elem_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
+        let slice_ty = ctx_mut.mk_ty(TyKind::Slice(elem_ty));
+        let ctx = ctx_mut.freeze();
+
+        assert_eq!(count_fields(slice_ty, &ctx), None);
     }
 }
 
