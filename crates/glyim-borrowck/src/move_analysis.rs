@@ -124,7 +124,6 @@ impl MovePathArena {
                     match found {
                         Some(idx) => current_idx = idx,
                         None => {
-                            // Create a new move path child for this variant
                             let mut new_proj = self
                                 .get(current_idx)
                                 .place
@@ -162,20 +161,12 @@ impl MovePathArena {
                         None => return Some(current_idx),
                     }
                 }
-                ProjectionElem::ConstantIndex {
-                    offset,
-                    from_end: false,
-                    ..
-                } => {
+                ProjectionElem::ConstantIndex { offset, from_end: false, .. } => {
                     let current = self.get(current_idx);
                     let mut found = None;
                     for &child_idx in &current.children {
                         let child = self.get(child_idx);
-                        if let Some(ProjectionElem::ConstantIndex {
-                            offset: o,
-                            from_end: false,
-                            ..
-                        }) = child.place.projection.last()
+                        if let Some(ProjectionElem::ConstantIndex { offset: o, from_end: false, .. }) = child.place.projection.last()
                             && *o == *offset
                         {
                             found = Some(child_idx);
@@ -208,15 +199,17 @@ impl MovePathArena {
                         }
                     }
                 }
-                ProjectionElem::Deref
-                | ProjectionElem::ConstantIndex { .. }
-                | ProjectionElem::Subslice { .. } => {
-                    // As per TASK-P2-3, Deref and index/subslice on unsized are tracked at the ancestor.
+                ProjectionElem::ConstantIndex { from_end: true, .. } |
+                ProjectionElem::Subslice { .. } => {
+                    // For from_end constant indices and subslices, we track at the ancestor.
+                    return Some(current_idx);
+                }
+                ProjectionElem::Deref => {
+                    // Deref is tracked at the ancestor.
                     return Some(current_idx);
                 }
             }
         }
-
         Some(current_idx)
     }
 
@@ -275,18 +268,13 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
             ctx.adt_repr(*adt_id).map(|r| r.field_tys.len() as u32)
         }
         glyim_type::TyKind::Array(_, len) => {
-            // For arrays, the number of "fields" for move tracking is the array length.
-            // We can only enumerate this if the length is a resolved constant.
             match &len.kind {
                 glyim_type::ConstKind::Uint(n) => Some(*n as u32),
-                glyim_type::ConstKind::Int(n) => Some(*n as u32),
-                _ => None, // Unresolved or generic length
+                glyim_type::ConstKind::Int(n) => if *n >= 0 { Some(*n as u32) } else { None },
+                _ => None,
             }
         }
-        glyim_type::TyKind::Slice(_) => {
-            // Slices are unsized and do not have a statically known field count.
-            None
-        }
+        glyim_type::TyKind::Slice(_) => None,
         _ => None,
     }
 }
