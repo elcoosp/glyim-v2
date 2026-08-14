@@ -219,6 +219,9 @@ fn mark_used_params(ty: Ty, ctx: &dyn TypeLookup, used: &mut [bool]) {
         TyKind::Projection(proj) => {
             mark_used_params_in_subst(proj.trait_ref.substs, ctx, used);
         }
+        TyKind::Bound(_, _) | TyKind::Infer(_) | TyKind::Error => {
+            // These shouldn't appear in MIR after typeck, but handle gracefully.
+        }
         _ => {}
     }
 }
