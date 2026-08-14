@@ -3,14 +3,29 @@ use glyim_span::FileId;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct CompileOutput {
     pub diagnostics: Vec<GlyimDiagnostic>,
     pub syntax_tree: Option<glyim_syntax::SyntaxNode>,
     pub def_map: Option<glyim_def_map::CrateDefMap>,
     pub typeck_result: Option<glyim_typeck::TypeckResult>,
     pub mir_bodies: Vec<Arc<glyim_mir::Body>>,
+    pub ty_ctx: Option<Arc<glyim_type::TyCtx>>,
 }
+
+impl std::fmt::Debug for CompileOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompileOutput")
+            .field("diagnostics", &self.diagnostics)
+            .field("syntax_tree", &self.syntax_tree)
+            .field("def_map", &self.def_map)
+            .field("typeck_result", &self.typeck_result)
+            .field("mir_bodies", &self.mir_bodies)
+            .field("ty_ctx", &self.ty_ctx.as_ref().map(|_| "TyCtx"))
+            .finish()
+    }
+}
+
 
 pub trait TestCompiler: Send + Sync {
     fn compile(&self, source: &str, file_id: FileId, flags: &[String]) -> CompileOutput;
@@ -28,6 +43,7 @@ impl TestCompiler for FrontendOnlyCompiler {
             def_map: None,
             typeck_result: None,
             mir_bodies: Vec::new(),
+            ty_ctx: None,
         }
     }
 }
@@ -59,6 +75,7 @@ impl TestCompiler for PipelineCompiler {
         db.vfs().add_file_content(&path, Arc::from(source));
 
         let output_path = std::path::Path::new("test_output.o");
+        let ty_ctx = db.get_ty_ctx();
         match glyim_pipeline::Pipeline::compile_file(&mut db, &path, &*self.backend, output_path) {
             Ok(()) => CompileOutput {
                 diagnostics: Vec::new(),
@@ -66,6 +83,7 @@ impl TestCompiler for PipelineCompiler {
                 def_map: None,
                 typeck_result: None,
                 mir_bodies: Vec::new(),
+                ty_ctx,
             },
             Err(diags) => CompileOutput {
                 diagnostics: diags,
@@ -73,6 +91,7 @@ impl TestCompiler for PipelineCompiler {
                 def_map: None,
                 typeck_result: None,
                 mir_bodies: Vec::new(),
+                ty_ctx,
             },
         }
     }

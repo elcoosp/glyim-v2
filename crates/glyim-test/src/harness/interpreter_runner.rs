@@ -1,30 +1,30 @@
-use super::runner::RunResult;
+//! Interpreter runner – executes MIR bodies using glyim-mir-interp.
+
+use glyim_mir_interp::Interpreter;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct InterpRunner {
-    bodies: Vec<std::sync::Arc<glyim_mir::Body>>,
+    bodies: Vec<Arc<glyim_mir::Body>>,
+    ty_ctx: Arc<glyim_type::TyCtx>,
 }
 
 impl InterpRunner {
-    pub fn new(bodies: Vec<std::sync::Arc<glyim_mir::Body>>) -> Self {
-        Self { bodies }
+    pub fn new(bodies: Vec<Arc<glyim_mir::Body>>, ty_ctx: Arc<glyim_type::TyCtx>) -> Self {
+        Self { bodies, ty_ctx }
     }
 
-    pub fn run(self, timeout: Duration) -> RunResult {
+    pub fn run(self, timeout: Duration) -> super::runner::RunResult {
         let start = std::time::Instant::now();
-        let timeout_secs = timeout.as_secs();
-
         let (tx, rx) = std::sync::mpsc::channel();
-
         std::thread::spawn(move || {
-            let output = interpret_bodies(&self.bodies);
+            let output = interpret_bodies(&self.bodies, self.ty_ctx.as_ref());
             let _ = tx.send(output);
         });
-
         match rx.recv_timeout(timeout) {
             Ok(output) => {
                 let duration = start.elapsed();
-                RunResult {
+                super::runner::RunResult {
                     exit_code: Some(output.exit_code),
                     stdout: output.stdout,
                     stderr: output.stderr,
@@ -34,10 +34,10 @@ impl InterpRunner {
             }
             Err(_) => {
                 let duration = start.elapsed();
-                RunResult {
+                super::runner::RunResult {
                     exit_code: None,
                     stdout: String::new(),
-                    stderr: format!("interpreter timed out after {}s", timeout_secs),
+                    stderr: format!("interpreter timed out after {}s", timeout.as_secs()),
                     timed_out: true,
                     duration,
                 }
@@ -52,7 +52,7 @@ struct InterpOutput {
     stderr: String,
 }
 
-fn interpret_bodies(bodies: &[std::sync::Arc<glyim_mir::Body>]) -> InterpOutput {
+fn interpret_bodies(bodies: &[Arc<glyim_mir::Body>], ty_ctx: &glyim_type::TyCtx) -> InterpOutput {
     let stdout = String::new();
     let mut stderr = String::new();
 
@@ -64,24 +64,34 @@ fn interpret_bodies(bodies: &[std::sync::Arc<glyim_mir::Body>]) -> InterpOutput 
         };
     }
 
-    let body = &bodies[0];
-    let mut exit_code = 0;
-
-    for (_idx, block) in body.basic_blocks.iter_enumerated() {
-        match &block.terminator.kind {
-            glyim_mir::TerminatorKind::Return => break,
-            glyim_mir::TerminatorKind::Unreachable => {
-                stderr.push_str("runtime error: reached unreachable\n");
-                exit_code = 101;
-                break;
-            }
-            _ => {}
-        }
+    // Set up the interpreter.
+    let mut interpreter = Interpreter::new(ty_ctx);
+    // Register all bodies with the interpreter.
+    for body in bodies {
+        interpreter.add_function(body.owner, (**body).clone());
     }
 
-    InterpOutput {
-        exit_code,
-        stdout,
-        stderr,
+    // Run the main body (assume it's the first one).
+    let main_body = &bodies[0];
+    let result = interpreter.run_body(main_body);
+
+    match result {
+        Ok(()) => {
+            // If the body returns unit, we consider success.
+            // For other return types, we could inspect the return value, but for now we just exit 0.
+            InterpOutput {
+                exit_code: 0,
+                stdout,
+                stderr,
+            }
+        }
+        Err(e) => {
+            stderr.push_str(&format!("interpreter error: {}\n", e));
+            InterpOutput {
+                exit_code: 101,
+                stdout,
+                stderr,
+            }
+        }
     }
 }

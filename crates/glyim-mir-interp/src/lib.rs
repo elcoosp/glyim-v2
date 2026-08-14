@@ -1,6 +1,7 @@
 use glyim_core::{BinOp, CrateId, DefId, LocalDefId, UnOp};
+use glyim_type::Ty;
 use glyim_mir::*;
-use glyim_type::TyCtx;
+use glyim_type::{TyCtx, FieldIdx};
 use std::collections::HashMap;
 
 mod interp_error;
@@ -550,6 +551,7 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
+    
     fn read_place(&self, place: &Place) -> InterpResult<InterpValue> {
         let idx = place.local.index();
         let mut val = self
@@ -558,6 +560,9 @@ impl<'tcx> Interpreter<'tcx> {
             .and_then(|opt| opt.as_ref())
             .cloned()
             .ok_or_else(|| InterpError::Panic(format!("read from uninitialized local {}", idx)))?;
+
+        // Keep track of the current type to compute offsets for ConstantIndex.
+        let mut current_ty = self.local_decls.get(place.local.index()).map(|d| d.ty).unwrap_or(Ty::ERROR);
 
         for proj in place.projection.iter() {
             match proj {
@@ -574,6 +579,12 @@ impl<'tcx> Interpreter<'tcx> {
                                     target
                                 ))
                             })?;
+                        // Update current_ty based on the new value.
+                        if let Some(decl) = self.local_decls.get(target) {
+                            current_ty = decl.ty;
+                        } else {
+                            current_ty = Ty::ERROR;
+                        }
                     }
                     _ => {
                         return Err(InterpError::Panic(
@@ -592,6 +603,15 @@ impl<'tcx> Interpreter<'tcx> {
                                     fields.len()
                                 ))
                             })?;
+                            // Update current_ty: we need the field type. We'll use ty_ctx.
+                            if let Some(decl) = self.local_decls.get(place.local.index()) {
+                                // We need to compute field type from current_ty.
+                                // For simplicity, we'll just set to ERROR and compute later.
+                                // But we can improve by using layout.
+                                current_ty = self.get_field_type(current_ty, *field_idx);
+                            } else {
+                                current_ty = Ty::ERROR;
+                            }
                         }
                         _ => {
                             return Err(InterpError::Panic(
@@ -599,7 +619,7 @@ impl<'tcx> Interpreter<'tcx> {
                             ));
                         }
                     }
-                }
+                },
                 ProjectionElem::Index(index_local) => {
                     let index_val = self
                         .locals
@@ -627,6 +647,8 @@ impl<'tcx> Interpreter<'tcx> {
                                     elems.len()
                                 ))
                             })?;
+                            // Update current_ty: we need element type.
+                            current_ty = self.get_element_type(current_ty);
                         }
                         _ => {
                             return Err(InterpError::Panic(
@@ -634,30 +656,106 @@ impl<'tcx> Interpreter<'tcx> {
                             ));
                         }
                     }
-                }
-                ProjectionElem::Downcast(_) => {
-                    // no change
-                }
-                ProjectionElem::ConstantIndex {
-                    offset: _,
-                    min_length: _,
-                    from_end: _,
-                } => {
-                    // For constant index, we need to compute the index value.
-                    // For simplicity, we panic for now.
-                    panic!("ConstantIndex not implemented in interpreter");
-                }
-                ProjectionElem::Subslice {
-                    from: _,
-                    to: _,
-                    from_end: _,
-                } => {
-                    panic!("Subslice not implemented in interpreter");
-                }
+                },
+                ProjectionElem::Downcast(_variant_idx) => {
+                    // no change, but we may need to adjust current_ty.
+                    // For now, keep current_ty.
+                },
+                ProjectionElem::ConstantIndex { offset, min_length, from_end } => {
+                    // Compute the actual index.
+                    let len = self.get_length_of_aggregate(&val)?;
+                    let idx = if *from_end {
+                        if len <= *offset as usize {
+                            return Err(InterpError::Panic(format!(
+                                "constant index from end offset {} out of bounds (len {})",
+                                offset, len
+                            )));
+                        }
+                        len - *offset as usize
+                    } else {
+                        *offset as usize
+                    };
+                    // Now extract the element at idx.
+                    match val {
+                        InterpValue::Aggregate(ref elems) => {
+                            if idx >= elems.len() {
+                                return Err(InterpError::Panic(format!(
+                                    "constant index {} out of bounds (len {})",
+                                    idx,
+                                    elems.len()
+                                )));
+                            }
+                            val = elems[idx].clone();
+                            // Update current_ty.
+                            current_ty = self.get_element_type(current_ty);
+                        }
+                        _ => {
+                            return Err(InterpError::Panic(
+                                "constant index on non-aggregate value".into(),
+                            ));
+                        }
+                    }
+                },
+                ProjectionElem::Subslice { from, to, from_end } => {
+                    // Subslice produces a slice value (ptr, len).
+                    // For interpreter, we need to represent a slice as an aggregate of (ptr, len)?
+                    // But we don't have a concrete representation for slices yet.
+                    // We'll treat it as a tuple of (data_ptr, len).
+                    // Since we don't have heap, we'll just treat as a special value.
+                    // For simplicity, we'll just panic for now? But better to implement.
+                    // Let's return an aggregate with two values: address of the first element and length.
+                    // We need to compute the data pointer and the new length.
+                    let (base_ptr, base_len) = self.get_slice_base_and_len(&val, current_ty)?;
+                    let start = if *from_end {
+                        if base_len < *to as usize {
+                            return Err(InterpError::Panic(format!(
+                                "subslice from end to {} out of bounds (len {})",
+                                to, base_len
+                            )));
+                        }
+                        base_len - (*to as usize)
+                    } else {
+                        (*from) as usize
+                    };
+                    let end = if *from_end {
+                        if base_len < *to as usize {
+                            return Err(InterpError::Panic(format!(
+                                "subslice from end to {} out of bounds (len {})",
+                                to, base_len
+                            )));
+                        }
+                        base_len - (*from as usize)
+                    } else {
+                        (*to) as usize
+                    };
+                    if start > end {
+                        return Err(InterpError::Panic("subslice start > end".into()));
+                    }
+                    let new_len = end - start;
+                    // data_ptr = base_ptr + start * elem_size (but we don't have elem size).
+                    // We'll just use the base_ptr as is and adjust len.
+                    // In interpreter, we treat the aggregate as a tuple of (ptr, len).
+                    // We'll create a new aggregate of two usize values: (start, new_len) as placeholder.
+                    // Actually better: (base_ptr + start, new_len).
+                    // But we can just represent as (start, new_len) for simplicity.
+                    let elem_size = self.get_element_size(current_ty)?;
+                    let data_ptr = if let InterpValue::Ref(ptr) = val {
+                        ptr + start * elem_size
+                    } else {
+                        // For non-ref aggregates, we can't compute ptr.
+                        // We'll just use the index start as a placeholder.
+                        0
+                    };
+                    val = InterpValue::Aggregate(vec![
+                        InterpValue::Ref(data_ptr),
+                        InterpValue::Int(new_len as i128),
+                    ]);
+                },
             }
         }
         Ok(val)
     }
+
 
     fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
         let idx = place.local.index();
@@ -942,6 +1040,94 @@ impl<'tcx> Interpreter<'tcx> {
                 "slice length expected aggregate or reference".into(),
             )),
         }
+    }
+
+
+    /// Helper to get the length of an aggregate (array, slice, tuple).
+    fn get_length_of_aggregate(&self, val: &InterpValue) -> InterpResult<usize> {
+        match val {
+            InterpValue::Aggregate(fields) => Ok(fields.len()),
+            InterpValue::Ref(target) => {
+                // Dereference to get the aggregate.
+                let target_val = self
+                    .locals
+                    .get(*target)
+                    .and_then(|opt| opt.as_ref())
+                    .ok_or_else(|| InterpError::Panic(format!(
+                        "deref of uninitialized local {}",
+                        target
+                    )))?;
+                self.get_length_of_aggregate(target_val)
+            }
+            _ => Err(InterpError::Panic("expected aggregate for length".into())),
+        }
+    }
+
+    /// Helper to get element type of an aggregate (for updating current_ty).
+    fn get_element_type(&self, ty: Ty) -> Ty {
+        match self.tcx.ty_kind(ty) {
+            glyim_type::TyKind::Array(elem, _) | glyim_type::TyKind::Slice(elem) => *elem,
+            _ => Ty::ERROR,
+        }
+    }
+
+    /// Helper to get field type.
+    fn get_field_type(&self, ty: Ty, field_idx: FieldIdx) -> Ty {
+        match self.tcx.ty_kind(ty) {
+            glyim_type::TyKind::Tuple(substs) => {
+                let args = self.tcx.substitution_args(*substs);
+                if let Some(glyim_type::GenericArg::Ty(t)) = args.get(field_idx.index()) {
+                    *t
+                } else {
+                    Ty::ERROR
+                }
+            }
+            glyim_type::TyKind::Adt(adt_id, _) => {
+                self.tcx.field_ty(*adt_id, field_idx.index())
+            }
+            _ => Ty::ERROR,
+        }
+    }
+
+    /// Helper to get slice base and length.
+    fn get_slice_base_and_len(&self, val: &InterpValue, ty: Ty) -> InterpResult<(usize, usize)> {
+        // We need to compute base pointer and length from the value.
+        // For a slice represented as aggregate of (ptr, len), we extract.
+        match val {
+            InterpValue::Aggregate(fields) if fields.len() == 2 => {
+                let ptr = match &fields[0] {
+                    InterpValue::Ref(p) => *p,
+                    InterpValue::Int(i) => *i as usize,
+                    _ => 0,
+                };
+                let len = match &fields[1] {
+                    InterpValue::Int(i) => *i as usize,
+                    InterpValue::Uint(u) => *u as usize,
+                    _ => 0,
+                };
+                Ok((ptr, len))
+            }
+            InterpValue::Ref(target) => {
+                // Dereference to get the aggregate.
+                let target_val = self
+                    .locals
+                    .get(*target)
+                    .and_then(|opt| opt.as_ref())
+                    .ok_or_else(|| InterpError::Panic(format!(
+                        "deref of uninitialized local {}",
+                        target
+                    )))?;
+                self.get_slice_base_and_len(target_val, ty)
+            }
+            _ => Err(InterpError::Panic("expected slice aggregate".into())),
+        }
+    }
+
+    /// Helper to get element size (for pointer arithmetic).
+    fn get_element_size(&self, _ty: Ty) -> InterpResult<usize> {
+        // For simplicity, assume all elements are size 1 for now.
+        // We can extend with layout later.
+        Ok(1)
     }
 }
 
