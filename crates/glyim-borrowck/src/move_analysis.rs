@@ -98,7 +98,7 @@ impl MovePathArena {
     }
 
     /// Find the move path for a given place.
-    fn find(&self, place: &Place) -> Option<MovePathIdx> {
+    fn find(&mut self, place: &Place) -> Option<MovePathIdx> {
         let root_idx = *self.root_index.get(place.local.to_raw() as usize)?;
 
         if place.projection.is_empty() {
@@ -107,24 +107,93 @@ impl MovePathArena {
 
         let mut current_idx = root_idx?;
         for proj_elem in place.projection.iter() {
-            if let ProjectionElem::Index(_) = proj_elem {
-                return Some(current_idx);
-            }
-            let current = self.get(current_idx);
-            let mut found = None;
-            for &child_idx in &current.children {
-                let child = self.get(child_idx);
-                if let Some(ProjectionElem::Field(f)) = child.place.projection.last()
-                    && let ProjectionElem::Field(g) = proj_elem
-                    && f == g
-                {
-                    found = Some(child_idx);
-                    break;
+            match proj_elem {
+                ProjectionElem::Index(_) => return Some(current_idx),
+                ProjectionElem::Downcast(variant_idx) => {
+                    let current = self.get(current_idx);
+                    let mut found = None;
+                    for &child_idx in &current.children {
+                        let child = self.get(child_idx);
+                        if let Some(ProjectionElem::Downcast(v)) = child.place.projection.last()
+                            && *v == *variant_idx
+                        {
+                            found = Some(child_idx);
+                            break;
+                        }
+                    }
+                    match found {
+                        Some(idx) => current_idx = idx,
+                        None => {
+                            // Create a new move path child for this variant
+                            let mut new_proj = self.get(current_idx).place.projection.iter().cloned().collect::<Vec<_>>();
+                            new_proj.push(ProjectionElem::Downcast(*variant_idx));
+                            let new_path = MovePath {
+                                place: Place {
+                                    local: place.local,
+                                    projection: new_proj.into_boxed_slice(),
+                                },
+                                parent: Some(current_idx),
+                                children: Vec::new(),
+                            };
+                            let new_idx = self.push(new_path);
+                            self.get_mut(current_idx).children.push(new_idx);
+                            current_idx = new_idx;
+                        }
+                    }
                 }
-            }
-            match found {
-                Some(idx) => current_idx = idx,
-                None => return Some(current_idx),
+                ProjectionElem::Field(_) => {
+                    let current = self.get(current_idx);
+                    let mut found = None;
+                    for &child_idx in &current.children {
+                        let child = self.get(child_idx);
+                        if let Some(ProjectionElem::Field(f)) = child.place.projection.last()
+                            && let ProjectionElem::Field(g) = proj_elem
+                            && f == g
+                        {
+                            found = Some(child_idx);
+                            break;
+                        }
+                    }
+                    match found {
+                        Some(idx) => current_idx = idx,
+                        None => return Some(current_idx),
+                    }
+                }
+                ProjectionElem::ConstantIndex { offset, from_end: false, .. } => {
+                    let current = self.get(current_idx);
+                    let mut found = None;
+                    for &child_idx in &current.children {
+                        let child = self.get(child_idx);
+                        if let Some(ProjectionElem::ConstantIndex { offset: o, from_end: false, .. }) = child.place.projection.last()
+                            && *o == *offset
+                        {
+                            found = Some(child_idx);
+                            break;
+                        }
+                    }
+                    match found {
+                        Some(idx) => current_idx = idx,
+                        None => {
+                            let mut new_proj = self.get(current_idx).place.projection.iter().cloned().collect::<Vec<_>>();
+                            new_proj.push(ProjectionElem::ConstantIndex { offset: *offset, min_length: 0, from_end: false });
+                            let new_path = MovePath {
+                                place: Place {
+                                    local: place.local,
+                                    projection: new_proj.into_boxed_slice(),
+                                },
+                                parent: Some(current_idx),
+                                children: Vec::new(),
+                            };
+                            let new_idx = self.push(new_path);
+                            self.get_mut(current_idx).children.push(new_idx);
+                            current_idx = new_idx;
+                        }
+                    }
+                }
+                ProjectionElem::Deref | ProjectionElem::ConstantIndex { .. } | ProjectionElem::Subslice { .. } => {
+                    // As per TASK-P2-3, Deref and index/subslice on unsized are tracked at the ancestor.
+                    return Some(current_idx);
+                }
             }
         }
 
@@ -250,14 +319,14 @@ struct MoveAnalysisResult {
     move_paths: MovePathArena,
 }
 
-fn record_move(move_paths: &MovePathArena, mp_idx: MovePathIdx, moved: &mut BitSet) {
+fn record_move(move_paths: &mut MovePathArena, mp_idx: MovePathIdx, moved: &mut BitSet) {
     moved.insert(mp_idx.to_raw() as usize);
     for &child in &move_paths.get(mp_idx).children {
         moved.insert(child.to_raw() as usize);
     }
 }
 
-fn record_init(move_paths: &MovePathArena, mp_idx: MovePathIdx, inits: &mut BitSet) {
+fn record_init(move_paths: &mut MovePathArena, mp_idx: MovePathIdx, inits: &mut BitSet) {
     inits.insert(mp_idx.to_raw() as usize);
     for &child in &move_paths.get(mp_idx).children {
         inits.insert(child.to_raw() as usize);
@@ -266,7 +335,7 @@ fn record_init(move_paths: &MovePathArena, mp_idx: MovePathIdx, inits: &mut BitS
 
 fn compute_move_dataflow(
     body: &Body,
-    move_paths: MovePathArena,
+    mut move_paths: MovePathArena,
     ctx: &dyn BorrowckCtx,
 ) -> MoveAnalysisResult {
     let num_blocks = body.basic_blocks.len();
@@ -291,7 +360,7 @@ fn compute_move_dataflow(
         for stmt in &block_data.statements {
             collect_stmt_move_effects(
                 stmt,
-                &move_paths,
+                &mut move_paths,
                 &mut block_moves[bi],
                 &mut block_inits[bi],
                 &mut block_deads[bi],
@@ -386,7 +455,7 @@ fn compute_move_dataflow(
 #[allow(clippy::too_many_arguments)]
 fn collect_stmt_move_effects(
     stmt: &glyim_mir::Statement,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     moves: &mut BitSet,
     inits: &mut BitSet,
     deads: &mut BitSet,
@@ -422,7 +491,7 @@ fn collect_stmt_move_effects(
 
 fn collect_rvalue_move_operands(
     rvalue: &Rvalue,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     moves: &mut BitSet,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
@@ -457,7 +526,7 @@ fn collect_rvalue_move_operands(
 
 fn collect_operand_move(
     operand: &Operand,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     moves: &mut BitSet,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
@@ -483,7 +552,7 @@ fn compute_stmt_moved(
     block: BasicBlockIdx,
     moved_in: &BitSet,
     dead_in: &BitSet,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     ctx: &dyn BorrowckCtx,
 ) -> (Vec<BitSet>, Vec<BitSet>) {
     let block_data = &body.basic_blocks[block];
@@ -515,7 +584,7 @@ fn compute_stmt_moved(
 
 fn apply_stmt_move_effects(
     stmt: &glyim_mir::Statement,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     moved: &mut BitSet,
     dead: &mut BitSet,
     ctx: &dyn BorrowckCtx,
@@ -565,7 +634,7 @@ pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagno
         return errors;
     }
 
-    let move_result = compute_move_dataflow(body, move_paths, ctx);
+    let mut move_result = compute_move_dataflow(body, move_paths, ctx);
 
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
         let block_usize = block_idx.to_raw() as usize;
@@ -577,7 +646,7 @@ pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagno
             block_idx,
             moved_in,
             dead_in,
-            &move_result.move_paths,
+            &mut move_result.move_paths,
             ctx,
         );
 
@@ -588,7 +657,7 @@ pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagno
                 stmt,
                 current_moved,
                 current_dead,
-                &move_result.move_paths,
+                &mut move_result.move_paths,
                 ctx,
                 &body.locals,
                 &mut errors,
@@ -608,7 +677,7 @@ fn check_stmt_use_after_move(
     stmt: &glyim_mir::Statement,
     moved: &BitSet,
     dead: &BitSet,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
     errors: &mut Vec<GlyimDiagnostic>,
@@ -689,7 +758,7 @@ fn check_place_use_after_move(
     stmt: &glyim_mir::Statement,
     moved: &BitSet,
     dead: &BitSet,
-    move_paths: &MovePathArena,
+    move_paths: &mut MovePathArena,
     ctx: &dyn BorrowckCtx,
     local_decls: &IndexVec<LocalIdx, LocalDecl>,
     errors: &mut Vec<GlyimDiagnostic>,

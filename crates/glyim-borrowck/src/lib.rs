@@ -35,7 +35,9 @@ use glyim_span::Span;
 use smallvec::SmallVec;
 use tracing::{debug, trace};
 
-use crate::visitor::{ReadVisitor, borrow_kind_label, places_conflict, walk_rvalue_reads};
+use crate::visitor::{
+    ReadVisitor, borrow_kind_label, places_conflict, walk_rvalue_reads, walk_terminator_reads,
+};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -168,6 +170,55 @@ impl ReadVisitor for PlaceCollector<'_> {
 /// program point, meaning the reference is still in use and the borrow
 /// is still active.
 #[allow(clippy::too_many_arguments)]
+fn check_terminator_conflicts(
+    activation_cache: &std::collections::HashMap<usize, twophase::ReservationAnalysis>,
+    ctx: &dyn BorrowckCtx,
+    terminator: &glyim_mir::Terminator,
+    active_loans: &[&Loan],
+    current_block: BasicBlockIdx,
+    current_stmt_idx: usize,
+    errors: &mut Vec<GlyimDiagnostic>,
+) {
+    let mut read_places: SmallVec<[Place; 4]> = SmallVec::new();
+    {
+        let mut collector = PlaceCollector {
+            places: &mut read_places,
+        };
+        walk_terminator_reads(&terminator.kind, &mut collector);
+    }
+
+    for place in &read_places {
+        for loan in active_loans.iter().copied() {
+            if places_conflict(place, &loan.borrowed_place) {
+                let activation = activation_cache.get(&loan.index);
+                let in_reservation = if let Some(act) = activation {
+                    loan_is_in_reservation(loan, current_block, current_stmt_idx, act)
+                } else {
+                    false
+                };
+                if matches!(loan.kind, BorrowKind::Mut { .. } | BorrowKind::Unique)
+                    && !in_reservation
+                {
+                    let name = ctx.local_name(place.local);
+                    let msg = format!(
+                        "cannot use `{name}` because it is {} borrowed",
+                        borrow_kind_label(&loan.kind)
+                    );
+                    let mut diag =
+                        GlyimDiagnostic::borrow_error(terminator.source_info.span, msg);
+                    diag = diag.with_sub(SubDiagnostic {
+                        severity: DiagSeverity::Note,
+                        message: format!("{} borrow occurs here", borrow_kind_label(&loan.kind)),
+                        span: Some(MultiSpan::from_span(loan.span)),
+                    });
+                    errors.push(diag);
+                }
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn check_stmt_conflicts(
     activation_cache: &std::collections::HashMap<usize, twophase::ReservationAnalysis>,
     ctx: &dyn BorrowckCtx,
@@ -175,7 +226,6 @@ fn check_stmt_conflicts(
     active_loans: &[&Loan],
     current_block: BasicBlockIdx,
     current_stmt_idx: usize,
-    _block_data: &BasicBlockData,
     errors: &mut Vec<GlyimDiagnostic>,
 ) {
     match &stmt.kind {
@@ -364,10 +414,28 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
                 &active_loans,
                 block_idx,
                 stmt_idx,
-                block_data,
                 &mut errors,
             );
         }
+
+        // Check terminator reads against active loans at the end of the block
+        let num_stmts = block_data.statements.len();
+        let live_locals = &stmt_liveness[num_stmts];
+        let mut active_loans: SmallVec<[&Loan; 4]> = SmallVec::new();
+        for local_idx in live_locals.ones() {
+            for &loan_idx in &loans_by_dest[local_idx] {
+                active_loans.push(&loans[loan_idx]);
+            }
+        }
+        check_terminator_conflicts(
+            &activation_cache,
+            ctx,
+            &block_data.terminator,
+            &active_loans,
+            block_idx,
+            num_stmts,
+            &mut errors,
+        );
     }
 
     // Move analysis: check for use-after-move errors
@@ -376,6 +444,129 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
 
     debug!(num_errors = errors.len(), "borrow checking complete");
     BorrowckResult { errors }
+}
+
+#[cfg(test)]
+mod terminator_conflict_tests {
+    use super::*;
+    use glyim_core::arena::IndexVec;
+    use glyim_core::def_id::{CrateId, DefId, LocalDefId};
+    use glyim_core::primitives::Mutability;
+    use glyim_mir::{
+        BasicBlockData, BasicBlockIdx, Body, BorrowKind, LocalDecl, Operand, Place, Rvalue,
+        SourceInfo, Statement, StatementKind, Terminator, TerminatorKind,
+    };
+    use glyim_span::Span;
+    use glyim_type::{Ty, TyCtx, TyCtxMut};
+
+    struct MockCtx {
+        locals: IndexVec<LocalIdx, LocalDecl>,
+        ty_ctx: TyCtx,
+    }
+
+    impl BorrowckCtx for MockCtx {
+        fn ty_ctx(&self) -> &TyCtx {
+            &self.ty_ctx
+        }
+        fn local_decl(&self, local: LocalIdx) -> &LocalDecl {
+            &self.locals[local]
+        }
+        fn local_name(&self, local: LocalIdx) -> String {
+            format!("local_{}", local.to_raw())
+        }
+    }
+
+    #[test]
+    fn test_terminator_read_conflict() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+        let ty_ctx = ctx_mut.freeze();
+
+        let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+        let local_0 = locals.push(LocalDecl { // return place
+            ty: Ty::ERROR,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let local_1 = locals.push(LocalDecl { // borrowed place
+            ty: Ty::BOOL,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let local_2 = locals.push(LocalDecl { // reference
+            ty: Ty::ERROR,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        let borrow_stmt = Statement {
+            kind: StatementKind::Assign(
+                Place::new(local_2),
+                Rvalue::Ref(
+                    Place::new(local_1),
+                    BorrowKind::Mut {
+                        allow_two_phase_borrow: false,
+                    },
+                ),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+
+        let block0 = BasicBlockData {
+            statements: vec![borrow_stmt],
+            terminator: Terminator {
+                kind: TerminatorKind::SwitchInt {
+                    discr: Operand::Copy(Place::new(local_1)),
+                    switch_ty: Ty::BOOL,
+                    targets: glyim_mir::SwitchTargets::new(
+                        Box::new([]),
+                        BasicBlockIdx::from_raw(1),
+                    ),
+                },
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            is_cleanup: false,
+        };
+
+        let assign_stmt = Statement {
+            kind: StatementKind::Assign(
+                Place::new(local_0),
+                Rvalue::Use(Operand::Move(Place::new(local_2))),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+
+        let block1 = BasicBlockData {
+            statements: vec![assign_stmt],
+            terminator: Terminator {
+                kind: TerminatorKind::Return,
+                source_info: SourceInfo::new(Span::DUMMY),
+            },
+            is_cleanup: false,
+        };
+
+        let mut body = Body {
+            owner: DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
+            basic_blocks: IndexVec::new(),
+            locals,
+            arg_count: 0,
+            return_ty: Ty::ERROR,
+            span: Span::DUMMY,
+            var_debug_info: Vec::new(),
+        };
+        body.basic_blocks.push(block0);
+        body.basic_blocks.push(block1);
+
+        let mock_ctx = MockCtx {
+            locals: body.locals.clone(),
+            ty_ctx,
+        };
+        let result = check_borrows(&mock_ctx, &body);
+
+        assert!(
+            result.errors.iter().any(|d| d.message.contains("cannot use `local_1` because it is mutable borrowed")),
+            "Expected a borrow error for using local_1 in terminator, got: {:?}", result.errors
+        );
+    }
 }
 
 #[cfg(test)]

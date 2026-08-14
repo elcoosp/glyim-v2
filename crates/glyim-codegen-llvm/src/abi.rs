@@ -20,6 +20,38 @@ impl<'a> FullLayoutComputer<'a> {
     fn ptr_size(&self) -> Size {
         self.simple.ptr_size()
     }
+
+    fn classify_arg(&self, ty: Ty, layout: &Layout) -> PassMode {
+        let size = layout.size.0;
+        if size == 0 {
+            return PassMode::Ignore;
+        }
+
+        let kind = self.ctx.ty_kind(ty);
+        let is_scalar = matches!(
+            kind,
+            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char
+            | TyKind::Ref(..) | TyKind::RawPtr(..) | TyKind::FnPtr(_) | TyKind::FnDef(..)
+        );
+
+        if is_scalar {
+            return PassMode::Direct;
+        }
+
+        // For aggregates (structs, tuples, arrays, closures), the SysV and AArch64 ABIs
+        // allow passing them in registers if they are <= 16 bytes.
+        // Windows x86-64 ABI is more restrictive: only <= 8 bytes are passed in registers.
+        let max_direct_size = match self.simple.target_info().abi {
+            glyim_core::primitives::TargetAbi::X86_64Windows => 8,
+            _ => 16,
+        };
+
+        if size <= max_direct_size {
+            PassMode::Direct
+        } else {
+            PassMode::Indirect { meta_attrs: false }
+        }
+    }
 }
 
 impl LayoutComputer for FullLayoutComputer<'_> {
@@ -197,28 +229,15 @@ impl LayoutComputer for FullLayoutComputer<'_> {
     }
 
     fn fn_abi_of(&self, sig: &glyim_type::FnSig) -> Result<FnAbi, LayoutError> {
-        let ptr_size = self.ptr_size();
-        let large_threshold = ptr_size.0.saturating_mul(2);
         let ret_layout = self.layout_of(sig.output)?;
-        let ret_mode = if ret_layout.size.0 == 0 {
-            PassMode::Ignore
-        } else if ret_layout.size.0 > large_threshold {
-            PassMode::Indirect { meta_attrs: false }
-        } else {
-            PassMode::Direct
-        };
+        let ret_mode = self.classify_arg(sig.output, &ret_layout);
+
         let args = self.ctx.substitution_args(sig.inputs);
         let mut arg_abis = Vec::with_capacity(args.len());
         for arg in args {
             if let glyim_type::GenericArg::Ty(t) = arg {
                 let layout = self.layout_of(*t)?;
-                let mode = if layout.size.0 == 0 {
-                    PassMode::Ignore
-                } else if layout.size.0 > large_threshold {
-                    PassMode::Indirect { meta_attrs: false }
-                } else {
-                    PassMode::Direct
-                };
+                let mode = self.classify_arg(*t, &layout);
                 arg_abis.push(ArgAbi {
                     ty: *t,
                     layout,
