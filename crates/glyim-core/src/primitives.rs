@@ -7,12 +7,27 @@ pub struct TargetInfo {
 
 impl TargetInfo {
     pub fn from_triple(triple: &str) -> Self {
-        let pointer_width = if triple.contains("64") { 64 } else { 32 };
-        let abi = if triple.starts_with("aarch64") {
-            TargetAbi::AArch64AAPCS
-        } else {
-            TargetAbi::X86_64SystemV
+        let parts: Vec<&str> = triple.split('-').collect();
+        let arch = parts.first().copied().unwrap_or("");
+        let os = parts.get(2).copied().unwrap_or("");
+
+        let pointer_width = match arch {
+            "x86_64" | "aarch64" | "arm64" | "riscv64" | "powerpc64" | "mips64" => 64,
+            "i386" | "i686" | "arm" | "armv7" | "wasm32" | "riscv32" | "powerpc" | "mips" => 32,
+            _ => {
+                // Fallback heuristic for unknown arches
+                if arch.contains("64") { 64 } else { 32 }
+            }
         };
+
+        let abi = match (arch, os) {
+            ("x86_64", "windows") | ("x86_64", "win32") => TargetAbi::X86_64Windows,
+            ("aarch64", "windows") | ("arm64", "windows") => TargetAbi::AArch64Windows,
+            ("aarch64", _) | ("arm64", _) => TargetAbi::AArch64AAPCS,
+            ("wasm32", _) => TargetAbi::Wasm32,
+            _ => TargetAbi::X86_64SystemV,
+        };
+
         Self {
             pointer_width,
             triple: triple.to_string(),
@@ -27,12 +42,15 @@ impl TargetInfo {
     pub fn x86_64() -> Self {
         Self::from_triple("x86_64-unknown-linux-gnu")
     }
+
     pub fn pointer_width(&self) -> u32 {
         self.pointer_width
     }
+
     pub fn pointer_size(&self) -> u64 {
         self.pointer_width as u64 / 8
     }
+
     pub fn pointer_align(&self) -> u64 {
         self.pointer_size()
     }
@@ -41,7 +59,10 @@ impl TargetInfo {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetAbi {
     X86_64SystemV,
+    X86_64Windows,
     AArch64AAPCS,
+    AArch64Windows,
+    Wasm32,
 }
 
 impl Default for TargetInfo {

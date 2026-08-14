@@ -14,6 +14,7 @@ pub struct Database {
     krate: CrateId,
     /// Cache of previously computed mono item symbols.
     mono_cache: RwLock<Option<Vec<String>>>,
+    config: CrateConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -28,13 +29,14 @@ impl Database {
         &mut self.interner
     }
 
-    pub fn new(_config: CrateConfig) -> Self {
+    pub fn new(config: CrateConfig) -> Self {
         Self {
             interner: Interner::new(),
             vfs: Vfs::new(),
             ty_ctx: Arc::new(std::sync::RwLock::new(None)),
             krate: CrateId::from_raw(0),
             mono_cache: RwLock::new(None),
+            config,
         }
     }
 
@@ -69,6 +71,10 @@ impl Database {
     pub fn mono_cache(&self) -> parking_lot::RwLockReadGuard<'_, Option<Vec<String>>> {
         self.mono_cache.read()
     }
+
+    pub fn config(&self) -> &CrateConfig {
+        &self.config
+    }
 }
 
 impl Default for Database {
@@ -82,4 +88,19 @@ impl Default for Database {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_database_stores_config() {
+        let config = CrateConfig {
+            name: "test_crate".to_string(),
+            target_triple: "aarch64-unknown-linux-gnu".to_string(),
+            opt_level: 2,
+        };
+        let db = Database::new(config);
+        assert_eq!(db.config().name, "test_crate");
+        assert_eq!(db.config().target_triple, "aarch64-unknown-linux-gnu");
+        assert_eq!(db.config().opt_level, 2);
+    }
+}
