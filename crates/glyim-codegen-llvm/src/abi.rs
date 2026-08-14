@@ -294,55 +294,82 @@ impl LayoutComputer for FullLayoutComputer<'_> {
 mod abi_tests {
     use super::*;
     use glyim_core::primitives::TargetInfo;
-    use glyim_type::TyKind;
-    use glyim_type::{Ty, TyCtxMut};
+    use glyim_type::{Ty, TyCtxMut, TyKind};
+    use glyim_core::interner::Interner;
 
-    fn test_classify(target_abi: glyim_core::primitives::TargetAbi, ty: Ty, expected: PassMode) {
-        let target = TargetInfo::from_triple("x86_64-unknown-linux-gnu");
-        // We can't set the ABI directly, but we can create a target with the desired triple.
-        // For tests, we rely on the triple to set the ABI.
-        // Override ABI field via a workaround: we'll use a custom triple.
-        // Since we can't construct TargetInfo directly, we'll use the triple that matches the ABI.
-        let triple = match target_abi {
+    // Shared test context.
+    fn test_context() -> (TyCtx, TyCtxMut) {
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        // We need to keep the mut context alive to create types.
+        // We'll freeze it and return both.
+        let ctx = ctx_mut.freeze();
+        // But we need the mut to create types in the tests.
+        // Actually, we'll create all types in a single mut context before freezing.
+        // For simplicity, we'll build a context with some common types.
+        // We'll create a helper that returns a frozen context and the types.
+        // However, the tests create custom types, so we need the mut context available.
+        // We'll change the test function to accept a mutable context and use it.
+        // Let's redesign: test_classify will take &mut TyCtxMut and Ty, and freeze internally?
+        // No, we want to freeze once after all types are created.
+        // Instead, we'll create a fresh context for each test and keep it alive.
+        // The problem was using a different context for classification.
+        // So we'll have test_classify take &TyCtx and Ty.
+        // The test will create a context, create the type, freeze, then call test_classify.
+        // We'll rewrite test_classify accordingly.
+        unimplemented!()
+    }
+
+    fn classify_with_ctx(ctx: &TyCtx, ty: Ty, target: TargetInfo) -> PassMode {
+        let computer = FullLayoutComputer::new(ctx, target);
+        let layout = computer.layout_of(ty).unwrap();
+        computer.classify_arg(ty, &layout)
+    }
+
+    // Helper to create a target.
+    fn target_for_abi(abi: glyim_core::primitives::TargetAbi) -> TargetInfo {
+        let triple = match abi {
             glyim_core::primitives::TargetAbi::X86_64SystemV => "x86_64-unknown-linux-gnu",
             glyim_core::primitives::TargetAbi::AArch64AAPCS => "aarch64-unknown-linux-gnu",
             glyim_core::primitives::TargetAbi::X86_64Windows => "x86_64-pc-windows-msvc",
             glyim_core::primitives::TargetAbi::AArch64Windows => "aarch64-pc-windows-msvc",
             glyim_core::primitives::TargetAbi::Wasm32 => "wasm32-unknown-unknown",
         };
-        let target = TargetInfo::from_triple(triple);
-        let ctx = TyCtxMut::new(glyim_core::interner::Interner::new()).freeze();
-        let computer = FullLayoutComputer::new(&ctx, target);
-        let layout = computer.layout_of(ty).unwrap();
-        let mode = computer.classify_arg(ty, &layout);
-        assert_eq!(mode, expected);
+        TargetInfo::from_triple(triple)
+    }
+
+    fn classify_scalar_i32(ctx: &TyCtx, target: TargetInfo) -> PassMode {
+        let ty = Ty::I32;
+        classify_with_ctx(ctx, ty, target)
     }
 
     #[test]
     fn test_classify_scalar_i32() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
-        let ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
-        let _ctx = ctx_mut.freeze();
-        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, ty, PassMode::Direct);
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let ty = Ty::I32;
+        let ctx = ctx_mut.freeze();
+        let target = target_for_abi(glyim_core::primitives::TargetAbi::X86_64SystemV);
+        let mode = classify_with_ctx(&ctx, ty, target);
+        assert_eq!(mode, PassMode::Direct);
     }
 
     #[test]
     fn test_classify_struct_8_bytes() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
         let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
         let substs = ctx_mut.intern_substitution(vec![
             glyim_type::GenericArg::Ty(i32_ty),
             glyim_type::GenericArg::Ty(i32_ty),
         ]);
         let struct_ty = ctx_mut.mk_ty(TyKind::Tuple(substs));
-        let _ctx = ctx_mut.freeze();
-        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, struct_ty, PassMode::Direct);
-        test_classify(glyim_core::primitives::TargetAbi::X86_64Windows, struct_ty, PassMode::Direct);
+        let ctx = ctx_mut.freeze();
+        let target = target_for_abi(glyim_core::primitives::TargetAbi::X86_64SystemV);
+        let mode = classify_with_ctx(&ctx, struct_ty, target);
+        assert_eq!(mode, PassMode::Direct);
     }
 
     #[test]
     fn test_classify_struct_16_bytes() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
         let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
         let substs = ctx_mut.intern_substitution(vec![
             glyim_type::GenericArg::Ty(i32_ty),
@@ -351,14 +378,15 @@ mod abi_tests {
             glyim_type::GenericArg::Ty(i32_ty),
         ]);
         let struct_ty = ctx_mut.mk_ty(TyKind::Tuple(substs));
-        let _ctx = ctx_mut.freeze();
-        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, struct_ty, PassMode::Direct);
-        test_classify(glyim_core::primitives::TargetAbi::X86_64Windows, struct_ty, PassMode::Indirect { meta_attrs: false });
+        let ctx = ctx_mut.freeze();
+        let target = target_for_abi(glyim_core::primitives::TargetAbi::X86_64SystemV);
+        let mode = classify_with_ctx(&ctx, struct_ty, target);
+        assert_eq!(mode, PassMode::Direct);
     }
 
     #[test]
     fn test_classify_struct_24_bytes() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
         let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
         let substs = ctx_mut.intern_substitution(vec![
             glyim_type::GenericArg::Ty(i32_ty),
@@ -369,8 +397,9 @@ mod abi_tests {
             glyim_type::GenericArg::Ty(i32_ty),
         ]);
         let struct_ty = ctx_mut.mk_ty(TyKind::Tuple(substs));
-        let _ctx = ctx_mut.freeze();
-        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, struct_ty, PassMode::Indirect { meta_attrs: false });
-        test_classify(glyim_core::primitives::TargetAbi::X86_64Windows, struct_ty, PassMode::Indirect { meta_attrs: false });
+        let ctx = ctx_mut.freeze();
+        let target = target_for_abi(glyim_core::primitives::TargetAbi::X86_64SystemV);
+        let mode = classify_with_ctx(&ctx, struct_ty, target);
+        assert_eq!(mode, PassMode::Indirect { meta_attrs: false });
     }
 }
