@@ -17,10 +17,6 @@ impl<'a> FullLayoutComputer<'a> {
             ctx,
         }
     }
-    fn ptr_size(&self) -> Size {
-        self.simple.ptr_size()
-    }
-
     fn classify_arg(&self, ty: Ty, layout: &Layout) -> PassMode {
         let size = layout.size.0;
         if size == 0 {

@@ -29,7 +29,7 @@ mod visitor;
 
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, MultiSpan, SubDiagnostic};
 use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, BorrowKind, LocalIdx, Place, Rvalue, StatementKind,
+    BasicBlockIdx, Body, BorrowKind, LocalIdx, Place, Rvalue, StatementKind,
 };
 use glyim_span::Span;
 use smallvec::SmallVec;

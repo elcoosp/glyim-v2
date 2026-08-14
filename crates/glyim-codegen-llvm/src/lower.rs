@@ -2932,8 +2932,8 @@ pub(crate) fn lower_body<'ctx>(
     for _ in 0..num_locals {
         locals.push(None);
     }
-    let ptr_type = context.ptr_type(AddressSpace::default());
-    let i64_type = context
+    let _ptr_type = context.ptr_type(AddressSpace::default());
+    let _i64_type = context
         .custom_width_int_type(NonZeroU32::new(64).unwrap())
         .unwrap();
     let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
