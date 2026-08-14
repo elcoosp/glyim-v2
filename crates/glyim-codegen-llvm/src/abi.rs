@@ -17,6 +17,7 @@ impl<'a> FullLayoutComputer<'a> {
             ctx,
         }
     }
+
     fn classify_arg(&self, ty: Ty, layout: &Layout) -> PassMode {
         let size = layout.size.0;
         if size == 0 {
@@ -41,18 +42,41 @@ impl<'a> FullLayoutComputer<'a> {
             return PassMode::Direct;
         }
 
-        // For aggregates (structs, tuples, arrays, closures), the SysV and AArch64 ABIs
-        // allow passing them in registers if they are <= 16 bytes.
-        // Windows x86-64 ABI is more restrictive: only <= 8 bytes are passed in registers.
-        let max_direct_size = match self.simple.target_info().abi {
-            glyim_core::primitives::TargetAbi::X86_64Windows => 8,
-            _ => 16,
-        };
+        // For aggregates, we need to consider the target ABI.
+        let target_abi = self.simple.target_info().abi;
 
-        if size <= max_direct_size {
-            PassMode::Direct
-        } else {
-            PassMode::Indirect { meta_attrs: false }
+        match target_abi {
+            glyim_core::primitives::TargetAbi::X86_64SystemV => {
+                if size <= 16 && layout.align.0 <= 8 {
+                    PassMode::Direct
+                } else {
+                    PassMode::Indirect { meta_attrs: false }
+                }
+            }
+            glyim_core::primitives::TargetAbi::AArch64AAPCS => {
+                if size <= 16 && layout.align.0 <= 8 {
+                    PassMode::Direct
+                } else {
+                    PassMode::Indirect { meta_attrs: false }
+                }
+            }
+            glyim_core::primitives::TargetAbi::X86_64Windows => {
+                if size <= 8 && layout.align.0 <= 8 {
+                    PassMode::Direct
+                } else {
+                    PassMode::Indirect { meta_attrs: false }
+                }
+            }
+            glyim_core::primitives::TargetAbi::AArch64Windows => {
+                if size <= 8 && layout.align.0 <= 8 {
+                    PassMode::Direct
+                } else {
+                    PassMode::Indirect { meta_attrs: false }
+                }
+            }
+            glyim_core::primitives::TargetAbi::Wasm32 => {
+                PassMode::Direct
+            }
         }
     }
 }
@@ -139,8 +163,7 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                         }
 
                         let max_size = variant_layouts.iter().map(|l| l.size.0).max().unwrap_or(0);
-                        let max_align =
-                            variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
+                        let max_align = variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
                         let max_align = Align::from_bytes(max_align);
 
                         let n_variants = adt_def.variants.len() as u64;
@@ -161,14 +184,8 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                             glyim_type::Ty::U32
                         };
 
-                        let mut tag_offsets: glyim_core::arena::IndexVec<
-                            glyim_type::FieldIdx,
-                            Size,
-                        > = glyim_core::arena::IndexVec::new();
-                        tag_offsets.push(Size::ZERO);
-
-                        let mut untagged_offsets = glyim_core::arena::IndexVec::new();
                         let data_start = tag_size.align_to(tag_align);
+                        let mut untagged_offsets = glyim_core::arena::IndexVec::new();
                         if let Some(layout) = variant_layouts.first()
                             && let FieldsShape::Arbitrary { offsets } = &layout.fields
                         {
@@ -268,5 +285,92 @@ impl LayoutComputer for FullLayoutComputer<'_> {
     }
     fn target_info(&self) -> &TargetInfo {
         self.simple.target_info()
+    }
+}
+
+
+
+#[cfg(test)]
+mod abi_tests {
+    use super::*;
+    use glyim_core::primitives::TargetInfo;
+    use glyim_type::TyKind;
+    use glyim_type::{Ty, TyCtxMut};
+
+    fn test_classify(target_abi: glyim_core::primitives::TargetAbi, ty: Ty, expected: PassMode) {
+        let target = TargetInfo::from_triple("x86_64-unknown-linux-gnu");
+        // We can't set the ABI directly, but we can create a target with the desired triple.
+        // For tests, we rely on the triple to set the ABI.
+        // Override ABI field via a workaround: we'll use a custom triple.
+        // Since we can't construct TargetInfo directly, we'll use the triple that matches the ABI.
+        let triple = match target_abi {
+            glyim_core::primitives::TargetAbi::X86_64SystemV => "x86_64-unknown-linux-gnu",
+            glyim_core::primitives::TargetAbi::AArch64AAPCS => "aarch64-unknown-linux-gnu",
+            glyim_core::primitives::TargetAbi::X86_64Windows => "x86_64-pc-windows-msvc",
+            glyim_core::primitives::TargetAbi::AArch64Windows => "aarch64-pc-windows-msvc",
+            glyim_core::primitives::TargetAbi::Wasm32 => "wasm32-unknown-unknown",
+        };
+        let target = TargetInfo::from_triple(triple);
+        let ctx = TyCtxMut::new(glyim_core::interner::Interner::new()).freeze();
+        let computer = FullLayoutComputer::new(&ctx, target);
+        let layout = computer.layout_of(ty).unwrap();
+        let mode = computer.classify_arg(ty, &layout);
+        assert_eq!(mode, expected);
+    }
+
+    #[test]
+    fn test_classify_scalar_i32() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+        let _ctx = ctx_mut.freeze();
+        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, ty, PassMode::Direct);
+    }
+
+    #[test]
+    fn test_classify_struct_8_bytes() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+        let substs = ctx_mut.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+        ]);
+        let struct_ty = ctx_mut.mk_ty(TyKind::Tuple(substs));
+        let _ctx = ctx_mut.freeze();
+        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, struct_ty, PassMode::Direct);
+        test_classify(glyim_core::primitives::TargetAbi::X86_64Windows, struct_ty, PassMode::Direct);
+    }
+
+    #[test]
+    fn test_classify_struct_16_bytes() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+        let substs = ctx_mut.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+        ]);
+        let struct_ty = ctx_mut.mk_ty(TyKind::Tuple(substs));
+        let _ctx = ctx_mut.freeze();
+        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, struct_ty, PassMode::Direct);
+        test_classify(glyim_core::primitives::TargetAbi::X86_64Windows, struct_ty, PassMode::Indirect { meta_attrs: false });
+    }
+
+    #[test]
+    fn test_classify_struct_24_bytes() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::interner::Interner::new());
+        let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+        let substs = ctx_mut.intern_substitution(vec![
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+            glyim_type::GenericArg::Ty(i32_ty),
+        ]);
+        let struct_ty = ctx_mut.mk_ty(TyKind::Tuple(substs));
+        let _ctx = ctx_mut.freeze();
+        test_classify(glyim_core::primitives::TargetAbi::X86_64SystemV, struct_ty, PassMode::Indirect { meta_attrs: false });
+        test_classify(glyim_core::primitives::TargetAbi::X86_64Windows, struct_ty, PassMode::Indirect { meta_attrs: false });
     }
 }

@@ -125,6 +125,7 @@ impl TyCtxMut {
             Ty::ISIZE.to_raw(),
             "Ty::ISIZE sentinel mismatch"
         );
+        ctx.register_builtin_ranges();
         ctx
     }
 
@@ -437,6 +438,70 @@ impl TyCtxMut {
         }
         visiting.remove(&adt_id);
         false
+    }
+
+
+    /// Register built-in range types as ADTs.
+    pub fn register_builtin_ranges(&mut self) {
+        use glyim_core::def_id::AdtId;
+        use glyim_core::arena::IndexVec;
+        use crate::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
+
+        // Helper to create a struct AdtDef with given field types.
+        // This is a plain function, not a closure, so it doesn't capture self.
+        // But we can't define a nested function that uses self.resolver directly.
+        // We'll just create each def manually.
+
+        // Create a type variable for T.
+        let t_var = self.mk_ty(TyKind::Param(ParamTy { index: 0, name: self.resolver.intern("T") }));
+
+        // Helper to make field defs for a list of types.
+        // We'll call self.resolver.intern directly inside the loop.
+        // This is safe because we don't hold any borrows across calls.
+        let make_field_defs = |fields: Vec<Ty>, this: &mut Self| {
+            let mut field_defs = IndexVec::new();
+            for (i, ty) in fields.iter().enumerate() {
+                field_defs.push(FieldDef {
+                    name: this.resolver.intern(&format!("field_{}", i)),
+                    ty: *ty,
+                });
+            }
+            field_defs
+        };
+
+        // Helper to make a struct AdtDef.
+        let make_struct_def = |fields: Vec<Ty>, this: &mut Self| {
+            let field_defs = make_field_defs(fields, this);
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: this.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+
+        // Register Range<T> (start, end) - ID 1000
+        let def = make_struct_def(vec![t_var, t_var], self);
+        self.register_adt(AdtId::from_raw(1000), def);
+
+        // Register RangeInclusive<T> (start, end) - ID 1001
+        let def = make_struct_def(vec![t_var, t_var], self);
+        self.register_adt(AdtId::from_raw(1001), def);
+
+        // Register RangeFrom<T> (start) - ID 1002
+        let def = make_struct_def(vec![t_var], self);
+        self.register_adt(AdtId::from_raw(1002), def);
+
+        // Register RangeTo<T> (end) - ID 1003
+        let def = make_struct_def(vec![t_var], self);
+        self.register_adt(AdtId::from_raw(1003), def);
+
+        // Register RangeToInclusive<T> (end) - ID 1004
+        let def = make_struct_def(vec![t_var], self);
+        self.register_adt(AdtId::from_raw(1004), def);
     }
 }
 
