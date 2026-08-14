@@ -261,9 +261,13 @@ impl<'a> FnCtxt<'a> {
                 iterable,
                 body,
             } => {
-                let (_iter_expr, _iter_ty) = self.check_expr(*iterable);
+                let (iter_expr, iter_ty) = self.check_expr(*iterable);
+                // Resolve Iterator::Item for the iterable type.
+                // For now, we use a fresh inference variable to represent the item type;
+                // the actual resolution will be done by the trait solver when lowering.
+                let item_ty = self.fresh_infer_ty();
                 self.env.enter_scope();
-                let pat_thir = self.check_pattern(*pat, Ty::ERROR);
+                let pat_thir = self.check_pattern(*pat, item_ty);
                 self.env.leave_scope();
 
                 self.env.enter_scope();
@@ -274,7 +278,7 @@ impl<'a> FnCtxt<'a> {
                     thir::Expr {
                         kind: thir::ExprKind::For {
                             pat: Box::new(pat_thir),
-                            iterable: Box::new(thir::Expr::err(span)),
+                            iterable: Box::new(iter_expr),
                             body: Box::new(body_expr),
                         },
                         ty: Ty::UNIT,

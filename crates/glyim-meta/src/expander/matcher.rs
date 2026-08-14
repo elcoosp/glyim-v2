@@ -1,3 +1,5 @@
+//! Macro pattern matching with fragment specifiers and TT munching.
+
 use super::token_tree::TokenTree;
 use glyim_syntax::SyntaxKind;
 use smol_str::SmolStr;
@@ -109,6 +111,7 @@ fn parse_pattern_pieces(trees: &[TokenTree], pos: usize) -> Option<(Vec<PatternP
                     pieces.push(PatternPiece::Metavar { name, fragment });
                 }
                 TokenTree::Group(SyntaxKind::LParen, inner, SyntaxKind::RParen) => {
+                    // Repetition: $(...)
                     let (inner_pieces, _) = parse_pattern_pieces(inner, 0)?;
                     i += 1;
                     let separator = if i < trees.len() {
@@ -188,25 +191,17 @@ fn matches_fragment_spec(tree: &TokenTree, spec: &FragmentSpec) -> bool {
             tree,
             TokenTree::Token(
                 SyntaxKind::IntLit
-                    | SyntaxKind::FloatLit
-                    | SyntaxKind::StringLit
-                    | SyntaxKind::BoolLit
-                    | SyntaxKind::CharLit,
+                | SyntaxKind::FloatLit
+                | SyntaxKind::StringLit
+                | SyntaxKind::BoolLit
+                | SyntaxKind::CharLit,
                 _
             )
         ),
         FragmentSpec::Lifetime => matches!(tree, TokenTree::Token(SyntaxKind::Lifetime, _)),
-        // tt, expr, ty, path, block, stmt, item, pat, vis, meta all match any single token tree
-        FragmentSpec::Tt
-        | FragmentSpec::Expr
-        | FragmentSpec::Ty
-        | FragmentSpec::Path
-        | FragmentSpec::Block
-        | FragmentSpec::Stmt
-        | FragmentSpec::Item
-        | FragmentSpec::Pat
-        | FragmentSpec::Vis
-        | FragmentSpec::Meta => true,
+        // For now, other fragment specs accept any single token tree (placeholder).
+        // Real parsing will be implemented later.
+        _ => true,
     }
 }
 
@@ -244,7 +239,7 @@ fn match_pieces(
                 }
             }
             PatternPiece::Metavar { name, fragment } => {
-                // All fragment specs match exactly one token tree.
+                // All fragment specs match exactly one token tree for now.
                 // Fragment-specific filtering rejects mismatched tokens.
                 if i < input.len() {
                     if matches_fragment_spec(&input[i], fragment) {
@@ -409,7 +404,6 @@ mod tests {
 
     #[test]
     fn test_expr_metavar_matches_one_token() {
-        // Expr fragment spec matches a single token (not greedy)
         let pattern = Pattern::new(vec![PatternPiece::Metavar {
             name: SmolStr::from("x"),
             fragment: FragmentSpec::Expr,
