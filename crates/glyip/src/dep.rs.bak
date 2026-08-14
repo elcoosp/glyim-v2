@@ -9,7 +9,6 @@ use crate::config::GlyipToml;
 use crate::error::{GlyipError, GlyipResult};
 use crate::lockfile::{CrateSource, LockedCrate, Lockfile};
 use serde::{Deserialize, Serialize};
-use semver::{Version, VersionReq};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -324,7 +323,6 @@ impl DependencyResolver {
         }
 
         // Process dependencies breadth-first.
-        // TODO: implement transitive resolution by fetching dependencies of each resolved crate.
         while let Some((name, version_req, path)) = visit_stack.pop_front() {
             let key = if let Some(ref v) = version_req {
                 format!("{}-{}", name, v)

@@ -42,6 +42,7 @@ members = [
 ]
 
 [workspace.dependencies]
+semver = "1.0"
 glyim-const-eval = { path = "crates/glyim-const-eval" }
 glyim-core = { path = "crates/glyim-core" }
 glyim-span = { path = "crates/glyim-span" }

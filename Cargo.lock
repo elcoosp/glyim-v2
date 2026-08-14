@@ -1398,6 +1398,7 @@ dependencies = [
  "glyim-vfs",
  "hex",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

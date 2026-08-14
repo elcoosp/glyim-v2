@@ -871,7 +871,7 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
+    fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, _span: Span) -> Ty {
         for (_id, item) in self.hir.items.iter_enumerated() {
             if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
                 let param_map = crate::tyconv::build_param_tys(self.ctx, &impl_item.generic_params);
