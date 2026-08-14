@@ -3,9 +3,9 @@
 //! Supports Int, Uint, Bool, Char, and Float constants.
 
 use glyim_mir::*;
-use glyim_span::Span;
 use glyim_type::TyCtx;
 use std::collections::HashMap;
+use glyim_span::Span;
 
 type BlockMap = HashMap<LocalIdx, Option<MirConst>>;
 
