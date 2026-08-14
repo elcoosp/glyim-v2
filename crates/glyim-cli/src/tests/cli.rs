@@ -20,7 +20,8 @@ mod tests {
         assert!(result.is_err());
         let errs = result.unwrap_err();
         assert!(!errs.is_empty());
-        assert!(errs[0].message.contains("unknown emit type"));
+        assert!(errs[0].message.contains("invalid value for --emit"));
+        assert!(errs[0].message.contains("expected one of: obj, exec, mir, llvm-ir"));
     }
 
     #[test]

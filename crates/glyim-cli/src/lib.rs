@@ -33,6 +33,29 @@ pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     run_with_args(args)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EmitKind {
+    Obj,
+    Exec,
+    Mir,
+    LlvmIr,
+}
+
+impl EmitKind {
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "obj" => Ok(EmitKind::Obj),
+            "exec" => Ok(EmitKind::Exec),
+            "mir" => Ok(EmitKind::Mir),
+            "llvm-ir" => Ok(EmitKind::LlvmIr),
+            _ => Err(format!(
+                "invalid value for --emit: '{}' (expected one of: obj, exec, mir, llvm-ir)",
+                s
+            )),
+        }
+    }
+}
+
 pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -40,17 +63,25 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         .ok();
 
     let input = &args.input;
-    let emit = args.emit.as_str();
+    let emit = match EmitKind::from_str(&args.emit) {
+        Ok(k) => k,
+        Err(msg) => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::parse_error(
+                glyim_diag::Span::DUMMY,
+                msg,
+            )]);
+        }
+    };
 
     // Determine output paths based on emit mode
     let (object_path, final_output_path) = match emit {
-        "obj" | "exec" => {
+        EmitKind::Obj | EmitKind::Exec => {
             let obj = args.output.clone().unwrap_or_else(|| {
                 let mut p = input.clone();
                 p.set_extension("o");
                 p
             });
-            let final_out = if emit == "exec" {
+            let final_out = if emit == EmitKind::Exec {
                 args.output.clone().unwrap_or_else(|| {
                     let mut p = input.clone();
                     p.set_extension("");
@@ -61,19 +92,14 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             };
             (obj, Some(final_out))
         }
-        "mir" | "llvm-ir" => {
+        EmitKind::Mir | EmitKind::LlvmIr => {
             let out = args.output.clone().unwrap_or_else(|| {
                 let mut p = input.clone();
-                let ext = if emit == "mir" { "mir" } else { "ll" };
+                let ext = if emit == EmitKind::Mir { "mir" } else { "ll" };
                 p.set_extension(ext);
                 p
             });
             (out, None)
-        }
-        _ => {
-            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-                "unknown emit type",
-            )]);
         }
     };
 
@@ -96,9 +122,9 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
     let mut db = Database::new(config);
 
     // Early return for MIR and LLVM IR emit
-    if emit == "mir" {
+    if emit == EmitKind::Mir {
         return glyim_pipeline::emit_mir(&mut db, input, &object_path);
-    } else if emit == "llvm-ir" {
+    } else if emit == EmitKind::LlvmIr {
         return glyim_pipeline::emit_llvm_ir(&mut db, input, &object_path);
     }
 
@@ -121,7 +147,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     Pipeline::compile_file(&mut db, input, &*backend, &object_path)?;
 
-    if emit == "exec" {
+    if emit == EmitKind::Exec {
         let final_path = final_output_path.expect("exec should have final output");
         linker::invoke_linker(
             &object_path,
