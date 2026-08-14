@@ -39,6 +39,7 @@ pub fn rename_symbol(
     let references = ref_graph.find_references(symbol_name);
     if !references.is_empty() {
         // We have semantic references, use them.
+        #[allow(clippy::mutable_key_type)]
         let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
         for r in references {
             if let Some(ref_path) = file_map.path(r.file_id)

@@ -345,6 +345,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
         }
     }
 
+    #[allow(clippy::needless_range_loop)]
     for bb_idx in 0..num_blocks {
         if let Some(map) = &in_maps[bb_idx] {
             let block = &mut body.basic_blocks[BasicBlockIdx::from_raw(bb_idx as u32)];

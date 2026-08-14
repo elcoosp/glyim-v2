@@ -144,6 +144,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
     /// Get a debug type for a given Ty, creating it if necessary.
     /// Returns a DIType that can be used directly in debug info.
+    #[allow(clippy::only_used_in_recursion)]
     pub(crate) fn debug_type_for_ty(
         &mut self,
         context: &'ctx Context,
@@ -183,7 +184,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                                 &name,
                                 file,
                                 0,
-                                size_bits.try_into().unwrap(),
+                                size_bits,
                                 align_bits.try_into().unwrap(),
                                 0,
                                 None,
@@ -215,7 +216,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             .as_type();
                         let data_array = self.builder.create_array_type(
                             data_ty,
-                            (data_size / 8).try_into().unwrap(),
+                            data_size / 8,
                             0,
                             &[],
                         );
@@ -225,7 +226,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                                 &format!("{}_enum", name),
                                 file,
                                 0,
-                                size_bits.try_into().unwrap(),
+                                size_bits,
                                 align_bits.try_into().unwrap(),
                                 0,
                                 None,
@@ -266,7 +267,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                         &name,
                         file,
                         0,
-                        size_bits.try_into().unwrap(),
+                        size_bits,
                         align_bits.try_into().unwrap(),
                         0,
                         None,
@@ -285,7 +286,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 };
                 let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 self.builder
-                    .create_array_type(elem_di, count_val.try_into().unwrap(), 0, &[])
+                    .create_array_type(elem_di, count_val, 0, &[])
                     .as_type()
             }
             TyKind::Slice(elem_ty) => {
@@ -328,6 +329,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         di_type
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn declare_local(
         &mut self,
         context: &'ctx Context,
