@@ -1227,7 +1227,7 @@ impl<'a> MirBuilder<'a> {
 
         let root =
             glyim_hir::ExprId::from_raw(u32::try_from(hir_body.exprs.len().checked_sub(1)?).ok()?);
-        let evaluator = ConstEvaluator::new(hir_body);
+        let mut evaluator = ConstEvaluator::new(hir_body);
         let value = evaluator.evaluate(root).ok()?;
 
         match value {
@@ -1236,7 +1236,7 @@ impl<'a> MirBuilder<'a> {
             ConstValue::Bool(b) => Some(b as u128),
             ConstValue::Char(c) => Some(c as u128),
             ConstValue::FloatBits(..) | ConstValue::String(_) | ConstValue::Unit => None,
-            ConstValue::Tuple(_) => None,
+            ConstValue::Tuple(_) | ConstValue::Array(_) | ConstValue::Struct(_) => None,
         }
     }
 

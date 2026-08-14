@@ -141,7 +141,6 @@ fn detect_unix_linker() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_unix_linker_command_construction() {

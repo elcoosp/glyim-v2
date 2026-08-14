@@ -46,7 +46,7 @@ fn alloc_binary(
 
 /// Helper: evaluate an expression and unwrap the result.
 fn eval_ok(body: &Body, expr_id: ExprId) -> ConstValue {
-    let evaluator = ConstEvaluator::new(body);
+    let mut evaluator = ConstEvaluator::new(body);
     evaluator
         .evaluate(expr_id)
         .expect("const evaluation should succeed")
@@ -54,7 +54,7 @@ fn eval_ok(body: &Body, expr_id: ExprId) -> ConstValue {
 
 /// Helper: evaluate an expression expecting an error.
 fn eval_err(body: &Body, expr_id: ExprId) -> ConstEvalError {
-    let evaluator = ConstEvaluator::new(body);
+    let mut evaluator = ConstEvaluator::new(body);
     evaluator
         .evaluate(expr_id)
         .expect_err("const evaluation should fail")

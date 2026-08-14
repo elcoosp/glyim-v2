@@ -32,7 +32,7 @@ fn alloc_lit(body: &mut Body, lit: Literal) -> ExprId {
 }
 
 fn eval_err(body: &Body, expr_id: ExprId) -> ConstEvalError {
-    let evaluator = ConstEvaluator::new(body);
+    let mut evaluator = ConstEvaluator::new(body);
     evaluator
         .evaluate(expr_id)
         .expect_err("const evaluation should fail")
