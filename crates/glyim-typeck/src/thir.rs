@@ -146,7 +146,12 @@ pub enum ExprKind {
         body: Box<Body>,
         captures: Vec<Capture>,
     },
-    Err,
+        Range {
+        start: Option<Box<Expr>>,
+        end: Option<Box<Expr>>,
+        inclusive: bool,
+    },
+Err,
 }
 
 #[derive(Clone, Debug)]

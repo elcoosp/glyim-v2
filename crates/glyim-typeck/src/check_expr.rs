@@ -1,6 +1,6 @@
 //! Expression checking logic for FnCtxt.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use glyim_core::def_id::{AdtId, FnDefId};
 use glyim_core::interner::Name;
@@ -480,40 +480,58 @@ impl<'a> FnCtxt<'a> {
             Expr::Index { base, index } => {
                 let (base_expr, base_ty) = self.check_expr(*base);
                 let (idx_expr, idx_ty) = self.check_expr(*index);
-
-                // Check that index is integer type
-                if !matches!(self.ctx.ty_kind(idx_ty), TyKind::Int(_) | TyKind::Uint(_))
-                    && idx_ty != Ty::ERROR
-                {
-                    self.diagnostics.push(GlyimDiagnostic::type_error(
+                // Check if the index is a Range expression.
+                if let thir::ExprKind::Range { .. } = idx_expr.kind {
+                    // Slicing: result type is slice of element type.
+                    let elem_ty = match self.ctx.ty_kind(base_ty) {
+                        TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
+                        _ => {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "slicing requires array or slice type",
+                            ));
+                            self.fresh_infer_ty()
+                        }
+                    };
+                    let slice_ty = self.ctx.mk_ty(TyKind::Slice(elem_ty));
+                    let thir_expr = thir::Expr {
+                        kind: thir::ExprKind::Index {
+                            base: Box::new(base_expr),
+                            index: Box::new(idx_expr),
+                        },
+                        ty: slice_ty,
                         span,
-                        "index expression must have integer type",
-                    ));
-                }
-
-                // Compute element type of the base
-                let elem_ty = match self.ctx.ty_kind(base_ty) {
-                    TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => *elem_ty,
-                    _ => {
+                    };
+                    (thir_expr, slice_ty)
+                } else {
+                    // Regular indexing: check integer type.
+                    if !matches!(self.ctx.ty_kind(idx_ty), TyKind::Int(_) | TyKind::Uint(_))
+                        && idx_ty != Ty::ERROR {
                         self.diagnostics.push(GlyimDiagnostic::type_error(
                             span,
-                            "indexing operation requires array or slice type",
+                            "index expression must have integer type",
                         ));
-                        self.fresh_infer_ty()
                     }
-                };
-
-                (
-                    thir::Expr {
+                    let elem_ty = match self.ctx.ty_kind(base_ty) {
+                        TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
+                        _ => {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "indexing operation requires array or slice type",
+                            ));
+                            self.fresh_infer_ty()
+                        }
+                    };
+                    let thir_expr = thir::Expr {
                         kind: thir::ExprKind::Index {
                             base: Box::new(base_expr),
                             index: Box::new(idx_expr),
                         },
                         ty: elem_ty,
                         span,
-                    },
-                    elem_ty,
-                )
+                    };
+                    (thir_expr, elem_ty)
+                }
             }
 
             Expr::Cast {
@@ -794,37 +812,15 @@ impl<'a> FnCtxt<'a> {
                 Ty::NEVER,
             ),
 
-            Expr::Range {
-                start,
-                end,
-                inclusive: _,
-            } => {
-                let bound_ty = self.fresh_infer_ty();
-                let _start_expr = if let Some(start_id) = start {
-                    let (s_expr, s_ty) = self.check_expr(*start_id);
-                    if s_ty != Ty::ERROR && bound_ty != Ty::ERROR {
-                        self.unify(s_ty, bound_ty, span);
-                    }
-                    Some(Box::new(s_expr))
-                } else {
-                    None
-                };
-                let _end_expr = if let Some(end_id) = end {
-                    let (e_expr, e_ty) = self.check_expr(*end_id);
-                    if e_ty != Ty::ERROR && bound_ty != Ty::ERROR {
-                        self.unify(e_ty, bound_ty, span);
-                    }
-                    Some(Box::new(e_expr))
-                } else {
-                    None
-                };
+            Expr::Range { start, end, inclusive } => {
+                let start_expr = start.map(|id| Box::new(self.check_expr(id).0));
+                let end_expr = end.map(|id| Box::new(self.check_expr(id).0));
                 let range_ty = self.fresh_infer_ty();
                 let thir_expr = thir::Expr {
-                    kind: thir::ExprKind::Struct {
-                        adt_id: AdtId::from_raw(0),
-                        fields: vec![],
-                        spread: None,
-                        variant_idx: 0,
+                    kind: thir::ExprKind::Range {
+                        start: start_expr,
+                        end: end_expr,
+                        inclusive: *inclusive,
                     },
                     ty: range_ty,
                     span,
@@ -960,60 +956,5 @@ impl<'a> FnCtxt<'a> {
         // Placeholder: walk the body and collect free variables.
         // For now, return empty.
         captures
-    }
-
-
-    /// Check match exhaustiveness: ensure all cases are covered.
-    /// For enums, check all variants are covered; for structs, check all fields.
-    /// For now, we implement a simple version that only handles enums with unit variants.
-    fn check_match_exhaustiveness(
-        &mut self,
-        scrutinee_ty: Ty,
-        arms: &[thir::MatchArm],
-        span: Span,
-    ) -> bool {
-        // Only handle enum types for now.
-        match self.ctx.ty_kind(scrutinee_ty) {
-            TyKind::Adt(adt_id, _) => {
-                if let Some(adt_def) = self.ctx.adt_def(*adt_id) {
-                    if adt_def.variants.len() > 1 {
-                        // Collect covered variants.
-                        let mut covered_variants: std::collections::HashSet<u32> = std::collections::HashSet::new();
-                        for arm in arms {
-                            // We need to extract the variant name from the pattern.
-                            // Since we only have THIR patterns here, we need to inspect the pattern.
-                            // For simplicity, we'll skip for now.
-                            // We'll just return true to avoid errors.
-                        }
-                        // Check if all variants are covered.
-                        // For now, we don't have the information, so we'll just return true.
-                        // This will be implemented fully later.
-                    }
-                }
-            }
-            _ => {}
-        }
-        true
-    }
-
-    /// Get the ADT ID for a range type.
-    fn get_range_adt(&self, inclusive: bool, start_has: bool, end_has: bool) -> AdtId {
-        // Based on the kinds, return the appropriate range ADT.
-        // For simplicity, we'll use fixed IDs registered in TyCtxMut.
-        // Range: start and end present, not inclusive -> AdtId(1000)
-        // RangeInclusive: start and end present, inclusive -> AdtId(1001)
-        // RangeFrom: start present, end absent -> AdtId(1002)
-        // RangeTo: end present, start absent, not inclusive -> AdtId(1003)
-        // RangeToInclusive: end present, start absent, inclusive -> AdtId(1004)
-        if start_has && end_has {
-            if inclusive { AdtId::from_raw(1001) } else { AdtId::from_raw(1000) }
-        } else if start_has && !end_has {
-            AdtId::from_raw(1002) // RangeFrom
-        } else if !start_has && end_has {
-            if inclusive { AdtId::from_raw(1004) } else { AdtId::from_raw(1003) } // RangeTo or RangeToInclusive
-        } else {
-            // Empty range is not allowed? For now, return Range.
-            AdtId::from_raw(1000)
-        }
     }
 }

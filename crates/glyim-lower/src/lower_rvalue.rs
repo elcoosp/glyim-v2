@@ -79,6 +79,16 @@ impl<'a> MirBuilder<'a> {
                 let mir_const = self.lower_literal(lit, expr.ty, expr.span);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const))
             }
+            thir::ExprKind::Range { start, end, inclusive } => {
+                // For now, we'll treat a range expression as a tuple of (start, end) or something.
+                // This is a placeholder; actual implementation will be added later.
+                let _start_val = start.as_ref().map(|e| self.lower_expr_to_rvalue(e));
+                let _end_val = end.as_ref().map(|e| self.lower_expr_to_rvalue(e));
+                let _inclusive = inclusive;
+                // We'll create a dummy aggregate for now.
+                let operands = Vec::new();
+                glyim_mir::Rvalue::Aggregate(glyim_mir::AggregateKind::Tuple, operands)
+            }
             thir::ExprKind::VarRef(var_id) => {
                 let local = LocalIdx::from_raw(var_id.to_raw());
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
@@ -454,23 +464,48 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
             }
             thir::ExprKind::Index { base, index } => {
-                let base_place = self.lower_expr_to_place(base);
-                let index_local = self.alloc_local(
-                    index.ty,
-                    glyim_core::primitives::Mutability::Not,
-                    index.span,
-                );
-                let index_rval = self.lower_expr_to_rvalue(index);
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(
-                        glyim_mir::Place::new(index_local),
-                        index_rval,
-                    ),
-                    index.span,
-                );
-                let place =
-                    self.place_with_projection(base_place, ProjectionElem::Index(index_local));
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+                // Check if the index is a Range expression.
+                if let thir::ExprKind::Range { start, end, inclusive } = &index.kind {
+                    if *inclusive {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            expr.span,
+                            "inclusive ranges (..=) are not supported for slicing yet".to_string(),
+                        ));
+                        return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
+                            glyim_mir::MirConst {
+                                kind: glyim_mir::MirConstKind::Error,
+                                ty: self.ctx.ty_ctx().error_ty(),
+                                span: expr.span,
+                            },
+                        ));
+                    }
+                    let base_place = self.lower_expr_to_place(base);
+                    self.lower_dynamic_range_slice(
+                        base_place,
+                        start.as_ref().map(|e| e.as_ref()),
+                        end.as_ref().map(|e| e.as_ref()),
+                        expr.ty,
+                        expr.span,
+                    )
+                } else {
+                    // Regular indexing (single element).
+                    let base_place = self.lower_expr_to_place(base);
+                    let index_local = self.alloc_local(
+                        index.ty,
+                        glyim_core::primitives::Mutability::Not,
+                        index.span,
+                    );
+                    let index_rval = self.lower_expr_to_rvalue(index);
+                    self.push_stmt(
+                        glyim_mir::StatementKind::Assign(
+                            glyim_mir::Place::new(index_local),
+                            index_rval,
+                        ),
+                        index.span,
+                    );
+                    let place = self.place_with_projection(base_place, glyim_mir::ProjectionElem::Index(index_local));
+                    glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+                }
             }
             thir::ExprKind::Cast { expr: inner } => {
                 let operand = self.lower_expr_to_operand(inner);
@@ -803,7 +838,7 @@ impl<'a> MirBuilder<'a> {
                     ),
                     index.span,
                 );
-                self.place_with_projection(base_place, ProjectionElem::Index(index_local))
+                self.place_with_projection(base_place, glyim_mir::ProjectionElem::Index(index_local))
             }
             thir::ExprKind::Ref {
                 operand,
@@ -1135,7 +1170,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn collect_switch_values(
-        &mut self, // <-- Changed from &self
+        &mut self,
         pat: &thir::Pattern,
         targets: &mut Vec<(u128, BasicBlockIdx)>,
         arm_bb: BasicBlockIdx,
@@ -1260,5 +1295,27 @@ impl<'a> MirBuilder<'a> {
             local: base.local,
             projection: proj.into_boxed_slice(),
         }
+    }
+
+    /// Lower a dynamic range slice: `base[start..end]`.
+    /// This is a stub implementation; full implementation will be added later.
+    pub(crate) fn lower_dynamic_range_slice(
+        &mut self,
+        base_place: glyim_mir::Place,
+        start_opt: Option<&thir::Expr>,
+        end_opt: Option<&thir::Expr>,
+        result_ty: Ty,
+        span: glyim_span::Span,
+    ) -> glyim_mir::Rvalue {
+        use glyim_mir::{Rvalue, Operand};
+
+        // For now, we'll just use the base place and return a dummy value.
+        // This is a placeholder to allow compilation.
+        let dummy = glyim_mir::MirConst {
+            kind: glyim_mir::MirConstKind::Unit,
+            ty: Ty::UNIT,
+            span,
+        };
+        Rvalue::Use(Operand::Constant(dummy))
     }
 }
