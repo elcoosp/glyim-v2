@@ -10,10 +10,16 @@ pub fn rename_symbol(
     file_map: &FileMap,
     params: &RenameParams,
 ) -> Option<WorkspaceEdit> {
+    use std::collections::HashMap;
+    use lsp_types::{TextEdit, WorkspaceEdit, Range, Position, Uri};
+    use url::Url;
+    use std::str::FromStr;
+
     let uri = &params.text_document_position.text_document.uri;
     let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
     let file_id = file_map.get_by_path(&path)?;
     let source_maps = db.source_maps.read();
+
     let sm = source_maps.get(&file_id)?;
     let pos = params.text_document_position.position;
     let offset = sm.line_col_to_offset(pos.line as usize, pos.character as usize)?;
@@ -21,6 +27,7 @@ pub fn rename_symbol(
 
     // Find symbol name at cursor
     let chars: Vec<char> = source.chars().collect();
+
     let mut start = offset;
     let mut end = offset;
     while start > 0 && (chars[start - 1].is_alphabetic() || chars[start - 1] == '_') {
@@ -36,11 +43,12 @@ pub fn rename_symbol(
 
     // First, try using the reference graph.
     let ref_graph = db.reference_graph.read();
+
     let references = ref_graph.find_references(symbol_name);
     if !references.is_empty() {
         // We have semantic references, use them.
-        #[allow(clippy::mutable_key_type)]
         let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
+
         for r in references {
             if let Some(ref_path) = file_map.path(r.file_id)
                 && let Ok(ref_url) = Url::from_file_path(ref_path) {
@@ -79,12 +87,15 @@ pub fn rename_symbol(
     // Fallback: simple text-based search within the current file only.
     eprintln!("rename: fallback to text search for '{}'", symbol_name);
     let lines: Vec<&str> = source.lines().collect();
+
     let mut edits = Vec::new();
+
     for (line_idx, line) in lines.iter().enumerate() {
         let mut search_start = 0;
         while let Some(pos) = line[search_start..].find(symbol_name) {
             let abs_pos = search_start + pos;
             let end_pos = abs_pos + symbol_name.len();
+
             let prev = if abs_pos > 0 {
                 line.chars().nth(abs_pos - 1).unwrap_or(' ')
             } else {
@@ -118,8 +129,8 @@ pub fn rename_symbol(
     if edits.is_empty() {
         return None;
     }
-    #[allow(clippy::mutable_key_type)]
     let mut changes = HashMap::new();
+
     changes.insert(uri.clone(), edits);
     Some(WorkspaceEdit {
         changes: Some(changes),
