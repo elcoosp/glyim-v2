@@ -2950,10 +2950,10 @@ pub(crate) fn lower_body<'ctx>(
         // routine (or a custom one shipped in glyim-runtime) will be needed
         // for other `TargetInfo` targets (e.g. macOS, or unwinding-disabled
         // embedded targets that should instead force `has_cleanup` off).
-        let personality_name = if target_info.triple.contains("windows") {
-            "__CxxFrameHandler3"
-        } else {
-            "__gcc_personality_v0"
+        let personality_name = match target_info.abi {
+            glyim_core::primitives::TargetAbi::X86_64Windows
+            | glyim_core::primitives::TargetAbi::AArch64Windows => "__CxxFrameHandler3",
+            _ => "__gcc_personality_v0",
         };
         let personality_fn_type = context.i32_type().fn_type(&[], true);
         let personality_fn = module

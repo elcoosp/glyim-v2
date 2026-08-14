@@ -161,15 +161,15 @@ impl<'ctx> DebugInfoCtx<'ctx> {
         let file = self.get_file(FileId::from_raw(0));
         let di_type = match ty_ctx.ty_kind(ty) {
             TyKind::Adt(adt_id, _substs) => {
-                if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
-                    let name = format!("Adt{}", adt_id.to_raw());
-                    // Use layout to get field types and offsets
-                    let layout = layout_computer
-                        .layout_of(ty)
-                        .unwrap_or_else(|_| Layout::unit());
-                    let size_bits = layout.size.0 * 8;
-                    let align_bits = layout.align.0 * 8;
-                    // For structs (single variant), emit a struct type with fields in order
+                let adt_def_opt = ty_ctx.adt_def(*adt_id);
+                let name = format!("Adt{}", adt_id.to_raw());
+                let _ = adt_def_opt;
+                let layout = layout_computer
+                    .layout_of(ty)
+                    .unwrap_or_else(|_| Layout::unit());
+                let size_bits = layout.size.0 * 8;
+                let align_bits = layout.align.0 * 8;
+                if let Some(adt_def) = adt_def_opt {
                     if adt_def.variants.len() == 1 {
                         let variant = &adt_def.variants[0];
                         let mut field_types = Vec::new();
@@ -189,18 +189,11 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                                 None,
                                 field_types.as_slice(),
                                 0,
-                                Some(
-                                    self.builder
-                                        .create_basic_type("i32", 32, 0x05, 0)
-                                        .unwrap()
-                                        .as_type(),
-                                ),
+                                None,
                                 "glyim",
                             )
                             .as_type()
                     } else {
-                        // For enums, emit a struct with tag and byte array.
-                        // Use the correct tag width from layout.
                         let tag_bits =
                             if let glyim_layout::VariantsShape::Multiple { tag_size, .. } =
                                 &layout.variants
@@ -214,11 +207,13 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             .create_basic_type("tag", tag_bits, 0x05, 0)
                             .unwrap()
                             .as_type();
+                        let data_size = layout.size.0 * 8 - tag_bits;
                         let data_ty = self
                             .builder
                             .create_basic_type("i8", 8, 0x05, 0)
                             .unwrap()
                             .as_type();
+                        let data_array = self.builder.create_array_type(data_ty, (data_size / 8).try_into().unwrap(), 0, &[]);
                         self.builder
                             .create_struct_type(
                                 self.compile_unit_scope,
@@ -229,21 +224,16 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                                 align_bits.try_into().unwrap(),
                                 0,
                                 None,
-                                &[tag_ty, data_ty],
+                                &[tag_ty, data_array.as_type()],
                                 0,
-                                Some(
-                                    self.builder
-                                        .create_basic_type("i32", 32, 0x05, 0)
-                                        .unwrap()
-                                        .as_type(),
-                                ),
+                                None,
                                 "glyim",
                             )
                             .as_type()
                     }
                 } else {
                     self.builder
-                        .create_basic_type("i32", 32, 0x05, 0)
+                        .create_basic_type("<unresolved>", 32, 0x05, 0)
                         .unwrap()
                         .as_type()
                 }
@@ -251,12 +241,15 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             TyKind::Tuple(substs) => {
                 let args = ty_ctx.substitution_args(*substs);
                 let mut field_types = Vec::new();
+                let mut name_parts = Vec::new();
                 for (_i, arg) in args.iter().enumerate() {
                     if let GenericArg::Ty(t) = arg {
                         let field_ty = self.debug_type_for_ty(context, *t, ty_ctx);
                         field_types.push(field_ty);
+                        name_parts.push(format!("{:?}", t));
                     }
                 }
+                let name = format!("({})", name_parts.join(", "));
                 let layout = layout_computer
                     .layout_of(ty)
                     .unwrap_or_else(|_| Layout::unit());
@@ -265,7 +258,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 self.builder
                     .create_struct_type(
                         self.compile_unit_scope,
-                        "tuple",
+                        &name,
                         file,
                         0,
                         size_bits.try_into().unwrap(),
@@ -274,34 +267,27 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                         None,
                         field_types.as_slice(),
                         0,
-                        Some(
-                            self.builder
-                                .create_basic_type("i32", 32, 0x05, 0)
-                                .unwrap()
-                                .as_type(),
-                        ),
+                        None,
                         "glyim",
                     )
                     .as_type()
             }
             TyKind::Array(elem_ty, count) => {
-                // Try to create an array type: get element type and count.
                 let count_val = match &count.kind {
                     glyim_type::ConstKind::Uint(n) => *n as u64,
                     glyim_type::ConstKind::Int(n) if *n >= 0 => *n as u64,
                     _ => 0,
                 };
-                let _elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
+                let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 self.builder
-                    .create_array_type(_elem_di, count_val.try_into().unwrap(), 0, &[])
+                    .create_array_type(elem_di, count_val.try_into().unwrap(), 0, &[])
                     .as_type()
             }
             TyKind::Slice(elem_ty) => {
-                // For slice, we can create a struct with two fields: data pointer and length.
-                let _elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
+                let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 let ptr_ty = self
                     .builder
-                    .create_basic_type("i8*", 64, 0x02, 0)
+                    .create_basic_type("ptr", 64, 0x02, 0)
                     .unwrap()
                     .as_type();
                 let len_ty = self
@@ -309,10 +295,11 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                     .create_basic_type("usize", 64, 0x04, 0)
                     .unwrap()
                     .as_type();
+                let name = format!("&[{:?}]", elem_ty);
                 self.builder
                     .create_struct_type(
                         self.compile_unit_scope,
-                        "slice",
+                        &name,
                         file,
                         0,
                         128, // 2 pointers * 64 bits
@@ -321,19 +308,14 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                         None,
                         &[ptr_ty, len_ty],
                         0,
-                        Some(
-                            self.builder
-                                .create_basic_type("i32", 32, 0x05, 0)
-                                .unwrap()
-                                .as_type(),
-                        ),
+                        None,
                         "glyim",
                     )
                     .as_type()
             }
             _ => self
                 .builder
-                .create_basic_type("i32", 32, 0x05, 0)
+                .create_basic_type("<unresolved>", 32, 0x05, 0)
                 .unwrap()
                 .as_type(),
         };
