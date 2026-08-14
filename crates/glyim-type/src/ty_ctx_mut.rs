@@ -502,7 +502,31 @@ impl TyCtxMut {
         // Register RangeToInclusive<T> (end) - ID 1004
         let def = make_struct_def(vec![t_var], self);
         self.register_adt(AdtId::from_raw(1004), def);
-    }
+    
+        // Register UnsafeCell<T> - ID 1005
+        // This is a special ADT for interior mutability.
+        let unsafe_cell_t_var = self.mk_ty(TyKind::Param(ParamTy { index: 0, name: self.resolver.intern("T") }));
+        let unsafe_cell_def = {
+            let mut field_defs = IndexVec::new();
+            // UnsafeCell has a single field: value of type T.
+            field_defs.push(FieldDef {
+                name: self.resolver.intern("value"),
+                ty: unsafe_cell_t_var,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: self.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        self.register_adt(AdtId::from_raw(1005), unsafe_cell_def);
+        // Mark it as interior mutable.
+        self.mark_adt_interior_mutable(AdtId::from_raw(1005));
+}
 }
 
 impl TypeLookup for TyCtxMut {
@@ -544,5 +568,107 @@ impl TypeLookup for TyCtxMut {
                 .unwrap_or_else(|| self.error_ty());
         }
         self.error_ty()
+    }
+}
+
+
+
+#[cfg(test)]
+mod interior_mutability_tests {
+    use super::*;
+    use glyim_core::interner::Interner;
+
+    #[test]
+    fn test_unsafe_cell_is_interior_mutable() {
+        let ctx_mut = TyCtxMut::new(Interner::new());
+        // register_builtin_ranges is called in new, so UnsafeCell (1005) is registered.
+        let ctx = ctx_mut.freeze();
+        let unsafe_cell_adt = AdtId::from_raw(1005);
+        assert!(ctx.is_interior_mutable_adt(unsafe_cell_adt));
+    }
+
+    #[test]
+    fn test_cell_is_interior_mutable() {
+        // Cell<T> contains UnsafeCell<T> internally.
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy { index: 0, name: ctx_mut.resolver.intern("T") }));
+        // Build substitution for UnsafeCell<T>
+        let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(t_var)]);
+        let unsafe_cell_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(1005), subst));
+        let cell_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut.resolver.intern("value"),
+                ty: unsafe_cell_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut.register_adt(AdtId::from_raw(1006), cell_def);
+        let ctx = ctx_mut.freeze();
+        let cell_adt = AdtId::from_raw(1006);
+        assert!(ctx.is_interior_mutable_adt(cell_adt));
+    }
+
+    #[test]
+    fn test_plain_struct_not_interior_mutable() {
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+        let plain_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut.resolver.intern("x"),
+                ty: i32_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut.register_adt(AdtId::from_raw(1007), plain_def);
+        let ctx = ctx_mut.freeze();
+        let plain_adt = AdtId::from_raw(1007);
+        assert!(!ctx.is_interior_mutable_adt(plain_adt));
+    }
+
+    #[test]
+    fn test_ref_cell_is_interior_mutable() {
+        // RefCell<T> contains UnsafeCell<T> internally.
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy { index: 0, name: ctx_mut.resolver.intern("T") }));
+        let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(t_var)]);
+        let unsafe_cell_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(1005), subst));
+        let ref_cell_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut.resolver.intern("value"),
+                ty: unsafe_cell_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut.register_adt(AdtId::from_raw(1008), ref_cell_def);
+        let ctx = ctx_mut.freeze();
+        let ref_cell_adt = AdtId::from_raw(1008);
+        assert!(ctx.is_interior_mutable_adt(ref_cell_adt));
     }
 }
