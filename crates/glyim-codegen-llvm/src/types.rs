@@ -58,7 +58,9 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             let n = match &count.kind {
                 glyim_type::ConstKind::Uint(n) => *n as u32,
                 glyim_type::ConstKind::Int(n) => *n as u32,
-                _ => panic!("Array with non-integer count in TyKind::Array"),
+                _ => return Err(vec![GlyimDiagnostic::internal_error(
+                    "internal compiler error: Array with non-integer count in TyKind::Array",
+                )]),
             };
             elem_llvm.array_type(n).into()
         }
@@ -109,20 +111,25 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             }
         }
         TyKind::Projection(_) => {
-            panic!("TyKind::Projection reached LLVM codegen – type normalization incomplete")
+            return Err(vec![GlyimDiagnostic::internal_error(
+                "internal compiler error: TyKind::Projection reached LLVM codegen – type normalization incomplete",
+            )]);
         }
-        TyKind::Param(param) => panic!(
-            "TyKind::Param({:?}) reached LLVM codegen – monomorphization should have resolved this",
-            param
-        ),
-        TyKind::Bound(debruijn, var) => panic!(
-            "TyKind::Bound({:?}, {:?}) reached LLVM codegen – binder instantiation failed",
-            debruijn, var
-        ),
-        TyKind::Infer(var) => panic!(
-            "TyKind::Infer({:?}) reached LLVM codegen – type inference incomplete",
-            var
-        ),
+        TyKind::Param(param) => {
+            return Err(vec![GlyimDiagnostic::internal_error(
+                format!("internal compiler error: TyKind::Param({:?}) reached LLVM codegen – monomorphization should have resolved this", param),
+            )]);
+        }
+        TyKind::Bound(debruijn, var) => {
+            return Err(vec![GlyimDiagnostic::internal_error(
+                format!("internal compiler error: TyKind::Bound({:?}, {:?}) reached LLVM codegen – binder instantiation failed", debruijn, var),
+            )]);
+        }
+        TyKind::Infer(var) => {
+            return Err(vec![GlyimDiagnostic::internal_error(
+                format!("internal compiler error: TyKind::Infer({:?}) reached LLVM codegen – type inference incomplete", var),
+            )]);
+        }
     })
 }
 

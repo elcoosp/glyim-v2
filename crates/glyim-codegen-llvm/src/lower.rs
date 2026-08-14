@@ -142,45 +142,45 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         self.locals[local].unwrap_or_else(|| panic!("local {} not allocated", local.index()))
     }
 
-    fn lower_operand(&self, operand: &Operand) -> BasicValueEnum<'ctx> {
+    fn lower_operand(&self, operand: &Operand) -> CompResult<BasicValueEnum<'ctx>> {
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
-                let ptr = self.place_ptr(place);
+                let ptr = self.place_ptr(place)?;
                 let ty = self.place_ty(place);
                 let llvm_ty = self.llvm_type_for_ty(ty);
-                self.builder
+                Ok(self.builder
                     .build_load(llvm_ty, ptr, "load")
-                    .expect("load failed")
+                    .expect("load failed"))
             }
             Operand::Constant(c) => self.lower_const(c),
         }
     }
 
-    fn lower_const(&self, c: &MirConst) -> BasicValueEnum<'ctx> {
+    fn lower_const(&self, c: &MirConst) -> CompResult<BasicValueEnum<'ctx>> {
         match &c.kind {
             MirConstKind::Int(v) => {
                 let ty = self.llvm_type_for_ty(c.ty);
                 let int_ty = ty.into_int_type();
-                int_ty.const_int(*v as u64, true).into()
+                Ok(int_ty.const_int(*v as u64, true).into())
             }
             MirConstKind::Uint(v) => {
                 let ty = self.llvm_type_for_ty(c.ty);
                 let int_ty = ty.into_int_type();
-                int_ty.const_int(*v as u64, false).into()
+                Ok(int_ty.const_int(*v as u64, false).into())
             }
-            MirConstKind::Bool(b) => self
+            MirConstKind::Bool(b) => Ok(self
                 .llvm_int_type(1)
                 .const_int(if *b { 1 } else { 0 }, false)
-                .into(),
+                .into()),
             MirConstKind::FloatBits(bits) => {
                 let ty = self.llvm_type_for_ty(c.ty);
                 let float_ty = ty.into_float_type();
-                float_ty.const_float(f64::from_bits(*bits)).into()
+                Ok(float_ty.const_float(f64::from_bits(*bits)).into())
             }
-            MirConstKind::Char(ch) => self.llvm_int_type(32).const_int(*ch as u64, false).into(),
+            MirConstKind::Char(ch) => Ok(self.llvm_int_type(32).const_int(*ch as u64, false).into()),
             MirConstKind::Unit => {
                 let unit_ty = self.context.struct_type(&[], false);
-                unit_ty.const_zero().as_basic_value_enum()
+                Ok(unit_ty.const_zero().as_basic_value_enum())
             }
             MirConstKind::String(name) => {
                 let str_content = self.ty_ctx.name_str(*name);
@@ -232,7 +232,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_insert_value(inserted_ptr, len_val, 1, "str_len_insert")
                     .expect("insert len failed");
                 match inserted_len {
-                    inkwell::values::AggregateValueEnum::StructValue(s) => s.as_basic_value_enum(),
+                    inkwell::values::AggregateValueEnum::StructValue(s) => Ok(s.as_basic_value_enum()),
                     _ => unreachable!(),
                 }
             }
@@ -247,10 +247,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     };
                     module.add_function(&fn_name, fn_type, None)
                 });
-                callee
+                Ok(callee
                     .as_global_value()
                     .as_pointer_value()
-                    .as_basic_value_enum()
+                    .as_basic_value_enum())
             }
             MirConstKind::ConstRef(const_def_id, _substs) => {
                 let global_name = format!("__glyim_const_{}", const_def_id.to_raw());
@@ -268,18 +268,22 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     global
                 });
                 let llvm_ty = self.llvm_type_for_ty(c.ty);
-                self.builder
+                Ok(self.builder
                     .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
-                    .expect("const ref load failed")
+                    .expect("const ref load failed"))
             }
-            MirConstKind::Error => panic!("MirConstKind::Error reached codegen"),
+            MirConstKind::Error => {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "internal compiler error: MirConstKind::Error reached codegen",
+                )]);
+            }
         }
     }
 
-    fn place_ptr(&self, place: &Place) -> PointerValue<'ctx> {
+    fn place_ptr(&self, place: &Place) -> CompResult<PointerValue<'ctx>> {
         let base = self.get_local_ptr(place.local);
         if place.projection.is_empty() {
-            return base;
+            return Ok(base);
         }
         let mut ptr = base;
         let mut current_ty = local_ty(self.body, place.local);
@@ -294,7 +298,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     ptr = loaded.into_pointer_value();
                     current_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
-                        other => panic!("Deref on non-pointer type {:?} – MIR is invalid", other),
+                        _ => {
+                            return Err(vec![GlyimDiagnostic::internal_error(
+                                format!("internal compiler error: Deref on non-pointer type {:?} – MIR is invalid", current_ty),
+                            )]);
+                        }
                     };
                 }
                 ProjectionElem::Field(idx) => {
@@ -399,7 +407,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) => *elem,
                         TyKind::Slice(elem) => *elem,
-                        other => panic!("Index projection on non-array/slice type {:?}", other),
+                        _ => {
+                            return Err(vec![GlyimDiagnostic::internal_error(
+                                format!("internal compiler error: Index projection on non-array/slice type {:?}", current_ty),
+                            )]);
+                        }
                     };
                     if let TyKind::Slice(_) = self.ty_ctx.ty_kind(current_ty) {
                         let i8_ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
@@ -535,7 +547,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                     .into_int_value();
                                 len_val
                             }
-                            _ => panic!("ConstantIndex on non-array/slice type"),
+                            _ => {
+                                return Err(vec![GlyimDiagnostic::internal_error(
+                                    format!("internal compiler error: ConstantIndex on non-array/slice type {:?}", current_ty),
+                                )]);
+                            }
                         };
                         let offset_val = self.llvm_int_type(64).const_int(*offset, false);
                         self.builder
@@ -565,7 +581,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     };
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
-                        _ => panic!("ConstantIndex on non-array/slice type"),
+                        _ => {
+                            return Err(vec![GlyimDiagnostic::internal_error(
+                                format!("internal compiler error: ConstantIndex on non-array/slice type {:?}", current_ty),
+                            )]);
+                        }
                     };
                     let elem_llvm_ty = self.llvm_type_for_ty(elem_ty);
                     ptr = unsafe {
@@ -632,7 +652,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             };
                             (ptr, self.llvm_int_type(64).const_int(n, false))
                         }
-                        other => panic!("Subslice projection on non-array/slice type {:?}", other),
+                        other => {
+                            return Err(vec![GlyimDiagnostic::internal_error(
+                                format!("internal compiler error: Subslice projection on non-array/slice type {:?}", other),
+                            )]);
+                        }
                     };
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
@@ -692,7 +716,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 }
             }
         }
-        ptr
+        Ok(ptr)
     }
 
     fn place_ty(&self, place: &Place) -> Ty {
@@ -705,7 +729,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             StatementKind::Assign(place, rvalue) => {
                 let expected_ty = self.place_ty(place);
                 let val = self.lower_rvalue(rvalue, expected_ty)?;
-                let ptr = self.place_ptr(place);
+                let ptr = self.place_ptr(place)?;
                 self.builder.build_store(ptr, val).expect("store failed");
                 Ok(())
             }
@@ -729,26 +753,26 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     /// reads this type already assume.
     fn lower_rvalue(&self, rvalue: &Rvalue, expected_ty: Ty) -> CompResult<BasicValueEnum<'ctx>> {
         match rvalue {
-            Rvalue::Use(operand) => Ok(self.lower_operand(operand)),
+            Rvalue::Use(operand) => Ok(self.lower_operand(operand)?),
             Rvalue::BinaryOp(op, operands) => {
                 let (left, right) = operands.as_ref();
-                let l = self.lower_operand(left);
-                let r = self.lower_operand(right);
+                let l = self.lower_operand(left)?;
+                let r = self.lower_operand(right)?;
                 let operand_ty = self.operand_ty(left);
                 self.lower_binop(*op, l, r, operand_ty)
             }
             Rvalue::UnaryOp(op, operand) => {
-                let val = self.lower_operand(operand);
+                let val = self.lower_operand(operand)?;
                 self.lower_unop(*op, operand, val)
             }
             Rvalue::Ref(place, _borrow_kind) => {
-                let ptr = self.place_ptr(place);
+                let ptr = self.place_ptr(place)?;
                 Ok(ptr.as_basic_value_enum())
             }
             Rvalue::Aggregate(kind, operands) => {
                 let mut vals = Vec::new();
                 for op in operands {
-                    vals.push(self.lower_operand(op));
+                    vals.push(self.lower_operand(op)?);
                 }
                 match kind {
                     AggregateKind::Array(elem_ty) => {
@@ -784,7 +808,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
             Rvalue::Discriminant(place) => self.lower_discriminant(place),
             Rvalue::Len(place) => {
-                let ptr = self.place_ptr(place);
+                let ptr = self.place_ptr(place)?;
                 let ty = self.place_ty(place);
                 let len = match self.ty_ctx.ty_kind(ty) {
                     TyKind::Array(_, const_val) => {
@@ -820,11 +844,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 Ok(len.as_basic_value_enum())
             }
             Rvalue::Cast(kind, operand, target_ty) => {
-                let val = self.lower_operand(operand);
+                let val = self.lower_operand(operand)?;
                 self.lower_cast(*kind, val, *target_ty)
             }
             Rvalue::Repeat(operand, count_const) => {
-                let val = self.lower_operand(operand);
+                let val = self.lower_operand(operand)?;
                 let count = match &count_const.kind {
                     MirConstKind::Uint(n) => *n as u32,
                     MirConstKind::Int(n) => *n as u32,
@@ -1076,7 +1100,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     /// extract at all -- the discriminant must be *computed* from the
     /// niche field's value).
     fn lower_discriminant(&self, place: &Place) -> CompResult<BasicValueEnum<'ctx>> {
-        let ptr = self.place_ptr(place);
+        let ptr = self.place_ptr(place)?;
         let ty = self.place_ty(place);
         let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
         let layout = layout_computer.layout_of(ty).map_err(|e| {
@@ -2028,7 +2052,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 switch_ty,
                 targets,
             } => {
-                let discr_val = self.lower_operand(discr);
+                let discr_val = self.lower_operand(discr)?;
                 let discr_int = discr_val.into_int_value();
                 let otherwise = *self.bb_map.get(&targets.otherwise()).unwrap();
                 let case_ty = self.llvm_type_for_ty(*switch_ty).into_int_type();
@@ -2070,7 +2094,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 } else {
                     let ret_op =
                         glyim_mir::Operand::Move(glyim_mir::Place::new(LocalIdx::from_raw(0)));
-                    let val = self.lower_operand(&ret_op);
+                    let val = self.lower_operand(&ret_op)?;
                     self.builder
                         .build_return(Some(&val))
                         .expect("return failed");
@@ -2112,7 +2136,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 cleanup,
                 msg,
             } => {
-                let cond_int = self.lower_operand(cond).into_int_value();
+                let cond_int = self.lower_operand(cond)?.into_int_value();
                 let expected_val = self
                     .llvm_int_type(1)
                     .const_int(if *expected { 1 } else { 0 }, false);
@@ -2253,10 +2277,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         self.ty_ctx.ty_kind(ty),
                         TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _)
                     ) {
-                        let val = self.lower_operand(&Operand::Move(place.clone()));
+                        let val = self.lower_operand(&Operand::Move(place.clone()))?;
                         val.into_pointer_value().into()
                     } else {
-                        self.place_ptr(place).into()
+                        self.place_ptr(place)?.into()
                     };
                     let args_vals: Vec<BasicValueEnum<'ctx>> = vec![drop_arg];
 
@@ -2287,7 +2311,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                     );
                                     self.module.add_function("glyim_dealloc", fn_type, None)
                                 });
-                            let val = self.lower_operand(&Operand::Move(place.clone()));
+                            let val = self.lower_operand(&Operand::Move(place.clone()))?;
                             let ptr = val.into_pointer_value();
                             let pointee_ty = match self.ty_ctx.ty_kind(ty) {
                                 TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
@@ -2347,7 +2371,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                     );
                                     self.module.add_function("glyim_dealloc", fn_type, None)
                                 });
-                            let val = self.lower_operand(&Operand::Move(place.clone()));
+                            let val = self.lower_operand(&Operand::Move(place.clone()))?;
                             let ptr = val.into_pointer_value();
                             let pointee_ty = match self.ty_ctx.ty_kind(ty) {
                                 TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
@@ -2459,7 +2483,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 )]);
             }
             let arg_op = &args[arg_idx];
-            let arg_val = self.lower_operand(arg_op);
+            let arg_val = self.lower_operand(arg_op)?;
             match arg_abi.mode {
                 PassMode::Direct => llvm_args.push(arg_val),
                 PassMode::Indirect { .. } => {
@@ -2569,7 +2593,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     })?
             }
         } else {
-            let func_val = self.lower_operand(func).into_pointer_value();
+            let func_val = self.lower_operand(func)?.into_pointer_value();
             if use_invoke {
                 let normal_bb = if let Some(target_bb) = target {
                     *self.bb_map.get(target_bb).expect("target block not found")
@@ -2657,7 +2681,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .builder
                 .build_load(sret_ty, sret_ptr, "sret_load")
                 .expect("load sret failed");
-            let dest_ptr = self.place_ptr(destination);
+            let dest_ptr = self.place_ptr(destination)?;
             self.builder
                 .build_store(dest_ptr, sret_val)
                 .expect("store sret failed");
@@ -2676,7 +2700,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     )]);
                 }
             };
-            let dest_ptr = self.place_ptr(destination);
+            let dest_ptr = self.place_ptr(destination)?;
             self.builder
                 .build_store(dest_ptr, ret_val)
                 .expect("store ret failed");
