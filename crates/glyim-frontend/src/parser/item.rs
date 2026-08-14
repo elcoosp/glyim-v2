@@ -779,7 +779,9 @@ impl<'a> Parser<'a> {
         // Handle alias `as`
         if self.current_kind() == SyntaxKind::KwAs {
             self.bump(); // as
-            if self.current_kind() == SyntaxKind::Ident || self.current_kind() == SyntaxKind::Underscore {
+            if self.current_kind() == SyntaxKind::Ident
+                || self.current_kind() == SyntaxKind::Underscore
+            {
                 self.bump();
             } else {
                 self.error("expected identifier or `_` after `as`");

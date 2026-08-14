@@ -127,11 +127,7 @@ pub fn invoke_linker(
 /// Prefers `cc`, then `clang`, then `gcc`.
 fn detect_unix_linker() -> String {
     for candidate in &["cc", "clang", "gcc"] {
-        if Command::new(candidate)
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
+        if Command::new(candidate).arg("--version").output().is_ok() {
             return candidate.to_string();
         }
     }

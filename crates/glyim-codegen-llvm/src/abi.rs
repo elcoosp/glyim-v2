@@ -26,8 +26,15 @@ impl<'a> FullLayoutComputer<'a> {
         let kind = self.ctx.ty_kind(ty);
         let is_scalar = matches!(
             kind,
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char
-            | TyKind::Ref(..) | TyKind::RawPtr(..) | TyKind::FnPtr(_) | TyKind::FnDef(..)
+            TyKind::Bool
+                | TyKind::Int(_)
+                | TyKind::Uint(_)
+                | TyKind::Float(_)
+                | TyKind::Char
+                | TyKind::Ref(..)
+                | TyKind::RawPtr(..)
+                | TyKind::FnPtr(_)
+                | TyKind::FnDef(..)
         );
 
         if is_scalar {

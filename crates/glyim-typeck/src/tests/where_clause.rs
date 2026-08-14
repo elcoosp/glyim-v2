@@ -30,7 +30,11 @@ fn build_def_map_with_names(
         let name = interner.intern(name_str);
         scope.types.insert(
             name,
-            (LocalDefId::from_raw(i as u32), Visibility::Public, Span::DUMMY),
+            (
+                LocalDefId::from_raw(i as u32),
+                Visibility::Public,
+                Span::DUMMY,
+            ),
         );
     }
     let root_id = ModuleId::from_raw(0);

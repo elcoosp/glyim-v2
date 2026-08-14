@@ -8,8 +8,8 @@ use glyim_core::primitives::Visibility;
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
-use std::collections::HashMap;
 use indexmap::IndexMap;
+use std::collections::HashMap;
 
 glyim_core::define_idx!(ModuleId);
 
@@ -75,9 +75,15 @@ impl ItemScope {
     ) {
         let entry = (id, vis, span);
         match ns {
-            Namespace::Types => { self.types.insert(name, entry); }
-            Namespace::Values => { self.values.insert(name, entry); }
-            Namespace::Macros => { self.macros.insert(name, entry); }
+            Namespace::Types => {
+                self.types.insert(name, entry);
+            }
+            Namespace::Values => {
+                self.values.insert(name, entry);
+            }
+            Namespace::Macros => {
+                self.macros.insert(name, entry);
+            }
         }
     }
 }
@@ -765,9 +771,15 @@ fn visibility_of_node(node: &SyntaxNode, interner: &Interner) -> Visibility {
                             return Visibility::Public;
                         }
 
-                        let has_crate = n.children_with_tokens().any(|e| e.kind() == SyntaxKind::KwCrate);
-                        let has_super = n.children_with_tokens().any(|e| e.kind() == SyntaxKind::KwSuper);
-                        let has_self = n.children_with_tokens().any(|e| e.kind() == SyntaxKind::KwSelf);
+                        let has_crate = n
+                            .children_with_tokens()
+                            .any(|e| e.kind() == SyntaxKind::KwCrate);
+                        let has_super = n
+                            .children_with_tokens()
+                            .any(|e| e.kind() == SyntaxKind::KwSuper);
+                        let has_self = n
+                            .children_with_tokens()
+                            .any(|e| e.kind() == SyntaxKind::KwSelf);
 
                         if has_crate {
                             return Visibility::PubCrate;
@@ -849,10 +861,17 @@ pub(crate) fn is_accessible_from(
         Visibility::PubIn(path) => {
             // Resolve the path relative to the defining module's parent (as per Rust rules)
             let start_module = modules[defining_module].parent.unwrap_or(defining_module);
-            if let Some(target_mod) = resolve_module_path_for_modules(modules, start_module, &glyim_core::path::Path {
-                segments: path.iter().map(|n| glyim_core::path::PathSegment { name: *n }).collect(),
-                kind: glyim_core::path::PathKind::Plain,
-            }) {
+            if let Some(target_mod) = resolve_module_path_for_modules(
+                modules,
+                start_module,
+                &glyim_core::path::Path {
+                    segments: path
+                        .iter()
+                        .map(|n| glyim_core::path::PathSegment { name: *n })
+                        .collect(),
+                    kind: glyim_core::path::PathKind::Plain,
+                },
+            ) {
                 from_module == target_mod || is_descendant_of(from_module, target_mod, modules)
             } else {
                 false

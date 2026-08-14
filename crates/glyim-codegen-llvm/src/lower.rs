@@ -146,7 +146,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let ptr = self.place_ptr(place)?;
                 let ty = self.place_ty(place);
                 let llvm_ty = self.llvm_type_for_ty(ty);
-                Ok(self.builder
+                Ok(self
+                    .builder
                     .build_load(llvm_ty, ptr, "load")
                     .expect("load failed"))
             }
@@ -175,7 +176,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let float_ty = ty.into_float_type();
                 Ok(float_ty.const_float(f64::from_bits(*bits)).into())
             }
-            MirConstKind::Char(ch) => Ok(self.llvm_int_type(32).const_int(*ch as u64, false).into()),
+            MirConstKind::Char(ch) => {
+                Ok(self.llvm_int_type(32).const_int(*ch as u64, false).into())
+            }
             MirConstKind::Unit => {
                 let unit_ty = self.context.struct_type(&[], false);
                 Ok(unit_ty.const_zero().as_basic_value_enum())
@@ -230,7 +233,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_insert_value(inserted_ptr, len_val, 1, "str_len_insert")
                     .expect("insert len failed");
                 match inserted_len {
-                    inkwell::values::AggregateValueEnum::StructValue(s) => Ok(s.as_basic_value_enum()),
+                    inkwell::values::AggregateValueEnum::StructValue(s) => {
+                        Ok(s.as_basic_value_enum())
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -266,7 +271,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     global
                 });
                 let llvm_ty = self.llvm_type_for_ty(c.ty);
-                Ok(self.builder
+                Ok(self
+                    .builder
                     .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
                     .expect("const ref load failed"))
             }
@@ -297,9 +303,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     current_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => *inner,
                         _ => {
-                            return Err(vec![GlyimDiagnostic::internal_error(
-                                format!("internal compiler error: Deref on non-pointer type {:?} – MIR is invalid", current_ty),
-                            )]);
+                            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                                "internal compiler error: Deref on non-pointer type {:?} – MIR is invalid",
+                                current_ty
+                            ))]);
                         }
                     };
                 }
@@ -406,9 +413,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         TyKind::Array(elem, _) => *elem,
                         TyKind::Slice(elem) => *elem,
                         _ => {
-                            return Err(vec![GlyimDiagnostic::internal_error(
-                                format!("internal compiler error: Index projection on non-array/slice type {:?}", current_ty),
-                            )]);
+                            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                                "internal compiler error: Index projection on non-array/slice type {:?}",
+                                current_ty
+                            ))]);
                         }
                     };
                     if let TyKind::Slice(_) = self.ty_ctx.ty_kind(current_ty) {
@@ -546,9 +554,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                 len_val
                             }
                             _ => {
-                                return Err(vec![GlyimDiagnostic::internal_error(
-                                    format!("internal compiler error: ConstantIndex on non-array/slice type {:?}", current_ty),
-                                )]);
+                                return Err(vec![GlyimDiagnostic::internal_error(format!(
+                                    "internal compiler error: ConstantIndex on non-array/slice type {:?}",
+                                    current_ty
+                                ))]);
                             }
                         };
                         let offset_val = self.llvm_int_type(64).const_int(*offset, false);
@@ -580,9 +589,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Array(elem, _) | TyKind::Slice(elem) => *elem,
                         _ => {
-                            return Err(vec![GlyimDiagnostic::internal_error(
-                                format!("internal compiler error: ConstantIndex on non-array/slice type {:?}", current_ty),
-                            )]);
+                            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                                "internal compiler error: ConstantIndex on non-array/slice type {:?}",
+                                current_ty
+                            ))]);
                         }
                     };
                     let elem_llvm_ty = self.llvm_type_for_ty(elem_ty);
@@ -651,9 +661,10 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             (ptr, self.llvm_int_type(64).const_int(n, false))
                         }
                         other => {
-                            return Err(vec![GlyimDiagnostic::internal_error(
-                                format!("internal compiler error: Subslice projection on non-array/slice type {:?}", other),
-                            )]);
+                            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                                "internal compiler error: Subslice projection on non-array/slice type {:?}",
+                                other
+                            ))]);
                         }
                     };
                     let elem_ty = match self.ty_ctx.ty_kind(current_ty) {
@@ -793,9 +804,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                         }
                         Ok(agg.as_basic_value_enum())
                     }
-                    AggregateKind::Tuple => {
-                        self.build_layout_aggregate(expected_ty, None, &vals)
-                    }
+                    AggregateKind::Tuple => self.build_layout_aggregate(expected_ty, None, &vals),
                     AggregateKind::Adt(_adt_id, variant, _substs) => {
                         self.build_layout_aggregate(expected_ty, Some(*variant), &vals)
                     }
@@ -1787,7 +1796,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             }
         }
     }
-    fn lower_unop(&self, op: UnOp, operand: &Operand, val: BasicValueEnum<'ctx>) -> CompResult<BasicValueEnum<'ctx>> {
+    fn lower_unop(
+        &self,
+        op: UnOp,
+        operand: &Operand,
+        val: BasicValueEnum<'ctx>,
+    ) -> CompResult<BasicValueEnum<'ctx>> {
         match op {
             UnOp::Not => {
                 if val.is_int_value() {
@@ -2263,12 +2277,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 let cleanup_bb = cleanup.map(|c| *self.bb_map.get(&c).unwrap());
 
                 if needs_drop || is_owning {
-                    let drop_fn = self.module.get_function("glyim_drop_in_place").unwrap_or_else(|| {
+                    let drop_fn = self
+                        .module
+                        .get_function("glyim_drop_in_place")
+                        .unwrap_or_else(|| {
                             let fn_type = self.context.void_type().fn_type(
                                 &[self.context.ptr_type(AddressSpace::default()).into()],
                                 false,
                             );
-                            self.module.add_function("glyim_drop_in_place", fn_type, None)
+                            self.module
+                                .add_function("glyim_drop_in_place", fn_type, None)
                         });
 
                     let drop_arg = if matches!(
@@ -2647,13 +2665,27 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             if let PassMode::Indirect { .. } = arg_abi.mode {
                 let llvm_ty = self.llvm_type_for_ty(arg_abi.ty);
                 let any_ty = match llvm_ty {
-                    inkwell::types::BasicTypeEnum::ArrayType(t) => inkwell::types::AnyTypeEnum::ArrayType(t),
-                    inkwell::types::BasicTypeEnum::FloatType(t) => inkwell::types::AnyTypeEnum::FloatType(t),
-                    inkwell::types::BasicTypeEnum::IntType(t) => inkwell::types::AnyTypeEnum::IntType(t),
-                    inkwell::types::BasicTypeEnum::PointerType(t) => inkwell::types::AnyTypeEnum::PointerType(t),
-                    inkwell::types::BasicTypeEnum::StructType(t) => inkwell::types::AnyTypeEnum::StructType(t),
-                    inkwell::types::BasicTypeEnum::VectorType(t) => inkwell::types::AnyTypeEnum::VectorType(t),
-                    inkwell::types::BasicTypeEnum::ScalableVectorType(t) => inkwell::types::AnyTypeEnum::ScalableVectorType(t),
+                    inkwell::types::BasicTypeEnum::ArrayType(t) => {
+                        inkwell::types::AnyTypeEnum::ArrayType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::FloatType(t) => {
+                        inkwell::types::AnyTypeEnum::FloatType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::IntType(t) => {
+                        inkwell::types::AnyTypeEnum::IntType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::PointerType(t) => {
+                        inkwell::types::AnyTypeEnum::PointerType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::StructType(t) => {
+                        inkwell::types::AnyTypeEnum::StructType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::VectorType(t) => {
+                        inkwell::types::AnyTypeEnum::VectorType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::ScalableVectorType(t) => {
+                        inkwell::types::AnyTypeEnum::ScalableVectorType(t)
+                    }
                 };
                 let byval_attr = self.context.create_type_attribute(
                     inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),
@@ -2800,7 +2832,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             | TyKind::FnDef(_, _)
             | TyKind::FnPtr(_) => false,
             // Unreachable after TASK-P1-6, but conservative fallback is true.
-            TyKind::Dynamic(..) | TyKind::Opaque(..) | TyKind::Projection(_) | TyKind::Param(_) | TyKind::Bound(_, _) | TyKind::Infer(_) => true,
+            TyKind::Dynamic(..)
+            | TyKind::Opaque(..)
+            | TyKind::Projection(_)
+            | TyKind::Param(_)
+            | TyKind::Bound(_, _)
+            | TyKind::Infer(_) => true,
             _ => false,
         }
     }
@@ -2858,13 +2895,16 @@ pub(crate) fn lower_body<'ctx>(
     // Use the real FnSig from TyCtx if available, otherwise fallback to an empty one.
     let layout_computer = FullLayoutComputer::new(ty_ctx, target_info.clone());
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(body.owner.local_id.to_raw());
-    let fn_sig = ty_ctx.fn_sig(fn_def_id).cloned().unwrap_or(glyim_type::FnSig {
-        inputs: glyim_type::Substitution::empty(),
-        output: body.return_ty,
-        abi: glyim_core::primitives::Abi::Glyim,
-        c_variadic: false,
-        unsafety: glyim_core::primitives::Safety::Safe,
-    });
+    let fn_sig = ty_ctx
+        .fn_sig(fn_def_id)
+        .cloned()
+        .unwrap_or(glyim_type::FnSig {
+            inputs: glyim_type::Substitution::empty(),
+            output: body.return_ty,
+            abi: glyim_core::primitives::Abi::Glyim,
+            c_variadic: false,
+            unsafety: glyim_core::primitives::Safety::Safe,
+        });
     if let Ok(fn_abi) = layout_computer.fn_abi_of(&fn_sig) {
         let mut param_idx = 0;
         if matches!(fn_abi.ret.mode, glyim_layout::PassMode::Indirect { .. }) {
@@ -2883,13 +2923,27 @@ pub(crate) fn lower_body<'ctx>(
                 let llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, arg_abi.ty)
                     .unwrap_or(context.i8_type().into());
                 let any_ty = match llvm_ty {
-                    inkwell::types::BasicTypeEnum::ArrayType(t) => inkwell::types::AnyTypeEnum::ArrayType(t),
-                    inkwell::types::BasicTypeEnum::FloatType(t) => inkwell::types::AnyTypeEnum::FloatType(t),
-                    inkwell::types::BasicTypeEnum::IntType(t) => inkwell::types::AnyTypeEnum::IntType(t),
-                    inkwell::types::BasicTypeEnum::PointerType(t) => inkwell::types::AnyTypeEnum::PointerType(t),
-                    inkwell::types::BasicTypeEnum::StructType(t) => inkwell::types::AnyTypeEnum::StructType(t),
-                    inkwell::types::BasicTypeEnum::VectorType(t) => inkwell::types::AnyTypeEnum::VectorType(t),
-                    inkwell::types::BasicTypeEnum::ScalableVectorType(t) => inkwell::types::AnyTypeEnum::ScalableVectorType(t),
+                    inkwell::types::BasicTypeEnum::ArrayType(t) => {
+                        inkwell::types::AnyTypeEnum::ArrayType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::FloatType(t) => {
+                        inkwell::types::AnyTypeEnum::FloatType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::IntType(t) => {
+                        inkwell::types::AnyTypeEnum::IntType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::PointerType(t) => {
+                        inkwell::types::AnyTypeEnum::PointerType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::StructType(t) => {
+                        inkwell::types::AnyTypeEnum::StructType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::VectorType(t) => {
+                        inkwell::types::AnyTypeEnum::VectorType(t)
+                    }
+                    inkwell::types::BasicTypeEnum::ScalableVectorType(t) => {
+                        inkwell::types::AnyTypeEnum::ScalableVectorType(t)
+                    }
                 };
                 let byval_attr = context.create_type_attribute(
                     inkwell::attributes::Attribute::get_named_enum_kind_id("byval"),

@@ -28,9 +28,7 @@ mod twophase;
 mod visitor;
 
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, MultiSpan, SubDiagnostic};
-use glyim_mir::{
-    BasicBlockIdx, Body, BorrowKind, LocalIdx, Place, Rvalue, StatementKind,
-};
+use glyim_mir::{BasicBlockIdx, Body, BorrowKind, LocalIdx, Place, Rvalue, StatementKind};
 use glyim_span::Span;
 use smallvec::SmallVec;
 use tracing::{debug, trace};

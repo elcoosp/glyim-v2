@@ -21,7 +21,11 @@ mod tests {
         let errs = result.unwrap_err();
         assert!(!errs.is_empty());
         assert!(errs[0].message.contains("invalid value for --emit"));
-        assert!(errs[0].message.contains("expected one of: obj, exec, mir, llvm-ir"));
+        assert!(
+            errs[0]
+                .message
+                .contains("expected one of: obj, exec, mir, llvm-ir")
+        );
     }
 
     #[test]
@@ -70,7 +74,11 @@ mod tests {
         };
         let result = run_with_args(args);
         assert!(result.is_ok(), "emit_llvm_ir failed: {:?}", result.err());
-        assert!(output.exists(), "LLVM IR file was not written to {:?}", output);
+        assert!(
+            output.exists(),
+            "LLVM IR file was not written to {:?}",
+            output
+        );
         std::fs::remove_file(&output).ok();
     }
 }

@@ -132,7 +132,9 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
     let target_info = glyim_core::TargetInfo::from_triple(&target_triple);
     let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
         if args.opt_level > 0 {
-            tracing::warn!("bytecode backend opt-level currently has no effect; reserved for future peephole passes");
+            tracing::warn!(
+                "bytecode backend opt-level currently has no effect; reserved for future peephole passes"
+            );
         }
         let ctx = glyim_type::TyCtxMut::new(db.interner().clone()).freeze();
         Box::new(BytecodeBackend::with_ty_ctx(
@@ -144,7 +146,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             LlvmBackend::with_db(&db)
                 .with_target(&target_triple)
                 .with_opt_level(args.opt_level)
-                .with_opt_for_size(false)
+                .with_opt_for_size(false),
         )
     };
 

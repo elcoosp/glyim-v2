@@ -125,7 +125,13 @@ impl MovePathArena {
                         Some(idx) => current_idx = idx,
                         None => {
                             // Create a new move path child for this variant
-                            let mut new_proj = self.get(current_idx).place.projection.iter().cloned().collect::<Vec<_>>();
+                            let mut new_proj = self
+                                .get(current_idx)
+                                .place
+                                .projection
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<_>>();
                             new_proj.push(ProjectionElem::Downcast(*variant_idx));
                             let new_path = MovePath {
                                 place: Place {
@@ -159,12 +165,20 @@ impl MovePathArena {
                         None => return Some(current_idx),
                     }
                 }
-                ProjectionElem::ConstantIndex { offset, from_end: false, .. } => {
+                ProjectionElem::ConstantIndex {
+                    offset,
+                    from_end: false,
+                    ..
+                } => {
                     let current = self.get(current_idx);
                     let mut found = None;
                     for &child_idx in &current.children {
                         let child = self.get(child_idx);
-                        if let Some(ProjectionElem::ConstantIndex { offset: o, from_end: false, .. }) = child.place.projection.last()
+                        if let Some(ProjectionElem::ConstantIndex {
+                            offset: o,
+                            from_end: false,
+                            ..
+                        }) = child.place.projection.last()
                             && *o == *offset
                         {
                             found = Some(child_idx);
@@ -174,8 +188,18 @@ impl MovePathArena {
                     match found {
                         Some(idx) => current_idx = idx,
                         None => {
-                            let mut new_proj = self.get(current_idx).place.projection.iter().cloned().collect::<Vec<_>>();
-                            new_proj.push(ProjectionElem::ConstantIndex { offset: *offset, min_length: 0, from_end: false });
+                            let mut new_proj = self
+                                .get(current_idx)
+                                .place
+                                .projection
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            new_proj.push(ProjectionElem::ConstantIndex {
+                                offset: *offset,
+                                min_length: 0,
+                                from_end: false,
+                            });
                             let new_path = MovePath {
                                 place: Place {
                                     local: place.local,
@@ -190,7 +214,9 @@ impl MovePathArena {
                         }
                     }
                 }
-                ProjectionElem::Deref | ProjectionElem::ConstantIndex { .. } | ProjectionElem::Subslice { .. } => {
+                ProjectionElem::Deref
+                | ProjectionElem::ConstantIndex { .. }
+                | ProjectionElem::Subslice { .. } => {
                     // As per TASK-P2-3, Deref and index/subslice on unsized are tracked at the ancestor.
                     return Some(current_idx);
                 }

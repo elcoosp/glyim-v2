@@ -122,8 +122,14 @@ impl BytecodeBackend {
             match proj {
                 ProjectionElem::Deref => {
                     bc.push(OP_DEREF);
-                    current_ty = match self.ty_ctx.as_ref().map(|c| c.ty_kind(current_ty)).unwrap_or(&glyim_type::TyKind::Error) {
-                        glyim_type::TyKind::Ref(_, inner, _) | glyim_type::TyKind::RawPtr(inner, _) => *inner,
+                    current_ty = match self
+                        .ty_ctx
+                        .as_ref()
+                        .map(|c| c.ty_kind(current_ty))
+                        .unwrap_or(&glyim_type::TyKind::Error)
+                    {
+                        glyim_type::TyKind::Ref(_, inner, _)
+                        | glyim_type::TyKind::RawPtr(inner, _) => *inner,
                         _ => Ty::ERROR,
                     };
                 }
@@ -151,8 +157,15 @@ impl BytecodeBackend {
                         bc.push(OP_MUL);
                         bc.push(OP_ADD);
                     }
-                    current_ty = match self.ty_ctx.as_ref().map(|c| c.ty_kind(current_ty)).unwrap_or(&glyim_type::TyKind::Error) {
-                        glyim_type::TyKind::Array(elem, _) | glyim_type::TyKind::Slice(elem) => *elem,
+                    current_ty = match self
+                        .ty_ctx
+                        .as_ref()
+                        .map(|c| c.ty_kind(current_ty))
+                        .unwrap_or(&glyim_type::TyKind::Error)
+                    {
+                        glyim_type::TyKind::Array(elem, _) | glyim_type::TyKind::Slice(elem) => {
+                            *elem
+                        }
                         _ => Ty::ERROR,
                     };
                 }

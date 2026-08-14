@@ -47,7 +47,9 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 return Ok(context.struct_type(&[], false).into());
             }
             let layout_computer = glyim_layout::SimpleLayoutComputer::new(ctx, target_info.clone());
-            let layout = layout_computer.layout_of(ty).unwrap_or_else(|_| glyim_layout::Layout::unit());
+            let layout = layout_computer
+                .layout_of(ty)
+                .unwrap_or_else(|_| glyim_layout::Layout::unit());
             if layout.size.0 == 0 {
                 return Ok(context.struct_type(&[], false).into());
             }
@@ -58,9 +60,11 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             let n = match &count.kind {
                 glyim_type::ConstKind::Uint(n) => *n as u32,
                 glyim_type::ConstKind::Int(n) => *n as u32,
-                _ => return Err(vec![GlyimDiagnostic::internal_error(
-                    "internal compiler error: Array with non-integer count in TyKind::Array",
-                )]),
+                _ => {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "internal compiler error: Array with non-integer count in TyKind::Array",
+                    )]);
+                }
             };
             elem_llvm.array_type(n).into()
         }
@@ -116,19 +120,22 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
             )]);
         }
         TyKind::Param(param) => {
-            return Err(vec![GlyimDiagnostic::internal_error(
-                format!("internal compiler error: TyKind::Param({:?}) reached LLVM codegen – monomorphization should have resolved this", param),
-            )]);
+            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                "internal compiler error: TyKind::Param({:?}) reached LLVM codegen – monomorphization should have resolved this",
+                param
+            ))]);
         }
         TyKind::Bound(debruijn, var) => {
-            return Err(vec![GlyimDiagnostic::internal_error(
-                format!("internal compiler error: TyKind::Bound({:?}, {:?}) reached LLVM codegen – binder instantiation failed", debruijn, var),
-            )]);
+            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                "internal compiler error: TyKind::Bound({:?}, {:?}) reached LLVM codegen – binder instantiation failed",
+                debruijn, var
+            ))]);
         }
         TyKind::Infer(var) => {
-            return Err(vec![GlyimDiagnostic::internal_error(
-                format!("internal compiler error: TyKind::Infer({:?}) reached LLVM codegen – type inference incomplete", var),
-            )]);
+            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                "internal compiler error: TyKind::Infer({:?}) reached LLVM codegen – type inference incomplete",
+                var
+            ))]);
         }
     })
 }
@@ -164,14 +171,23 @@ fn int_type<'ctx>(context: &'ctx Context, bits: u32) -> IntType<'ctx> {
 /// LLVM struct layout might not match the compiler's layout due to padding.
 /// By using an opaque block of the correct size and alignment, we can safely
 /// use byte-offset GEPs to access fields, matching the behavior of `build_layout_aggregate`.
-pub(crate) fn opaque_sized_type<'ctx>(context: &'ctx Context, size: u64, align: u64) -> BasicTypeEnum<'ctx> {
+pub(crate) fn opaque_sized_type<'ctx>(
+    context: &'ctx Context,
+    size: u64,
+    align: u64,
+) -> BasicTypeEnum<'ctx> {
     let align = align.max(1);
     let align_ty: BasicTypeEnum<'ctx> = match align {
         1 => context.i8_type().into(),
         2 => context.i16_type().into(),
         4 => context.i32_type().into(),
         8 => context.i64_type().into(),
-        16 => context.struct_type(&[context.i64_type().into(), context.i64_type().into()], false).into(),
+        16 => context
+            .struct_type(
+                &[context.i64_type().into(), context.i64_type().into()],
+                false,
+            )
+            .into(),
         _ => {
             // Fallback to i8 array, alignment might be wrong but at least size is correct
             return context.i8_type().array_type(size as u32).into();

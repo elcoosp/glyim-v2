@@ -124,7 +124,14 @@ fn t04_inline_module_child() {
     let child_data = &def_map.modules[child];
     assert_eq!(child_data.scope.values.len(), 1);
     assert_eq!(
-        child_data.scope.values.get_index(0).unwrap().0.clone().clone(),
+        child_data
+            .scope
+            .values
+            .get_index(0)
+            .unwrap()
+            .0
+            .clone()
+            .clone(),
         def_map.interner.intern("inner")
     );
 }
@@ -142,7 +149,10 @@ fn t05_visibility_pub_vs_private() {
     assert!(diags.is_empty());
     let scope = root_scope(&def_map);
     assert_eq!(scope.values.get_index(0).unwrap().1.1, Visibility::Public);
-    assert_eq!(scope.values.get_index(1).unwrap().1.1, Visibility::Inherited);
+    assert_eq!(
+        scope.values.get_index(1).unwrap().1.1,
+        Visibility::Inherited
+    );
     assert_eq!(scope.types.get_index(0).unwrap().1.1, Visibility::Public);
     assert_eq!(scope.types.get_index(1).unwrap().1.1, Visibility::Inherited);
 }
@@ -255,8 +265,14 @@ fn t12_duplicate_across_namespaces_allowed() {
     assert_eq!(scope.values.len(), 1);
     assert_eq!(scope.types.len(), 1);
     // Both have the same name
-    assert_eq!(scope.values.get_index(0).unwrap().0.clone(), def_map.interner.intern("foo"));
-    assert_eq!(scope.types.get_index(0).unwrap().0.clone(), def_map.interner.intern("foo"));
+    assert_eq!(
+        scope.values.get_index(0).unwrap().0.clone(),
+        def_map.interner.intern("foo")
+    );
+    assert_eq!(
+        scope.types.get_index(0).unwrap().0.clone(),
+        def_map.interner.intern("foo")
+    );
 }
 
 #[test]
@@ -363,7 +379,10 @@ fn t24_use_decl_ignored() {
     let scope = root_scope(&def_map);
     // use decl is not collected
     assert_eq!(scope.values.len(), 1);
-    assert_eq!(scope.values.get_index(0).unwrap().0.clone(), def_map.interner.intern("real"));
+    assert_eq!(
+        scope.values.get_index(0).unwrap().0.clone(),
+        def_map.interner.intern("real")
+    );
     assert!(scope.types.is_empty());
 }
 
@@ -380,8 +399,14 @@ fn t26_visibility_inside_module() {
     let mod_id = def_map.modules[def_map.root].children[0].1;
     let mod_data = &def_map.modules[mod_id];
     assert_eq!(mod_data.scope.values.len(), 2);
-    assert_eq!(mod_data.scope.values.get_index(0).unwrap().1.1, Visibility::Public);
-    assert_eq!(mod_data.scope.values.get_index(1).unwrap().1.1, Visibility::Inherited);
+    assert_eq!(
+        mod_data.scope.values.get_index(0).unwrap().1.1,
+        Visibility::Public
+    );
+    assert_eq!(
+        mod_data.scope.values.get_index(1).unwrap().1.1,
+        Visibility::Inherited
+    );
 }
 
 #[test]
@@ -442,7 +467,12 @@ fn t31_resolve_shadowed_name_returns_first() {
         scope
             .values
             .iter()
-            .find_map(|(n, v)| if *n == def_map.interner.intern("shadow") { Some(v.clone()) } else { None }).is_some()
+            .find_map(|(n, v)| if *n == def_map.interner.intern("shadow") {
+                Some(v.clone())
+            } else {
+                None
+            })
+            .is_some()
     );
 }
 

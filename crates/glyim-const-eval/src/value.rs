@@ -33,36 +33,84 @@ impl ConstValue {
     pub fn validate_range(&self, pointer_width: u32) -> Option<ConstValue> {
         match self {
             ConstValue::Int(v, IntTy::I8) => {
-                if *v >= i8::MIN as i128 && *v <= i8::MAX as i128 { Some(self.clone()) } else { None }
+                if *v >= i8::MIN as i128 && *v <= i8::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Int(v, IntTy::I16) => {
-                if *v >= i16::MIN as i128 && *v <= i16::MAX as i128 { Some(self.clone()) } else { None }
+                if *v >= i16::MIN as i128 && *v <= i16::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Int(v, IntTy::I32) => {
-                if *v >= i32::MIN as i128 && *v <= i32::MAX as i128 { Some(self.clone()) } else { None }
+                if *v >= i32::MIN as i128 && *v <= i32::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Int(v, IntTy::I64) => {
-                if *v >= i64::MIN as i128 && *v <= i64::MAX as i128 { Some(self.clone()) } else { None }
+                if *v >= i64::MIN as i128 && *v <= i64::MAX as i128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Int(v, IntTy::Isize) => {
-                let max = if pointer_width == 64 { i64::MAX as i128 } else { i32::MAX as i128 };
-                let min = if pointer_width == 64 { i64::MIN as i128 } else { i32::MIN as i128 };
-                if *v >= min && *v <= max { Some(self.clone()) } else { None }
+                let max = if pointer_width == 64 {
+                    i64::MAX as i128
+                } else {
+                    i32::MAX as i128
+                };
+                let min = if pointer_width == 64 {
+                    i64::MIN as i128
+                } else {
+                    i32::MIN as i128
+                };
+                if *v >= min && *v <= max {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Uint(v, UintTy::U8) => {
-                if *v <= u8::MAX as u128 { Some(self.clone()) } else { None }
+                if *v <= u8::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Uint(v, UintTy::U16) => {
-                if *v <= u16::MAX as u128 { Some(self.clone()) } else { None }
+                if *v <= u16::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Uint(v, UintTy::U32) => {
-                if *v <= u32::MAX as u128 { Some(self.clone()) } else { None }
+                if *v <= u32::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Uint(v, UintTy::U64) => {
-                if *v <= u64::MAX as u128 { Some(self.clone()) } else { None }
+                if *v <= u64::MAX as u128 {
+                    Some(self.clone())
+                } else {
+                    None
+                }
             }
             ConstValue::Uint(v, UintTy::Usize) => {
-                let max = if pointer_width == 64 { u64::MAX as u128 } else { u32::MAX as u128 };
+                let max = if pointer_width == 64 {
+                    u64::MAX as u128
+                } else {
+                    u32::MAX as u128
+                };
                 if *v <= max { Some(self.clone()) } else { None }
             }
             _ => Some(self.clone()),
@@ -112,7 +160,10 @@ impl ConstValue {
                 a.checked_add(*b).map(|v| ConstValue::Uint(v, *ty_a))
             }
             (ConstValue::FloatBits(a, ty_a), ConstValue::FloatBits(b, ty_b)) if ty_a == ty_b => {
-                Some(ConstValue::FloatBits((f64::from_bits(*a) + f64::from_bits(*b)).to_bits(), *ty_a))
+                Some(ConstValue::FloatBits(
+                    (f64::from_bits(*a) + f64::from_bits(*b)).to_bits(),
+                    *ty_a,
+                ))
             }
             _ => None,
         }
@@ -127,7 +178,10 @@ impl ConstValue {
                 a.checked_sub(*b).map(|v| ConstValue::Uint(v, *ty_a))
             }
             (ConstValue::FloatBits(a, ty_a), ConstValue::FloatBits(b, ty_b)) if ty_a == ty_b => {
-                Some(ConstValue::FloatBits((f64::from_bits(*a) - f64::from_bits(*b)).to_bits(), *ty_a))
+                Some(ConstValue::FloatBits(
+                    (f64::from_bits(*a) - f64::from_bits(*b)).to_bits(),
+                    *ty_a,
+                ))
             }
             _ => None,
         }
@@ -142,7 +196,10 @@ impl ConstValue {
                 a.checked_mul(*b).map(|v| ConstValue::Uint(v, *ty_a))
             }
             (ConstValue::FloatBits(a, ty_a), ConstValue::FloatBits(b, ty_b)) if ty_a == ty_b => {
-                Some(ConstValue::FloatBits((f64::from_bits(*a) * f64::from_bits(*b)).to_bits(), *ty_a))
+                Some(ConstValue::FloatBits(
+                    (f64::from_bits(*a) * f64::from_bits(*b)).to_bits(),
+                    *ty_a,
+                ))
             }
             _ => None,
         }
@@ -161,7 +218,10 @@ impl ConstValue {
                 if bv == 0.0 {
                     Some(ConstValue::FloatBits(f64::INFINITY.to_bits(), *ty_a)) // or NaN
                 } else {
-                    Some(ConstValue::FloatBits((f64::from_bits(*a) / bv).to_bits(), *ty_a))
+                    Some(ConstValue::FloatBits(
+                        (f64::from_bits(*a) / bv).to_bits(),
+                        *ty_a,
+                    ))
                 }
             }
             _ => None,
@@ -181,7 +241,10 @@ impl ConstValue {
                 if bv == 0.0 {
                     Some(ConstValue::FloatBits(f64::NAN.to_bits(), *ty_a))
                 } else {
-                    Some(ConstValue::FloatBits((f64::from_bits(*a) % bv).to_bits(), *ty_a))
+                    Some(ConstValue::FloatBits(
+                        (f64::from_bits(*a) % bv).to_bits(),
+                        *ty_a,
+                    ))
                 }
             }
             _ => None,
@@ -191,7 +254,10 @@ impl ConstValue {
     pub fn checked_neg(&self) -> Option<ConstValue> {
         match self {
             ConstValue::Int(v, ty) => v.checked_neg().map(|r| ConstValue::Int(r, *ty)),
-            ConstValue::FloatBits(bits, ty) => Some(ConstValue::FloatBits((-f64::from_bits(*bits)).to_bits(), *ty)),
+            ConstValue::FloatBits(bits, ty) => Some(ConstValue::FloatBits(
+                (-f64::from_bits(*bits)).to_bits(),
+                *ty,
+            )),
             _ => None,
         }
     }

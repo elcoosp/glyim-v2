@@ -213,7 +213,12 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             .create_basic_type("i8", 8, 0x05, 0)
                             .unwrap()
                             .as_type();
-                        let data_array = self.builder.create_array_type(data_ty, (data_size / 8).try_into().unwrap(), 0, &[]);
+                        let data_array = self.builder.create_array_type(
+                            data_ty,
+                            (data_size / 8).try_into().unwrap(),
+                            0,
+                            &[],
+                        );
                         self.builder
                             .create_struct_type(
                                 self.compile_unit_scope,
@@ -284,7 +289,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                     .as_type()
             }
             TyKind::Slice(elem_ty) => {
-                let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
+                let _elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 let ptr_ty = self
                     .builder
                     .create_basic_type("ptr", 64, 0x02, 0)
