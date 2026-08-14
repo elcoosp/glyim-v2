@@ -84,11 +84,7 @@ fn build_empty_def_map(krate: CrateId) -> CrateDefMap {
     modules.push(ModuleData {
         parent: None,
         children: Vec::new(),
-        scope: ItemScope {
-            types: Vec::new(),
-            values: Vec::new(),
-            macros: Vec::new(),
-        },
+        scope: ItemScope::default(),
         origin: ModuleOrigin::CrateRoot,
         span: Span::DUMMY,
         def_id: LocalDefId::from_raw(0),
@@ -441,18 +437,14 @@ fn v03_t04_default_method_with_generic_params() {
 
     // Build def map with MyType and MyTrait so they resolve
     let mut scope = glyim_def_map::ItemScope::default();
-    scope.types.push((
+    scope.types.insert(
         make_name(&mut interner, "MyType"),
-        LocalDefId::from_raw(0),
-        Visibility::Public,
-        Span::DUMMY,
-    ));
-    scope.types.push((
+        (LocalDefId::from_raw(0), Visibility::Public, Span::DUMMY),
+    );
+    scope.types.insert(
         make_name(&mut interner, "MyTrait"),
-        LocalDefId::from_raw(1),
-        Visibility::Public,
-        Span::DUMMY,
-    ));
+        (LocalDefId::from_raw(1), Visibility::Public, Span::DUMMY),
+    );
     let root_id = glyim_def_map::ModuleId::from_raw(0);
     let root_data = glyim_def_map::ModuleData {
         parent: None,

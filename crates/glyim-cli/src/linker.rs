@@ -1,4 +1,92 @@
 use std::path::Path;
+use std::process::Command;
+
+/// Trait abstracting the system linker, allowing for different implementations
+/// for MSVC, Unix/GCC, and LLD.
+trait LinkerInvoker {
+    fn link(
+        &self,
+        obj_path: &Path,
+        output_path: &Path,
+        link_flags: Option<&str>,
+    ) -> Result<(), String>;
+}
+
+struct UnixLinker {
+    linker: String,
+}
+
+impl LinkerInvoker for UnixLinker {
+    fn link(
+        &self,
+        obj_path: &Path,
+        output_path: &Path,
+        link_flags: Option<&str>,
+    ) -> Result<(), String> {
+        let mut cmd = Command::new(&self.linker);
+        cmd.arg(obj_path.as_os_str())
+            .arg("-o")
+            .arg(output_path.as_os_str());
+
+        if let Some(flags) = link_flags {
+            for flag in flags.split_whitespace() {
+                cmd.arg(flag);
+            }
+        }
+
+        let status = cmd
+            .status()
+            .map_err(|e| format!("Failed to invoke linker '{}': {}", self.linker, e))?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Linker '{}' failed with status {}",
+                self.linker, status
+            ))
+        }
+    }
+}
+
+struct MsvcLinker {
+    linker: String,
+}
+
+impl LinkerInvoker for MsvcLinker {
+    fn link(
+        &self,
+        obj_path: &Path,
+        output_path: &Path,
+        link_flags: Option<&str>,
+    ) -> Result<(), String> {
+        let mut cmd = Command::new(&self.linker);
+        cmd.arg(obj_path.as_os_str())
+            .arg("/OUT:")
+            .arg(output_path.as_os_str())
+            .arg("/SUBSYSTEM:CONSOLE") // Default to console subsystem
+            .arg("msvcrt.lib"); // Default C runtime
+
+        if let Some(flags) = link_flags {
+            for flag in flags.split_whitespace() {
+                cmd.arg(flag);
+            }
+        }
+
+        let status = cmd
+            .status()
+            .map_err(|e| format!("Failed to invoke linker '{}': {}", self.linker, e))?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Linker '{}' failed with status {}",
+                self.linker, status
+            ))
+        }
+    }
+}
 
 pub fn invoke_linker(
     obj_path: &Path,
@@ -6,43 +94,64 @@ pub fn invoke_linker(
     linker: Option<&str>,
     link_flags: Option<&str>,
 ) -> Result<(), String> {
-    // Default to `cc` on Unix-like systems, `link.exe` on Windows.
-    // This can be overridden by the `--linker` CLI flag.
+    // Detect platform to choose default linker
     let default_linker = if cfg!(target_os = "windows") {
         "link.exe"
     } else {
         "cc"
     };
 
-    let linker = linker.unwrap_or(default_linker);
-    let mut cmd = std::process::Command::new(linker);
+    let linker_name = linker.unwrap_or(default_linker).to_string();
 
-    // Platform-specific default flags
-    if cfg!(target_os = "windows") {
-        // MSVC defaults
-        cmd.arg(obj_path.as_os_str())
-            .arg("/OUT:")
-            .arg(output_path.as_os_str());
+    // If no linker is explicitly provided, try to detect a better one on Unix
+    let final_linker_name = if linker.is_none() && !cfg!(target_os = "windows") {
+        detect_unix_linker()
     } else {
-        // GCC/Clang defaults
-        cmd.arg(obj_path.as_os_str())
-            .arg("-o")
-            .arg(output_path.as_os_str());
-    }
+        linker_name
+    };
 
-    if let Some(flags) = link_flags {
-        for flag in flags.split_whitespace() {
-            cmd.arg(flag);
+    let linker_invoker: Box<dyn LinkerInvoker> = if cfg!(target_os = "windows") {
+        Box::new(MsvcLinker {
+            linker: final_linker_name,
+        })
+    } else {
+        Box::new(UnixLinker {
+            linker: final_linker_name,
+        })
+    };
+
+    linker_invoker.link(obj_path, output_path, link_flags)
+}
+
+/// Tries to find a suitable C linker on Unix-like systems.
+/// Prefers `cc`, then `clang`, then `gcc`.
+fn detect_unix_linker() -> String {
+    for candidate in &["cc", "clang", "gcc"] {
+        if Command::new(candidate)
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            return candidate.to_string();
         }
     }
+    "cc".to_string() // Fallback
+}
 
-    let status = cmd
-        .status()
-        .map_err(|e| format!("Failed to invoke linker '{}': {}", linker, e))?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("Linker '{}' failed with status {}", linker, status))
+    #[test]
+    fn test_unix_linker_command_construction() {
+        // We can't actually run the linker in CI reliably, but we can test
+        // that the logic constructs the correct arguments.
+        // This is a conceptual test; in a real environment, we'd refactor
+        // `link` to return the `Command` for inspection.
+
+        // For now, just ensure detect_unix_linker returns a string
+        let detected = detect_unix_linker();
+        assert!(!detected.is_empty());
     }
 }

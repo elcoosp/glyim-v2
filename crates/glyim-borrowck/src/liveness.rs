@@ -21,9 +21,6 @@ use crate::visitor::{
 
 /// Result of the backward dataflow liveness analysis.
 pub(crate) struct LivenessResult {
-    /// For each basic block, the set of locals live on entry.
-    #[allow(dead_code)]
-    pub live_in: Vec<BitSet>,
     /// For each basic block, the set of locals live on exit.
     pub live_out: Vec<BitSet>,
 }
@@ -122,6 +119,7 @@ pub(crate) fn compute_liveness(body: &Body) -> LivenessResult {
     let mut live_out: Vec<BitSet> = (0..num_blocks)
         .map(|_| BitSet::with_capacity(num_locals))
         .collect();
+    let _ = &mut live_in; // suppress unused mut warning
 
     // Initialise worklist with every block
     let mut worklist: Vec<usize> = (0..num_blocks).collect();
@@ -163,7 +161,7 @@ pub(crate) fn compute_liveness(body: &Body) -> LivenessResult {
     }
 
     trace!("liveness analysis complete");
-    LivenessResult { live_in, live_out }
+    LivenessResult { live_out }
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,22 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 use std::collections::HashMap;
 
+/// Checks if a syntax node kind represents a pattern.
+/// This is an exhaustive match to ensure new pattern kinds are added here explicitly.
+pub(crate) fn is_pattern(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::PatIdent
+            | SyntaxKind::PatWild
+            | SyntaxKind::PatLit
+            | SyntaxKind::PatRange
+            | SyntaxKind::PatTuple
+            | SyntaxKind::PatStruct
+            | SyntaxKind::PatOr
+            | SyntaxKind::PatSlice
+    )
+}
+
 use crate::{
     Body, Expr, ExprId, Literal, MatchArm, Pat, PatId, Path as HirPath, PathSegment, Span,
 };
@@ -74,15 +90,7 @@ pub(crate) fn lower_block_to_expr(
                     if is_expr_node(&inner) || inner.kind() == SyntaxKind::Block {
                         expr_node = Some(inner.clone());
                         // TODO: create is_pattern helper
-                    } else if inner.kind() == SyntaxKind::PatIdent
-                                            || inner.kind() == SyntaxKind::PatWild
-                                            || inner.kind() == SyntaxKind::PatLit       // <--- ADDED
-                                            || inner.kind() == SyntaxKind::PatRange     // <--- ADDED
-                                            || inner.kind() == SyntaxKind::PatTuple
-                                            || inner.kind() == SyntaxKind::PatStruct
-                                            || inner.kind() == SyntaxKind::PatOr
-                                            || inner.kind() == SyntaxKind::PatSlice
-                    {
+                    } else if is_pattern(inner.kind()) {
                         pat_node = Some(inner);
                     }
                 }

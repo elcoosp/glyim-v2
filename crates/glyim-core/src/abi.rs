@@ -1,6 +1,5 @@
-pub const ALIGN_MAX: u64 = 16;
+pub const ALIGN_MAX: u64 = 64;
 pub const ALIGN_MIN: u64 = 1;
-pub const DEFAULT_STACK_SIZE: usize = 8 * 1024 * 1024;
 
 pub fn validate_alignment(align: u64) -> Result<(), String> {
     if align == 0 {

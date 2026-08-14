@@ -837,26 +837,3 @@ fn check_place_use_after_move(
         }
     }
 }
-#[allow(dead_code)]
-fn describe_projection(projection: &[ProjectionElem]) -> String {
-    projection
-        .iter()
-        .map(|elem| match elem {
-            ProjectionElem::Deref => "*".to_string(),
-            ProjectionElem::Field(idx) => format!(".{}", idx.to_raw()),
-            ProjectionElem::Index(_) => "[..]".to_string(),
-            ProjectionElem::Downcast(idx) => format!(".{}", idx.to_raw()),
-
-            ProjectionElem::ConstantIndex {
-                offset,
-                min_length: _,
-                from_end: _,
-            } => format!("[{}]", offset),
-            ProjectionElem::Subslice {
-                from,
-                to,
-                from_end: _,
-            } => format!("[{}..{}]", from, to),
-        })
-        .collect()
-}

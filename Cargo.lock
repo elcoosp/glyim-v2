@@ -1018,6 +1018,7 @@ dependencies = [
  "glyim-span",
  "glyim-syntax",
  "glyim-test",
+ "indexmap",
  "tracing",
 ]
 

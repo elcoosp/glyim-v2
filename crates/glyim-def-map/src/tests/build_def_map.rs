@@ -42,7 +42,7 @@ fn test_single_fn() {
         1,
         "expected one value in root scope"
     );
-    let (name, _id, vis, _span) = &root.scope.values[0];
+    let (name, (_id, vis, _span)) = root.scope.values.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "main", "expected function named 'main'");
     assert_eq!(
@@ -66,7 +66,7 @@ fn test_pub_fn_visibility() {
         1,
         "expected one value in root scope"
     );
-    let (_name, _id, vis, _span) = &root.scope.values[0];
+    let (_name, (_id, vis, _span)) = root.scope.values.get_index(0).unwrap();
     assert_eq!(
         *vis,
         Visibility::Public,
@@ -88,7 +88,7 @@ fn test_struct_in_types_namespace() {
         root.scope.values.is_empty(),
         "struct should not be in values namespace"
     );
-    let (name, _id, vis, _span) = &root.scope.types[0];
+    let (name, (_id, vis, _span)) = root.scope.types.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "Foo");
     assert_eq!(
@@ -107,7 +107,7 @@ fn test_pub_struct_visibility() {
         diags
     );
     let root = &def_map.modules[def_map.root];
-    let (_name, _id, vis, _span) = &root.scope.types[0];
+    let (_name, (_id, vis, _span)) = root.scope.types.get_index(0).unwrap();
     assert_eq!(
         *vis,
         Visibility::Public,
@@ -125,7 +125,7 @@ fn test_enum_in_types_namespace() {
     );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type in root scope");
-    let (name, _, _, _) = &root.scope.types[0];
+    let (name, _) = root.scope.types.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "Color");
 }
@@ -144,7 +144,7 @@ fn test_const_in_values_namespace() {
         1,
         "expected one value in root scope"
     );
-    let (name, _, _, _) = &root.scope.values[0];
+    let (name, _) = root.scope.values.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "MAX");
 }
@@ -163,7 +163,7 @@ fn test_static_in_values_namespace() {
         1,
         "expected one value in root scope"
     );
-    let (name, _, _, _) = &root.scope.values[0];
+    let (name, _) = root.scope.values.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "COUNT");
 }
@@ -365,7 +365,7 @@ fn test_type_alias_in_types_namespace() {
     );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type");
-    let (name, _, _, _) = &root.scope.types[0];
+    let (name, _) = root.scope.types.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "Point");
 }
@@ -396,7 +396,7 @@ fn test_trait_def_in_types_namespace() {
     );
     let root = &def_map.modules[def_map.root];
     assert_eq!(root.scope.types.len(), 1, "expected one type");
-    let (name, _, _, _) = &root.scope.types[0];
+    let (name, _) = root.scope.types.get_index(0).unwrap();
     let name_str = def_map.interner.resolve(*name);
     assert_eq!(name_str, "Display");
 }
@@ -431,12 +431,12 @@ fn test_def_ids_are_unique() {
     // appear both in root.scope.types and in the child ModuleData.def_id.
     // We collect all def_ids from scopes (which include module entries) and
     // then verify child module def_ids are consistent.
-    for (_, id, _, _) in &root.scope.types {
+    for (_, (id, _, _)) in &root.scope.types {
         let raw = id.to_raw();
         assert!(!seen_def_ids.contains(&raw), "duplicate def_id: {}", raw);
         seen_def_ids.push(raw);
     }
-    for (_, id, _, _) in &root.scope.values {
+    for (_, (id, _, _)) in &root.scope.values {
         let raw = id.to_raw();
         assert!(!seen_def_ids.contains(&raw), "duplicate def_id: {}", raw);
         seen_def_ids.push(raw);
@@ -450,7 +450,7 @@ fn test_def_ids_are_unique() {
         "module c's def_id should appear in parent scope types"
     );
 
-    for (_, id, _, _) in &c_data.scope.values {
+    for (_, (id, _, _)) in &c_data.scope.values {
         let raw = id.to_raw();
         assert!(!seen_def_ids.contains(&raw), "duplicate def_id: {}", raw);
         seen_def_ids.push(raw);
@@ -491,8 +491,8 @@ fn test_module_with_items() {
         .scope
         .values
         .iter()
-        .find(|(n, _, _, _)| *n == connect_name)
-        .map(|(_, _, v, _)| v.clone());
+        .find(|(n, _)| **n == connect_name)
+        .map(|(_, v)| v.1.clone());
     assert_eq!(
         connect_vis,
         Some(Visibility::Inherited),
@@ -504,8 +504,8 @@ fn test_module_with_items() {
         .scope
         .values
         .iter()
-        .find(|(n, _, _, _)| *n == disconnect_name)
-        .map(|(_, _, v, _)| v.clone());
+        .find(|(n, _)| **n == disconnect_name)
+        .map(|(_, v)| v.1.clone());
     assert_eq!(
         disconnect_vis,
         Some(Visibility::Public),

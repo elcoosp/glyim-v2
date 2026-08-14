@@ -101,12 +101,10 @@ fn build_def_map(
     let mut scope = ItemScope::default();
     for (i, &name_str) in local_type_names.iter().enumerate() {
         let name = interner.intern(name_str);
-        scope.types.push((
+        scope.types.insert(
             name,
-            LocalDefId::from_raw(i as u32),
-            Visibility::Public,
-            Span::DUMMY,
-        ));
+            (LocalDefId::from_raw(i as u32), Visibility::Public, Span::DUMMY),
+        );
     }
     let root_id = ModuleId::from_raw(0);
     let root_data = ModuleData {

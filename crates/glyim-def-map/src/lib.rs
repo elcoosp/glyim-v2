@@ -9,6 +9,7 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
+use indexmap::IndexMap;
 
 glyim_core::define_idx!(ModuleId);
 
@@ -48,18 +49,20 @@ pub enum ModuleOrigin {
 
 #[derive(Clone, Debug, Default)]
 pub struct ItemScope {
-    pub types: Vec<(Name, LocalDefId, Visibility, Span)>,
-    pub values: Vec<(Name, LocalDefId, Visibility, Span)>,
-    pub macros: Vec<(Name, LocalDefId, Visibility, Span)>,
+    pub types: IndexMap<Name, (LocalDefId, Visibility, Span)>,
+    pub values: IndexMap<Name, (LocalDefId, Visibility, Span)>,
+    pub macros: IndexMap<Name, (LocalDefId, Visibility, Span)>,
 }
 
 impl ItemScope {
     pub fn resolve(&self, name: Name) -> Option<(LocalDefId, Visibility)> {
-        self.types
-            .iter()
-            .chain(self.values.iter())
-            .find(|(n, _, _, _)| *n == name)
-            .map(|(_, id, vis, _)| (*id, vis.clone()))
+        if let Some((id, vis, _)) = self.types.get(&name) {
+            return Some((*id, vis.clone()));
+        }
+        if let Some((id, vis, _)) = self.values.get(&name) {
+            return Some((*id, vis.clone()));
+        }
+        None
     }
 
     pub fn declare(
@@ -70,11 +73,11 @@ impl ItemScope {
         span: Span,
         ns: Namespace,
     ) {
-        let entry = (name, id, vis, span);
+        let entry = (id, vis, span);
         match ns {
-            Namespace::Types => self.types.push(entry),
-            Namespace::Values => self.values.push(entry),
-            Namespace::Macros => self.macros.push(entry),
+            Namespace::Types => { self.types.insert(name, entry); }
+            Namespace::Values => { self.values.insert(name, entry); }
+            Namespace::Macros => { self.macros.insert(name, entry); }
         }
     }
 }
@@ -151,21 +154,13 @@ impl<'a> Resolver<'a> {
         for (i, segment) in path.segments.iter().enumerate().skip(start_idx) {
             let module_data = &self.modules[current_module];
             if i == path.segments.len() - 1 {
-                let types = module_data
-                    .scope
-                    .types
-                    .iter()
-                    .find(|(n, _, _, _)| *n == segment.name);
-                let values = module_data
-                    .scope
-                    .values
-                    .iter()
-                    .find(|(n, _, _, _)| *n == segment.name);
+                let types = module_data.scope.types.get(&segment.name);
+                let values = module_data.scope.values.get(&segment.name);
                 let mut result = PerNs::default();
-                if let Some((_, tid, tvis, _)) = types {
+                if let Some((tid, tvis, _)) = types {
                     result.types = Some((*tid, tvis.clone()));
                 }
-                if let Some((_, vid, vvis, _)) = values {
+                if let Some((vid, vvis, _)) = values {
                     result.values = Some((*vid, vvis.clone()));
                 }
                 return result;
@@ -244,14 +239,14 @@ fn import_all_public_for_modules(
 ) {
     let source_scope = modules[source].scope.clone();
 
-    for (name, id, vis, span) in source_scope.types {
+    for (name, (id, vis, span)) in source_scope.types {
         if vis == Visibility::Public {
             modules[target]
                 .scope
                 .declare(name, id, vis, span, Namespace::Types);
         }
     }
-    for (name, id, vis, span) in source_scope.values {
+    for (name, (id, vis, span)) in source_scope.values {
         if vis == Visibility::Public {
             modules[target]
                 .scope
@@ -645,9 +640,9 @@ fn collect_items(
 
                     let scope = &mut modules[parent_module].scope;
                     let existing = match ns {
-                        Namespace::Types => scope.types.iter().any(|(n, _, _, _)| *n == name),
-                        Namespace::Values => scope.values.iter().any(|(n, _, _, _)| *n == name),
-                        Namespace::Macros => scope.macros.iter().any(|(n, _, _, _)| *n == name),
+                        Namespace::Types => scope.types.contains_key(&name),
+                        Namespace::Values => scope.values.contains_key(&name),
+                        Namespace::Macros => scope.macros.contains_key(&name),
                     };
                     if existing {
                         diagnostics.push(GlyimDiagnostic::parse_error(
@@ -903,7 +898,7 @@ fn validate_import_visibility(
         let scope = &modules[module_id].scope;
 
         // Check type namespace items
-        for (name, def_id, vis, span) in &scope.types {
+        for (name, (def_id, vis, span)) in &scope.types {
             if let Some(&defining_mod) = def_to_module.get(def_id)
                 && !is_accessible_from(vis.clone(), defining_mod, module_id, modules)
             {
@@ -918,7 +913,7 @@ fn validate_import_visibility(
         }
 
         // Check value namespace items
-        for (name, def_id, vis, span) in &scope.values {
+        for (name, (def_id, vis, span)) in &scope.values {
             if let Some(&defining_mod) = def_to_module.get(def_id)
                 && !is_accessible_from(vis.clone(), defining_mod, module_id, modules)
             {
@@ -933,7 +928,7 @@ fn validate_import_visibility(
         }
 
         // Check macro namespace items
-        for (name, def_id, vis, span) in &scope.macros {
+        for (name, (def_id, vis, span)) in &scope.macros {
             if let Some(&defining_mod) = def_to_module.get(def_id)
                 && !is_accessible_from(vis.clone(), defining_mod, module_id, modules)
             {

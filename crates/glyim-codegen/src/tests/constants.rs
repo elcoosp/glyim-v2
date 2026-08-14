@@ -13,7 +13,7 @@ use std::sync::Arc;
 #[test]
 fn string_constant_emitted_to_string_table() {
     let interner = Interner::default();
-    let mut ctx_mut = TyCtxMut::new(interner.clone());
+    let ctx_mut = TyCtxMut::new(interner.clone());
 
     let mut body = Body::dummy(glyim_core::DefId::new(
         CrateId::from_raw(0),
@@ -63,7 +63,7 @@ fn string_constant_emitted_to_string_table() {
 #[test]
 fn function_constant_emitted_to_fn_table() {
     let interner = Interner::default();
-    let mut ctx_mut = TyCtxMut::new(interner.clone());
+    let ctx_mut = TyCtxMut::new(interner.clone());
 
     let mut body = Body::dummy(glyim_core::DefId::new(
         CrateId::from_raw(0),

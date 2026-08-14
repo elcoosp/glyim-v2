@@ -18,8 +18,7 @@ fn item_is_accessible(
         .types
         .iter()
         .chain(def_map.modules[item_module].scope.values.iter())
-        .find(|(n, _, _, _)| *n == name)
-        .map(|(_, _, v, _)| v.clone());
+        .find_map(|(n, v)| if *n == name { Some(v.1.clone()) } else { None });
 
     match vis {
         Some(v) => is_accessible_from(v, item_module, from_module, &def_map.modules),
