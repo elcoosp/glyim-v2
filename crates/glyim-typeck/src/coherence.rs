@@ -6,7 +6,7 @@ use glyim_core::def_id::TraitDefId;
 use glyim_core::interner::Name;
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, SubDiagnostic};
 use glyim_span::Span;
-use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut, TyKind};
+use glyim_type::{ImplPolarity, Substitution, Ty, TyCtxMut};
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
@@ -47,40 +47,139 @@ impl<'a> CoherenceChecker<'a> {
         }
     }
 
+    /// Structural type matching with generic parameters.
+    /// Returns true if the two types can be made equal by substituting generic args.
+    fn structural_tys_match(&self, ctx: &TyCtxMut, a: Ty, b: Ty) -> bool {
+        use glyim_type::TyKind;
+        match (ctx.ty_kind(a), ctx.ty_kind(b)) {
+            (TyKind::Param(p1), TyKind::Param(p2)) => p1.name == p2.name,
+            (TyKind::Param(_), _) | (_, TyKind::Param(_)) => false,
+            (TyKind::Adt(id_a, _), TyKind::Adt(id_b, _)) => id_a == id_b,
+            (TyKind::Ref(_, inner_a, mut_a), TyKind::Ref(_, inner_b, mut_b)) => {
+                mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b)
+            }
+            (TyKind::RawPtr(inner_a, mut_a), TyKind::RawPtr(inner_b, mut_b)) => {
+                mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b)
+            }
+            (TyKind::Slice(inner_a), TyKind::Slice(inner_b)) => {
+                self.structural_tys_match(ctx, *inner_a, *inner_b)
+            }
+            (TyKind::Array(inner_a, _), TyKind::Array(inner_b, _)) => {
+                self.structural_tys_match(ctx, *inner_a, *inner_b)
+            }
+            (TyKind::Tuple(sub_a), TyKind::Tuple(sub_b)) => {
+                let args_a = ctx.substitution_args(*sub_a);
+                let args_b = ctx.substitution_args(*sub_b);
+                if args_a.len() != args_b.len() {
+                    return false;
+                }
+                args_a.iter().zip(args_b.iter()).all(|(ga, gb)| {
+                    match (ga, gb) {
+                        (glyim_type::GenericArg::Ty(ta), glyim_type::GenericArg::Ty(tb)) => {
+                            self.structural_tys_match(ctx, *ta, *tb)
+                        }
+                        _ => false,
+                    }
+                })
+            }
+            (TyKind::Never, TyKind::Never)
+            | (TyKind::Unit, TyKind::Unit)
+            | (TyKind::Bool, TyKind::Bool)
+            | (TyKind::Char, TyKind::Char)
+            | (TyKind::String, TyKind::String) => true,
+            (TyKind::Int(ia), TyKind::Int(ib)) => ia == ib,
+            (TyKind::Uint(ua), TyKind::Uint(ub)) => ua == ub,
+            (TyKind::Float(fa), TyKind::Float(fb)) => fa == fb,
+            _ => false,
+        }
+    }
+
+    /// Checks if a type is a blanket impl (contains a type parameter).
+    fn is_blanket_impl(&self, ctx: &TyCtxMut, ty: Ty) -> bool {
+        use glyim_type::TyKind;
+        match ctx.ty_kind(ty) {
+            TyKind::Param(_) => true,
+            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => {
+                self.is_blanket_impl(ctx, *inner)
+            }
+            TyKind::Slice(inner) | TyKind::Array(inner, _) => {
+                self.is_blanket_impl(ctx, *inner)
+            }
+            TyKind::Tuple(substs) => {
+                let args = ctx.substitution_args(*substs);
+                args.iter().any(|arg| {
+                    match arg {
+                        glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
+                        _ => false,
+                    }
+                })
+            }
+            TyKind::Adt(_, substs) => {
+                let args = ctx.substitution_args(*substs);
+                args.iter().any(|arg| {
+                    match arg {
+                        glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
+                        _ => false,
+                    }
+                })
+            }
+            _ => false,
+        }
+    }
+
+    /// Resolve a name in any module of the crate, recursively.
+    fn resolve_name_in_any_module(&self, name: Name) -> Option<glyim_core::def_id::LocalDefId> {
+        let mut stack = vec![self.def_map.root];
+        while let Some(module) = stack.pop() {
+            let module_data = &self.def_map.modules[module];
+            if let Some((id, _)) = module_data.scope.resolve(name) {
+                return Some(id);
+            }
+            for (_, child) in &module_data.children {
+                stack.push(*child);
+            }
+        }
+        None
+    }
+
+    /// Returns true if there is a negative impl for the given trait and self type.
+    #[allow(dead_code)]
+    fn has_negative_impl(&self, trait_def_id: TraitDefId, self_ty: Ty) -> bool {
+        self.negative_impls
+            .iter()
+            .any(|(tid, ty)| *tid == trait_def_id && *ty == self_ty)
+    }
+
     pub fn check_and_register(
         &mut self,
         header: ResolvedImplHeader,
-        ctx: &TyCtxMut,
+        ctx: &mut TyCtxMut,
+        infer: &mut glyim_solve::InferenceTable,
     ) -> Result<(), Vec<GlyimDiagnostic>> {
         if header.trait_def_id.is_some() || header.trait_name.is_some() {
             self.check_orphan_rule(&header)?;
         }
 
-        if let Some(trait_def_id) = header.trait_def_id
-            && let Some(errors) = self.check_overlap(trait_def_id, &header, ctx)
-        {
-            return Err(errors);
+        if let Some(trait_def_id) = header.trait_def_id {
+            if let Some(errors) = self.check_overlap(trait_def_id, &header, ctx, infer) {
+                return Err(errors);
+            }
         }
 
         self.register(header);
         Ok(())
     }
 
-    pub fn check_orphan_rule(
-        &self,
-        header: &ResolvedImplHeader,
-    ) -> Result<(), Vec<GlyimDiagnostic>> {
-        // Only true inherent impls (no trait_name AND no trait_def_id) are always local.
-        // Unresolved traits (trait_name is Some but trait_def_id is None) are NOT local.
+    pub(crate) fn check_orphan_rule(&self, header: &ResolvedImplHeader) -> Result<(), Vec<GlyimDiagnostic>> {
         let trait_is_local = header
             .trait_name
-            .and_then(|n| self.def_map.modules[self.def_map.root].scope.resolve(n))
+            .and_then(|n| self.resolve_name_in_any_module(n))
             .is_some()
             || (header.trait_name.is_none() && header.trait_def_id.is_none());
 
         let self_type_is_local = header
             .self_type_name
-            .and_then(|n| self.def_map.modules[self.def_map.root].scope.resolve(n))
+            .and_then(|n| self.resolve_name_in_any_module(n))
             .is_some();
 
         if trait_is_local || self_type_is_local {
@@ -100,86 +199,38 @@ impl<'a> CoherenceChecker<'a> {
         Err(vec![GlyimDiagnostic::type_error(header.span, msg)])
     }
 
-    /// Check whether two self types overlap. This does NOT handle the
-    /// blanket-vs-blanket case — that is left to `check_overlap` so it
-    /// can apply its own conservative policy.
     fn self_tys_overlap(
         &self,
         old: &RegisteredImpl,
         new: &ResolvedImplHeader,
-        ctx: &TyCtxMut,
+        ctx: &mut TyCtxMut,
+        _infer: &mut glyim_solve::InferenceTable,
     ) -> bool {
-        // Direct Ty comparison
-        if old.self_ty == new.self_ty {
-            return true;
-        }
-
-        // Name-based comparison
-        if let (Some(a), Some(b)) = (old.self_type_name, new.self_type_name)
-            && a == b
-        {
-            return true;
-        }
-
-        let old_kind = ctx.ty_kind(old.self_ty);
-        let new_kind = ctx.ty_kind(new.self_ty);
-
-        // Two type params from different impl blocks are NOT automatically
-        // overlapping — each impl has its own parameter namespace.
-        // The blanket-vs-blanket overlap policy is handled separately
-        // in `check_overlap`.
-        if matches!(old_kind, TyKind::Param(_)) && matches!(new_kind, TyKind::Param(_)) {
-            return false;
-        }
-
-        // Kind-based comparison for when types aren't content-interned
-        match (old_kind, new_kind) {
-            (TyKind::Adt(a, _), TyKind::Adt(b, _)) => a == b,
-            (TyKind::Int(a), TyKind::Int(b)) => a == b,
-            (TyKind::Uint(a), TyKind::Uint(b)) => a == b,
-            (TyKind::Float(a), TyKind::Float(b)) => a == b,
-            (TyKind::Bool, TyKind::Bool)
-            | (TyKind::Char, TyKind::Char)
-            | (TyKind::Never, TyKind::Never)
-            | (TyKind::String, TyKind::String) => true,
-            _ => false,
-        }
+        self.structural_tys_match(ctx, old.self_ty, new.self_ty)
     }
 
     fn check_overlap(
         &self,
         trait_def_id: TraitDefId,
         new_header: &ResolvedImplHeader,
-        ctx: &TyCtxMut,
+        ctx: &mut TyCtxMut,
+        infer: &mut glyim_solve::InferenceTable,
     ) -> Option<Vec<GlyimDiagnostic>> {
         let existing = self.registered.get(&trait_def_id)?;
 
         for old in existing {
-            // Opposite polarities still conflict (can't have both impl and !impl)
-            if self.self_tys_overlap(old, new_header, ctx) {
-                return Some(self.make_overlap_diag(new_header, old));
+            // Negative impls: same polarity negative doesn't conflict.
+            if new_header.polarity == ImplPolarity::Negative && old.polarity == ImplPolarity::Negative {
+                continue;
             }
-
-            let new_is_blanket = matches!(ctx.ty_kind(new_header.self_ty), TyKind::Param(_));
-            let old_is_blanket = matches!(ctx.ty_kind(old.self_ty), TyKind::Param(_));
-
-            // Two blanket impls: conservatively allow (proper overlap
-            // detection requires unification which isn't available here)
-            if new_is_blanket && old_is_blanket {
+            if old.polarity == ImplPolarity::Negative && new_header.polarity == ImplPolarity::Positive {
                 continue;
             }
 
-            // One blanket + one concrete → overlap
-            if new_is_blanket || old_is_blanket {
-                return Some(self.make_overlap_diag(new_header, old));
-            }
-
-            // Generic params might make it a blanket impl
-            if !new_header.generic_param_names.is_empty() {
+            if self.self_tys_overlap(old, new_header, ctx, infer) {
                 return Some(self.make_overlap_diag(new_header, old));
             }
         }
-
         None
     }
 
@@ -209,11 +260,12 @@ impl<'a> CoherenceChecker<'a> {
         &mut self,
         header: &ResolvedImplHeader,
         polarity: ImplPolarity,
-        ctx: &TyCtxMut,
+        ctx: &mut TyCtxMut,
+        infer: &mut glyim_solve::InferenceTable,
     ) -> Result<(), Vec<GlyimDiagnostic>> {
         let mut header = header.clone();
         header.polarity = polarity;
-        self.check_and_register(header, ctx)
+        self.check_and_register(header, ctx, infer)
     }
 
     fn register(&mut self, header: ResolvedImplHeader) {

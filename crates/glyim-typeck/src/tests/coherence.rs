@@ -1,14 +1,25 @@
-use super::common::{global_interner, make_ty_ctx};
+//! Coherence checker tests.
+
 use crate::coherence::{CoherenceChecker, ResolvedImplHeader};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 use glyim_core::interner::Interner;
-use glyim_core::primitives::Visibility;
+use glyim_core::primitives::{IntTy, UintTy, FloatTy, Visibility, Mutability};
 use glyim_core::primitives::*;
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
-use glyim_hir::{ImplItem, Path, TypeRef};
+use glyim_hir::{ImplItem, Path, TypeRef, GenericParam, GenericParamKind};
 use glyim_span::Span;
 use glyim_type::{ImplPolarity, ParamTy, Substitution, Ty, TyCtxMut, TyKind};
+
+// ---- Helpers ----
+
+fn global_interner() -> Interner {
+    Interner::new()
+}
+
+fn make_ty_ctx() -> TyCtxMut {
+    TyCtxMut::new(global_interner())
+}
 
 fn impl_item_to_header(
     impl_item: &ImplItem,
@@ -148,14 +159,16 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
         trait_ref: Some(Path::from_single(interner.intern(trait_name))),
         self_ty: TypeRef::Path(Path::from_single(param)),
         methods: vec![],
-        generic_params: vec![glyim_hir::GenericParam {
+        generic_params: vec![GenericParam {
             name: param,
-            kind: glyim_hir::GenericParamKind::Type { default: None },
+            kind: GenericParamKind::Type { default: None },
             span: Span::DUMMY,
         }],
         where_clauses: vec![],
     }
 }
+
+// ---- Tests ----
 
 #[test]
 fn t01_duplicate_impl_should_error() {
@@ -163,6 +176,7 @@ fn t01_duplicate_impl_should_error() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType", "Send"]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let mut checker = CoherenceChecker::new(&def_map);
 
     let impl1 = make_impl_item(&mut interner, "Send", "MyType");
@@ -171,14 +185,16 @@ fn t01_duplicate_impl_should_error() {
     let result1 = checker.check_and_register_impl_compat(
         &impl_item_to_header(&impl1, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(result1.is_ok(), "first impl should be accepted");
 
     let result2 = checker.check_and_register_impl_compat(
         &impl_item_to_header(&impl2, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(result2.is_err(), "duplicate impl should be rejected");
     let errors = result2.unwrap_err();
@@ -193,6 +209,7 @@ fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &[]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let checker = CoherenceChecker::new(&def_map);
 
     let impl_item = make_impl_item(&mut interner, "ForeignTrait", "ForeignType");
@@ -216,6 +233,7 @@ fn t03_blanket_impl_conflicts_with_concrete() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyTrait"]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let mut checker = CoherenceChecker::new(&def_map);
 
     let concrete = make_impl_item(&mut interner, "MyTrait", "i32");
@@ -225,14 +243,16 @@ fn t03_blanket_impl_conflicts_with_concrete() {
         .check_and_register_impl_compat(
             &impl_item_to_header(&concrete, &mut interner, &mut ctx, &def_map),
             ImplPolarity::Positive,
-            &ctx,
+            &mut ctx,
+            &mut infer,
         )
         .unwrap();
 
     let result = checker.check_and_register_impl_compat(
         &impl_item_to_header(&blanket, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(
         result.is_err(),
@@ -267,13 +287,15 @@ fn t05_negative_impl_overrides_auto_trait() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType", "Send"]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let mut checker = CoherenceChecker::new(&def_map);
 
     let neg_impl = make_impl_item(&mut interner, "Send", "MyType");
     let result = checker.check_and_register_impl_compat(
         &impl_item_to_header(&neg_impl, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Negative,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(result.is_ok(), "negative impl should be allowed");
 }
@@ -284,6 +306,7 @@ fn t06_duplicate_with_different_polarity_error() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType", "Send"]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let mut checker = CoherenceChecker::new(&def_map);
 
     let pos_impl = make_impl_item(&mut interner, "Send", "MyType");
@@ -293,14 +316,16 @@ fn t06_duplicate_with_different_polarity_error() {
         .check_and_register_impl_compat(
             &impl_item_to_header(&pos_impl, &mut interner, &mut ctx, &def_map),
             ImplPolarity::Positive,
-            &ctx,
+            &mut ctx,
+            &mut infer,
         )
         .unwrap();
 
     let result = checker.check_and_register_impl_compat(
         &impl_item_to_header(&neg_impl, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Negative,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(
         result.is_err(),
@@ -335,6 +360,7 @@ fn t08_two_non_overlapping_blanket_impls_allowed() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["From"]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let mut checker = CoherenceChecker::new(&def_map);
 
     let blanket_a = make_blanket_impl_item(&mut interner, "From", "A");
@@ -343,14 +369,16 @@ fn t08_two_non_overlapping_blanket_impls_allowed() {
     let r1 = checker.check_and_register_impl_compat(
         &impl_item_to_header(&blanket_a, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(r1.is_ok(), "first blanket impl should be accepted");
 
     let r2 = checker.check_and_register_impl_compat(
         &impl_item_to_header(&blanket_b, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(
         r2.is_ok(),
@@ -385,6 +413,7 @@ fn t10_different_traits_no_conflict() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &["MyType", "TraitA", "TraitB"]);
     let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
     let mut checker = CoherenceChecker::new(&def_map);
 
     let impl_trait_a = make_impl_item(&mut interner, "TraitA", "MyType");
@@ -393,12 +422,14 @@ fn t10_different_traits_no_conflict() {
     let r1 = checker.check_and_register_impl_compat(
         &impl_item_to_header(&impl_trait_a, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     let r2 = checker.check_and_register_impl_compat(
         &impl_item_to_header(&impl_trait_b, &mut interner, &mut ctx, &def_map),
         ImplPolarity::Positive,
-        &ctx,
+        &mut ctx,
+        &mut infer,
     );
     assert!(r1.is_ok(), "impl for TraitA should be accepted");
     assert!(r2.is_ok(), "impl for TraitB should be accepted");

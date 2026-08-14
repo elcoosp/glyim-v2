@@ -152,13 +152,11 @@ impl Place {
                     }
                 },
                 ProjectionElem::Downcast(_variant_idx) => {
-                    tracing::warn!(
-                        "Place::ty(): Downcast projection not fully implemented, returning original type"
-                    );
+                    // Downcast keeps the same ADT type; the variant's fields are accessed via Field projections.
                     ty
                 }
-                ProjectionElem::ConstantIndex { .. } => {
-                    // Constant index keeps the element type
+                ProjectionElem::ConstantIndex { offset: _, min_length: _, from_end: _ } => {
+                    // Constant index returns the element type of the array/slice.
                     match ctx.ty_kind(ty) {
                         TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => *inner_ty,
                         _ => {
@@ -167,10 +165,12 @@ impl Place {
                         }
                     }
                 }
-                ProjectionElem::Subslice { .. } => {
-                    // Subslice returns the element type (actual slice type handled by desugaring)
+                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => {
+                    // Subslice returns a slice of the element type.
+                    // Since we cannot construct a new type here, we return the element type.
+                    // The actual slice type is constructed during desugaring.
                     match ctx.ty_kind(ty) {
-                        TyKind::Array(e, _) | TyKind::Slice(e) => *e,
+                        TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => *inner_ty,
                         _ => {
                             tracing::error!("Place::ty(): Subslice on non-array/slice type");
                             ctx.error_ty()
