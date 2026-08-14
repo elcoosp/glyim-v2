@@ -204,8 +204,7 @@ fn check_terminator_conflicts(
                         "cannot use `{name}` because it is {} borrowed",
                         borrow_kind_label(&loan.kind)
                     );
-                    let mut diag =
-                        GlyimDiagnostic::borrow_error(terminator.source_info.span, msg);
+                    let mut diag = GlyimDiagnostic::borrow_error(terminator.source_info.span, msg);
                     diag = diag.with_sub(SubDiagnostic {
                         severity: DiagSeverity::Note,
                         message: format!("{} borrow occurs here", borrow_kind_label(&loan.kind)),
@@ -478,21 +477,24 @@ mod terminator_conflict_tests {
 
     #[test]
     fn test_terminator_read_conflict() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+        let ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
         let ty_ctx = ctx_mut.freeze();
 
         let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
-        let local_0 = locals.push(LocalDecl { // return place
+        let local_0 = locals.push(LocalDecl {
+            // return place
             ty: Ty::ERROR,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(Span::DUMMY),
         });
-        let local_1 = locals.push(LocalDecl { // borrowed place
+        let local_1 = locals.push(LocalDecl {
+            // borrowed place
             ty: Ty::BOOL,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(Span::DUMMY),
         });
-        let local_2 = locals.push(LocalDecl { // reference
+        let local_2 = locals.push(LocalDecl {
+            // reference
             ty: Ty::ERROR,
             mutability: Mutability::Not,
             source_info: SourceInfo::new(Span::DUMMY),
@@ -563,8 +565,11 @@ mod terminator_conflict_tests {
         let result = check_borrows(&mock_ctx, &body);
 
         assert!(
-            result.errors.iter().any(|d| d.message.contains("cannot use `local_1` because it is mutable borrowed")),
-            "Expected a borrow error for using local_1 in terminator, got: {:?}", result.errors
+            result.errors.iter().any(|d| d
+                .message
+                .contains("cannot use `local_1` because it is mutable borrowed")),
+            "Expected a borrow error for using local_1 in terminator, got: {:?}",
+            result.errors
         );
     }
 }

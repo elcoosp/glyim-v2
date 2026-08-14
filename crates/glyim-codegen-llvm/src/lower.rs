@@ -35,8 +35,6 @@ struct LoweringCtx<'ctx, 'a> {
     builder: Builder<'ctx>,
     function: inkwell::values::FunctionValue<'ctx>,
     module: &'a Module<'ctx>,
-    _drop_fn: inkwell::values::FunctionValue<'ctx>,
-    _dealloc_fn: inkwell::values::FunctionValue<'ctx>,
     body: &'a Body,
     target_info: TargetInfo,
     ty_ctx: &'a TyCtx,
@@ -2801,12 +2799,16 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             | TyKind::Unit
             | TyKind::FnDef(_, _)
             | TyKind::FnPtr(_) => false,
+            // Unreachable after TASK-P1-6, but conservative fallback is true.
+            TyKind::Dynamic(..) | TyKind::Opaque(..) | TyKind::Projection(_) | TyKind::Param(_) | TyKind::Bound(_, _) | TyKind::Infer(_) => true,
             _ => false,
         }
     }
 
     fn type_is_owning_pointer(&self, ty: Ty) -> bool {
         match self.ty_ctx.ty_kind(ty) {
+            // INTENTIONAL: only Ref(Mut)/RawPtr(Mut) are owning-pointer-like today;
+            // extend this match when an owned-box type is added to glyim-type.
             TyKind::Ref(_, inner, glyim_core::primitives::Mutability::Mut)
             | TyKind::RawPtr(inner, glyim_core::primitives::Mutability::Mut) => {
                 !self.ty_ctx.is_copy(*inner)
@@ -2934,15 +2936,6 @@ pub(crate) fn lower_body<'ctx>(
     let i64_type = context
         .custom_width_int_type(NonZeroU32::new(64).unwrap())
         .unwrap();
-    let drop_fn_type = void_type.fn_type(&[ptr_type.into()], false);
-    let drop_fn = module
-        .get_function("glyim_drop_in_place")
-        .unwrap_or_else(|| module.add_function("glyim_drop_in_place", drop_fn_type, None));
-    let dealloc_fn_type =
-        void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
-    let dealloc_fn = module
-        .get_function("glyim_dealloc")
-        .unwrap_or_else(|| module.add_function("glyim_dealloc", dealloc_fn_type, None));
     let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
     let personality_fn = if has_cleanup {
         // `__gcc_personality_v0` is the Itanium-ABI personality routine
@@ -2976,8 +2969,6 @@ pub(crate) fn lower_body<'ctx>(
         builder,
         function,
         module,
-        _drop_fn: drop_fn,
-        _dealloc_fn: dealloc_fn,
         body,
         target_info,
         ty_ctx,
