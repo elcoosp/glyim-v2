@@ -1284,6 +1284,21 @@ pub unsafe extern "C" fn glyim_thread_park() {
     thread::park();
 }
 
+/// Park the current thread with a timeout.
+///
+/// Blocks the current thread until either the token is made available or
+/// the specified duration has elapsed.
+///
+/// # Safety
+///
+/// This is a safe FFI function.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_thread_park_timeout(secs: u64, nanos: u32) {
+    let duration = std::time::Duration::new(secs, nanos);
+    std::thread::park_timeout(duration);
+}
+
+
 #[unsafe(no_mangle)]
 /// # Safety
 /// FFI entry point.
