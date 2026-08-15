@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
-use glyim_core::{BinOp, CrateId, DefId, LocalDefId, UnOp};
+use glyim_core::{primitives::TargetInfo, BinOp, CrateId, DefId, LocalDefId, UnOp};
+use glyim_layout::{LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
 use glyim_type::Ty;
 use glyim_type::{FieldIdx, TyCtx};
@@ -13,6 +14,13 @@ pub use interp_value::InterpValue;
 
 pub struct Interpreter<'tcx> {
     tcx: &'tcx TyCtx,
+    layout: SimpleLayoutComputer<'tcx>,
+    /// When `true`, a call whose callee panics is expected to unwind to the
+    /// `cleanup` block (not yet implemented in this tree-walking interpreter).
+    /// Currently always `false`; full unwind/cleanup-block semantics are out
+    /// of scope for the interpreter (used for `const fn` evaluation and the
+    /// test harness, not full runtime semantics).
+    pub panics_unwind: bool,
     pub step_limit: usize,
     pub recursion_limit: usize,
     step_count: usize,
@@ -38,6 +46,8 @@ impl<'tcx> Interpreter<'tcx> {
     pub fn new(tcx: &'tcx TyCtx) -> Self {
         Interpreter {
             tcx,
+            layout: SimpleLayoutComputer::new(tcx, TargetInfo::default()),
+            panics_unwind: false,
             step_limit: 1_000_000,
             recursion_limit: 256,
             step_count: 0,
@@ -56,8 +66,26 @@ impl<'tcx> Interpreter<'tcx> {
         self
     }
 
+    /// Test-only accessor exposing the real layout-backed element size that
+    /// drives pointer arithmetic. This is the observable result of the
+    /// `get_element_size` fix (Tier 0.1): every element is sized by its
+    /// layout, not assumed to be 1 byte.
+    #[cfg(test)]
+    pub(crate) fn element_size_of(&self, ty: Ty) -> InterpResult<usize> {
+        self.get_element_size(ty)
+    }
+
     pub fn with_recursion_limit(mut self, limit: usize) -> Self {
         self.recursion_limit = limit;
+        self
+    }
+
+    /// Configure whether a panicking call is expected to unwind to its
+    /// `cleanup` block. Currently a no-op flag (full unwind-table support is
+    /// out of scope for this tree-walking interpreter); provided so callers
+    /// can opt into the documented-but-unimplemented behavior intentionally.
+    pub fn with_panics_unwind(mut self, yes: bool) -> Self {
+        self.panics_unwind = yes;
         self
     }
 
@@ -243,6 +271,16 @@ impl<'tcx> Interpreter<'tcx> {
                     target,
                     cleanup: _,
                 } => {
+                    // By the time MIR reaches the interpreter, `glyim-opt`'s
+                    // drop-elaboration pass has rewritten `Drop` terminators
+                    // for types with actual destructors into `Call`s to the
+                    // generated drop-glue functions, so a bare `Drop` here is
+                    // the no-op case (no fields need dropping). Full
+                    // unwind/cleanup semantics are out of scope for this
+                    // tree-walking interpreter; see `with_panics_unwind`.
+                    tracing::debug!(
+                        "interpreter Drop terminator: skipping (drop glue already lowered to a Call)"
+                    );
                     bb_idx = target;
                 }
             }
@@ -264,7 +302,7 @@ impl<'tcx> Interpreter<'tcx> {
         Ok(())
     }
 
-    fn eval_rvalue(&self, rvalue: &Rvalue) -> InterpResult<InterpValue> {
+    pub(crate) fn eval_rvalue(&self, rvalue: &Rvalue) -> InterpResult<InterpValue> {
         match rvalue {
             Rvalue::Use(operand) => self.eval_operand(operand),
             Rvalue::BinaryOp(op, operands) => {
@@ -349,6 +387,9 @@ impl<'tcx> Interpreter<'tcx> {
                         InterpValue::Float(f) => Ok(InterpValue::Int(f as i128)),
                         _ => Err(InterpError::Panic("expected float for FloatToInt".into())),
                     },
+                    // Deliberately a no-op: InterpValue pointers carry no
+                    // type-specific representation to convert between, so a
+                    // pointer-to-pointer cast is identity at this value level.
                     CastKind::PtrToPtr | CastKind::FnPtrToPtr => Ok(val),
                     CastKind::PtrToInt => match val {
                         InterpValue::Ref(addr) => Ok(InterpValue::Uint(addr as u128)),
@@ -764,7 +805,7 @@ impl<'tcx> Interpreter<'tcx> {
         Ok(val)
     }
 
-    fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
+    pub(crate) fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
         let idx = place.local.index();
         if idx >= self.locals.len() {
             return Err(InterpError::Panic(format!(
@@ -917,20 +958,77 @@ impl<'tcx> Interpreter<'tcx> {
                 "Deref projection unexpected in write_through_projections".into(),
             )),
             ProjectionElem::ConstantIndex {
-                offset: _,
-                min_length: _,
-                from_end: _,
+                offset,
+                min_length,
+                from_end,
             } => {
-                // For constant index, we need to compute the index value.
-                // For simplicity, we panic.
-                panic!("ConstantIndex not implemented in interpreter (write)");
+                debug_assert!(
+                    rest.is_empty(),
+                    "ConstantIndex must be terminal (see slice_desugar invariant)"
+                );
+                match base {
+                    InterpValue::Aggregate(mut elems) => {
+                        let len = elems.len() as u64;
+                        let idx = if *from_end {
+                            len.checked_sub(*offset as u64).ok_or_else(|| {
+                                InterpError::Panic(format!(
+                                    "ConstantIndex from_end offset {offset} out of bounds for length {len}"
+                                ))
+                            })?
+                        } else {
+                            *offset as u64
+                        } as usize;
+                        if idx >= elems.len() || len < *min_length as u64 {
+                            return Err(InterpError::Panic(format!(
+                                "ConstantIndex {idx} out of bounds (len {len}, min_length {min_length})"
+                            )));
+                        }
+                        elems[idx] = val;
+                        Ok(InterpValue::Aggregate(elems))
+                    }
+                    _ => Err(InterpError::Panic(
+                        "ConstantIndex write on non-aggregate".into(),
+                    )),
+                }
             }
             ProjectionElem::Subslice {
-                from: _,
-                to: _,
-                from_end: _,
+                from,
+                to,
+                from_end,
             } => {
-                panic!("Subslice not implemented in interpreter (write)");
+                debug_assert!(
+                    rest.is_empty(),
+                    "Subslice must be terminal (see slice_desugar invariant)"
+                );
+                match (base, val) {
+                    (InterpValue::Aggregate(mut elems), InterpValue::Aggregate(new_slice_elems)) => {
+                        let len = elems.len() as u64;
+                        let end = if *from_end {
+                            len.checked_sub(*to as u64).ok_or_else(|| {
+                                InterpError::Panic(format!(
+                                    "Subslice `to` {to} out of bounds for length {len}"
+                                ))
+                            })?
+                        } else {
+                            *to as u64
+                        } as usize;
+                        let (from, end) = (*from as usize, end);
+                        if from > end
+                            || end > elems.len()
+                            || (end - from) != new_slice_elems.len()
+                        {
+                            return Err(InterpError::Panic(format!(
+                                "Subslice write range [{from}, {end}) doesn't match value length {}",
+                                new_slice_elems.len()
+                            )));
+                        }
+                        elems.splice(from..end, new_slice_elems);
+                        Ok(InterpValue::Aggregate(elems))
+                    }
+                    _ => Err(InterpError::Panic(
+                        "Subslice write requires aggregate base and aggregate (slice) value".into(),
+                    )),
+                }
             }
         }
     }
@@ -1126,10 +1224,18 @@ impl<'tcx> Interpreter<'tcx> {
     }
 
     /// Helper to get element size (for pointer arithmetic).
-    fn get_element_size(&self, _ty: Ty) -> InterpResult<usize> {
-        // For simplicity, assume all elements are size 1 for now.
-        // We can extend with layout later.
-        Ok(1)
+    ///
+    /// Uses the real layout computer so that pointer arithmetic walks the
+    /// correct number of bytes per element instead of assuming 1.
+    fn get_element_size(&self, ty: Ty) -> InterpResult<usize> {
+        self.layout
+            .layout_of(ty)
+            .map(|l| l.size.0 as usize)
+            .map_err(|e| {
+                InterpError::Panic(format!(
+                    "cannot size type for pointer arithmetic: {e:?}"
+                ))
+            })
     }
 }
 

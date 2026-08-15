@@ -33,4 +33,5 @@ mod stubs_tests;
 mod switch_int;
 mod terminator;
 mod terminators;
+mod tier0;
 mod unary_ops;

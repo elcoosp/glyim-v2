@@ -7,6 +7,7 @@ edition = "2024"
 glyim-core = { workspace = true }
 glyim-mir = { workspace = true }
 glyim-type = { workspace = true }
+glyim-layout = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
