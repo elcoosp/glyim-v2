@@ -7,6 +7,7 @@ mod cast;
 mod closure;
 mod closure_advanced;
 mod drop_glue;
+mod drop_elaboration;
 mod error_paths;
 mod expr_stmt;
 mod field_access;

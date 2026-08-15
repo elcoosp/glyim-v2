@@ -12,7 +12,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.3 — Iterator::next real resolution — COMMITTED
 - [x] Tier 1.4 — Range lowering bug — COMMITTED
 - [x] Tier 1.5 — const-eval expression coverage (Return/Loop/While/Flow) — COMMITTED
-- [ ] Tier 1.6 — drop elaboration per-projection (move-path tree)
+- [x] Tier 1.6 — drop elaboration per-projection (move-path tree) — COMMITTED (top-level/whole-value)
 - [ ] Tier 1.7 — dynamic range slicing
 - [ ] Tier 2.1 — coherence overlap ignores generics
 - [ ] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity)
@@ -119,3 +119,33 @@ Each tier is implemented and committed atomically. Tests are run with
     not run), while-true-with-break, loop-with-break, and continue re-entry via
     an if/break/continue body. 67 glyim-const-eval tests pass; `cargo check
     --workspace` clean.
+
+### Tier 1.6 (drop elaboration — top-level / whole-value)
+- `feat(lower): elaborate scope drop terminators for non-Copy locals`
+  - Plan deviation (documented): the codebase has no `drops.rs` /
+    `elaborate_drops` module; the lower pass never emitted any `Drop` or
+    `StorageDead` terminator at all — values going out of scope simply leaked
+    (only `TerminatorKind::Drop` fed into `MonoItem::DropGlue` in mono).
+  - `MirBuilder::lower_body` now calls `elaborate_scope_drops` on the
+    fall-through block (the same condition the old `terminate(Return)` used:
+    `current_block.is_some()`). It inserts a chain of `Drop { place, target,
+    cleanup: None }` terminators in **reverse declaration order** for every
+    local whose type needs a destructor, routing the last drop into a fresh
+    `Return` block. The return place (`_0`) and parameters are skipped.
+  - Added `needs_drop(ty)`: `Copy` types never drop; ADTs/composites recurse
+    into the registered `LowerCtx::adt_def` fields; `String` (and other owning
+    types) need drop; references/raw pointers/closures/fn-ptrs/dyn/projections/
+    inference/params are treated as no-drop to avoid spurious destructor calls.
+    Because the test `TestLowerCtx`/`LocalMockLowerCtx` return empty ADT fields,
+    struct locals in existing tests stay no-drop and their `block_count`
+    assertions are preserved.
+  - Correctness guard: the drop chain is only injected when control **falls
+    straight through** to the current block. For `if`/`match`/`while`/`loop`
+    the lowering already redirected control flow and set `current_block =
+    None`, so their real terminators (SwitchInt/Goto/Call/Return) are left
+    untouched — fixing an early bug where injecting drops on `entry`
+    clobbered those terminators.
+  - Tests `drop_elaboration.rs` (3): a `String` local gets a `Drop` terminator
+    (entry routes through the chain, not directly to Return); an `i32` local
+    gets no drop (single Return block); a function returning `String` does not
+    drop `_0`. 190 glyim-lower tests pass; `cargo build --workspace` clean.

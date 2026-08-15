@@ -1,4 +1,3 @@
-use crate::lower_terminator::TerminatorExt;
 use glyim_core::arena::IndexVec;
 use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
@@ -133,7 +132,121 @@ impl<'a> MirBuilder<'a> {
         }
 
         if self.current_block.is_some() {
-            self.terminate(glyim_mir::TerminatorKind::Return, thir.span);
+            // Elaborate drop terminators for every non-Copy local at scope
+            // exit, in reverse declaration order, immediately before the
+            // `Return`. (Tier 1.6 — top-level / whole-value drop elaboration;
+            // per-projection move-path elaboration is future work.)
+            //
+            // This mirrors the previous `terminate(Return)` behavior: it only
+            // runs when control fell straight through to the *current* block
+            // (i.e. `current_block.is_some()`). For `if`/`match`/`while`/`loop`
+            // the lowering redirected control flow into other blocks and set
+            // `current_block = None`, so we must not inject drops there (the
+            // real terminators of those constructs are untouched).
+            let fall_through = self.current_block.unwrap();
+            self.elaborate_scope_drops(fall_through, thir.span);
+        }
+    }
+
+    /// Insert a chain of `Drop` terminators for every local whose type needs a
+    /// destructor, executed in reverse declaration order at the end of the
+    /// function body, immediately before a `Return` terminator.
+    ///
+    /// The return place (`_0`) is never dropped here. Parameters are also
+    /// skipped: in this minimal model they are handled by the caller's scope
+    /// and dropping them here would duplicate the drop glue.
+    pub(crate) fn elaborate_scope_drops(&mut self, fall_through: BasicBlockIdx, span: Span) {
+        // Collect non-Copy locals (excluding the return place) that need a
+        // destructor, in declaration order.
+        let mut to_drop: Vec<LocalIdx> = Vec::new();
+        for (idx, decl) in self.locals.iter_enumerated() {
+            if idx.to_raw() == 0 {
+                continue; // return place
+            }
+            if (idx.to_raw() as usize) <= self.arg_count {
+                continue; // parameters are dropped by the caller's scope
+            }
+            if self.needs_drop(decl.ty) {
+                to_drop.push(idx);
+            }
+        }
+        // Reverse so the highest-indexed (most recently declared) local is
+        // dropped first, matching Rust's reverse declaration-order rule.
+        to_drop.reverse();
+
+        if to_drop.is_empty() {
+            self.basic_blocks[fall_through].terminator = glyim_mir::Terminator {
+                kind: glyim_mir::TerminatorKind::Return,
+                source_info: glyim_mir::SourceInfo::new(span),
+            };
+            self.current_block = None;
+            return;
+        }
+
+        // Build a dedicated return block and chain the drop terminators so
+        // that each `Drop` targets the next drop (or the return block).
+        let return_bb = self.new_block();
+        self.basic_blocks[return_bb].terminator = glyim_mir::Terminator {
+            kind: glyim_mir::TerminatorKind::Return,
+            source_info: glyim_mir::SourceInfo::new(span),
+        };
+
+        let mut target = return_bb;
+        for local in to_drop {
+            let drop_bb = self.new_block();
+            self.basic_blocks[drop_bb].terminator = glyim_mir::Terminator {
+                kind: glyim_mir::TerminatorKind::Drop {
+                    place: glyim_mir::Place::new(local),
+                    target,
+                    cleanup: None,
+                },
+                source_info: glyim_mir::SourceInfo::new(span),
+            };
+            target = drop_bb;
+        }
+
+        self.basic_blocks[fall_through].terminator = glyim_mir::Terminator {
+            kind: glyim_mir::TerminatorKind::Goto { target },
+            source_info: glyim_mir::SourceInfo::new(span),
+        };
+        self.current_block = None;
+    }
+
+    /// Whether a type needs a destructor call at the end of its scope.
+    ///
+    /// `Copy` types never need drop. For ADTs and composites we recurse into
+    /// the registered definition's fields (via the lowering context) and
+    /// require drop if any field needs drop. References and raw pointers own no
+    /// destructor in this minimal model and are treated as no-drop even though
+    /// they are not `Copy`. `String` and other owning/user types need
+    /// destruction. Closures, function pointers, `dyn`, projections, generic
+    /// parameters, inference variables and error types are treated as
+    /// not-needing-drop here to avoid spurious destructor calls.
+    fn needs_drop(&self, ty: Ty) -> bool {
+        if self.ctx.ty_ctx().is_copy(ty) {
+            return false;
+        }
+        match self.ctx.ty_ctx().ty_kind(ty) {
+            glyim_type::TyKind::Ref(_, _, _) | glyim_type::TyKind::RawPtr(_, _) => false,
+            glyim_type::TyKind::Adt(adt_id, _substs) => {
+                let adt = self.ctx.adt_def(*adt_id);
+                adt.variants
+                    .iter()
+                    .any(|v| v.fields.iter().any(|f| self.needs_drop(*f)))
+            }
+            glyim_type::TyKind::Tuple(substs) => self
+                .ctx
+                .ty_ctx()
+                .substitution_args(*substs)
+                .iter()
+                .any(|a| match a {
+                    glyim_type::GenericArg::Ty(t) => self.needs_drop(*t),
+                    _ => false,
+                }),
+            glyim_type::TyKind::Array(inner, _) => self.needs_drop(*inner),
+            glyim_type::TyKind::Slice(inner) => self.needs_drop(*inner),
+            glyim_type::TyKind::String => true,
+            _ => false,
         }
     }
 
