@@ -168,7 +168,14 @@ pub(crate) fn opaque_sized_type<'ctx>(
             )
             .into(),
         _ => {
-            // Fallback to i8 array, alignment might be wrong but at least size is correct
+            // Size-correct only. An LLVM type cannot express an arbitrary
+            // alignment above 16 bytes through its type alone (there is no
+            // "i256-aligned-to-64" type), so we fall back to a naturally
+            // 1-aligned i8 array. Callers that emit an `alloca`/`GlobalVariable`
+            // for a type with `align > 16` MUST set the real alignment
+            // explicitly via `set_alignment` — relying on this type's own
+            // alignment is wrong for any align > 16 (see `alloc_local` /
+            // global emission in lower.rs).
             return context.i8_type().array_type(size as u32).into();
         }
     };
@@ -185,6 +192,7 @@ pub(crate) fn opaque_sized_type<'ctx>(
 mod tests {
     use super::*;
     use inkwell::context::Context;
+    use inkwell::targets::{InitializationConfig, Target, TargetData};
 
     #[test]
     fn test_opaque_sized_type() {
@@ -199,5 +207,36 @@ mod tests {
 
         let ty = opaque_sized_type(&context, 0, 1);
         assert!(ty.is_struct_type());
+    }
+
+    #[test]
+    fn test_opaque_sized_type_over_aligned_is_size_correct() {
+        // Tier 5.1: the `>16` fallback (align 32) must produce a type whose
+        // *size* is correct even though its natural alignment is only 1. The
+        // alignment itself is enforced at the alloca/global use site via
+        // `set_alignment`, not through this type.
+        Target::initialize_all(&InitializationConfig::default());
+        let context = Context::create();
+        let target_data = TargetData::create("e-m:e-p:32:32-i64:64-v128:64");
+
+        // align 32, size 64 -> i8 array of 64 elements == 64 bytes.
+        // The >16 fallback returns a naturally 1-aligned i8 array (ArrayType),
+        // NOT a struct; the real alignment is enforced at the use site.
+        let ty = opaque_sized_type(&context, 64, 32);
+        assert!(ty.is_array_type(), "over-aligned fallback should be an i8 array");
+        let size = target_data.get_store_size(&ty);
+        assert_eq!(
+            size, 64,
+            "over-aligned (>16) fallback must preserve exact byte size"
+        );
+
+        // align 64, size 100 -> i8 array of 100 elements == 100 bytes.
+        let ty = opaque_sized_type(&context, 100, 64);
+        assert!(ty.is_array_type(), "over-aligned fallback should be an i8 array");
+        let size = target_data.get_store_size(&ty);
+        assert_eq!(
+            size, 100,
+            "over-aligned (>16) fallback must preserve exact byte size"
+        );
     }
 }

@@ -132,6 +132,18 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .builder
                 .build_alloca(llvm_ty, &name)
                 .expect("alloca failed");
+            // The LLVM type for an over-aligned aggregate (align > 16) is a
+            // naturally 1-aligned i8 array (see `opaque_sized_type`), so the
+            // real alignment must be enforced explicitly here.
+            let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+            if let Ok(layout) = layout_computer.layout_of(ty) {
+                let align = layout.align.0;
+                if align > 16 {
+                    if let Some(alloca_inst) = alloca.as_instruction_value() {
+                        let _ = alloca_inst.set_alignment(align as u32);
+                    }
+                }
+            }
             self.locals[local] = Some(alloca);
         }
     }

@@ -5,7 +5,7 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_core::primitives::Mutability;
 use glyim_mir::{
-    BasicBlockData, Body, LocalDecl, LocalIdx, SourceInfo, Statement, Terminator, TerminatorKind,
+    BasicBlockData, Body, LocalDecl, LocalIdx, SourceInfo, Terminator, TerminatorKind,
 };
 use glyim_span::Span;
 use glyim_type::{TyCtxMut, TyKind};

@@ -24,7 +24,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 4.2 — line!/column! from SourceMap — COMMITTED (via Vfs source lookup)
 - [x] Tier 4.3 — include! CWD-relative fix — COMMITTED
 - [x] Tier 4.4 — stringify! normalization — COMMITTED
-- [ ] Tier 5.1 — over-alignment fallback comment + set_alignment — PENDING (blocked: see note)
+- [x] Tier 5.1 — over-alignment fallback comment + set_alignment — COMMITTED
 - [ ] Tier 5.2 — DWARF pointer/slice debug types — PENDING (blocked: see note)
 - [x] Tier 5.3 — fn_sig fallback → internal error — COMMITTED
 - [ ] Tier 5.4 — bytecode Subslice/ConstantIndex scaling — PENDING (blocked: see note)
@@ -448,3 +448,30 @@ Each tier is implemented and committed atomically. Tests are run with
     clean baseline (the LLVM backend is broadly unfinished on this branch);
     this commit does not worsen that and does not depend on the broken
     `glyim-typeck` working tree.
+
+### Tier 5.1 (over-alignment fallback comment + set_alignment)
+- `fix(codegen-llvm): enforce >16 alignment at alloca via set_alignment`
+  - `types.rs::opaque_sized_type`: the `>16` fallback previously had a
+    misleading comment ("alignment might be wrong but at least size is
+    correct"). Replaced with an accurate explanation: an LLVM type cannot
+    express an arbitrary alignment above 16 bytes through its type alone, so
+    the fallback is a naturally 1-aligned i8 array that is *size*-correct
+    only; callers MUST set the real alignment explicitly at the
+    alloca/global use site via `set_alignment`.
+  - `lower.rs::alloc_local`: after `build_alloca`, compute the type's
+    layout via `FullLayoutComputer` and, when `align > 16`, obtain the
+    underlying `AllocaInst` (`alloca.as_instruction_value()`) and call
+    `set_alignment(align as u32)`. This restores the correct alignment for
+    over-aligned aggregates whose LLVM type is only 1-aligned.
+  - Added `types::tests::test_opaque_sized_type_over_aligned_is_size_correct`
+    which uses `TargetData::get_store_size` to assert the `>16` fallback
+    preserves the exact byte size (64 for align 32/size 64; 100 for align
+    64/size 100) and is an i8 ArrayType. NOTE: in the current type system no
+    primitive/aggregate reaches `align > 16` (all fields top out at 8-byte
+    alignment), so the `alloc_local` branch is currently defensive — it
+    cannot be triggered through a normal glyim type yet, but is correct for
+    when SIMD/over-aligned types are added.
+  - Verified in isolation: `cargo test -p glyim-codegen-llvm --lib
+    types::tests` → 2 passed. Full `glyim-codegen-llvm` suite still has the
+    ~213 PRE-EXISTING failures (unchanged from baseline); this commit adds no
+    new failures.
