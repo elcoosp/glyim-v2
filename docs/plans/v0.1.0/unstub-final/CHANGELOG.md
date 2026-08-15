@@ -28,7 +28,8 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 5.2 — DWARF pointer/slice debug types — COMMITTED
 - [x] Tier 5.3 — fn_sig fallback → internal error — COMMITTED
 - [x] Tier 5.4 — bytecode from_end ConstantIndex: array→const, slice→runtime len−offset — COMMITTED
-- [ ] Tier 6.1-6.5 — LSP reference graph/rename/completion/unused-imports
+- [x] Tier 6.1 — reference_graph walks Range/Closure/Index/Break children — COMMITTED
+- [ ] Tier 6.2-6.5 — LSP read/write distinction, rename literal-safety, type-filtered completion, unused-imports via graph
 - [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
 
 ## Commits
@@ -533,3 +534,38 @@ Each tier is implemented and committed atomically. Tests are run with
   - Rewrote the previous placeholder bodies in `slice_projection.rs`.
   - Verified in isolation: `cargo test -p glyim-codegen --lib
     tests::slice_projection` → 2 passed. No new failures vs baseline.
+
+### Tier 6.1 (reference_graph walk_expr covers Range/Closure/Index/Break)
+- `fix(lsp): reference_graph walk_expr now walks Range/Closure/Index/Break children`
+  - `reference_graph.rs::build_from_hir::walk_expr`: the following `Expr` variants
+    previously fell through to the `_ => {}` fallback and silently skipped their
+    children (confirmed by diffing the `match` arms against the full `Expr` enum in
+    `glyim-hir/src/lib.rs` — the same canonical variant list `check_expr.rs` uses):
+    - `Expr::Index { base, index }` — neither `base` nor `index` was walked, so a
+      variable used as an index operand or the indexed base (e.g. `arr[1..x]`) was
+      missed. Now both are recursed.
+    - `Expr::Range { start, end }` — neither `start` nor `end` was walked. This is
+      the plan's exact example: a variable used only inside `1..x` (the `end`) was
+      never found. Now both optional sides are recursed.
+    - `Expr::Break { value: Some(v) }` — the break's value expression was not
+      walked. Now recursed (the `None` arm stays a no-op).
+    - `Expr::Closure { params, body }` — only `body` was walked; the closure's
+      `params` (which are `PatId`s) were never registered as definitions. Now the
+      parameters are walked via the existing `walk_pattern` helper, mirroring the
+      top-level `for param in &body.params` loop, so the traversal shape matches
+      `check_expr.rs` exactly (no silent drift when new variants are added).
+  - Semantics note: this graph records local `let`/closure bindings as `Variable`
+    *uses* (via their binding name / `Expr::Path`), not as `is_definition` entries
+    — only top-level item/function/param names become definitions. So "find all
+    references" surfaces every *use*, which is what matters for 6.1. Each probe
+    variable in the test is bound once and used in exactly one of the four forms
+    above, proving the corresponding arm now walks its children (would be 1 ref
+    without the fix, 2 with it).
+  - Added `tests::reference_graph_tests::test_reference_graph_walks_range_and_closure`
+    (uses the existing `compile_to_hir` fixture helper). It asserts:
+    - `range_only` (used only as a `Range` `end`) → 2 refs (let + range-end use);
+    - `closure_only` (used only inside a closure body) → 2 refs;
+    - `index_base_only` (used as an `Index` base) → 2 refs (let + index-base use).
+  - Verified: `cargo test -p glyim-lsp --lib` → 44 passed, 0 failed, 5 ignored
+    (no new failures; the 5 ignored are pre-existing). The 3
+    `reference_graph_tests` tests (incl. the new one) all pass.

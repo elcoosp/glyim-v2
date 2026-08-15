@@ -370,6 +370,18 @@ impl ReferenceGraph {
                     );
                 }
                 Expr::Return { value: None } => {}
+                Expr::Break { value: Some(val) } => {
+                    walk_expr(
+                        *val,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                }
+                Expr::Break { value: None } => {}
                 Expr::Assign { lhs, rhs } => {
                     if let Expr::Path(path) = &body.exprs[*lhs]
                         && let Some(name) = path.as_name()
@@ -485,9 +497,10 @@ impl ReferenceGraph {
                         );
                     }
                 }
-                Expr::Closure {
-                    body: closure_body, ..
-                } => {
+                Expr::Closure { params, body: closure_body } => {
+                    for param in params {
+                        walk_pattern(*param, body, interner, add_ref);
+                    }
                     walk_expr(
                         *closure_body,
                         body,
@@ -497,6 +510,50 @@ impl ReferenceGraph {
                         function_names,
                         false,
                     );
+                }
+                Expr::Index { base, index } => {
+                    walk_expr(
+                        *base,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                    walk_expr(
+                        *index,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                    );
+                }
+                Expr::Range { start, end, .. } => {
+                    if let Some(start_expr) = start {
+                        walk_expr(
+                            *start_expr,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
+                    }
+                    if let Some(end_expr) = end {
+                        walk_expr(
+                            *end_expr,
+                            body,
+                            interner,
+                            _file_id,
+                            add_ref,
+                            function_names,
+                            false,
+                        );
+                    }
                 }
                 Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
                     walk_expr(

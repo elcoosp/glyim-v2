@@ -77,3 +77,69 @@ fn caller() {
     assert_eq!(call.file_id, file_id_b);
     assert_eq!(call.kind, ReferenceKind::Call);
 }
+
+/// Tier 6.1: `build_from_hir` must walk `Range` sides, `Closure` bodies,
+/// `Index` base/operand, and `Break` values so that variables used only inside
+/// those expression forms are still found by "find all references". These arms
+/// previously fell through to the `_ => {}` fallback and silently skipped
+/// their children.
+///
+/// Note on semantics: this graph records local `let`/closure bindings as
+/// `Variable` *uses* (via their binding name / `Expr::Path`), not as
+/// `is_definition` entries — only top-level item/function/param names become
+/// definitions. So the assertions below count *uses*, which is exactly what
+/// "find all references" surfaces. Each probe variable is therefore used in
+/// exactly one place so we can prove its containing expression form is walked.
+#[test]
+fn test_reference_graph_walks_range_and_closure() {
+    let src = r#"
+fn main() {
+    let range_only = 0;
+    let closure_only = 0;
+    let index_base_only = [0, 1, 2];
+    let _ = index_base_only[1..range_only];
+    let f = |a| closure_only + a;
+}
+"#;
+    let mut interner = Interner::new();
+    let file_id = create_test_file_id(1);
+    let (hir, diags) = compile_to_hir(src, file_id, &mut interner);
+    assert!(diags.is_empty(), "Compilation had diagnostics: {:?}", diags);
+
+    let mut ref_graph = ReferenceGraph::new();
+    ref_graph.build_from_hir(file_id, &hir, &interner);
+
+    // Every probe variable below is bound with `let` (which this graph records
+    // as a `Variable` use of the binding name — see the module note) and then
+    // used in exactly ONE expression form. So a correct walk yields exactly 2
+    // references: the `let` use + the construct use. Before the fix the
+    // construct-specific arms hit `_ => {}` and silently skipped their children,
+    // so the construct use was missing and only 1 reference (the `let`) showed.
+
+    // `range_only` is used *only* as the `end` of `1..range_only` (a Range).
+    let range_refs = ref_graph.find_references("range_only");
+    assert_eq!(
+        range_refs.len(),
+        2,
+        "range-only variable must be found via the Range `end` arm; got {:?}",
+        range_refs
+    );
+
+    // `closure_only` is used *only* inside the closure body `|a| closure_only + a`.
+    let closure_refs = ref_graph.find_references("closure_only");
+    assert_eq!(
+        closure_refs.len(),
+        2,
+        "closure-only variable must be found via the closure body; got {:?}",
+        closure_refs
+    );
+
+    // `index_base_only` is used as the `base` of `index_base_only[..]` (an Index).
+    let index_refs = ref_graph.find_references("index_base_only");
+    assert_eq!(
+        index_refs.len(),
+        2,
+        "index base must add the Index use to the let use; got {:?}",
+        index_refs
+    );
+}
