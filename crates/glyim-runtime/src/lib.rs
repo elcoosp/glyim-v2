@@ -1023,6 +1023,32 @@ pub unsafe extern "C" fn glyim_net_tcp_local_addr(fd: i32, buf: *mut u8, buf_len
     bytes.len() as i32
 }
 
+/// Set non-blocking mode on a TCP stream.
+///
+/// # Returns
+/// - `0` on success
+/// - `-1` on failure (invalid fd or socket error)
+///
+/// # Safety
+///
+/// - `fd` must be a valid TCP stream descriptor
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_net_tcp_set_nonblocking(fd: i32, nonblocking: i32) -> i32 {
+    use socket2::SockRef;
+    let fd = fd as u32;
+    let store = tcp_streams().lock().unwrap();
+    let stream = match store.streams.get(&fd) {
+        Some(s) => s,
+        None => return -1,
+    };
+    // Use socket2 to set non-blocking.
+    match SockRef::from(stream).set_nonblocking(nonblocking != 0) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+
 // UDP functions
 #[unsafe(no_mangle)]
 /// # Safety
