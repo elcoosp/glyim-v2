@@ -1,14 +1,16 @@
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_const_eval::{ConstEvaluator, ConstValue};
+use glyim_core::TargetInfo;
+use glyim_core::primitives::{BinOp, Mutability};
 use glyim_diag::GlyimDiagnostic;
-use glyim_mir::{self, BasicBlockIdx, CastKind, LocalIdx, ProjectionElem, Rvalue, Operand, Place, StatementKind, TerminatorKind, SwitchTargets, MirConst, MirConstKind};
+use glyim_layout::LayoutComputer;
+use glyim_mir::{
+    self, BasicBlockIdx, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
+    ProjectionElem, Rvalue, StatementKind, SwitchTargets, TerminatorKind,
+};
 use glyim_type::{self, FieldIdx, Ty, TyKind};
 use glyim_typeck::thir;
-use glyim_layout::LayoutComputer;
-use glyim_core::primitives::{BinOp, Mutability};
-use glyim_core::TargetInfo;
-
 
 impl<'a> MirBuilder<'a> {
     // ---- Statement lowering ----
@@ -83,7 +85,11 @@ impl<'a> MirBuilder<'a> {
                 let mir_const = self.lower_literal(lit, expr.ty, expr.span);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const))
             }
-            thir::ExprKind::Range { start, end, inclusive } => {
+            thir::ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 // For now, we'll treat a range expression as a tuple of (start, end) or something.
                 // This is a placeholder; actual implementation will be added later.
                 let _start_val = start.as_ref().map(|e| self.lower_expr_to_rvalue(e));
@@ -360,7 +366,10 @@ impl<'a> MirBuilder<'a> {
                             iterable.span,
                         );
                         let next_fn_const = glyim_mir::MirConst {
-                            kind: glyim_mir::MirConstKind::Fn(iter_info.fn_def_id, iter_info.fn_substs),
+                            kind: glyim_mir::MirConstKind::Fn(
+                                iter_info.fn_def_id,
+                                iter_info.fn_substs,
+                            ),
                             ty: iter_info.fn_ty,
                             span: expr.span,
                         };
@@ -388,7 +397,8 @@ impl<'a> MirBuilder<'a> {
                             expr.span,
                         );
                         self.current_block = Some(after_call_bb);
-                        let discr_op = glyim_mir::Operand::Copy(glyim_mir::Place::new(option_local));
+                        let discr_op =
+                            glyim_mir::Operand::Copy(glyim_mir::Place::new(option_local));
                         let some_bb = self.new_block();
                         let none_bb = exit_bb;
                         let switch_targets =
@@ -490,7 +500,12 @@ impl<'a> MirBuilder<'a> {
             }
             thir::ExprKind::Index { base, index } => {
                 // Check if the index is a Range expression.
-                if let thir::ExprKind::Range { start, end, inclusive } = &index.kind {
+                if let thir::ExprKind::Range {
+                    start,
+                    end,
+                    inclusive,
+                } = &index.kind
+                {
                     if *inclusive {
                         self.diagnostics.push(GlyimDiagnostic::type_error(
                             expr.span,
@@ -528,7 +543,10 @@ impl<'a> MirBuilder<'a> {
                         ),
                         index.span,
                     );
-                    let place = self.place_with_projection(base_place, glyim_mir::ProjectionElem::Index(index_local));
+                    let place = self.place_with_projection(
+                        base_place,
+                        glyim_mir::ProjectionElem::Index(index_local),
+                    );
                     glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
                 }
             }
@@ -863,7 +881,10 @@ impl<'a> MirBuilder<'a> {
                     ),
                     index.span,
                 );
-                self.place_with_projection(base_place, glyim_mir::ProjectionElem::Index(index_local))
+                self.place_with_projection(
+                    base_place,
+                    glyim_mir::ProjectionElem::Index(index_local),
+                )
             }
             thir::ExprKind::Ref {
                 operand,
@@ -1282,14 +1303,14 @@ impl<'a> MirBuilder<'a> {
         let mut evaluator = ConstEvaluator::new(hir_body);
         let value = evaluator.evaluate(root).ok()?;
 
-            match value {
-        ConstValue::Int(v, _) => Some(v as u128), // handles both positive and negative via two's complement
-        ConstValue::Uint(v, _) => Some(v),
-        ConstValue::Bool(b) => Some(b as u128),
-        ConstValue::Char(c) => Some(c as u128),
-        ConstValue::FloatBits(..) | ConstValue::String(_) | ConstValue::Unit => None,
-        ConstValue::Tuple(_) | ConstValue::Array(_) | ConstValue::Struct(_) => None,
-    }
+        match value {
+            ConstValue::Int(v, _) => Some(v as u128), // handles both positive and negative via two's complement
+            ConstValue::Uint(v, _) => Some(v),
+            ConstValue::Bool(b) => Some(b as u128),
+            ConstValue::Char(c) => Some(c as u128),
+            ConstValue::FloatBits(..) | ConstValue::String(_) | ConstValue::Unit => None,
+            ConstValue::Tuple(_) | ConstValue::Array(_) | ConstValue::Struct(_) => None,
+        }
     }
 
     // ---- Field resolution helpers ----
@@ -1332,7 +1353,6 @@ impl<'a> MirBuilder<'a> {
         result_ty: Ty,
         span: glyim_span::Span,
     ) -> glyim_mir::Rvalue {
-
         // Determine the element type and whether we have a slice or array.
         let base_ty = base_place.ty(self.ctx.ty_ctx(), &self.locals);
         let elem_ty = match self.ctx.ty_ctx().ty_kind(base_ty) {
@@ -1366,13 +1386,19 @@ impl<'a> MirBuilder<'a> {
 
         // 1. Compute len_val = Len(base_place)
         let len_rvalue = Rvalue::Len(base_place.clone());
-        self.push_stmt(StatementKind::Assign(Place::new(len_local), len_rvalue), span);
+        self.push_stmt(
+            StatementKind::Assign(Place::new(len_local), len_rvalue),
+            span,
+        );
 
         // 2. Compute start_val
         let start_val = if let Some(start_expr) = start_opt {
             // Evaluate start expression and assign to start_local
             let start_rvalue = self.lower_expr_to_rvalue(start_expr);
-            self.push_stmt(StatementKind::Assign(Place::new(start_local), start_rvalue), start_expr.span);
+            self.push_stmt(
+                StatementKind::Assign(Place::new(start_local), start_rvalue),
+                start_expr.span,
+            );
             Operand::Copy(Place::new(start_local))
         } else {
             // start = 0
@@ -1390,7 +1416,10 @@ impl<'a> MirBuilder<'a> {
         // 3. Compute end_val
         let end_val = if let Some(end_expr) = end_opt {
             let end_rvalue = self.lower_expr_to_rvalue(end_expr);
-            self.push_stmt(StatementKind::Assign(Place::new(end_local), end_rvalue), end_expr.span);
+            self.push_stmt(
+                StatementKind::Assign(Place::new(end_local), end_rvalue),
+                end_expr.span,
+            );
             Operand::Copy(Place::new(end_local))
         } else {
             // end = len
@@ -1406,35 +1435,52 @@ impl<'a> MirBuilder<'a> {
         let done_bb = self.new_block();
 
         // Check start <= end
-        let start_le_end = Rvalue::BinaryOp(BinOp::LtEq, Box::new((start_val.clone(), end_val.clone())));
-        let start_le_end_local = self.alloc_local(self.ctx.ty_ctx().bool_ty(), Mutability::Not, span);
+        let start_le_end =
+            Rvalue::BinaryOp(BinOp::LtEq, Box::new((start_val.clone(), end_val.clone())));
+        let start_le_end_local =
+            self.alloc_local(self.ctx.ty_ctx().bool_ty(), Mutability::Not, span);
         self.push_stmt(StatementKind::StorageLive(start_le_end_local), span);
-        self.push_stmt(StatementKind::Assign(Place::new(start_le_end_local), start_le_end), span);
+        self.push_stmt(
+            StatementKind::Assign(Place::new(start_le_end_local), start_le_end),
+            span,
+        );
 
         // Terminate current block with Assert on start_le_end.
         let cond_op = Operand::Copy(Place::new(start_le_end_local));
         let targets = SwitchTargets::if_switch(check_start_le_end_bb, check_end_le_len_bb);
-        self.terminate(TerminatorKind::SwitchInt {
-            discr: cond_op,
-            switch_ty: self.ctx.ty_ctx().bool_ty(),
-            targets,
-        }, span);
+        self.terminate(
+            TerminatorKind::SwitchInt {
+                discr: cond_op,
+                switch_ty: self.ctx.ty_ctx().bool_ty(),
+                targets,
+            },
+            span,
+        );
 
         self.current_block = Some(check_start_le_end_bb);
 
         // Check end <= len
-        let end_le_len = Rvalue::BinaryOp(BinOp::LtEq, Box::new((end_val.clone(), Operand::Copy(Place::new(len_local)))));
+        let end_le_len = Rvalue::BinaryOp(
+            BinOp::LtEq,
+            Box::new((end_val.clone(), Operand::Copy(Place::new(len_local)))),
+        );
         let end_le_len_local = self.alloc_local(self.ctx.ty_ctx().bool_ty(), Mutability::Not, span);
         self.push_stmt(StatementKind::StorageLive(end_le_len_local), span);
-        self.push_stmt(StatementKind::Assign(Place::new(end_le_len_local), end_le_len), span);
+        self.push_stmt(
+            StatementKind::Assign(Place::new(end_le_len_local), end_le_len),
+            span,
+        );
 
         let cond_op2 = Operand::Copy(Place::new(end_le_len_local));
         let targets2 = SwitchTargets::if_switch(done_bb, check_end_le_len_bb);
-        self.terminate(TerminatorKind::SwitchInt {
-            discr: cond_op2,
-            switch_ty: self.ctx.ty_ctx().bool_ty(),
-            targets: targets2,
-        }, span);
+        self.terminate(
+            TerminatorKind::SwitchInt {
+                discr: cond_op2,
+                switch_ty: self.ctx.ty_ctx().bool_ty(),
+                targets: targets2,
+            },
+            span,
+        );
 
         self.current_block = Some(check_end_le_len_bb);
         self.terminate(TerminatorKind::Unreachable, span);
@@ -1442,23 +1488,44 @@ impl<'a> MirBuilder<'a> {
         self.current_block = Some(done_bb);
 
         // Compute data_ptr:
-        let first_elem_place = if matches!(self.ctx.ty_ctx().ty_kind(base_ty), TyKind::Array(_, _)) {
+        let first_elem_place = if matches!(self.ctx.ty_ctx().ty_kind(base_ty), TyKind::Array(_, _))
+        {
             let mut proj = base_place.projection.to_vec();
-            proj.push(ProjectionElem::ConstantIndex { offset: 0, min_length: 0, from_end: false });
-            Place { local: base_place.local, projection: proj.into_boxed_slice() }
+            proj.push(ProjectionElem::ConstantIndex {
+                offset: 0,
+                min_length: 0,
+                from_end: false,
+            });
+            Place {
+                local: base_place.local,
+                projection: proj.into_boxed_slice(),
+            }
         } else {
             let mut proj = base_place.projection.to_vec();
             proj.push(ProjectionElem::Field(glyim_type::FieldIdx::from_raw(0)));
-            Place { local: base_place.local, projection: proj.into_boxed_slice() }
+            Place {
+                local: base_place.local,
+                projection: proj.into_boxed_slice(),
+            }
         };
 
         let data_ptr_ptr = self.alloc_local(Ty::USIZE, Mutability::Not, span);
         self.push_stmt(StatementKind::StorageLive(data_ptr_ptr), span);
         let load_data_ptr = Rvalue::Use(Operand::Copy(first_elem_place));
-        self.push_stmt(StatementKind::Assign(Place::new(data_ptr_ptr), load_data_ptr), span);
+        self.push_stmt(
+            StatementKind::Assign(Place::new(data_ptr_ptr), load_data_ptr),
+            span,
+        );
 
-        let layout_computer = glyim_layout::SimpleLayoutComputer::new(self.ctx.ty_ctx(), TargetInfo::x86_64());
-        let elem_layout = layout_computer.layout_of(elem_ty).unwrap_or(glyim_layout::Layout::scalar(glyim_layout::Size::bytes(1), glyim_layout::Align::ONE));
+        let layout_computer =
+            glyim_layout::SimpleLayoutComputer::new(self.ctx.ty_ctx(), TargetInfo::x86_64());
+        let elem_layout =
+            layout_computer
+                .layout_of(elem_ty)
+                .unwrap_or(glyim_layout::Layout::scalar(
+                    glyim_layout::Size::bytes(1),
+                    glyim_layout::Align::ONE,
+                ));
         let elem_size = elem_layout.size.0;
 
         let elem_size_const = MirConst {
@@ -1471,16 +1538,31 @@ impl<'a> MirBuilder<'a> {
         let byte_offset = Rvalue::BinaryOp(BinOp::Mul, Box::new((start_op, size_op)));
         let byte_offset_local = self.alloc_local(Ty::USIZE, Mutability::Not, span);
         self.push_stmt(StatementKind::StorageLive(byte_offset_local), span);
-        self.push_stmt(StatementKind::Assign(Place::new(byte_offset_local), byte_offset), span);
+        self.push_stmt(
+            StatementKind::Assign(Place::new(byte_offset_local), byte_offset),
+            span,
+        );
 
-        let data_ptr_rvalue = Rvalue::BinaryOp(BinOp::Add, Box::new((
-            Operand::Copy(Place::new(data_ptr_ptr)),
-            Operand::Copy(Place::new(byte_offset_local))
-        )));
-        self.push_stmt(StatementKind::Assign(Place::new(data_ptr_local), data_ptr_rvalue), span);
+        let data_ptr_rvalue = Rvalue::BinaryOp(
+            BinOp::Add,
+            Box::new((
+                Operand::Copy(Place::new(data_ptr_ptr)),
+                Operand::Copy(Place::new(byte_offset_local)),
+            )),
+        );
+        self.push_stmt(
+            StatementKind::Assign(Place::new(data_ptr_local), data_ptr_rvalue),
+            span,
+        );
 
-        let new_len_rvalue = Rvalue::BinaryOp(BinOp::Sub, Box::new((end_val, Operand::Copy(Place::new(start_local)))));
-        self.push_stmt(StatementKind::Assign(Place::new(new_len_local), new_len_rvalue), span);
+        let new_len_rvalue = Rvalue::BinaryOp(
+            BinOp::Sub,
+            Box::new((end_val, Operand::Copy(Place::new(start_local)))),
+        );
+        self.push_stmt(
+            StatementKind::Assign(Place::new(new_len_local), new_len_rvalue),
+            span,
+        );
 
         let slice_operands = vec![
             Operand::Copy(Place::new(data_ptr_local)),

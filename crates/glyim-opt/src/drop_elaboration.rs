@@ -10,8 +10,8 @@ use glyim_core::IndexVec;
 use glyim_core::Mutability;
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
 use glyim_type::AdtKind;
+use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
 
 // -----------------------------------------------------------------------------
 // Dataflow: which locals are definitely initialized at each program point.
@@ -404,14 +404,13 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
     body.basic_blocks = IndexVec::from_raw(new_blocks);
 }
 
-
 /// Determine if a type needs drop glue.
 /// A type needs drop if it implements Drop directly, or contains a field/element that needs drop.
 /// Memoization is used to avoid repeated work.
 fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
-    use std::collections::HashSet;
-    use glyim_type::TyKind;
     use glyim_type::GenericArg;
+    use glyim_type::TyKind;
+    use std::collections::HashSet;
 
     fn needs_drop_rec(ctx: &TyCtx, ty: Ty, visited: &mut HashSet<Ty>) -> bool {
         if visited.contains(&ty) {
@@ -445,35 +444,34 @@ fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
                     true
                 }
             }
-            TyKind::Array(elem_ty, _) => {
-                needs_drop_rec(ctx, *elem_ty, visited)
-            }
-            TyKind::Slice(elem_ty) => {
-                needs_drop_rec(ctx, *elem_ty, visited)
-            }
+            TyKind::Array(elem_ty, _) => needs_drop_rec(ctx, *elem_ty, visited),
+            TyKind::Slice(elem_ty) => needs_drop_rec(ctx, *elem_ty, visited),
             TyKind::Tuple(substs) => {
                 for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg {
-                        if needs_drop_rec(ctx, *t, visited) {
+                    if let GenericArg::Ty(t) = arg
+                        && needs_drop_rec(ctx, *t, visited) {
                             return true;
                         }
-                    }
                 }
                 false
             }
             TyKind::Closure(_, substs) => {
                 for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg {
-                        if needs_drop_rec(ctx, *t, visited) {
+                    if let GenericArg::Ty(t) = arg
+                        && needs_drop_rec(ctx, *t, visited) {
                             return true;
                         }
-                    }
                 }
                 false
             }
             // Primitive types don't need drop.
-            TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char
-            | TyKind::Never | TyKind::Unit => false,
+            TyKind::Bool
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Float(_)
+            | TyKind::Char
+            | TyKind::Never
+            | TyKind::Unit => false,
             // References and raw pointers don't need drop (the pointee is not owned).
             TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => false,
             // Function pointers and function definitions don't need drop.

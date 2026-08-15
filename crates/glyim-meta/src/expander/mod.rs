@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use matcher::{MatchResult, Pattern, match_pattern};
 use token_tree::{TokenTree, flatten_token_tree};
 
-
 static RECURSION_LIMIT: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
 
 /// Set the recursion limit for macro expansion.
@@ -28,7 +27,6 @@ pub fn set_recursion_limit(limit: u32) {
 fn get_recursion_limit() -> u32 {
     *RECURSION_LIMIT.get().unwrap_or(&128)
 }
-
 
 #[derive(Clone, Debug)]
 pub(crate) struct MacroArm {

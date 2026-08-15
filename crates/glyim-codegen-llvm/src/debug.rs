@@ -41,7 +41,7 @@ pub(crate) struct DebugInfoCtx<'ctx> {
 
 impl<'ctx> DebugInfoCtx<'ctx> {
     pub(crate) fn new(
-        context: &'ctx Context,
+        _context: &'ctx Context,
         module: &inkwell::module::Module<'ctx>,
         source_map: HashMap<FileId, (String, String)>,
         enable: bool,
@@ -106,7 +106,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
 
     pub(crate) fn set_function(
         &mut self,
-        context: &'ctx Context,
+        _context: &'ctx Context,
         func: &FunctionValue<'ctx>,
         name: &str,
         file_id: FileId,
@@ -182,14 +182,14 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             TyKind::Int(i) => {
                 let bits = i.bit_width(&target);
                 self.builder
-                    .create_basic_type(i.name(), (bits as u32).into(), 0x04, 0)
+                    .create_basic_type(i.name(), bits.into(), 0x04, 0)
                     .unwrap()
                     .as_type()
             }
             TyKind::Uint(u) => {
                 let bits = u.bit_width(&target);
                 self.builder
-                    .create_basic_type(u.name(), (bits as u32).into(), 0x04, 0)
+                    .create_basic_type(u.name(), bits.into(), 0x04, 0)
                     .unwrap()
                     .as_type()
             }
@@ -218,7 +218,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 .unwrap()
                 .as_type(),
             TyKind::Ref(region, inner, mutability) => {
-                let inner_di = self.debug_type_for_ty(context, *inner, ty_ctx);
+                let _inner_di = self.debug_type_for_ty(context, *inner, ty_ctx);
                 let ptr_ty = self
                     .builder
                     .create_basic_type("ptr", 64, 0x02, 0)
@@ -387,7 +387,12 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                         // Enum: create a union of variants.
                         // Simpler: treat as opaque.
                         self.builder
-                            .create_basic_type(&format!("{}_enum", name), (size_bits as u32).into(), 0x04, 0)
+                            .create_basic_type(
+                                &format!("{}_enum", name),
+                                (size_bits as u32).into(),
+                                0x04,
+                                0,
+                            )
                             .unwrap()
                             .as_type()
                     }

@@ -1,7 +1,7 @@
 use glyim_core::{BinOp, CrateId, DefId, LocalDefId, UnOp};
-use glyim_type::Ty;
 use glyim_mir::*;
-use glyim_type::{TyCtx, FieldIdx};
+use glyim_type::Ty;
+use glyim_type::{FieldIdx, TyCtx};
 use std::collections::HashMap;
 
 mod interp_error;
@@ -551,7 +551,6 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
-    
     fn read_place(&self, place: &Place) -> InterpResult<InterpValue> {
         let idx = place.local.index();
         let mut val = self
@@ -562,7 +561,11 @@ impl<'tcx> Interpreter<'tcx> {
             .ok_or_else(|| InterpError::Panic(format!("read from uninitialized local {}", idx)))?;
 
         // Keep track of the current type to compute offsets for ConstantIndex.
-        let mut current_ty = self.local_decls.get(place.local.index()).map(|d| d.ty).unwrap_or(Ty::ERROR);
+        let mut current_ty = self
+            .local_decls
+            .get(place.local.index())
+            .map(|d| d.ty)
+            .unwrap_or(Ty::ERROR);
 
         for proj in place.projection.iter() {
             match proj {
@@ -619,7 +622,7 @@ impl<'tcx> Interpreter<'tcx> {
                             ));
                         }
                     }
-                },
+                }
                 ProjectionElem::Index(index_local) => {
                     let index_val = self
                         .locals
@@ -656,12 +659,16 @@ impl<'tcx> Interpreter<'tcx> {
                             ));
                         }
                     }
-                },
+                }
                 ProjectionElem::Downcast(_variant_idx) => {
                     // no change, but we may need to adjust current_ty.
                     // For now, keep current_ty.
-                },
-                ProjectionElem::ConstantIndex { offset, min_length: _, from_end } => {
+                }
+                ProjectionElem::ConstantIndex {
+                    offset,
+                    min_length: _,
+                    from_end,
+                } => {
                     // Compute the actual index.
                     let len = self.get_length_of_aggregate(&val)?;
                     let idx = if *from_end {
@@ -695,7 +702,7 @@ impl<'tcx> Interpreter<'tcx> {
                             ));
                         }
                     }
-                },
+                }
                 ProjectionElem::Subslice { from, to, from_end } => {
                     // Subslice produces a slice value (ptr, len).
                     // For interpreter, we need to represent a slice as an aggregate of (ptr, len)?
@@ -750,12 +757,11 @@ impl<'tcx> Interpreter<'tcx> {
                         InterpValue::Ref(data_ptr),
                         InterpValue::Int(new_len as i128),
                     ]);
-                },
+                }
             }
         }
         Ok(val)
     }
-
 
     fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
         let idx = place.local.index();
@@ -1042,7 +1048,6 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
-
     /// Helper to get the length of an aggregate (array, slice, tuple).
     fn get_length_of_aggregate(&self, val: &InterpValue) -> InterpResult<usize> {
         match val {
@@ -1053,10 +1058,9 @@ impl<'tcx> Interpreter<'tcx> {
                     .locals
                     .get(*target)
                     .and_then(|opt| opt.as_ref())
-                    .ok_or_else(|| InterpError::Panic(format!(
-                        "deref of uninitialized local {}",
-                        target
-                    )))?;
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!("deref of uninitialized local {}", target))
+                    })?;
                 self.get_length_of_aggregate(target_val)
             }
             _ => Err(InterpError::Panic("expected aggregate for length".into())),
@@ -1082,9 +1086,7 @@ impl<'tcx> Interpreter<'tcx> {
                     Ty::ERROR
                 }
             }
-            glyim_type::TyKind::Adt(adt_id, _) => {
-                self.tcx.field_ty(*adt_id, field_idx.index())
-            }
+            glyim_type::TyKind::Adt(adt_id, _) => self.tcx.field_ty(*adt_id, field_idx.index()),
             _ => Ty::ERROR,
         }
     }
@@ -1113,10 +1115,9 @@ impl<'tcx> Interpreter<'tcx> {
                     .locals
                     .get(*target)
                     .and_then(|opt| opt.as_ref())
-                    .ok_or_else(|| InterpError::Panic(format!(
-                        "deref of uninitialized local {}",
-                        target
-                    )))?;
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!("deref of uninitialized local {}", target))
+                    })?;
                 self.get_slice_base_and_len(target_val, ty)
             }
             _ => Err(InterpError::Panic("expected slice aggregate".into())),

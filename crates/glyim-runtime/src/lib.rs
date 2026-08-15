@@ -512,12 +512,9 @@ pub unsafe extern "C" fn glyim_env_vars_get(
     0
 }
 
-
 /// Determine the user's home directory.
 ///
 /// Checks `HOME` environment variable first (Unix convention).
-
-
 
 fn dirs_home_dir() -> Option<String> {
     if let Some(home) = std::env::var_os("HOME") {
@@ -534,7 +531,8 @@ fn dirs_home_dir() -> Option<String> {
         }
     }
     // Windows fallback: HOMEDRIVE + HOMEPATH
-    if let (Some(drive), Some(path)) = (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+    if let (Some(drive), Some(path)) = (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH"))
+    {
         let drive_str = drive.to_string_lossy();
         let path_str = path.to_string_lossy();
         if !drive_str.is_empty() && !path_str.is_empty() {
@@ -925,7 +923,7 @@ pub unsafe extern "C" fn glyim_net_tcp_bind(addr: *const u8, addr_len: usize, po
     };
     // Set SO_REUSEADDR using socket2
     use socket2::SockRef;
-    if let Err(_) = SockRef::from(&listener).set_reuse_address(true) {
+    if SockRef::from(&listener).set_reuse_address(true).is_err() {
         return -1;
     }
     let id = alloc_socket_id();
@@ -1048,7 +1046,6 @@ pub unsafe extern "C" fn glyim_net_tcp_set_nonblocking(fd: i32, nonblocking: i32
     }
 }
 
-
 // UDP functions
 #[unsafe(no_mangle)]
 /// # Safety
@@ -1146,7 +1143,7 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
         std::ptr::copy_nonoverlapping(ip_bytes.as_ptr(), src_addr, ip_bytes.len());
         // Add null terminator (optional, but consistent with previous behavior)
         *src_addr.add(ip_bytes.len()) = 0;
-        *src_addr_len = ip_bytes.len() + 1;  // including null
+        *src_addr_len = ip_bytes.len() + 1; // including null
         *src_port = port;
     }
     n as isize
@@ -1323,7 +1320,6 @@ pub unsafe extern "C" fn glyim_thread_park_timeout(secs: u64, nanos: u32) {
     let duration = std::time::Duration::new(secs, nanos);
     std::thread::park_timeout(duration);
 }
-
 
 #[unsafe(no_mangle)]
 /// # Safety

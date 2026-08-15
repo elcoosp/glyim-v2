@@ -4,10 +4,10 @@ use crate::coherence::{CoherenceChecker, ResolvedImplHeader};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 use glyim_core::interner::Interner;
-use glyim_core::primitives::{IntTy, UintTy, FloatTy, Visibility, Mutability};
 use glyim_core::primitives::*;
+use glyim_core::primitives::{FloatTy, IntTy, Mutability, UintTy, Visibility};
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
-use glyim_hir::{ImplItem, Path, TypeRef, GenericParam, GenericParamKind};
+use glyim_hir::{GenericParam, GenericParamKind, ImplItem, Path, TypeRef};
 use glyim_span::Span;
 use glyim_type::{ImplPolarity, ParamTy, Substitution, Ty, TyCtxMut, TyKind};
 

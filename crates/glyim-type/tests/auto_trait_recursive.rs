@@ -1,11 +1,11 @@
 //! Test coinductive auto-trait computation on mutually recursive types.
 
-use glyim_type::{AutoTraitFlags, TyCtxMut, Ty};
-use glyim_type::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
-use glyim_core::def_id::AdtId;
 use glyim_core::arena::IndexVec;
+use glyim_core::def_id::AdtId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::{IntTy, Mutability};
+use glyim_type::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
+use glyim_type::{AutoTraitFlags, Ty, TyCtxMut};
 
 fn build_ctx() -> TyCtxMut {
     TyCtxMut::new(Interner::new())
@@ -61,16 +61,10 @@ fn mutually_recursive_send_sync() {
     let ptr_a_raw = ctx_mut.mk_ty(glyim_type::TyKind::RawPtr(node_a_ty, Mutability::Not));
 
     // 4. Register real ADTs with new IDs.
-    let real_a_def = mk_struct_def(
-        &mut ctx_mut,
-        vec![("next", ptr_b_raw), ("data", i32_ty)],
-    );
+    let real_a_def = mk_struct_def(&mut ctx_mut, vec![("next", ptr_b_raw), ("data", i32_ty)]);
     ctx_mut.register_adt(id_a2, real_a_def);
 
-    let real_b_def = mk_struct_def(
-        &mut ctx_mut,
-        vec![("next", ptr_a_raw), ("data", i32_ty)],
-    );
+    let real_b_def = mk_struct_def(&mut ctx_mut, vec![("next", ptr_a_raw), ("data", i32_ty)]);
     ctx_mut.register_adt(id_b2, real_b_def);
 
     // 5. Get final Ty values.

@@ -276,11 +276,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
                     .expect("const ref load failed"))
             }
-            MirConstKind::Error => {
-                Err(vec![GlyimDiagnostic::internal_error(
-                    "internal compiler error: MirConstKind::Error reached codegen",
-                )])
-            }
+            MirConstKind::Error => Err(vec![GlyimDiagnostic::internal_error(
+                "internal compiler error: MirConstKind::Error reached codegen",
+            )]),
         }
     }
 
@@ -546,9 +544,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                                     BasicValueEnum::StructValue(s) => s,
                                     _ => panic!("slice value not a struct"),
                                 };
-                                
-                                self
-                                    .builder
+
+                                self.builder
                                     .build_extract_value(struct_val, 1, "slice_len_extract")
                                     .expect("extract failed")
                                     .into_int_value()
@@ -577,9 +574,8 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             BasicValueEnum::StructValue(s) => s,
                             _ => panic!("slice value not a struct"),
                         };
-                        
-                        self
-                            .builder
+
+                        self.builder
                             .build_extract_value(struct_val, 0, "slice_data_ptr")
                             .expect("extract failed")
                             .into_pointer_value()

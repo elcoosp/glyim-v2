@@ -10,10 +10,9 @@ use glyim_type::{Ty, TyKind};
 use crate::check_body::FnCtxt;
 use crate::thir;
 
+use crate::thir::Pattern;
 use glyim_core::interner::Name;
 use glyim_hir::Literal;
-use crate::thir::Pattern;
-use std::collections::HashSet;
 
 impl<'a> FnCtxt<'a> {
     pub fn check_pattern(&mut self, pat_id: PatId, expected_ty: Ty) -> thir::Pattern {
@@ -213,12 +212,7 @@ impl<'a> FnCtxt<'a> {
 
     /// Check struct pattern: field exhaustiveness, duplicate fields, and missing fields.
     /// Returns true if the pattern is valid, false with diagnostics added.
-    fn check_struct_pattern(
-        &mut self,
-        pat: &Pat,
-        expected_ty: Ty,
-        span: Span,
-    ) -> bool {
+    fn check_struct_pattern(&mut self, pat: &Pat, _expected_ty: Ty, span: Span) -> bool {
         match pat {
             Pat::Struct { path, fields, rest } => {
                 // Resolve the ADT.
@@ -258,7 +252,10 @@ impl<'a> FnCtxt<'a> {
                     if !seen_fields.insert(*field_name) {
                         self.diagnostics.push(GlyimDiagnostic::type_error(
                             span,
-                            format!("duplicate field `{}` in struct pattern", self.ctx.name_str(*field_name)),
+                            format!(
+                                "duplicate field `{}` in struct pattern",
+                                self.ctx.name_str(*field_name)
+                            ),
                         ));
                         return false;
                     }
@@ -281,7 +278,10 @@ impl<'a> FnCtxt<'a> {
                         if !fields.iter().any(|(name, _)| name == field_name) {
                             self.diagnostics.push(GlyimDiagnostic::type_error(
                                 span,
-                                format!("missing field `{}` in struct pattern", self.ctx.name_str(*field_name)),
+                                format!(
+                                    "missing field `{}` in struct pattern",
+                                    self.ctx.name_str(*field_name)
+                                ),
                             ));
                         }
                     }
@@ -295,18 +295,18 @@ impl<'a> FnCtxt<'a> {
     }
 
     /// Validate range pattern bounds: start <= end and type compatibility.
-        
+
     /// Validate range pattern bounds: start <= end and type compatibility.
     fn validate_range_pattern(
         &mut self,
         start: Option<&Literal>,
         end: Option<&Literal>,
-        inclusive: bool,
-        scrutinee_ty: Ty,
-        span: Span,
+        _inclusive: bool,
+        _scrutinee_ty: Ty,
+        _span: Span,
     ) -> bool {
         // Simple validation: check start <= end if both are integers.
-        if let (Some(start_lit), Some(end_lit)) = (start, end) {
+        if let (Some(_start_lit), Some(_end_lit)) = (start, end) {
             // Use the existing literal comparison logic.
             // For now, we just return true; the type checking already ensures compatibility.
             // TODO: implement proper start <= end comparison.
@@ -316,8 +316,7 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-
-fn check_slice_pattern(
+    fn check_slice_pattern(
         &mut self,
         prefix: &[Pattern],
         slice: Option<&Pattern>,
@@ -341,7 +340,7 @@ fn check_slice_pattern(
                         ));
                         return false;
                     }
-                    if let Some(_) = slice {
+                    if slice.is_some() {
                         // If there is a slice pattern, the total matched elements can be any length.
                         // We can check that prefix+suffix <= array_len.
                         if total_pattern_len > array_len {

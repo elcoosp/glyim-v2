@@ -5,12 +5,12 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::AdtId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::{IntTy, TargetInfo};
+use glyim_layout::FieldsShape;
+use glyim_layout::LayoutComputer;
+use glyim_layout::SimpleLayoutComputer;
+use glyim_layout::VariantsShape;
 use glyim_type::{AdtDef, AdtKind, FieldDef, Ty, TyCtxMut, TyKind, VariantDef};
 use rand::Rng;
-use glyim_layout::SimpleLayoutComputer;
-use glyim_layout::FieldsShape;
-use glyim_layout::VariantsShape;
-use glyim_layout::LayoutComputer;
 
 fn build_random_ty(ctx: &mut TyCtxMut, rng: &mut impl Rng, depth: u32) -> Ty {
     if depth > 3 {
@@ -23,7 +23,11 @@ fn build_random_ty(ctx: &mut TyCtxMut, rng: &mut impl Rng, depth: u32) -> Ty {
         3 => ctx.mk_ty(TyKind::Bool),
         4 => {
             let inner = build_random_ty(ctx, rng, depth + 1);
-            ctx.mk_ref(glyim_type::Region::Erased, inner, glyim_core::primitives::Mutability::Not)
+            ctx.mk_ref(
+                glyim_type::Region::Erased,
+                inner,
+                glyim_core::primitives::Mutability::Not,
+            )
         }
         5 => {
             let inner = build_random_ty(ctx, rng, depth + 1);
@@ -43,7 +47,11 @@ fn build_random_ty(ctx: &mut TyCtxMut, rng: &mut impl Rng, depth: u32) -> Ty {
             let count = rng.gen_range(1..4);
             let mut args = Vec::new();
             for _ in 0..count {
-                args.push(glyim_type::GenericArg::Ty(build_random_ty(ctx, rng, depth + 1)));
+                args.push(glyim_type::GenericArg::Ty(build_random_ty(
+                    ctx,
+                    rng,
+                    depth + 1,
+                )));
             }
             let subst = ctx.intern_substitution(args);
             ctx.mk_ty(TyKind::Tuple(subst))
@@ -91,11 +99,21 @@ fn fuzz_random_adt_layouts() {
 
         // Compute layout using the standard SimpleLayoutComputer.
         let computer = SimpleLayoutComputer::new(&frozen, target.clone());
-        let layout = if let Ok(l) = computer.layout_of(ty) { l } else { return };
+        let layout = if let Ok(l) = computer.layout_of(ty) {
+            l
+        } else {
+            return;
+        };
 
         // Verify basic invariants.
-        assert!(layout.align.0.is_power_of_two(), "Alignment must be power of two");
-        assert!(layout.align.0 >= 1 && layout.align.0 <= 64, "Alignment within limits");
+        assert!(
+            layout.align.0.is_power_of_two(),
+            "Alignment must be power of two"
+        );
+        assert!(
+            layout.align.0 >= 1 && layout.align.0 <= 64,
+            "Alignment within limits"
+        );
         assert!(layout.size.0 >= 0, "Size non-negative");
         if field_count == 0 {
             assert_eq!(layout.size.0, 0, "Empty struct should have size 0");
@@ -154,7 +172,8 @@ fn fuzz_random_enum_layouts() {
             });
         }
         // Build a flat field list for the ADT (just for registration).
-        let all_fields: Vec<FieldDef> = variants.iter()
+        let all_fields: Vec<FieldDef> = variants
+            .iter()
             .flat_map(|v| v.fields.iter().cloned())
             .collect();
         let adt_def = AdtDef {
@@ -170,7 +189,11 @@ fn fuzz_random_enum_layouts() {
         let frozen = ctx_mut.freeze();
 
         let computer = SimpleLayoutComputer::new(&frozen, target.clone());
-        let layout = if let Ok(l) = computer.layout_of(ty) { l } else { return };
+        let layout = if let Ok(l) = computer.layout_of(ty) {
+            l
+        } else {
+            return;
+        };
 
         // Check alignment and size invariants.
         assert!(layout.align.0.is_power_of_two());
@@ -178,8 +201,17 @@ fn fuzz_random_enum_layouts() {
 
         // For enums, the variants shape should be Multiple.
         match layout.variants {
-            VariantsShape::Multiple { tag: _, variants: variant_layouts, tag_encoding: _, .. } => {
-                assert_eq!(variant_layouts.len(), variant_count, "Variant count mismatch");
+            VariantsShape::Multiple {
+                tag: _,
+                variants: variant_layouts,
+                tag_encoding: _,
+                ..
+            } => {
+                assert_eq!(
+                    variant_layouts.len(),
+                    variant_count,
+                    "Variant count mismatch"
+                );
                 // Tag type can be non-integer for niche-optimized enums, so we skip type check.
                 // Check that variant layouts are valid.
                 for vl in &variant_layouts {
@@ -189,7 +221,9 @@ fn fuzz_random_enum_layouts() {
             VariantsShape::Single { index } if variant_count == 1 => {
                 assert_eq!(index, 0);
             }
-            _ => panic!("Enum should have Multiple variant shape for multiple variants, or Single for single variant"),
+            _ => panic!(
+                "Enum should have Multiple variant shape for multiple variants, or Single for single variant"
+            ),
         }
     }
 }
@@ -207,7 +241,11 @@ fn test_niche_encoding_option_like() {
         index: 0,
         name: ctx_mut.resolver().intern("T"),
     }));
-    let ref_ty = ctx_mut.mk_ref(glyim_type::Region::Erased, t_var, glyim_core::primitives::Mutability::Not);
+    let ref_ty = ctx_mut.mk_ref(
+        glyim_type::Region::Erased,
+        t_var,
+        glyim_core::primitives::Mutability::Not,
+    );
     let some_fields = vec![FieldDef {
         name: ctx_mut.resolver().intern("value"),
         ty: ref_ty,
@@ -246,14 +284,23 @@ fn test_niche_encoding_option_like() {
     let frozen = ctx_mut.freeze();
 
     let computer = SimpleLayoutComputer::new(&frozen, target.clone());
-    let layout = if let Ok(l) = computer.layout_of(ty) { l } else { return };
+    let layout = if let Ok(l) = computer.layout_of(ty) {
+        l
+    } else {
+        return;
+    };
 
     // The enum should have a Multiple variant shape with niche encoding.
     match layout.variants {
-        VariantsShape::Multiple { tag, tag_encoding, .. } => {
+        VariantsShape::Multiple {
+            tag, tag_encoding, ..
+        } => {
             // Niche encoding: the tag should be the same as the field type (reference).
             // The tag value should be a niche (e.g., null for references).
-            if let glyim_layout::TagEncoding::Niche { untagged_variant, .. } = tag_encoding {
+            if let glyim_layout::TagEncoding::Niche {
+                untagged_variant, ..
+            } = tag_encoding
+            {
                 // The untagged variant can be either 0 (Some) or 1 (None) depending on layout algorithm.
                 assert!(untagged_variant == 0 || untagged_variant == 1);
             } else {

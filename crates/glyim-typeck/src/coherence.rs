@@ -72,12 +72,14 @@ impl<'a> CoherenceChecker<'a> {
         // Otherwise, structural comparison.
         match (ctx.ty_kind(a), ctx.ty_kind(b)) {
             (glyim_type::TyKind::Adt(id_a, _), glyim_type::TyKind::Adt(id_b, _)) => id_a == id_b,
-            (glyim_type::TyKind::Ref(_, inner_a, mut_a), glyim_type::TyKind::Ref(_, inner_b, mut_b)) => {
-                mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b)
-            }
-            (glyim_type::TyKind::RawPtr(inner_a, mut_a), glyim_type::TyKind::RawPtr(inner_b, mut_b)) => {
-                mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b)
-            }
+            (
+                glyim_type::TyKind::Ref(_, inner_a, mut_a),
+                glyim_type::TyKind::Ref(_, inner_b, mut_b),
+            ) => mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b),
+            (
+                glyim_type::TyKind::RawPtr(inner_a, mut_a),
+                glyim_type::TyKind::RawPtr(inner_b, mut_b),
+            ) => mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b),
             (glyim_type::TyKind::Slice(inner_a), glyim_type::TyKind::Slice(inner_b)) => {
                 self.structural_tys_match(ctx, *inner_a, *inner_b)
             }
@@ -90,14 +92,15 @@ impl<'a> CoherenceChecker<'a> {
                 if args_a.len() != args_b.len() {
                     return false;
                 }
-                args_a.iter().zip(args_b.iter()).all(|(ga, gb)| {
-                    match (ga, gb) {
+                args_a
+                    .iter()
+                    .zip(args_b.iter())
+                    .all(|(ga, gb)| match (ga, gb) {
                         (glyim_type::GenericArg::Ty(ta), glyim_type::GenericArg::Ty(tb)) => {
                             self.structural_tys_match(ctx, *ta, *tb)
                         }
                         _ => false,
-                    }
-                })
+                    })
             }
             (glyim_type::TyKind::Never, glyim_type::TyKind::Never)
             | (glyim_type::TyKind::Unit, glyim_type::TyKind::Unit)
@@ -119,25 +122,19 @@ impl<'a> CoherenceChecker<'a> {
             TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => {
                 self.is_blanket_impl(ctx, *inner)
             }
-            TyKind::Slice(inner) | TyKind::Array(inner, _) => {
-                self.is_blanket_impl(ctx, *inner)
-            }
+            TyKind::Slice(inner) | TyKind::Array(inner, _) => self.is_blanket_impl(ctx, *inner),
             TyKind::Tuple(substs) => {
                 let args = ctx.substitution_args(*substs);
-                args.iter().any(|arg| {
-                    match arg {
-                        glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
-                        _ => false,
-                    }
+                args.iter().any(|arg| match arg {
+                    glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
+                    _ => false,
                 })
             }
             TyKind::Adt(_, substs) => {
                 let args = ctx.substitution_args(*substs);
-                args.iter().any(|arg| {
-                    match arg {
-                        glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
-                        _ => false,
-                    }
+                args.iter().any(|arg| match arg {
+                    glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
+                    _ => false,
                 })
             }
             _ => false,
@@ -177,17 +174,19 @@ impl<'a> CoherenceChecker<'a> {
             self.check_orphan_rule(&header)?;
         }
 
-        if let Some(trait_def_id) = header.trait_def_id {
-            if let Some(errors) = self.check_overlap(trait_def_id, &header, ctx, infer) {
+        if let Some(trait_def_id) = header.trait_def_id
+            && let Some(errors) = self.check_overlap(trait_def_id, &header, ctx, infer) {
                 return Err(errors);
             }
-        }
 
         self.register(header);
         Ok(())
     }
 
-    pub(crate) fn check_orphan_rule(&self, header: &ResolvedImplHeader) -> Result<(), Vec<GlyimDiagnostic>> {
+    pub(crate) fn check_orphan_rule(
+        &self,
+        header: &ResolvedImplHeader,
+    ) -> Result<(), Vec<GlyimDiagnostic>> {
         let trait_is_local = header
             .trait_name
             .and_then(|n| self.resolve_name_in_any_module(n))
@@ -237,10 +236,14 @@ impl<'a> CoherenceChecker<'a> {
 
         for old in existing {
             // Negative impls: same polarity negative doesn't conflict.
-            if new_header.polarity == ImplPolarity::Negative && old.polarity == ImplPolarity::Negative {
+            if new_header.polarity == ImplPolarity::Negative
+                && old.polarity == ImplPolarity::Negative
+            {
                 continue;
             }
-            if old.polarity == ImplPolarity::Negative && new_header.polarity == ImplPolarity::Positive {
+            if old.polarity == ImplPolarity::Negative
+                && new_header.polarity == ImplPolarity::Positive
+            {
                 continue;
             }
 

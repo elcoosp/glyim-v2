@@ -26,7 +26,12 @@ pub(crate) fn check_llvm_version_and_passes() {
             version.0, version.1, version.2
         );
     }
-    tracing::info!("Using LLVM version: {}.{}.{}", version.0, version.1, version.2);
+    tracing::info!(
+        "Using LLVM version: {}.{}.{}",
+        version.0,
+        version.1,
+        version.2
+    );
 }
 
 pub(crate) fn run_llvm_passes<'ctx>(

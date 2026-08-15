@@ -8,10 +8,10 @@ pub fn rename_symbol(
     file_map: &FileMap,
     params: &RenameParams,
 ) -> Option<WorkspaceEdit> {
+    use lsp_types::{Position, Range, TextEdit, Uri, WorkspaceEdit};
     use std::collections::HashMap;
-    use lsp_types::{TextEdit, WorkspaceEdit, Range, Position, Uri};
-    use url::Url;
     use std::str::FromStr;
+    use url::Url;
 
     let uri = &params.text_document_position.text_document.uri;
     let path = Url::parse(uri.as_str()).ok()?.to_file_path().ok()?;
@@ -49,29 +49,30 @@ pub fn rename_symbol(
 
         for r in references {
             if let Some(ref_path) = file_map.path(r.file_id)
-                && let Ok(ref_url) = Url::from_file_path(ref_path) {
-                    let ref_uri = Uri::from_str(ref_url.as_ref()).ok()?;
-                    if let Some(sm_ref) = source_maps.get(&r.file_id)
-                        && let Some(((start_line, start_col), (end_line, end_col))) =
-                            sm_ref.span_to_position(r.span.lo.to_usize(), r.span.hi.to_usize())
-                        {
-                            let range = Range {
-                                start: Position {
-                                    line: start_line as u32,
-                                    character: start_col as u32,
-                                },
-                                end: Position {
-                                    line: end_line as u32,
-                                    character: end_col as u32,
-                                },
-                            };
-                            let edit = TextEdit {
-                                range,
-                                new_text: params.new_name.clone(),
-                            };
-                            changes.entry(ref_uri).or_default().push(edit);
-                        }
+                && let Ok(ref_url) = Url::from_file_path(ref_path)
+            {
+                let ref_uri = Uri::from_str(ref_url.as_ref()).ok()?;
+                if let Some(sm_ref) = source_maps.get(&r.file_id)
+                    && let Some(((start_line, start_col), (end_line, end_col))) =
+                        sm_ref.span_to_position(r.span.lo.to_usize(), r.span.hi.to_usize())
+                {
+                    let range = Range {
+                        start: Position {
+                            line: start_line as u32,
+                            character: start_col as u32,
+                        },
+                        end: Position {
+                            line: end_line as u32,
+                            character: end_col as u32,
+                        },
+                    };
+                    let edit = TextEdit {
+                        range,
+                        new_text: params.new_name.clone(),
+                    };
+                    changes.entry(ref_uri).or_default().push(edit);
                 }
+            }
         }
         if changes.is_empty() {
             return None;

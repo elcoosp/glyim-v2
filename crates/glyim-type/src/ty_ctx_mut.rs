@@ -440,12 +440,11 @@ impl TyCtxMut {
         false
     }
 
-
     /// Register built-in range types as ADTs.
     pub fn register_builtin_ranges(&mut self) {
-        use glyim_core::def_id::AdtId;
-        use glyim_core::arena::IndexVec;
         use crate::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
+        use glyim_core::arena::IndexVec;
+        use glyim_core::def_id::AdtId;
 
         // Helper to create a struct AdtDef with given field types.
         // This is a plain function, not a closure, so it doesn't capture self.
@@ -453,7 +452,10 @@ impl TyCtxMut {
         // We'll just create each def manually.
 
         // Create a type variable for T.
-        let t_var = self.mk_ty(TyKind::Param(ParamTy { index: 0, name: self.resolver.intern("T") }));
+        let t_var = self.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: self.resolver.intern("T"),
+        }));
 
         // Helper to make field defs for a list of types.
         // We'll call self.resolver.intern directly inside the loop.
@@ -502,10 +504,13 @@ impl TyCtxMut {
         // Register RangeToInclusive<T> (end) - ID 1004
         let def = make_struct_def(vec![t_var], self);
         self.register_adt(AdtId::from_raw(1004), def);
-    
+
         // Register UnsafeCell<T> - ID 1005
         // This is a special ADT for interior mutability.
-        let unsafe_cell_t_var = self.mk_ty(TyKind::Param(ParamTy { index: 0, name: self.resolver.intern("T") }));
+        let unsafe_cell_t_var = self.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: self.resolver.intern("T"),
+        }));
         let unsafe_cell_def = {
             let mut field_defs = IndexVec::new();
             // UnsafeCell has a single field: value of type T.
@@ -526,7 +531,7 @@ impl TyCtxMut {
         self.register_adt(AdtId::from_raw(1005), unsafe_cell_def);
         // Mark it as interior mutable.
         self.mark_adt_interior_mutable(AdtId::from_raw(1005));
-}
+    }
 }
 
 impl TypeLookup for TyCtxMut {
@@ -571,8 +576,6 @@ impl TypeLookup for TyCtxMut {
     }
 }
 
-
-
 #[cfg(test)]
 mod interior_mutability_tests {
     use super::*;
@@ -591,7 +594,10 @@ mod interior_mutability_tests {
     fn test_cell_is_interior_mutable() {
         // Cell<T> contains UnsafeCell<T> internally.
         let mut ctx_mut = TyCtxMut::new(Interner::new());
-        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy { index: 0, name: ctx_mut.resolver.intern("T") }));
+        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: ctx_mut.resolver.intern("T"),
+        }));
         // Build substitution for UnsafeCell<T>
         let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(t_var)]);
         let unsafe_cell_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(1005), subst));
@@ -647,7 +653,10 @@ mod interior_mutability_tests {
     fn test_ref_cell_is_interior_mutable() {
         // RefCell<T> contains UnsafeCell<T> internally.
         let mut ctx_mut = TyCtxMut::new(Interner::new());
-        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy { index: 0, name: ctx_mut.resolver.intern("T") }));
+        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: ctx_mut.resolver.intern("T"),
+        }));
         let subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(t_var)]);
         let unsafe_cell_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(1005), subst));
         let ref_cell_def = {

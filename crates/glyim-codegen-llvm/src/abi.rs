@@ -74,9 +74,7 @@ impl<'a> FullLayoutComputer<'a> {
                     PassMode::Indirect { meta_attrs: false }
                 }
             }
-            glyim_core::primitives::TargetAbi::Wasm32 => {
-                PassMode::Direct
-            }
+            glyim_core::primitives::TargetAbi::Wasm32 => PassMode::Direct,
         }
     }
 }
@@ -163,7 +161,8 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                         }
 
                         let max_size = variant_layouts.iter().map(|l| l.size.0).max().unwrap_or(0);
-                        let max_align = variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
+                        let max_align =
+                            variant_layouts.iter().map(|l| l.align.0).max().unwrap_or(1);
                         let max_align = Align::from_bytes(max_align);
 
                         let n_variants = adt_def.variants.len() as u64;
@@ -288,14 +287,12 @@ impl LayoutComputer for FullLayoutComputer<'_> {
     }
 }
 
-
-
 #[cfg(test)]
 mod abi_tests {
     use super::*;
+    use glyim_core::interner::Interner;
     use glyim_core::primitives::TargetInfo;
     use glyim_type::{Ty, TyCtxMut, TyKind};
-    use glyim_core::interner::Interner;
 
     // Shared test context.
     fn test_context() -> (TyCtx, TyCtxMut) {

@@ -99,124 +99,126 @@ impl MovePathArena {
 
     /// Find the move path for a given place.
     fn find(&mut self, place: &Place) -> Option<MovePathIdx> {
-    let root_idx = *self.root_index.get(place.local.to_raw() as usize)?;
+        let root_idx = *self.root_index.get(place.local.to_raw() as usize)?;
 
-    if place.projection.is_empty() {
-        return root_idx;
-    }
+        if place.projection.is_empty() {
+            return root_idx;
+        }
 
-    let mut current_idx = root_idx?;
-    for proj_elem in place.projection.iter() {
-        match proj_elem {
-            ProjectionElem::Index(_) => {
-                // For Index projections, we treat them as the same path (all indices share a path).
-                // We'll just continue with the current path.
-                // However, we might want to create a path for each index? Usually all indices are treated as the same path.
-                // So we keep current_idx unchanged.
-            }
-            ProjectionElem::Downcast(variant_idx) => {
-                let current = self.get(current_idx);
-                let mut found = None;
-                for &child_idx in &current.children {
-                    let child = self.get(child_idx);
-                    if let Some(ProjectionElem::Downcast(v)) = child.place.projection.last()
-                        && *v == *variant_idx
-                    {
-                        found = Some(child_idx);
-                        break;
+        let mut current_idx = root_idx?;
+        for proj_elem in place.projection.iter() {
+            match proj_elem {
+                ProjectionElem::Index(_) => {
+                    // For Index projections, we treat them as the same path (all indices share a path).
+                    // We'll just continue with the current path.
+                    // However, we might want to create a path for each index? Usually all indices are treated as the same path.
+                    // So we keep current_idx unchanged.
+                }
+                ProjectionElem::Downcast(variant_idx) => {
+                    let current = self.get(current_idx);
+                    let mut found = None;
+                    for &child_idx in &current.children {
+                        let child = self.get(child_idx);
+                        if let Some(ProjectionElem::Downcast(v)) = child.place.projection.last()
+                            && *v == *variant_idx
+                        {
+                            found = Some(child_idx);
+                            break;
+                        }
+                    }
+                    match found {
+                        Some(idx) => current_idx = idx,
+                        None => {
+                            let mut new_proj = self.get(current_idx).place.projection.to_vec();
+                            new_proj.push(ProjectionElem::Downcast(*variant_idx));
+                            let new_path = MovePath {
+                                place: Place {
+                                    local: place.local,
+                                    projection: new_proj.into_boxed_slice(),
+                                },
+                                parent: Some(current_idx),
+                                children: Vec::new(),
+                            };
+                            let new_idx = self.push(new_path);
+                            self.get_mut(current_idx).children.push(new_idx);
+                            current_idx = new_idx;
+                        }
                     }
                 }
-                match found {
-                    Some(idx) => current_idx = idx,
-                    None => {
-                        let mut new_proj = self
-                            .get(current_idx)
-                            .place
-                            .projection.to_vec();
-                        new_proj.push(ProjectionElem::Downcast(*variant_idx));
-                        let new_path = MovePath {
-                            place: Place {
-                                local: place.local,
-                                projection: new_proj.into_boxed_slice(),
-                            },
-                            parent: Some(current_idx),
-                            children: Vec::new(),
-                        };
-                        let new_idx = self.push(new_path);
-                        self.get_mut(current_idx).children.push(new_idx);
-                        current_idx = new_idx;
+                ProjectionElem::Field(_) => {
+                    let current = self.get(current_idx);
+                    let mut found = None;
+                    for &child_idx in &current.children {
+                        let child = self.get(child_idx);
+                        if let Some(ProjectionElem::Field(f)) = child.place.projection.last()
+                            && let ProjectionElem::Field(g) = proj_elem
+                            && f == g
+                        {
+                            found = Some(child_idx);
+                            break;
+                        }
+                    }
+                    match found {
+                        Some(idx) => current_idx = idx,
+                        None => return Some(current_idx),
                     }
                 }
-            }
-            ProjectionElem::Field(_) => {
-                let current = self.get(current_idx);
-                let mut found = None;
-                for &child_idx in &current.children {
-                    let child = self.get(child_idx);
-                    if let Some(ProjectionElem::Field(f)) = child.place.projection.last()
-                        && let ProjectionElem::Field(g) = proj_elem
-                        && f == g
-                    {
-                        found = Some(child_idx);
-                        break;
-                    }
-                }
-                match found {
-                    Some(idx) => current_idx = idx,
-                    None => return Some(current_idx),
-                }
-            }
-            ProjectionElem::ConstantIndex { offset, from_end: false, .. } => {
-                let current = self.get(current_idx);
-                let mut found = None;
-                for &child_idx in &current.children {
-                    let child = self.get(child_idx);
-                    if let Some(ProjectionElem::ConstantIndex { offset: o, from_end: false, .. }) = child.place.projection.last()
-                        && *o == *offset
-                    {
-                        found = Some(child_idx);
-                        break;
-                    }
-                }
-                match found {
-                    Some(idx) => current_idx = idx,
-                    None => {
-                        let mut new_proj = self
-                            .get(current_idx)
-                            .place
-                            .projection.to_vec();
-                        new_proj.push(ProjectionElem::ConstantIndex {
-                            offset: *offset,
-                            min_length: 0,
+                ProjectionElem::ConstantIndex {
+                    offset,
+                    from_end: false,
+                    ..
+                } => {
+                    let current = self.get(current_idx);
+                    let mut found = None;
+                    for &child_idx in &current.children {
+                        let child = self.get(child_idx);
+                        if let Some(ProjectionElem::ConstantIndex {
+                            offset: o,
                             from_end: false,
-                        });
-                        let new_path = MovePath {
-                            place: Place {
-                                local: place.local,
-                                projection: new_proj.into_boxed_slice(),
-                            },
-                            parent: Some(current_idx),
-                            children: Vec::new(),
-                        };
-                        let new_idx = self.push(new_path);
-                        self.get_mut(current_idx).children.push(new_idx);
-                        current_idx = new_idx;
+                            ..
+                        }) = child.place.projection.last()
+                            && *o == *offset
+                        {
+                            found = Some(child_idx);
+                            break;
+                        }
+                    }
+                    match found {
+                        Some(idx) => current_idx = idx,
+                        None => {
+                            let mut new_proj = self.get(current_idx).place.projection.to_vec();
+                            new_proj.push(ProjectionElem::ConstantIndex {
+                                offset: *offset,
+                                min_length: 0,
+                                from_end: false,
+                            });
+                            let new_path = MovePath {
+                                place: Place {
+                                    local: place.local,
+                                    projection: new_proj.into_boxed_slice(),
+                                },
+                                parent: Some(current_idx),
+                                children: Vec::new(),
+                            };
+                            let new_idx = self.push(new_path);
+                            self.get_mut(current_idx).children.push(new_idx);
+                            current_idx = new_idx;
+                        }
                     }
                 }
-            }
-            ProjectionElem::ConstantIndex { from_end: true, .. } |
-            ProjectionElem::Subslice { .. } => {
-                // For from_end constant indices and subslices, we track at the ancestor.
-                return Some(current_idx);
-            }
-            ProjectionElem::Deref => {
-                // Deref is tracked at the ancestor.
-                return Some(current_idx);
+                ProjectionElem::ConstantIndex { from_end: true, .. }
+                | ProjectionElem::Subslice { .. } => {
+                    // For from_end constant indices and subslices, we track at the ancestor.
+                    return Some(current_idx);
+                }
+                ProjectionElem::Deref => {
+                    // Deref is tracked at the ancestor.
+                    return Some(current_idx);
+                }
             }
         }
+        Some(current_idx)
     }
-    Some(current_idx)
-}
 
     /// Find the root move path for a local (no projections).
     fn find_root(&self, local: LocalIdx) -> Option<MovePathIdx> {
@@ -276,7 +278,13 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
             // Try to resolve the const length.
             match &len.kind {
                 glyim_type::ConstKind::Uint(n) => Some(*n as u32),
-                glyim_type::ConstKind::Int(n) => if *n >= 0 { Some(*n as u32) } else { None },
+                glyim_type::ConstKind::Int(n) => {
+                    if *n >= 0 {
+                        Some(*n as u32)
+                    } else {
+                        None
+                    }
+                }
                 // For generic/associated consts, we could try to resolve via substitution,
                 // but we don't have the substs here. Return None for now.
                 _ => None,

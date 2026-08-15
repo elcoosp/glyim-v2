@@ -261,7 +261,7 @@ impl<'a> FnCtxt<'a> {
                 iterable,
                 body,
             } => {
-                let (iter_expr, iter_ty) = self.check_expr(*iterable);
+                let (iter_expr, _iter_ty) = self.check_expr(*iterable);
                 // Resolve Iterator::Item for the iterable type.
                 // For now, we use a fresh inference variable to represent the item type;
                 // the actual resolution will be done by the trait solver when lowering.
@@ -506,7 +506,8 @@ impl<'a> FnCtxt<'a> {
                 } else {
                     // Regular indexing: check integer type.
                     if !matches!(self.ctx.ty_kind(idx_ty), TyKind::Int(_) | TyKind::Uint(_))
-                        && idx_ty != Ty::ERROR {
+                        && idx_ty != Ty::ERROR
+                    {
                         self.diagnostics.push(GlyimDiagnostic::type_error(
                             span,
                             "index expression must have integer type",
@@ -723,10 +724,13 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Closure { params, body } => {
                 // 1. Infer parameter types from annotations or fresh inference variables.
-                let _param_tys: Vec<Ty> = params.iter().map(|_pat_id| {
-                    // TODO: get type annotation from pattern (if any)
-                    self.fresh_infer_ty()
-                }).collect();
+                let _param_tys: Vec<Ty> = params
+                    .iter()
+                    .map(|_pat_id| {
+                        // TODO: get type annotation from pattern (if any)
+                        self.fresh_infer_ty()
+                    })
+                    .collect();
 
                 // 2. Analyze captures: free variables used in the closure body.
                 let captures = self.analyze_captures(*body, span);
@@ -737,13 +741,14 @@ impl<'a> FnCtxt<'a> {
 
                 // 4. Build THIR for closure: capture list and body.
                 let (body_expr, _) = self.check_expr(*body);
-                let capture_thir: Vec<thir::Capture> = captures.iter().map(|(var_id, kind, ty)| {
-                    thir::Capture {
+                let capture_thir: Vec<thir::Capture> = captures
+                    .iter()
+                    .map(|(var_id, kind, ty)| thir::Capture {
                         local: *var_id,
                         kind: *kind,
                         ty: *ty,
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 let closure_expr = thir::Expr {
                     kind: thir::ExprKind::Closure {
@@ -812,7 +817,11 @@ impl<'a> FnCtxt<'a> {
                 Ty::NEVER,
             ),
 
-            Expr::Range { start, end, inclusive } => {
+            Expr::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 let start_expr = start.map(|id| Box::new(self.check_expr(id).0));
                 let end_expr = end.map(|id| Box::new(self.check_expr(id).0));
                 let range_ty = self.fresh_infer_ty();
@@ -951,10 +960,14 @@ impl<'a> FnCtxt<'a> {
     }
 
     /// Analyze free variables in a closure body, classifying each capture.
-    fn analyze_captures(&mut self, _body_expr: ExprId, _span: Span) -> Vec<(thir::LocalVarId, thir::CaptureKind, Ty)> {
-        let captures = Vec::new();
+    fn analyze_captures(
+        &mut self,
+        _body_expr: ExprId,
+        _span: Span,
+    ) -> Vec<(thir::LocalVarId, thir::CaptureKind, Ty)> {
+        
         // Placeholder: walk the body and collect free variables.
         // For now, return empty.
-        captures
+        Vec::new()
     }
 }

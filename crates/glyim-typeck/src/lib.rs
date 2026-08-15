@@ -83,7 +83,9 @@ pub fn typeck_crate(
                 span,
             );
 
-            if let Err(mut cohesion_diags) = coherence.check_and_register(header, &mut ctx, &mut infer) {
+            if let Err(mut cohesion_diags) =
+                coherence.check_and_register(header, &mut ctx, &mut infer)
+            {
                 diagnostics.append(&mut cohesion_diags);
             }
         }
@@ -269,7 +271,7 @@ fn check_body(
         owner,
         expr_cache: Default::default(),
         def_map,
-            trait_ctx,
+        trait_ctx,
     };
 
     let thir_body = fn_ctxt.check(params);

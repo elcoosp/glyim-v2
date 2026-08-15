@@ -26,7 +26,6 @@ impl std::fmt::Debug for CompileOutput {
     }
 }
 
-
 pub trait TestCompiler: Send + Sync {
     fn compile(&self, source: &str, file_id: FileId, flags: &[String]) -> CompileOutput;
 }

@@ -16,13 +16,12 @@
 //! All functions return negative values on error. See the `FS_E*` constants.
 //! Success is indicated by `FS_OK` (0) or a non-negative fd / byte count.
 
+use libc;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
-use libc;
-
 
 // ---------------------------------------------------------------------------
 // Error codes
@@ -154,7 +153,8 @@ unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
         // We'll do a simple conversion: assume bytes are little-endian UTF-16.
         // This is a fallback; most real-world Windows paths are UTF-16.
         if bytes.len() % 2 == 0 {
-            let u16_vals: Vec<u16> = bytes.chunks_exact(2)
+            let u16_vals: Vec<u16> = bytes
+                .chunks_exact(2)
                 .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                 .collect();
             // Filter out null terminators.
@@ -205,11 +205,10 @@ fn io_err_to_errno(err: &std::io::Error) -> i32 {
 // FFI functions
 // ---------------------------------------------------------------------------
 
-
 // Cleanup function for process exit.
 extern "C" fn cleanup_fs_table() {
-    if let Some(table) = FS_TABLE.get() {
-        if let Ok(mut guard) = table.lock() {
+    if let Some(table) = FS_TABLE.get()
+        && let Ok(mut guard) = table.lock() {
             // Collect all fds to close.
             let fds: Vec<i32> = guard.files.keys().copied().collect();
             for fd in fds {
@@ -218,7 +217,6 @@ extern "C" fn cleanup_fs_table() {
                 guard.files.remove(&fd);
             }
         }
-    }
 }
 
 // Register the cleanup handler once.
@@ -247,7 +245,8 @@ fn register_cleanup() {
 ///
 /// - `path` must point to valid UTF-8 data of exactly `path_len` bytes
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: u32) -> i32 {    register_cleanup();
+pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: u32) -> i32 {
+    register_cleanup();
 
     // Validate flag combinations.
     let access = flags & 0x3;

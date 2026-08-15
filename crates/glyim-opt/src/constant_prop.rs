@@ -3,9 +3,9 @@
 //! Supports Int, Uint, Bool, Char, and Float constants.
 
 use glyim_mir::*;
+use glyim_span::Span;
 use glyim_type::TyCtx;
 use std::collections::HashMap;
-use glyim_span::Span;
 
 type BlockMap = HashMap<LocalIdx, Option<MirConst>>;
 
@@ -34,21 +34,19 @@ fn maps_equal(a: &BlockMap, b: &BlockMap) -> bool {
     for (k, v) in a {
         match b.get(k) {
             None => return false,
-            Some(bv) => {
-                match (v, bv) {
-                    (None, None) => continue,
-                    (Some(c1), Some(c2)) => {
-                        if !const_eq(c1, c2) {
-                            return false;
-                        }
+            Some(bv) => match (v, bv) {
+                (None, None) => continue,
+                (Some(c1), Some(c2)) => {
+                    if !const_eq(c1, c2) {
+                        return false;
                     }
-                    _ => return false,
                 }
-            }
+                _ => return false,
+            },
         }
     }
     // Also check keys in b that are not in a (though len check already covers it, but do it for safety)
-    for (k, _) in b {
+    for k in b.keys() {
         if !a.contains_key(k) {
             return false;
         }
@@ -103,10 +101,18 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
                         glyim_core::primitives::BinOp::Div => {
-                            if r != 0 { l / r } else { 0 }
+                            if r != 0 {
+                                l / r
+                            } else {
+                                0
+                            }
                         }
                         glyim_core::primitives::BinOp::Rem => {
-                            if r != 0 { l % r } else { 0 }
+                            if r != 0 {
+                                l % r
+                            } else {
+                                0
+                            }
                         }
                         _ => return None,
                     };
@@ -122,10 +128,18 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                         glyim_core::primitives::BinOp::Sub => l - r,
                         glyim_core::primitives::BinOp::Mul => l * r,
                         glyim_core::primitives::BinOp::Div => {
-                            if r != 0 { l / r } else { 0 }
+                            if r != 0 {
+                                l / r
+                            } else {
+                                0
+                            }
                         }
                         glyim_core::primitives::BinOp::Rem => {
-                            if r != 0 { l % r } else { 0 }
+                            if r != 0 {
+                                l % r
+                            } else {
+                                0
+                            }
                         }
                         _ => return None,
                     };
@@ -157,25 +171,53 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                         glyim_core::primitives::BinOp::Sub => lf - rf,
                         glyim_core::primitives::BinOp::Mul => lf * rf,
                         glyim_core::primitives::BinOp::Div => {
-                            if rf != 0.0 { lf / rf } else { 0.0 }
+                            if rf != 0.0 {
+                                lf / rf
+                            } else {
+                                0.0
+                            }
                         }
                         glyim_core::primitives::BinOp::Eq => {
-                            if lf == rf { 1.0 } else { 0.0 }
+                            if lf == rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
                         }
                         glyim_core::primitives::BinOp::Ne => {
-                            if lf != rf { 1.0 } else { 0.0 }
+                            if lf != rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
                         }
                         glyim_core::primitives::BinOp::Lt => {
-                            if lf < rf { 1.0 } else { 0.0 }
+                            if lf < rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
                         }
                         glyim_core::primitives::BinOp::Gt => {
-                            if lf > rf { 1.0 } else { 0.0 }
+                            if lf > rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
                         }
                         glyim_core::primitives::BinOp::LtEq => {
-                            if lf <= rf { 1.0 } else { 0.0 }
+                            if lf <= rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
                         }
                         glyim_core::primitives::BinOp::GtEq => {
-                            if lf >= rf { 1.0 } else { 0.0 }
+                            if lf >= rf {
+                                1.0
+                            } else {
+                                0.0
+                            }
                         }
                         _ => return None,
                     };
