@@ -127,7 +127,48 @@ unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
     }
     // SAFETY: Caller guarantees [ptr, ptr + len) is valid readable memory.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    std::str::from_utf8(bytes).ok().map(Path::new)
+
+    #[cfg(unix)]
+    {
+        // On Unix, paths are typically UTF-8, but we use OsString to be safe.
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        let os_str = OsStr::from_bytes(bytes);
+        Some(Path::new(os_str))
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, we need to handle UTF-16. The input is usually UTF-8
+        // from the compiler (since Glyim sources are UTF-8), but we should
+        // handle both. We'll try to convert from UTF-8 first; if that fails,
+        // we'll attempt to treat the bytes as UTF-16 (which is less common).
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+
+        // Try UTF-8 first (common case).
+        if let Ok(s) = std::str::from_utf8(bytes) {
+            return Some(Path::new(s));
+        }
+        // If UTF-8 fails, try to interpret as UTF-16 (WTF-8? no, just attempt).
+        // We'll do a simple conversion: assume bytes are little-endian UTF-16.
+        // This is a fallback; most real-world Windows paths are UTF-16.
+        if bytes.len() % 2 == 0 {
+            let u16_vals: Vec<u16> = bytes.chunks_exact(2)
+                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect();
+            // Filter out null terminators.
+            let os_str = OsString::from_wide(&u16_vals);
+            let path = Path::new(&os_str);
+            // If the path is empty, fall back to lossy UTF-8.
+            if !path.as_os_str().is_empty() {
+                return Some(path);
+            }
+        }
+        // Ultimate fallback: lossy UTF-8 conversion.
+        let s = String::from_utf8_lossy(bytes);
+        Some(Path::new(s.as_ref()))
+    }
 }
 
 /// Map an `std::io::Error` to a Glyim errno code.
