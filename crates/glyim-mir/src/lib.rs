@@ -117,42 +117,50 @@ impl Place {
     pub fn ty(&self, ctx: &impl TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
         let mut ty = local_decls[self.local].ty;
 
+        
         for elem in self.projection.iter() {
             ty = match elem {
-                ProjectionElem::Deref => match ctx.ty_kind(ty) {
-                    TyKind::Ref(_, inner_ty, _) => *inner_ty,
-                    TyKind::RawPtr(inner_ty, _) => *inner_ty,
-                    _ => {
-                        tracing::error!("Place::ty(): Deref on non-pointer type");
-                        ctx.error_ty()
-                    }
-                },
-                ProjectionElem::Field(idx) => match ctx.ty_kind(ty) {
-                    TyKind::Tuple(substs) => {
-                        let args = ctx.substitution_args(*substs);
-                        if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
-                            *field_ty
-                        } else {
-                            tracing::error!("Place::ty(): Field index out of bounds for tuple");
+                ProjectionElem::Deref => {
+                    match ctx.ty_kind(ty) {
+                        TyKind::Ref(_, inner_ty, _) => *inner_ty,
+                        TyKind::RawPtr(inner_ty, _) => *inner_ty,
+                        _ => {
+                            tracing::error!("Place::ty(): Deref on non-pointer type");
                             ctx.error_ty()
                         }
                     }
-                    TyKind::Adt(adt_id, _substs) => ctx.field_ty(*adt_id, idx.to_raw() as usize),
-                    _ => {
-                        tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
-                        ctx.error_ty()
+                }
+                ProjectionElem::Field(idx) => {
+                    match ctx.ty_kind(ty) {
+                        TyKind::Tuple(substs) => {
+                            let args = ctx.substitution_args(*substs);
+                            if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
+                                *field_ty
+                            } else {
+                                tracing::error!("Place::ty(): Field index out of bounds for tuple");
+                                ctx.error_ty()
+                            }
+                        }
+                        TyKind::Adt(adt_id, _substs) => ctx.field_ty(*adt_id, idx.to_raw() as usize),
+                        _ => {
+                            tracing::error!("Place::ty(): Field projection on non-tuple/ADT type");
+                            ctx.error_ty()
+                        }
                     }
-                },
-                ProjectionElem::Index(_) => match ctx.ty_kind(ty) {
-                    TyKind::Array(inner_ty, _) => *inner_ty,
-                    TyKind::Slice(inner_ty) => *inner_ty,
-                    _ => {
-                        tracing::error!("Place::ty(): Index on non-array/slice type");
-                        ctx.error_ty()
+                }
+                ProjectionElem::Index(_) => {
+                    match ctx.ty_kind(ty) {
+                        TyKind::Array(inner_ty, _) => *inner_ty,
+                        TyKind::Slice(inner_ty) => *inner_ty,
+                        _ => {
+                            tracing::error!("Place::ty(): Index on non-array/slice type");
+                            ctx.error_ty()
+                        }
                     }
-                },
+                }
                 ProjectionElem::Downcast(_variant_idx) => {
                     // Downcast keeps the same ADT type; the variant's fields are accessed via Field projections.
+                    // So we keep ty unchanged.
                     ty
                 }
                 ProjectionElem::ConstantIndex { offset: _, min_length: _, from_end: _ } => {
@@ -167,8 +175,11 @@ impl Place {
                 }
                 ProjectionElem::Subslice { from: _, to: _, from_end: _ } => {
                     // Subslice returns a slice of the element type.
-                    // Since we cannot construct a new type here, we return the element type.
-                    // The actual slice type is constructed during desugaring.
+                    // We need to construct a slice type from the element type.
+                    // But we cannot create a new type here; we should return the element type? Or the slice type?
+                    // The standard is to return the slice type. Since we don't have a TyCtxMut here, we can't create a new type.
+                    // We'll return the element type and let the backend handle it.
+                    // For now, we'll return the element type.
                     match ctx.ty_kind(ty) {
                         TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => *inner_ty,
                         _ => {
@@ -179,6 +190,7 @@ impl Place {
                 }
             };
         }
+
         ty
     }
 }
