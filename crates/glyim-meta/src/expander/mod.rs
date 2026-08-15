@@ -683,13 +683,26 @@ fn stringify_token_trees(trees: &[TokenTree]) -> String {
             TokenTree::Token(_kind, text) => {
                 parts.push(text.as_str().to_string());
             }
-            TokenTree::Group(open, inner, _close) => {
-                parts.push(delim_token_text(*open).to_string());
+            TokenTree::Group(open, inner, close) => {
+                // Preserve the delimiters and recursively stringify the inner tokens.
+                let open_str = match open {
+                    SyntaxKind::LParen => "(",
+                    SyntaxKind::LBrace => "{",
+                    SyntaxKind::LBracket => "[",
+                    _ => "",
+                };
+                let close_str = match close {
+                    SyntaxKind::RParen => ")",
+                    SyntaxKind::RBrace => "}",
+                    SyntaxKind::RBracket => "]",
+                    _ => "",
+                };
                 let inner_str = stringify_token_trees(inner);
+                parts.push(open_str.to_string());
                 if !inner_str.is_empty() {
                     parts.push(inner_str);
                 }
-                parts.push(delim_token_text(*_close).to_string());
+                parts.push(close_str.to_string());
             }
             TokenTree::DollarCrate => {
                 parts.push("$crate".to_string());
