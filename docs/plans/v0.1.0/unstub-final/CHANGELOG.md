@@ -17,7 +17,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 2.1 — coherence overlap ignores generics — COMMITTED
 - [x] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity) — COMMITTED
 - [x] Tier 2.3 — object safety associated types & supertraits — COMMITTED
-- [ ] Tier 3.1 — transitive dependency resolution (glyip)
+- [x] Tier 3.1 — transitive dependency resolution (glyip) — COMMITTED
 - [ ] Tier 3.2 — glyip cmd_test executes tests
 - [ ] Tier 3.3 — registry-disabled error message
 - [ ] Tier 4.1 — fragment-spec matching (Stage A + B)
@@ -264,3 +264,35 @@ Each tier is implemented and committed atomically. Tests are run with
     flagged, safe supertrait is NOT. 13 object-safety / 557 glyim-type tests
     pass; 4 object-safety / 168 glyim-codegen tests pass; `cargo build
     --workspace` clean.
+
+### Tier 3.1 (transitive dependency resolution in glyip)
+- `feat(glyip): resolve transitive dependencies (BFS enqueues sub-deps)`
+  - `crates/glyip/src/dep.rs`: `DependencyResolver::resolve` previously seeded
+    the BFS queue only from the root's direct deps and never enqueued a
+    resolved crate's own dependencies (the `// TODO: implement transitive
+    resolution` was duplicated twice — both removed).
+  - `IndexEntry` gained a `dependencies: HashMap<String, Vec<IndexDependency>>`
+    field (`#[serde(default)]` for backward-compat with on-disk `.json`
+    index files) plus a new `IndexDependency { name, version_req }` struct.
+  - `resolve_registry_dep` and `resolve_path_dep` now return
+    `(LockedCrate, Vec<(String, Option<String>, Option<PathBuf>)>)` — the sub-
+    dep list — instead of just `LockedCrate`. Their `LockedCrate.dependencies`
+    (a `BTreeMap<String,String>`) is now populated from that list (the
+    requested version requirement), not left `BTreeMap::new()`. A shared
+    `sub_deps_from_index` helper reads `entry.dependencies[version]`.
+  - `resolve()`'s loop now enqueues each resolved crate's sub-deps. The queue
+    element was extended with a 4th field `Option<PathBuf>` "base dir": a path
+    sub-dependency carries its relative path and its nested path deps must
+    resolve against that crate's directory, so the enqueued base is set to the
+    parent's abs dir; registry sub-deps carry `None`/`None`. Diamond deps are
+    still handled by the existing `visited` set keyed on `{name}-{version}`
+    (Cargo-style non-unification); semver-range unification left out of scope
+    per the plan.
+  - Existing `IndexEntry { ... }` literals in the three test files
+    (`crate_index_io.rs`, `dep_advanced.rs`, `dep_resolution.rs`, ~22 sites)
+    were updated to include `dependencies: Default::default()` (and
+    `IndexDependency` imported where the new test uses it).
+  - Added regression test `resolve_transitive_dependencies`: a local index has
+    `a` depends-on `b`; root depends only on `a`; asserts `b` appears in the
+    lockfile and `a.dependencies["b"] == "0.5"`. 177 glyip tests pass;
+    `cargo build --workspace` clean.

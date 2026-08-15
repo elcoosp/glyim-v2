@@ -21,7 +21,7 @@ fn crate_index_load_from_nonexistent_dir() {
 fn crate_index_save_and_load_roundtrip() {
     let dir = TempDir::new().unwrap();
     let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "test-crate".to_string(),
         versions: vec!["1.0.0".to_string(), "0.9.0".to_string()],
         checksums: {
@@ -30,7 +30,7 @@ fn crate_index_save_and_load_roundtrip() {
             m
         },
     });
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "other-crate".to_string(),
         versions: vec!["2.0.0".to_string()],
         checksums: HashMap::new(),
@@ -55,7 +55,7 @@ fn crate_index_save_and_load_roundtrip() {
 fn crate_index_save_creates_json_files() {
     let dir = TempDir::new().unwrap();
     let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "mylib".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),
@@ -68,7 +68,7 @@ fn crate_index_save_creates_json_files() {
 #[test]
 fn crate_index_load_ignores_non_json_files() {
     let dir = TempDir::new().unwrap();
-    let entry = IndexEntry {
+    let entry = IndexEntry { dependencies: Default::default(),
         name: "valid".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),
@@ -112,7 +112,7 @@ fn crate_index_save_overwrites_existing() {
     let dir = TempDir::new().unwrap();
 
     let mut index1 = CrateIndex::new();
-    index1.insert(IndexEntry {
+    index1.insert(IndexEntry { dependencies: Default::default(),
         name: "lib".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),
@@ -120,7 +120,7 @@ fn crate_index_save_overwrites_existing() {
     index1.save_to_dir(dir.path()).unwrap();
 
     let mut index2 = CrateIndex::new();
-    index2.insert(IndexEntry {
+    index2.insert(IndexEntry { dependencies: Default::default(),
         name: "lib".to_string(),
         versions: vec!["2.0.0".to_string()],
         checksums: HashMap::new(),
@@ -138,7 +138,7 @@ fn crate_index_len_and_is_empty() {
     assert!(index.is_empty());
     assert_eq!(index.len(), 0);
 
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "foo".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),
@@ -146,7 +146,7 @@ fn crate_index_len_and_is_empty() {
     assert!(!index.is_empty());
     assert_eq!(index.len(), 1);
 
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "bar".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),

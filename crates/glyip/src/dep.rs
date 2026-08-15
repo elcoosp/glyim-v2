@@ -14,6 +14,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
+/// A dependency declared by a published crate version in the index.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndexDependency {
+    /// Dependent crate name.
+    pub name: String,
+    /// Version requirement (semver-like), if any.
+    #[serde(default)]
+    pub version_req: Option<String>,
+}
+
 /// An entry in the crate index — metadata about a published crate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IndexEntry {
@@ -24,6 +34,12 @@ pub struct IndexEntry {
     /// Checksums keyed by version.
     #[serde(default)]
     pub checksums: HashMap<String, String>,
+    /// Dependencies keyed by version: each published version lists its own
+    /// dependencies. `#[serde(default)]` keeps this backward-compatible with
+    /// existing `.json` index files on disk (they deserialize with an empty
+    /// map — no migration needed).
+    #[serde(default)]
+    pub dependencies: HashMap<String, Vec<IndexDependency>>,
 }
 
 /// A virtual crate index for dependency resolution.
@@ -265,6 +281,26 @@ impl RegistryClient for HttpRegistryClient {
     }
 }
 
+/// Build the transitive sub-dependency list for a resolved index version.
+///
+/// Reads `entry.dependencies[version]` (a `Vec<IndexDependency>`), mapping
+/// each to `(name, version_req, path)` where path is always `None` for
+/// registry-indexed crates (their deps are resolved through the index too).
+fn sub_deps_from_index(
+    entry: &IndexEntry,
+    version: &str,
+) -> Vec<(String, Option<String>, Option<PathBuf>)> {
+    entry
+        .dependencies
+        .get(version)
+        .map(|deps| {
+            deps.iter()
+                .map(|d| (d.name.clone(), d.version_req.clone(), None))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Resolves the full dependency graph for a project.
 pub struct DependencyResolver {
     index: CrateIndex,
@@ -310,22 +346,31 @@ impl DependencyResolver {
     ///
     /// For dependencies not found in the local index, falls back to the
     /// registry client (if one was provided via [`with_registry_client`]).
+    ///
+    /// Performs a breadth-first traversal that also resolves each resolved
+    /// crate's own dependencies (transitive resolution), not just the root
+    /// project's direct dependencies.
     pub fn resolve(&self, config: &GlyipToml, project_dir: &Path) -> GlyipResult<Lockfile> {
         let mut lockfile = Lockfile::new();
         let mut visited: HashSet<String> = HashSet::new();
-        let mut visit_stack: VecDeque<(String, Option<String>, Option<PathBuf>)> = VecDeque::new();
+        // Queue element: (name, version_req, path (if path dep), base dir to
+        // resolve this dep's own path deps relative to). `base` is `None` for
+        // deps declared relative to the project root (or registry deps), and
+        // `Some(dir)` when the dep was itself pulled in by a path dependency
+        // (so its nested path deps resolve relative to that crate's dir).
+        let mut visit_stack: VecDeque<(String, Option<String>, Option<PathBuf>, Option<PathBuf>)> =
+            VecDeque::new();
 
         // Seed the stack with direct dependencies.
         for (name, dep) in config.all_dependencies() {
             let version = dep.version().map(String::from);
             let path = dep.path().map(PathBuf::from);
-            visit_stack.push_back((name.clone(), version, path));
+            visit_stack.push_back((name.clone(), version, path, None));
         }
 
-        // Process dependencies breadth-first.
-        // TODO: implement transitive resolution by fetching dependencies of each resolved crate.
-        // TODO: implement transitive resolution by fetching dependencies of each resolved crate.
-        while let Some((name, version_req, path)) = visit_stack.pop_front() {
+        // Process dependencies breadth-first, enqueuing each resolved crate's
+        // own (transitive) dependencies.
+        while let Some((name, version_req, path, base)) = visit_stack.pop_front() {
             let key = if let Some(ref v) = version_req {
                 format!("{}-{}", name, v)
             } else {
@@ -337,20 +382,40 @@ impl DependencyResolver {
             }
             visited.insert(key.clone());
 
-            let locked = if let Some(p) = path {
-                // Path dependency — read the sub-project's Glyip.toml.
-                let abs_path = if p.is_absolute() {
+            // Absolute directory for a path dependency: if it's relative and we
+            // were reached from a path dep, join against that crate's dir;
+            // otherwise against the project root.
+            let abs_path = path.as_ref().map(|p| {
+                if p.is_absolute() {
                     p.clone()
+                } else if let Some(ref b) = base {
+                    b.join(p)
                 } else {
-                    project_dir.join(&p)
-                };
-                self.resolve_path_dep(&name, &abs_path)?
+                    project_dir.join(p)
+                }
+            });
+
+            let (locked, sub_deps) = if let Some(ref abs) = abs_path {
+                self.resolve_path_dep(&name, abs)?
             } else {
                 // Index / registry dependency.
                 self.resolve_registry_dep(&name, version_req.as_deref())?
             };
 
             lockfile.add_crate(locked);
+
+            // Enqueue transitive dependencies discovered for the crate we just
+            // resolved. A path sub-dependency carries its own (relative) path
+            // and must resolve its own nested path deps against this crate's
+            // directory, so pass that as the new `base`.
+            for (dep_name, dep_version_req, dep_path) in sub_deps {
+                let dep_base = if dep_path.is_some() {
+                    abs_path.clone()
+                } else {
+                    None
+                };
+                visit_stack.push_back((dep_name, dep_version_req, dep_path, dep_base));
+            }
         }
 
         // Cycle detection on the resolved graph.
@@ -360,29 +425,34 @@ impl DependencyResolver {
     }
 
     /// Resolve a dependency from the local index or remote registry.
+    ///
+    /// Returns the [`LockedCrate`] plus the list of its own dependencies
+    /// `(name, version_req, path)` so the caller can enqueue them for
+    /// transitive resolution.
     fn resolve_registry_dep(
         &self,
         name: &str,
         version_req: Option<&str>,
-    ) -> GlyipResult<LockedCrate> {
+    ) -> GlyipResult<(LockedCrate, Vec<(String, Option<String>, Option<PathBuf>)>)> {
         // Try the local index first.
         match self.index.resolve_version(name, version_req) {
             Ok(version) => {
-                let checksum = self
-                    .index
-                    .get(name)
-                    .and_then(|e| e.checksums.get(&version))
-                    .cloned()
-                    .unwrap_or_default();
-                Ok(LockedCrate {
+                let entry = self.index.get(name).expect("version resolved from this entry");
+                let checksum = entry.checksums.get(&version).cloned().unwrap_or_default();
+                let sub_deps = sub_deps_from_index(entry, &version);
+                let locked = LockedCrate {
                     name: name.to_string(),
-                    version,
+                    version: version.clone(),
                     source: CrateSource::Registry {
                         url: "https://index.glyim.dev".to_string(),
                         checksum,
                     },
-                    dependencies: BTreeMap::new(),
-                })
+                    dependencies: sub_deps
+                        .iter()
+                        .map(|(n, v, _)| (n.clone(), v.clone().unwrap_or_default()))
+                        .collect(),
+                };
+                Ok((locked, sub_deps))
             }
             Err(_) if self.registry_client.is_some() => {
                 // Fall back to the registry client.
@@ -414,25 +484,38 @@ impl DependencyResolver {
                 };
 
                 let checksum = entry.checksums.get(&version).cloned().unwrap_or_default();
+                let sub_deps = sub_deps_from_index(&entry, &version);
 
                 debug!("Resolved '{}' v{} from remote registry", name, version);
 
-                Ok(LockedCrate {
+                let locked = LockedCrate {
                     name: name.to_string(),
                     version,
                     source: CrateSource::Registry {
                         url: "https://index.glyim.dev".to_string(),
                         checksum,
                     },
-                    dependencies: BTreeMap::new(),
-                })
+                    dependencies: sub_deps
+                        .iter()
+                        .map(|(n, v, _)| (n.clone(), v.clone().unwrap_or_default()))
+                        .collect(),
+                };
+                Ok((locked, sub_deps))
             }
             Err(e) => Err(e),
         }
     }
 
     /// Resolve a path-based dependency.
-    fn resolve_path_dep(&self, name: &str, path: &Path) -> GlyipResult<LockedCrate> {
+    ///
+    /// Returns the [`LockedCrate`] plus the sub-project's own dependencies
+    /// `(name, version_req, path)` (read from its `Glyip.toml`) so the caller
+    /// can enqueue them for transitive resolution.
+    fn resolve_path_dep(
+        &self,
+        name: &str,
+        path: &Path,
+    ) -> GlyipResult<(LockedCrate, Vec<(String, Option<String>, Option<PathBuf>)>)> {
         let config = GlyipToml::read_from_dir(path).unwrap_or_else(|_| GlyipToml {
             package: crate::config::PackageConfig {
                 name: name.to_string(),
@@ -447,14 +530,27 @@ impl DependencyResolver {
             dev_dependencies: BTreeMap::new(),
         });
 
-        Ok(LockedCrate {
+        let mut sub_deps: Vec<(String, Option<String>, Option<PathBuf>)> = Vec::new();
+        for (dep_name, dep) in config.all_dependencies() {
+            sub_deps.push((
+                dep_name.clone(),
+                dep.version().map(String::from),
+                dep.path().map(PathBuf::from),
+            ));
+        }
+
+        let locked = LockedCrate {
             name: name.to_string(),
             version: config.package.version.clone(),
             source: CrateSource::Path {
                 path: path.to_string_lossy().to_string(),
             },
-            dependencies: BTreeMap::new(),
-        })
+            dependencies: sub_deps
+                .iter()
+                .map(|(n, v, _)| (n.clone(), v.clone().unwrap_or_default()))
+                .collect(),
+        };
+        Ok((locked, sub_deps))
     }
 
     /// Download a crate's source code from the registry.

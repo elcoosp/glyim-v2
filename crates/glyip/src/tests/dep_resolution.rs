@@ -1,7 +1,7 @@
 //! Tests for dependency resolution — S12-T01.
 
 use crate::config::{Dependency, DependencyDetail, GlyipToml, PackageConfig};
-use crate::dep::{CrateIndex, DependencyResolver, IndexEntry, RegistryClient};
+use crate::dep::{CrateIndex, DependencyResolver, IndexDependency, IndexEntry, RegistryClient};
 use crate::lockfile::CrateSource;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -107,9 +107,59 @@ fn make_config_with_path_dep(name: &str, path: &str) -> GlyipToml {
 }
 
 #[test]
+fn resolve_transitive_dependencies() {
+    // Tier 3.1: a crate's own dependencies must be resolved transitively,
+    // even when the root project never mentions them directly.
+    let mut index = CrateIndex::new();
+
+    // `a` depends on `b` (version 0.5.0).
+    index.insert(IndexEntry {
+        name: "a".to_string(),
+        versions: vec!["1.0.0".to_string()],
+        checksums: HashMap::new(),
+        dependencies: {
+            let mut m = HashMap::new();
+            m.insert(
+                "1.0.0".to_string(),
+                vec![IndexDependency {
+                    name: "b".to_string(),
+                    version_req: Some("0.5".to_string()),
+                }],
+            );
+            m
+        },
+    });
+
+    index.insert(IndexEntry {
+        dependencies: Default::default(),
+        name: "b".to_string(),
+        versions: vec!["0.5.0".to_string()],
+        checksums: HashMap::new(),
+    });
+
+    let resolver = DependencyResolver::new(index);
+    // Root only depends on `a`.
+    let config = make_config_with_dep("a", "1.0");
+    let dir = TempDir::new().unwrap();
+    let lockfile = resolver.resolve(&config, dir.path()).unwrap();
+
+    // `a` resolved...
+    assert!(lockfile.get_crate("a", "1.0.0").is_some());
+    // ...and its transitive dep `b` was pulled in automatically.
+    assert!(
+        lockfile.get_crate("b", "0.5.0").is_some(),
+        "transitive dependency `b` should be in the lockfile even though the root never mentions it"
+    );
+    // `a`'s own lockfile entry records `b` as a dependency (storing the
+    // requested version requirement, as produced by the index metadata).
+    let a = lockfile.get_crate("a", "1.0.0").unwrap();
+    assert_eq!(a.dependencies.get("b"), Some(&"0.5".to_string()));
+}
+
+#[test]
 fn resolve_from_local_index() {
     let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "foo".to_string(),
         versions: vec!["1.0.0".to_string(), "0.9.0".to_string()],
         checksums: {
@@ -137,7 +187,7 @@ fn resolve_from_local_index() {
 fn resolve_from_registry_fetch() {
     // S12-T01: glyip build fetches dependency from registry.
     let mut mock = MockRegistryClient::new();
-    mock.add_entry(IndexEntry {
+    mock.add_entry(IndexEntry { dependencies: Default::default(),
         name: "bar".to_string(),
         versions: vec!["2.1.0".to_string()],
         checksums: {
@@ -164,14 +214,14 @@ fn resolve_from_registry_fetch() {
 #[test]
 fn registry_fallback_on_missing_index_entry() {
     let mut index = CrateIndex::new();
-    index.insert(IndexEntry {
+    index.insert(IndexEntry { dependencies: Default::default(),
         name: "foo".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),
     });
 
     let mut mock = MockRegistryClient::new();
-    mock.add_entry(IndexEntry {
+    mock.add_entry(IndexEntry { dependencies: Default::default(),
         name: "bar".to_string(),
         versions: vec!["3.0.0".to_string()],
         checksums: HashMap::new(),
@@ -269,7 +319,7 @@ fn detect_dependency_cycle() {
 #[test]
 fn download_crate_with_registry() {
     let mut mock = MockRegistryClient::new();
-    mock.add_entry(IndexEntry {
+    mock.add_entry(IndexEntry { dependencies: Default::default(),
         name: "qux".to_string(),
         versions: vec!["1.0.0".to_string()],
         checksums: HashMap::new(),
@@ -331,7 +381,7 @@ fn dependency_not_found_without_registry() {
 #[test]
 fn mock_registry_download_count() {
     let mut mock = MockRegistryClient::new();
-    mock.add_entry(IndexEntry {
+    mock.add_entry(IndexEntry { dependencies: Default::default(),
         name: "counted".to_string(),
         versions: vec!["0.1.0".to_string()],
         checksums: HashMap::new(),
