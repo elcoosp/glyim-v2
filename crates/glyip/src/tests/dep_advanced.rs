@@ -220,3 +220,28 @@ fn detect_three_node_cycle() {
     let result = resolver.detect_cycles(&lf);
     assert!(result.is_err());
 }
+
+/// Tier 3.3: when no registry client is configured and a dependency is not in
+/// the local index, the error must be actionable (hint about the `registry`
+/// feature / local index) rather than a bare `DependencyNotFound`.
+#[test]
+fn registry_disabled_gives_actionable_error() {
+    let dir = TempDir::new().expect("temp dir");
+    // Empty index, no registry client (DependencyResolver::new has None).
+    let index = CrateIndex::new();
+    let mut deps = BTreeMap::new();
+    deps.insert("remote-crate".to_string(), Dependency::Simple("1.0".to_string()));
+    let config = make_config_with_deps("main", deps, BTreeMap::new());
+
+    let resolver = DependencyResolver::new(index);
+    let err = resolver.resolve(&config, dir.path()).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("remote-crate"),
+        "error should name the missing dep: {msg}"
+    );
+    assert!(
+        msg.contains("--features registry") || msg.contains("local index"),
+        "error should hint at the registry feature / local index: {msg}"
+    );
+}

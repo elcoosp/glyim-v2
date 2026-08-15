@@ -502,6 +502,14 @@ impl DependencyResolver {
                 };
                 Ok((locked, sub_deps))
             }
+            Err(_) if self.registry_client.is_none() => Err(GlyipError::DependencyNotFound {
+                name: name.to_string(),
+                version: version_req.map(|v| {
+                    format!(
+                        "{v} (hint: no registry client configured — build glyip with `--features registry` or provide a local index entry for '{name}')"
+                    )
+                }),
+            }),
             Err(e) => Err(e),
         }
     }

@@ -19,7 +19,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 2.3 — object safety associated types & supertraits — COMMITTED
 - [x] Tier 3.1 — transitive dependency resolution (glyip) — COMMITTED
 - [x] Tier 3.2 — glyip cmd_test executes tests — COMMITTED
-- [ ] Tier 3.3 — registry-disabled error message
+- [x] Tier 3.3 — registry-disabled error message — COMMITTED
 - [ ] Tier 4.1 — fragment-spec matching (Stage A + B)
 - [ ] Tier 4.2 — line!/column! from SourceMap
 - [ ] Tier 4.3 — include! CWD-relative fix
@@ -333,3 +333,17 @@ Each tier is implemented and committed atomically. Tests are run with
   `run_ignored`), plus updated `test_with_only_src_files` / `test_with_filter`
   to the new discovered-test-function semantics. 179 tests pass; `cargo build
   --workspace` clean; `glyim-pipeline` (3) and `glyim-test` (94) still green.
+
+### Tier 3.3 (registry-disabled actionable error)
+- `fix(glyip): clear error when registry feature is disabled + dep not in local index`
+  - `resolve_registry_dep` previously fell through to the bare
+    `DependencyNotFound` from `index.resolve_version` when `registry_client`
+    was `None` and the dep wasn't in the local index — an unhelpful message.
+  - Added an `Err(_) if self.registry_client.is_none()` arm that wraps the
+    error with a hint: `... (hint: no registry client configured — build glyip
+    with `--features registry` or provide a local index entry for '<name>')`.
+  - Added `registry_disabled_gives_actionable_error` (dep_advanced.rs): empty
+    index + `DependencyResolver::new` (no client), resolves a missing
+    `remote-crate` dep, asserts the error names the dep and mentions the
+    registry feature / local index. 180 glyip tests pass (`cargo test -p
+    glyip`); `cargo build -p glyip -p glyim-pipeline` clean.
