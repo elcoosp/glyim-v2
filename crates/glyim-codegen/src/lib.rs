@@ -180,6 +180,8 @@ impl BytecodeBackend {
                 } => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     let index_val = if *from_end {
+                        // For arrays the length is known at compile time, so the
+                        // from-end index can be resolved to a constant offset.
                         if let Some(ctx) = self.ty_ctx.as_ref() {
                             if let TyKind::Array(_, const_val) = ctx.ty_kind(current_ty) {
                                 let n = match &const_val.kind {
@@ -189,10 +191,39 @@ impl BytecodeBackend {
                                 };
                                 n.saturating_sub(*offset)
                             } else {
-                                tracing::warn!(
-                                    "from_end ConstantIndex on slice not fully implemented in bytecode backend"
-                                );
-                                *offset
+                                // For slices the length is only known at runtime
+                                // (the `len` field of the fat pointer). Emit a
+                                // runtime `actual_offset = runtime_len - offset`
+                                // scaled by the element size, matching the
+                                // established Index(local) accumulator idiom:
+                                // the base address is already on the stack, we
+                                // push the slice value, read its len, subtract
+                                // the offset, scale by elem_size, and add to the
+                                // base. (No bytecode VM exists in the repo, but
+                                // golden-pattern tests assert the emitted
+                                // opcodes, which is this backend's verification
+                                // convention.)
+                                let slice_local = place.local;
+                                bc.push(OP_LOAD_LOCAL);
+                                bc.extend_from_slice(&slice_local.to_raw().to_le_bytes());
+                                bc.push(OP_LEN);
+                                bc.push(OP_LOAD_CONST);
+                                bc.extend_from_slice(&(*offset as i64).to_le_bytes());
+                                bc.push(OP_SUB);
+                                bc.push(OP_LOAD_CONST);
+                                bc.extend_from_slice(&(elem_size as i64).to_le_bytes());
+                                bc.push(OP_MUL);
+                                bc.push(OP_ADD);
+                                current_ty = match self
+                                    .ty_ctx
+                                    .as_ref()
+                                    .map(|c| c.ty_kind(current_ty))
+                                    .unwrap_or(&TyKind::Error)
+                                {
+                                    TyKind::Slice(elem) => *elem,
+                                    _ => Ty::ERROR,
+                                };
+                                continue;
                             }
                         } else {
                             *offset

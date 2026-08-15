@@ -27,7 +27,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 5.1 — over-alignment fallback comment + set_alignment — COMMITTED
 - [x] Tier 5.2 — DWARF pointer/slice debug types — COMMITTED
 - [x] Tier 5.3 — fn_sig fallback → internal error — COMMITTED
-- [ ] Tier 5.4 — bytecode Subslice/ConstantIndex scaling — PENDING (blocked: see note)
+- [x] Tier 5.4 — bytecode from_end ConstantIndex: array→const, slice→runtime len−offset — COMMITTED
 - [ ] Tier 6.1-6.5 — LSP reference graph/rename/completion/unused-imports
 - [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
 
@@ -501,3 +501,35 @@ Each tier is implemented and committed atomically. Tests are run with
     `tests::debug_info::*` cases that build a body with `FnDefId(0)` and no
     registered `FnSig`; they now correctly surface the Tier 5.3 internal
     error. That is expected fallout of 5.3, not a regression from 5.2.
+
+### Tier 5.4 (bytecode from_end ConstantIndex: array→const, slice→runtime len−offset)
+- `fix(codegen): emit runtime len-offset for from_end ConstantIndex on slices`
+  - `lib.rs::emit_place_address`: the `ProjectionElem::ConstantIndex { from_end: true }`
+    arm previously fell through to `offset` (a from-*start* index) for slices —
+    i.e. it silently generated a wrong index for slice indexing. For
+    `TyKind::Array` it already computed the correct compile-time constant
+    `n.saturating_sub(offset)`; that path is unchanged.
+  - **Slice `from_end`** (the plan's explicit requirement): the slice length is
+    only known at runtime (the `len` field of the fat pointer), so the backend
+    now emits a runtime `actual_offset = runtime_len - offset` scaled by the
+    element size. It follows the existing `Index(local)` accumulator idiom:
+    push the slice *value* (`OP_LOAD_LOCAL`), read its `len` (`OP_LEN`), push
+    the offset and `OP_SUB`, push `elem_size` and `OP_MUL`, then `OP_ADD` to the
+    base address already on the stack. `current_ty` is advanced to the element
+    type for any subsequent projection. This matches the plan's
+    `emit_slice_len(base) - offset` shape.
+  - Verification note: there is **no bytecode VM** in the repo (`glyim-test`
+    runs MIR via `glyim-mir-interp`; `glyim-runtime` is native FFI stubs), so
+    this backend is verified by **golden-pattern opcode assertions** — the same
+    convention used by `discriminant_len.rs` (asserts `OP_LEN` appears) and
+    `comprehensive.rs`. `tests::slice_projection::
+    constant_index_slice_from_end_emits_runtime_len_sub` asserts the emitted
+    sequence is exactly
+    `OP_LOAD_LOCAL_ADDR; OP_LOAD_LOCAL; OP_LEN; OP_LOAD_CONST(1); OP_SUB;
+     OP_LOAD_CONST(4); OP_MUL; OP_ADD`.
+  - `tests::slice_projection::constant_index_array_from_end_is_constant_offset`
+    confirms the array case still resolves to a constant byte offset
+    (`OP_LOAD_CONST(12); OP_ADD` for `[i32;4]` with `from_end` offset 1).
+  - Rewrote the previous placeholder bodies in `slice_projection.rs`.
+  - Verified in isolation: `cargo test -p glyim-codegen --lib
+    tests::slice_projection` → 2 passed. No new failures vs baseline.
