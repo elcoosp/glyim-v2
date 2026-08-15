@@ -422,7 +422,7 @@ fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
         visited.insert(ty);
 
         match ctx.ty_kind(ty) {
-            TyKind::Adt(adt_id, substs) => {
+            TyKind::Adt(adt_id, _substs) => {
                 // Check if the ADT has a Drop impl (we don't have explicit Drop trait yet, so we check fields).
                 // For now, we assume any ADT that is not a primitive and has fields might need drop.
                 // But we must check its fields recursively.

@@ -604,7 +604,7 @@ impl<'tcx> Interpreter<'tcx> {
                                 ))
                             })?;
                             // Update current_ty: we need the field type. We'll use ty_ctx.
-                            if let Some(decl) = self.local_decls.get(place.local.index()) {
+                            if let Some(_decl) = self.local_decls.get(place.local.index()) {
                                 // We need to compute field type from current_ty.
                                 // For simplicity, we'll just set to ERROR and compute later.
                                 // But we can improve by using layout.
@@ -661,7 +661,7 @@ impl<'tcx> Interpreter<'tcx> {
                     // no change, but we may need to adjust current_ty.
                     // For now, keep current_ty.
                 },
-                ProjectionElem::ConstantIndex { offset, min_length, from_end } => {
+                ProjectionElem::ConstantIndex { offset, min_length: _, from_end } => {
                     // Compute the actual index.
                     let len = self.get_length_of_aggregate(&val)?;
                     let idx = if *from_end {
@@ -705,7 +705,7 @@ impl<'tcx> Interpreter<'tcx> {
                     // For simplicity, we'll just panic for now? But better to implement.
                     // Let's return an aggregate with two values: address of the first element and length.
                     // We need to compute the data pointer and the new length.
-                    let (base_ptr, base_len) = self.get_slice_base_and_len(&val, current_ty)?;
+                    let (_base_ptr, base_len) = self.get_slice_base_and_len(&val, current_ty)?;
                     let start = if *from_end {
                         if base_len < *to as usize {
                             return Err(InterpError::Panic(format!(

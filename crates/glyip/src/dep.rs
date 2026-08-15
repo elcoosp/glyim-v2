@@ -9,7 +9,6 @@ use crate::config::GlyipToml;
 use crate::error::{GlyipError, GlyipResult};
 use crate::lockfile::{CrateSource, LockedCrate, Lockfile};
 use serde::{Deserialize, Serialize};
-use semver::{Version, VersionReq};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -273,9 +273,12 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
             ctx.adt_repr(*adt_id).map(|r| r.field_tys.len() as u32)
         }
         glyim_type::TyKind::Array(_, len) => {
+            // Try to resolve the const length.
             match &len.kind {
                 glyim_type::ConstKind::Uint(n) => Some(*n as u32),
                 glyim_type::ConstKind::Int(n) => if *n >= 0 { Some(*n as u32) } else { None },
+                // For generic/associated consts, we could try to resolve via substitution,
+                // but we don't have the substs here. Return None for now.
                 _ => None,
             }
         }

@@ -16,7 +16,19 @@ use std::collections::HashMap;
 use matcher::{MatchResult, Pattern, match_pattern};
 use token_tree::{TokenTree, flatten_token_tree};
 
-const MAX_RECURSION_DEPTH: u32 = 128;
+
+static RECURSION_LIMIT: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+/// Set the recursion limit for macro expansion.
+pub fn set_recursion_limit(limit: u32) {
+    let _ = RECURSION_LIMIT.set(limit);
+}
+
+/// Get the current recursion limit, or the default 128.
+fn get_recursion_limit() -> u32 {
+    *RECURSION_LIMIT.get().unwrap_or(&128)
+}
+
 
 #[derive(Clone, Debug)]
 pub(crate) struct MacroArm {
@@ -281,7 +293,7 @@ impl<'a> ExpanderImpl<'a> {
         node: &SyntaxNode,
         depth: u32,
     ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
-        if depth > MAX_RECURSION_DEPTH {
+        if depth > get_recursion_limit() {
             return (
                 None,
                 vec![GlyimDiagnostic::type_error(

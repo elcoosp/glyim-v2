@@ -266,7 +266,7 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                 _ => None,
             }
         }
-        Rvalue::Ref(place, _borrow_kind) => {
+        Rvalue::Ref(_place, _borrow_kind) => {
             // References to constants are not representable; return None.
             None
         }
