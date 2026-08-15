@@ -35,8 +35,8 @@ Each tier is implemented and committed atomically. Tests are run with
 - [ ] Tier 6.4 — completion type-filtered by receiver (BLOCKED: no typeck cache in LSP; TypeckResult type queries are stubs) — see note
 - [x] Tier 7.1 — PipelineCompiler surfaces MIR/def-map/typeck artifacts + per-file temp path — COMMITTED
 - [x] Tier 7.2 — RunPass/RunFail link executable via glyim_cli::linker + plumb executable_path — COMMITTED
-- [ ] Tier 7.3 — mock/lower_ctx with_iterator_next override — pending
-- [ ] Tier 7.4 — mock/solver iterator_next override — pending
+- [x] Tier 7.3 — mock/lower_ctx with_iterator_next override — COMMITTED
+- [x] Tier 7.4 — mock/solver iterator_next override — COMMITTED
 
 ## Commits
 
@@ -729,4 +729,51 @@ Each tier is implemented and committed atomically. Tests are run with
   wiring is correct; only the downstream native codegen/link of real glyim output is
   blocked by the pre-existing LLVM backend state. The mock-backed harness path is fully
   green.
+
+### Tier 7.3 (mock/lower_ctx with_iterator_next override) — COMMITTED
+
+- `crates/glyim-test/src/mock/lower_ctx.rs`: `MockLowerCtx` gained an
+  `iterator_next_override: Option<Box<dyn Fn(Ty, Ty) -> Option<IteratorNextInfo> + 'a>>`
+  field, default `None` in `new()`.
+- `with_iterator_next(f)` now **actually stores** the closure (previously a no-op stub
+  that discarded `_f` and returned `self`), and `LowerCtx::iterator_next_fn` now consults
+  the override: `self.iterator_next_override.as_ref().and_then(|f| f(iter_ty, elem_ty))`.
+- Note: the plan spec named the trait method return type `SolverIteratorNextInfo`, but the
+  real `LowerCtx::iterator_next_fn` returns `glyim_lower::IteratorNextInfo` (the
+  `SolverIteratorNextInfo` type lives only on `TraitSolver::iterator_next_info`). The
+  implementation follows the actual trait signature.
+- Added `mod tests` with 3 assertions: override returning `Some(info)` is surfaced by
+  `iterator_next_fn`; no override yields `None`; override returning `None` yields `None`.
+- Verified: `cargo test -p glyim-test --lib` → 101 passed after this tier (the 3 new
+  mock tests); 0 failed.
+
+### Tier 7.4 (mock/solver iterator_next override) — COMMITTED
+
+- `crates/glyim-test/src/mock/solver.rs`: `MockSolver` gained an
+  `iterator_next_override: Option<Box<dyn Fn(Ty, Ty) -> Option<SolverIteratorNextInfo>>>`
+  field, default `None` in `new()`, and a `with_iterator_next(f)` builder (matching the
+  7.3 shape) that stores the closure.
+- `TraitSolver::iterator_next_info` now consults the override instead of unconditionally
+  returning `None`, so tests can exercise both the "solver found Iterator::next"
+  (`Some(info)`) and "solver didn't" (`None`) branches of the Tier 1.3 fallback code in
+  isolation from a full pipeline.
+- Added `mod tests` with 3 assertions parallel to 7.3.
+- Verified: `cargo test -p glyim-test --lib` → **104 passed** (was 98 at end of 7.2;
+  +6 for 7.3+7.4), 0 failed. `glyim-pipeline`/`glyim-cli`/`glyim-lower` unaffected
+  (the mocks are `glyim-test`-local).
+
+### Tier 7 — all sub-tiers complete (7.1, 7.2, 7.3, 7.4)
+
+- 7.1: PipelineCompiler surfaces MIR/def-map/typeck artifacts + per-file temp path.
+- 7.2: RunPass/RunFail link via glyim_cli::linker; executor passes executable_path
+  through (native run-pass of real glyim output is still blocked by the pre-existing
+  `glyim-codegen-llvm` "no FnSig registered" bug + Linux-targeted object on macOS — the
+  wiring is correct; mock-backed harness is fully green).
+- 7.3 + 7.4: the `MockLowerCtx` / `MockSolver` iterator-next overrides are now real,
+  unblocking isolated unit tests of the Tier 1.3 Iterator::next fallback.
+- Remaining open item from this plan: **Tier 6.4** (completion type-filtered by receiver)
+  is BLOCKED — see the note above (no typeck cache in the LSP; `TypeckResult::expr_ty` /
+  `pat_ty` are stubs; `glyim-lsp` does not depend on `glyim-typeck`). It requires building
+  out real typeck queries and wiring them into the LSP, which is out of scope for the
+  no-stub test-harness work and was deliberately left un-faked.
 

@@ -1,10 +1,13 @@
-use glyim_solve::{SolverResult, TraitSolver};
-use glyim_type::{Predicate, TraitPredicate, TyCtx};
+use glyim_solve::{SolverIteratorNextInfo, SolverResult, TraitSolver};
+use glyim_type::{Predicate, TraitPredicate, Ty, TyCtx};
 
 pub struct MockSolver {
     responses: Vec<(PredicateMatcher, SolverResult)>,
     calls: Vec<TraitPredicate>,
     default: SolverResult,
+    /// Optional override for `iterator_next_info` so tests can simulate
+    /// "solver resolved Iterator::next" vs "solver didn't" in isolation.
+    iterator_next_override: Option<Box<dyn Fn(Ty, Ty) -> Option<SolverIteratorNextInfo>>>,
 }
 
 enum PredicateMatcher {
@@ -18,6 +21,7 @@ impl MockSolver {
             responses: Vec::new(),
             calls: Vec::new(),
             default: SolverResult::Ambiguous,
+            iterator_next_override: None,
         }
     }
     pub fn default_result(mut self, result: SolverResult) -> Self {
@@ -34,6 +38,17 @@ impl MockSolver {
     }
     pub fn respond_for_any(mut self, result: SolverResult) -> Self {
         self.responses.push((PredicateMatcher::Any, result));
+        self
+    }
+    /// Attach an `Iterator::next` resolver. When set, `iterator_next_info`
+    /// consults this closure, letting a test exercise both the "solver found
+    /// it" (`Some(info)`) and "solver didn't" (`None`) branches of the Tier
+    /// 1.3 fallback code in isolation.
+    pub fn with_iterator_next(
+        mut self,
+        f: impl Fn(Ty, Ty) -> Option<SolverIteratorNextInfo> + 'static,
+    ) -> Self {
+        self.iterator_next_override = Some(Box::new(f));
         self
     }
     pub fn call_count(&self) -> usize {
@@ -74,9 +89,54 @@ impl TraitSolver for MockSolver {
     fn iterator_next_info(
         &self,
         _ctx_mut: &mut glyim_type::TyCtxMut,
-        _iter_ty: glyim_type::Ty,
-        _elem_ty: glyim_type::Ty,
+        iter_ty: glyim_type::Ty,
+        elem_ty: glyim_type::Ty,
     ) -> Option<glyim_solve::SolverIteratorNextInfo> {
-        None
+        self.iterator_next_override
+            .as_ref()
+            .and_then(|f| f(iter_ty, elem_ty))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::def_id::FnDefId;
+
+    fn sample_info() -> SolverIteratorNextInfo {
+        SolverIteratorNextInfo {
+            fn_def_id: FnDefId::from_raw(0),
+            fn_substs: glyim_type::Substitution::empty(),
+            fn_ty: Ty::ERROR,
+            option_ty: Ty::UNIT,
+            discr_ty: Ty::UNIT,
+            ref_iter_ty: Ty::ERROR,
+        }
+    }
+
+    #[test]
+    fn test_iterator_next_override_resolved() {
+        // Tier 7.4: with_iterator_next wires the closure into iterator_next_info,
+        // so a test can exercise the "solver resolved Iterator::next" branch.
+        let info = sample_info();
+        let solver = MockSolver::new().with_iterator_next(move |_iter, _elem| Some(info.clone()));
+        let mut ctx = glyim_type::TyCtxMut::new(glyim_core::interner::Interner::new());
+        let got = TraitSolver::iterator_next_info(&solver, &mut ctx, Ty::UNIT, Ty::UNIT);
+        assert!(got.is_some(), "iterator_next_info should return the override's Some(info)");
+        assert_eq!(got.unwrap().fn_def_id, FnDefId::from_raw(0));
+    }
+
+    #[test]
+    fn test_iterator_next_no_override_is_none() {
+        let solver = MockSolver::new();
+        let mut ctx = glyim_type::TyCtxMut::new(glyim_core::interner::Interner::new());
+        assert!(TraitSolver::iterator_next_info(&solver, &mut ctx, Ty::UNIT, Ty::UNIT).is_none());
+    }
+
+    #[test]
+    fn test_iterator_next_override_can_return_none() {
+        let solver = MockSolver::new().with_iterator_next(|_iter, _elem| None);
+        let mut ctx = glyim_type::TyCtxMut::new(glyim_core::interner::Interner::new());
+        assert!(TraitSolver::iterator_next_info(&solver, &mut ctx, Ty::UNIT, Ty::UNIT).is_none());
     }
 }
