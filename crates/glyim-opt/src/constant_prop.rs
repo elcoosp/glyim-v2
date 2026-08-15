@@ -47,6 +47,12 @@ fn maps_equal(a: &BlockMap, b: &BlockMap) -> bool {
             }
         }
     }
+    // Also check keys in b that are not in a (though len check already covers it, but do it for safety)
+    for (k, _) in b {
+        if !a.contains_key(k) {
+            return false;
+        }
+    }
     true
 }
 
@@ -235,6 +241,7 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
             }
         }
         Rvalue::Aggregate(kind, operands) => {
+            // Handle aggregates of constants (tuples, arrays, structs)
             let mut field_consts = Vec::new();
             for op in operands {
                 if let Some(c) = operand_to_const(op, locals) {
@@ -243,6 +250,7 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                     return None;
                 }
             }
+            // For now, only tuples are supported; arrays and structs could be added later.
             match kind {
                 AggregateKind::Tuple => {
                     if field_consts.is_empty() {
@@ -252,13 +260,19 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                             span: Span::DUMMY,
                         });
                     }
+                    // We cannot represent tuple constants in MIR; return None.
                     None
                 }
                 _ => None,
             }
         }
+        Rvalue::Ref(place, _borrow_kind) => {
+            // References to constants are not representable; return None.
+            None
+        }
         Rvalue::Cast(_, op, _) => operand_to_const(op, locals),
-        _ => None,
+        Rvalue::Repeat(op, _) => operand_to_const(op, locals),
+        Rvalue::Discriminant(_) | Rvalue::Len(_) => None,
     }
 }
 
