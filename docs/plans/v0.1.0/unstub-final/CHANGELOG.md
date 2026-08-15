@@ -11,7 +11,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.2 — vtable generation (trait-def-driven method population) — COMMITTED
 - [x] Tier 1.3 — Iterator::next real resolution — COMMITTED
 - [x] Tier 1.4 — Range lowering bug — COMMITTED
-- [ ] Tier 1.5 — const-eval expression coverage (Loop/While/Flow/Call/etc)
+- [x] Tier 1.5 — const-eval expression coverage (Return/Loop/While/Flow) — COMMITTED
 - [ ] Tier 1.6 — drop elaboration per-projection (move-path tree)
 - [ ] Tier 1.7 — dynamic range slicing
 - [ ] Tier 2.1 — coherence overlap ignores generics
@@ -100,3 +100,22 @@ Each tier is implemented and committed atomically. Tests are run with
   - Tests `range_lower.rs` (3 tests) assert exclusive -> Adt 1000, inclusive ->
     Adt 1001, both with 2 constant operands. 187 glyim-lower + 56 glyim-typeck
     tests pass; `cargo check --workspace` clean.
+
+### Tier 1.5 (const-eval expression coverage)
+- `feat(const-eval): support Return/Break/Continue and while/loop`
+  - `Expr::Return { value }` now evaluates the inner expression (or Unit) and
+    returns it instead of erroring.
+  - Added a `loop_control: Option<LoopControl>` field + `LoopControl::{Break,
+    Continue}` enum. `Break`/`Continue` set the flag (value currently ignored,
+    matching unlabeled break in const eval) instead of erroring.
+  - New `eval_while` / `eval_loop` drivers constant-fold loops: evaluate the
+    condition/body, react to `break` (exit -> Unit) and `continue` (next
+    iteration). Both are bounded by a 1_000_000-iteration cap so a
+    non-terminating loop returns a clear error instead of hanging.
+  - Note: `Call`/`MethodCall`/`Closure`/`Range`/`For` remain unsupported
+    (genuinely require a full evaluation context); `For` over a constant
+    iterable was left as a future extension.
+  - Tests `flow_eval.rs` (6) cover Return-with/without value, while-false (body
+    not run), while-true-with-break, loop-with-break, and continue re-entry via
+    an if/break/continue body. 67 glyim-const-eval tests pass; `cargo check
+    --workspace` clean.

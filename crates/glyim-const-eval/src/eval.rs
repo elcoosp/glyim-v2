@@ -14,6 +14,17 @@ pub struct ConstEvaluator<'a> {
     body: &'a Body,
     env: Vec<HashMap<Name, ConstValue>>,
     pointer_width: u32,
+    /// Set when a `break`/`continue` is encountered inside a loop so the loop
+    /// driver can react. `None` means normal flow.
+    loop_control: Option<LoopControl>,
+}
+
+/// Control-flow signal raised by `break`/`continue` during constant
+/// evaluation. The loop driver consumes it after evaluating a body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoopControl {
+    Break,
+    Continue,
 }
 
 impl<'a> ConstEvaluator<'a> {
@@ -22,6 +33,7 @@ impl<'a> ConstEvaluator<'a> {
             body,
             env: vec![HashMap::new()],
             pointer_width: 64, // Default to 64-bit
+            loop_control: None,
         }
     }
 
@@ -205,18 +217,22 @@ impl<'a> ConstEvaluator<'a> {
                 "error expression in const evaluation",
                 span,
             )),
-            Expr::Return { .. } => Err(ConstEvalError::new(
-                "return not supported in const eval",
-                span,
-            )),
-            Expr::Break { .. } => Err(ConstEvalError::new(
-                "break not supported in const eval",
-                span,
-            )),
-            Expr::Continue => Err(ConstEvalError::new(
-                "continue not supported in const eval",
-                span,
-            )),
+            Expr::Return { value } => match value {
+                Some(v) => self.evaluate_at_depth(*v, depth),
+                None => Ok(ConstValue::Unit),
+            },
+            Expr::Break { value } => {
+                // Signal the enclosing loop driver; the value (if any) is
+                // currently ignored by the loop drivers, matching `break`
+                // without a label in constant evaluation.
+                let _ = value;
+                self.loop_control = Some(LoopControl::Break);
+                Ok(ConstValue::Unit)
+            }
+            Expr::Continue => {
+                self.loop_control = Some(LoopControl::Continue);
+                Ok(ConstValue::Unit)
+            }
             Expr::Closure { .. } => Err(ConstEvalError::new(
                 "closures not supported in const eval",
                 span,
@@ -225,14 +241,8 @@ impl<'a> ConstEvaluator<'a> {
                 "ranges not supported in const eval",
                 span,
             )),
-            Expr::While { .. } => Err(ConstEvalError::new(
-                "while loops not supported in const eval",
-                span,
-            )),
-            Expr::Loop { .. } => Err(ConstEvalError::new(
-                "loops not supported in const eval",
-                span,
-            )),
+            Expr::While { cond, body } => self.eval_while(*cond, *body, span, depth),
+            Expr::Loop { body } => self.eval_loop(*body, span, depth),
             Expr::For { .. } => Err(ConstEvalError::new(
                 "for loops not supported in const eval",
                 span,
@@ -735,6 +745,66 @@ impl<'a> ConstEvaluator<'a> {
         };
         self.env.pop();
         result
+    }
+
+    /// Constant-fold a `while` loop: evaluate the condition; while it holds,
+    /// evaluate the body (which may `break`/`continue`). A `break` exits the
+    /// loop and yields `Unit`; a `continue` skips to the next iteration. This
+    /// only terminates for constant loop conditions (the common case for
+    /// compile-time computation).
+    fn eval_while(
+        &mut self,
+        cond_id: ExprId,
+        body_id: ExprId,
+        span: Span,
+        depth: u32,
+    ) -> ConstEvalResult<ConstValue> {
+        // Bound iterations so a non-terminating loop cannot hang evaluation.
+        const MAX_ITERS: u32 = 1_000_000;
+        for _ in 0..MAX_ITERS {
+            let cond_val = self.evaluate_at_depth(cond_id, depth)?;
+            let cond_bool = cond_val.as_bool().ok_or_else(|| {
+                ConstEvalError::new("const `while` condition must be a boolean", span)
+            })?;
+            if !cond_bool {
+                self.loop_control = None;
+                return Ok(ConstValue::Unit);
+            }
+            self.evaluate_at_depth(body_id, depth)?;
+            match self.loop_control.take() {
+                Some(LoopControl::Break) => return Ok(ConstValue::Unit),
+                Some(LoopControl::Continue) => continue,
+                None => continue,
+            }
+        }
+        Err(ConstEvalError::new(
+            "const `while` loop exceeded iteration limit (non-constant condition?)",
+            span,
+        ))
+    }
+
+    /// Constant-fold an (infinite) `loop` body until a `break` is hit. A
+    /// `continue` simply re-runs the body. A loop with no `break` is bounded by
+    /// an iteration cap so evaluation cannot hang.
+    fn eval_loop(
+        &mut self,
+        body_id: ExprId,
+        span: Span,
+        depth: u32,
+    ) -> ConstEvalResult<ConstValue> {
+        const MAX_ITERS: u32 = 1_000_000;
+        for _ in 0..MAX_ITERS {
+            self.evaluate_at_depth(body_id, depth)?;
+            match self.loop_control.take() {
+                Some(LoopControl::Break) => return Ok(ConstValue::Unit),
+                Some(LoopControl::Continue) => continue,
+                None => continue,
+            }
+        }
+        Err(ConstEvalError::new(
+            "const `loop` exceeded iteration limit (no terminating `break`?)",
+            span,
+        ))
     }
 
     fn eval_cast(
