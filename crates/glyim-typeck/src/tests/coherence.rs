@@ -20,6 +20,66 @@ fn make_ty_ctx() -> TyCtxMut {
     TyCtxMut::new(global_interner())
 }
 
+fn type_ref_to_ty(
+    type_ref: &TypeRef,
+    interner: &Interner,
+    ctx: &mut TyCtxMut,
+    def_map: &CrateDefMap,
+) -> Ty {
+    match type_ref {
+        TypeRef::Path(p) => {
+            let name = p.as_name().or_else(|| p.segments.first().map(|s| s.name));
+            let name = match name {
+                Some(n) => n,
+                None => return Ty::ERROR,
+            };
+            let is_generic = false; // self-type params aren't expressed here
+            let _ = is_generic;
+            if let Some(seg) = p.segments.first() {
+                if let Some(args) = &seg.generic_args {
+                    // Generic ADT: `Name<Arg1, Arg2, ...>`.
+                    let adt_id = match def_map.modules[def_map.root].scope.resolve(name) {
+                        Some(res) => glyim_core::def_id::AdtId::from_raw(res.0.to_raw()),
+                        None => return Ty::ERROR,
+                    };
+                    let generic_args: Vec<glyim_type::GenericArg> = args
+                        .iter()
+                        .map(|a| {
+                            glyim_type::GenericArg::Ty(type_ref_to_ty(a, interner, ctx, def_map))
+                        })
+                        .collect();
+                    let substs = ctx.intern_substitution(generic_args);
+                    return ctx.mk_ty(TyKind::Adt(adt_id, substs));
+                }
+            }
+            if let Some(res) = def_map.modules[def_map.root].scope.resolve(name) {
+                let adt_id = glyim_core::def_id::AdtId::from_raw(res.0.to_raw());
+                let substs = ctx.intern_substitution(vec![]);
+                ctx.mk_ty(TyKind::Adt(adt_id, substs))
+            } else {
+                let s = interner.resolve(name);
+                match s {
+                    "i8" => ctx.mk_ty(TyKind::Int(IntTy::I8)),
+                    "i16" => ctx.mk_ty(TyKind::Int(IntTy::I16)),
+                    "i32" => ctx.mk_ty(TyKind::Int(IntTy::I32)),
+                    "i64" => ctx.mk_ty(TyKind::Int(IntTy::I64)),
+                    "isize" => ctx.mk_ty(TyKind::Int(IntTy::Isize)),
+                    "u8" => ctx.mk_ty(TyKind::Uint(UintTy::U8)),
+                    "u16" => ctx.mk_ty(TyKind::Uint(UintTy::U16)),
+                    "u32" => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
+                    "u64" => ctx.mk_ty(TyKind::Uint(UintTy::U64)),
+                    "usize" => ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
+                    "f32" => ctx.mk_ty(TyKind::Float(FloatTy::F32)),
+                    "f64" => ctx.mk_ty(TyKind::Float(FloatTy::F64)),
+                    "bool" => Ty::BOOL,
+                    _ => Ty::ERROR,
+                }
+            }
+        }
+        _ => Ty::ERROR,
+    }
+}
+
 fn impl_item_to_header(
     impl_item: &ImplItem,
     _interner: &mut Interner,
@@ -37,45 +97,26 @@ fn impl_item_to_header(
         None
     };
 
-    let self_ty = match &impl_item.self_ty {
-        TypeRef::Path(p) => {
-            if let Some(name) = p.as_name() {
-                let is_generic = impl_item.generic_params.iter().any(|gp| gp.name == name);
-                if is_generic {
-                    let idx = impl_item
-                        .generic_params
-                        .iter()
-                        .position(|gp| gp.name == name)
-                        .unwrap() as u32;
-                    ctx.mk_ty(TyKind::Param(ParamTy { index: idx, name }))
-                } else if let Some(res) = def_map.modules[def_map.root].scope.resolve(name) {
-                    let adt_id = glyim_core::def_id::AdtId::from_raw(res.0.to_raw());
-                    let substs = ctx.intern_substitution(vec![]);
-                    ctx.mk_ty(TyKind::Adt(adt_id, substs))
-                } else {
-                    let s = ctx.name_str(name);
-                    match s {
-                        "i8" => ctx.mk_ty(TyKind::Int(IntTy::I8)),
-                        "i16" => ctx.mk_ty(TyKind::Int(IntTy::I16)),
-                        "i32" => ctx.mk_ty(TyKind::Int(IntTy::I32)),
-                        "i64" => ctx.mk_ty(TyKind::Int(IntTy::I64)),
-                        "isize" => ctx.mk_ty(TyKind::Int(IntTy::Isize)),
-                        "u8" => ctx.mk_ty(TyKind::Uint(UintTy::U8)),
-                        "u16" => ctx.mk_ty(TyKind::Uint(UintTy::U16)),
-                        "u32" => ctx.mk_ty(TyKind::Uint(UintTy::U32)),
-                        "u64" => ctx.mk_ty(TyKind::Uint(UintTy::U64)),
-                        "usize" => ctx.mk_ty(TyKind::Uint(UintTy::Usize)),
-                        "f32" => ctx.mk_ty(TyKind::Float(FloatTy::F32)),
-                        "f64" => ctx.mk_ty(TyKind::Float(FloatTy::F64)),
-                        "bool" => Ty::BOOL,
-                        _ => Ty::ERROR,
-                    }
-                }
+    // Generic self-type parameters (e.g. blanket `impl Trait for T`) must
+    // become `TyKind::Param`, not be resolved as a named type.
+    let self_ty = if let TypeRef::Path(p) = &impl_item.self_ty {
+        if let Some(name) = p.as_name() {
+            let is_generic = impl_item.generic_params.iter().any(|gp| gp.name == name);
+            if is_generic {
+                let idx = impl_item
+                    .generic_params
+                    .iter()
+                    .position(|gp| gp.name == name)
+                    .unwrap() as u32;
+                ctx.mk_ty(TyKind::Param(ParamTy { index: idx, name }))
             } else {
-                Ty::ERROR
+                type_ref_to_ty(&impl_item.self_ty, _interner, ctx, def_map)
             }
+        } else {
+            type_ref_to_ty(&impl_item.self_ty, _interner, ctx, def_map)
         }
-        _ => Ty::ERROR,
+    } else {
+        type_ref_to_ty(&impl_item.self_ty, _interner, ctx, def_map)
     };
 
     let self_type_name = match &impl_item.self_ty {
@@ -432,4 +473,100 @@ fn t10_different_traits_no_conflict() {
     );
     assert!(r1.is_ok(), "impl for TraitA should be accepted");
     assert!(r2.is_ok(), "impl for TraitB should be accepted");
+}
+
+/// Build an `impl Trait for Adt<Args...>` impl item with generic self-type
+/// arguments (e.g. `Vec<i32>`).
+fn make_generic_impl_item(
+    interner: &mut Interner,
+    trait_name: &str,
+    self_ty_name: &str,
+    arg_names: &[&str],
+) -> ImplItem {
+    let arg_ty_refs: Vec<TypeRef> = arg_names
+        .iter()
+        .map(|n| TypeRef::Path(Path::from_single(interner.intern(n))))
+        .collect();
+    let self_ty_path = Path {
+        segments: vec![glyim_hir::PathSegment {
+            name: interner.intern(self_ty_name),
+            generic_args: Some(arg_ty_refs),
+        }],
+        kind: glyim_core::path::PathKind::Plain,
+    };
+    ImplItem {
+        trait_ref: Some(Path::from_single(interner.intern(trait_name))),
+        self_ty: glyim_hir::TypeRef::Path(self_ty_path),
+        methods: vec![],
+        generic_params: vec![],
+        where_clauses: vec![],
+    }
+}
+
+#[test]
+fn t11_distinct_generic_args_do_not_overlap() {
+    // Regression for Tier 2.1: `impl Foo for Vec<i32>` and
+    // `impl Foo for Vec<String>` must NOT be treated as overlapping.
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = global_interner();
+    let def_map = build_def_map(&mut interner, local_krate, &["Foo", "Vec", "String"]);
+    let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
+    let mut checker = CoherenceChecker::new(&def_map);
+
+    let impl_i32 = make_generic_impl_item(&mut interner, "Foo", "Vec", &["i32"]);
+    let impl_string = make_generic_impl_item(&mut interner, "Foo", "Vec", &["String"]);
+
+    let r1 = checker.check_and_register_impl_compat(
+        &impl_item_to_header(&impl_i32, &mut interner, &mut ctx, &def_map),
+        ImplPolarity::Positive,
+        &mut ctx,
+        &mut infer,
+    );
+    assert!(r1.is_ok(), "impl Foo for Vec<i32> should be accepted");
+
+    let r2 = checker.check_and_register_impl_compat(
+        &impl_item_to_header(&impl_string, &mut interner, &mut ctx, &def_map),
+        ImplPolarity::Positive,
+        &mut ctx,
+        &mut infer,
+    );
+    assert!(
+        r2.is_ok(),
+        "impl Foo for Vec<String> must NOT overlap impl Foo for Vec<i32>"
+    );
+}
+
+#[test]
+fn t12_same_generic_args_do_overlap() {
+    // Sanity check: two impls with identical generic self types still conflict.
+    let local_krate = CrateId::from_raw(0);
+    let mut interner = global_interner();
+    let def_map = build_def_map(&mut interner, local_krate, &["Foo", "Vec", "String"]);
+    let mut ctx = make_ty_ctx();
+    let mut infer = glyim_solve::InferenceTable::new();
+    let mut checker = CoherenceChecker::new(&def_map);
+
+    let impl_a = make_generic_impl_item(&mut interner, "Foo", "Vec", &["i32"]);
+    let impl_b = make_generic_impl_item(&mut interner, "Foo", "Vec", &["i32"]);
+
+    checker
+        .check_and_register_impl_compat(
+            &impl_item_to_header(&impl_a, &mut interner, &mut ctx, &def_map),
+            ImplPolarity::Positive,
+            &mut ctx,
+            &mut infer,
+        )
+        .unwrap();
+
+    let r2 = checker.check_and_register_impl_compat(
+        &impl_item_to_header(&impl_b, &mut interner, &mut ctx, &def_map),
+        ImplPolarity::Positive,
+        &mut ctx,
+        &mut infer,
+    );
+    assert!(
+        r2.is_err(),
+        "two impl Foo for Vec<i32> must conflict (overlap)"
+    );
 }

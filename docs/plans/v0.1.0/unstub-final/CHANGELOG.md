@@ -14,7 +14,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.5 — const-eval expression coverage (Return/Loop/While/Flow) — COMMITTED
 - [x] Tier 1.6 — drop elaboration per-projection (move-path tree) — COMMITTED (top-level/whole-value)
 - [x] Tier 1.7 — dynamic range slicing — COMMITTED (regression coverage; impl already present)
-- [ ] Tier 2.1 — coherence overlap ignores generics
+- [x] Tier 2.1 — coherence overlap ignores generics — COMMITTED
 - [ ] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity)
 - [ ] Tier 2.3 — object safety associated types & supertraits
 - [ ] Tier 3.1 — transitive dependency resolution (glyip)
@@ -171,3 +171,27 @@ Each tier is implemented and committed atomically. Tests are run with
     correctly rejected with a diagnostic; `arr[1..]` (open-ended) lowers to a
     `{ptr, len}` tuple. 193 glyim-lower tests pass; `cargo build --workspace`
     clean.
+
+### Tier 2.1 (coherence overlap check ignores generic args)
+- `fix(typeck): structural_tys_match recurses into Adt substitution args`
+  - In `glyim-typeck/src/coherence.rs`, the `structural_tys_match` `Adt` arm
+    previously discarded the `Substitution` (`id_a == id_b`) so `Vec<i32>` and
+    `Vec<String>` were wrongly treated as overlapping — a soundness gap that
+    would reject valid non-overlapping impls. The arm now recurses into
+    `ctx.substitution_args`, comparing each `GenericArg::Ty` structurally;
+    lifetime/const args are treated as always-compatible (documented, since
+    const values aren't modeled precisely yet). The `Tuple`/`Array`/`Slice`/
+    `Ref`/`RawPtr` arms already recursed into inner types.
+  - Test-harness fix (latent bug): `type_ref_to_ty` resolved primitive type
+    names via `ctx.name_str(name)`, but `ctx`'s interner is a *separate*
+    `Interner` instance from the one that interned the test names
+    (`Interner` wraps `Arc<ThreadedRodeo>`, each `new()` is its own symbol
+    table). That returned an empty/garbage string and silently produced
+    `Ty::ERROR` for generic args — which is why no prior test caught it (they
+    resolve via `def_map`, and blanket-vs-concrete short-circuits on the param
+    branch). Switched to `interner.resolve(name)` (the interner that created
+    the names).
+  - Added `make_generic_impl_item` + tests `coherence.rs` `t11` (distinct
+    generic self types `Vec<i32>`/`Vec<String>` do NOT conflict) and `t12`
+    (identical `Vec<i32>`/`Vec<i32>` DO conflict). 12 coherence / 58 glyim-
+    typeck tests pass; `cargo build --workspace` clean.

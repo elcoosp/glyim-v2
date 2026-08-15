@@ -71,7 +71,25 @@ impl<'a> CoherenceChecker<'a> {
 
         // Otherwise, structural comparison.
         match (ctx.ty_kind(a), ctx.ty_kind(b)) {
-            (glyim_type::TyKind::Adt(id_a, _), glyim_type::TyKind::Adt(id_b, _)) => id_a == id_b,
+            (glyim_type::TyKind::Adt(id_a, subs_a), glyim_type::TyKind::Adt(id_b, subs_b)) => {
+                if id_a != id_b {
+                    return false;
+                }
+                let args_a = ctx.substitution_args(*subs_a);
+                let args_b = ctx.substitution_args(*subs_b);
+                if args_a.len() != args_b.len() {
+                    return false;
+                }
+                args_a.iter().zip(args_b.iter()).all(|(ga, gb)| match (ga, gb) {
+                    (glyim_type::GenericArg::Ty(ta), glyim_type::GenericArg::Ty(tb)) => {
+                        self.structural_tys_match(ctx, *ta, *tb)
+                    }
+                    // Lifetime/const generics: treat as always-compatible for
+                    // overlap purposes (this crate does not yet model const
+                    // generic values precisely enough to compare them).
+                    _ => true,
+                })
+            }
             (
                 glyim_type::TyKind::Ref(_, inner_a, mut_a),
                 glyim_type::TyKind::Ref(_, inner_b, mut_b),
