@@ -1106,9 +1106,11 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
         Ok((n, addr)) => (n, addr),
         Err(_) => return -1,
     };
-    let ip = addr.ip();
-    let port_val = addr.port();
-    let ip_str = ip.to_string();
+
+    // Use proper SocketAddr parsing to get IP and port.
+    let ip_str = addr.ip().to_string(); // This handles both IPv4 and IPv6 correctly.
+    let port = addr.port();
+
     let ip_bytes = ip_str.as_bytes();
     let max_len = unsafe { *src_addr_len };
     if ip_bytes.len() >= max_len {
@@ -1116,9 +1118,10 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
     }
     unsafe {
         std::ptr::copy_nonoverlapping(ip_bytes.as_ptr(), src_addr, ip_bytes.len());
+        // Add null terminator (optional, but consistent with previous behavior)
         *src_addr.add(ip_bytes.len()) = 0;
-        *src_addr_len = ip_bytes.len() + 1;
-        *src_port = port_val;
+        *src_addr_len = ip_bytes.len() + 1;  // including null
+        *src_port = port;
     }
     n as isize
 }
