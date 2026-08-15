@@ -113,15 +113,13 @@ fn for_loop_desugaring_uses_iterator_next() {
     let next_fn_id = FnDefId::from_raw(200);
     let mut found_next_call = false;
     for block in body.basic_blocks.iter() {
-        if let glyim_mir::TerminatorKind::Call { func, .. } = &block.terminator.kind {
-            if let glyim_mir::Operand::Constant(c) = func {
-                if let glyim_mir::MirConstKind::Fn(id, _) = c.kind {
-                    if id == next_fn_id {
-                        found_next_call = true;
-                        break;
-                    }
-                }
-            }
+        if let glyim_mir::TerminatorKind::Call { func, .. } = &block.terminator.kind
+            && let glyim_mir::Operand::Constant(c) = func
+            && let glyim_mir::MirConstKind::Fn(id, _) = c.kind
+            && id == next_fn_id
+        {
+            found_next_call = true;
+            break;
         }
     }
     assert!(

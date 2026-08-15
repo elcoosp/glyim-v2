@@ -295,37 +295,6 @@ fn count_fields(ty: glyim_type::Ty, ctx: &TyCtx) -> Option<u32> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use glyim_core::primitives::UintTy;
-    use glyim_type::{Const, ConstKind, TyCtxMut, TyKind};
-
-    #[test]
-    fn test_count_fields_array() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
-        let elem_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
-        let count = Const {
-            kind: ConstKind::Uint(5),
-            ty: ctx_mut.mk_ty(TyKind::Uint(UintTy::Usize)),
-        };
-        let array_ty = ctx_mut.mk_ty(TyKind::Array(elem_ty, count));
-        let ctx = ctx_mut.freeze();
-
-        assert_eq!(count_fields(array_ty, &ctx), Some(5));
-    }
-
-    #[test]
-    fn test_count_fields_slice() {
-        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
-        let elem_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
-        let slice_ty = ctx_mut.mk_ty(TyKind::Slice(elem_ty));
-        let ctx = ctx_mut.freeze();
-
-        assert_eq!(count_fields(slice_ty, &ctx), None);
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Move dataflow analysis
 // ---------------------------------------------------------------------------
@@ -859,5 +828,36 @@ fn check_place_use_after_move(
             let msg = format!("use of partially moved value: `{name}`");
             errors.push(GlyimDiagnostic::borrow_error(stmt.source_info.span, msg));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::primitives::UintTy;
+    use glyim_type::{Const, ConstKind, TyCtxMut, TyKind};
+
+    #[test]
+    fn test_count_fields_array() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+        let elem_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
+        let count = Const {
+            kind: ConstKind::Uint(5),
+            ty: ctx_mut.mk_ty(TyKind::Uint(UintTy::Usize)),
+        };
+        let array_ty = ctx_mut.mk_ty(TyKind::Array(elem_ty, count));
+        let ctx = ctx_mut.freeze();
+
+        assert_eq!(count_fields(array_ty, &ctx), Some(5));
+    }
+
+    #[test]
+    fn test_count_fields_slice() {
+        let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
+        let elem_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U32));
+        let slice_ty = ctx_mut.mk_ty(TyKind::Slice(elem_ty));
+        let ctx = ctx_mut.freeze();
+
+        assert_eq!(count_fields(slice_ty, &ctx), None);
     }
 }

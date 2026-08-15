@@ -140,27 +140,6 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use inkwell::context::Context;
-
-    #[test]
-    fn test_opaque_sized_type() {
-        let context = Context::create();
-        let ty = opaque_sized_type(&context, 24, 8);
-        assert!(ty.is_struct_type());
-        // We don't assert exact size here because StructType::size_of() can return None
-        // without a TargetData layout attached to the context.
-
-        let ty = opaque_sized_type(&context, 10, 4);
-        assert!(ty.is_struct_type());
-
-        let ty = opaque_sized_type(&context, 0, 1);
-        assert!(ty.is_struct_type());
-    }
-}
-
 fn int_type<'ctx>(context: &'ctx Context, bits: u32) -> IntType<'ctx> {
     let non_zero = NonZeroU32::new(bits).unwrap_or_else(|| NonZeroU32::new(64).unwrap());
     context.custom_width_int_type(non_zero).unwrap()
@@ -200,4 +179,25 @@ pub(crate) fn opaque_sized_type<'ctx>(
         fields.push(context.i8_type().array_type(remainder as u32).into());
     }
     context.struct_type(&fields, false).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inkwell::context::Context;
+
+    #[test]
+    fn test_opaque_sized_type() {
+        let context = Context::create();
+        let ty = opaque_sized_type(&context, 24, 8);
+        assert!(ty.is_struct_type());
+        // We don't assert exact size here because StructType::size_of() can return None
+        // without a TargetData layout attached to the context.
+
+        let ty = opaque_sized_type(&context, 10, 4);
+        assert!(ty.is_struct_type());
+
+        let ty = opaque_sized_type(&context, 0, 1);
+        assert!(ty.is_struct_type());
+    }
 }

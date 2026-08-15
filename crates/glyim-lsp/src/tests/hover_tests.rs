@@ -61,7 +61,7 @@ fn hover_shows_type_signature_and_doc() {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
                 uri: Uri::from_str(
-                    &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+                    &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
                         .unwrap()
                         .to_string(),
                 )

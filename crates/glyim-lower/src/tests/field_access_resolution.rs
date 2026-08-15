@@ -44,14 +44,14 @@ fn field_access_uses_resolved_field_idx() {
     // The MIR body should have a place with a Field(FieldIdx(1)) projection
     let found_field_proj = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(operand) = rvalue {
-                    if let glyim_mir::Operand::Copy(place) = operand {
-                        return place.projection.iter().any(
-                            |elem| matches!(elem, ProjectionElem::Field(idx) if idx.to_raw() == 1),
-                        );
-                    }
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(operand) = rvalue
+                && let glyim_mir::Operand::Copy(place) = operand
+            {
+                return place
+                    .projection
+                    .iter()
+                    .any(|elem| matches!(elem, ProjectionElem::Field(idx) if idx.to_raw() == 1));
             }
             false
         })
@@ -96,10 +96,10 @@ fn field_access_with_no_resolution_emits_error_const() {
     // Should produce an Error constant since field resolution fails
     let found_error = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue {
-                    return matches!(c.kind, glyim_mir::MirConstKind::Error);
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue
+            {
+                return matches!(c.kind, glyim_mir::MirConstKind::Error);
             }
             false
         })

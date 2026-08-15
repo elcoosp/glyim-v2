@@ -39,7 +39,7 @@ fn test_goto_definition_jumps_to_definition() {
     let (db, _file_id) = setup_db_with_file("/test/goto.g", source);
     let file_map = db.file_map.read();
 
-    let uri = Uri::from_str(&Url::from_file_path("/test/goto.g").unwrap().to_string()).unwrap();
+    let uri = Uri::from_str(Url::from_file_path("/test/goto.g").unwrap().as_ref()).unwrap();
     let params = GotoDefinitionParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },

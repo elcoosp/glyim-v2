@@ -1,6 +1,5 @@
 use crate::database::{AnalysisDatabase, SourceMap};
 use glyim_core::Interner;
-use glyim_frontend;
 use std::path::PathBuf;
 
 #[test]

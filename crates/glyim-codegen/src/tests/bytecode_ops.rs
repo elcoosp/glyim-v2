@@ -236,7 +236,7 @@ fn test_repeat_emits_op_repeat() {
         .expect("generate_function should succeed");
 
     assert!(
-        bc.iter().any(|&b| b == OP_REPEAT),
+        bc.contains(&OP_REPEAT),
         "bytecode should contain OP_REPEAT for [value; count]"
     );
 }

@@ -10,7 +10,7 @@ fn setup_analysis(content: &str) -> (AnalysisDatabase, Uri) {
     let db = AnalysisDatabase::new();
     let path = std::env::current_dir().unwrap().join("main.gly");
     let uri = Uri::from_str(
-        &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+        &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
             .unwrap()
             .to_string(),
     )

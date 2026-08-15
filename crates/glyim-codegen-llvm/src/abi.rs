@@ -296,10 +296,10 @@ mod abi_tests {
 
     // Shared test context.
     fn test_context() -> (TyCtx, TyCtxMut) {
-        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let ctx_mut = TyCtxMut::new(Interner::new());
         // We need to keep the mut context alive to create types.
         // We'll freeze it and return both.
-        let ctx = ctx_mut.freeze();
+        let _ctx = ctx_mut.freeze();
         // But we need the mut to create types in the tests.
         // Actually, we'll create all types in a single mut context before freezing.
         // For simplicity, we'll build a context with some common types.
@@ -341,7 +341,7 @@ mod abi_tests {
 
     #[test]
     fn test_classify_scalar_i32() {
-        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let ctx_mut = TyCtxMut::new(Interner::new());
         let ty = Ty::I32;
         let ctx = ctx_mut.freeze();
         let target = target_for_abi(glyim_core::primitives::TargetAbi::X86_64SystemV);

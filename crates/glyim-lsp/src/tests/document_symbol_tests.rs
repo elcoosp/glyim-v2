@@ -77,7 +77,7 @@ fn document_symbols_returns_hierarchy() {
     let params = DocumentSymbolParams {
         text_document: TextDocumentIdentifier {
             uri: Uri::from_str(
-                &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+                &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
                     .unwrap()
                     .to_string(),
             )

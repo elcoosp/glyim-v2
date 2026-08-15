@@ -24,23 +24,23 @@ fn lower_source(source: &str) -> TestContext {
 fn find_fn_body(ctx: &TestContext, fn_name: &str) -> Option<BodyId> {
     let fn_name_name = ctx.interner.intern(fn_name);
     for item in ctx.hir.items.iter() {
-        if let ItemKind::Fn(fn_item) = &item.kind {
-            if item.name == fn_name_name {
-                return fn_item.body;
-            }
+        if let ItemKind::Fn(fn_item) = &item.kind
+            && item.name == fn_name_name
+        {
+            return fn_item.body;
         }
     }
     None
 }
 
-fn find_match_arm_pattern<'a>(hir: &'a CrateHir, body_id: BodyId) -> Option<Pat> {
+fn find_match_arm_pattern(hir: &CrateHir, body_id: BodyId) -> Option<Pat> {
     let body = &hir.bodies[body_id];
     for (_, expr) in body.exprs.iter_enumerated() {
-        if let Expr::Match { arms, .. } = expr {
-            if let Some(first_arm) = arms.first() {
-                let pat = &body.pats[first_arm.pat];
-                return Some(pat.clone());
-            }
+        if let Expr::Match { arms, .. } = expr
+            && let Some(first_arm) = arms.first()
+        {
+            let pat = &body.pats[first_arm.pat];
+            return Some(pat.clone());
         }
     }
     None

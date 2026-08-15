@@ -27,10 +27,10 @@ fn fn_ref_lowers_to_constant_fn() {
 
     let found_fn_const = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue {
-                    return matches!(&c.kind, MirConstKind::Fn(id, _substs) if id.to_raw() == 7);
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue
+            {
+                return matches!(&c.kind, MirConstKind::Fn(id, _substs) if id.to_raw() == 7);
             }
             false
         })

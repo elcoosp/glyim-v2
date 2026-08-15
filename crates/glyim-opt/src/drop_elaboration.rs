@@ -449,18 +449,20 @@ fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
             TyKind::Tuple(substs) => {
                 for arg in ctx.substitution_args(*substs) {
                     if let GenericArg::Ty(t) = arg
-                        && needs_drop_rec(ctx, *t, visited) {
-                            return true;
-                        }
+                        && needs_drop_rec(ctx, *t, visited)
+                    {
+                        return true;
+                    }
                 }
                 false
             }
             TyKind::Closure(_, substs) => {
                 for arg in ctx.substitution_args(*substs) {
                     if let GenericArg::Ty(t) = arg
-                        && needs_drop_rec(ctx, *t, visited) {
-                            return true;
-                        }
+                        && needs_drop_rec(ctx, *t, visited)
+                    {
+                        return true;
+                    }
                 }
                 false
             }

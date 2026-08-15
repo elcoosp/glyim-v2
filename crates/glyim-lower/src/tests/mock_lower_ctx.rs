@@ -1,7 +1,6 @@
 use crate::lower::{AdtDef, AdtKind, AdtVariant, IteratorNextInfo, LowerCtx};
 use glyim_core::def_id::{AdtId, ConstDefId, FnDefId};
 use glyim_core::interner::Name;
-use glyim_mir;
 use glyim_span::Span;
 use glyim_type::{FieldIdx, FnSig, Substitution, Ty, TyCtx};
 use std::collections::HashMap;

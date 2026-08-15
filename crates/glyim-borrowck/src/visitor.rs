@@ -283,6 +283,73 @@ pub(crate) fn places_conflict(a: &Place, b: &Place) -> bool {
     true
 }
 
+// ---------------------------------------------------------------------------
+// Concrete visitors
+// ---------------------------------------------------------------------------
+
+/// Checks whether a specific local is read (used for two-phase activation).
+pub(crate) struct LocalReadChecker {
+    target: LocalIdx,
+    found: bool,
+}
+
+impl LocalReadChecker {
+    pub(crate) fn new(target: LocalIdx) -> Self {
+        Self {
+            target,
+            found: false,
+        }
+    }
+
+    pub(crate) fn found(&self) -> bool {
+        self.found
+    }
+}
+
+impl ReadVisitor for LocalReadChecker {
+    fn visit_read(&mut self, place: &Place) {
+        if place.local == self.target {
+            self.found = true;
+        }
+    }
+}
+
+/// Collects block-level "use" facts: records `place.local` into the uses set
+/// only if it has not already been defined earlier in the same block.
+pub(crate) struct LivenessUseCollector<'a> {
+    pub uses: &'a mut BitSet,
+    pub defs: &'a BitSet,
+}
+
+impl ReadVisitor for LivenessUseCollector<'_> {
+    fn visit_read(&mut self, place: &Place) {
+        let idx = place.local.to_raw() as usize;
+        if !self.defs.contains(idx) {
+            self.uses.insert(idx);
+        }
+    }
+}
+
+/// Unconditionally adds `place.local` to a liveness "gen" set.
+pub(crate) struct LivenessGen<'a> {
+    pub live: &'a mut BitSet,
+}
+
+impl ReadVisitor for LivenessGen<'_> {
+    fn visit_read(&mut self, place: &Place) {
+        self.live.insert(place.local.to_raw() as usize);
+    }
+}
+
+/// Human-readable label for a borrow kind.
+pub(crate) fn borrow_kind_label(kind: &BorrowKind) -> &'static str {
+    match kind {
+        BorrowKind::Shared => "shared",
+        BorrowKind::Mut { .. } => "mutable",
+        BorrowKind::Unique => "unique",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,72 +494,5 @@ mod tests {
         let p1 = make_place(0, &[ProjectionElem::Field(FieldIdx::from_raw(0))]);
         let p2 = make_place(0, &[ProjectionElem::Index(LocalIdx::from_raw(1))]);
         assert!(!places_conflict(&p1, &p2));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Concrete visitors
-// ---------------------------------------------------------------------------
-
-/// Checks whether a specific local is read (used for two-phase activation).
-pub(crate) struct LocalReadChecker {
-    target: LocalIdx,
-    found: bool,
-}
-
-impl LocalReadChecker {
-    pub(crate) fn new(target: LocalIdx) -> Self {
-        Self {
-            target,
-            found: false,
-        }
-    }
-
-    pub(crate) fn found(&self) -> bool {
-        self.found
-    }
-}
-
-impl ReadVisitor for LocalReadChecker {
-    fn visit_read(&mut self, place: &Place) {
-        if place.local == self.target {
-            self.found = true;
-        }
-    }
-}
-
-/// Collects block-level "use" facts: records `place.local` into the uses set
-/// only if it has not already been defined earlier in the same block.
-pub(crate) struct LivenessUseCollector<'a> {
-    pub uses: &'a mut BitSet,
-    pub defs: &'a BitSet,
-}
-
-impl ReadVisitor for LivenessUseCollector<'_> {
-    fn visit_read(&mut self, place: &Place) {
-        let idx = place.local.to_raw() as usize;
-        if !self.defs.contains(idx) {
-            self.uses.insert(idx);
-        }
-    }
-}
-
-/// Unconditionally adds `place.local` to a liveness "gen" set.
-pub(crate) struct LivenessGen<'a> {
-    pub live: &'a mut BitSet,
-}
-
-impl ReadVisitor for LivenessGen<'_> {
-    fn visit_read(&mut self, place: &Place) {
-        self.live.insert(place.local.to_raw() as usize);
-    }
-}
-
-/// Human-readable label for a borrow kind.
-pub(crate) fn borrow_kind_label(kind: &BorrowKind) -> &'static str {
-    match kind {
-        BorrowKind::Shared => "shared",
-        BorrowKind::Mut { .. } => "mutable",
-        BorrowKind::Unique => "unique",
     }
 }

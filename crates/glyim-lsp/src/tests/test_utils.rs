@@ -10,7 +10,7 @@ pub fn setup_test_db(content: &str, path_str: &str) -> (AnalysisDatabase, FileMa
     let mut file_map = FileMap::new();
     let path = PathBuf::from(path_str);
     let uri = Uri::from_str(
-        &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+        &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
             .unwrap()
             .to_string(),
     )

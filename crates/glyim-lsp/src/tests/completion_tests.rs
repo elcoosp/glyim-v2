@@ -75,7 +75,7 @@ fn completion_provides_struct_fields() {
     let (db, _file_id, path) = setup_test_db();
     let file_map = db.file_map.read();
     let uri = Uri::from_str(
-        &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+        &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
             .unwrap()
             .to_string(),
     )

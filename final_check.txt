@@ -1,0 +1,46 @@
+warning: methods `check_struct_pattern`, `validate_range_pattern`, and `check_slice_pattern` are never used
+   --> crates/glyim-typeck/src/check_pat.rs:215:8
+    |
+ 17 | impl<'a> FnCtxt<'a> {
+    | ------------------- methods in this implementation
+...
+215 |     fn check_struct_pattern(&mut self, pat: &Pat, _expected_ty: Ty, s...
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+300 |     fn validate_range_pattern(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+319 |     fn check_slice_pattern(
+    |        ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `is_blanket_impl` is never used
+   --> crates/glyim-typeck/src/coherence.rs:118:8
+    |
+ 41 | impl<'a> CoherenceChecker<'a> {
+    | ----------------------------- method in this implementation
+...
+118 |     fn is_blanket_impl(&self, ctx: &TyCtxMut, ty: Ty) -> bool {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `glyim-typeck` (lib) generated 2 warnings
+warning: unused import: `std::str::FromStr`
+ --> crates/glyim-lsp/src/rename.rs:4:5
+  |
+4 | use std::str::FromStr;
+  |     ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `set_recursion_limit` is never used
+  --> crates/glyim-meta/src/expander/mod.rs:22:8
+   |
+22 | pub fn set_recursion_limit(limit: u32) {
+   |        ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `glyim-lsp` (lib) generated 1 warning
+warning: `glyim-meta` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.60s

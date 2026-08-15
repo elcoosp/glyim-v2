@@ -965,7 +965,6 @@ impl<'a> FnCtxt<'a> {
         _body_expr: ExprId,
         _span: Span,
     ) -> Vec<(thir::LocalVarId, thir::CaptureKind, Ty)> {
-        
         // Placeholder: walk the body and collect free variables.
         // For now, return empty.
         Vec::new()

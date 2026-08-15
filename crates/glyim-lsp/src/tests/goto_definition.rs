@@ -52,7 +52,7 @@ fn goto_definition_returns_location() {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
                 uri: Uri::from_str(
-                    &Uri::from_str(&Url::from_file_path(&path).unwrap().to_string())
+                    &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
                         .unwrap()
                         .to_string(),
                 )
@@ -141,7 +141,7 @@ fn goto_definition_cross_file() {
     let params = GotoDefinitionParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
-                uri: Uri::from_str(&Url::from_file_path(&path1).unwrap().to_string()).unwrap(),
+                uri: Uri::from_str(Url::from_file_path(&path1).unwrap().as_ref()).unwrap(),
             },
             position: Position {
                 line: 0,
@@ -156,7 +156,7 @@ fn goto_definition_cross_file() {
     if let GotoDefinitionResponse::Scalar(loc) = response.unwrap() {
         assert_eq!(
             loc.uri,
-            Uri::from_str(&Url::from_file_path(&path2).unwrap().to_string()).unwrap()
+            Uri::from_str(Url::from_file_path(&path2).unwrap().as_ref()).unwrap()
         );
     } else {
         panic!("Expected scalar location");

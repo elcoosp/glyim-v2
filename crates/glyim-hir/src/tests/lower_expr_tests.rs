@@ -24,10 +24,10 @@ fn lower_source(source: &str) -> TestContext {
 fn find_fn_body(ctx: &TestContext, fn_name: &str) -> Option<BodyId> {
     let fn_name_name = ctx.interner.intern(fn_name);
     for item in ctx.hir.items.iter() {
-        if let ItemKind::Fn(fn_item) = &item.kind {
-            if item.name == fn_name_name {
-                return fn_item.body;
-            }
+        if let ItemKind::Fn(fn_item) = &item.kind
+            && item.name == fn_name_name
+        {
+            return fn_item.body;
         }
     }
     None

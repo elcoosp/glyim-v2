@@ -58,17 +58,14 @@ fn nested_field_access_creates_projection_chain() {
     // Verify there's a place with at least one Field projection
     let found_field_proj = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(operand) = rvalue {
-                    if let glyim_mir::Operand::Copy(place) | glyim_mir::Operand::Move(place) =
-                        operand
-                    {
-                        return place
-                            .projection
-                            .iter()
-                            .any(|elem| matches!(elem, ProjectionElem::Field(_)));
-                    }
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(operand) = rvalue
+                && let glyim_mir::Operand::Copy(place) | glyim_mir::Operand::Move(place) = operand
+            {
+                return place
+                    .projection
+                    .iter()
+                    .any(|elem| matches!(elem, ProjectionElem::Field(_)));
             }
             false
         })
@@ -104,17 +101,14 @@ fn index_expr_creates_index_projection() {
 
     let found_index_proj = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(operand) = rvalue {
-                    if let glyim_mir::Operand::Copy(place) | glyim_mir::Operand::Move(place) =
-                        operand
-                    {
-                        return place
-                            .projection
-                            .iter()
-                            .any(|elem| matches!(elem, ProjectionElem::Index(_)));
-                    }
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(operand) = rvalue
+                && let glyim_mir::Operand::Copy(place) | glyim_mir::Operand::Move(place) = operand
+            {
+                return place
+                    .projection
+                    .iter()
+                    .any(|elem| matches!(elem, ProjectionElem::Index(_)));
             }
             false
         })

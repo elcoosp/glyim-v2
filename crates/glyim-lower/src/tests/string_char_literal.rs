@@ -23,10 +23,10 @@ fn string_literal_lowers_to_mir_const_string() {
 
     let found_string = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue {
-                    return matches!(&c.kind, MirConstKind::String(n) if *n == hello_name);
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue
+            {
+                return matches!(&c.kind, MirConstKind::String(n) if *n == hello_name);
             }
             false
         })
@@ -50,10 +50,10 @@ fn char_literal_lowers_to_int_const() {
 
     let found_char = result.body.basic_blocks.iter().any(|bb| {
         bb.statements.iter().any(|stmt| {
-            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue {
-                    return matches!(&c.kind, MirConstKind::Int(v) if *v == 'A' as i128);
-                }
+            if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue
+            {
+                return matches!(&c.kind, MirConstKind::Int(v) if *v == 'A' as i128);
             }
             false
         })

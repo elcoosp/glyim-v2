@@ -208,15 +208,16 @@ fn io_err_to_errno(err: &std::io::Error) -> i32 {
 // Cleanup function for process exit.
 extern "C" fn cleanup_fs_table() {
     if let Some(table) = FS_TABLE.get()
-        && let Ok(mut guard) = table.lock() {
-            // Collect all fds to close.
-            let fds: Vec<i32> = guard.files.keys().copied().collect();
-            for fd in fds {
-                // Close the file descriptor.
-                // This drops the File, which closes the underlying OS handle.
-                guard.files.remove(&fd);
-            }
+        && let Ok(mut guard) = table.lock()
+    {
+        // Collect all fds to close.
+        let fds: Vec<i32> = guard.files.keys().copied().collect();
+        for fd in fds {
+            // Close the file descriptor.
+            // This drops the File, which closes the underlying OS handle.
+            guard.files.remove(&fd);
         }
+    }
 }
 
 // Register the cleanup handler once.

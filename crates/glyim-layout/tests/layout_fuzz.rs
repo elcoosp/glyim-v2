@@ -293,7 +293,9 @@ fn test_niche_encoding_option_like() {
     // The enum should have a Multiple variant shape with niche encoding.
     match layout.variants {
         VariantsShape::Multiple {
-            tag, tag_encoding, ..
+            tag: _,
+            tag_encoding,
+            ..
         } => {
             // Niche encoding: the tag should be the same as the field type (reference).
             // The tag value should be a niche (e.g., null for references).

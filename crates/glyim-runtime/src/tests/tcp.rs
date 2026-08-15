@@ -19,10 +19,10 @@ fn tcp_echo_server_client_works() {
     let server_handle = thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut buf = [0u8; 1024];
-            if let Ok(n) = stream.read(&mut buf) {
-                if n > 0 {
-                    let _ = stream.write_all(&buf[..n]);
-                }
+            if let Ok(n) = stream.read(&mut buf)
+                && n > 0
+            {
+                let _ = stream.write_all(&buf[..n]);
             }
         }
     });

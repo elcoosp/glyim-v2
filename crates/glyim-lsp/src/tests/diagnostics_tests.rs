@@ -1,6 +1,5 @@
 use crate::database::{AnalysisDatabase, SourceMap};
 use glyim_core::Interner;
-use glyim_frontend;
 
 #[test]
 fn diagnostics_are_emitted_on_change() {

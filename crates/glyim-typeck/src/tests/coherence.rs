@@ -4,8 +4,7 @@ use crate::coherence::{CoherenceChecker, ResolvedImplHeader};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId, TraitDefId};
 use glyim_core::interner::Interner;
-use glyim_core::primitives::*;
-use glyim_core::primitives::{FloatTy, IntTy, Mutability, UintTy, Visibility};
+use glyim_core::primitives::{FloatTy, IntTy, UintTy, Visibility};
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::{GenericParam, GenericParamKind, ImplItem, Path, TypeRef};
 use glyim_span::Span;
@@ -209,7 +208,7 @@ fn t02_orphan_rule_foreign_trait_foreign_type_error() {
     let mut interner = global_interner();
     let def_map = build_def_map(&mut interner, local_krate, &[]);
     let mut ctx = make_ty_ctx();
-    let mut infer = glyim_solve::InferenceTable::new();
+    let _infer = glyim_solve::InferenceTable::new();
     let checker = CoherenceChecker::new(&def_map);
 
     let impl_item = make_impl_item(&mut interner, "ForeignTrait", "ForeignType");
