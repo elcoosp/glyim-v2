@@ -1,3 +1,4 @@
+use glyim_core::primitives::Mutability;
 use glyim_core::Interner;
 use glyim_hir::{Body, CrateHir, Expr, ExprId, ItemKind, Pat};
 use glyim_span::{FileId, Span};
@@ -9,7 +10,17 @@ pub struct Reference {
     pub span: Span,
     pub is_definition: bool,
     pub kind: ReferenceKind,
+    /// Read/write access. A reference is `Write` when it is the direct LHS of an
+    /// `Expr::Assign` or the operand of a `&mut` borrow; everything else is a
+    /// `Read`. Mirrors Tier 1.1's `is_mut_use` classification.
+    pub access: AccessKind,
     pub def_id: Option<glyim_core::def_id::DefId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AccessKind {
+    Read,
+    Write,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,16 +67,20 @@ impl ReferenceGraph {
         let mut seen = HashSet::new();
         let function_names = &self.function_names;
 
-        let mut add_ref = |name: &str, span: Span, is_def: bool, kind: ReferenceKind| {
+        let mut add_ref = |name: &str, span: Span, is_def: bool, kind: ReferenceKind, access: AccessKind| {
             let key = (
                 name.to_string(),
                 file_id,
                 span.lo.to_usize(),
                 span.hi.to_usize(),
                 kind,
+                access,
             );
             if seen.insert(key) {
-                eprintln!("REF: {} is_def={:?} kind={:?}", name, is_def, kind);
+                eprintln!(
+                    "REF: {} is_def={:?} kind={:?} access={:?}",
+                    name, is_def, kind, access
+                );
                 self.references
                     .entry(name.to_string())
                     .or_default()
@@ -74,6 +89,7 @@ impl ReferenceGraph {
                         span,
                         is_definition: is_def,
                         kind,
+                        access,
                         def_id: None,
                     });
             }
@@ -81,24 +97,42 @@ impl ReferenceGraph {
 
         for item in hir.items.iter() {
             let name = interner.resolve(item.name).to_string();
-            add_ref(&name, item.span, true, ReferenceKind::Definition);
+            add_ref(&name, item.span, true, ReferenceKind::Definition, AccessKind::Read);
 
             if let ItemKind::Fn(fn_item) = &item.kind {
                 for param in &fn_item.params {
                     let param_name = interner.resolve(param.name).to_string();
-                    add_ref(&param_name, param.span, true, ReferenceKind::Definition);
+                    add_ref(
+                        &param_name,
+                        param.span,
+                        true,
+                        ReferenceKind::Definition,
+                        AccessKind::Read,
+                    );
                 }
             }
             if let ItemKind::Struct(struct_item) = &item.kind {
                 for field in &struct_item.fields {
                     let field_name = interner.resolve(field.name).to_string();
-                    add_ref(&field_name, field.span, true, ReferenceKind::Definition);
+                    add_ref(
+                        &field_name,
+                        field.span,
+                        true,
+                        ReferenceKind::Definition,
+                        AccessKind::Read,
+                    );
                 }
             }
             if let ItemKind::Enum(enum_item) = &item.kind {
                 for variant in &enum_item.variants {
                     let variant_name = interner.resolve(variant.name).to_string();
-                    add_ref(&variant_name, variant.span, true, ReferenceKind::Definition);
+                    add_ref(
+                        &variant_name,
+                        variant.span,
+                        true,
+                        ReferenceKind::Definition,
+                        AccessKind::Read,
+                    );
                 }
             }
         }
@@ -107,22 +141,29 @@ impl ReferenceGraph {
             pat_id: glyim_hir::PatId,
             body: &Body,
             interner: &Interner,
-            add_ref: &mut impl FnMut(&str, Span, bool, ReferenceKind),
+            add_ref: &mut impl FnMut(&str, Span, bool, ReferenceKind, AccessKind),
+            access: AccessKind,
         ) {
             let pat = &body.pats[pat_id];
             match pat {
                 Pat::Binding { name, .. } => {
                     let name_str = interner.resolve(*name).to_string();
-                    add_ref(&name_str, Span::DUMMY, true, ReferenceKind::Definition);
+                    add_ref(
+                        &name_str,
+                        Span::DUMMY,
+                        true,
+                        ReferenceKind::Definition,
+                        access,
+                    );
                 }
                 Pat::Struct { fields, .. } => {
                     for (_, pat_id) in fields {
-                        walk_pattern(*pat_id, body, interner, add_ref);
+                        walk_pattern(*pat_id, body, interner, add_ref, access);
                     }
                 }
                 Pat::Tuple(pats) | Pat::Or(pats) => {
                     for p in pats {
-                        walk_pattern(*p, body, interner, add_ref);
+                        walk_pattern(*p, body, interner, add_ref, access);
                     }
                 }
                 _ => {}
@@ -147,9 +188,10 @@ impl ReferenceGraph {
             body: &Body,
             interner: &Interner,
             _file_id: FileId,
-            add_ref: &mut impl FnMut(&str, Span, bool, ReferenceKind),
+            add_ref: &mut impl FnMut(&str, Span, bool, ReferenceKind, AccessKind),
             function_names: &HashSet<String>,
             in_call_func: bool,
+            access: AccessKind,
         ) {
             let expr = &body.exprs[expr_id];
             let span = body.expr_spans.get(expr_id).copied().unwrap_or(Span::DUMMY);
@@ -160,14 +202,20 @@ impl ReferenceGraph {
                         let name_str = interner.resolve(name).to_string();
                         if !in_call_func && !function_names.contains(&name_str) {
                             eprintln!("PATH use: {}", name_str);
-                            add_ref(&name_str, span, false, ReferenceKind::Variable);
+                            add_ref(
+                                &name_str,
+                                span,
+                                false,
+                                ReferenceKind::Variable,
+                                access,
+                            );
                         }
                     }
                 }
                 Expr::Call { func, args } => {
                     if let Some(name) = extract_path_name(*func, body, interner) {
                         eprintln!("CALL function: {}", name);
-                        add_ref(&name, span, false, ReferenceKind::Call);
+                        add_ref(&name, span, false, ReferenceKind::Call, AccessKind::Read);
                     }
                     walk_expr(
                         *func,
@@ -177,6 +225,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         true,
+                        AccessKind::Read,
                     );
                     for arg in args {
                         walk_expr(
@@ -187,6 +236,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
@@ -204,10 +254,11 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     let method_str = interner.resolve(*method).to_string();
                     eprintln!("METHOD call: {}", method_str);
-                    add_ref(&method_str, span, false, ReferenceKind::Call);
+                    add_ref(&method_str, span, false, ReferenceKind::Call, AccessKind::Read);
                     for arg in args {
                         walk_expr(
                             *arg,
@@ -217,6 +268,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
@@ -229,10 +281,17 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     let field_str = interner.resolve(*field).to_string();
                     eprintln!("FIELD access: {}", field_str);
-                    add_ref(&field_str, span, false, ReferenceKind::FieldAccess);
+                    add_ref(
+                        &field_str,
+                        span,
+                        false,
+                        ReferenceKind::FieldAccess,
+                        AccessKind::Read,
+                    );
                 }
                 Expr::Binary { lhs, rhs, .. } => {
                     walk_expr(
@@ -243,6 +302,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     walk_expr(
                         *rhs,
@@ -252,6 +312,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Unary { expr, .. } => {
@@ -263,6 +324,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Block { stmts, tail } => {
@@ -275,6 +337,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                     if let Some(tail_expr) = tail {
@@ -286,6 +349,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
@@ -302,6 +366,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     walk_expr(
                         *then_branch,
@@ -311,6 +376,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     if let Some(else_expr) = else_branch {
                         walk_expr(
@@ -321,6 +387,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
@@ -333,9 +400,10 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     for arm in arms {
-                        walk_pattern(arm.pat, body, interner, add_ref);
+                        walk_pattern(arm.pat, body, interner, add_ref, AccessKind::Read);
                         if let Some(guard) = arm.guard {
                             walk_expr(
                                 guard,
@@ -345,6 +413,7 @@ impl ReferenceGraph {
                                 add_ref,
                                 function_names,
                                 false,
+                                AccessKind::Read,
                             );
                         }
                         walk_expr(
@@ -355,6 +424,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
@@ -367,6 +437,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Return { value: None } => {}
@@ -379,6 +450,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Break { value: None } => {}
@@ -387,8 +459,16 @@ impl ReferenceGraph {
                         && let Some(name) = path.as_name()
                     {
                         let name_str = interner.resolve(name).to_string();
-                        eprintln!("ASSIGN LHS definition: {}", name_str);
-                        add_ref(&name_str, span, true, ReferenceKind::Variable);
+                        eprintln!("ASSIGN LHS write: {}", name_str);
+                        // The direct LHS of an assignment is a *write* to that
+                        // variable (mirrors Tier 1.1's is_mut_use write tracking).
+                        add_ref(
+                            &name_str,
+                            span,
+                            true,
+                            ReferenceKind::Variable,
+                            AccessKind::Write,
+                        );
                     }
                     // Walk RHS only (not LHS to avoid duplicate use)
                     walk_expr(
@@ -399,6 +479,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Loop { body: loop_body } => {
@@ -410,6 +491,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::While {
@@ -424,6 +506,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     walk_expr(
                         *loop_body,
@@ -433,6 +516,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::For {
@@ -440,7 +524,7 @@ impl ReferenceGraph {
                     iterable,
                     body: loop_body,
                 } => {
-                    walk_pattern(*pat, body, interner, add_ref);
+                    walk_pattern(*pat, body, interner, add_ref, AccessKind::Read);
                     walk_expr(
                         *iterable,
                         body,
@@ -449,6 +533,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     walk_expr(
                         *loop_body,
@@ -458,6 +543,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Struct { fields, spread, .. } => {
@@ -470,6 +556,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                     if let Some(spread_expr) = spread {
@@ -481,6 +568,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
@@ -494,12 +582,13 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
                 Expr::Closure { params, body: closure_body } => {
                     for param in params {
-                        walk_pattern(*param, body, interner, add_ref);
+                        walk_pattern(*param, body, interner, add_ref, AccessKind::Read);
                     }
                     walk_expr(
                         *closure_body,
@@ -509,6 +598,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Index { base, index } => {
@@ -520,6 +610,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                     walk_expr(
                         *index,
@@ -529,6 +620,7 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
                     );
                 }
                 Expr::Range { start, end, .. } => {
@@ -541,6 +633,7 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                     if let Some(end_expr) = end {
@@ -552,10 +645,11 @@ impl ReferenceGraph {
                             add_ref,
                             function_names,
                             false,
+                            AccessKind::Read,
                         );
                     }
                 }
-                Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
+                Expr::Cast { expr, .. } => {
                     walk_expr(
                         *expr,
                         body,
@@ -564,6 +658,27 @@ impl ReferenceGraph {
                         add_ref,
                         function_names,
                         false,
+                        AccessKind::Read,
+                    );
+                }
+                Expr::Ref { expr, mutability } => {
+                    // A `&mut x` borrow is a write to `x` (mirrors Tier 1.1's
+                    // is_mut_use classification); `&x` is a read borrow.
+                    eprintln!("DBG Ref: is_mut={} is_not={}", *mutability == Mutability::Mut, *mutability == Mutability::Not);
+                    let operand_access = if *mutability == Mutability::Mut {
+                        AccessKind::Write
+                    } else {
+                        AccessKind::Read
+                    };
+                    walk_expr(
+                        *expr,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                        operand_access,
                     );
                 }
                 _ => {
@@ -575,7 +690,7 @@ impl ReferenceGraph {
 
         for (_, body) in hir.bodies.iter_enumerated() {
             for param in &body.params {
-                walk_pattern(*param, body, interner, &mut add_ref);
+                walk_pattern(*param, body, interner, &mut add_ref, AccessKind::Read);
             }
             for (expr_id, _) in body.exprs.iter_enumerated() {
                 walk_expr(
@@ -586,6 +701,7 @@ impl ReferenceGraph {
                     &mut add_ref,
                     function_names,
                     false,
+                    AccessKind::Read,
                 );
             }
         }

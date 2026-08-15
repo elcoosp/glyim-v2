@@ -29,7 +29,8 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 5.3 — fn_sig fallback → internal error — COMMITTED
 - [x] Tier 5.4 — bytecode from_end ConstantIndex: array→const, slice→runtime len−offset — COMMITTED
 - [x] Tier 6.1 — reference_graph walks Range/Closure/Index/Break children — COMMITTED
-- [ ] Tier 6.2-6.5 — LSP read/write distinction, rename literal-safety, type-filtered completion, unused-imports via graph
+- [x] Tier 6.2 — reference_graph Read/Write access classification + `&mut` lowering fix — COMMITTED
+- [ ] Tier 6.3-6.5 — LSP rename literal-safety, type-filtered completion, unused-imports via graph
 - [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
 
 ## Commits
@@ -569,3 +570,33 @@ Each tier is implemented and committed atomically. Tests are run with
   - Verified: `cargo test -p glyim-lsp --lib` → 44 passed, 0 failed, 5 ignored
     (no new failures; the 5 ignored are pre-existing). The 3
     `reference_graph_tests` tests (incl. the new one) all pass.
+
+### Tier 6.2 (reference_graph Read/Write access + `&mut` lowering fix)
+- `feat(lsp): reference_graph records Read/Write access + fix &mut HIR lowering`
+  - `reference_graph.rs`: added a new `AccessKind { Read, Write }` field to `Reference`
+    (additive — does not repurpose the existing `ReferenceKind` semantic enum, so
+    existing `kind`/`is_definition` consumers are unchanged). The `Reference` equality
+    dedup key now includes `access`, so a variable that is both read and written at the
+    same span yields two distinct entries.
+  - `walk_expr` classification rules (mirrors Tier 1.1's `is_mut_use` write model):
+    - `Expr::Assign { lhs, .. }` where `lhs` is a `Path` → the target is recorded as
+      `AccessKind::Write`.
+    - `Expr::Ref { mutability, expr }` → the borrowed operand is `Write` when
+      `mutability == Mutability::Mut` (i.e. `&mut x`), otherwise `Read` (`&x`).
+    - All other uses (plain reads, calls, fields, ranges, indices, immutable
+      borrows) are `AccessKind::Read`.
+  - Root-cause fix for `&mut` lowering: the parser (`glyim-frontend`)
+    `parse_unary_expr` only bumped the `&` token and recursed, so the trailing `mut`
+    keyword fell through to `parse_postfix_expr`, got wrapped in an ERROR node, and
+    HIR lowering (`lower_unary_expr`) could never see the `KwMut` token — meaning
+    `&mut x` always lowered to an immutable `Expr::Ref { mutability: Not }`. The
+    parser now consumes `mut` as a direct child of the `UnaryExpr` node, and
+    `lower_unary_expr` (and `lower_ref_expr`, belt-and-suspenders) detect `KwMut` to
+    emit `Mutability::Mut`. This unblocks Tier 6.2's end-to-end verification.
+  - Added `tests::reference_graph_tests::test_reference_graph_read_write_access`:
+    a `let`-bound variable carries exactly one `Write` (its initialization); an
+    immutable `&x` borrow must NOT add a `Write` (proves the Read/Write distinction),
+    while a `&mut x` borrow MUST add a `Write` (one more than the let-only baseline).
+  - Verified: `cargo test -p glyim-lsp --lib` → 45 passed, 0 failed, 5 ignored;
+    `glyim-frontend --lib` parser tests → 730 passed (no regression from the `&mut`
+    parser change); `glyim-hir --lib` → 82 passed.

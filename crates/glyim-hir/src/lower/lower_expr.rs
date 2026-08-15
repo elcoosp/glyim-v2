@@ -987,9 +987,20 @@ fn lower_unary_expr(
         .find(|c| is_expr_node(c) || c.kind() == SyntaxKind::Block)?;
     let expr_id = lower_expr(&inner, interner, body, diags, struct_field_map)?;
     if op_token.kind() == SyntaxKind::And {
+        // `&x` (immutable borrow) vs `&mut x` (mutable borrow). Detect the
+        // `mut` keyword so `&mut x` lowers to a `Mut` reference; otherwise the
+        // `&mut` case would always be recorded as immutable (and the dedicated
+        // `lower_ref_expr` mutability detection would be bypassed).
+        let is_mut = node
+            .children_with_tokens()
+            .any(|c| matches!(&c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::KwMut));
         let expr = Expr::Ref {
             expr: expr_id,
-            mutability: Mutability::Not,
+            mutability: if is_mut {
+                Mutability::Mut
+            } else {
+                Mutability::Not
+            },
         };
         let eid = body.alloc_expr(expr, node_span(node));
         return Some(eid);

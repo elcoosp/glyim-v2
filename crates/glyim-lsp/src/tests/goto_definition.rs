@@ -2,6 +2,7 @@ use crate::goto_definition::goto_definition;
 use crate::{
     AnalysisDatabase, DefinitionLocation, Reference, ReferenceKind, SymbolInfo, SymbolKind,
 };
+use crate::reference_graph::AccessKind;
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::Uri;
 use lsp_types::*;
@@ -128,6 +129,7 @@ fn goto_definition_cross_file() {
         span: usage_span,
         is_definition: false,
         kind: ReferenceKind::Call,
+        access: AccessKind::Read,
         def_id: None,
     };
     analysis

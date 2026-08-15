@@ -155,6 +155,14 @@ impl<'a> Parser<'a> {
         ) {
             self.start_node(SyntaxKind::UnaryExpr);
             self.bump();
+            // For mutable borrows (`&mut x`), consume the `mut` keyword here so
+            // it becomes a direct child token of the `UnaryExpr` node. Without
+            // this, `mut` falls through to `parse_postfix_expr`, is wrapped in
+            // an error node, and HIR lowering cannot distinguish `&mut` from
+            // `&` (it always lowers to an immutable `Ref`).
+            if self.current_kind() == SyntaxKind::KwMut {
+                self.bump();
+            }
             self.parse_unary_expr();
             self.finish_node();
         } else {

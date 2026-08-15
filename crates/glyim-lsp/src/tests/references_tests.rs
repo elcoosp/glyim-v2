@@ -1,7 +1,7 @@
 use crate::AnalysisDatabase;
 use crate::database::FileMap;
 use crate::navigation::find_references;
-use crate::reference_graph::{Reference, ReferenceGraph, ReferenceKind};
+use crate::reference_graph::{AccessKind, Reference, ReferenceGraph, ReferenceKind};
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::Position;
 use lsp_types::Uri;
@@ -29,6 +29,7 @@ fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) 
         span,
         is_definition: true,
         kind: ReferenceKind::Definition,
+        access: AccessKind::Read,
         def_id: None,
     };
     let use_ref = Reference {
@@ -36,6 +37,7 @@ fn setup_test_db_with_references() -> (Arc<AnalysisDatabase>, FileMap, PathBuf) 
         span,
         is_definition: false,
         kind: ReferenceKind::Call,
+        access: AccessKind::Read,
         def_id: None,
     };
     graph.insert_test_reference("foo", def_ref);

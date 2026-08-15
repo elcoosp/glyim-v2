@@ -1,4 +1,4 @@
-use crate::reference_graph::{Reference, ReferenceGraph, ReferenceKind};
+use crate::reference_graph::{AccessKind, Reference, ReferenceGraph, ReferenceKind};
 use glyim_span::{ByteIdx, FileId, Span, SyntaxContext};
 
 #[test]
@@ -16,6 +16,7 @@ fn test_insert_and_find() {
         ),
         is_definition: true,
         kind: ReferenceKind::Call,
+        access: AccessKind::Read,
         def_id: None,
     };
 

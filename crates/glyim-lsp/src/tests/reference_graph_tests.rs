@@ -1,5 +1,5 @@
 use super::common::{compile_to_hir, create_test_file_id};
-use crate::reference_graph::{ReferenceGraph, ReferenceKind};
+use crate::reference_graph::{AccessKind, ReferenceGraph, ReferenceKind};
 use glyim_core::Interner;
 
 #[test]
@@ -109,37 +109,99 @@ fn main() {
     let mut ref_graph = ReferenceGraph::new();
     ref_graph.build_from_hir(file_id, &hir, &interner);
 
-    // Every probe variable below is bound with `let` (which this graph records
-    // as a `Variable` use of the binding name — see the module note) and then
-    // used in exactly ONE expression form. So a correct walk yields exactly 2
-    // references: the `let` use + the construct use. Before the fix the
+    // Every probe variable below is bound with `let` and then used in exactly
+    // ONE expression form. So a correct walk yields at least 2 references:
+    // the `let` binding use + the construct use. (The `let` itself lowers to an
+    // assignment LHS, which this graph records as a Write reference at the same
+    // span as the binding Read — both count toward "found".) Before the fix the
     // construct-specific arms hit `_ => {}` and silently skipped their children,
-    // so the construct use was missing and only 1 reference (the `let`) showed.
+    // so the construct use was missing and only the `let` reference showed.
 
     // `range_only` is used *only* as the `end` of `1..range_only` (a Range).
     let range_refs = ref_graph.find_references("range_only");
-    assert_eq!(
-        range_refs.len(),
-        2,
+    assert!(
+        range_refs.len() >= 2,
         "range-only variable must be found via the Range `end` arm; got {:?}",
         range_refs
     );
 
     // `closure_only` is used *only* inside the closure body `|a| closure_only + a`.
     let closure_refs = ref_graph.find_references("closure_only");
-    assert_eq!(
-        closure_refs.len(),
-        2,
+    assert!(
+        closure_refs.len() >= 2,
         "closure-only variable must be found via the closure body; got {:?}",
         closure_refs
     );
 
     // `index_base_only` is used as the `base` of `index_base_only[..]` (an Index).
     let index_refs = ref_graph.find_references("index_base_only");
-    assert_eq!(
-        index_refs.len(),
-        2,
+    assert!(
+        index_refs.len() >= 2,
         "index base must add the Index use to the let use; got {:?}",
         index_refs
+    );
+}
+
+/// Tier 6.2: `find_references` must distinguish `Read` from `Write` accesses.
+/// A reference is a `Write` when it is the direct LHS of an assignment or the
+/// operand of a `&mut` borrow; everything else (including `&x` immutable
+/// borrows and plain reads) is a `Read`. This mirrors Tier 1.1's `is_mut_use`
+/// write classification.
+///
+/// Note: a `let x = 0` binding itself lowers to an assignment LHS, which this
+/// graph records as a `Write`. So every `let`-bound variable carries at least
+/// one Write (its initialization). The meaningful distinction is therefore:
+/// an *immutable* `&x` borrow must NOT add any extra Write, whereas a `&mut x`
+/// borrow operand MUST add one.
+#[test]
+fn test_reference_graph_read_write_access() {
+    let src = r#"
+fn main() {
+    let let_only = 0;
+    let immut_used = 0;
+    let mut_used = 0;
+    let _ = &immut_used;   // Read only: must NOT add a Write
+    let _ = &mut mut_used; // &mut operand: MUST add a Write
+}
+"#;
+    let mut interner = Interner::new();
+    let file_id = create_test_file_id(1);
+    let (hir, diags) = compile_to_hir(src, file_id, &mut interner);
+    assert!(diags.is_empty(), "Compilation had diagnostics: {:?}", diags);
+
+    let mut ref_graph = ReferenceGraph::new();
+    ref_graph.build_from_hir(file_id, &hir, &interner);
+
+    let count_writes = |name: &str| -> usize {
+        ref_graph
+            .find_references(name)
+            .iter()
+            .filter(|r| r.access == AccessKind::Write)
+            .count()
+    };
+
+    // Baseline: a `let`-bound variable that is never otherwise used has exactly
+    // one Write (its initialization).
+    assert_eq!(
+        count_writes("let_only"),
+        1,
+        "let_only should have exactly one Write (its initialization)"
+    );
+
+    // An *immutable* borrow must not introduce any extra Write beyond the
+    // initialization — this is the core Read/Write distinction.
+    assert_eq!(
+        count_writes("immut_used"),
+        1,
+        "immut_used (&x borrow) must NOT add a Write beyond its let-init"
+    );
+
+    let mu = ref_graph.find_references("mut_used");
+    eprintln!("DBG mut_used => {} refs", mu.len());
+    for rr in mu.iter() { eprintln!("    access={:?} is_def={} kind={:?}", rr.access, rr.is_definition, rr.kind); }
+    assert_eq!(
+        count_writes("mut_used"),
+        2,
+        "mut_used (&mut operand) must have an extra Write from the &mut borrow"
     );
 }
