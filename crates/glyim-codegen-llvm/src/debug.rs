@@ -4,6 +4,7 @@ use glyim_layout::{Layout, LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::VarDebugInfo;
 use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_type::TyCtx;
+use inkwell::AddressSpace;
 use inkwell::context::Context;
 use inkwell::debug_info::{
     AsDIScope, DIFile, DIFlags, DIFlagsConstants, DIScope, DISubprogram, DIType, DWARFEmissionKind,
@@ -218,71 +219,36 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 .unwrap()
                 .as_type(),
             TyKind::Ref(region, inner, mutability) => {
-                let _inner_di = self.debug_type_for_ty(context, *inner, ty_ctx);
-                let ptr_ty = self
-                    .builder
-                    .create_basic_type("ptr", 64, 0x02, 0)
-                    .unwrap()
-                    .as_type();
-                // DIType for a reference is a pointer with attributes.
+                let inner_di = self.debug_type_for_ty(context, *inner, ty_ctx);
                 let name = if mutability.is_mut() {
                     format!("&mut {:?}", region)
                 } else {
                     format!("&{}", format!("{:?}", region))
                 };
+                // A reference is a real DWARF pointer to its pointee type.
                 self.builder
-                    .create_struct_type(
-                        self.compile_unit_scope,
-                        &name,
-                        file,
-                        0,
-                        64,
-                        64,
-                        0,
-                        None,
-                        &[ptr_ty],
-                        0,
-                        None,
-                        "glyim",
-                    )
+                    .create_pointer_type(&name, inner_di, 64, 64, AddressSpace::default())
                     .as_type()
             }
             TyKind::RawPtr(inner, mutability) => {
                 let inner_di = self.debug_type_for_ty(context, *inner, ty_ctx);
-                let ptr_ty = self
-                    .builder
-                    .create_basic_type("ptr", 64, 0x02, 0)
-                    .unwrap()
-                    .as_type();
                 let name = if mutability.is_mut() {
                     format!("*mut {:?}", inner_di)
                 } else {
                     format!("*const {:?}", inner_di)
                 };
+                // A raw pointer is a real DWARF pointer to its pointee type.
                 self.builder
-                    .create_struct_type(
-                        self.compile_unit_scope,
-                        &name,
-                        file,
-                        0,
-                        64,
-                        64,
-                        0,
-                        None,
-                        &[ptr_ty],
-                        0,
-                        None,
-                        "glyim",
-                    )
+                    .create_pointer_type(&name, inner_di, 64, 64, AddressSpace::default())
                     .as_type()
             }
             TyKind::Slice(elem_ty) => {
-                // Slice is represented as {ptr, len}.
+                // Slice is represented as {ptr, len} where ptr is a real
+                // DWARF pointer to the element type.
                 let elem_di = self.debug_type_for_ty(context, *elem_ty, ty_ctx);
                 let ptr_ty = self
                     .builder
-                    .create_basic_type("ptr", 64, 0x02, 0)
-                    .unwrap()
+                    .create_pointer_type("ptr", elem_di, 64, 64, AddressSpace::default())
                     .as_type();
                 let len_ty = self
                     .builder

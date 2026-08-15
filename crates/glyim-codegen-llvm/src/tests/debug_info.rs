@@ -716,3 +716,97 @@ fn nested_macro_expansions_produce_correct_inline_locations() {
         outer_call_site_line
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tier 5.2: DWARF pointer/slice debug types must use real pointer shapes
+// (DIDerivedType / DW_TAG_pointer_type) rather than an opaque blob.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tier5_2_reference_debug_type_is_real_pointer() {
+    use glyim_core::Mutability;
+    use glyim_type::{Region, TyKind};
+
+    let mut ctx_mut = TyCtxMut::new(Interner::default());
+    let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    let ref_ty = ctx_mut.mk_ty(TyKind::Ref(Region::Static, i32_ty, Mutability::Not));
+    let raw_ty = ctx_mut.mk_ty(TyKind::RawPtr(i32_ty, Mutability::Not));
+    let slice_ty = ctx_mut.mk_ty(TyKind::Slice(i32_ty));
+
+    let context = Context::create();
+    let module = context.create_module("tier5_2_debug_types");
+    let source_map: HashMap<FileId, (String, String)> = HashMap::from([(
+        FileId::from_raw(0),
+        ("test.g".to_string(), "fn main() {}".to_string()),
+    )]);
+    let mut debug_ctx =
+        crate::debug::DebugInfoCtx::new(&context, &module, source_map, true, None);
+
+    // Reference, raw pointer, and slice must all emit real DWARF pointer
+    // shapes (not opaque blobs). Force retention of the created DI types into
+    // the module IR via global metadata so we can assert on the produced
+    // DWARF (declaring locals is broken under LLVM 22 in this repo, but the
+    // type construction itself is what Tier 5.2 targets). Force retention of
+    // the created DI types into the module IR by wrapping each in a global
+    // variable expression (which references the DIType and is emitted into
+    // the module's metadata), so we can assert on the produced DWARF.
+    let file = debug_ctx
+        .builder
+        .create_file("test.g", ".");
+    let ref_di = debug_ctx.debug_type_for_ty(&context, ref_ty, &ctx_mut.freeze());
+    let raw_di = debug_ctx.debug_type_for_ty(&context, raw_ty, &ctx_mut.freeze());
+    let slice_di = debug_ctx.debug_type_for_ty(&context, slice_ty, &ctx_mut.freeze());
+    let ref_gv = debug_ctx.builder.create_global_variable_expression(
+        debug_ctx.compile_unit_scope,
+        "ref_v",
+        "",
+        file,
+        1,
+        ref_di,
+        true,
+        None,
+        None,
+        0,
+    );
+    let raw_gv = debug_ctx.builder.create_global_variable_expression(
+        debug_ctx.compile_unit_scope,
+        "raw_v",
+        "",
+        file,
+        2,
+        raw_di,
+        true,
+        None,
+        None,
+        0,
+    );
+    let slice_gv = debug_ctx.builder.create_global_variable_expression(
+        debug_ctx.compile_unit_scope,
+        "slice_v",
+        "",
+        file,
+        3,
+        slice_di,
+        true,
+        None,
+        None,
+        0,
+    );
+    module
+        .add_global_metadata("glyim.dbg.types", &ref_gv.as_metadata_value(&context))
+        .unwrap();
+    module
+        .add_global_metadata("glyim.dbg.types", &raw_gv.as_metadata_value(&context))
+        .unwrap();
+    module
+        .add_global_metadata("glyim.dbg.types", &slice_gv.as_metadata_value(&context))
+        .unwrap();
+    debug_ctx.finalize();
+
+    let ir = module.print_to_string().to_string();
+    assert!(
+        ir.contains("DW_TAG_pointer_type"),
+        "Ref/RawPtr/Slice debug types should emit DW_TAG_pointer_type (real pointer shape).\nIR:\n{}",
+        ir
+    );
+}

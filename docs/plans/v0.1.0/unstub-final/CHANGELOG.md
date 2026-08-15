@@ -25,7 +25,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 4.3 — include! CWD-relative fix — COMMITTED
 - [x] Tier 4.4 — stringify! normalization — COMMITTED
 - [x] Tier 5.1 — over-alignment fallback comment + set_alignment — COMMITTED
-- [ ] Tier 5.2 — DWARF pointer/slice debug types — PENDING (blocked: see note)
+- [x] Tier 5.2 — DWARF pointer/slice debug types — COMMITTED
 - [x] Tier 5.3 — fn_sig fallback → internal error — COMMITTED
 - [ ] Tier 5.4 — bytecode Subslice/ConstantIndex scaling — PENDING (blocked: see note)
 - [ ] Tier 6.1-6.5 — LSP reference graph/rename/completion/unused-imports
@@ -475,3 +475,29 @@ Each tier is implemented and committed atomically. Tests are run with
     types::tests` → 2 passed. Full `glyim-codegen-llvm` suite still has the
     ~213 PRE-EXISTING failures (unchanged from baseline); this commit adds no
     new failures.
+
+### Tier 5.2 (DWARF pointer/slice debug types)
+- `fix(codegen-llvm): Ref/RawPtr/Slice debug types use real DWARF pointers`
+  - `debug.rs::debug_type_for_ty`: `TyKind::Ref` and `TyKind::RawPtr` previously
+    emitted a struct wrapping a basic `i32`-sized "ptr" basic type (an opaque
+    blob). Now they emit a real `DIDerivedType` via
+    `create_pointer_type(name, pointee_di, 64, 64, AddressSpace::default())`,
+    so debuggers see a true pointer to the pointee type.
+  - `TyKind::Slice` previously emitted a struct `{ basic "ptr", usize }`. The
+    `ptr` member is now a real `create_pointer_type` to the element type
+    (struct `{ ptr->elem, usize }`); the comment was updated to note the ptr
+    member is a real DWARF pointer.
+  - Added import `use inkwell::AddressSpace;` (module-level).
+  - Added `tests::debug_info::tier5_2_reference_debug_type_is_real_pointer`
+    which builds `&i32`, `*const i32`, and `[i32]` debug types, forces their
+    retention into the module IR via `create_global_variable_expression`
+    (the `declare_local` path panics under LLVM 22 in this repo — see the
+    `#[ignore]`d `test_debug_declare_local_emits_intrinsic`), and asserts the
+    emitted IR contains `DW_TAG_pointer_type`.
+  - Verified in isolation: `cargo test -p glyim-codegen-llvm --lib
+    tier5_2` → 1 passed. Full `glyim-codegen-llvm` suite: 73 passed / 213
+    failed (baseline was 72/213; the +1 pass is the new 5.2 test; no new
+    failures introduced). NOTE: the 213 pre-existing failures include several
+    `tests::debug_info::*` cases that build a body with `FnDefId(0)` and no
+    registered `FnSig`; they now correctly surface the Tier 5.3 internal
+    error. That is expected fallout of 5.3, not a regression from 5.2.
