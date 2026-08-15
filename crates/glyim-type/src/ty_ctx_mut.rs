@@ -577,6 +577,30 @@ impl TyCtxMut {
         self.register_adt(AdtId::from_raw(1005), unsafe_cell_def);
         // Mark it as interior mutable.
         self.mark_adt_interior_mutable(AdtId::from_raw(1005));
+
+        // Register Option<T> - ID 1010
+        // A two-variant enum: `None` (no fields) and `Some(T)`.
+        let mut none_fields = IndexVec::new();
+        let mut some_fields = IndexVec::new();
+        some_fields.push(FieldDef {
+            name: self.resolver.intern("0"),
+            ty: t_var,
+        });
+        let option_def = AdtDef {
+            kind: AdtKind::Enum,
+            fields: IndexVec::new(),
+            variants: vec![
+                VariantDef {
+                    name: self.resolver.intern("None"),
+                    fields: none_fields,
+                },
+                VariantDef {
+                    name: self.resolver.intern("Some"),
+                    fields: some_fields.clone(),
+                },
+            ],
+        };
+        self.register_adt(AdtId::from_raw(1010), option_def);
     }
 }
 
@@ -667,6 +691,31 @@ mod interior_mutability_tests {
         let ctx = ctx_mut.freeze();
         let cell_adt = AdtId::from_raw(1006);
         assert!(ctx.is_interior_mutable_adt(cell_adt));
+    }
+
+    #[test]
+    fn test_option_builtin_registered() {
+        // `Option<T>` is registered as a two-variant enum at id 1010 by
+        // register_builtin_ranges (called in `new`).
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        // Build Option<T> type to confirm the ADT exists and is an enum.
+        let t_var = ctx_mut.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: ctx_mut.resolver.intern("T"),
+        }));
+        let opt_subst = ctx_mut.intern_substitution(vec![GenericArg::Ty(t_var)]);
+        let option_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(1010), opt_subst));
+        let ctx = ctx_mut.freeze();
+        match ctx.ty_kind(option_ty) {
+            TyKind::Adt(adt_id, _) => {
+                assert_eq!(*adt_id, AdtId::from_raw(1010));
+                let def = ctx.adt_def(*adt_id).expect("Option ADT should be registered");
+                assert_eq!(def.variants.len(), 2, "Option has None + Some variants");
+                assert_eq!(ctx.name_str(def.variants[0].name), "None");
+                assert_eq!(ctx.name_str(def.variants[1].name), "Some");
+            }
+            other => panic!("expected Option ADT, got {other:?}"),
+        }
     }
 
     #[test]

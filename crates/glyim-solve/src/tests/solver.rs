@@ -306,6 +306,36 @@ fn t17_multiple_impls_for_same_trait() {
 }
 
 #[test]
+fn t18_iterator_next_info_uses_real_option_adt() {
+    use glyim_core::def_id::FnDefId;
+    use glyim_type::{Ty, TyKind};
+
+    let mut trait_ctx = TraitContext::new();
+    let solver = SimpleTraitSolver::new(&trait_ctx);
+
+    // Without a registered `next` fn def, resolution yields None.
+    let mut ctx = test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+    assert!(solver.iterator_next_info(&mut ctx, i32_ty, i32_ty).is_none());
+
+    // With a `next` fn def registered, resolution yields a real info struct
+    // whose `option_ty` is the builtin `Option` ADT (id 1010), not a magic id.
+    let mut trait_ctx2 = TraitContext::new();
+    trait_ctx2.set_builtin_iterator_next(FnDefId::from_raw(42));
+    let solver2 = SimpleTraitSolver::new(&trait_ctx2);
+    let mut ctx2 = test_ty_ctx();
+    let elem_ty = ctx2.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+    let info = solver2
+        .iterator_next_info(&mut ctx2, elem_ty, elem_ty)
+        .expect("iterator_next_info should resolve with a registered next fn");
+    assert_eq!(info.fn_def_id, FnDefId::from_raw(42));
+    match ctx2.freeze().ty_kind(info.option_ty) {
+        TyKind::Adt(adt_id, _) => assert_eq!(*adt_id, glyim_core::def_id::AdtId::from_raw(1010)),
+        other => panic!("expected Option ADT for option_ty, got {other:?}"),
+    }
+}
+
+#[test]
 fn t18_register_trait_with_associated_types() {
     let interner = Interner::new();
     let assoc = interner.intern("Item");

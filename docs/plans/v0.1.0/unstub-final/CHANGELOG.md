@@ -9,7 +9,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 0 — mir-interp soundness (0.1 sizing, 0.2 ConstantIndex/Subslice write, 0.3 PtrToPtr comment, 0.4 Drop/Call scope note, 0.5 Len non-int -> Err) — COMMITTED
 - [x] Tier 1.1 + 1.1b — closure capture analysis + real closure ADT type — COMMITTED
 - [x] Tier 1.2 — vtable generation (trait-def-driven method population) — COMMITTED
-- [ ] Tier 1.3 — Iterator::next real resolution
+- [x] Tier 1.3 — Iterator::next real resolution — COMMITTED
 - [ ] Tier 1.4 — Range lowering bug
 - [ ] Tier 1.5 — const-eval expression coverage (Loop/While/Flow/Call/etc)
 - [ ] Tier 1.6 — drop elaboration per-projection (move-path tree)
@@ -69,3 +69,19 @@ Each tier is implemented and committed atomically. Tests are run with
     2-method trait and asserts the vtable carries both entries with correct
     def ids and size. 63 glyim-layout + 168 glyim-codegen tests pass;
     `cargo check --workspace` clean.
+
+### Tier 1.3 (Iterator::next resolution)
+- `fix(solve): Iterator::next yields a real Option<T> type`
+  - Plan deviation (documented): `iterator_next_info` already returned a real
+    `SolverIteratorNextInfo` (not `None`) — it derived `next` from the
+    registered `builtin_next_fn_id`. The genuine latent bug was the `Option`
+    return type using a magic `AdtId::from_raw(101)` with no backing ADT.
+  - Registered a real `Option<T>` builtin enum (id 1010, variants `None`/
+    `Some(T)`) in `TyCtxMut::register_builtin_ranges`, and pointed
+    `iterator_next_info` at it. Avoided id collision with existing tests that
+    use 1006/1007.
+  - Tests: `test_option_builtin_registered` (glyim-type) asserts the enum is
+    registered with two correct variants; `t18_iterator_next_info_uses_real_
+    option_adt` (glyim-solve) asserts `None` when no `next` fn is registered
+    and a real `Option<elem>` (id 1010) otherwise. 560 glyim-type+glyim-solve
+    tests pass; `cargo check --workspace` clean.
