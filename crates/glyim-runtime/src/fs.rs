@@ -21,6 +21,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
+use libc;
+
 
 // ---------------------------------------------------------------------------
 // Error codes
@@ -162,6 +164,33 @@ fn io_err_to_errno(err: &std::io::Error) -> i32 {
 // FFI functions
 // ---------------------------------------------------------------------------
 
+
+// Cleanup function for process exit.
+extern "C" fn cleanup_fs_table() {
+    if let Some(table) = FS_TABLE.get() {
+        if let Ok(mut guard) = table.lock() {
+            // Collect all fds to close.
+            let fds: Vec<i32> = guard.files.keys().copied().collect();
+            for fd in fds {
+                // Close the file descriptor.
+                // This drops the File, which closes the underlying OS handle.
+                guard.files.remove(&fd);
+            }
+        }
+    }
+}
+
+// Register the cleanup handler once.
+static REGISTERED: std::sync::Once = std::sync::Once::new();
+fn register_cleanup() {
+    REGISTERED.call_once(|| {
+        // SAFETY: atexit is safe to call and the cleanup function is safe to call from any thread.
+        unsafe {
+            libc::atexit(cleanup_fs_table);
+        }
+    });
+}
+
 /// Open a file and return a file descriptor.
 ///
 /// The `flags` parameter controls the open mode (see `FS_O_*` constants).
@@ -177,7 +206,8 @@ fn io_err_to_errno(err: &std::io::Error) -> i32 {
 ///
 /// - `path` must point to valid UTF-8 data of exactly `path_len` bytes
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: u32) -> i32 {
+pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: u32) -> i32 {    register_cleanup();
+
     // Validate flag combinations.
     let access = flags & 0x3;
     // Must specify exactly one of RDONLY, WRONLY, RDWR.
