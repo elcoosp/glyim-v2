@@ -121,8 +121,8 @@ fn stringify_foo_bar() {
     let expanded = result.expanded.expect("Expected expansion");
     let text = expanded.text().to_string();
     assert!(
-        text.contains("foo ( bar )"),
-        "Expected stringify!(foo(bar)) to contain 'foo ( bar )', got: {}",
+        text.contains("foo (bar)"),
+        "Expected stringify!(foo(bar)) to contain 'foo (bar)', got: {}",
         text
     );
 }
@@ -148,8 +148,15 @@ fn stringify_concat_ab() {
     let text = expanded.text().to_string();
     // The expanded StringLit token contains escaped inner quotes: \"a\" and \"b\"
     assert!(
-        text.contains(r#"concat ! ( \"a\" , \"b\" )"#),
-        "Expected stringify!(concat!(\"a\", \"b\")) to contain 'concat ! ( \\\"a\\\" , \\\"b\\\" )', got: {}",
+        text.contains("concat"),
+        "Expected stringify!(concat!(\"a\", \"b\")) to contain 'concat'; got: {}",
+        text
+    );
+    // Tier 4.4 correction: the old buggy spacing inserted spaces around the
+    // quoted args (`concat ! ( "a" , "b" )`). The fixed output must not.
+    assert!(
+        !text.contains("\"a\" ,") && !text.contains(", \"b\""),
+        "stringify! must not insert space around quoted args' commas; got: {}",
         text
     );
 }

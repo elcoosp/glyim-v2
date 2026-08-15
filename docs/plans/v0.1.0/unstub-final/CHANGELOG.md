@@ -20,10 +20,10 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 3.1 — transitive dependency resolution (glyip) — COMMITTED
 - [x] Tier 3.2 — glyip cmd_test executes tests — COMMITTED
 - [x] Tier 3.3 — registry-disabled error message — COMMITTED
-- [ ] Tier 4.1 — fragment-spec matching (Stage A + B)
+- [ ] Tier 4.1 — fragment-spec matching (Stage A + B) — Stage A COMMITTED
 - [ ] Tier 4.2 — line!/column! from SourceMap
 - [ ] Tier 4.3 — include! CWD-relative fix
-- [ ] Tier 4.4 — stringify! normalization
+- [x] Tier 4.4 — stringify! normalization — COMMITTED
 - [ ] Tier 5.1 — over-alignment fallback comment + set_alignment
 - [ ] Tier 5.2 — DWARF pointer/slice debug types
 - [ ] Tier 5.3 — fn_sig fallback -> hard error
@@ -347,3 +347,44 @@ Each tier is implemented and committed atomically. Tests are run with
     `remote-crate` dep, asserts the error names the dep and mentions the
     registry feature / local index. 180 glyip tests pass (`cargo test -p
     glyip`); `cargo build -p glyip -p glyim-pipeline` clean.
+
+### Tier 4.1 Stage A (fragment-spec matching)
+- `feat(macro): tighten matches_fragment_spec single-token validation`
+  - Replaced the `_ => true` blanket-accept for non-ident/literal fragment
+    specs with concrete single-token cases that do not require full parsing:
+    - `Ident` / `Literal` (Int|Float|String|Bool|Char) / `Lifetime` already
+      matched by token kind.
+    - `Vis` => `KwPub` token.
+    - `Block` => a `{ ... }` group (LBrace..RBrace).
+    - `Tt` => any single token tree (correct by definition).
+    - `Expr` / `Ty` / `Path` / `Pat` => reject tokens that can never start
+      the fragment (`;` `,` `)` `}` `]`), but still accept otherwise (whole-
+      fragment validity is Stage B).
+    - `Stmt` / `Item` / `Meta` => remain `true` (too varied to validate from a
+      single token; Stage B handles them).
+  - Stage B (variable-length fragment consumption via a new
+    `glyim-frontend::try_parse_fragment` entry point) is intentionally left
+    for a follow-up commit — it is a multi-file change and new surface area
+    worth landing separately.
+  - Tests (matcher.rs): `test_stage_a_expr_rejects_separator_token` (5
+    separators rejected for `:expr`), `test_stage_a_vis_matches_pub`,
+    `test_stage_a_block_matches_brace_group`. 60 glyim-meta tests pass.
+
+### Tier 4.4 (stringify! normalization)
+- `fix(macro): deterministic stringify! spacing`
+  - `stringify_token_trees` previously did `parts.join(" ")` — every token
+    (including delimiters and commas) got a space, producing
+    `concat ! ( "a" , "b" )`. Replaced with a flatten-to-leaves pass plus a
+    `needs_space_before(prev, next)` rule that matches real `stringify!`:
+    - no space before `,` `;` `)` `]` `}`,
+    - no space after `(` `[` `{`,
+    - space everywhere else.
+  - Extracted `delim_char(kind)` (open/close delimiter char) and
+    `needs_space_before` helpers.
+  - Updated the two pre-existing `concat_stringify` tests that had hard-coded
+    the buggy spacing (`foo ( bar )` / `concat ! ( "a" , "b" )`) to assert the
+    corrected output and the absence of space-around-quote-comma. Added unit
+    tests `stringify_spaces_infix_operands` (`1 + 2`),
+    `stringify_call_no_space_around_parens_or_comma` (`foo (a, b)`),
+    `needs_space_before_rules`. 63 glyim-meta tests pass (`cargo test -p
+    glyim-meta`); build clean.

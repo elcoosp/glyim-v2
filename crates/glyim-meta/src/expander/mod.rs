@@ -682,42 +682,64 @@ impl<'a> ExpanderImpl<'a> {
     }
 }
 
-/// Convert token trees to a string with spaces between each token,
-/// preserving group delimiters as separate tokens.
+/// Convert token trees to a string with deterministic spacing, approximating
+/// real `macro_rules!` `stringify!`:
+/// - single space between adjacent tokens,
+/// - no space before `,`/`;`/`)`/`]`/`}`,
+/// - no space after `(`/`[`/`{`,
+/// - delimiters written as their literal characters.
+///
+/// This is intentionally NOT byte-exact to the original source (glyim's
+/// `TokenTree` carries only `SyntaxKind` + text, not spans) — it matches
+/// `stringify!`'s normalized output closely enough for production use.
 fn stringify_token_trees(trees: &[TokenTree]) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    for tree in trees {
-        match tree {
-            TokenTree::Token(_kind, text) => {
-                parts.push(text.as_str().to_string());
-            }
-            TokenTree::Group(open, inner, close) => {
-                // Preserve the delimiters and recursively stringify the inner tokens.
-                let open_str = match open {
-                    SyntaxKind::LParen => "(",
-                    SyntaxKind::LBrace => "{",
-                    SyntaxKind::LBracket => "[",
-                    _ => "",
-                };
-                let close_str = match close {
-                    SyntaxKind::RParen => ")",
-                    SyntaxKind::RBrace => "}",
-                    SyntaxKind::RBracket => "]",
-                    _ => "",
-                };
-                let inner_str = stringify_token_trees(inner);
-                parts.push(open_str.to_string());
-                if !inner_str.is_empty() {
-                    parts.push(inner_str);
+    // Flatten into an ordered list of leaf pieces (tokens + delimiter chars).
+    let mut leaves: Vec<String> = Vec::new();
+    fn flatten(trees: &[TokenTree], out: &mut Vec<String>) {
+        for tree in trees {
+            match tree {
+                TokenTree::Token(_kind, text) => out.push(text.as_str().to_string()),
+                TokenTree::Group(open, inner, close) => {
+                    out.push(delim_char(*open).to_string());
+                    flatten(inner, out);
+                    out.push(delim_char(*close).to_string());
                 }
-                parts.push(close_str.to_string());
-            }
-            TokenTree::DollarCrate => {
-                parts.push("$crate".to_string());
+                TokenTree::DollarCrate => out.push("$crate".to_string()),
             }
         }
     }
-    parts.join(" ")
+    flatten(trees, &mut leaves);
+
+    let mut out = String::new();
+    for (i, piece) in leaves.iter().enumerate() {
+        if i > 0 && needs_space_before(&leaves[i - 1], piece) {
+            out.push(' ');
+        }
+        out.push_str(piece);
+    }
+    out
+}
+
+/// Delimiter open/close char for a `SyntaxKind` (returns ' ' for non-delims).
+fn delim_char(kind: SyntaxKind) -> char {
+    match kind {
+        SyntaxKind::LParen => '(',
+        SyntaxKind::RParen => ')',
+        SyntaxKind::LBrace => '{',
+        SyntaxKind::RBrace => '}',
+        SyntaxKind::LBracket => '[',
+        SyntaxKind::RBracket => ']',
+        _ => ' ',
+    }
+}
+
+/// Spacing rule matching real `stringify!`: no space before a closing or
+/// separator punctuation, no space after an opening punctuation, space
+/// everywhere else.
+fn needs_space_before(prev: &str, next: &str) -> bool {
+    let next_closes = matches!(next, "," | ";" | ")" | "]" | "}");
+    let prev_opens = matches!(prev, "(" | "[" | "{");
+    !(next_closes || prev_opens)
 }
 
 fn delim_token_text(kind: SyntaxKind) -> &'static str {
@@ -729,5 +751,59 @@ fn delim_token_text(kind: SyntaxKind) -> &'static str {
         SyntaxKind::LBracket => "[",
         SyntaxKind::RBracket => "]",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_syntax::SyntaxKind;
+
+    fn tok(text: &str) -> TokenTree {
+        // Best-effort kind: punctuation vs identifier-like.
+        let kind = match text {
+            "(" => SyntaxKind::LParen,
+            ")" => SyntaxKind::RParen,
+            "[" => SyntaxKind::LBracket,
+            "]" => SyntaxKind::RBracket,
+            "{" => SyntaxKind::LBrace,
+            "}" => SyntaxKind::RBrace,
+            _ => SyntaxKind::Ident,
+        };
+        TokenTree::Token(kind, smol_str::SmolStr::from(text))
+    }
+
+    fn grp(open: SyntaxKind, inner: Vec<TokenTree>, close: SyntaxKind) -> TokenTree {
+        TokenTree::Group(open, inner, close)
+    }
+
+    #[test]
+    fn stringify_spaces_infix_operands() {
+        // stringify!(1+2) -> "1 + 2"
+        let trees = vec![tok("1"), tok("+"), tok("2")];
+        assert_eq!(stringify_token_trees(&trees), "1 + 2");
+    }
+
+    #[test]
+    fn stringify_call_no_space_around_parens_or_comma() {
+        // stringify!(foo(a, b)) -> "foo (a, b)" (space between callee and
+        // `(`, none after `(`/before `,`/before `)` — per the documented rule).
+        let trees = vec![
+            tok("foo"),
+            grp(
+                SyntaxKind::LParen,
+                vec![tok("a"), tok(","), tok("b")],
+                SyntaxKind::RParen,
+            ),
+        ];
+        assert_eq!(stringify_token_trees(&trees), "foo (a, b)");
+    }
+
+    #[test]
+    fn needs_space_before_rules() {
+        assert!(!needs_space_before("(", "x")); // no space after open
+        assert!(!needs_space_before("x", ")")); // no space before close
+        assert!(!needs_space_before("x", ",")); // no space before comma
+        assert!(needs_space_before("1", "+")); // space between operands
     }
 }

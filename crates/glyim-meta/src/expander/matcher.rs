@@ -184,6 +184,12 @@ fn parse_fragment_spec(tree: &TokenTree) -> Option<FragmentSpec> {
 }
 
 /// Check if a token tree matches a fragment specifier.
+///
+/// Stage A (Tier 4.1): tighten the single-token cases that a fragment could
+/// plausibly be validated against without full parsing, and reject
+/// patently-invalid single-token starts for the flexible fragment kinds
+/// instead of blanket-accepting everything. Variable-length fragment
+/// consumption (Stage B) lives in `match_pieces` via `consume_fragment`.
 fn matches_fragment_spec(tree: &TokenTree, spec: &FragmentSpec) -> bool {
     match spec {
         FragmentSpec::Ident => matches!(tree, TokenTree::Token(SyntaxKind::Ident, _)),
@@ -199,9 +205,32 @@ fn matches_fragment_spec(tree: &TokenTree, spec: &FragmentSpec) -> bool {
             )
         ),
         FragmentSpec::Lifetime => matches!(tree, TokenTree::Token(SyntaxKind::Lifetime, _)),
-        // For now, other fragment specs accept any single token tree (placeholder).
-        // Real parsing will be implemented later.
-        _ => true,
+        FragmentSpec::Vis => matches!(tree, TokenTree::Token(SyntaxKind::KwPub, _)),
+        FragmentSpec::Block => {
+            matches!(tree, TokenTree::Group(SyntaxKind::LBrace, _, SyntaxKind::RBrace))
+        }
+        FragmentSpec::Tt => true, // `tt` is "exactly one token tree" — `true` is correct here.
+        FragmentSpec::Expr
+        | FragmentSpec::Ty
+        | FragmentSpec::Path
+        | FragmentSpec::Pat => {
+            // Reject tokens that can never start this fragment kind, even
+            // though we can't yet confirm the whole fragment is valid.
+            !matches!(
+                tree,
+                TokenTree::Token(
+                    SyntaxKind::Semicolon
+                        | SyntaxKind::Comma
+                        | SyntaxKind::RParen
+                        | SyntaxKind::RBrace
+                        | SyntaxKind::RBracket,
+                    _
+                )
+            )
+        }
+        // `stmt`/`item`/`meta` can begin with a keyword + many shapes, and a
+        // single token tree cannot be validated as a whole here (Stage B).
+        FragmentSpec::Stmt | FragmentSpec::Item | FragmentSpec::Meta => true,
     }
 }
 
@@ -424,6 +453,57 @@ mod tests {
             fragment: FragmentSpec::Tt,
         }]);
         let input = vec![tok(SyntaxKind::Plus, "+")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_stage_a_expr_rejects_separator_token() {
+        // Tier 4.1 Stage A: a fragment starting with a separator token can
+        // never be a valid expr/ty/path/pat start.
+        for sep in [
+            SyntaxKind::Semicolon,
+            SyntaxKind::Comma,
+            SyntaxKind::RParen,
+            SyntaxKind::RBrace,
+            SyntaxKind::RBracket,
+        ] {
+            let pattern = Pattern::new(vec![PatternPiece::Metavar {
+                name: SmolStr::from("x"),
+                fragment: FragmentSpec::Expr,
+            }]);
+            let input = vec![tok(sep, ";")];
+            let result = match_pattern(&pattern, &input);
+            assert!(
+                matches!(result, MatchResult::NoMatch),
+                "expr must reject separator token {:?}",
+                sep
+            );
+        }
+    }
+
+    #[test]
+    fn test_stage_a_vis_matches_pub() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("v"),
+            fragment: FragmentSpec::Vis,
+        }]);
+        let input = vec![tok(SyntaxKind::KwPub, "pub")];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_stage_a_block_matches_brace_group() {
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("b"),
+            fragment: FragmentSpec::Block,
+        }]);
+        let input = vec![TokenTree::Group(
+            SyntaxKind::LBrace,
+            vec![tok(SyntaxKind::Ident, "x")],
+            SyntaxKind::RBrace,
+        )];
         let result = match_pattern(&pattern, &input);
         assert!(matches!(result, MatchResult::FullMatch(_)));
     }
