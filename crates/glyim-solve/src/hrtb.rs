@@ -256,6 +256,182 @@ fn substitute_substitution(
     ctx.intern_substitution(new_args)
 }
 
+/// Structural (interning-independent) equality of two types.
+///
+/// `Ty`/`Substitution`/`Region` equality is by interned handle, but HRTB
+/// instantiation re-interns substituted types, so two structurally identical
+/// types can carry different handles. This recurses through the type
+/// structure (including substitution arguments) so identity coercion can be
+/// proven for substituted types.
+fn ty_struct_eq(a: Ty, b: Ty, ctx: &TyCtx) -> bool {
+    match (ctx.ty_kind(a), ctx.ty_kind(b)) {
+        (TyKind::Ref(ra, ia, ma), TyKind::Ref(rb, ib, mb)) => {
+            ra == rb && ma == mb && ty_struct_eq(*ia, *ib, ctx)
+        }
+        (TyKind::RawPtr(ia, ma), TyKind::RawPtr(ib, mb)) => {
+            ma == mb && ty_struct_eq(*ia, *ib, ctx)
+        }
+        (TyKind::Slice(ia), TyKind::Slice(ib)) => ty_struct_eq(*ia, *ib, ctx),
+        (TyKind::Array(ia, ca), TyKind::Array(ib, cb)) => {
+            ca == cb && ty_struct_eq(*ia, *ib, ctx)
+        }
+        (TyKind::Tuple(sa), TyKind::Tuple(sb)) => substs_struct_eq(*sa, *sb, ctx),
+        (TyKind::Adt(ida, sa), TyKind::Adt(idb, sb)) => {
+            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+        }
+        (TyKind::FnDef(ida, sa), TyKind::FnDef(idb, sb)) => {
+            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+        }
+        (TyKind::Closure(ida, sa), TyKind::Closure(idb, sb)) => {
+            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+        }
+        (TyKind::Opaque(ida, sa), TyKind::Opaque(idb, sb)) => {
+            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+        }
+        (TyKind::FnPtr(sa), TyKind::FnPtr(sb)) => {
+            sa.c_variadic == sb.c_variadic
+                && sa.unsafety == sb.unsafety
+                && sa.abi == sb.abi
+                && substs_struct_eq(sa.inputs, sb.inputs, ctx)
+                && ty_struct_eq(sa.output, sb.output, ctx)
+        }
+        (TyKind::Dynamic(pa, ra), TyKind::Dynamic(pb, rb)) => {
+            ra == rb && preds_struct_eq(pa, pb, ctx)
+        }
+        (TyKind::Projection(pa), TyKind::Projection(pb)) => {
+            pa.trait_ref.def_id == pb.trait_ref.def_id
+                && substs_struct_eq(pa.trait_ref.substs, pb.trait_ref.substs, ctx)
+                && pa.item_name == pb.item_name
+        }
+        (TyKind::Int(a), TyKind::Int(b)) => a == b,
+        (TyKind::Uint(a), TyKind::Uint(b)) => a == b,
+        (TyKind::Float(a), TyKind::Float(b)) => a == b,
+        (TyKind::Bool, TyKind::Bool) => true,
+        (TyKind::Char, TyKind::Char) => true,
+        (TyKind::String, TyKind::String) => true,
+        (TyKind::Never, TyKind::Never) => true,
+        (TyKind::Unit, TyKind::Unit) => true,
+        (TyKind::Param(a), TyKind::Param(b)) => a == b,
+        (TyKind::Infer(_), TyKind::Infer(_)) => false,
+        (TyKind::Error, TyKind::Error) => true,
+        (TyKind::Bound(_, _), TyKind::Bound(_, _)) => false,
+        _ => false,
+    }
+}
+
+fn substs_struct_eq(sa: Substitution, sb: Substitution, ctx: &TyCtx) -> bool {
+    let a = ctx.substitution_args(sa);
+    let b = ctx.substitution_args(sb);
+    a.len() == b.len()
+        && a.iter().zip(b.iter()).all(|(ga, gb)| match (ga, gb) {
+            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => ty_struct_eq(*ta, *tb, ctx),
+            (GenericArg::Lifetime(ra), GenericArg::Lifetime(rb)) => ra == rb,
+            (GenericArg::Const(ca), GenericArg::Const(cb)) => ca == cb,
+            _ => false,
+        })
+}
+
+fn preds_struct_eq(
+    pa: &glyim_type::Binder<Box<[glyim_type::Predicate]>>,
+    pb: &glyim_type::Binder<Box<[glyim_type::Predicate]>>,
+    ctx: &TyCtx,
+) -> bool {
+    let a = &pa.value;
+    let b = &pb.value;
+    a.len() == b.len()
+        && a.iter().zip(b.iter()).all(|(p, q)| pred_struct_eq(p, q, ctx))
+}
+
+fn pred_struct_eq(
+    p: &glyim_type::Predicate,
+    q: &glyim_type::Predicate,
+    ctx: &TyCtx,
+) -> bool {
+    match (p, q) {
+        (Predicate::Trait(tp), Predicate::Trait(tq)) => {
+            tp.trait_ref.def_id == tq.trait_ref.def_id
+                && substs_struct_eq(tp.trait_ref.substs, tq.trait_ref.substs, ctx)
+                && tp.polarity == tq.polarity
+        }
+        (Predicate::RegionOutlives(rp), Predicate::RegionOutlives(rq)) => {
+            rp.a == rq.a && rp.b == rq.b
+        }
+        (Predicate::TypeOutlives(tp), Predicate::TypeOutlives(tq)) => {
+            ty_struct_eq(tp.ty, tq.ty, ctx) && tp.region == tq.region
+        }
+        (Predicate::WellFormed(ta), Predicate::WellFormed(tb)) => ty_struct_eq(*ta, *tb, ctx),
+        (Predicate::Coerce(a, b), Predicate::Coerce(c, d)) => {
+            ty_struct_eq(*a, *c, ctx) && ty_struct_eq(*b, *d, ctx)
+        }
+        _ => false,
+    }
+}
+
+/// Returns true if `region` (by structural equality, ignoring the universe)
+/// appears anywhere within `ty`. Used to prove reflexive `T: 'r` bounds under
+/// HRTB — if `T` contains `'r`, then `T: 'r` holds for every instantiation.
+fn region_in_ty(region: &Region, ty: Ty, ctx: &TyCtx) -> bool {
+    match ctx.ty_kind(ty) {
+        TyKind::Ref(r, inner, _) => r == region || region_in_ty(region, *inner, ctx),
+        TyKind::RawPtr(inner, _) => region_in_ty(region, *inner, ctx),
+        TyKind::Slice(inner) => region_in_ty(region, *inner, ctx),
+        TyKind::Array(inner, _) => region_in_ty(region, *inner, ctx),
+        TyKind::Tuple(substs) => ctx
+            .substitution_args(*substs)
+            .iter()
+            .any(|a| matches!(a, GenericArg::Ty(t) if region_in_ty(region, *t, ctx))),
+        TyKind::Adt(_, substs)
+        | TyKind::FnDef(_, substs)
+        | TyKind::Closure(_, substs)
+        | TyKind::Opaque(_, substs) => ctx
+            .substitution_args(*substs)
+            .iter()
+            .any(|a| matches!(a, GenericArg::Ty(t) if region_in_ty(region, *t, ctx))),
+        TyKind::FnPtr(sig) => {
+            ctx.substitution_args(sig.inputs)
+                .iter()
+                .any(|a| matches!(a, GenericArg::Ty(t) if region_in_ty(region, *t, ctx)))
+                || region_in_ty(region, sig.output, ctx)
+        }
+        TyKind::Dynamic(_, r) => r == region,
+        _ => false,
+    }
+}
+
+/// Returns true if `ty` has any *open* components that prevent a definitive
+/// HRTB verdict: an inference variable, a generic type parameter, a
+/// late-bound placeholder, an early-bound region parameter, or an inference
+/// region. A `Placeholder` region (introduced by HRTB instantiation) is
+/// *not* open — it is fully resolved — so `HAS_RE_PLACEHOLDER` is deliberately
+/// excluded. Such types cannot be discharged without further context, so the
+/// caller should remain `Ambiguous`. Owned/scalar types (which contain no
+/// such components) return `false` and are trivially well-formed / outlive
+/// every region.
+fn ty_has_open_components(ty: Ty, ctx: &TyCtx) -> bool {
+    let flags = ctx.ty_flags(ty);
+    flags.intersects(
+        TypeFlags::HAS_TY_INFER
+            | TypeFlags::HAS_TY_PARAM
+            | TypeFlags::HAS_TY_PLACEHOLDER
+            | TypeFlags::HAS_RE_INFER
+            | TypeFlags::HAS_RE_PARAM
+            | TypeFlags::HAS_ERROR,
+    )
+}
+
+/// Returns true if `ty` is concrete and trivially well-formed for HRTB
+/// purposes: no open type/region components (no inference vars, generic
+/// params, late-bound placeholders, or region variables), and not a
+/// `dyn`/projection type whose where-clauses are uncheckable here.
+fn ty_is_concrete_well_formed(ty: Ty, ctx: &TyCtx) -> bool {
+    if ty_has_open_components(ty, ctx) {
+        return false;
+    }
+    // `dyn Trait` / `impl Trait` (projection) carry where-clauses that this
+    // cheap HRTB check cannot verify, so treat them as not-yet-proven.
+    !matches!(ctx.ty_kind(ty), TyKind::Dynamic(_, _) | TyKind::Projection(_))
+}
+
 /// Check whether a higher-ranked trait bound is satisfied.
 ///
 /// This function:
@@ -283,59 +459,68 @@ pub fn check_hrtb(
         Predicate::RegionOutlives(rp) => {
             // Check that the placeholder regions satisfy outlives.
             // For HRTB, we need to ensure that for all regions, a outlives b.
-            // A simple check: if they are the same placeholder, or one is static.
+            // Cheap-win cases that are *trivially* provable everywhere:
+            //   * reflexivity (`a == b`) — every region outlives itself;
+            //   * either side is `'static` — `'static` outlives everything and
+            //     is outlived by everything.
+            // Anything genuinely open (two distinct placeholders or a
+            // placeholder vs. an unrelated early-bound region) stays
+            // Ambiguous rather than being falsely proven.
             match (&rp.a, &rp.b) {
-                (Region::Placeholder(_), Region::Placeholder(_)) => {
-                    if rp.a == rp.b {
-                        crate::solver::SolverResult::Proven
-                    } else {
-                        // Different placeholders: need to check if one outlives the other.
-                        // For now, conservative: assume ambiguous.
-                        crate::solver::SolverResult::Ambiguous
-                    }
-                }
+                _ if rp.a == rp.b => crate::solver::SolverResult::Proven,
                 (Region::Placeholder(_), Region::Static) => crate::solver::SolverResult::Proven,
-                (Region::Static, Region::Placeholder(_)) => {
-                    // Static outlives any placeholder
-                    crate::solver::SolverResult::Proven
-                }
+                (Region::Static, Region::Placeholder(_)) => crate::solver::SolverResult::Proven,
+                (Region::Static, Region::Static) => crate::solver::SolverResult::Proven,
                 _ => crate::solver::SolverResult::Ambiguous,
             }
         }
         Predicate::TypeOutlives(tp) => {
-            // Check that the type is well-formed under the placeholders.
-            // For now, just check that the type doesn't contain any unbound parameters.
-            use glyim_type::TypeFlags;
-            let flags = ctx.ty_flags(tp.ty);
-            if flags.contains(TypeFlags::HAS_TY_PARAM)
-                || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER)
-            {
-                // Type contains generic parameters, which may be okay if they are bound.
-                // For a placeholder, we need to ensure the type is well-formed in the universe.
-                // Conservative: return Ambiguous.
-                crate::solver::SolverResult::Ambiguous
-            } else {
+            // `T: 'r` is provable when `'r` is `'static`, or when `T` *contains*
+            // `'r` (the bound is reflexive), or when `T` is an owned/scalar type
+            // that contains no non-static regions at all (it trivially
+            // outlives every region). It stays Ambiguous when `T` carries
+            // unresolved inference variables or regions it does not itself
+            // contain, since those cannot be discharged under HRTB.
+            if matches!(tp.region, Region::Static) {
                 crate::solver::SolverResult::Proven
+            } else if region_in_ty(&tp.region, tp.ty, &ctx) {
+                crate::solver::SolverResult::Proven
+            } else {
+                // No inference/placeholder/param type vars, and no region
+                // variables anywhere -> owned type, provably outlives all.
+                if !ty_has_open_components(tp.ty, &ctx) {
+                    crate::solver::SolverResult::Proven
+                } else {
+                    crate::solver::SolverResult::Ambiguous
+                }
             }
         }
         Predicate::WellFormed(ty) => {
-            // Check that the type is well-formed.
-            // For HRTB, we just check that the type doesn't contain unbound params.
-            use glyim_type::TypeFlags;
-            let flags = ctx.ty_flags(*ty);
-            if flags.contains(TypeFlags::HAS_TY_PARAM)
-                || flags.contains(TypeFlags::HAS_TY_PLACEHOLDER)
-            {
-                // Conservative.
-                crate::solver::SolverResult::Ambiguous
-            } else {
+            // Well-formedness of a concrete type (no generic params, no
+            // late-bound placeholders, no inference variables, no
+            // `dyn`/projection components whose bounds are uncheckable) is not
+            // actually ambiguous — it is simply true. Only types with open
+            // components (unresolved inference vars, generic params whose
+            // bounds haven't been checked, or `dyn`/projection positions whose
+            // where-clauses are pending) remain Ambiguous.
+            if ty_is_concrete_well_formed(*ty, &ctx) {
                 crate::solver::SolverResult::Proven
+            } else {
+                crate::solver::SolverResult::Ambiguous
             }
         }
         Predicate::Coerce(a, b) => {
-            // Check coercion validity under the placeholders.
-            // We can use the can_coerce function from the solver module.
-            if crate::solver::can_coerce(&ctx, *a, *b) {
+            // Identity coercion (`a` and `b` are structurally equal types) is
+            // always valid. Note: `Ty` equality is by interned index, and
+            // HRTB instantiation re-interns substituted types, so two
+            // structurally identical types may carry different `Ty` handles.
+            // Compare via `TyKind` (structural) rather than relying on
+            // `can_coerce`'s index-based `a == b` identity check. Genuinely
+            // open higher-ranked coercions (and non-identity coercions the
+            // existing rules reject) stay Ambiguous.
+            if ty_struct_eq(*a, *b, &ctx) {
+                crate::solver::SolverResult::Proven
+            } else if crate::solver::can_coerce(&ctx, *a, *b) {
                 crate::solver::SolverResult::Proven
             } else {
                 crate::solver::SolverResult::Ambiguous

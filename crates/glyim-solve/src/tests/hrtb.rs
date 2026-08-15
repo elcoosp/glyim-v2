@@ -586,8 +586,9 @@ fn test_hrtb_coerce_via_check() {
     let trait_ctx = TraitContext::new();
     let mut solver = SimpleTraitSolver::new(&trait_ctx);
     let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, ctx);
-    // Reverted: Coerce(i32, i32) returns Ambiguous in the solver's strict evaluation context
-    assert_eq!(result, SolverResult::Ambiguous);
+    // Identity coercion `Coerce(i32, i32)` is provable (a == b), so the cheap
+    // HRTB win resolves it to `Proven` instead of the old `Ambiguous`.
+    assert_eq!(result, SolverResult::Proven);
 }
 
 #[test]
@@ -676,4 +677,127 @@ fn test_substitute_fn_ptr_shared_bound_region() {
         }
         other => panic!("Expected FnPtr, got {:?}", other),
     }
+}
+
+// --- Tier 2.2 cheap-HRTB-win regression tests ---
+
+/// `for<'a> 'a: 'a` must prove (reflexivity).
+#[test]
+fn t22_region_outlives_reflexive() {
+    let (_ctx, mut infer) = fresh_ctx_and_infer();
+    let bound_vars: Box<[BoundVariableKind]> =
+        Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
+    let region_a = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
+    let predicate = Predicate::RegionOutlives(RegionOutlivesPredicate {
+        a: region_a.clone(),
+        b: region_a,
+    });
+    let binder = Binder::bind(predicate, bound_vars);
+    let trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let empty_ctx = TyCtxMut::new(Interner::new());
+    let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, empty_ctx);
+    assert_eq!(result, SolverResult::Proven);
+}
+
+/// `for<'a> 'a: 'static` must prove (static outlives everything), but two
+/// *distinct* placeholders must stay Ambiguous (not falsely proven).
+#[test]
+fn t22_distinct_placeholders_region_outlives_ambiguous() {
+    let (_ctx, mut infer) = fresh_ctx_and_infer();
+    let bound_vars: Box<[BoundVariableKind]> = Box::new([
+        BoundVariableKind::Region(BoundRegionKind::BrAnon(0)),
+        BoundVariableKind::Region(BoundRegionKind::BrAnon(1)),
+    ]);
+    let ra = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
+    let rb = Region::LateBound(DebruijnIndex::INNERMOST, 1, BoundRegionKind::BrAnon(1));
+    let predicate = Predicate::RegionOutlives(RegionOutlivesPredicate { a: ra, b: rb });
+    let binder = Binder::bind(predicate, bound_vars);
+    let trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let empty_ctx = TyCtxMut::new(Interner::new());
+    let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, empty_ctx);
+    assert_eq!(result, SolverResult::Ambiguous);
+}
+
+/// `for<'a> &'a i32: 'a` must prove (reflexive containment of the bound
+/// region inside `T`).
+#[test]
+fn t22_type_outlives_reflexive() {
+    let (mut ctx, mut infer) = fresh_ctx_and_infer();
+    let bound_vars: Box<[BoundVariableKind]> =
+        Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
+    let bound_region = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let ref_i32 = ctx.mk_ref(bound_region.clone(), i32_ty, Mutability::Not);
+    let predicate = Predicate::TypeOutlives(TypeOutlivesPredicate {
+        ty: ref_i32,
+        region: bound_region,
+    });
+    let binder = Binder::bind(predicate, bound_vars);
+    let trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, ctx);
+    assert_eq!(result, SolverResult::Proven);
+}
+
+/// `for<'a> i32: 'a` must prove (owned/scalar type, no open components).
+#[test]
+fn t22_type_outlives_owned() {
+    let (mut ctx, mut infer) = fresh_ctx_and_infer();
+    let bound_vars: Box<[BoundVariableKind]> =
+        Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
+    let bound_region = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let predicate = Predicate::TypeOutlives(TypeOutlivesPredicate {
+        ty: i32_ty,
+        region: bound_region,
+    });
+    let binder = Binder::bind(predicate, bound_vars);
+    let trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, ctx);
+    assert_eq!(result, SolverResult::Proven);
+}
+
+/// `for<'a> &'a i32` well-formedness must prove (concrete, no open components).
+#[test]
+fn t22_well_formed_concrete() {
+    let (mut ctx, mut infer) = fresh_ctx_and_infer();
+    let bound_vars: Box<[BoundVariableKind]> =
+        Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
+    let bound_region = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let ref_i32 = ctx.mk_ref(bound_region, i32_ty, Mutability::Not);
+    let predicate = Predicate::WellFormed(ref_i32);
+    let binder = Binder::bind(predicate, bound_vars);
+    let trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, ctx);
+    assert_eq!(result, SolverResult::Proven);
+}
+
+/// `for<'a> fn(&'a i32) -> fn(&'a i32)` identity coercion must prove.
+#[test]
+fn t22_coerce_identity_fn_ptr() {
+    let (mut ctx, mut infer) = fresh_ctx_and_infer();
+    let bound_vars: Box<[BoundVariableKind]> =
+        Box::new([BoundVariableKind::Region(BoundRegionKind::BrAnon(0))]);
+    let bound_region = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let ref_i32 = ctx.mk_ref(bound_region, i32_ty, Mutability::Not);
+    let inputs = ctx.intern_substitution(vec![GenericArg::Ty(ref_i32.clone())]);
+    let fn_ptr = ctx.mk_ty(TyKind::FnPtr(FnSig {
+        inputs,
+        output: ref_i32,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    }));
+    let predicate = Predicate::Coerce(fn_ptr, fn_ptr);
+    let binder = Binder::bind(predicate, bound_vars);
+    let trait_ctx = TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (result, _frozen) = check_hrtb(&binder, &mut solver, &mut infer, ctx);
+    assert_eq!(result, SolverResult::Proven);
 }

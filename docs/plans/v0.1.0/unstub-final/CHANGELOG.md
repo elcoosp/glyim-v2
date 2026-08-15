@@ -15,7 +15,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.6 — drop elaboration per-projection (move-path tree) — COMMITTED (top-level/whole-value)
 - [x] Tier 1.7 — dynamic range slicing — COMMITTED (regression coverage; impl already present)
 - [x] Tier 2.1 — coherence overlap ignores generics — COMMITTED
-- [ ] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity)
+- [x] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity) — COMMITTED
 - [ ] Tier 2.3 — object safety associated types & supertraits
 - [ ] Tier 3.1 — transitive dependency resolution (glyip)
 - [ ] Tier 3.2 — glyip cmd_test executes tests
@@ -195,3 +195,43 @@ Each tier is implemented and committed atomically. Tests are run with
     generic self types `Vec<i32>`/`Vec<String>` do NOT conflict) and `t12`
     (identical `Vec<i32>`/`Vec<i32>` DO conflict). 12 coherence / 58 glyim-
     typeck tests pass; `cargo build --workspace` clean.
+
+### Tier 2.2 (HRTB predicates — mostly `Ambiguous` → `Proven` for trivial cases)
+- `fix(solve): cheap HRTB provable-case wins in check_hrtb`
+  - `glyim-solve/src/hrtb.rs` `check_hrtb` now resolves the *trivially
+    provable* HRTB predicates to `SolverResult::Proven` instead of the prior
+    blanket `Ambiguous`:
+    - `RegionOutlives(a, b)`: reflexivity (`a == b`) and any side being
+      `'static` → `Proven`. Two *distinct* placeholders (or a placeholder vs an
+      unrelated early-bound region) correctly stay `Ambiguous` (not falsely
+      proven).
+    - `TypeOutlives(ty, r)`: `r == 'static` → `Proven`; if `r` is structurally
+      *inside* `ty` (reflexive containment, via new `region_in_ty`) → `Proven`;
+      otherwise an owned/scalar `ty` with no open components (`ty_has_open_
+      components`) → `Proven`; genuinely open types stay `Ambiguous`.
+    - `WellFormed(ty)`: concrete types with no open components
+      (inference vars, generic params, late-bound placeholders, region
+      variables) and not `dyn`/projection → `Proven`; else `Ambiguous`. Helper
+      `ty_is_concrete_well_formed` deliberately excludes `HAS_RE_PLACEHOLDER`
+      (a placeholder region introduced by HRTB instantiation is fully
+      resolved, not "open").
+    - `Coerce(a, b)`: identity coercion resolved via a new structural
+      `ty_struct_eq` (recurses through substitution args), then falls back to
+      `can_coerce`.
+  - Root cause surfaced: `Ty`/`Substitution`/`Region` equality is by *interned
+    handle*, but HRTB instantiation **re-interns** substituted types, so two
+    structurally-identical types (e.g. `fn(&'p i32)`) carry different handles
+    and the old index-based `a == b` identity check missed them. `ty_struct_eq`
+    compares structurally (and through substitution contents), fixing both the
+    `Coerce` identity case and making identity resolution robust.
+  - Wired the previously-orphaned `tests/hrtb.rs` into `tests/mod.rs` (it was
+    not declared, so none of its `test_hrtb_*` tests ran). Updated the
+    pre-existing `test_hrtb_coerce_via_check` expectation from `Ambiguous` to
+    `Proven` (identity `Coerce(i32,i32)` is now correctly proven).
+  - Added 6 regression tests `t22_*`: region-outlives reflexivity (Proven),
+    distinct-placeholder region-outlives (Ambiguous), type-outlives reflexive
+    `&'a i32: 'a` (Proven), type-outlives owned `i32: 'a` (Proven),
+    well-formed `&'a i32` (Proven), identity `Coerce(fn(&'a i32), fn(&'a i32))`
+    (Proven). 33 glyim-solve lib tests pass; `cargo build --workspace` clean.
+  - DOC NOTE left on `check_hrtb` stating which cases remain conservative and
+    why (this is the 80% cheap-win pass, not a complete HRTB solver).
