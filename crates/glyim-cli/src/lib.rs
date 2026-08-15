@@ -6,7 +6,7 @@ use glyim_db::{CrateConfig, Database};
 use glyim_pipeline::Pipeline;
 use std::path::PathBuf;
 
-mod linker;
+pub mod linker;
 
 #[derive(Parser, Debug)]
 #[command(name = "glyim", version, about = "The Glyim compiler")]

@@ -228,14 +228,14 @@ fn execute_inner(
         super::config::TestMode::RunPass => strategy::RunPassStrategy.evaluate(
             &output,
             &test.source,
-            None,
+            output.executable_path.as_deref(),
             &test.config,
             run_timeout,
         ),
         super::config::TestMode::RunFail => strategy::RunFailStrategy.evaluate(
             &output,
             &test.source,
-            None,
+            output.executable_path.as_deref(),
             &test.config,
             run_timeout,
         ),

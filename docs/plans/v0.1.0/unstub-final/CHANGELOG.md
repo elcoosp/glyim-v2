@@ -34,7 +34,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 6.5 — unused-imports via reference graph (replaces text heuristic) — COMMITTED
 - [ ] Tier 6.4 — completion type-filtered by receiver (BLOCKED: no typeck cache in LSP; TypeckResult type queries are stubs) — see note
 - [x] Tier 7.1 — PipelineCompiler surfaces MIR/def-map/typeck artifacts + per-file temp path — COMMITTED
-- [ ] Tier 7.2 — RunPass/RunFail link executable via glyim_cli::linker — pending
+- [x] Tier 7.2 — RunPass/RunFail link executable via glyim_cli::linker + plumb executable_path — COMMITTED
 - [ ] Tier 7.3 — mock/lower_ctx with_iterator_next override — pending
 - [ ] Tier 7.4 — mock/solver iterator_next override — pending
 
@@ -686,5 +686,47 @@ Each tier is implemented and committed atomically. Tests are run with
 - Note: this unblocks 7.2 (the produced object file now has a stable, non-colliding path that the linker step can
   consume).
 
-### Tier 7.2 (RunPass/RunFail link executable) — PENDING
+### Tier 7.2 (RunPass/RunFail link executable) — COMMITTED
+
+- Exposed the linker to the test crate: `crates/glyim-cli/src/lib.rs` `mod linker;`
+  → `pub mod linker;` so `glyim-test` can call `glyim_cli::linker::invoke_linker`.
+- `crates/glyim-test/Cargo.toml`: added `glyim-cli = { workspace = true }`.
+- `crates/glyim-test/src/harness/compiler.rs`:
+  - `CompileOutput` gained an `executable_path: Option<PathBuf>` field (defaults
+    `None`, surfaced in `Debug`).
+  - `PipelineCompiler::compile` now computes `exe_path = output_path.with_extension("")`,
+    and on a successful compile invokes `glyim_cli::linker::invoke_linker(&output_path,
+    &exe_path, None, None)`; `executable_path` is set to `Some(exe_path)` only when the
+    link step succeeds (otherwise it stays `None`).
+- `crates/glyim-test/src/harness/executor.rs`: `RunPass`/`RunFail` now pass
+  `output.executable_path.as_deref()` into `RunPassStrategy::evaluate` /
+  `RunFailStrategy::evaluate` instead of the hardcoded `None`, so the execution
+  strategy actually runs the linked binary when one was produced.
+- `crates/glyim-test/src/tests/harness_tests.rs`: added three verification tests:
+  - `test_run_pass_strategy_executes_provided_executable`: a `CompileOutput` whose
+    `executable_path` points at `/bin/echo` is run by `RunPassStrategy` and passes
+    (proves the executor now executes a real binary when present).
+  - `test_run_pass_strategy_no_executable_fails`: a `CompileOutput` with
+    `executable_path: None` makes `RunPassStrategy` report `CompilationFailed`
+    ("no executable produced") rather than silently passing.
+  - `test_pipeline_compiler_populates_executable_path_field`: end-to-end through
+    `PipelineCompiler::compile` the new field is present and `None` under the mock
+    backend (which emits no real object, so linking cannot succeed on this platform).
+- `crates/glyim-pipeline/src/lib.rs`: **restored** `Pipeline::compile_file` as a thin
+  wrapper over `compile_file_with_artifacts` (discards the artifacts). This was renamed
+  away in 7.1 but is still the production entry point used by `glyip`/`glyim-cli`
+  `run_with_args`; without it `glyim-cli` does not compile. Kept the 7.1
+  `compile_file_with_artifacts` for the test harness.
+- Verification: `cargo test -p glyim-test --lib` → **98 passed** (was 95; +3 for 7.2),
+  0 failed. `glyim-cli`/`glyim-pipeline` compile clean.
+- Known pre-existing limitation (NOT a regression from this tier, documented at Tier 5.3):
+  the `glyim-cli` `test_compile_valid_file` and `test_emit_llvm_ir_writes_file` tests
+  still fail because the LLVM backend lowers `fn main() {}` with
+  `"no FnSig registered for FnDefId(0) when lowering body to LLVM IR"` — an unfinished
+  `glyim-codegen-llvm` bug. On this macOS box the produced object is also a
+  Linux-targeted (`x86_64-unknown-linux-gnu`) object that `clang` cannot link, so a
+  full native run-pass of a compiled glyim program is not yet achievable here. The 7.2
+  wiring is correct; only the downstream native codegen/link of real glyim output is
+  blocked by the pre-existing LLVM backend state. The mock-backed harness path is fully
+  green.
 

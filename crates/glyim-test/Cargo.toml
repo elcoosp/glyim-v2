@@ -26,6 +26,7 @@ glyim-borrowck   = { workspace = true }
 glyim-codegen    = { workspace = true }
 glyim-db         = { workspace = true }
 glyim-pipeline   = { workspace = true }
+glyim-cli        = { workspace = true }
 glyim-layout     = { workspace = true }
 glyim-opt        = { workspace = true }
 insta            = { workspace = true }

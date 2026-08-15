@@ -1,5 +1,6 @@
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::FileId;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Clone, Default)]
@@ -10,6 +11,12 @@ pub struct CompileOutput {
     pub typeck_result: Option<glyim_typeck::TypeckResult>,
     pub mir_bodies: Vec<Arc<glyim_mir::Body>>,
     pub ty_ctx: Option<Arc<glyim_type::TyCtx>>,
+    /// Path to a linked executable, populated only when compilation succeeded
+    /// AND the produced object file was successfully linked (Tier 7.2). `None`
+    /// otherwise (e.g. a mock backend that emits no real object, or a link
+    /// failure) — in which case run-pass/run-fail strategies report "no
+    /// executable produced" rather than silently running nothing.
+    pub executable_path: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for CompileOutput {
@@ -21,6 +28,7 @@ impl std::fmt::Debug for CompileOutput {
             .field("typeck_result", &self.typeck_result)
             .field("mir_bodies", &self.mir_bodies)
             .field("ty_ctx", &self.ty_ctx.as_ref().map(|_| "TyCtx"))
+            .field("executable_path", &self.executable_path)
             .finish()
     }
 }
@@ -42,6 +50,7 @@ impl TestCompiler for FrontendOnlyCompiler {
             typeck_result: None,
             mir_bodies: Vec::new(),
             ty_ctx: None,
+            executable_path: None,
         }
     }
 }
@@ -75,20 +84,32 @@ impl TestCompiler for PipelineCompiler {
 
         let output_path = std::env::temp_dir().join(format!("glyim_test_{}.o", file_id.to_raw()));
         let ty_ctx = db.get_ty_ctx();
+        let exe_path = output_path.with_extension("");
         match glyim_pipeline::Pipeline::compile_file_with_artifacts(
             &mut db,
             &path,
             &*self.backend,
             &output_path,
         ) {
-            Ok(artifacts) => CompileOutput {
-                diagnostics: Vec::new(),
-                syntax_tree: None,
-                def_map: Some(artifacts.def_map),
-                typeck_result: Some(artifacts.typeck_result),
-                mir_bodies: artifacts.mir_bodies,
-                ty_ctx: Some(artifacts.ty_ctx),
-            },
+            Ok(artifacts) => {
+                // Tier 7.2: link the produced object file into a real executable
+                // so run-pass/run-fail strategies can actually execute it. The
+                // linker is only invoked when codegen produced a real object
+                // (the production LLVM backend does; a mock backend that emits
+                // nothing will fail to link and we fall back to `None`).
+                let executable_path = glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None)
+                    .ok()
+                    .map(|()| exe_path.clone());
+                CompileOutput {
+                    diagnostics: Vec::new(),
+                    syntax_tree: None,
+                    def_map: Some(artifacts.def_map),
+                    typeck_result: Some(artifacts.typeck_result),
+                    mir_bodies: artifacts.mir_bodies,
+                    ty_ctx: Some(artifacts.ty_ctx),
+                    executable_path,
+                }
+            }
             Err(diags) => CompileOutput {
                 diagnostics: diags,
                 syntax_tree: None,
@@ -96,6 +117,7 @@ impl TestCompiler for PipelineCompiler {
                 typeck_result: None,
                 mir_bodies: Vec::new(),
                 ty_ctx,
+                executable_path: None,
             },
         }
     }

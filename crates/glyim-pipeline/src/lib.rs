@@ -33,6 +33,22 @@ pub struct CompileArtifacts {
 }
 
 impl Pipeline {
+    /// Production entry point: compile a source file to an object file and
+    /// discard the intermediate artifacts. Kept for `glyip` and other callers
+    /// that only need the object file; test harnesses should use
+    /// [`Pipeline::compile_file_with_artifacts`] to inspect the def-map /
+    /// type-check / MIR results.
+    pub fn compile_file(
+        db: &mut Database,
+        path: &Path,
+        backend: &dyn CodegenBackend,
+        output_path: &Path,
+    ) -> CompResult<()> {
+        Self::compile_file_with_artifacts(db, path, backend, output_path).map(|_| ())
+    }
+}
+
+impl Pipeline {
     /// Compile a source file through the full pipeline and return the mid-pipeline
     /// artifacts (def-map, type-check result, MIR bodies, type context) in addition
     /// to emitting the object file. Used by test harnesses that need to assert on

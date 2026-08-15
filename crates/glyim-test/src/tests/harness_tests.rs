@@ -284,3 +284,91 @@ fn test_pipeline_compiler_surfaces_mir_artifacts() {
     let out = &calls[0].output_path;
     assert!(out.to_string_lossy().contains("glyim_test_777.o"), "expected per-file temp path, got {:?}", out);
 }
+
+#[test]
+fn test_run_pass_strategy_executes_provided_executable() {
+    use crate::harness::compiler::CompileOutput;
+    use crate::harness::config::TestConfig;
+    use crate::harness::strategy::RunPassStrategy;
+    use std::path::Path;
+    use std::time::Duration;
+
+    // Tier 7.2: when a real executable is provided (the linking step in
+    // PipelineCompiler::compile produces one from a real object file), the
+    // run-pass strategy must actually execute it and check its output.
+    // Here we drive the consumer side directly with /bin/echo so the test is
+    // deterministic regardless of whether the mock backend can emit a linkable
+    // object on this platform. We assert the process ran and exited 0 (a
+    // nonexistent exe would yield a spawn failure / "no executable produced"
+    // instead), proving the executor now actually runs the provided path.
+    let config = TestConfig::default();
+    let output = CompileOutput {
+        diagnostics: Vec::new(),
+        syntax_tree: None,
+        def_map: None,
+        typeck_result: None,
+        mir_bodies: Vec::new(),
+        ty_ctx: None,
+        executable_path: Some(Path::new("/bin/echo").to_path_buf()),
+    };
+
+    let outcome = RunPassStrategy {}.evaluate(
+        &output,
+        "fn main() {}",
+        output.executable_path.as_deref(),
+        &config,
+        Duration::from_secs(5),
+    );
+    assert!(matches!(outcome, crate::harness::executor::TestOutcome::Passed), "run-pass with /bin/echo should pass, got {:?}", outcome);
+}
+
+#[test]
+fn test_run_pass_strategy_no_executable_fails() {
+    use crate::harness::compiler::CompileOutput;
+    use crate::harness::config::TestConfig;
+    use crate::harness::strategy::RunPassStrategy;
+    use std::time::Duration;
+
+    // Without an executable (e.g. mock backend emitted no real object and the
+    // link step fell back to None), run-pass must report "no executable
+    // produced" rather than silently passing.
+    let output = CompileOutput {
+        diagnostics: Vec::new(),
+        syntax_tree: None,
+        def_map: None,
+        typeck_result: None,
+        mir_bodies: Vec::new(),
+        ty_ctx: None,
+        executable_path: None,
+    };
+    let outcome = RunPassStrategy {}.evaluate(
+        &output,
+        "fn main() {}",
+        None,
+        &TestConfig::default(),
+        Duration::from_secs(5),
+    );
+    assert!(matches!(
+        outcome,
+        crate::harness::executor::TestOutcome::Failed { reason: crate::FailureReason::CompilationFailed { .. } }
+    ), "run-pass with no exe must fail, got {:?}", outcome);
+}
+
+#[test]
+fn test_pipeline_compiler_populates_executable_path_field() {
+    use crate::harness::compiler::TestCompiler;
+    use crate::mock::MockCodegen;
+    use glyim_span::FileId;
+    use std::sync::Arc;
+
+    // Tier 7.2: the CompileOutput produced by PipelineCompiler must now carry
+    // the `executable_path` field. With the mock backend (which emits no real
+    // object), the link step cannot succeed, so the field is None — but the
+    // value must be present and the linking path must not panic. (A real
+    // backend producing a linkable object would populate Some(...).)
+    let backend: Arc<dyn glyim_codegen::CodegenBackend + Send + Sync> =
+        Arc::new(MockCodegen::new());
+    let compiler = crate::harness::compiler::PipelineCompiler::new(backend);
+    let output = compiler.compile("fn main() {}", FileId::from_raw(888), &[]);
+    assert!(output.executable_path.is_none(), "mock backend emits no real object, so linking yields None (got {:?})", output.executable_path);
+}
