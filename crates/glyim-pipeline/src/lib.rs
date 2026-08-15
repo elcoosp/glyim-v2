@@ -21,13 +21,28 @@ use pipeline_context::{PipelineBorrowckCtx, PipelineLowerCtx};
 
 pub struct Pipeline;
 
+/// Artifacts produced by compiling a source file through the full pipeline.
+/// Returned by [`Pipeline::compile_file_with_artifacts`] so that test harnesses
+/// can inspect the mid-pipeline results (def-map, type-check, MIR bodies) that
+/// the standard `compile_file` discards.
+pub struct CompileArtifacts {
+    pub def_map: glyim_def_map::CrateDefMap,
+    pub typeck_result: glyim_typeck::TypeckResult,
+    pub mir_bodies: Vec<Arc<glyim_mir::Body>>,
+    pub ty_ctx: Arc<glyim_type::TyCtx>,
+}
+
 impl Pipeline {
-    pub fn compile_file(
+    /// Compile a source file through the full pipeline and return the mid-pipeline
+    /// artifacts (def-map, type-check result, MIR bodies, type context) in addition
+    /// to emitting the object file. Used by test harnesses that need to assert on
+    /// the MIR/typeck output.
+    pub fn compile_file_with_artifacts(
         db: &mut Database,
         path: &Path,
         backend: &dyn CodegenBackend,
         output_path: &Path,
-    ) -> CompResult<()> {
+    ) -> CompResult<CompileArtifacts> {
         let sink = DiagSink::new();
         let sink_cell = RefCell::new(sink);
 
@@ -65,7 +80,7 @@ impl Pipeline {
         let mut solver = SimpleTraitSolver::new(&trait_ctx);
         let (ty_ctx, typeck_result) =
             glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
-        sink_cell.borrow_mut().extend(typeck_result.diagnostics);
+        sink_cell.borrow_mut().extend(typeck_result.diagnostics.clone());
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
@@ -162,7 +177,13 @@ impl Pipeline {
             backend.generate(&all_bodies, out_path)?;
         }
 
-        Ok(())
+        let ty_ctx = db.get_ty_ctx().expect("TyCtx not initialized");
+        Ok(CompileArtifacts {
+            def_map,
+            typeck_result: typeck_result.clone(),
+            mir_bodies: all_bodies,
+            ty_ctx,
+        })
     }
 }
 

@@ -1,6 +1,5 @@
 use glyim_diag::GlyimDiagnostic;
 use glyim_span::FileId;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Clone, Default)]
@@ -70,19 +69,25 @@ impl TestCompiler for PipelineCompiler {
         };
 
         let mut db = Database::new(config);
-        let path = PathBuf::from(format!("test_{}.g", file_id.to_raw()));
+        let path = std::env::temp_dir().join(format!("glyim_test_{}.g", file_id.to_raw()));
+        std::fs::write(&path, source).expect("failed to write temp source file for PipelineCompiler");
         db.vfs().add_file_content(&path, Arc::from(source));
 
-        let output_path = std::path::Path::new("test_output.o");
+        let output_path = std::env::temp_dir().join(format!("glyim_test_{}.o", file_id.to_raw()));
         let ty_ctx = db.get_ty_ctx();
-        match glyim_pipeline::Pipeline::compile_file(&mut db, &path, &*self.backend, output_path) {
-            Ok(()) => CompileOutput {
+        match glyim_pipeline::Pipeline::compile_file_with_artifacts(
+            &mut db,
+            &path,
+            &*self.backend,
+            &output_path,
+        ) {
+            Ok(artifacts) => CompileOutput {
                 diagnostics: Vec::new(),
                 syntax_tree: None,
-                def_map: None,
-                typeck_result: None,
-                mir_bodies: Vec::new(),
-                ty_ctx,
+                def_map: Some(artifacts.def_map),
+                typeck_result: Some(artifacts.typeck_result),
+                mir_bodies: artifacts.mir_bodies,
+                ty_ctx: Some(artifacts.ty_ctx),
             },
             Err(diags) => CompileOutput {
                 diagnostics: diags,

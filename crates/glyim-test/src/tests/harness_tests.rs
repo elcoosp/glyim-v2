@@ -252,3 +252,35 @@ fn test_program_runner_with_stdin() {
     assert_eq!(result.exit_code, Some(0));
     assert!(result.stdout.contains("input data"));
 }
+
+#[test]
+fn test_pipeline_compiler_surfaces_mir_artifacts() {
+    use crate::harness::compiler::TestCompiler;
+    use crate::mock::MockCodegen;
+    use glyim_span::FileId;
+    use std::sync::Arc;
+
+    // Tier 7.1: the full-pipeline compiler must populate CompileOutput with
+    // the MIR bodies/def-map/typeck result it used to discard, and must write
+    // its object file to a per-file temp path (not a shared "test_output.o").
+    let mock = Arc::new(MockCodegen::new());
+    let backend: Arc<dyn glyim_codegen::CodegenBackend + Send + Sync> = mock.clone();
+    let compiler = harness::compiler::PipelineCompiler::new(backend.clone());
+
+    let source = "fn main() {}";
+    let output = compiler.compile(source, FileId::from_raw(777), &[]);
+
+    assert!(output.diagnostics.is_empty(), "unexpected diagnostics: {:?}", output.diagnostics);
+    assert!(output.def_map.is_some(), "def_map must be populated, was None");
+    assert!(output.typeck_result.is_some(), "typeck_result must be populated, was None");
+    assert!(
+        !output.mir_bodies.is_empty(),
+        "mir_bodies must be populated (pipeline used to discard them)"
+    );
+
+    // The mock backend recorded exactly one generate call, to a per-file temp path.
+    let calls = mock.calls();
+    assert_eq!(calls.len(), 1, "expected one codegen generate call");
+    let out = &calls[0].output_path;
+    assert!(out.to_string_lossy().contains("glyim_test_777.o"), "expected per-file temp path, got {:?}", out);
+}

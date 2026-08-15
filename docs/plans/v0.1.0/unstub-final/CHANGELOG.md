@@ -33,7 +33,10 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 6.3 — rename fallback lexes & only edits `Ident` tokens (skips string/char/comment) — COMMITTED
 - [x] Tier 6.5 — unused-imports via reference graph (replaces text heuristic) — COMMITTED
 - [ ] Tier 6.4 — completion type-filtered by receiver (BLOCKED: no typeck cache in LSP; TypeckResult type queries are stubs) — see note
-- [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
+- [x] Tier 7.1 — PipelineCompiler surfaces MIR/def-map/typeck artifacts + per-file temp path — COMMITTED
+- [ ] Tier 7.2 — RunPass/RunFail link executable via glyim_cli::linker — pending
+- [ ] Tier 7.3 — mock/lower_ctx with_iterator_next override — pending
+- [ ] Tier 7.4 — mock/solver iterator_next override — pending
 
 ## Commits
 
@@ -661,3 +664,27 @@ Each tier is implemented and committed atomically. Tests are run with
   effort that is explicitly a "no stubs" zone. Faking a filter would violate
   that. Deferred until the typeck result layer exists. The completion path
   still works (name-based symbol index), just unfiltered.
+
+### Tier 7.1 (PipelineCompiler surfaces intermediates + per-file temp path) — COMMITTED
+- `fix(pipeline): add compile_file_with_artifacts returning def_map/typeck_result/mir_bodies`
+  - `glyim-pipeline/src/lib.rs`: added `pub struct CompileArtifacts { def_map, typeck_result, mir_bodies, ty_ctx }` and
+    `pub fn compile_file_with_artifacts(db, path, backend, output) -> CompResult<CompileArtifacts>`. The existing
+    `Pipeline::compile_file` (used by `glyip`) is left untouched — it calls through and discards the artifacts, so
+    production behavior is unchanged. `CompileArtifacts.typeck_result` is cloned at return (the pipeline already
+    partially-moves `typeck_result.diagnostics` into the diagnostic sink at line 83, so a plain `.clone()` on the
+    field is required).
+  - `glyim-test/src/harness/compiler.rs`: `PipelineCompiler::compile` now writes the source to a per-file temp path
+    (`$TMPDIR/glyim_test_{file_id}.g`) on disk (the pipeline reads via `add_file_from_disk`, so in-memory content
+    alone is insufficient), then calls `compile_file_with_artifacts`. On success it populates `CompileOutput`'s
+    `def_map`/`typeck_result`/`mir_bodies`/`ty_ctx` (previously all `None`/empty). The object output path is also a
+    per-file temp file (`glyim_test_{file_id}.o`) instead of the shared `test_output.o` (which was a parallel-test
+    race hazard).
+  - `glyim-test/src/tests/harness_tests.rs`: added `test_pipeline_compiler_surfaces_mir_artifacts` asserting that a
+    clean `fn main() {}` produces non-empty `mir_bodies` and populated `def_map`/`typeck_result`, and that the mock
+    backend recorded exactly one `generate` call to a `glyim_test_777.o` path.
+  - Verified: `cargo test -p glyim-test --lib` → 95 passed (was 94; +1), 0 failed.
+- Note: this unblocks 7.2 (the produced object file now has a stable, non-colliding path that the linker step can
+  consume).
+
+### Tier 7.2 (RunPass/RunFail link executable) — PENDING
+
