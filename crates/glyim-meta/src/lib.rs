@@ -8,8 +8,9 @@
 
 use glyim_core::interner::{Interner, Name};
 use glyim_diag::GlyimDiagnostic;
-use glyim_span::{HygieneCtx, Span};
+use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_syntax::SyntaxNode;
+use glyim_vfs::Vfs;
 
 mod expander;
 
@@ -48,6 +49,13 @@ pub struct Expander<'a> {
     hygiene: &'a mut HygieneCtx,
     macros: Vec<MacroDef>,
     interner: Interner,
+    /// File id of the source currently being expanded. Used to anchor
+    /// `file!` / `line!` / `column!` / `include!` to the real source when the
+    /// caller supplies one (defaults to `FileId::BOGUS`).
+    current_file: FileId,
+    /// Optional virtual file system, used to resolve `include!` paths relative
+    /// to the calling file and to compute real `line!`/`column!` offsets.
+    vfs: Option<&'a Vfs>,
 }
 
 impl<'a> Expander<'a> {
@@ -56,7 +64,21 @@ impl<'a> Expander<'a> {
             hygiene,
             macros: Vec::new(),
             interner: Interner::default(),
+            current_file: FileId::BOGUS,
+            vfs: None,
         }
+    }
+
+    /// Set the `FileId` of the source being expanded. Enables `file!`,
+    /// `line!`, `column!`, and `include!` to resolve against the real file.
+    pub fn set_source_file(&mut self, file_id: FileId) {
+        self.current_file = file_id;
+    }
+
+    /// Provide a virtual file system so `include!` / `line!` / `column!` /
+    /// `file!` resolve against real source paths and contents.
+    pub fn set_vfs(&mut self, vfs: &'a Vfs) {
+        self.vfs = Some(vfs);
     }
 
     pub fn register_macro(&mut self, def: MacroDef) {
@@ -80,6 +102,8 @@ impl<'a> Expander<'a> {
             self.hygiene,
             &self.macros,
             &self.interner,
+            self.current_file,
+            self.vfs,
             0,
         );
         let expanded = green_opt.map(SyntaxNode::new_root);
@@ -91,8 +115,14 @@ impl<'a> Expander<'a> {
 
     #[tracing::instrument(level = "info", skip(self, root))]
     pub fn expand_crate(&mut self, root: &SyntaxNode) -> (SyntaxNode, Vec<GlyimDiagnostic>) {
-        let (green, diags) =
-            expander::expand_crate(root, &mut self.interner, self.hygiene, &self.macros);
+        let (green, diags) = expander::expand_crate(
+            root,
+            &mut self.interner,
+            self.hygiene,
+            &self.macros,
+            self.current_file,
+            self.vfs,
+        );
         let expanded = SyntaxNode::new_root(green);
         (expanded, diags)
     }

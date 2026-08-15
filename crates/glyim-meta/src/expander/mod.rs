@@ -9,6 +9,7 @@ use glyim_span::{
     ByteIdx, ExpnData, ExpnKind, FileId, HygieneCtx, Mark, Span, SyntaxContext, Transparency,
 };
 use glyim_syntax::{GlyimLang, GreenNode, SyntaxKind, SyntaxNode};
+use glyim_vfs::Vfs;
 use rowan::Language;
 use smol_str::SmolStr;
 use std::collections::HashMap;
@@ -43,8 +44,10 @@ pub(crate) fn expand_crate(
     interner: &mut Interner,
     hygiene: &mut HygieneCtx,
     registered: &[crate::MacroDef],
+    current_file: FileId,
+    vfs: Option<&Vfs>,
 ) -> (GreenNode, Vec<GlyimDiagnostic>) {
-    let mut expander = ExpanderImpl::new(hygiene, interner.clone());
+    let mut expander = ExpanderImpl::new(hygiene, interner.clone(), current_file, vfs);
     // Register builtins from the public API
     for def in registered {
         if let crate::MacroKind::Builtin { handler, .. } = &def.kind {
@@ -63,6 +66,8 @@ pub(crate) fn expand_macro_invocation(
     hygiene: &mut HygieneCtx,
     registered: &[crate::MacroDef],
     interner: &Interner,
+    current_file: FileId,
+    vfs: Option<&Vfs>,
     depth: u32,
 ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
     let mut registered_builtins: HashMap<Name, BuiltinMacro> = HashMap::new();
@@ -80,6 +85,8 @@ pub(crate) fn expand_macro_invocation(
             registered_builtins,
             diagnostics: Vec::new(),
             interner: interner.clone(),
+            current_file,
+            vfs,
         };
         return expander.expand_builtin(handler, args, call_site, depth);
     }
@@ -90,6 +97,8 @@ pub(crate) fn expand_macro_invocation(
         registered_builtins,
         diagnostics: Vec::new(),
         interner: interner.clone(),
+        current_file,
+        vfs,
     };
     let (green, diags) = expander.expand_macro_call(name, args, call_site, depth);
     expander.diagnostics.extend(diags);
@@ -102,16 +111,28 @@ pub(crate) struct ExpanderImpl<'a> {
     registered_builtins: HashMap<Name, BuiltinMacro>,
     diagnostics: Vec<GlyimDiagnostic>,
     interner: Interner,
+    /// File id of the source currently being expanded (anchors line!/column!/
+    /// file!/include! to the real source; defaults to `FileId::BOGUS`).
+    current_file: FileId,
+    /// Optional VFS for resolving include! paths and computing real line/col.
+    vfs: Option<&'a Vfs>,
 }
 
 impl<'a> ExpanderImpl<'a> {
-    pub(crate) fn new(hygiene: &'a mut HygieneCtx, interner: Interner) -> Self {
+    pub(crate) fn new(
+        hygiene: &'a mut HygieneCtx,
+        interner: Interner,
+        current_file: FileId,
+        vfs: Option<&'a Vfs>,
+    ) -> Self {
         Self {
             hygiene,
             macros: HashMap::new(),
             registered_builtins: HashMap::new(),
             diagnostics: Vec::new(),
             interner,
+            current_file,
+            vfs,
         }
     }
 
@@ -368,41 +389,34 @@ impl<'a> ExpanderImpl<'a> {
         _depth: u32,
     ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
         use std::fs;
-        use std::path::Path;
+        use std::path::{Path, PathBuf};
         let expanded_trees = match handler {
             BuiltinMacro::File => {
-                // file!() expands to a string literal with the file name (approximated)
-                let file_id_num = call_site.file.to_raw();
-                let name = if file_id_num == u32::MAX {
+                // file!() expands to the path of the source file (relative to
+                // the VFS path when available, else the file id).
+                let name = if let Some(vfs) = self.vfs {
+                    vfs.file_path(call_site.file)
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| format!("file_{}", call_site.file.to_raw()))
+                } else if call_site.file.to_raw() == u32::MAX {
                     String::from("<bogus>")
                 } else {
-                    // Placeholder - real implementation would use Vfs
-                    format!("file_{}", file_id_num)
+                    format!("file_{}", call_site.file.to_raw())
                 };
-                let text = SmolStr::from(format!("\"{}\"", name));
+                let text = SmolStr::from(format!("\"{}\"", name.replace('\\', "\\\\")));
                 vec![TokenTree::Token(SyntaxKind::StringLit, text)]
             }
             BuiltinMacro::Line => {
-                // line!() expands to a line number (approximated from byte offset)
-                let line_num = call_site
-                    .lo
-                    .to_raw()
-                    .checked_div(80)
-                    .unwrap_or(0)
-                    .saturating_add(1);
+                // line!() expands to the 1-based line number of the call site.
+                let line_num = self.line_col_of(call_site).0;
                 vec![TokenTree::Token(
                     SyntaxKind::IntLit,
                     SmolStr::from(line_num.to_string()),
                 )]
             }
             BuiltinMacro::Column => {
-                // column!() expands to a column number (approximated from byte offset)
-                let col_num = call_site
-                    .lo
-                    .to_raw()
-                    .checked_rem(80)
-                    .unwrap_or(0)
-                    .saturating_add(1);
+                // column!() expands to the 1-based column number of the call site.
+                let col_num = self.line_col_of(call_site).1;
                 vec![TokenTree::Token(
                     SyntaxKind::IntLit,
                     SmolStr::from(col_num.to_string()),
@@ -410,67 +424,60 @@ impl<'a> ExpanderImpl<'a> {
             }
             BuiltinMacro::Env => {
                 // env!("VAR") reads environment variable at compile time
-                // Extract the string literal argument
                 let args_tt = flatten_token_tree(args_node);
-                if args_tt.len() != 1 {
-                    return (
-                        None,
-                        vec![GlyimDiagnostic::type_error(
-                            call_site,
-                            "env! expects one string literal argument".to_string(),
-                        )],
-                    );
-                }
-                match &args_tt[0] {
-                    TokenTree::Token(SyntaxKind::StringLit, text) => {
-                        let var_name = &text.as_str()[1..text.len() - 1]; // strip quotes
-                        match std::env::var(var_name) {
-                            Ok(val) => {
-                                let lit = SmolStr::from(format!("\"{}\"", val));
-                                vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
-                            }
-                            Err(_) => {
-                                return (
-                                    None,
-                                    vec![GlyimDiagnostic::type_error(
-                                        call_site,
-                                        format!("environment variable '{}' not found", var_name),
-                                    )],
-                                );
-                            }
+                match first_string_lit(&args_tt) {
+                    Some(var_name) => match std::env::var(var_name) {
+                        Ok(val) => {
+                            let lit = SmolStr::from(format!("\"{}\"", val));
+                            vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
                         }
-                    }
-                    _ => {
+                        Err(_) => {
+                            return (
+                                None,
+                                vec![GlyimDiagnostic::type_error(
+                                    call_site,
+                                    format!("environment variable '{}' not found", var_name),
+                                )],
+                            );
+                        }
+                    },
+                    None => {
                         return (
                             None,
                             vec![GlyimDiagnostic::type_error(
                                 call_site,
-                                "env! argument must be a string literal".to_string(),
+                                "env! expects one string literal argument".to_string(),
                             )],
                         );
                     }
                 }
             }
             BuiltinMacro::Include => {
-                // include!("path") reads file content as string literal
+                // include!("path") reads file content as a string literal.
+                // Resolves relative to the calling file's directory when a VFS
+                // with the call-site file is available; otherwise CWD.
                 let args_tt = flatten_token_tree(args_node);
-                if args_tt.len() != 1 {
-                    return (
-                        None,
-                        vec![GlyimDiagnostic::type_error(
-                            call_site,
-                            "include! expects one string literal argument".to_string(),
-                        )],
-                    );
-                }
-                match &args_tt[0] {
-                    TokenTree::Token(SyntaxKind::StringLit, text) => {
-                        let path_str = &text.as_str()[1..text.len() - 1];
-                        // For now, resolve relative to current working directory (tests will set up temp files)
+                match first_string_lit(&args_tt) {
+                    Some(path_str) => {
                         let path = Path::new(path_str);
-                        match fs::read_to_string(path) {
+                        let resolved = if path.is_absolute() {
+                            path.to_path_buf()
+                        } else if let Some(vfs) = self.vfs {
+                            match vfs.file_path(call_site.file) {
+                                Some(calling) => calling
+                                    .parent()
+                                    .map(|dir| dir.join(path_str))
+                                    .unwrap_or_else(|| PathBuf::from(path_str)),
+                                None => PathBuf::from(path_str),
+                            }
+                        } else {
+                            PathBuf::from(path_str)
+                        };
+                        match fs::read_to_string(&resolved) {
                             Ok(content) => {
-                                let escaped = content.replace('\\', "\\\\").replace('"', "\\\"");
+                                let escaped = content
+                                    .replace('\\', "\\\\")
+                                    .replace('"', "\\\"");
                                 let lit = SmolStr::from(format!("\"{}\"", escaped));
                                 vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
                             }
@@ -479,18 +486,22 @@ impl<'a> ExpanderImpl<'a> {
                                     None,
                                     vec![GlyimDiagnostic::type_error(
                                         call_site,
-                                        format!("failed to read file '{}': {}", path_str, e),
+                                        format!(
+                                            "failed to read file '{}': {}",
+                                            resolved.display(),
+                                            e
+                                        ),
                                     )],
                                 );
                             }
                         }
                     }
-                    _ => {
+                    None => {
                         return (
                             None,
                             vec![GlyimDiagnostic::type_error(
                                 call_site,
-                                "include! argument must be a string literal".to_string(),
+                                "include! expects one string literal argument".to_string(),
                             )],
                         );
                     }
@@ -668,7 +679,7 @@ impl<'a> ExpanderImpl<'a> {
     }
 
     fn file_id_from_node(&self, _node: &SyntaxNode) -> FileId {
-        FileId::BOGUS
+        self.current_file
     }
 
     fn span_from_node(&self, node: &SyntaxNode) -> Span {
@@ -678,6 +689,37 @@ impl<'a> ExpanderImpl<'a> {
             ByteIdx::from_raw(range.start().into()),
             ByteIdx::from_raw(range.end().into()),
             SyntaxContext::ROOT,
+        )
+    }
+
+    /// Compute the 1-based (line, column) of a span's start, using the real
+    /// source text from the VFS when available. Falls back to a heuristic
+    /// (`lo / 80`, `lo % 80`) for call sites without a VFS/source.
+    fn line_col_of(&self, span: Span) -> (u32, u32) {
+        if let Some(vfs) = self.vfs {
+            if let Some(src) = vfs.file_content(span.file) {
+                let offset = span.lo.to_usize();
+                let mut line = 1u32;
+                let mut col = 1u32;
+                for (i, ch) in src.char_indices() {
+                    if i >= offset {
+                        break;
+                    }
+                    if ch == '\n' {
+                        line += 1;
+                        col = 1;
+                    } else {
+                        col += 1;
+                    }
+                }
+                return (line, col);
+            }
+        }
+        // Fallback heuristic when no source is available.
+        let lo = span.lo.to_raw();
+        (
+            lo.checked_div(80).unwrap_or(0).saturating_add(1),
+            lo.checked_rem(80).unwrap_or(0).saturating_add(1),
         )
     }
 }
@@ -740,6 +782,27 @@ fn needs_space_before(prev: &str, next: &str) -> bool {
     let next_closes = matches!(next, "," | ";" | ")" | "]" | "}");
     let prev_opens = matches!(prev, "(" | "[" | "{");
     !(next_closes || prev_opens)
+}
+
+/// Recursively find the first string-literal token in a flattened token tree,
+/// regardless of whether it is wrapped in a delimiter group. Used by `env!` /
+/// `include!` whose argument may arrive as a bare `Token` or wrapped in a
+/// `( ... )` group depending on the call path.
+fn first_string_lit<'t>(trees: &'t [TokenTree]) -> Option<&'t str> {
+    for tt in trees {
+        match tt {
+            TokenTree::Token(SyntaxKind::StringLit, text) => {
+                return Some(&text.as_str()[1..text.len() - 1]);
+            }
+            TokenTree::Group(_, inner, _) => {
+                if let Some(s) = first_string_lit(inner) {
+                    return Some(s);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn delim_token_text(kind: SyntaxKind) -> &'static str {

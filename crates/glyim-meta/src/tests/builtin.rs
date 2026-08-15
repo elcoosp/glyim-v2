@@ -201,7 +201,7 @@ fn builtin_line_expand_api() {
     );
 }
 
-/// Test that env!() produces a diagnostic (not yet fully implemented).
+/// Test the expand() public API directly for the env! builtin.
 #[test]
 fn builtin_env_expand_api() {
     let mut hygiene = HygieneCtx::default();
@@ -217,7 +217,12 @@ fn builtin_env_expand_api() {
         span: Span::DUMMY,
     });
 
-    let args_source = r#"("PATH")"#;
+    // Use a deterministic variable so the test does not depend on the host
+    // environment.
+    unsafe {
+        std::env::set_var("GLYIM_TEST_ENV_VAR", "hello-env");
+    }
+    let args_source = r#"("GLYIM_TEST_ENV_VAR")"#;
     let args_root = parse(args_source);
 
     let call_site = Span::new(
@@ -230,12 +235,103 @@ fn builtin_env_expand_api() {
     let result = expander.expand(env_name, &args_root, call_site);
 
     assert!(
-        !result.diagnostics.is_empty(),
-        "Expected env!() to produce a diagnostic about not being implemented, got: {:?}",
+        result.expanded.is_some(),
+        "Expected env!() to produce an expansion, got diagnostics: {:?}",
         result.diagnostics
     );
+
+    let expanded_text = result.expanded.unwrap().text().to_string();
     assert!(
-        result.expanded.is_none(),
-        "Expected env!() to not produce an expansion yet"
+        expanded_text.contains("hello-env"),
+        "Expected env!() expansion to contain the variable value, got: {}",
+        expanded_text
+    );
+}
+
+/// Tier 4.2 / 4.3: line!/column!/include! resolve against a real VFS.
+#[test]
+fn vfs_backed_line_column_and_include() {
+    use glyim_vfs::Vfs;
+    use std::io::Write;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    let src_path = src_dir.join("main.gly");
+    // `line!` sits on line 2, column 13 (1-based) of this exact source.
+    let src = "fn main() {\n    let _ = line!();\n}\n";
+    {
+        let mut f = std::fs::File::create(&src_path).unwrap();
+        f.write_all(src.as_bytes()).unwrap();
+    }
+    let footer_path = src_dir.join("footer.gly");
+    {
+        let mut f = std::fs::File::create(&footer_path).unwrap();
+        f.write_all(b"42").unwrap();
+    }
+
+    let mut vfs = Vfs::new();
+    let src_id = vfs.add_file_from_disk(&src_path).unwrap();
+
+    // line!/column! expansion via expand_crate with the source file set.
+    let root = parse_to_syntax(src, src_id).root;
+    let mut hygiene = HygieneCtx::default();
+    let mut expander = Expander::new(&mut hygiene);
+    expander.set_source_file(src_id);
+    expander.set_vfs(&vfs);
+
+    let line_name = expander.interner().intern("line");
+    expander.register_macro(MacroDef {
+        name: line_name,
+        kind: MacroKind::Builtin {
+            name: line_name,
+            handler: BuiltinMacro::Line,
+        },
+        span: Span::DUMMY,
+    });
+    let (expanded, _diags) = expander.expand_crate(&root);
+    let text = expanded.text().to_string();
+    // The real line is 2; the old heuristic fallback would yield 1 (offset/80),
+    // so asserting the literal `2` and absence of the unexpanded `line!` proves
+    // the VFS-backed real line/col path ran.
+    assert!(
+        !text.contains("line!"),
+        "line!() should be expanded away, got: {}",
+        text
+    );
+    assert!(
+        text.contains("2"),
+        "line!() should expand to the real line 2, got: {}",
+        text
+    );
+
+    // include! resolves relative to the calling file's directory.
+    let inc_src = "fn main() {\n    let _ = include!(\"footer.gly\");\n}\n";
+    let inc_root = parse_to_syntax(inc_src, src_id).root;
+    let mut hygiene2 = HygieneCtx::default();
+    let mut expander2 = Expander::new(&mut hygiene2);
+    expander2.set_source_file(src_id);
+    expander2.set_vfs(&vfs);
+
+    let include_name = expander2.interner().intern("include");
+    expander2.register_macro(MacroDef {
+        name: include_name,
+        kind: MacroKind::Builtin {
+            name: include_name,
+            handler: BuiltinMacro::Include,
+        },
+        span: Span::DUMMY,
+    });
+    let (inc_expanded, inc_diags) = expander2.expand_crate(&inc_root);
+    assert!(
+        inc_diags.is_empty(),
+        "include! should not emit diagnostics, got: {:?}",
+        inc_diags
+    );
+    let inc_text = inc_expanded.text().to_string();
+    assert!(
+        inc_text.contains("42"),
+        "include! should inline footer.gly content, got: {}",
+        inc_text
     );
 }

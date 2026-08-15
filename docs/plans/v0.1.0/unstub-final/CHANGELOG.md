@@ -21,8 +21,8 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 3.2 — glyip cmd_test executes tests — COMMITTED
 - [x] Tier 3.3 — registry-disabled error message — COMMITTED
 - [ ] Tier 4.1 — fragment-spec matching (Stage A + B) — Stage A COMMITTED
-- [ ] Tier 4.2 — line!/column! from SourceMap
-- [ ] Tier 4.3 — include! CWD-relative fix
+- [x] Tier 4.2 — line!/column! from SourceMap — COMMITTED (via Vfs source lookup)
+- [x] Tier 4.3 — include! CWD-relative fix — COMMITTED
 - [x] Tier 4.4 — stringify! normalization — COMMITTED
 - [ ] Tier 5.1 — over-alignment fallback comment + set_alignment
 - [ ] Tier 5.2 — DWARF pointer/slice debug types
@@ -382,9 +382,49 @@ Each tier is implemented and committed atomically. Tests are run with
   - Extracted `delim_char(kind)` (open/close delimiter char) and
     `needs_space_before` helpers.
   - Updated the two pre-existing `concat_stringify` tests that had hard-coded
-    the buggy spacing (`foo ( bar )` / `concat ! ( "a" , "b" )`) to assert the
-    corrected output and the absence of space-around-quote-comma. Added unit
-    tests `stringify_spaces_infix_operands` (`1 + 2`),
-    `stringify_call_no_space_around_parens_or_comma` (`foo (a, b)`),
-    `needs_space_before_rules`. 63 glyim-meta tests pass (`cargo test -p
-    glyim-meta`); build clean.
+  the buggy spacing (`foo ( bar )` / `concat ! ( "a" , "b" )`) to assert the
+  corrected output and the absence of space-around-quote-comma. Added unit
+  tests `stringify_spaces_infix_operands` (`1 + 2`),
+  `stringify_call_no_space_around_parens_or_comma` (`foo (a, b)`),
+  `needs_space_before_rules`. 63 glyim-meta tests pass (`cargo test -p
+  glyim-meta`); build clean.
+
+### Tier 4.2 (line!/column! from real source) + Tier 4.3 (include! relative path)
+- `feat(macro): line!/column!/file!/include! resolve against the Vfs`
+  - Plan deviation (documented): the plan assumed a `glyim-span` `SourceMap`
+    with `lookup_line_col`. No such type exists; instead `glyim-vfs` already
+    exposes `file_content(FileId) -> Option<Arc<str>>` and
+    `file_path(FileId) -> Option<PathBuf>`, which cover both needs. The
+    Expander was plumbed with the calling `FileId` + an optional `&Vfs`
+    (single change that serves 4.2 and 4.3 together).
+  - `glyim-meta` gains a `glyim-vfs` dependency. `Expander` now carries
+    `current_file: FileId` (default `BOGUS`) + `vfs: Option<&Vfs>`, set via
+    `set_source_file(id)` / `set_vfs(&vfs)`. The internal `expand_crate` /
+    `expand_macro_invocation` free functions thread these through
+    `ExpanderImpl` (no public-signature change for `expand_crate(root)`, so
+    existing test call sites are untouched).
+  - `file_id_from_node` now returns `self.current_file` (was always `BOGUS`),
+    so `line!`/`column!`/`include!`/`file!` spans carry the real source file.
+  - `line!` / `column!` compute the 1-based (line, col) from the real source
+    via a new `line_col_of` helper that walks `vfs.file_content(file)` by byte
+    offset; the old `/80` `/%80` heuristic is kept only as a no-Vfs fallback.
+  - `file!` resolves the path through `vfs.file_path` (previously a
+    `file_<id>` placeholder).
+  - `include!` now resolves relative to the calling file's directory:
+    `vfs.file_path(call_site.file).parent().join(arg)` for relative paths
+    (absolute paths used as-is; CWD fallback when no Vfs is set).
+  - `env!` / `include!` argument extraction generalized via a new
+    `first_string_lit` helper that finds the string literal whether it
+    arrives as a bare `Token` or wrapped in a `( ... )` group (the two call
+    paths differ in arg shape); this also makes `env!` work via
+    `expand_crate` (previously only the public `expand()` path reached the
+    Token branch).
+  - Test `vfs_backed_line_column_and_include` (builtin.rs) builds a temp Vfs
+    with a source file + sibling `footer.gly`, sets source file + Vfs on the
+    Expander, and asserts `line!()` expands to the real line 2 (not the
+    heuristic `1`) and `include!("footer.gly")` inlines `footer.gly`'s
+    content with no diagnostics. `builtin_env_expand_api` updated to set a
+    deterministic env var and assert the expanded value (was asserting the
+    old "not implemented" diagnostic, which the fix removed). 64 glyim-meta
+  tests pass (`cargo test -p glyim-meta`); `glyim-pipeline` + `glyim-test`
+  build clean.
