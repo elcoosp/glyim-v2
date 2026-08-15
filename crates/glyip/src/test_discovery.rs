@@ -81,14 +81,24 @@ impl FileTestDiscovery {
 
 /// Extract the function name from a line like `fn foo(` or `pub fn foo(`.
 fn extract_fn_name(line: &str) -> Option<&str> {
-    // Find "fn " then the identifier after it.
-    let line = line.strip_prefix("pub ").unwrap_or(line);
-    let line = line.trim_start();
-
+    // Strip modifiers like pub, async, unsafe, const, extern, etc.
+    let mut line = line.trim_start();
+    let prefixes = ["pub", "const", "unsafe", "async", "extern"];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for &prefix in &prefixes {
+            if line.starts_with(prefix) && line[prefix.len()..].starts_with(' ') {
+                line = line[prefix.len()..].trim_start();
+                changed = true;
+                break;
+            }
+        }
+    }
+    // Now find "fn "
     let after_fn = line.strip_prefix("fn ")?;
     let after_fn = after_fn.trim_start();
 
-    // The function name is everything up to '(' or '<' (for generics).
     let name_end = after_fn
         .find(|c: char| c == '(' || c == '<' || c == '{' || c.is_whitespace())
         .unwrap_or(after_fn.len());
