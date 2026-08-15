@@ -16,7 +16,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.7 — dynamic range slicing — COMMITTED (regression coverage; impl already present)
 - [x] Tier 2.1 — coherence overlap ignores generics — COMMITTED
 - [x] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity) — COMMITTED
-- [ ] Tier 2.3 — object safety associated types & supertraits
+- [x] Tier 2.3 — object safety associated types & supertraits — COMMITTED
 - [ ] Tier 3.1 — transitive dependency resolution (glyip)
 - [ ] Tier 3.2 — glyip cmd_test executes tests
 - [ ] Tier 3.3 — registry-disabled error message
@@ -235,3 +235,32 @@ Each tier is implemented and committed atomically. Tests are run with
     (Proven). 33 glyim-solve lib tests pass; `cargo build --workspace` clean.
   - DOC NOTE left on `check_hrtb` stating which cases remain conservative and
     why (this is the 80% cheap-win pass, not a complete HRTB solver).
+
+### Tier 2.3 (object safety ignores associated types & supertraits)
+- `feat(type): object safety checks associated types + supertraits`
+  - `glyim-type/src/object_safety.rs` `check_object_safety` previously only
+    inspected per-method receiver/generic-param shape. Replaced its
+    `(requires_self_sized, methods)` signature with a `TraitObjectSafetyInput`
+    struct (associated types + supertraits are trait-level, not method-level,
+    so they are NOT bolted onto `MethodSignature`).
+  - Added `AssociatedTypeInfo { name, span, is_constrained_in_all_methods }`
+    and `SupertraitSafety { trait_id, is_safe, span }`. New violation variant
+    `ObjectSafetyViolation::SupertraitNotObjectSafe { trait_id, span }`
+    (cleanly named rather than overloading `SelfSized`). The pre-existing-but-
+    never-constructed `UnconstrainedAssociatedType { name, span }` variant is
+    now actually emitted.
+  - Two new check folds in `check_object_safety`: an associated type that is
+    not constrained (mentioned) by the methods yields
+    `UnconstrainedAssociatedType`; a supertrait whose pre-resolved
+    `is_safe == false` yields `SupertraitNotObjectSafe`. `glyim-type` stays
+    pure/data-in-data-out — the caller (`glyim-typeck`, which owns the
+    recursive `TraitDef.predicates` walk) computes `supertrait_safety` and
+    passes it in, exactly as the plan's design note requires.
+  - Updated the only two call sites (both test-only): `glyim-type/src/tests/
+    s12_object_safety.rs` and `glyim-codegen/src/tests/trait_objects.rs`
+    (8 call sites there) now build `TraitObjectSafetyInput`. Added 4 new
+    regression tests in `s12_object_safety.rs`: unconstrained associated type
+    is flagged, constrained associated type is NOT, unsafe supertrait is
+    flagged, safe supertrait is NOT. 13 object-safety / 557 glyim-type tests
+    pass; 4 object-safety / 168 glyim-codegen tests pass; `cargo build
+    --workspace` clean.

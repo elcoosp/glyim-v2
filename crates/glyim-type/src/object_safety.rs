@@ -5,8 +5,12 @@
 //! 2. All methods have receivers that can be dispatched (i.e., take `self` by reference
 //!    or by value where `Self: Sized` is not required).
 //! 3. No method has generic type parameters.
-//! 4. No associated constants (future: Glyim doesn't have these yet).
+//! 4. All associated types are constrained (mentioned) by at least one method signature,
+//!    so they can be resolved through the trait object's vtable.
+//! 5. All supertraits are themselves object-safe (computed by the caller, since this
+//!    module deliberately avoids depending on trait-resolution machinery).
 
+use glyim_core::def_id::TraitDefId;
 use glyim_core::Name;
 use glyim_span::Span;
 
@@ -23,8 +27,11 @@ pub enum ObjectSafetyViolation {
     ByValueSelf { method: Name, span: Span },
     /// An associated function is not callable through a trait object.
     AssociatedFunction { name: Name, span: Span },
-    /// The trait has an associated type that is not constrained (future).
+    /// The trait has an associated type that is not constrained (mentioned in any method
+    /// signature), so it cannot be inferred from the trait object's vtable.
     UnconstrainedAssociatedType { name: Name, span: Span },
+    /// A supertrait of this trait is itself not object-safe.
+    SupertraitNotObjectSafe { trait_id: TraitDefId, span: Span },
 }
 
 /// HIR-level representation of a method signature for object safety checking.
@@ -54,20 +61,56 @@ pub enum MethodSelfKind {
     None,
 }
 
-/// Checks whether a trait is object-safe given its methods.
+/// Information about a trait's associated type, needed for object-safety checking.
+#[derive(Debug, Clone)]
+pub struct AssociatedTypeInfo {
+    /// Name of the associated type.
+    pub name: Name,
+    /// Span for error reporting.
+    pub span: Span,
+    /// Whether the associated type is mentioned (constrained) in **every** method
+    /// signature of the trait. If not, it cannot be inferred from the trait object's
+    /// vtable and the trait is not object-safe.
+    pub is_constrained_in_all_methods: bool,
+}
+
+/// Pre-resolved object-safety result for a supertrait, computed by the caller
+/// (`glyim-typeck`, which performs the recursive walk over `TraitContext`).
+/// `glyim-type` intentionally does not own trait-resolution recursion.
+#[derive(Debug, Clone)]
+pub struct SupertraitSafety {
+    /// The supertrait's def id.
+    pub trait_id: TraitDefId,
+    /// Whether that supertrait is itself object-safe.
+    pub is_safe: bool,
+    /// Span for error reporting (the supertrait bound's span in the trait def).
+    pub span: Span,
+}
+
+/// Full input for an object-safety check of a single trait.
+#[derive(Debug, Clone, Default)]
+pub struct TraitObjectSafetyInput<'a> {
+    /// Whether the trait (or one of its bounds) requires `Self: Sized`.
+    pub requires_self_sized: bool,
+    /// The trait's method signatures.
+    pub methods: &'a [MethodSignature],
+    /// The trait's associated types.
+    pub associated_types: &'a [AssociatedTypeInfo],
+    /// Pre-resolved object-safety of each supertrait.
+    pub supertrait_safety: &'a [SupertraitSafety],
+}
+
+/// Checks whether a trait is object-safe given its full description.
 ///
 /// Returns a list of violations. An empty list means the trait is object-safe.
-pub fn check_object_safety(
-    requires_self_sized: bool,
-    methods: &[MethodSignature],
-) -> Vec<ObjectSafetyViolation> {
+pub fn check_object_safety(input: &TraitObjectSafetyInput<'_>) -> Vec<ObjectSafetyViolation> {
     let mut violations = Vec::new();
 
-    if requires_self_sized {
+    if input.requires_self_sized {
         violations.push(ObjectSafetyViolation::SelfSized);
     }
 
-    for method in methods {
+    for method in input.methods {
         // Generic methods can't be put in a vtable
         if method.has_generic_params {
             violations.push(ObjectSafetyViolation::GenericMethod {
@@ -80,7 +123,7 @@ pub fn check_object_safety(
             MethodSelfKind::ByValue => {
                 // Taking self by value is only allowed if the trait requires Self: Sized,
                 // but we already flagged that. If not, it's a separate violation.
-                if !requires_self_sized {
+                if !input.requires_self_sized {
                     violations.push(ObjectSafetyViolation::ByValueSelf {
                         method: method.name,
                         span: method.span,
@@ -100,6 +143,27 @@ pub fn check_object_safety(
             MethodSelfKind::ByReference => {
                 // Fine: &self or &mut self
             }
+        }
+    }
+
+    // Associated types must be constrained (mentioned) by the methods, otherwise they
+    // cannot be resolved through the trait object's vtable.
+    for at in input.associated_types {
+        if !at.is_constrained_in_all_methods {
+            violations.push(ObjectSafetyViolation::UnconstrainedAssociatedType {
+                name: at.name,
+                span: at.span,
+            });
+        }
+    }
+
+    // Every supertrait must itself be object-safe.
+    for st in input.supertrait_safety {
+        if !st.is_safe {
+            violations.push(ObjectSafetyViolation::SupertraitNotObjectSafe {
+                trait_id: st.trait_id,
+                span: st.span,
+            });
         }
     }
 
