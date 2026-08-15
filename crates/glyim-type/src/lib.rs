@@ -45,4 +45,9 @@ pub struct TraitDef {
 pub struct MethodDef {
     pub name: glyim_core::interner::Name,
     pub sig: FnSig,
+    /// The `FnDefId` of the (canonical, trait-level) method definition.
+    /// When a vtable is generated for a concrete impl, this identifies the
+    /// method whose monomorphized body should be dispatched. `None` when the
+    /// method's def id is not yet known (e.g. built-in traits).
+    pub fn_def_id: Option<glyim_core::def_id::FnDefId>,
 }

@@ -364,6 +364,12 @@ impl TyCtxMut {
         self.fn_sigs.insert(def_id, sig);
     }
 
+    /// Register a trait definition (its name and method set) so that vtable
+    /// generation and other downstream passes can resolve the trait's methods.
+    pub fn register_trait_def(&mut self, id: glyim_core::def_id::TraitDefId, def: crate::TraitDef) {
+        self.trait_defs.insert(id, def);
+    }
+
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
     }

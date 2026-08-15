@@ -750,13 +750,36 @@ impl crate::vtable::VTableComputer for SimpleLayoutComputer<'_> {
         concrete_ty: glyim_type::Ty,
     ) -> Option<crate::vtable::VTableLayout> {
         let concrete_layout = self.layout_of(concrete_ty).ok()?;
+
+        // Real vtable generation: the method slots are determined by the
+        // trait's actual method set, not an empty placeholder. Each trait
+        // method becomes one vtable entry carrying its signature and the
+        // (canonical) method `FnDefId` used for dispatch.
+        let methods = self
+            .ctx
+            .trait_def(trait_def_id)
+            .map(|trait_def| {
+                trait_def
+                    .methods
+                    .iter()
+                    .map(|method| crate::vtable::VTableEntry {
+                        name: method.name,
+                        sig: method.sig.clone(),
+                        fn_def_id: method
+                            .fn_def_id
+                            .unwrap_or_else(|| glyim_core::def_id::FnDefId::from_raw(u32::MAX)),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
         Some(crate::vtable::VTableLayout {
             trait_def_id,
             concrete_ty,
             size: concrete_layout.size,
             align: concrete_layout.align,
             drop_fn: None,
-            methods: vec![],
+            methods,
         })
     }
 }

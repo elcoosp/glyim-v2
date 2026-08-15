@@ -8,7 +8,7 @@ Each tier is implemented and committed atomically. Tests are run with
 
 - [x] Tier 0 — mir-interp soundness (0.1 sizing, 0.2 ConstantIndex/Subslice write, 0.3 PtrToPtr comment, 0.4 Drop/Call scope note, 0.5 Len non-int -> Err) — COMMITTED
 - [x] Tier 1.1 + 1.1b — closure capture analysis + real closure ADT type — COMMITTED
-- [ ] Tier 1.2 — vtable generation (ImplDef.items + VTableComputer + pipeline)
+- [x] Tier 1.2 — vtable generation (trait-def-driven method population) — COMMITTED
 - [ ] Tier 1.3 — Iterator::next real resolution
 - [ ] Tier 1.4 — Range lowering bug
 - [ ] Tier 1.5 — const-eval expression coverage (Loop/While/Flow/Call/etc)
@@ -51,3 +51,21 @@ Each tier is implemented and committed atomically. Tests are run with
   - Test `closures.rs` asserts 1 capture of enclosing `x` as ByRef(Not) and
     that the closure type is a concrete `Adt` (not Infer).
   - 56 typeck tests pass.
+
+### Tier 1.2 (layout / vtable generation)
+- `feat(layout): derive vtable method slots from the trait definition`
+  - Plan deviation (documented): the codebase has no `ImplDef.items` registry
+    and `glyim-solve::TraitContext::ImplDef` carries no method bindings. The
+    real trait-method data lives in `glyim_type::TraitDef { methods: Vec<MethodDef> }`
+    on `TyCtx`. Added `TyCtxMut::register_trait_def(id, TraitDef)` to populate
+    it (mirrors `register_adt`/`register_fn_sig`).
+  - `MethodDef` gained `fn_def_id: Option<FnDefId>` so each vtable entry can
+    carry the concrete dispatch target.
+  - `SimpleLayoutComputer::vtable_of` now looks up `trait_def(id)` and builds
+    one `VTableEntry` per trait method (name + sig + fn_def_id), instead of
+    the previous `methods: vec![]` placeholder. Traits with no registered
+    method set still produce an empty vtable (backward compatible).
+  - New test `s15_vtable_computer_populates_methods_from_trait_def` registers a
+    2-method trait and asserts the vtable carries both entries with correct
+    def ids and size. 63 glyim-layout + 168 glyim-codegen tests pass;
+    `cargo check --workspace` clean.

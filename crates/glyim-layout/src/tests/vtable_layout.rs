@@ -79,13 +79,60 @@ fn s15_vtable_method_offset() {
 }
 
 #[test]
-fn s15_vtable_computer_trait() {
-    let (ctx, concrete_ty) = with_fresh_ty_ctx(|c| c.bool_ty());
+fn s15_vtable_computer_populates_methods_from_trait_def() {
+    use glyim_test::test_ty_ctx;
+
+    let mut ctx_mut = test_ty_ctx();
+    let concrete_ty = ctx_mut.bool_ty();
+    // Register a trait (id 7) with two methods so vtable_of can derive the
+    // method slots from the real trait definition.
+    let i32_ty = ctx_mut.mk_ty(glyim_type::TyKind::Int(IntTy::I32));
+    let inputs = ctx_mut.intern_substitution(vec![glyim_type::GenericArg::Ty(i32_ty)]);
+    let sig = glyim_type::FnSig {
+        inputs,
+        output: ctx_mut.bool_ty(),
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    };
+    let foo_name = ctx_mut.resolver().intern("foo");
+    let bar_name = ctx_mut.resolver().intern("bar");
+    let trait_def = glyim_type::TraitDef {
+        name: ctx_mut.resolver().intern("Foo"),
+        methods: vec![
+            glyim_type::MethodDef {
+                name: foo_name,
+                sig: sig.clone(),
+                fn_def_id: Some(glyim_core::FnDefId::from_raw(10)),
+            },
+            glyim_type::MethodDef {
+                name: bar_name,
+                sig,
+                fn_def_id: Some(glyim_core::FnDefId::from_raw(11)),
+            },
+        ],
+    };
+    ctx_mut.register_trait_def(glyim_core::TraitDefId::from_raw(7), trait_def);
+    let ctx = ctx_mut.freeze();
+
     let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
-    let result = computer.vtable_of(glyim_core::TraitDefId::from_raw(1), concrete_ty);
-    assert!(result.is_some(), "vtable_of should return Some");
-    let vtable = result.unwrap();
-    assert_eq!(vtable.trait_def_id, glyim_core::TraitDefId::from_raw(1));
-    assert_eq!(vtable.size, Size::bytes(1));
-    assert_eq!(vtable.align, Align::ONE);
+    let vtable = computer
+        .vtable_of(glyim_core::TraitDefId::from_raw(7), concrete_ty)
+        .expect("vtable_of with a registered trait should return Some");
+
+    assert_eq!(vtable.methods.len(), 2, "methods derived from trait def");
+    assert_eq!(vtable.methods[0].name, foo_name);
+    assert_eq!(
+        vtable.methods[0].fn_def_id,
+        glyim_core::FnDefId::from_raw(10)
+    );
+    assert_eq!(vtable.methods[1].name, bar_name);
+    assert_eq!(
+        vtable.methods[1].fn_def_id,
+        glyim_core::FnDefId::from_raw(11)
+    );
+    // One method slot per trait method: 3 metadata + 2 methods.
+    let mem = vtable.memory_size(8);
+    assert_eq!(mem.size, 40);
 }
+
