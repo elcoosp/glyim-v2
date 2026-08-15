@@ -4,10 +4,9 @@ use lsp_types::*;
 use std::collections::HashSet;
 
 use url::Url;
-fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
+fn collect_unused_imports(source: &str, used_names: &HashSet<String>) -> Vec<(String, Range)> {
     let lines: Vec<&str> = source.lines().collect();
     let mut imports = Vec::new();
-    let mut used_names = HashSet::new();
 
     for (line_idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
@@ -34,20 +33,10 @@ fn collect_unused_imports(source: &str) -> Vec<(String, Range)> {
         }
     }
 
-    for line in lines.iter() {
-        if line.trim_start().starts_with("use ") {
-            continue;
-        }
-        let words: Vec<&str> = line
-            .split_whitespace()
-            .flat_map(|w| w.split(|c: char| !c.is_alphabetic() && c != '_'))
-            .filter(|w| !w.is_empty())
-            .collect();
-        for word in words {
-            used_names.insert(word.to_string());
-        }
-    }
-
+    // An import is unused iff its name has zero Read/Write references anywhere
+    // in the indexed HIR (resolved via the reference graph, not text search —
+    // this avoids false positives on shadowed names and false negatives on
+    // names that appear only inside strings/comments).
     imports
         .into_iter()
         .filter(|(name, _)| !used_names.contains(name))
@@ -66,7 +55,12 @@ pub fn provide_code_actions(
     let source_map = source_maps.get(&file_id)?;
     let source = source_map.source();
 
-    let unused_imports = collect_unused_imports(source);
+    let used_names = {
+        let ref_graph = db.reference_graph.read();
+        ref_graph.used_symbols()
+    };
+
+    let unused_imports = collect_unused_imports(source, &used_names);
     if unused_imports.is_empty() {
         return None;
     }
@@ -95,4 +89,61 @@ pub fn provide_code_actions(
     }
 
     Some(actions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_unused_imports;
+    use std::collections::HashSet;
+
+    fn names(set: &[&str]) -> HashSet<String> {
+        set.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_unused_import_flagged_when_no_reference() {
+        // `HashMap` is imported but never referenced anywhere in the HIR.
+        let src = "use std::collections::HashMap;\nfn main() { let x = 42; }\n";
+        let used = names(&[]); // empty reference graph
+        let unused = collect_unused_imports(src, &used);
+        assert_eq!(unused.len(), 1, "import with no references must be flagged");
+        assert_eq!(unused[0].0, "HashMap");
+    }
+
+    #[test]
+    fn test_used_import_not_flagged() {
+        // `Foo` is imported AND has a real reference (it appears in code), so
+        // it must NOT be flagged as unused — even though the old text heuristic
+        // would also have found it, the graph is now the source of truth.
+        let src = "use mymod::Foo;\nfn main() { let x = Foo; }\n";
+        let used = names(&["Foo"]);
+        let unused = collect_unused_imports(src, &used);
+        assert!(
+            unused.is_empty(),
+            "import with a real reference must NOT be flagged, got {:?}",
+            unused
+        );
+    }
+
+    #[test]
+    fn test_import_name_in_string_is_still_unused() {
+        // `Secret` is imported and only appears inside a string literal and a
+        // comment — no real reference. The graph-based check correctly keeps
+        // it flagged (the old substring heuristic would also flag it; the
+        // point is the graph is the authority, not raw text).
+        let src = "use mymod::Secret;\nfn main() { let s = \"Secret inside a string\"; /* Secret in comment */ }\n";
+        let used = names(&[]);
+        let unused = collect_unused_imports(src, &used);
+        assert_eq!(unused.len(), 1);
+        assert_eq!(unused[0].0, "Secret");
+    }
+
+    #[test]
+    fn test_only_unused_among_many_flagged() {
+        let src = "use a::Used;\nuse b::Unused;\nfn main() { let x = Used; }\n";
+        let used = names(&["Used"]);
+        let unused = collect_unused_imports(src, &used);
+        assert_eq!(unused.len(), 1);
+        assert_eq!(unused[0].0, "Unused");
+    }
 }

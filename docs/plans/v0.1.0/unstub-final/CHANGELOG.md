@@ -31,7 +31,8 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 6.1 — reference_graph walks Range/Closure/Index/Break children — COMMITTED
 - [x] Tier 6.2 — reference_graph Read/Write access classification + `&mut` lowering fix — COMMITTED
 - [x] Tier 6.3 — rename fallback lexes & only edits `Ident` tokens (skips string/char/comment) — COMMITTED
-- [ ] Tier 6.4-6.5 — LSP type-filtered completion, unused-imports via graph
+- [x] Tier 6.5 — unused-imports via reference graph (replaces text heuristic) — COMMITTED
+- [ ] Tier 6.4 — completion type-filtered by receiver (BLOCKED: no typeck cache in LSP; TypeckResult type queries are stubs) — see note
 - [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
 
 ## Commits
@@ -621,3 +622,42 @@ Each tier is implemented and committed atomically. Tests are run with
     (name appears ONLY in a string/comment → no edits, no corruption).
   - Verified: `cargo test -p glyim-lsp --lib` → 47 passed (was 45; +2 rename
     tests), 0 failed, 5 ignored.
+
+### Tier 6.5 (unused-imports via reference graph, replaces text heuristic)
+- `fix(lsp): code_action unused-import detection uses the reference graph`
+  - `code_action.rs::collect_unused_imports` no longer builds a
+    text-substring `used_names` set (which false-positived on shadowed names
+    and false-negatived on names appearing only inside strings/comments).
+    Instead the caller (`provide_code_actions`) now reads
+    `db.reference_graph.used_symbols()` and an import is flagged unused iff
+    its name has zero `Read`/`Write` references anywhere in the indexed HIR.
+    This is a direct consumer of the Tier 6.1/6.2 reference graph.
+  - Added `ReferenceGraph::used_symbols() -> HashSet<String>` (every name
+    with ≥1 reference; all references are `Read`/`Write` per 6.2).
+  - Also removed the leftover `eprintln!` debug statements that had crept into
+    `reference_graph.rs::build_from_hir` during 6.2 development (they were
+    spamming stdout on every analysis).
+  - Added `code_action.rs::tests`: unused import flagged when no reference;
+    used import NOT flagged; name-in-string/comment still correctly flagged;
+    only the unused import among several is flagged.
+  - Verified: `cargo test -p glyim-lsp --lib` → 51 passed (was 47; +4
+    code_action tests), 0 failed, 5 ignored.
+
+### Tier 6.4 (completion type-filtered by receiver) — BLOCKED
+- The plan assumes `database.rs` already holds a typeck-result cache that
+  `hover.rs` uses for type text. Neither is true in the current tree:
+  - `AnalysisDatabase` holds only `hirs`, not any `TypeckResult`/`def_map`/
+    type cache.
+  - `hover.rs` resolves no types — it only looks the symbol up in the
+    `SymbolIndex` by location.
+  - `glyim-lsp` does not depend on `glyim-typeck`, and `glyim-typeck`'s
+    `TypeckResult::expr_ty`/`pat_ty` are themselves **stubs** (they take
+    `_body_id`/`_expr_id` and return `None`/`&[]`). So receiver-type
+    resolution is not actually implemented anywhere yet.
+- Implementing 6.4 properly therefore requires, in order: (1) real type
+  queries in `glyim-typeck` (un-stub `expr_ty`/`pat_ty`), (2) wiring
+  `glyim-typeck` into `glyim-lsp`'s `AnalysisDatabase`, (3) method-call
+  receiver detection + `Self`-type unification — a multi-part, cross-cutting
+  effort that is explicitly a "no stubs" zone. Faking a filter would violate
+  that. Deferred until the typeck result layer exists. The completion path
+  still works (name-based symbol index), just unfiltered.

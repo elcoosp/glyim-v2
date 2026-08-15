@@ -77,10 +77,6 @@ impl ReferenceGraph {
                 access,
             );
             if seen.insert(key) {
-                eprintln!(
-                    "REF: {} is_def={:?} kind={:?} access={:?}",
-                    name, is_def, kind, access
-                );
                 self.references
                     .entry(name.to_string())
                     .or_default()
@@ -201,7 +197,6 @@ impl ReferenceGraph {
                     if let Some(name) = path.as_name() {
                         let name_str = interner.resolve(name).to_string();
                         if !in_call_func && !function_names.contains(&name_str) {
-                            eprintln!("PATH use: {}", name_str);
                             add_ref(
                                 &name_str,
                                 span,
@@ -214,7 +209,6 @@ impl ReferenceGraph {
                 }
                 Expr::Call { func, args } => {
                     if let Some(name) = extract_path_name(*func, body, interner) {
-                        eprintln!("CALL function: {}", name);
                         add_ref(&name, span, false, ReferenceKind::Call, AccessKind::Read);
                     }
                     walk_expr(
@@ -257,7 +251,6 @@ impl ReferenceGraph {
                         AccessKind::Read,
                     );
                     let method_str = interner.resolve(*method).to_string();
-                    eprintln!("METHOD call: {}", method_str);
                     add_ref(&method_str, span, false, ReferenceKind::Call, AccessKind::Read);
                     for arg in args {
                         walk_expr(
@@ -284,7 +277,6 @@ impl ReferenceGraph {
                         AccessKind::Read,
                     );
                     let field_str = interner.resolve(*field).to_string();
-                    eprintln!("FIELD access: {}", field_str);
                     add_ref(
                         &field_str,
                         span,
@@ -459,7 +451,6 @@ impl ReferenceGraph {
                         && let Some(name) = path.as_name()
                     {
                         let name_str = interner.resolve(name).to_string();
-                        eprintln!("ASSIGN LHS write: {}", name_str);
                         // The direct LHS of an assignment is a *write* to that
                         // variable (mirrors Tier 1.1's is_mut_use write tracking).
                         add_ref(
@@ -664,7 +655,6 @@ impl ReferenceGraph {
                 Expr::Ref { expr, mutability } => {
                     // A `&mut x` borrow is a write to `x` (mirrors Tier 1.1's
                     // is_mut_use classification); `&x` is a read borrow.
-                    eprintln!("DBG Ref: is_mut={} is_not={}", *mutability == Mutability::Mut, *mutability == Mutability::Not);
                     let operand_access = if *mutability == Mutability::Mut {
                         AccessKind::Write
                     } else {
@@ -712,6 +702,17 @@ impl ReferenceGraph {
             .get(symbol_name)
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+
+    /// Every symbol name that has at least one recorded reference (definition
+    /// or use). Since every `Reference` is either a `Read` or a `Write`
+    /// (see `AccessKind`), a name absent from this set has no reads and no
+    /// writes anywhere in the indexed HIR — i.e. it is unused. Used by the
+    /// unused-import code action (Tier 6.5) to replace the old text-substring
+    /// heuristic, which false-positived on shadowed names and false-negatived
+    /// on names that appear only inside strings/comments.
+    pub fn used_symbols(&self) -> HashSet<String> {
+        self.references.keys().cloned().collect()
     }
 
     #[doc(hidden)]
