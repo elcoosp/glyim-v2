@@ -1159,6 +1159,7 @@ dependencies = [
  "glyim-span",
  "glyim-syntax",
  "glyim-test",
+ "glyim-vfs",
  "rowan",
  "smol_str",
  "tempfile",
