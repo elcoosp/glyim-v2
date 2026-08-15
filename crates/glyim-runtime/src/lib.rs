@@ -1106,14 +1106,10 @@ pub unsafe extern "C" fn glyim_net_udp_recv_from(
         Ok((n, addr)) => (n, addr),
         Err(_) => return -1,
     };
-    let addr_str = addr.to_string();
-    let parts: Vec<&str> = addr_str.rsplitn(2, ':').collect();
-    let (ip, port_val) = if parts.len() == 2 {
-        (parts[1], parts[0].parse::<u16>().unwrap_or(0))
-    } else {
-        ("", 0)
-    };
-    let ip_bytes = ip.as_bytes();
+    let ip = addr.ip();
+    let port_val = addr.port();
+    let ip_str = ip.to_string();
+    let ip_bytes = ip_str.as_bytes();
     let max_len = unsafe { *src_addr_len };
     if ip_bytes.len() >= max_len {
         return -1;
