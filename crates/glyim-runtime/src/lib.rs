@@ -473,6 +473,9 @@ pub unsafe extern "C" fn glyim_env_temp_dir(out_ptr: *mut *mut u8, out_len: *mut
 /// Determine the user's home directory.
 ///
 /// Checks `HOME` environment variable first (Unix convention).
+
+
+
 fn dirs_home_dir() -> Option<String> {
     if let Some(home) = std::env::var_os("HOME") {
         let home_str = home.to_string_lossy().into_owned();
@@ -480,9 +483,26 @@ fn dirs_home_dir() -> Option<String> {
             return Some(home_str);
         }
     }
+    // Windows fallback: USERPROFILE
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        let profile_str = profile.to_string_lossy().into_owned();
+        if !profile_str.is_empty() {
+            return Some(profile_str);
+        }
+    }
+    // Windows fallback: HOMEDRIVE + HOMEPATH
+    if let (Some(drive), Some(path)) = (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+        let drive_str = drive.to_string_lossy();
+        let path_str = path.to_string_lossy();
+        if !drive_str.is_empty() && !path_str.is_empty() {
+            let home = format!("{}{}", drive_str, path_str);
+            if !home.is_empty() {
+                return Some(home);
+            }
+        }
+    }
     None
 }
-
 // ---------------------------------------------------------------------------
 // Process functions
 // ---------------------------------------------------------------------------
@@ -855,10 +875,16 @@ pub unsafe extern "C" fn glyim_net_tcp_bind(addr: *const u8, addr_len: usize, po
         None => return -1,
     };
     let full_addr = format!("{}:{}", addr_str, port);
-    let listener = match TcpListener::bind(&full_addr) {
+    // Bind using standard TcpListener, then set SO_REUSEADDR via socket2 SockRef
+    let listener = match std::net::TcpListener::bind(&full_addr) {
         Ok(l) => l,
         Err(_) => return -1,
     };
+    // Set SO_REUSEADDR using socket2
+    use socket2::SockRef;
+    if let Err(_) = SockRef::from(&listener).set_reuse_address(true) {
+        return -1;
+    }
     let id = alloc_socket_id();
     tcp_listeners()
         .lock()

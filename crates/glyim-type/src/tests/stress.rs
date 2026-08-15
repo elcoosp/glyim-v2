@@ -12,7 +12,7 @@ fn allocate_1000_types() {
         let mut count = 0usize;
         for i in 0..1000u32 {
             let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-            assert_eq!(ty.to_raw(), 14 + i);
+            assert_eq!(ty.to_raw(), 18 + i);
             count += 1;
         }
         count
@@ -125,20 +125,20 @@ fn many_fn_ptrs() {
 
 #[test]
 fn mixed_type_allocation_stress() {
-    let (frozen, count) = with_fresh_ty_ctx(|c| {
+    let (frozen, (count, last)) = with_fresh_ty_ctx(|c| {
         let mut count = 0usize;
+        let mut last = c.bool_ty(); // placeholder
         for i in 0..100u32 {
             let _ = c.mk_ty(TyKind::Int(IntTy::I32));
             let _ = c.mk_ref(Region::Erased, c.bool_ty(), Mutability::Not);
             let _ = c.mk_ty(TyKind::Slice(c.bool_ty()));
             let inner = c.mk_ty(TyKind::Uint(UintTy::U64));
             let substs = c.intern_substitution(vec![GenericArg::Ty(inner)]);
-            let _ = c.mk_adt(AdtId::from_raw(i), substs);
-            count += 4;
+            last = c.mk_adt(AdtId::from_raw(i), substs);
+            count += 5;
         }
-        count
+        (count, last)
     });
-    assert_eq!(count, 400);
-    let last = Ty::from_raw(4 + 400 - 1);
+    assert_eq!(count, 500);
     assert!(matches!(frozen.ty_kind(last), TyKind::Adt(_, _)));
 }

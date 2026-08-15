@@ -61,6 +61,8 @@ pub const FS_O_APPEND: u32 = 4;
 pub const FS_O_CREAT: u32 = 8;
 /// Truncate the file to zero length if it exists.
 pub const FS_O_TRUNC: u32 = 16;
+/// Fail if the file already exists (must be used with FS_O_CREAT).
+pub const FS_O_EXCL: u32 = 32;
 
 // ---------------------------------------------------------------------------
 // File descriptor table
@@ -176,6 +178,31 @@ fn io_err_to_errno(err: &std::io::Error) -> i32 {
 /// - `path` must point to valid UTF-8 data of exactly `path_len` bytes
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: u32) -> i32 {
+    
+    // Validate flag combinations.
+    let access = flags & 0x3;
+    // Must specify exactly one of RDONLY, WRONLY, RDWR.
+    if access != 0 && access != 1 && access != 2 {
+        return FS_EIO;
+    }
+    // O_EXCL requires O_CREAT.
+    if (flags & FS_O_EXCL) != 0 && (flags & FS_O_CREAT) == 0 {
+        return FS_EIO;
+    }
+// Validate flag combinations.
+    let access = flags & 0x3;
+    // RDONLY is 0, WRONLY is 1, RDWR is 2.
+    if access == 0 && (flags & FS_O_WRONLY) != 0 {
+        return FS_EIO;
+    }
+    if access == 1 && (flags & FS_O_RDONLY) != 0 {
+        return FS_EIO;
+    }
+    // O_EXCL requires O_CREAT.
+    if (flags & FS_O_EXCL) != 0 && (flags & FS_O_CREAT) == 0 {
+        return FS_EIO;
+    }
+
     let p = match unsafe { path_from_raw(path, path_len) } {
         Some(p) => p,
         None => return FS_EIO,

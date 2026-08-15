@@ -50,24 +50,41 @@ impl<'a> CoherenceChecker<'a> {
     /// Structural type matching with generic parameters.
     /// Returns true if the two types can be made equal by substituting generic args.
     fn structural_tys_match(&self, ctx: &TyCtxMut, a: Ty, b: Ty) -> bool {
-        use glyim_type::TyKind;
+        // Check for type parameters.
+        let a_is_param = matches!(ctx.ty_kind(a), glyim_type::TyKind::Param(_));
+        let b_is_param = matches!(ctx.ty_kind(b), glyim_type::TyKind::Param(_));
+
+        if a_is_param && b_is_param {
+            // Both are params: they overlap only if they have the same name.
+            if let (glyim_type::TyKind::Param(p1), glyim_type::TyKind::Param(p2)) =
+                (ctx.ty_kind(a), ctx.ty_kind(b))
+            {
+                return p1.name == p2.name;
+            }
+            return false;
+        }
+
+        if a_is_param || b_is_param {
+            // One is a param, the other is concrete: they overlap.
+            return true;
+        }
+
+        // Otherwise, structural comparison.
         match (ctx.ty_kind(a), ctx.ty_kind(b)) {
-            (TyKind::Param(p1), TyKind::Param(p2)) => p1.name == p2.name,
-            (TyKind::Param(_), _) | (_, TyKind::Param(_)) => false,
-            (TyKind::Adt(id_a, _), TyKind::Adt(id_b, _)) => id_a == id_b,
-            (TyKind::Ref(_, inner_a, mut_a), TyKind::Ref(_, inner_b, mut_b)) => {
+            (glyim_type::TyKind::Adt(id_a, _), glyim_type::TyKind::Adt(id_b, _)) => id_a == id_b,
+            (glyim_type::TyKind::Ref(_, inner_a, mut_a), glyim_type::TyKind::Ref(_, inner_b, mut_b)) => {
                 mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b)
             }
-            (TyKind::RawPtr(inner_a, mut_a), TyKind::RawPtr(inner_b, mut_b)) => {
+            (glyim_type::TyKind::RawPtr(inner_a, mut_a), glyim_type::TyKind::RawPtr(inner_b, mut_b)) => {
                 mut_a == mut_b && self.structural_tys_match(ctx, *inner_a, *inner_b)
             }
-            (TyKind::Slice(inner_a), TyKind::Slice(inner_b)) => {
+            (glyim_type::TyKind::Slice(inner_a), glyim_type::TyKind::Slice(inner_b)) => {
                 self.structural_tys_match(ctx, *inner_a, *inner_b)
             }
-            (TyKind::Array(inner_a, _), TyKind::Array(inner_b, _)) => {
+            (glyim_type::TyKind::Array(inner_a, _), glyim_type::TyKind::Array(inner_b, _)) => {
                 self.structural_tys_match(ctx, *inner_a, *inner_b)
             }
-            (TyKind::Tuple(sub_a), TyKind::Tuple(sub_b)) => {
+            (glyim_type::TyKind::Tuple(sub_a), glyim_type::TyKind::Tuple(sub_b)) => {
                 let args_a = ctx.substitution_args(*sub_a);
                 let args_b = ctx.substitution_args(*sub_b);
                 if args_a.len() != args_b.len() {
@@ -82,14 +99,14 @@ impl<'a> CoherenceChecker<'a> {
                     }
                 })
             }
-            (TyKind::Never, TyKind::Never)
-            | (TyKind::Unit, TyKind::Unit)
-            | (TyKind::Bool, TyKind::Bool)
-            | (TyKind::Char, TyKind::Char)
-            | (TyKind::String, TyKind::String) => true,
-            (TyKind::Int(ia), TyKind::Int(ib)) => ia == ib,
-            (TyKind::Uint(ua), TyKind::Uint(ub)) => ua == ub,
-            (TyKind::Float(fa), TyKind::Float(fb)) => fa == fb,
+            (glyim_type::TyKind::Never, glyim_type::TyKind::Never)
+            | (glyim_type::TyKind::Unit, glyim_type::TyKind::Unit)
+            | (glyim_type::TyKind::Bool, glyim_type::TyKind::Bool)
+            | (glyim_type::TyKind::Char, glyim_type::TyKind::Char)
+            | (glyim_type::TyKind::String, glyim_type::TyKind::String) => true,
+            (glyim_type::TyKind::Int(ia), glyim_type::TyKind::Int(ib)) => ia == ib,
+            (glyim_type::TyKind::Uint(ua), glyim_type::TyKind::Uint(ub)) => ua == ub,
+            (glyim_type::TyKind::Float(fa), glyim_type::TyKind::Float(fb)) => fa == fb,
             _ => false,
         }
     }

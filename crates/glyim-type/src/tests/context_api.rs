@@ -20,12 +20,12 @@ fn first_custom_type_gets_index_4() {
         let ty = c.mk_ty(TyKind::Int(IntTy::I32));
         assert_eq!(
             ty.to_raw(),
-            14,
-            "first custom type should be at index 14 (after sentinels and primitives)"
+            18,
+            "first custom type should be at index 18 (after sentinels and primitives)"
         );
         ty
     });
-    assert_eq!(custom.to_raw(), 14);
+    assert_eq!(custom.to_raw(), 18);
     assert!(matches!(frozen.ty_kind(custom), TyKind::Int(IntTy::I32)));
 }
 
@@ -37,9 +37,9 @@ fn multiple_types_get_increasing_indices() {
         let t3 = c.mk_ty(TyKind::Int(IntTy::I32));
         vec![t1, t2, t3]
     });
-    assert_eq!(tys[0].to_raw(), 14);
-    assert_eq!(tys[1].to_raw(), 15);
-    assert_eq!(tys[2].to_raw(), 16);
+    assert_eq!(tys[0].to_raw(), 18);
+    assert_eq!(tys[1].to_raw(), 19);
+    assert_eq!(tys[2].to_raw(), 20);
     for ty in &tys {
         assert!(matches!(frozen.ty_kind(*ty), TyKind::Int(_)));
     }

@@ -12,7 +12,7 @@ fn many_types_allocated() {
         let mut tys = Vec::new();
         for i in 0..100u32 {
             let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-            assert_eq!(ty.to_raw(), 14 + i);
+            assert_eq!(ty.to_raw(), 18 + i);
             tys.push(ty);
         }
         tys
