@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use glyim_core::{BinOp, CrateId, DefId, LocalDefId, UnOp};
 use glyim_mir::*;
 use glyim_type::Ty;

@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use clap::Parser;
 use glyim_codegen::BytecodeBackend;
 use glyim_codegen_llvm::LlvmBackend;

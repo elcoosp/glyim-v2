@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use glyim_core::def_id::CrateId;
 use glyim_core::interner::Interner;
 use glyim_vfs::Vfs;

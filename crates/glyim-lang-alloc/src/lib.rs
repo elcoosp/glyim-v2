@@ -2,6 +2,7 @@
 //!
 //! The actual implementation is in `.g` files. This crate only provides
 //! access to those sources.
+#![allow(missing_docs)]
 
 /// Returns the source code of an alloc library module by name.
 pub fn alloc_source(name: &str) -> Option<&'static str> {

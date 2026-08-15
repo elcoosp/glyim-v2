@@ -1,4 +1,5 @@
 //! MIR optimizations (constant propagation, dead code elimination, etc.)
+#![allow(missing_docs)]
 
 use glyim_mir::Body;
 use glyim_type::TyCtx;

@@ -1,4 +1,5 @@
 //! Foundation types: arena, primitives, def-id, abi, interner, path.
+#![allow(missing_docs)]
 
 pub mod abi;
 pub mod arena;

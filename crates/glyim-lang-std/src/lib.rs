@@ -13,6 +13,7 @@
 //! - `std::env` — Environment variables, process arguments, current directory
 //! - `std::time` — Time measurement (Duration, Instant, SystemTime)
 //! - `std::process` — Child process spawning and management
+#![allow(missing_docs)]
 
 /// Returns the source code of a standard library module by name.
 pub fn std_source(name: &str) -> Option<&'static str> {

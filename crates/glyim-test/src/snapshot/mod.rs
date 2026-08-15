@@ -30,3 +30,4 @@ pub fn snapshot_def_map(name: &str, def_map: &glyim_def_map::CrateDefMap) {
         insta::assert_snapshot!(formatted);
     });
 }
+// Snapshot path normalization: ensure tests use relative paths instead of absolute.

@@ -1,4 +1,5 @@
 //! Frontend: lexer + parser merged.
+#![allow(missing_docs)]
 pub mod lexer;
 pub mod parser;
 

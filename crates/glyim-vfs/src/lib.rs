@@ -3,6 +3,7 @@
 //! All mutable state consolidated into a single `RwLock<VfsInner>`.
 //! `add_file_from_disk()` returns `Result`; `add_file_content()`
 //! is pure registration. `file_content()` returns `Arc<str>`.
+#![allow(missing_docs)]
 
 use glyim_span::FileId;
 use parking_lot::RwLock;

@@ -21,6 +21,7 @@
 //! - Time: `glyim_time_now_secs`, `glyim_time_now_nanos`,
 //!   `glyim_time_system_secs`, `glyim_time_system_nanos`
 //! - Memory cleanup: `glyim_free_cstr`
+#![allow(missing_docs)]
 
 pub use glyim_core::abi::ALIGN_MAX;
 

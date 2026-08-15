@@ -1,4 +1,5 @@
 //! Core type system & Type Context.
+#![allow(missing_docs)]
 pub mod adt_def;
 pub mod auto_trait;
 pub mod binder;

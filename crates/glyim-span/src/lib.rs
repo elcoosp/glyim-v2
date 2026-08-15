@@ -1,4 +1,5 @@
 //! Source locations, hygiene context, multi-span for diagnostics.
+#![allow(missing_docs)]
 
 pub mod hygiene;
 pub use hygiene::*;

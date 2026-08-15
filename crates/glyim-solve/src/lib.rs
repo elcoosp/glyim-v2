@@ -6,6 +6,7 @@
 //! [F18] Separate `IndexVec`s for `TyVar`, `IntVar`, and
 //! `FloatVar`. The type system prevents constructing
 //! `InferVar::Int(TyVar(0))` because `Int` takes an `IntVar`.
+#![allow(missing_docs)]
 
 pub mod fulfill;
 pub mod hrtb;

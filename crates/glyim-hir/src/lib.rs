@@ -7,6 +7,7 @@
 //! [F12] Uses `glyim_core::path::PathKind` (shared). Defines its
 //! own `PathSegment` with `generic_args: Option<Vec<TypeRef>>`,
 //! which differs from `glyim_core::path::PathSegment` (name-only).
+#![allow(missing_docs)]
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;

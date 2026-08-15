@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use glyim_codegen::CodegenBackend;
 use glyim_core::TargetInfo;
 use glyim_diag::{CompResult, GlyimDiagnostic};

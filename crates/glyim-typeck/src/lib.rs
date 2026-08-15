@@ -1,4 +1,5 @@
 //! Type checker: HIR → THIR with full inference and trait solving.
+#![allow(missing_docs)]
 
 mod check_body;
 mod check_expr;

@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_diag::{CompResult, GlyimDiagnostic};

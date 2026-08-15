@@ -1,4 +1,5 @@
 //! Type layout computation — sizes, alignments, ABI details.
+#![allow(missing_docs)]
 
 use glyim_core::abi::ALIGN_MAX;
 use glyim_core::arena::IndexVec;

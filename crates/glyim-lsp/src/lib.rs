@@ -1,4 +1,5 @@
 //! Language Server Protocol implementation for Glyim compiler.
+#![allow(missing_docs)]
 
 pub mod code_action;
 pub mod completion;

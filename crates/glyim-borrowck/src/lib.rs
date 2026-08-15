@@ -21,6 +21,7 @@
 //!    active (their dest local is live) and check for conflicts with
 //!    place accesses in the statement. Two-phase borrows in reservation
 //!    phase are treated as shared borrows for conflict purposes.
+#![allow(missing_docs)]
 
 mod liveness;
 mod move_analysis;

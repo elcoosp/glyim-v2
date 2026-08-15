@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 pub use glyim_span::{MultiSpan, Span};
 pub use miette::{Diagnostic as MietteDiagnostic, Report, Severity, SourceSpan};
 

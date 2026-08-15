@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, num_enum::TryFromPrimitive, PartialOrd)]
 #[repr(u16)]
 pub enum SyntaxKind {

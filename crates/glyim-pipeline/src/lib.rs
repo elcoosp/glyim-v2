@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use glyim_codegen::CodegenBackend;
 use glyim_codegen_llvm::LlvmBackend;
 use glyim_db::Database;

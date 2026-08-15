@@ -64,6 +64,14 @@ impl<'a> MockLowerCtx<'a> {
     pub fn add_adt_def(&mut self, adt_id: AdtId, def: AdtDef) {
         self.adt_defs.insert(adt_id.to_raw(), def);
     }
+
+    /// Convenience: attach an iterator‑next resolver.
+    pub fn with_iterator_next<F>(self, _f: F) -> Self
+    where
+        F: Fn(glyim_type::Ty, glyim_type::Ty) -> Option<glyim_lower::IteratorNextInfo> + 'static,
+    {
+        self
+    }
 }
 
 impl<'a> LowerCtx for MockLowerCtx<'a> {
@@ -77,10 +85,12 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
             kind: AdtKind::Struct,
         })
     }
+
     fn hir_body(&self, _owner: glyim_core::def_id::LocalDefId) -> Option<&glyim_hir::Body> {
         // Mock context does not have a real HIR map, so return None.
         None
     }
+
     fn push_span(&self, span: Span) {
         self.span_stack.borrow_mut().push(span);
     }
@@ -100,7 +110,14 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
     }
 
     fn fn_sig(&self, _def_id: FnDefId) -> Option<FnSig> {
-        None
+        // Provide a minimal dummy signature for tests.
+        Some(FnSig {
+            inputs: Substitution::empty(),
+            output: self.ty_ctx.unit_ty(),
+            c_variadic: false,
+            unsafety: glyim_core::primitives::Safety::Safe,
+            abi: glyim_core::primitives::Abi::Glyim,
+        })
     }
 
     fn const_value(
@@ -108,6 +125,10 @@ impl<'a> LowerCtx for MockLowerCtx<'a> {
         _def_id: ConstDefId,
         _substs: Substitution,
     ) -> Option<glyim_mir::MirConst> {
-        None
+        Some(glyim_mir::MirConst {
+            kind: glyim_mir::MirConstKind::Unit,
+            ty: self.ty_ctx.unit_ty(),
+            span: Span::DUMMY,
+        })
     }
 }

@@ -4,6 +4,7 @@
 //! delegates actual evaluation to `glyim-mir-interp`.
 //!
 //! Uses `HygieneCtx` from `glyim-span` (the merged hygiene crate).
+#![allow(missing_docs)]
 
 use glyim_core::interner::{Interner, Name};
 use glyim_diag::GlyimDiagnostic;

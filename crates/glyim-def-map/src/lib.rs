@@ -1,4 +1,5 @@
 //! Module graph and lightweight definition map.
+#![allow(missing_docs)]
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, LocalDefId};
