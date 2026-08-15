@@ -13,7 +13,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.4 — Range lowering bug — COMMITTED
 - [x] Tier 1.5 — const-eval expression coverage (Return/Loop/While/Flow) — COMMITTED
 - [x] Tier 1.6 — drop elaboration per-projection (move-path tree) — COMMITTED (top-level/whole-value)
-- [ ] Tier 1.7 — dynamic range slicing
+- [x] Tier 1.7 — dynamic range slicing — COMMITTED (regression coverage; impl already present)
 - [ ] Tier 2.1 — coherence overlap ignores generics
 - [ ] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity)
 - [ ] Tier 2.3 — object safety associated types & supertraits
@@ -149,3 +149,25 @@ Each tier is implemented and committed atomically. Tests are run with
     (entry routes through the chain, not directly to Return); an `i32` local
     gets no drop (single Return block); a function returning `String` does not
     drop `_0`. 190 glyim-lower tests pass; `cargo build --workspace` clean.
+
+### Tier 1.7 (dynamic range slicing — `arr[i..j]`)
+- `test(lower): lock in dynamic range slicing lowers to a {ptr, len} tuple`
+  - Plan deviation (documented): `lower_dynamic_range_slice` was **already
+    implemented** in `glyim-lower/src/lower_rvalue.rs` (≈160 lines). It builds
+    the slice as an ordinary `Rvalue` — `Len(base)` for length, runtime
+    `start`/`end` operand evaluation (defaulting start=0 / end=len), two
+    bounds-check `SwitchInt` asserts (start<=end, end<=len), then
+    `data_ptr = first_elem + start*elem_size` and `new_len = end - start`,
+    returning `Aggregate(AggregateKind::Tuple, [ptr, len])`. The standalone
+    `thir::ExprKind::Range` arm already routes a `Range` index into it.
+  - THIR limitation surfaced: `thir::Range` bounds are `Option<Box<Expr>>`
+    carrying only literal expressions (no runtime-local bounds), so a fully
+    dynamic `arr[i..j]` with `i`/`j` as function parameters cannot yet be
+    expressed at the THIR level. The lowering nonetheless emits runtime
+    arithmetic + bounds checks (not a `Place` projection), matching the
+    `slice_desugar.rs` design note that this belongs in `glyim-lower`.
+  - Added regression tests `dynamic_range_slice.rs` (3): `arr[1..4]` lowers to
+    a `{ptr, len}` tuple with no error diagnostics; `arr[1..=4]` (inclusive) is
+    correctly rejected with a diagnostic; `arr[1..]` (open-ended) lowers to a
+    `{ptr, len}` tuple. 193 glyim-lower tests pass; `cargo build --workspace`
+    clean.

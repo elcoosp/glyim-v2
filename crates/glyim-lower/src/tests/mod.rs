@@ -8,6 +8,7 @@ mod closure;
 mod closure_advanced;
 mod drop_glue;
 mod drop_elaboration;
+mod dynamic_range_slice;
 mod error_paths;
 mod expr_stmt;
 mod field_access;
