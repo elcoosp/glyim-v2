@@ -2887,20 +2887,25 @@ pub(crate) fn lower_body<'ctx>(
     };
     let function = module.add_function(&fn_name, fn_type, None);
 
-    // Apply ABI attributes to function definition parameters
-    // Use the real FnSig from TyCtx if available, otherwise fallback to an empty one.
+    // Apply ABI attributes to function definition parameters.
+    // A missing FnSig for a function that has reached codegen is an internal
+    // compiler error (not a user error): by the time we lower to LLVM IR every
+    // called function must already have had its signature resolved during
+    // typeck/HIR lowering. Silently substituting an empty FnSig here produced a
+    // wrong-arity LLVM function that crashed far from the real cause, so fail
+    // loudly instead.
     let layout_computer = FullLayoutComputer::new(ty_ctx, target_info.clone());
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(body.owner.local_id.to_raw());
-    let fn_sig = ty_ctx
-        .fn_sig(fn_def_id)
-        .cloned()
-        .unwrap_or(glyim_type::FnSig {
-            inputs: glyim_type::Substitution::empty(),
-            output: body.return_ty,
-            abi: glyim_core::primitives::Abi::Glyim,
-            c_variadic: false,
-            unsafety: glyim_core::primitives::Safety::Safe,
-        });
+    let fn_sig = match ty_ctx.fn_sig(fn_def_id) {
+        Some(sig) => sig.clone(),
+        None => {
+            return Err(vec![GlyimDiagnostic::internal_error(format!(
+                "no FnSig registered for {:?} when lowering body to LLVM IR — \
+                 this indicates a bug in typeck/monomorphization, not a user-facing error",
+                fn_def_id
+            ))]);
+        }
+    };
     if let Ok(fn_abi) = layout_computer.fn_abi_of(&fn_sig) {
         let mut param_idx = 0;
         if matches!(fn_abi.ret.mode, glyim_layout::PassMode::Indirect { .. }) {

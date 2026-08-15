@@ -24,10 +24,10 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 4.2 — line!/column! from SourceMap — COMMITTED (via Vfs source lookup)
 - [x] Tier 4.3 — include! CWD-relative fix — COMMITTED
 - [x] Tier 4.4 — stringify! normalization — COMMITTED
-- [ ] Tier 5.1 — over-alignment fallback comment + set_alignment
-- [ ] Tier 5.2 — DWARF pointer/slice debug types
-- [ ] Tier 5.3 — fn_sig fallback -> hard error
-- [ ] Tier 5.4 — bytecode backend Subslice/ConstantIndex scaling
+- [ ] Tier 5.1 — over-alignment fallback comment + set_alignment — PENDING (blocked: see note)
+- [ ] Tier 5.2 — DWARF pointer/slice debug types — PENDING (blocked: see note)
+- [x] Tier 5.3 — fn_sig fallback → internal error — COMMITTED
+- [ ] Tier 5.4 — bytecode Subslice/ConstantIndex scaling — PENDING (blocked: see note)
 - [ ] Tier 6.1-6.5 — LSP reference graph/rename/completion/unused-imports
 - [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
 
@@ -428,3 +428,23 @@ Each tier is implemented and committed atomically. Tests are run with
     old "not implemented" diagnostic, which the fix removed). 64 glyim-meta
   tests pass (`cargo test -p glyim-meta`); `glyim-pipeline` + `glyim-test`
   build clean.
+
+### Tier 5.3 (fn_sig silent fallback → internal compiler error)
+- `fix(codegen-llvm): missing FnSig at codegen is now an internal error`
+  - `lower.rs::lower_body` previously `.unwrap_or`-ed a missing `FnSig` to an
+    empty `FnSig { inputs: empty, output: body.return_ty, ... }`, which could
+    emit a wrong-arity LLVM function and crash far from the cause. Replaced
+    with a `match` that returns `Err(vec![GlyimDiagnostic::internal_error(
+    "no FnSig registered for {:?} ...")])` when `ty_ctx.fn_sig(fn_def_id)` is
+    `None`. By the time codegen runs every called function must have a resolved
+    signature, so this is a compiler bug, not a user error.
+  - Added `tests/fn_sig_missing.rs` (registered in `tests/mod.rs`) which
+    builds a trivial `Body` with `owner = FnDefId(7)` and deliberately omits
+    any `fn_sig` registration, then asserts `backend.generate_function(&body)`
+    returns `Err` whose diagnostic mentions the missing FnSig.
+  - Verified in isolation: `cargo test -p glyim-codegen-llvm --lib
+    t53_missing_fn_sig_is_internal_compiler_error` → 1 passed. NOTE: the full
+    `glyim-codegen-llvm` test suite has ~213 PRE-EXISTING failures on the
+    clean baseline (the LLVM backend is broadly unfinished on this branch);
+    this commit does not worsen that and does not depend on the broken
+    `glyim-typeck` working tree.

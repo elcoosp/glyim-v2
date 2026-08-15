@@ -22,6 +22,7 @@ mod edge_cases;
 mod field_projection;
 mod float_arith;
 mod float_lowering;
+mod fn_sig_missing;
 mod helpers;
 mod integer_arith;
 mod len_lowering;
