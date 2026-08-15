@@ -1313,6 +1313,7 @@ name = "glyim-test"
 version = "0.1.0"
 dependencies = [
  "glyim-borrowck",
+ "glyim-cli",
  "glyim-codegen",
  "glyim-core",
  "glyim-db",
