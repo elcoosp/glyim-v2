@@ -878,7 +878,19 @@ impl<'a> FnCtxt<'a> {
             } => {
                 let start_expr = start.map(|id| Box::new(self.check_expr(id).0));
                 let end_expr = end.map(|id| Box::new(self.check_expr(id).0));
-                let range_ty = self.fresh_infer_ty();
+                // Resolve the range's element type `T` from the endpoint types
+                // (prefer `start`, fall back to `end`), defaulting to an error
+                // type for a full range `..` with no endpoints.
+                let elem_ty = start_expr
+                    .as_ref()
+                    .map(|e| e.ty)
+                    .or_else(|| end_expr.as_ref().map(|e| e.ty))
+                    .unwrap_or_else(|| self.ctx.error_ty());
+                let adt_id = glyim_core::def_id::AdtId::from_raw(if *inclusive { 1001 } else { 1000 });
+                let substs = self
+                    .ctx
+                    .intern_substitution(vec![glyim_type::GenericArg::Ty(elem_ty)]);
+                let range_ty = self.ctx.mk_adt(adt_id, substs);
                 let thir_expr = thir::Expr {
                     kind: thir::ExprKind::Range {
                         start: start_expr,

@@ -37,6 +37,7 @@ mod place_projections;
 mod polymorphize;
 mod post_mono_checks_tests;
 mod range_patterns;
+mod range_lower;
 mod return_expr;
 mod root_discovery;
 mod slice_patterns;

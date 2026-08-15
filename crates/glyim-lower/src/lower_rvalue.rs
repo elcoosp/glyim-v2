@@ -90,14 +90,60 @@ impl<'a> MirBuilder<'a> {
                 end,
                 inclusive,
             } => {
-                // For now, we'll treat a range expression as a tuple of (start, end) or something.
-                // This is a placeholder; actual implementation will be added later.
-                let _start_val = start.as_ref().map(|e| self.lower_expr_to_rvalue(e));
-                let _end_val = end.as_ref().map(|e| self.lower_expr_to_rvalue(e));
-                let _inclusive = inclusive;
-                // We'll create a dummy aggregate for now.
-                let operands = Vec::new();
-                glyim_mir::Rvalue::Aggregate(glyim_mir::AggregateKind::Tuple, operands)
+                // Lower a range to a real `Range<T>` / `RangeInclusive<T>`
+                // aggregate (the builtin ADTs registered at ids 1000/1001)
+                // carrying its `start` and `end` operands, instead of a dummy
+                // empty tuple.
+                let adt_id = glyim_core::def_id::AdtId::from_raw(if *inclusive { 1001 } else { 1000 });
+
+                // The range type is resolved during type-checking to
+                // `Adt(1000|1001, [T])`; reuse its substitution so the element
+                // type lines up with the operand types.
+                let (substs, elem_ty) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
+                    glyim_type::TyKind::Adt(_, s) => {
+                        let args = self.ctx.ty_ctx().substitution_args(*s);
+                        let elem = args
+                            .first()
+                            .and_then(|a| match a {
+                                glyim_type::GenericArg::Ty(t) => Some(*t),
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| self.ctx.ty_ctx().error_ty());
+                        (*s, elem)
+                    }
+                    _ => {
+                        let elem = start
+                            .as_ref()
+                            .map(|e| e.ty)
+                            .or_else(|| end.as_ref().map(|e| e.ty))
+                            .unwrap_or_else(|| self.ctx.ty_ctx().error_ty());
+                        // No resolved substitution available; emit an empty one
+                        // and rely on the element type for operand shapes.
+                        (glyim_type::Substitution::empty(), elem)
+                    }
+                };
+
+                let start_op = match start {
+                    Some(e) => self.lower_expr_to_operand(e),
+                    None => glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                        kind: glyim_mir::MirConstKind::Error,
+                        ty: elem_ty,
+                        span: expr.span,
+                    }),
+                };
+                let end_op = match end {
+                    Some(e) => self.lower_expr_to_operand(e),
+                    None => glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                        kind: glyim_mir::MirConstKind::Error,
+                        ty: elem_ty,
+                        span: expr.span,
+                    }),
+                };
+
+                glyim_mir::Rvalue::Aggregate(
+                    glyim_mir::AggregateKind::Adt(adt_id, glyim_mir::VariantIdx::from_raw(0), substs),
+                    vec![start_op, end_op],
+                )
             }
             thir::ExprKind::VarRef(var_id) => {
                 let local = LocalIdx::from_raw(var_id.to_raw());

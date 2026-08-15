@@ -10,7 +10,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 1.1 + 1.1b — closure capture analysis + real closure ADT type — COMMITTED
 - [x] Tier 1.2 — vtable generation (trait-def-driven method population) — COMMITTED
 - [x] Tier 1.3 — Iterator::next real resolution — COMMITTED
-- [ ] Tier 1.4 — Range lowering bug
+- [x] Tier 1.4 — Range lowering bug — COMMITTED
 - [ ] Tier 1.5 — const-eval expression coverage (Loop/While/Flow/Call/etc)
 - [ ] Tier 1.6 — drop elaboration per-projection (move-path tree)
 - [ ] Tier 1.7 — dynamic range slicing
@@ -84,4 +84,19 @@ Each tier is implemented and committed atomically. Tests are run with
     registered with two correct variants; `t18_iterator_next_info_uses_real_
     option_adt` (glyim-solve) asserts `None` when no `next` fn is registered
     and a real `Option<elem>` (id 1010) otherwise. 560 glyim-type+glyim-solve
+    tests pass; `cargo check --workspace` clean.
+
+### Tier 1.4 (Range lowering)
+- `fix(lower): lower ranges to real Range/RangeInclusive aggregates`
+  - The `thir::ExprKind::Range` arm in `lower_expr_to_rvalue` discarded
+    start/end/inclusive and returned an empty `Aggregate(Tuple, [])` (the bug).
+  - Typeck now resolves the range expression's type to the proper
+    `Range<T>` (id 1000, exclusive) / `RangeInclusive<T>` (id 1001, inclusive)
+    ADT via `mk_adt`, deriving `T` from the endpoint types (defaulting to the
+    error type for a full `..`).
+  - Lowering reads the substitution from that resolved `Adt` type and emits
+    `Aggregate(Adt(adt_id, 0, substs), [start_op, end_op])`, so the range
+    carries its real endpoints. `..` (no endpoints) emits Error-typed operands.
+  - Tests `range_lower.rs` (3 tests) assert exclusive -> Adt 1000, inclusive ->
+    Adt 1001, both with 2 constant operands. 187 glyim-lower + 56 glyim-typeck
     tests pass; `cargo check --workspace` clean.
