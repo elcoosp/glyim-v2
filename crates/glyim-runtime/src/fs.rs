@@ -178,28 +178,22 @@ fn io_err_to_errno(err: &std::io::Error) -> i32 {
 /// - `path` must point to valid UTF-8 data of exactly `path_len` bytes
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: u32) -> i32 {
-    
     // Validate flag combinations.
     let access = flags & 0x3;
     // Must specify exactly one of RDONLY, WRONLY, RDWR.
-    if access != 0 && access != 1 && access != 2 {
+    if access != FS_O_RDONLY && access != FS_O_WRONLY && access != FS_O_RDWR {
         return FS_EIO;
     }
     // O_EXCL requires O_CREAT.
     if (flags & FS_O_EXCL) != 0 && (flags & FS_O_CREAT) == 0 {
         return FS_EIO;
     }
-// Validate flag combinations.
-    let access = flags & 0x3;
-    // RDONLY is 0, WRONLY is 1, RDWR is 2.
-    if access == 0 && (flags & FS_O_WRONLY) != 0 {
+    // O_TRUNC requires write access (WRONLY or RDWR).
+    if (flags & FS_O_TRUNC) != 0 && (access == FS_O_RDONLY) {
         return FS_EIO;
     }
-    if access == 1 && (flags & FS_O_RDONLY) != 0 {
-        return FS_EIO;
-    }
-    // O_EXCL requires O_CREAT.
-    if (flags & FS_O_EXCL) != 0 && (flags & FS_O_CREAT) == 0 {
+    // O_APPEND requires write access.
+    if (flags & FS_O_APPEND) != 0 && (access == FS_O_RDONLY) {
         return FS_EIO;
     }
 
@@ -209,12 +203,11 @@ pub unsafe extern "C" fn glyim_fs_open(path: *const u8, path_len: usize, flags: 
     };
 
     let access = flags & 0x3;
-    let do_read = access != 1; // anything except WRONLY
-    let append = flags & FS_O_APPEND != 0;
-    let create = flags & FS_O_CREAT != 0;
-    let truncate = flags & FS_O_TRUNC != 0;
-    // Write is required for WRONLY, RDWR, and any write-related flag.
-    let do_write = access != 0 || append || create || truncate;
+    let do_read = access != FS_O_WRONLY;
+    let append = (flags & FS_O_APPEND) != 0;
+    let create = (flags & FS_O_CREAT) != 0;
+    let truncate = (flags & FS_O_TRUNC) != 0;
+    let do_write = access != FS_O_RDONLY || append || create || truncate;
 
     let mut opts = OpenOptions::new();
     opts.read(do_read)
