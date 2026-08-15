@@ -108,11 +108,13 @@ fn discovered_test_equality() {
         name: "test_foo".to_string(),
         file: std::path::PathBuf::from("test.g"),
         line: 1,
+        ignored: false,
     };
     let t2 = DiscoveredTest {
         name: "test_foo".to_string(),
         file: std::path::PathBuf::from("test.g"),
         line: 1,
+        ignored: false,
     };
     assert_eq!(t1, t2);
 }

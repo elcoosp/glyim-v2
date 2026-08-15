@@ -22,6 +22,7 @@ fn cmd_test_no_tests_no_run() {
         release: false,
         filter: None,
         no_run: true,
+        run_ignored: false,
     };
 
     let result = cmd_test(&pd, &opts).unwrap();
@@ -59,6 +60,7 @@ fn cmd_test_with_filter_skips_non_matching() {
         release: false,
         filter: Some("math".to_string()),
         no_run: true,
+        run_ignored: false,
     };
 
     let result = cmd_test(&pd, &opts).unwrap();
@@ -88,6 +90,7 @@ fn cmd_test_no_run_counts_test_files() {
         release: false,
         filter: None,
         no_run: true,
+        run_ignored: false,
     };
 
     let result = cmd_test(&pd, &opts).unwrap();

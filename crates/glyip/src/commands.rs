@@ -4,10 +4,12 @@
 //! configuration loading, dependency resolution, compilation, and output.
 
 use glyim_db::{CrateConfig, Database};
-use std::collections::BTreeMap;
+use glyim_pipeline::MirCompilation;
+use glyim_core::def_id::DefId;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::cache::Cache;
 use crate::config::{BuildOptions, GlyipToml, NewOptions, RunOptions, TestOptions};
@@ -184,7 +186,6 @@ pub struct TestResult {
 /// failures.
 pub fn cmd_test(project_dir: &Path, opts: &TestOptions) -> GlyipResult<TestResult> {
     let config = GlyipToml::read_from_dir(project_dir)?;
-    let mut cache = Cache::new(project_dir)?;
 
     info!(
         "Testing {} v{}",
@@ -231,90 +232,70 @@ pub fn cmd_test(project_dir: &Path, opts: &TestOptions) -> GlyipResult<TestResul
     let mut failed = 0usize;
     let mut ignored = 0usize;
 
-    // If individual test functions were discovered, report per-function.
-    if !all_discovered.is_empty() {
-        for discovered_test in &all_discovered {
-            // Apply filter: skip tests that don't match.
-            if let Some(ref filter) = opts.filter
-                && !discovered_test.name.contains(filter.as_str())
-            {
-                ignored += 1;
-                continue;
-            }
+    // Compile each test file to MIR once, then run the specific test body for
+    // every discovered test function via the in-process MIR interpreter. The
+    // bytecode backend emits glyim's own opcode format (not a native object),
+    // so runtime execution goes through the interpreter rather than a linker.
+    let mut mir_cache: HashMap<PathBuf, Option<MirCompilation>> = HashMap::new();
 
-            total += 1;
-
-            if opts.no_run {
-                continue;
-            }
-
-            // Compile the containing file.
-            let build_opts = BuildOptions {
-                release: opts.release,
-                target: None,
-                backend: "bytecode".to_string(),
-                opt_level: 0,
-            };
-
-            match compile_source(
-                project_dir,
-                &discovered_test.file,
-                &config,
-                &build_opts,
-                &mut cache,
-            ) {
-                Ok(_) => {
-                    passed += 1;
-                }
-                Err(GlyipError::BuildFailed(_diags)) => {
-                    failed += 1;
-                }
-                Err(e) => {
-                    warn!(
-                        "Test compilation error for '{}': {}",
-                        discovered_test.name, e
-                    );
-                    failed += 1;
-                }
-            }
+    for discovered_test in &all_discovered {
+        // Apply name filter: non-matching tests are reported as ignored.
+        if let Some(ref filter) = opts.filter
+            && !discovered_test.name.contains(filter.as_str())
+        {
+            ignored += 1;
+            continue;
         }
-    } else {
-        // No individual test functions found — fall back to per-file.
-        for test_file in &test_files {
-            let build_opts = BuildOptions {
-                release: opts.release,
-                target: None,
-                backend: "bytecode".to_string(),
-                opt_level: 0,
-            };
 
-            // Apply filter: skip files that don't match.
-            if let Some(ref filter) = opts.filter {
-                let name = test_file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if !name.contains(filter.as_str()) {
-                    ignored += 1;
-                    continue;
+        // `#[ignore]` tests are skipped unless explicitly requested.
+        if discovered_test.ignored && !opts.run_ignored {
+            ignored += 1;
+            continue;
+        }
+
+        total += 1;
+
+        if opts.no_run {
+            continue;
+        }
+
+        // Compile (or reuse a cached compilation of) the containing file.
+        let mir = mir_cache.entry(discovered_test.file.clone()).or_insert_with(|| {
+            let mut db = make_test_db(&config);
+            match glyim_pipeline::compile_file_to_mir(&mut db, &discovered_test.file) {
+                Ok(m) => Some(m),
+                Err(diags) => {
+                    eprintln!("[DBG] compile error diags:");
+                    for d in &diags {
+                        eprintln!("[DBG]   {:?}", d.message);
+                    }
+                    None
                 }
             }
+        });
 
-            total += 1;
+        let Some(compilation) = mir else {
+            failed += 1;
+            continue;
+        };
 
-            if opts.no_run {
-                continue;
-            }
+        // Resolve the discovered test name to the function's DefId and run it.
+        let Some(def_id) = resolve_test_def_id(compilation, &discovered_test.name) else {
+            failed += 1;
+            continue;
+        };
+        let Some(body) = compilation.bodies.get(&def_id) else {
+            failed += 1;
+            continue;
+        };
 
-            match compile_source(project_dir, test_file, &config, &build_opts, &mut cache) {
-                Ok(_) => {
-                    passed += 1;
-                }
-                Err(GlyipError::BuildFailed(_diags)) => {
-                    failed += 1;
-                }
-                Err(e) => {
-                    warn!("Test compilation error: {}", e);
-                    failed += 1;
-                }
-            }
+        let mut interpreter = glyim_mir_interp::Interpreter::new(compilation.ty_ctx.as_ref());
+        for (id, b) in &compilation.bodies {
+            interpreter.add_function(*id, (**b).clone());
+        }
+        match interpreter.run_body(body) {
+            Ok(()) => passed += 1,
+            Err(_) => failed += 1,
         }
     }
 
@@ -328,6 +309,29 @@ pub fn cmd_test(project_dir: &Path, opts: &TestOptions) -> GlyipResult<TestResul
         failed,
         ignored,
     })
+}
+
+/// Build a fresh compiler `Database` for compiling a single test file to MIR.
+fn make_test_db(config: &GlyipToml) -> Database {
+    let crate_config = CrateConfig {
+        name: config.package.name.clone(),
+        target_triple: "x86_64-unknown-linux-gnu".to_string(),
+        opt_level: 0,
+    };
+    Database::new(crate_config)
+}
+
+/// Resolve a discovered test function name to its `DefId` within a compiled
+/// crate, so the matching MIR body can be executed by the interpreter.
+fn resolve_test_def_id(compilation: &MirCompilation, name: &str) -> Option<DefId> {
+    for module in compilation.def_map.modules.iter() {
+        for (name_key, (local_id, _visibility, _span)) in &module.scope.values {
+            if compilation.def_map.interner.resolve(*name_key) == name {
+                return Some(DefId::new(compilation.def_map.krate, *local_id));
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

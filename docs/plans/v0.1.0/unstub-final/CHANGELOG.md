@@ -18,7 +18,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 2.2 — HRTB provable cases (reflexivity/static/WF/identity) — COMMITTED
 - [x] Tier 2.3 — object safety associated types & supertraits — COMMITTED
 - [x] Tier 3.1 — transitive dependency resolution (glyip) — COMMITTED
-- [ ] Tier 3.2 — glyip cmd_test executes tests
+- [x] Tier 3.2 — glyip cmd_test executes tests — COMMITTED
 - [ ] Tier 3.3 — registry-disabled error message
 - [ ] Tier 4.1 — fragment-spec matching (Stage A + B)
 - [ ] Tier 4.2 — line!/column! from SourceMap
@@ -296,3 +296,40 @@ Each tier is implemented and committed atomically. Tests are run with
     `a` depends-on `b`; root depends only on `a`; asserts `b` appears in the
     lockfile and `a.dependencies["b"] == "0.5"`. 177 glyip tests pass;
     `cargo build --workspace` clean.
+
+### Tier 3.2 (glyip `cmd_test` actually executes tests)
+- **Adaptation (plan assumed native link+run; reality differs):** the bytecode
+  backend emits glyim's own opcode format (see `glyim-codegen`
+  `BytecodeBackend::generate`), NOT a native object file, so the plan's
+  "link + run the bytecode object" path is non-functional on this tree. The
+  only in-repo working runtime is the MIR interpreter (`glyim_mir_interp`),
+  which `glyim-test`'s `InterpRunner` already uses. `cmd_test` now compiles each
+  discovered test file to MIR and runs the specific test body via
+  `Interpreter::run_body`, which is genuine execution, not a stub.
+- Added `glyim_pipeline::compile_file_to_mir` (returns `MirCompilation {
+  bodies: HashMap<DefId, Arc<Body>>, def_map: CrateDefMap, ty_ctx: Arc<TyCtx>
+  }`) — the front half of `compile_file` without backend codegen.
+- `cmd_test` (commands.rs): replaced the file-counting stub with per-test
+  compile-to-MIR + run. Resolves each discovered test name to its `DefId` via
+  the `CrateDefMap` (`resolve_test_def_id`), registers all bodies in the
+  interpreter, and runs the matching body — `Ok` => passed, `Err` => failed.
+  Compilation failures also count as failed. `#[ignore]` tests are skipped
+  unless `TestOptions::run_ignored` is set (mirrors `cargo test -- --ignored`).
+- `test_discovery::DiscoveredTest` gained an `ignored: bool` field. Because
+  glyim source does NOT parse `#[...]` attributes (the frontend lexer emits
+  `Hash` but the parser forms no attribute node — `scan` of a `#[ignore]`
+  attribute yields "expected item, found Hash"), the `#[ignore]` marker is
+  written as a comment (`// #[ignore]`) on the line before the function; `scan`
+  detects both the bare `#[ignore]` attribute and a `//`-comment containing
+  "ignore".
+- `TestOptions` gained `run_ignored: bool` (already derived `Default`).
+- **Known pipeline quirk (documented, not fixed here):** the MIR pipeline
+  drops the LAST-declared function in a file from `thir_bodies`, so a test that
+  is the final function in its file will not get a runnable body. Test fixtures
+  work around this with a trailing `_pad() {}` non-test function. (Fixing the
+  underlying typeck/THIR collection is a separate task.)
+- Tests: `test_cmd_test_executes_tests` (1 passed / 1 failed / 1 ignored via
+  two files), `test_cmd_test_runs_ignored_when_requested` (both run when
+  `run_ignored`), plus updated `test_with_only_src_files` / `test_with_filter`
+  to the new discovered-test-function semantics. 179 tests pass; `cargo build
+  --workspace` clean; `glyim-pipeline` (3) and `glyim-test` (94) still green.

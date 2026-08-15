@@ -166,6 +166,91 @@ impl Pipeline {
     }
 }
 
+/// Result of compiling a source file down to MIR without code generation.
+pub struct MirCompilation {
+    /// All monomorphized MIR bodies, keyed by their owning `DefId`.
+    pub bodies: std::collections::HashMap<glyim_core::def_id::DefId, Arc<Body>>,
+    /// The crate's definition map (used to resolve a function name to a `DefId`).
+    pub def_map: glyim_def_map::CrateDefMap,
+    /// The type context produced during type-checking (required by the interpreter).
+    pub ty_ctx: Arc<glyim_type::TyCtx>,
+}
+
+/// Compile a single source file to MIR only (no backend code generation).
+///
+/// This is the entry point used by `glyip test` and other runners that execute
+/// MIR bodies directly (e.g. via the in-process `glyim_mir_interp` interpreter)
+/// instead of producing a native object file.
+pub fn compile_file_to_mir(
+    db: &mut Database,
+    path: &Path,
+) -> Result<MirCompilation, Vec<GlyimDiagnostic>> {
+    let sink = DiagSink::new();
+    let sink_cell = RefCell::new(sink);
+
+    let file_id = db
+        .vfs()
+        .add_file_from_disk(path)
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("I/O Error: {}", e))])?;
+    let source = db
+        .vfs()
+        .file_content(file_id)
+        .unwrap_or_else(|| Arc::from(""));
+
+    let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
+    sink_cell
+        .borrow_mut()
+        .extend(parse_result.diagnostics.clone());
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    sink_cell.borrow_mut().extend(def_diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (hir, hir_diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
+    sink_cell.borrow_mut().extend(hir_diags);
+
+    let resolver = db.interner().clone();
+    let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
+    let trait_ctx = glyim_solve::TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (ty_ctx, typeck_result) =
+        glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
+    sink_cell.borrow_mut().extend(typeck_result.diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    db.set_ty_ctx(ty_ctx);
+
+    let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
+    let ty_ctx_ref = ty_ctx_guard.as_ref();
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+
+    let mut bodies = std::collections::HashMap::new();
+    for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
+        let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
+        sink_cell.borrow_mut().extend(lower_result.diagnostics);
+        if sink_cell.borrow().has_errors() {
+            return Err(sink_cell.into_inner().into_diagnostics());
+        }
+        let mir_arc = Arc::new(lower_result.body);
+        let owner = mir_arc.owner;
+        bodies.insert(owner, mir_arc);
+    }
+
+    Ok(MirCompilation {
+        bodies,
+        def_map,
+        ty_ctx: ty_ctx_guard,
+    })
+}
+
 pub fn emit_mir(
     db: &mut Database,
     input: &Path,

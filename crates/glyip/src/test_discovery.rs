@@ -15,6 +15,9 @@ pub struct DiscoveredTest {
     pub file: PathBuf,
     /// 1-based line number where the function is declared.
     pub line: usize,
+    /// Whether the test is annotated with `#[ignore]` and should be skipped
+    /// unless the caller explicitly opts into running ignored tests.
+    pub ignored: bool,
 }
 
 /// Result of scanning a file for test functions.
@@ -36,15 +39,26 @@ impl FileTestDiscovery {
         let content = std::fs::read_to_string(file)?;
         let mut tests = Vec::new();
         let mut pending_test_attr = false;
+        let mut pending_ignore_attr = false;
 
         for (line_idx, line) in content.lines().enumerate() {
             let line_number = line_idx.saturating_add(1);
             let trimmed = line.trim();
 
-            // Detect #[test] attribute on its own line or inline.
+            // Detect #[test] / #[ignore] attributes on their own line or inline.
             if trimmed == "#[test]" {
                 pending_test_attr = true;
                 continue;
+            }
+            if trimmed == "#[ignore]" {
+                pending_ignore_attr = true;
+                continue;
+            }
+            // glyim source does not parse `#[...]` attributes, so an `#[ignore]`
+            // marker must be written as a comment (`// #[ignore]` or `// ignore`)
+            // on the line immediately preceding the function.
+            if trimmed.starts_with("//") && trimmed.contains("ignore") {
+                pending_ignore_attr = true;
             }
 
             // Detect fn declaration.
@@ -55,14 +69,18 @@ impl FileTestDiscovery {
                         name: fn_name.to_string(),
                         file: file.to_path_buf(),
                         line: line_number,
+                        ignored: pending_ignore_attr,
                     });
                 }
                 pending_test_attr = false;
+                pending_ignore_attr = false;
             } else {
-                // If there was a #[test] but the next non-empty line isn't a fn,
-                // keep looking (but reset for safety if it's clearly not a fn).
+                // If there was a #[test]/#[ignore] but the next non-empty line
+                // isn't a fn, keep looking (but reset for safety if it's clearly
+                // not a fn).
                 if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("//") {
                     pending_test_attr = false;
+                    pending_ignore_attr = false;
                 }
             }
         }

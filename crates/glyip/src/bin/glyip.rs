@@ -101,6 +101,7 @@ fn main() {
                 release,
                 filter,
                 no_run,
+                run_ignored: false,
             };
             glyip::cmd_test(&project_dir, &opts).map(|_| ())
         }

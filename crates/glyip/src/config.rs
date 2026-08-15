@@ -217,6 +217,8 @@ pub struct TestOptions {
     pub filter: Option<String>,
     /// Compile tests but do not run them.
     pub no_run: bool,
+    /// Run tests annotated with `#[ignore]` (mirrors `cargo test -- --ignored`).
+    pub run_ignored: bool,
 }
 
 /// Options for the `glyip run` command.
