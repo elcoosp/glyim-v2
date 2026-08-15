@@ -12,12 +12,31 @@ use inkwell::targets::TargetMachine;
 /// - 4+: Same as O3 (default)
 ///
 /// When `opt_for_size` is true, size optimizations (Os/Oz) are used instead of speed.
+
+/// Check that the linked LLVM version is supported.
+/// Panics with a clear error message if the version is unsupported.
+pub(crate) fn check_llvm_version_and_passes() {
+    let version = inkwell::support::get_llvm_version();
+    // version is (major, minor, patch)
+    let major = version.0;
+    // We support LLVM 18, 19, 20, 21, 22 (and later)
+    if major < 18 {
+        panic!(
+            "Unsupported LLVM version: {}.{}.{}. Glyim requires LLVM 18 or later.",
+            version.0, version.1, version.2
+        );
+    }
+    tracing::info!("Using LLVM version: {}.{}.{}", version.0, version.1, version.2);
+}
+
 pub(crate) fn run_llvm_passes<'ctx>(
     module: &Module<'ctx>,
     target_machine: &TargetMachine,
     opt_level: u8,
     opt_for_size: bool,
 ) -> Result<(), String> {
+    check_llvm_version_and_passes();
+
     let pass_str = match (opt_level, opt_for_size) {
         // Level 0: no optimization
         (0, _) => "default<O0>",

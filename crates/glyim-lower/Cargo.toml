@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+glyim-layout = { workspace = true }
 rowan = { workspace = true }
 glyim-hir = { workspace = true }
 glyim-syntax = { workspace = true }

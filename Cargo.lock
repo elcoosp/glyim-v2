@@ -1107,6 +1107,7 @@ dependencies = [
  "glyim-diag",
  "glyim-frontend",
  "glyim-hir",
+ "glyim-layout",
  "glyim-mir",
  "glyim-pipeline",
  "glyim-solve",
