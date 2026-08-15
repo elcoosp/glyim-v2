@@ -1,14 +1,59 @@
 use crate::AnalysisDatabase;
-use crate::database::FileMap;
-use lsp_types::{RenameParams, WorkspaceEdit};
+use crate::database::{FileMap, SourceMap};
+use glyim_span::FileId;
+use lsp_types::{RenameParams, TextEdit, WorkspaceEdit};
 use std::str::FromStr;
+
+/// Fallback used when the reference graph has no entries for `symbol_name`.
+///
+/// Lexes `source` and emits a `TextEdit` for every `SyntaxKind::Ident` token
+/// whose text equals `symbol_name`. Crucially this skips occurrences inside
+/// `StringLit`/`CharLit` tokens and comments (which the lexer excludes from
+/// the token stream as trivia), so a name that also appears in a string
+/// literal or comment is never corrupted.
+pub(crate) fn rename_text_fallback(
+    sm: &SourceMap,
+    file_id: FileId,
+    symbol_name: &str,
+    new_name: &str,
+) -> Option<Vec<TextEdit>> {
+    let source = sm.source();
+    let lexed = glyim_frontend::lexer::lex(source, file_id);
+    let mut edits = Vec::new();
+    for tok in &lexed.tokens {
+        if tok.kind == glyim_syntax::SyntaxKind::Ident && tok.text.as_str() == symbol_name {
+            if let Some(((start_line, start_col), (end_line, end_col))) =
+                sm.span_to_position(tok.span.lo.to_usize(), tok.span.hi.to_usize())
+            {
+                edits.push(TextEdit {
+                    range: lsp_types::Range {
+                        start: lsp_types::Position {
+                            line: start_line as u32,
+                            character: start_col as u32,
+                        },
+                        end: lsp_types::Position {
+                            line: end_line as u32,
+                            character: end_col as u32,
+                        },
+                    },
+                    new_text: new_name.to_string(),
+                });
+            }
+        }
+    }
+    if edits.is_empty() {
+        None
+    } else {
+        Some(edits)
+    }
+}
 
 pub fn rename_symbol(
     db: &AnalysisDatabase,
     file_map: &FileMap,
     params: &RenameParams,
 ) -> Option<WorkspaceEdit> {
-    use lsp_types::{Position, Range, TextEdit, Uri, WorkspaceEdit};
+    use lsp_types::{Position, Range, Uri, WorkspaceEdit};
     use std::collections::HashMap;
     use url::Url;
 
@@ -82,51 +127,10 @@ pub fn rename_symbol(
         });
     }
 
-    // Fallback: simple text-based search within the current file only.
-    eprintln!("rename: fallback to text search for '{}'", symbol_name);
-    let lines: Vec<&str> = source.lines().collect();
-
-    let mut edits = Vec::new();
-
-    for (line_idx, line) in lines.iter().enumerate() {
-        let mut search_start = 0;
-        while let Some(pos) = line[search_start..].find(symbol_name) {
-            let abs_pos = search_start + pos;
-            let end_pos = abs_pos + symbol_name.len();
-
-            let prev = if abs_pos > 0 {
-                line.chars().nth(abs_pos - 1).unwrap_or(' ')
-            } else {
-                ' '
-            };
-            let next = if end_pos < line.len() {
-                line.chars().nth(end_pos).unwrap_or(' ')
-            } else {
-                ' '
-            };
-            if (prev.is_alphabetic() || prev == '_') || (next.is_alphabetic() || next == '_') {
-                search_start = abs_pos + 1;
-                continue;
-            }
-            edits.push(TextEdit {
-                range: Range {
-                    start: Position {
-                        line: line_idx as u32,
-                        character: abs_pos as u32,
-                    },
-                    end: Position {
-                        line: line_idx as u32,
-                        character: end_pos as u32,
-                    },
-                },
-                new_text: params.new_name.clone(),
-            });
-            search_start = abs_pos + 1;
-        }
-    }
-    if edits.is_empty() {
-        return None;
-    }
+    // Fallback: text-based search within the current file only. Lex first and
+    // only replace `Ident` tokens (string/char literals and comments are
+    // skipped automatically by the lexer).
+    let edits = rename_text_fallback(sm, file_id, symbol_name, &params.new_name)?;
     let mut changes = HashMap::new();
 
     changes.insert(uri.clone(), edits);

@@ -30,3 +30,61 @@ fn main() { let x = old_name(); }
 
     state.did_close(&path);
 }
+
+#[test]
+fn test_rename_text_fallback_skips_string_and_comment() {
+    use crate::database::SourceMap;
+    use crate::rename::rename_text_fallback;
+    use glyim_span::FileId;
+
+    // `target` appears three times: once as a real identifier, once inside a
+    // string literal, and once inside a `//` comment. The fallback must rename
+    // only the real identifier and leave the string/comment occurrences alone.
+    let content = "let target = 1;\nlet s = \"target in a string\";\n// target in a comment\ntarget = 2;\n";
+    let sm = SourceMap::new(
+        std::path::PathBuf::from("/test/main.g"),
+        FileId::from_raw(0),
+        content.to_string(),
+    );
+
+    let edits = rename_text_fallback(&sm, FileId::from_raw(0), "target", "renamed")
+        .expect("expected fallback edits for the real identifier occurrences");
+
+    // Exactly two identifier occurrences: `let target` and `target = 2`.
+    assert_eq!(edits.len(), 2, "string/comment occurrences must be skipped");
+
+    // Both edits must target the span of the word "target", never inside the
+    // string literal (line 1) or the comment (line 2).
+    for e in &edits {
+        let line = e.range.start.line;
+        assert!(
+            line == 0 || line == 3,
+            "edit landed on line {} — must be a real identifier, not string/comment",
+            line
+        );
+        assert_eq!(e.new_text, "renamed");
+    }
+}
+
+#[test]
+fn test_rename_text_fallback_target_only_in_string_is_none() {
+    use crate::database::SourceMap;
+    use crate::rename::rename_text_fallback;
+    use glyim_span::FileId;
+
+    // `target` appears ONLY inside a string literal and a comment — no real
+    // identifier occurrence — so the fallback must produce no edits (and must
+    // NOT corrupt the string/comment text).
+    let content = "let s = \"target in a string\";\n// target in a comment\n";
+    let sm = SourceMap::new(
+        std::path::PathBuf::from("/test/main.g"),
+        FileId::from_raw(0),
+        content.to_string(),
+    );
+
+    let edits = rename_text_fallback(&sm, FileId::from_raw(0), "target", "renamed");
+    assert!(
+        edits.is_none(),
+        "name only in string/comment must yield no fallback edits"
+    );
+}

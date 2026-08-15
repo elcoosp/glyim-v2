@@ -30,7 +30,8 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 5.4 — bytecode from_end ConstantIndex: array→const, slice→runtime len−offset — COMMITTED
 - [x] Tier 6.1 — reference_graph walks Range/Closure/Index/Break children — COMMITTED
 - [x] Tier 6.2 — reference_graph Read/Write access classification + `&mut` lowering fix — COMMITTED
-- [ ] Tier 6.3-6.5 — LSP rename literal-safety, type-filtered completion, unused-imports via graph
+- [x] Tier 6.3 — rename fallback lexes & only edits `Ident` tokens (skips string/char/comment) — COMMITTED
+- [ ] Tier 6.4-6.5 — LSP type-filtered completion, unused-imports via graph
 - [ ] Tier 7.1-7.4 — test harness real linking+execution+mock wiring
 
 ## Commits
@@ -600,3 +601,23 @@ Each tier is implemented and committed atomically. Tests are run with
   - Verified: `cargo test -p glyim-lsp --lib` → 45 passed, 0 failed, 5 ignored;
     `glyim-frontend --lib` parser tests → 730 passed (no regression from the `&mut`
     parser change); `glyim-hir --lib` → 82 passed.
+
+### Tier 6.3 (rename fallback skips string/char literals and comments)
+- `fix(lsp): rename text fallback lexes source and only edits Ident tokens`
+  - `rename.rs`: the previous fallback did a naive per-line `str::find` substring
+    search, which would corrupt a name that also appears inside a string literal
+    (e.g. rename `x` would rewrite `"x is a variable"`) or a comment. It now
+    lexes the file with `glyim_frontend::lexer::lex` and emits a `TextEdit` only
+    for `SyntaxKind::Ident` tokens whose text equals the symbol — string/char
+    literals and comments are never `Ident` tokens (the lexer emits `StringLit`/
+    `CharLit` and treats comments as trivia), so they are skipped automatically.
+  - Extracted the fallback into `pub(crate) fn rename_text_fallback(sm, file_id,
+    symbol_name, new_name) -> Option<Vec<TextEdit>>` so it can be unit-tested
+    without spinning up the full `LspState`/analysis driver.
+  - Added `tests::rename::test_rename_text_fallback_skips_string_and_comment`
+    (name appears as a real identifier + inside a string literal + in a comment
+    → exactly 2 edits, both on real-identifier lines, string/comment untouched)
+    and `tests::rename::test_rename_text_fallback_target_only_in_string_is_none`
+    (name appears ONLY in a string/comment → no edits, no corruption).
+  - Verified: `cargo test -p glyim-lsp --lib` → 47 passed (was 45; +2 rename
+    tests), 0 failed, 5 ignored.
