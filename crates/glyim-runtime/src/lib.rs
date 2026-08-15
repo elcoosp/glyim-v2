@@ -470,6 +470,49 @@ pub unsafe extern "C" fn glyim_env_temp_dir(out_ptr: *mut *mut u8, out_len: *mut
     0
 }
 
+/// Return the number of environment variables.
+#[unsafe(no_mangle)]
+pub extern "C" fn glyim_env_vars_count() -> usize {
+    std::env::vars().count()
+}
+
+/// Get an environment variable by index.
+///
+/// On success, writes the key and value into the provided buffers.
+/// Returns 0 on success, -1 if the index is out of bounds, or -2 if the buffers are too small.
+///
+/// # Safety
+///
+/// - `key_buf` and `val_buf` must be valid, writable buffers of the given capacities.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn glyim_env_vars_get(
+    index: usize,
+    key_buf: *mut u8,
+    key_cap: usize,
+    val_buf: *mut u8,
+    val_cap: usize,
+) -> i32 {
+    // Collect all env vars into a vector (to allow indexing by position).
+    let vars: Vec<(String, String)> = std::env::vars().collect();
+    if index >= vars.len() {
+        return -1;
+    }
+    let (key, value) = &vars[index];
+    let key_bytes = key.as_bytes();
+    let val_bytes = value.as_bytes();
+    // Check if buffers are large enough (including null terminator? We'll copy without null terminator).
+    if key_bytes.len() >= key_cap || val_bytes.len() >= val_cap {
+        return -2; // buffers too small
+    }
+    // SAFETY: Caller guarantees valid writable buffers.
+    unsafe {
+        std::ptr::copy_nonoverlapping(key_bytes.as_ptr(), key_buf, key_bytes.len());
+        std::ptr::copy_nonoverlapping(val_bytes.as_ptr(), val_buf, val_bytes.len());
+    }
+    0
+}
+
+
 /// Determine the user's home directory.
 ///
 /// Checks `HOME` environment variable first (Unix convention).
