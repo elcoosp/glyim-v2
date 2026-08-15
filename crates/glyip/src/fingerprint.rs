@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 pub struct Fingerprint {
     /// SHA-256 hex digest of the file content.
     pub hash: String,
-    /// Last modification time (seconds since epoch).
-    pub mtime: u64,
+    /// Last modification time (nanoseconds since epoch).
+    pub mtime: u128,
     /// File size in bytes.
     pub size: u64,
 }
@@ -31,7 +31,7 @@ impl Fingerprint {
                 .modified()
                 .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
+                .map(|d| d.as_nanos())
                 .unwrap_or(0),
             size: metadata.len(),
         })
@@ -192,7 +192,7 @@ fn parse_fingerprint_file(content: &str) -> Option<(String, Fingerprint)> {
         } else if let Some(val) = line.strip_prefix("hash=") {
             hash = Some(val.to_string());
         } else if let Some(val) = line.strip_prefix("mtime=") {
-            mtime = Some(val.parse().ok()?);
+            mtime = Some(val.parse::<u128>().ok()?);
         } else if let Some(val) = line.strip_prefix("size=") {
             size = Some(val.parse().ok()?);
         }
