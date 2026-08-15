@@ -19,9 +19,7 @@ use token_tree::{TokenTree, flatten_token_tree};
 static RECURSION_LIMIT: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
 
 /// Set the recursion limit for macro expansion.
-pub fn set_recursion_limit(limit: u32) {
-    let _ = RECURSION_LIMIT.set(limit);
-}
+
 
 /// Get the current recursion limit, or the default 128.
 fn get_recursion_limit() -> u32 {

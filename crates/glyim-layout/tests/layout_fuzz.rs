@@ -114,7 +114,7 @@ fn fuzz_random_adt_layouts() {
             layout.align.0 >= 1 && layout.align.0 <= 64,
             "Alignment within limits"
         );
-        assert!(layout.size.0 >= 0, "Size non-negative");
+        // size is u64, always non-negative
         if field_count == 0 {
             assert_eq!(layout.size.0, 0, "Empty struct should have size 0");
             assert_eq!(layout.align.0, 1, "Empty struct should have align 1");

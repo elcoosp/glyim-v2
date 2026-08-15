@@ -515,7 +515,6 @@ pub unsafe extern "C" fn glyim_env_vars_get(
 /// Determine the user's home directory.
 ///
 /// Checks `HOME` environment variable first (Unix convention).
-
 fn dirs_home_dir() -> Option<String> {
     if let Some(home) = std::env::var_os("HOME") {
         let home_str = home.to_string_lossy().into_owned();

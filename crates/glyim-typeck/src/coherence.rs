@@ -115,31 +115,7 @@ impl<'a> CoherenceChecker<'a> {
     }
 
     /// Checks if a type is a blanket impl (contains a type parameter).
-    fn is_blanket_impl(&self, ctx: &TyCtxMut, ty: Ty) -> bool {
-        use glyim_type::TyKind;
-        match ctx.ty_kind(ty) {
-            TyKind::Param(_) => true,
-            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => {
-                self.is_blanket_impl(ctx, *inner)
-            }
-            TyKind::Slice(inner) | TyKind::Array(inner, _) => self.is_blanket_impl(ctx, *inner),
-            TyKind::Tuple(substs) => {
-                let args = ctx.substitution_args(*substs);
-                args.iter().any(|arg| match arg {
-                    glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
-                    _ => false,
-                })
-            }
-            TyKind::Adt(_, substs) => {
-                let args = ctx.substitution_args(*substs);
-                args.iter().any(|arg| match arg {
-                    glyim_type::GenericArg::Ty(t) => self.is_blanket_impl(ctx, *t),
-                    _ => false,
-                })
-            }
-            _ => false,
-        }
-    }
+    
 
     /// Resolve a name in any module of the crate, recursively.
     fn resolve_name_in_any_module(&self, name: Name) -> Option<glyim_core::def_id::LocalDefId> {

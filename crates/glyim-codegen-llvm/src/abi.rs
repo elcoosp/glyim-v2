@@ -295,26 +295,7 @@ mod abi_tests {
     use glyim_type::{Ty, TyCtxMut, TyKind};
 
     // Shared test context.
-    fn test_context() -> (TyCtx, TyCtxMut) {
-        let ctx_mut = TyCtxMut::new(Interner::new());
-        // We need to keep the mut context alive to create types.
-        // We'll freeze it and return both.
-        let _ctx = ctx_mut.freeze();
-        // But we need the mut to create types in the tests.
-        // Actually, we'll create all types in a single mut context before freezing.
-        // For simplicity, we'll build a context with some common types.
-        // We'll create a helper that returns a frozen context and the types.
-        // However, the tests create custom types, so we need the mut context available.
-        // We'll change the test function to accept a mutable context and use it.
-        // Let's redesign: test_classify will take &mut TyCtxMut and Ty, and freeze internally?
-        // No, we want to freeze once after all types are created.
-        // Instead, we'll create a fresh context for each test and keep it alive.
-        // The problem was using a different context for classification.
-        // So we'll have test_classify take &TyCtx and Ty.
-        // The test will create a context, create the type, freeze, then call test_classify.
-        // We'll rewrite test_classify accordingly.
-        unimplemented!()
-    }
+    
 
     fn classify_with_ctx(ctx: &TyCtx, ty: Ty, target: TargetInfo) -> PassMode {
         let computer = FullLayoutComputer::new(ctx, target);
@@ -334,10 +315,7 @@ mod abi_tests {
         TargetInfo::from_triple(triple)
     }
 
-    fn classify_scalar_i32(ctx: &TyCtx, target: TargetInfo) -> PassMode {
-        let ty = Ty::I32;
-        classify_with_ctx(ctx, ty, target)
-    }
+    
 
     #[test]
     fn test_classify_scalar_i32() {
