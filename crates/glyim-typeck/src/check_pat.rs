@@ -10,9 +10,6 @@ use glyim_type::{Ty, TyKind};
 use crate::check_body::FnCtxt;
 use crate::thir;
 
-use crate::thir::Pattern;
-use glyim_core::interner::Name;
-use glyim_hir::Literal;
 
 impl<'a> FnCtxt<'a> {
     pub fn check_pattern(&mut self, pat_id: PatId, expected_ty: Ty) -> thir::Pattern {
@@ -210,13 +207,9 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    /// Check struct pattern: field exhaustiveness, duplicate fields, and missing fields.
-    /// Returns true if the pattern is valid, false with diagnostics added.
     
 
-    /// Validate range pattern bounds: start <= end and type compatibility.
 
-    /// Validate range pattern bounds: start <= end and type compatibility.
     
 
     

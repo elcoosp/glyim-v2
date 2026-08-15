@@ -10,7 +10,6 @@ pub fn rename_symbol(
 ) -> Option<WorkspaceEdit> {
     use lsp_types::{Position, Range, TextEdit, Uri, WorkspaceEdit};
     use std::collections::HashMap;
-    use std::str::FromStr;
     use url::Url;
 
     let uri = &params.text_document_position.text_document.uri;

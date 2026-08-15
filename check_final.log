@@ -1,0 +1,7 @@
+    Checking glyim-typeck v0.1.0 (/Users/adm/Documents/Repos/glyim-v2/crates/glyim-typeck)
+    Checking glyim-lower v0.1.0 (/Users/adm/Documents/Repos/glyim-v2/crates/glyim-lower)
+    Checking glyim-pipeline v0.1.0 (/Users/adm/Documents/Repos/glyim-v2/crates/glyim-pipeline)
+    Checking glyip v0.1.0 (/Users/adm/Documents/Repos/glyim-v2/crates/glyip)
+    Checking glyim-cli v0.1.0 (/Users/adm/Documents/Repos/glyim-v2/crates/glyim-cli)
+    Checking glyim-test v0.1.0 (/Users/adm/Documents/Repos/glyim-v2/crates/glyim-test)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.48s
