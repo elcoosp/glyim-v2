@@ -56,6 +56,7 @@ impl<'a> FnCtxt<'a> {
     pub fn check_path(&mut self, path: &Path, span: Span) -> (thir::Expr, Ty) {
         if let Some(name) = path.as_name() {
             if let Some(var_info) = self.env.lookup_by_name(name) {
+                self.capture_log.push((var_info.id, var_info.ty, false));
                 let thir_expr = thir::Expr {
                     kind: thir::ExprKind::VarRef(var_info.id),
                     ty: var_info.ty,

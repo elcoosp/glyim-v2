@@ -4,6 +4,7 @@ mod binary_error;
 mod binary_i32;
 mod break_continue;
 mod cast;
+mod closures;
 mod coherence;
 mod common;
 mod default_methods;

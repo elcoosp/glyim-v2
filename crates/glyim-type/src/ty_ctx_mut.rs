@@ -33,6 +33,10 @@ pub struct TyCtxMut {
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
+    /// Counter for compiler-synthesized ADT ids (closures, etc.). Seeded far
+    /// above any user-defined ADT id and the 1000-1005 builtin range ids so it
+    /// can never collide.
+    synthetic_adt_counter: u32,
 }
 
 impl TyCtxMut {
@@ -53,6 +57,7 @@ impl TyCtxMut {
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
             body_tys: HashMap::new(),
+            synthetic_adt_counter: 2_000_000,
         };
         // sentinels
         assert_eq!(
@@ -286,6 +291,41 @@ impl TyCtxMut {
         }
     }
 
+    /// Allocate a fresh compiler-synthesized `AdtId` that cannot collide with
+    /// user-defined ADTs or the builtin fixed-id ADTs (ranges, etc.).
+    pub fn next_synthetic_adt_id(&mut self) -> AdtId {
+        let id = self.synthetic_adt_counter;
+        self.synthetic_adt_counter += 1;
+        AdtId::from_raw(id)
+    }
+
+    /// Register a nominal ADT representing a closure's captured environment.
+    ///
+    /// Each distinct closure expression (with a distinct capture set) gets its
+    /// own synthetic ADT with one field per captured variable. This gives a
+    /// closure a real, concrete `TyKind::Adt` so downstream passes (MIR
+    /// lowering, layout, codegen) have a genuine type to work with instead of
+    /// an unconstrained inference variable.
+    pub fn register_closure(&mut self, capture_tys: Vec<Ty>) -> AdtId {
+        let id = self.next_synthetic_adt_id();
+        let mut field_defs = IndexVec::new();
+        for (i, ty) in capture_tys.iter().enumerate() {
+            field_defs.push(FieldDef {
+                name: self.resolver.intern(&format!("capture_{i}")),
+                ty: *ty,
+            });
+        }
+        let def = AdtDef {
+            kind: AdtKind::Struct,
+            fields: field_defs.clone(),
+            variants: vec![VariantDef {
+                name: self.resolver.intern(""),
+                fields: field_defs,
+            }],
+        };
+        self.register_adt(id, def);
+        id
+    }
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
     }

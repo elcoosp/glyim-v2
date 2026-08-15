@@ -106,6 +106,17 @@ impl LocalEnv {
     pub fn lookup_by_id(&self, id: LocalVarId) -> Option<&LocalVarInfo> {
         self.vars.get(id.to_raw() as usize)
     }
+
+    /// Returns the `LocalVarId` that the *next* added binding will receive.
+    ///
+    /// `LocalVarId`s are allocated sequentially and never reused, so this is
+    /// a stable "boundary": any `VarRef` resolved after this point belongs to
+    /// an inner scope (e.g. a closure body or block), while any resolved
+    /// before belongs to an enclosing scope (hence is a capture).
+    #[inline]
+    pub fn next_var_id(&self) -> LocalVarId {
+        LocalVarId::from_raw(self.vars.len() as u32)
+    }
 }
 
 impl Default for LocalEnv {

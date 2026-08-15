@@ -12,6 +12,27 @@ use crate::thir;
 
 
 impl<'a> FnCtxt<'a> {
+    /// Bind a HIR pattern into the local environment, returning the
+    /// `LocalVarId` of the (first) binding it introduces. Used for closure
+    /// parameters, mirroring how `check_pattern` / `let` statements bind
+    /// `Pat::Binding` names into `self.env`.
+    pub fn bind_pattern(&mut self, pat_id: PatId, ty: Ty, mutability: Mutability) -> thir::LocalVarId {
+        let pat = &self.body.pats[pat_id];
+        match pat {
+            Pat::Binding { name, .. } => {
+                let id = self.env.add_binding(*name, ty, mutability);
+                thir::LocalVarId::from_raw(id.to_raw())
+            }
+            _ => {
+                // Non-binding patterns can't introduce a capture boundary
+                // name; bind a synthetic id so the boundary logic still works.
+                let id = self.env.add_binding(self.ctx.resolver().intern("_"), ty, mutability);
+                thir::LocalVarId::from_raw(id.to_raw())
+            }
+        }
+    }
+
+    /// Type-check a pattern, producing the THIR pattern and binding names.
     pub fn check_pattern(&mut self, pat_id: PatId, expected_ty: Ty) -> thir::Pattern {
         let pat = &self.body.pats[pat_id];
         let span = Span::DUMMY;

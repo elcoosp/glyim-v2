@@ -172,6 +172,21 @@ impl<'a> FnCtxt<'a> {
 
             Expr::Ref { expr, mutability } => {
                 let (inner_expr, inner_ty) = self.check_expr(*expr);
+                // If we just took a mutable reference to a captured local,
+                // record the mutating use so capture analysis can classify it
+                // as `ByRef(Mut)`.
+                if *mutability == Mutability::Mut {
+                    if let thir::ExprKind::VarRef(id) = inner_expr.kind {
+                        if let Some(entry) = self
+                            .capture_log
+                            .iter_mut()
+                            .rev()
+                            .find(|(vid, ..)| *vid == id)
+                        {
+                            entry.2 = true;
+                        }
+                    }
+                }
                 let ref_ty = self.ctx.mk_ref(Region::Erased, inner_ty, *mutability);
                 (
                     thir::Expr {
@@ -723,39 +738,70 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Closure { params, body } => {
-                // 1. Infer parameter types from annotations or fresh inference variables.
-                let _param_tys: Vec<Ty> = params
-                    .iter()
-                    .map(|_pat_id| {
-                        // TODO: get type annotation from pattern (if any)
-                        self.fresh_infer_ty()
-                    })
-                    .collect();
+                // 1. Enter the closure's own scope and bind the parameters so
+                //    that the body's own bindings are distinguishable (by
+                //    LocalVarId boundary) from captures of the enclosing env.
+                self.env.enter_scope();
+                let boundary = self.env.next_var_id();
+                for pat_id in params {
+                    let ty = self.fresh_infer_ty();
+                    self.bind_pattern(*pat_id, ty, Mutability::Not);
+                }
 
-                // 2. Analyze captures: free variables used in the closure body.
-                let captures = self.analyze_captures(*body, span);
+                // 2. Check the body exactly once. The capture log records every
+                //    VarRef resolved while checking it.
+                //
+                //    NOTE: `check_stmt::check` iterates every body expr as a
+                //    statement, so the closure body may have already been
+                //    type-checked (and cached) at the enclosing scope before
+                //    this arm runs. Clear the per-expr cache so the body is
+                //    re-checked *inside* the closure scope, ensuring its
+                //    VarRefs are recorded in the capture log within the drain
+                //    window below (and resolved against the closure's own
+                //    bindings where appropriate).
+                self.expr_cache.clear();
+                let log_start = self.capture_log.len();
+                let (body_expr, body_ty) = self.check_expr(*body);
 
-                // 3. Build a unique closure ADT and register it.
-                // For now, we'll create a placeholder closure type (will be replaced with real).
-                let closure_ty = self.fresh_infer_ty();
+                // 3. Classify captures: anything resolved below the boundary
+                //    is a capture from an enclosing scope; classify mutability
+                //    from the is_mut_use flag recorded in the log.
+                let mut seen = std::collections::HashSet::new();
+                let mut captures = Vec::new();
+                for (id, ty, is_mut) in self.capture_log.drain(log_start..) {
+                    if id.to_raw() as u32 >= boundary.to_raw() as u32 {
+                        continue; // bound inside the closure itself — not a capture
+                    }
+                    if !seen.insert(id) {
+                        continue; // already recorded (e.g. used twice) — keep first classification
+                    }
+                    let kind = if is_mut {
+                        thir::CaptureKind::ByRef(Mutability::Mut)
+                    } else {
+                        thir::CaptureKind::ByRef(Mutability::Not)
+                    };
+                    captures.push((id, kind, ty));
+                }
+                self.env.leave_scope();
 
-                // 4. Build THIR for closure: capture list and body.
-                let (body_expr, _) = self.check_expr(*body);
+                // 4. Build a real closure type (see Tier 1.1b).
+                let capture_tys: Vec<Ty> = captures.iter().map(|(_, _, ty)| *ty).collect();
+                let closure_adt = self.ctx.register_closure(capture_tys.clone());
+                let closure_substs = self.ctx.intern_substitution(vec![]);
+                let closure_ty = self.ctx.mk_adt(closure_adt, closure_substs);
+
+                // 5. Build THIR for the closure: capture list and body.
                 let capture_thir: Vec<thir::Capture> = captures
-                    .iter()
-                    .map(|(var_id, kind, ty)| thir::Capture {
-                        local: *var_id,
-                        kind: *kind,
-                        ty: *ty,
-                    })
+                    .into_iter()
+                    .map(|(local, kind, ty)| thir::Capture { local, kind, ty })
                     .collect();
 
                 let closure_expr = thir::Expr {
                     kind: thir::ExprKind::Closure {
                         body: Box::new(thir::Body {
                             owner: self.owner,
-                            params: Vec::new(), // will be filled later
-                            return_ty: self.fresh_infer_ty(),
+                            params: Vec::new(), // closure params lowered separately
+                            return_ty: body_ty,
                             stmts: vec![thir::Stmt::Expr { expr: body_expr }],
                             span,
                         }),
@@ -768,7 +814,15 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Assign { lhs, rhs } => {
-                let (_lhs_expr, lhs_ty) = self.check_expr(*lhs);
+                let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
+                // An assignment to a captured local is a mutating use.
+                if let thir::ExprKind::VarRef(id) = lhs_expr.kind {
+                    if let Some(entry) =
+                        self.capture_log.iter_mut().rev().find(|(vid, ..)| *vid == id)
+                    {
+                        entry.2 = true;
+                    }
+                }
                 let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
                 if lhs_ty != Ty::ERROR && rhs_ty != Ty::ERROR {
                     self.unify(rhs_ty, lhs_ty, span);

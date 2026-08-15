@@ -61,6 +61,7 @@ pub fn check_function_body(
         expr_cache: HashMap::new(),
         def_map,
         trait_ctx: &trait_ctx,
+        capture_log: Vec::new(),
     };
 
     let thir_body = fn_ctxt.check(params);

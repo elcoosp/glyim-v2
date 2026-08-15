@@ -25,4 +25,10 @@ pub struct FnCtxt<'a> {
     pub expr_cache: HashMap<ExprId, (thir::Expr, Ty)>,
     pub trait_ctx: &'a TraitContext,
     pub def_map: &'a glyim_def_map::CrateDefMap,
+    /// Per-body capture log: every `VarRef` id/type resolved while checking a
+    /// `let`/closure body, in resolution order. Used by closure capture
+    /// analysis (Tier 1.1) to classify captures by mutability and to filter
+    /// out bindings that belong to the closure's own scope via the
+    /// `LocalVarId` boundary.
+    pub capture_log: Vec<(thir::LocalVarId, Ty, bool /* is_mut_use */)>,
 }

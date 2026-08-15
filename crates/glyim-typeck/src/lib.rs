@@ -273,6 +273,7 @@ fn check_body(
         expr_cache: Default::default(),
         def_map,
         trait_ctx,
+        capture_log: Vec::new(),
     };
 
     let thir_body = fn_ctxt.check(params);
