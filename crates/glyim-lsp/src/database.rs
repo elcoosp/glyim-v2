@@ -1,9 +1,12 @@
 use crate::reference_graph::ReferenceGraph;
 use crate::symbol_index::SymbolIndex;
 use glyim_span::FileId;
+use glyim_type::Ty;
+use glyim_typeck::TypeckResult;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone)]
@@ -112,6 +115,11 @@ pub struct AnalysisDatabase {
     pub symbol_index: RwLock<SymbolIndex>,
     pub reference_graph: RwLock<ReferenceGraph>,
     pub hirs: RwLock<HashMap<FileId, glyim_hir::CrateHir>>,
+    /// Per-file type-checking result + the `TyCtx` it was produced with.
+    /// Populated by the analysis driver (Tier 6.4) so completions/hover can
+    /// resolve the type of any expression via `expr_ty_at` /
+    /// `type_at_offset`. Keyed by `FileId`.
+    pub typeck: RwLock<HashMap<FileId, (Arc<glyim_type::TyCtx>, TypeckResult)>>,
     pub diagnostics: RwLock<HashMap<FileId, lsp_types::Diagnostic>>,
     pub file_access_times: RwLock<HashMap<FileId, Instant>>,
 }
@@ -130,6 +138,7 @@ impl AnalysisDatabase {
             symbol_index: RwLock::new(SymbolIndex::new()),
             reference_graph: RwLock::new(ReferenceGraph::new()),
             hirs: RwLock::new(HashMap::new()),
+            typeck: RwLock::new(HashMap::new()),
             diagnostics: RwLock::new(HashMap::new()),
             file_access_times: RwLock::new(HashMap::new()),
         }
@@ -137,4 +146,57 @@ impl AnalysisDatabase {
 
     pub fn touch(&self, _file_id: FileId) {}
     pub fn evict_stale(&self, _max_age: std::time::Duration) {}
+
+    /// Resolve the type of the HIR expression that contains `offset` in
+    /// `file_id`. Used by completion (Tier 6.4) to filter by receiver type.
+    ///
+    /// Walks every body in the file's `CrateHir`, finds the innermost
+    /// expression whose span contains the offset (or ends just before it, so a
+    /// cursor placed right after a `.` still resolves the receiver), and
+    /// returns its resolved type via `TypeckResult::expr_ty`.
+    pub fn type_at_offset(&self, file_id: FileId, offset: usize) -> Option<Ty> {
+        let hirs = self.hirs.read();
+        let hir = hirs.get(&file_id)?;
+        let typeck = self.typeck.read();
+        let (_, result) = typeck.get(&file_id)?;
+
+        let mut best: Option<(usize, glyim_core::def_id::LocalDefId, glyim_hir::ExprId)> = None;
+        for (body_id, body) in hir.bodies.iter_enumerated() {
+            for (expr_id, span) in body.expr_spans.iter_enumerated() {
+                let lo = span.lo.to_usize();
+                let hi = span.hi.to_usize();
+                // Innermost = smallest span; prefer spans that strictly contain
+                // the offset, else a span ending exactly at the cursor (the
+                // receiver of `obj.` sits just before the dot).
+                let contains = lo <= offset && offset <= hi;
+                let ends_before = hi == offset || hi == offset.saturating_sub(1);
+                if contains || ends_before {
+                    let size = hi.saturating_sub(lo);
+                    if best.map(|(b, _, _)| size < b).unwrap_or(true) {
+                        let owner = hir.body_owners[body_id];
+                        best = Some((size, owner, expr_id));
+                    }
+                }
+            }
+        }
+        let (_, owner, expr_id) = best?;
+        result.expr_ty(owner, expr_id.to_raw() as usize)
+    }
+
+    /// Directly query a resolved expression type by `(LocalDefId, ExprId)`.
+    pub fn expr_ty_at(
+        &self,
+        file_id: FileId,
+        local_def_id: glyim_core::def_id::LocalDefId,
+        expr_id: usize,
+    ) -> Option<Ty> {
+        let typeck = self.typeck.read();
+        let (_, result) = typeck.get(&file_id)?;
+        result.expr_ty(local_def_id, expr_id)
+    }
+
+    /// Access the frozen `TyCtx` for a file (for inspecting resolved `Ty`s).
+    pub fn ty_ctx(&self, file_id: FileId) -> Option<Arc<glyim_type::TyCtx>> {
+        self.typeck.read().get(&file_id).map(|(ctx, _)| ctx.clone())
+    }
 }

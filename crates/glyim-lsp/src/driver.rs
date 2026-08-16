@@ -79,10 +79,18 @@ impl AnalysisDriver {
         let crate_id = CrateId::from_raw(0);
         let lex_result = lex(content, file_id);
         let parse_result = parse_to_syntax(content, file_id);
-        let (_def_map, def_diagnostics) = build_def_map(&parse_result.root, crate_id);
+        let (def_map, def_diagnostics) = build_def_map(&parse_result.root, crate_id);
 
         let mut interner = Interner::new();
         let (hir, _hir_diags) = lower_crate_for_pipeline(&parse_result.root, &mut interner);
+
+        // Tier 6.4: run the type checker so completions/hover can resolve
+        // expression types. Mirrors the pipeline's `typeck_crate` invocation.
+        let ty_ctx_mut = glyim_type::TyCtxMut::new(interner.clone());
+        let trait_ctx = glyim_solve::TraitContext::new();
+        let mut solver = glyim_solve::SimpleTraitSolver::new(&trait_ctx);
+        let (ty_ctx, typeck_result) =
+            glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
 
         self.extract_dependencies(path, &hir, &interner);
 
@@ -95,6 +103,10 @@ impl AnalysisDriver {
             .write()
             .build_from_hir(file_id, &hir, &interner);
         self.db.hirs.write().insert(file_id, hir);
+        self.db
+            .typeck
+            .write()
+            .insert(file_id, (std::sync::Arc::new(ty_ctx), typeck_result));
 
         let mut all_diagnostics = Vec::new();
         all_diagnostics.extend(lex_result.diagnostics);

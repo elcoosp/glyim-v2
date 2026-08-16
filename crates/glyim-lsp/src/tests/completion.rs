@@ -36,6 +36,7 @@ fn test_provide_completions() {
             },
             type_signature: Some(TypeSignature {
                 params: vec![("x".to_string(), "i32".to_string())],
+                receiver_type: None,
                 return_type: Some("i32".to_string()),
             }),
             is_pub: true,

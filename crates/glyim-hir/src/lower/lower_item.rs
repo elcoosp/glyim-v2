@@ -6,9 +6,10 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
+use crate::where_clause::WhereClause;
 use crate::{
-    Body, BodyId, EnumItem, Field, FnItem, Item, ItemId, ItemKind, Param, Pat, PatId, StructItem,
-    Variant, Visibility,
+    Body, BodyId, EnumItem, Field, FnItem, GenericParam, ImplItem, ImplMethod, Item, ItemId,
+    ItemKind, Param, Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
 };
 
 use super::{
@@ -333,6 +334,133 @@ pub(crate) fn lower_variant(node: &SyntaxNode, interner: &mut Interner) -> Optio
         name: vname,
         fields,
         kind,
+        span: node_span(node),
+    })
+}
+
+/// Lower an `impl` block into `ItemKind::Impl`. Inherent impls
+/// (`impl Foo {}`) and trait impls (`impl Trait for Foo {}`) are both
+/// supported; each method is lowered to an `ImplMethod` with its own body
+/// (mirroring `lower_fn_def` body lowering) so the type checker and LSP can
+/// resolve method receiver types (Tier 6.4).
+pub(crate) fn lower_impl_def(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
+    bodies: &mut IndexVec<BodyId, Body>,
+    body_owners: &mut IndexVec<BodyId, LocalDefId>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<Item> {
+    let mut self_ty: Option<TypeRef> = None;
+    let mut trait_ref: Option<Path> = None;
+    let mut saw_for = false;
+    for child in node.children() {
+        match child.kind() {
+            SyntaxKind::TypeParamList => continue,
+            SyntaxKind::KwFor => saw_for = true,
+            _ if is_type_node(&child) => {
+                if saw_for {
+                    if trait_ref.is_none() {
+                        if let TypeRef::Path(p) = lower_type_ref(&child, interner)? {
+                            trait_ref = Some(p);
+                        }
+                    }
+                } else if self_ty.is_none() {
+                    self_ty = lower_type_ref(&child, interner);
+                }
+            }
+            _ => {}
+        }
+    }
+    let self_ty = self_ty?;
+
+    let mut methods = Vec::new();
+    for method_node in node.children().filter(|c| c.kind() == SyntaxKind::FnDef) {
+        let mname_str = first_ident_text(&method_node)?;
+        let mname = interner.intern(&mname_str);
+
+        let owner = next_local_def_id(local_def_counter);
+        let mut params = Vec::new();
+        let mut body_params = Vec::new();
+        let mut temp_pats = IndexVec::new();
+        for child in method_node.children() {
+            if child.kind() == SyntaxKind::ParamList {
+                for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
+                    let (p, pat_id) = lower_param(&param_node, interner, &mut temp_pats);
+                    params.push(p);
+                    body_params.push(pat_id);
+                }
+            }
+        }
+
+        let mut return_ty = None;
+        let mut arrow_seen = false;
+        for el in method_node.children_with_tokens() {
+            match el {
+                glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Arrow => {
+                    arrow_seen = true;
+                }
+                glyim_syntax::SyntaxElement::Node(n) if arrow_seen && is_type_node(&n) => {
+                    return_ty = lower_type_ref(&n, interner);
+                    arrow_seen = false;
+                }
+                _ => {}
+            }
+        }
+
+        let body_id = if let Some(block_node) = method_node
+            .children()
+            .find(|c| c.kind() == SyntaxKind::Block)
+        {
+            let mut body = Body {
+                owner,
+                exprs: IndexVec::new(),
+                pats: temp_pats,
+                params: body_params,
+                span: node_span(&method_node),
+                expr_spans: IndexVec::new(),
+            };
+            lower_block_to_expr(&block_node, interner, &mut body, diags, struct_field_map);
+            let bid = bodies.push(body);
+            body_owners.push(owner);
+            Some(bid)
+        } else {
+            None
+        };
+
+        methods.push(ImplMethod {
+            name: mname,
+            body: body_id,
+            params,
+            return_ty,
+        });
+    }
+
+    // Derive a diagnostic name for the impl from its self type.
+    let name = match &self_ty {
+        TypeRef::Path(p) => p
+            .segments
+            .last()
+            .map(|s| s.name)
+            .unwrap_or_else(|| interner.intern("impl")),
+        _ => interner.intern("impl"),
+    };
+
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
+    Some(Item {
+        id,
+        name,
+        kind: ItemKind::Impl(ImplItem {
+            trait_ref,
+            self_ty,
+            methods,
+            generic_params: Vec::new(),
+            where_clauses: Vec::new(),
+        }),
+        visibility: Visibility::Inherited,
         span: node_span(node),
     })
 }

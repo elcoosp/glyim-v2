@@ -49,6 +49,7 @@ fn document_symbols_returns_hierarchy() {
         },
         type_signature: Some(TypeSignature {
             params: vec![],
+            receiver_type: None,
             return_type: Some("()".to_string()),
         }),
         is_pub: true,

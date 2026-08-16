@@ -41,11 +41,7 @@ pub(crate) fn rename_text_fallback(
             }
         }
     }
-    if edits.is_empty() {
-        None
-    } else {
-        Some(edits)
-    }
+    if edits.is_empty() { None } else { Some(edits) }
 }
 
 pub fn rename_symbol(

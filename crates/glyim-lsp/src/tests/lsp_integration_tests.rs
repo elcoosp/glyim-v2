@@ -42,6 +42,7 @@ fn completions_include_function_name() {
         definition: DefinitionLocation { file_id, span },
         type_signature: Some(TypeSignature {
             params: vec![],
+            receiver_type: None,
             return_type: Some("()".to_string()),
         }),
         is_pub: true,

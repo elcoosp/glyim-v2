@@ -33,3 +33,4 @@ mod rename_tests;
 mod server_tests;
 mod symbol_index_tests;
 mod test_utils;
+mod tier6_4_completion_tests;

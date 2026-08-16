@@ -40,7 +40,8 @@ fn test_rename_text_fallback_skips_string_and_comment() {
     // `target` appears three times: once as a real identifier, once inside a
     // string literal, and once inside a `//` comment. The fallback must rename
     // only the real identifier and leave the string/comment occurrences alone.
-    let content = "let target = 1;\nlet s = \"target in a string\";\n// target in a comment\ntarget = 2;\n";
+    let content =
+        "let target = 1;\nlet s = \"target in a string\";\n// target in a comment\ntarget = 2;\n";
     let sm = SourceMap::new(
         std::path::PathBuf::from("/test/main.g"),
         FileId::from_raw(0),

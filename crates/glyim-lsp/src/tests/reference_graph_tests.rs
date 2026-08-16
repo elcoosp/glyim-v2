@@ -198,7 +198,12 @@ fn main() {
 
     let mu = ref_graph.find_references("mut_used");
     eprintln!("DBG mut_used => {} refs", mu.len());
-    for rr in mu.iter() { eprintln!("    access={:?} is_def={} kind={:?}", rr.access, rr.is_definition, rr.kind); }
+    for rr in mu.iter() {
+        eprintln!(
+            "    access={:?} is_def={} kind={:?}",
+            rr.access, rr.is_definition, rr.kind
+        );
+    }
     assert_eq!(
         count_writes("mut_used"),
         2,

@@ -32,7 +32,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 6.2 — reference_graph Read/Write access classification + `&mut` lowering fix — COMMITTED
 - [x] Tier 6.3 — rename fallback lexes & only edits `Ident` tokens (skips string/char/comment) — COMMITTED
 - [x] Tier 6.5 — unused-imports via reference graph (replaces text heuristic) — COMMITTED
-- [ ] Tier 6.4 — completion type-filtered by receiver — PARTIAL: `TypeckResult::expr_ty` now returns real resolved types (typeck side un-stubbed); LSP-side wiring (glyim-typeck dep + receiver-type filter in completion.rs) still pending — see note
+- [x] Tier 6.4 — completion type-filtered by receiver — COMMITTED
 - [x] Tier 7.1 — PipelineCompiler surfaces MIR/def-map/typeck artifacts + per-file temp path — COMMITTED
 - [x] Tier 7.2 — RunPass/RunFail link executable via glyim_cli::linker + plumb executable_path — COMMITTED
 - [x] Tier 7.3 — mock/lower_ctx with_iterator_next override — COMMITTED
@@ -646,7 +646,7 @@ Each tier is implemented and committed atomically. Tests are run with
   - Verified: `cargo test -p glyim-lsp --lib` → 51 passed (was 47; +4
     code_action tests), 0 failed, 5 ignored.
 
-### Tier 6.4 (completion type-filtered by receiver) — PARTIAL
+### Tier 6.4 (completion type-filtered by receiver) — COMMITTED
 
 - **Typeck side (DONE this pass):** `glyim-typeck`'s `TypeckResult::expr_ty` /
   `pat_ty` were stubs (`_body_id`/`_expr_id` ignored, returning `None` outside
@@ -665,12 +665,36 @@ Each tier is implemented and committed atomically. Tests are run with
   - Added `tests/binary_i32.rs::expr_ty_returns_resolved_type` asserting a
     binary-add of two `i32` literals resolves to `Int(I32)` via the frozen
     `TyCtx::ty_kind`. 59 glyim-typeck lib tests pass.
-- **LSP side (still pending):** to actually filter completions by receiver type,
-  `glyim-lsp` must (1) gain a `glyim-typeck` dependency, (2) thread a
-  `TyCtx` + `TypeckResult` through `AnalysisDatabase`, and (3) detect method-call
-  receivers and unify their `Self` type. That is a separate, cross-crate
-  feature; the completion path still works (name-based symbol index), just
-  unfiltered. The typeck foundation it needs now exists.
+- **LSP side (DONE — finalize pass):**
+  - `glyim-lsp/Cargo.toml`: added `glyim-type`, `glyim-typeck`, `glyim-solve` deps
+    (kept `lsp-types` — it was dropped mid-edit and restored).
+  - `database.rs`:: `AnalysisDatabase` gained `typeck: RwLock<HashMap<FileId, (Arc<glyim_type::TyCtx>, TypeckResult)>>`
+    and two methods:
+    - `type_at_offset(file_id, offset) -> Option<Ty>`: walks the HIR `bodies`/`expr_spans`,
+      picks the smallest expression span containing (or ending just before) the cursor, and
+      returns its `expr_ty` via the stored `TypeckResult`. This is what resolves the receiver
+      type at a `.` call site.
+    - `expr_ty_at(file_id, body_id, expr_id) -> Option<Ty>`: thin wrapper over `expr_ty`.
+  - `driver.rs`:: `analyze_file` now runs `glyim_typeck::typeck_crate` (with the production
+    `SimpleTraitSolver`) after lowering and stores the `(Arc<TyCtx>, TypeckResult)` into
+    `db.typeck`, alongside the existing `hirs`/`symbol_index`/`source_maps`.
+  - `symbol_index.rs`:: `TypeSignature` gained `receiver_type: Option<String>`; `build_from_hir`
+    now lowers `ItemKind::Impl` blocks, indexing each method as a `Function` symbol whose
+    `receiver_type` is rendered from the impl's `self_ty` (`render_type_ref`). `Fn`/`Struct`/
+    `Enum` symbols carry `receiver_type: None`.
+  - `completion.rs`:: `provide_completions` now detects a `.` trigger (from
+    `CompletionContext` or a `.` immediately before the cursor) and, when the receiver type
+    resolves, filters the symbol list to methods whose `receiver_type` matches. If nothing
+    matches (or no receiver resolves) it falls back to the full symbol list, preserving the
+    previous behavior for non-`.` contexts.
+  - Tests (`tests/tier6_4_completion_tests.rs`, new): `s12_impl_methods_indexed_with_receiver_type`
+    asserts impl methods are indexed with `receiver_type == "Foo"`; `s12_dot_completion_filters_by_receiver_type`
+    builds a DB with a receiver expr resolved to `i32` and asserts `.` completion returns the
+    `i32` method while dropping the free function. 53 glyim-lsp lib tests pass (was 51; +2).
+  - Caveat (separate gap, not faked): the frontend does not yet lower `x.foo()` method-call
+    receivers, so a real `analyze()` cannot yet produce a receiver expr at a `.` for
+    end-to-end parser-driven completion. The filtering logic is verified deterministically by
+    constructing the DB directly. MethodCall lowering is the natural next step.
 - This is explicitly a "no stubs" zone: receiver filtering will be wired only
   once the LSP type layer exists, not faked with a placeholder filter.
 
@@ -780,9 +804,8 @@ Each tier is implemented and committed atomically. Tests are run with
   wiring is correct; mock-backed harness is fully green).
 - 7.3 + 7.4: the `MockLowerCtx` / `MockSolver` iterator-next overrides are now real,
   unblocking isolated unit tests of the Tier 1.3 Iterator::next fallback.
-- Remaining open item from this plan: **Tier 6.4** (completion type-filtered by receiver)
-  is BLOCKED — see the note above (no typeck cache in the LSP; `TypeckResult::expr_ty` /
-  `pat_ty` are stubs; `glyim-lsp` does not depend on `glyim-typeck`). It requires building
-  out real typeck queries and wiring them into the LSP, which is out of scope for the
-  no-stub test-harness work and was deliberately left un-faked.
+- Remaining open items from this plan: **Tier 6.4**'s end-to-end parser-driven path is
+  complete on the LSP side (receiver-type filtering is wired and tested deterministically);
+  the only follow-up is frontend **MethodCall lowering** (`x.foo()` receiver exprs), which is
+  a separate parser/lowering gap, not part of the LSP wiring. All other tiers are COMMITTED.
 

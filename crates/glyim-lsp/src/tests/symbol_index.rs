@@ -18,6 +18,7 @@ fn test_lookup_by_name_returns_correct_symbol() {
         definition: def_loc,
         type_signature: Some(TypeSignature {
             params: vec![("x".to_string(), "i32".to_string())],
+            receiver_type: None,
             return_type: Some("i32".to_string()),
         }),
         is_pub: true,

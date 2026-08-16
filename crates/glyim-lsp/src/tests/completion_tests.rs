@@ -43,6 +43,7 @@ fn setup_test_db() -> (AnalysisDatabase, FileId, PathBuf) {
                 },
                 type_signature: Some(TypeSignature {
                     params: vec![],
+                    receiver_type: None,
                     return_type: Some("i32".into()),
                 }),
                 is_pub: true,
@@ -60,6 +61,7 @@ fn setup_test_db() -> (AnalysisDatabase, FileId, PathBuf) {
                 },
                 type_signature: Some(TypeSignature {
                     params: vec![],
+                    receiver_type: None,
                     return_type: Some("i32".into()),
                 }),
                 is_pub: true,

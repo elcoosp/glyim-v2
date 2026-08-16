@@ -44,6 +44,7 @@ fn hover_shows_type_signature_and_doc() {
                 ("a".to_string(), "i32".to_string()),
                 ("b".to_string(), "i32".to_string()),
             ],
+            receiver_type: None,
             return_type: Some("i32".to_string()),
         }),
         is_pub: true,

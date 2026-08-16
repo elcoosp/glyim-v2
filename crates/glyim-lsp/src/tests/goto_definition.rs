@@ -1,8 +1,8 @@
 use crate::goto_definition::goto_definition;
+use crate::reference_graph::AccessKind;
 use crate::{
     AnalysisDatabase, DefinitionLocation, Reference, ReferenceKind, SymbolInfo, SymbolKind,
 };
-use crate::reference_graph::AccessKind;
 use glyim_span::{ByteIdx, Span, SyntaxContext};
 use lsp_types::Uri;
 use lsp_types::*;

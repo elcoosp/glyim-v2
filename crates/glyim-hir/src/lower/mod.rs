@@ -147,6 +147,20 @@ pub(crate) fn lower_crate(
                     items.push(item);
                 }
             }
+            SyntaxKind::ImplDef => {
+                if let Some(item) = lower_item::lower_impl_def(
+                    &child,
+                    interner,
+                    &mut local_def_counter,
+                    &mut item_id_counter,
+                    &mut bodies,
+                    &mut body_owners,
+                    diags,
+                    &struct_field_map,
+                ) {
+                    items.push(item);
+                }
+            }
             SyntaxKind::ExternBlock => {
                 tracing::debug!("Processing ExternBlock");
                 let mut stack = vec![child.clone()];

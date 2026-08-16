@@ -39,6 +39,7 @@ fn test_provide_hover() {
             },
             type_signature: Some(TypeSignature {
                 params: vec![],
+                receiver_type: None,
                 return_type: None,
             }),
             is_pub: true,

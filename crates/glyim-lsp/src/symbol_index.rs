@@ -35,6 +35,10 @@ pub struct DefinitionLocation {
 pub struct TypeSignature {
     pub params: Vec<(String, String)>,
     pub return_type: Option<String>,
+    /// For method symbols, the resolved receiver (`self`) type, e.g. `"Foo"`.
+    /// `None` for free functions / item symbols. Used by Tier 6.4 completion
+    /// filtering to match a `.`-method call's receiver type.
+    pub receiver_type: Option<String>,
 }
 
 pub struct SymbolIndex {
@@ -63,6 +67,49 @@ impl SymbolIndex {
 
         for item in hir.items.iter() {
             let name = interner.resolve(item.name).to_string();
+
+            // Tier 6.4: index each method of an `impl` block as a function
+            // symbol carrying its receiver (`self`) type, so completion can
+            // filter `.`-method calls by receiver type.
+            if let ItemKind::Impl(impl_item) = &item.kind {
+                let receiver_str = render_type_ref(&impl_item.self_ty, interner);
+                let def_loc = DefinitionLocation {
+                    file_id,
+                    span: item.span,
+                };
+                for method in &impl_item.methods {
+                    let params: Vec<(String, String)> = method
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let ty_str =
+                                p.ty.as_ref()
+                                    .map(|t| render_type_ref(t, interner))
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            (interner.resolve(p.name).to_string(), ty_str)
+                        })
+                        .collect();
+                    let return_ty = method
+                        .return_ty
+                        .as_ref()
+                        .map(|t| render_type_ref(t, interner));
+                    let info = SymbolInfo {
+                        name: interner.resolve(method.name).to_string(),
+                        kind: SymbolKind::Function,
+                        definition: def_loc.clone(),
+                        type_signature: Some(TypeSignature {
+                            params,
+                            return_type: return_ty,
+                            receiver_type: Some(receiver_str.clone()),
+                        }),
+                        is_pub: matches!(item.visibility, glyim_core::Visibility::Public),
+                        documentation: None,
+                    };
+                    self.insert_symbol(file_id, info);
+                }
+                continue;
+            }
+
             let kind = match item.kind {
                 ItemKind::Fn(_) => SymbolKind::Function,
                 ItemKind::Struct(_) => SymbolKind::Struct,
@@ -79,15 +126,19 @@ impl SymbolIndex {
                         .map(|p| {
                             let ty_str =
                                 p.ty.as_ref()
-                                    .map(|t| format!("{:?}", t))
+                                    .map(|t| render_type_ref(t, interner))
                                     .unwrap_or_else(|| "unknown".to_string());
                             (interner.resolve(p.name).to_string(), ty_str)
                         })
                         .collect();
-                    let return_ty = fn_item.return_ty.as_ref().map(|t| format!("{:?}", t));
+                    let return_ty = fn_item
+                        .return_ty
+                        .as_ref()
+                        .map(|t| render_type_ref(t, interner));
                     Some(TypeSignature {
                         params,
                         return_type: return_ty,
+                        receiver_type: None,
                     })
                 }
                 ItemKind::Struct(struct_item) => {
@@ -102,6 +153,7 @@ impl SymbolIndex {
                     Some(TypeSignature {
                         params: fields,
                         return_type: None,
+                        receiver_type: None,
                     })
                 }
                 ItemKind::Enum(enum_item) => {
@@ -122,6 +174,7 @@ impl SymbolIndex {
                     Some(TypeSignature {
                         params: variants,
                         return_type: None,
+                        receiver_type: None,
                     })
                 }
                 _ => None,
@@ -267,5 +320,50 @@ impl SymbolIndex {
     #[doc(hidden)]
     pub fn insert_test_symbol(&mut self, file_id: FileId, sym: SymbolInfo) {
         self.insert_symbol(file_id, sym);
+    }
+}
+
+/// Render a HIR `TypeRef` to a human-readable type name string.
+///
+/// Used to record an impl method's receiver type (`SymbolInfo::receiver_type`)
+/// in a form comparable with the resolved receiver type produced by
+/// `AnalysisDatabase::type_at_offset` (which renders a `Ty` via `PrintTy`).
+pub fn render_type_ref(ty: &glyim_hir::TypeRef, interner: &glyim_core::Interner) -> String {
+    match ty {
+        glyim_hir::TypeRef::Path(path) => path
+            .segments
+            .last()
+            .map(|s| interner.resolve(s.name).to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        glyim_hir::TypeRef::Ref { inner, mutability } => {
+            let prefix = if matches!(mutability, glyim_core::primitives::Mutability::Mut) {
+                "&mut "
+            } else {
+                "&"
+            };
+            format!("{}{}", prefix, render_type_ref(inner, interner))
+        }
+        glyim_hir::TypeRef::Slice(inner) => format!("[{}]", render_type_ref(inner, interner)),
+        glyim_hir::TypeRef::Array { inner, .. } => {
+            format!("[{}]", render_type_ref(inner, interner))
+        }
+        glyim_hir::TypeRef::Tuple(tys) => {
+            let inner: Vec<String> = tys.iter().map(|t| render_type_ref(t, interner)).collect();
+            format!("({})", inner.join(", "))
+        }
+        glyim_hir::TypeRef::Fn { params, ret } => {
+            let ps: Vec<String> = params
+                .iter()
+                .map(|t| render_type_ref(t, interner))
+                .collect();
+            let r = ret
+                .as_ref()
+                .map(|t| render_type_ref(t, interner))
+                .unwrap_or_default();
+            format!("fn({}) -> {}", ps.join(", "), r)
+        }
+        glyim_hir::TypeRef::Never => "!".to_string(),
+        glyim_hir::TypeRef::Infer => "_".to_string(),
+        glyim_hir::TypeRef::Error => "error".to_string(),
     }
 }

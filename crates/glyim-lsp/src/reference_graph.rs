@@ -1,5 +1,5 @@
-use glyim_core::primitives::Mutability;
 use glyim_core::Interner;
+use glyim_core::primitives::Mutability;
 use glyim_hir::{Body, CrateHir, Expr, ExprId, ItemKind, Pat};
 use glyim_span::{FileId, Span};
 use std::collections::{HashMap, HashSet};
@@ -67,33 +67,40 @@ impl ReferenceGraph {
         let mut seen = HashSet::new();
         let function_names = &self.function_names;
 
-        let mut add_ref = |name: &str, span: Span, is_def: bool, kind: ReferenceKind, access: AccessKind| {
-            let key = (
-                name.to_string(),
-                file_id,
-                span.lo.to_usize(),
-                span.hi.to_usize(),
-                kind,
-                access,
-            );
-            if seen.insert(key) {
-                self.references
-                    .entry(name.to_string())
-                    .or_default()
-                    .push(Reference {
-                        file_id,
-                        span,
-                        is_definition: is_def,
-                        kind,
-                        access,
-                        def_id: None,
-                    });
-            }
-        };
+        let mut add_ref =
+            |name: &str, span: Span, is_def: bool, kind: ReferenceKind, access: AccessKind| {
+                let key = (
+                    name.to_string(),
+                    file_id,
+                    span.lo.to_usize(),
+                    span.hi.to_usize(),
+                    kind,
+                    access,
+                );
+                if seen.insert(key) {
+                    self.references
+                        .entry(name.to_string())
+                        .or_default()
+                        .push(Reference {
+                            file_id,
+                            span,
+                            is_definition: is_def,
+                            kind,
+                            access,
+                            def_id: None,
+                        });
+                }
+            };
 
         for item in hir.items.iter() {
             let name = interner.resolve(item.name).to_string();
-            add_ref(&name, item.span, true, ReferenceKind::Definition, AccessKind::Read);
+            add_ref(
+                &name,
+                item.span,
+                true,
+                ReferenceKind::Definition,
+                AccessKind::Read,
+            );
 
             if let ItemKind::Fn(fn_item) = &item.kind {
                 for param in &fn_item.params {
@@ -197,13 +204,7 @@ impl ReferenceGraph {
                     if let Some(name) = path.as_name() {
                         let name_str = interner.resolve(name).to_string();
                         if !in_call_func && !function_names.contains(&name_str) {
-                            add_ref(
-                                &name_str,
-                                span,
-                                false,
-                                ReferenceKind::Variable,
-                                access,
-                            );
+                            add_ref(&name_str, span, false, ReferenceKind::Variable, access);
                         }
                     }
                 }
@@ -251,7 +252,13 @@ impl ReferenceGraph {
                         AccessKind::Read,
                     );
                     let method_str = interner.resolve(*method).to_string();
-                    add_ref(&method_str, span, false, ReferenceKind::Call, AccessKind::Read);
+                    add_ref(
+                        &method_str,
+                        span,
+                        false,
+                        ReferenceKind::Call,
+                        AccessKind::Read,
+                    );
                     for arg in args {
                         walk_expr(
                             *arg,
@@ -577,7 +584,10 @@ impl ReferenceGraph {
                         );
                     }
                 }
-                Expr::Closure { params, body: closure_body } => {
+                Expr::Closure {
+                    params,
+                    body: closure_body,
+                } => {
                     for param in params {
                         walk_pattern(*param, body, interner, add_ref, AccessKind::Read);
                     }
