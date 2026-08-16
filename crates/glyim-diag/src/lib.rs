@@ -214,6 +214,17 @@ impl GlyimDiagnostic {
             MultiSpan::from_span(Span::DUMMY),
         )
     }
+    pub fn macro_error(span: Span, message: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode {
+                category: ErrorCategory::Comptime,
+                number: 1,
+            },
+            DiagSeverity::Error,
+            message,
+            MultiSpan::from_span(span),
+        )
+    }
 
     pub fn with_sub(mut self, sub: SubDiagnostic) -> Self {
         self.sub_diagnostics.push(sub);

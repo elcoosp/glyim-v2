@@ -356,21 +356,38 @@ impl<'a> ExpanderImpl<'a> {
         };
 
         let args = flatten_token_tree(args_node);
+        let name_str = self.interner.resolve(name);
 
         for arm in &def.arms {
             let result = match_pattern(&arm.pattern, &args);
             match result {
                 MatchResult::FullMatch(bindings) => {
-                    let expanded = substitution::substitute(&arm.expansion, &bindings);
-                    let expanded_green = self.build_expansion_green(&expanded, call_site, depth);
-                    return (Some(expanded_green), Vec::new());
+                    match substitution::substitute(&arm.expansion, &bindings) {
+                        Ok(expanded) => {
+                            let expanded_green =
+                                self.build_expansion_green(&expanded, call_site, depth);
+                            return (Some(expanded_green), Vec::new());
+                        }
+                        Err(unbound) => {
+                            return (
+                                None,
+                                vec![GlyimDiagnostic::macro_error(
+                                    call_site,
+                                    format!(
+                                        "unbound metavariable `${}` in macro '{}' expansion; \
+                                         it is not captured by any matcher fragment",
+                                        unbound, name_str
+                                    ),
+                                )],
+                            );
+                        }
+                    }
                 }
                 MatchResult::PartialMatch => continue,
                 MatchResult::NoMatch => continue,
             }
         }
 
-        let name_str = self.interner.resolve(name);
         (
             None,
             vec![GlyimDiagnostic::type_error(

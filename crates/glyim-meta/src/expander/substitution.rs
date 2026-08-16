@@ -3,10 +3,16 @@ use glyim_syntax::SyntaxKind;
 use smol_str::SmolStr;
 use std::collections::HashMap;
 
+/// Substitute metavariables (`$x`) in `template` using `bindings`.
+///
+/// Returns the expanded token stream, or `Err(name)` if a metavariable used in
+/// the template is not bound. §19.3: an unbound metavariable is a hard error
+/// (it used to be silently dropped), because a `$(...)*` repetition tied to a
+/// metavar that never matched produces an expansion that cannot type-check.
 pub(crate) fn substitute(
     template: &[TokenTree],
     bindings: &HashMap<SmolStr, Vec<TokenTree>>,
-) -> Vec<TokenTree> {
+) -> Result<Vec<TokenTree>, SmolStr> {
     let mut result = Vec::new();
     let mut i = 0;
     while i < template.len() {
@@ -25,8 +31,10 @@ pub(crate) fn substitute(
                             result.push(TokenTree::DollarCrate);
                         } else if let Some(captured) = bindings.get(name) {
                             result.extend(captured.clone());
+                        } else {
+                            // §19.3: an unbound metavariable must be a hard error.
+                            return Err(name.clone());
                         }
-                        // If not in bindings, skip the variable (no output)
                         i += 1;
                     }
                     TokenTree::Group(SyntaxKind::LParen, inner, SyntaxKind::RParen) => {
@@ -75,7 +83,7 @@ pub(crate) fn substitute(
                                     }
                                     let rep_bindings =
                                         extract_repetition_bindings(bindings, &var_names, rep_idx);
-                                    let subbed = substitute(inner, &rep_bindings);
+                                    let subbed = substitute(inner, &rep_bindings)?;
                                     result.extend(subbed);
                                 }
                             }
@@ -83,7 +91,7 @@ pub(crate) fn substitute(
                                 if repetitions > 0 {
                                     let rep_bindings =
                                         extract_repetition_bindings(bindings, &var_names, 0);
-                                    let subbed = substitute(inner, &rep_bindings);
+                                    let subbed = substitute(inner, &rep_bindings)?;
                                     result.extend(subbed);
                                 }
                             }
@@ -97,7 +105,7 @@ pub(crate) fn substitute(
                 }
             }
             TokenTree::Group(open, inner, close) => {
-                let subbed_inner = substitute(inner, bindings);
+                let subbed_inner = substitute(inner, bindings)?;
                 result.push(TokenTree::Group(*open, subbed_inner, *close));
                 i += 1;
             }
@@ -107,7 +115,7 @@ pub(crate) fn substitute(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 #[derive(Clone, Copy, Debug)]

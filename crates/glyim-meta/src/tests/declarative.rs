@@ -168,6 +168,48 @@ fn main() {
     );
 }
 
+/// §19.3: an unbound metavariable in the transcriber must be a hard error,
+/// not silently dropped. Here `$y` is referenced in the expansion but never
+/// captured by the matcher (`$x:ident`).
+#[test]
+fn unbound_metavariable_is_hard_error() {
+    let source = r#"
+macro_rules! bad {
+    ($x:ident) => { $y }
+}
+
+fn main() {
+    let _ = bad!(value);
+}
+"#;
+    let root = parse(source);
+    let mut hygiene = HygieneCtx::default();
+    let mut expander = Expander::new(&mut hygiene);
+    let (expanded, diags) = expander.expand_crate(&root);
+
+    let has_error = diags.iter().any(|d: &GlyimDiagnostic| d.is_error());
+    assert!(has_error, "Expected an error for unbound metavariable $y");
+
+    // The macro call must NOT have been expanded away (it is ill-formed).
+    let expanded_text = expanded.text().to_string();
+    assert!(
+        expanded_text.contains("bad!"),
+        "Expected ill-formed macro call to be left intact, got: {}",
+        expanded_text
+    );
+
+    let msg = diags
+        .iter()
+        .find(|d| d.is_error())
+        .map(|d| d.message.clone())
+        .unwrap_or_default();
+    assert!(
+        msg.contains("$y") && msg.contains("bad"),
+        "Error should name the unbound metavariable and macro, got: {:?}",
+        msg
+    );
+}
+
 /// Test expand() public API with a registered builtin macro.
 #[test]
 fn expand_api_with_builtin_file_macro() {
