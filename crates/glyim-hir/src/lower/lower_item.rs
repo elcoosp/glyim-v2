@@ -361,11 +361,10 @@ pub(crate) fn lower_impl_def(
             SyntaxKind::KwFor => saw_for = true,
             _ if is_type_node(&child) => {
                 if saw_for {
-                    if trait_ref.is_none() {
-                        if let TypeRef::Path(p) = lower_type_ref(&child, interner)? {
+                    if trait_ref.is_none()
+                        && let TypeRef::Path(p) = lower_type_ref(&child, interner)? {
                             trait_ref = Some(p);
                         }
-                    }
                 } else if self_ty.is_none() {
                     self_ty = lower_type_ref(&child, interner);
                 }

@@ -5,7 +5,7 @@
 //! `checked_div` cannot represent).
 
 use crate::*;
-use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability, UintTy};
+use glyim_core::{BinOp, CrateId, DefId, IndexVec, IntTy, LocalDefId, Mutability};
 use glyim_span::Span;
 use glyim_test::test_ty_ctx;
 use glyim_type::{Ty, TyCtxMut, TyKind};

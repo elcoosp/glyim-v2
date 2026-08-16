@@ -513,7 +513,7 @@ fn combined_post_mono_checks() {
 #[test]
 fn collect_then_check_unsized_local_fires() {
     use crate::mono::MonoCtx;
-    use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+    use glyim_core::def_id::{CrateId, DefId, LocalDefId};
     use glyim_type::{Ty, TyKind};
 
     let mut ctx_mut = glyim_test::test_ty_ctx();
@@ -547,7 +547,7 @@ fn collect_then_check_unsized_local_fires() {
 #[test]
 fn collect_then_check_sized_local_clean() {
     use crate::mono::MonoCtx;
-    use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+    use glyim_core::def_id::{CrateId, DefId, LocalDefId};
     use glyim_type::{Ty, TyKind};
 
     let mut ctx_mut = glyim_test::test_ty_ctx();

@@ -398,17 +398,15 @@ fn lower_struct_expr(
                     if t.kind() == SyntaxKind::DotDot {
                         // `..base`: the following element (a PathExpr node) is the
                         // spread expression.
-                        if i + 1 < siblings.len() {
-                            if let SyntaxElement::Node(next) = &siblings[i + 1] {
-                                if let Some(expr_id) =
+                        if i + 1 < siblings.len()
+                            && let SyntaxElement::Node(next) = &siblings[i + 1]
+                                && let Some(expr_id) =
                                     lower_expr(next, interner, body, diags, struct_field_map)
                                 {
                                     *spread = Some(expr_id);
                                     i += 2;
                                     continue;
                                 }
-                            }
-                        }
                     }
                     i += 1;
                 }
@@ -429,9 +427,9 @@ fn lower_struct_expr(
                                 continue;
                             }
                             // Otherwise, assume the next sibling is the expression
-                            if i + 1 < siblings.len() {
-                                if let SyntaxElement::Node(next) = &siblings[i + 1] {
-                                    if let Some(expr_id) = lower_expr(
+                            if i + 1 < siblings.len()
+                                && let SyntaxElement::Node(next) = &siblings[i + 1]
+                                    && let Some(expr_id) = lower_expr(
                                         next,
                                         interner,
                                         body,
@@ -442,19 +440,16 @@ fn lower_struct_expr(
                                         i += 2;
                                         continue;
                                     }
-                                }
-                            }
                             i += 1;
                         }
                         SyntaxKind::PathExpr => {
                             // Shorthand field: single identifier
-                            if let Some(name) = path_as_name(node, interner) {
-                                if let Some(expr_id) =
+                            if let Some(name) = path_as_name(node, interner)
+                                && let Some(expr_id) =
                                     lower_expr(node, interner, body, diags, struct_field_map)
                                 {
                                     fields.push((name, expr_id));
                                 }
-                            }
                             i += 1;
                         }
                         _ => {
@@ -569,9 +564,9 @@ fn lower_struct_expr(
     // §3.4: a struct literal that omits a field *and* has no `..base` spread is
     // a hard error (it would otherwise generate reads of uninitialized memory).
     // List *every* missing field at once rather than just the first.
-    if spread.is_none() {
-        if let Some(name) = struct_name {
-            if let Some(def_order) = struct_field_map.get(&name) {
+    if spread.is_none()
+        && let Some(name) = struct_name
+            && let Some(def_order) = struct_field_map.get(&name) {
                 let provided: std::collections::HashSet<Name> =
                     ordered_fields.iter().map(|(f, _)| *f).collect();
                 let missing: Vec<&Name> = def_order
@@ -593,8 +588,6 @@ fn lower_struct_expr(
                     ));
                 }
             }
-        }
-    }
 
     let expr = Expr::Struct {
         path: path_struct,

@@ -81,11 +81,9 @@ fn has_ptr_len_tuple(result: &crate::lower::LowerResult) -> bool {
         for stmt in bb.statements.iter() {
             if let StatementKind::Assign(_, Rvalue::Aggregate(AggregateKind::Tuple, ops)) =
                 &stmt.kind
-            {
-                if ops.len() == 2 {
+                && ops.len() == 2 {
                     return true;
                 }
-            }
         }
     }
     false

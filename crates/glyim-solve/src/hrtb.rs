@@ -481,9 +481,7 @@ pub fn check_hrtb(
             // outlives every region). It stays Ambiguous when `T` carries
             // unresolved inference variables or regions it does not itself
             // contain, since those cannot be discharged under HRTB.
-            if matches!(tp.region, Region::Static) {
-                crate::solver::SolverResult::Proven
-            } else if region_in_ty(&tp.region, tp.ty, &ctx) {
+            if matches!(tp.region, Region::Static) || region_in_ty(&tp.region, tp.ty, &ctx) {
                 crate::solver::SolverResult::Proven
             } else {
                 // No inference/placeholder/param type vars, and no region
@@ -518,9 +516,7 @@ pub fn check_hrtb(
             // `can_coerce`'s index-based `a == b` identity check. Genuinely
             // open higher-ranked coercions (and non-identity coercions the
             // existing rules reject) stay Ambiguous.
-            if ty_struct_eq(*a, *b, &ctx) {
-                crate::solver::SolverResult::Proven
-            } else if crate::solver::can_coerce(&ctx, *a, *b) {
+            if ty_struct_eq(*a, *b, &ctx) || crate::solver::can_coerce(&ctx, *a, *b) {
                 crate::solver::SolverResult::Proven
             } else {
                 crate::solver::SolverResult::Ambiguous

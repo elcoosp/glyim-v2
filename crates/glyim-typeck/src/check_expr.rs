@@ -175,9 +175,9 @@ impl<'a> FnCtxt<'a> {
                 // If we just took a mutable reference to a captured local,
                 // record the mutating use so capture analysis can classify it
                 // as `ByRef(Mut)`.
-                if *mutability == Mutability::Mut {
-                    if let thir::ExprKind::VarRef(id) = inner_expr.kind {
-                        if let Some(entry) = self
+                if *mutability == Mutability::Mut
+                    && let thir::ExprKind::VarRef(id) = inner_expr.kind
+                        && let Some(entry) = self
                             .capture_log
                             .iter_mut()
                             .rev()
@@ -185,8 +185,6 @@ impl<'a> FnCtxt<'a> {
                         {
                             entry.2 = true;
                         }
-                    }
-                }
                 let ref_ty = self.ctx.mk_ref(Region::Erased, inner_ty, *mutability);
                 (
                     thir::Expr {
@@ -769,7 +767,7 @@ impl<'a> FnCtxt<'a> {
                 let mut seen = std::collections::HashSet::new();
                 let mut captures = Vec::new();
                 for (id, ty, is_mut) in self.capture_log.drain(log_start..) {
-                    if id.to_raw() as u32 >= boundary.to_raw() as u32 {
+                    if id.to_raw() >= boundary.to_raw() {
                         continue; // bound inside the closure itself — not a capture
                     }
                     if !seen.insert(id) {
@@ -816,13 +814,12 @@ impl<'a> FnCtxt<'a> {
             Expr::Assign { lhs, rhs } => {
                 let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
                 // An assignment to a captured local is a mutating use.
-                if let thir::ExprKind::VarRef(id) = lhs_expr.kind {
-                    if let Some(entry) =
+                if let thir::ExprKind::VarRef(id) = lhs_expr.kind
+                    && let Some(entry) =
                         self.capture_log.iter_mut().rev().find(|(vid, ..)| *vid == id)
                     {
                         entry.2 = true;
                     }
-                }
                 let (_rhs_expr, rhs_ty) = self.check_expr(*rhs);
                 if lhs_ty != Ty::ERROR && rhs_ty != Ty::ERROR {
                     self.unify(rhs_ty, lhs_ty, span);

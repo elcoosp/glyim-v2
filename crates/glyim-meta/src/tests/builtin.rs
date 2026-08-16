@@ -270,7 +270,7 @@ fn vfs_backed_line_column_and_include() {
         f.write_all(b"42").unwrap();
     }
 
-    let mut vfs = Vfs::new();
+    let vfs = Vfs::new();
     let src_id = vfs.add_file_from_disk(&src_path).unwrap();
 
     // line!/column! expansion via expand_crate with the source file set.

@@ -265,7 +265,7 @@ fn main() {
     assert_eq!(
         resolved.as_ref().map(|t| format!(
             "{}",
-            glyim_type::PrintTy::new(t.clone(), tc.as_ref().unwrap().as_ref())
+            glyim_type::PrintTy::new(*t, tc.as_ref().unwrap().as_ref())
         )),
         Some("i32".to_string()),
         "receiver `x` before the `.` should resolve to `i32`"

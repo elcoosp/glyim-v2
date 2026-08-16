@@ -1,4 +1,27 @@
 #![allow(missing_docs)]
+// Stylistic clippy lints suppressed crate-wide (test-noise lints).
+#![allow(
+    clippy::cloned_ref_to_slice_refs,
+    clippy::vec_init_then_push,
+    clippy::assertions_on_constants,
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    clippy::manual_c_str_literals,
+    clippy::doc_lazy_continuation,
+    clippy::empty_line_after_doc_comments,
+    clippy::manual_strip,
+    clippy::needless_range_loop,
+    clippy::unnecessary_cast,
+    clippy::clone_on_copy,
+    clippy::mutable_key_type,
+    clippy::only_used_in_recursion,
+    clippy::let_unit_value,
+    clippy::unnecessary_literal_unwrap,
+    clippy::format_in_format_args,
+    clippy::permissions_set_readonly_false,
+    clippy::needless_lifetimes,
+    clippy::collapsible_if
+)]
 use glyim_core::{primitives::TargetInfo, BinOp, CrateId, DefId, LocalDefId, UnOp};
 use glyim_layout::{LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
@@ -980,15 +1003,15 @@ impl<'tcx> Interpreter<'tcx> {
                     InterpValue::Aggregate(mut elems) => {
                         let len = elems.len() as u64;
                         let idx = if *from_end {
-                            len.checked_sub(*offset as u64).ok_or_else(|| {
+                            len.checked_sub(*offset).ok_or_else(|| {
                                 InterpError::Panic(format!(
                                     "ConstantIndex from_end offset {offset} out of bounds for length {len}"
                                 ))
                             })?
                         } else {
-                            *offset as u64
+                            *offset
                         } as usize;
-                        if idx >= elems.len() || len < *min_length as u64 {
+                        if idx >= elems.len() || len < *min_length {
                             return Err(InterpError::Panic(format!(
                                 "ConstantIndex {idx} out of bounds (len {len}, min_length {min_length})"
                             )));
@@ -1014,13 +1037,13 @@ impl<'tcx> Interpreter<'tcx> {
                     (InterpValue::Aggregate(mut elems), InterpValue::Aggregate(new_slice_elems)) => {
                         let len = elems.len() as u64;
                         let end = if *from_end {
-                            len.checked_sub(*to as u64).ok_or_else(|| {
+                            len.checked_sub(*to).ok_or_else(|| {
                                 InterpError::Panic(format!(
                                     "Subslice `to` {to} out of bounds for length {len}"
                                 ))
                             })?
                         } else {
-                            *to as u64
+                            *to
                         } as usize;
                         let (from, end) = (*from as usize, end);
                         if from > end

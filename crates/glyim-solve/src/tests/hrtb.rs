@@ -786,7 +786,7 @@ fn t22_coerce_identity_fn_ptr() {
     let bound_region = Region::LateBound(DebruijnIndex::INNERMOST, 0, BoundRegionKind::BrAnon(0));
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
     let ref_i32 = ctx.mk_ref(bound_region, i32_ty, Mutability::Not);
-    let inputs = ctx.intern_substitution(vec![GenericArg::Ty(ref_i32.clone())]);
+    let inputs = ctx.intern_substitution(vec![GenericArg::Ty(ref_i32)]);
     let fn_ptr = ctx.mk_ty(TyKind::FnPtr(FnSig {
         inputs,
         output: ref_i32,

@@ -139,7 +139,7 @@ fn from_io_error() {
 #[test]
 fn glyip_result_ok() {
     let result: GlyipResult<i32> = Ok(42);
-    assert_eq!(result.unwrap(), 42);
+    assert!(matches!(result, Ok(42)));
 }
 
 #[test]

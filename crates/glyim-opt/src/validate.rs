@@ -113,14 +113,13 @@ pub fn validate_body(ctx: &TyCtx, body: &Body) -> Result<(), MirValidationError>
                         span: bb.terminator.source_info.span,
                     });
                 }
-                if let Some(c) = cleanup {
-                    if !block_exists(*c) {
+                if let Some(c) = cleanup
+                    && !block_exists(*c) {
                         return Err(MirValidationError {
                             kind: MirValidationErrorKind::UnknownTarget(*c),
                             span: bb.terminator.source_info.span,
                         });
                     }
-                }
                 // NOTE: the Drop-needs-drop consistency check (plan §8.8) is
                 // intentionally NOT performed here yet: the workspace has two
                 // divergent `needs_drop` implementations (glyim-opt and
@@ -147,22 +146,20 @@ pub fn validate_body(ctx: &TyCtx, body: &Body) -> Result<(), MirValidationError>
                 }
             }
             TerminatorKind::Call { target, cleanup, .. } => {
-                if let Some(t) = target {
-                    if !block_exists(*t) {
+                if let Some(t) = target
+                    && !block_exists(*t) {
                         return Err(MirValidationError {
                             kind: MirValidationErrorKind::UnknownTarget(*t),
                             span: bb.terminator.source_info.span,
                         });
                     }
-                }
-                if let Some(c) = cleanup {
-                    if !block_exists(*c) {
+                if let Some(c) = cleanup
+                    && !block_exists(*c) {
                         return Err(MirValidationError {
                             kind: MirValidationErrorKind::UnknownTarget(*c),
                             span: bb.terminator.source_info.span,
                         });
                     }
-                }
             }
             TerminatorKind::Return | TerminatorKind::Unreachable => {}
         }
@@ -183,27 +180,24 @@ pub fn validate_body(ctx: &TyCtx, body: &Body) -> Result<(), MirValidationError>
 pub fn validate_no_subslice(body: &Body) -> Result<(), MirValidationError> {
     for bb in body.basic_blocks.iter() {
         for stmt in &bb.statements {
-            if let StatementKind::Assign(_, rvalue) = &stmt.kind {
-                if let Some(place) = rvalue_place(rvalue) {
-                    if place.projection.iter().any(|e| matches!(e, ProjectionElem::Subslice { .. })) {
+            if let StatementKind::Assign(_, rvalue) = &stmt.kind
+                && let Some(place) = rvalue_place(rvalue)
+                    && place.projection.iter().any(|e| matches!(e, ProjectionElem::Subslice { .. })) {
                         return Err(MirValidationError {
                             kind: MirValidationErrorKind::SubsliceAfterDesugar,
                             span: bb.statements.first().map(|s| s.source_info.span).unwrap_or(Span::DUMMY),
                         });
                     }
-                }
-            }
         }
         // Terminator operands / places don't carry Subslice (only statement
         // Assign RHS places do in this MIR), but scan defensively anyway.
-        if let TerminatorKind::Drop { place, .. } = &bb.terminator.kind {
-            if place.projection.iter().any(|e| matches!(e, ProjectionElem::Subslice { .. })) {
+        if let TerminatorKind::Drop { place, .. } = &bb.terminator.kind
+            && place.projection.iter().any(|e| matches!(e, ProjectionElem::Subslice { .. })) {
                 return Err(MirValidationError {
                     kind: MirValidationErrorKind::SubsliceAfterDesugar,
                     span: bb.terminator.source_info.span,
                 });
             }
-        }
     }
     Ok(())
 }
@@ -360,7 +354,7 @@ mod tests {
 
     #[test]
     fn validate_no_subslice_passes_clean_body() {
-        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| {
+        let (_ctx, i32_ty) = with_fresh_ty_ctx(|c| {
             c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32))
         });
         let body = empty_body(i32_ty, i32_ty);

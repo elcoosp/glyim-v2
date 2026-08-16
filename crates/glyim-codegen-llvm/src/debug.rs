@@ -223,7 +223,7 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                 let name = if mutability.is_mut() {
                     format!("&mut {:?}", region)
                 } else {
-                    format!("&{}", format!("{:?}", region))
+                    format!("&{:?}", region)
                 };
                 // A reference is a real DWARF pointer to its pointee type.
                 self.builder

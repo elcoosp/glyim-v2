@@ -8,7 +8,6 @@ use glyim_core::primitives::*;
 use glyim_hir::{Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind};
 use glyim_span::Span;
 use glyim_test::{assert_no_errors, mock::MockSolver};
-use glyim_type::TyKind;
 
 #[test]
 fn binary_i32_add_ok() {

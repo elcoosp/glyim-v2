@@ -191,11 +191,10 @@ impl AnalysisDatabase {
                 }
             }
         }
-        if let Some((_, owner, recv_id)) = receiver_best {
-            if let Some(ty) = result.expr_ty(owner, recv_id.to_raw() as usize) {
+        if let Some((_, owner, recv_id)) = receiver_best
+            && let Some(ty) = result.expr_ty(owner, recv_id.to_raw() as usize) {
                 return Some(ty);
             }
-        }
 
         // Fallback: innermost expression (by span) containing the offset, or
         // ending just before it.

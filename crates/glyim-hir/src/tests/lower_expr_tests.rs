@@ -204,32 +204,3 @@ fn missing_field_lists_all_missing_at_once() {
 }
 
 
-fn debug_spread_dump() {
-    let source = r#"
-        struct Point { x: i32, y: i32 }
-        fn test() {
-            let base = Point { x: 1, y: 2 };
-            let p = Point { x: 10, ..base };
-        }
-    "#;
-    let trace = FrontendTester::new(source).run();
-    let root = trace.parse_tree.unwrap();
-    fn dump_all(node: &glyim_syntax::SyntaxNode, depth: usize) {
-        for _ in 0..depth {
-            eprint!("  ");
-        }
-        eprintln!("NODE {:?}", node.kind());
-        for el in node.children_with_tokens() {
-            match el {
-                glyim_syntax::SyntaxElement::Node(n) => dump_all(&n, depth + 1),
-                glyim_syntax::SyntaxElement::Token(t) => {
-                    for _ in 0..(depth + 1) {
-                        eprint!("  ");
-                    }
-                    eprintln!("TOKEN {:?} '{}'", t.kind(), t.text());
-                }
-            }
-        }
-    }
-    dump_all(&root, 0);
-}

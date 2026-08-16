@@ -21,8 +21,8 @@ pub(crate) fn rename_text_fallback(
     let lexed = glyim_frontend::lexer::lex(source, file_id);
     let mut edits = Vec::new();
     for tok in &lexed.tokens {
-        if tok.kind == glyim_syntax::SyntaxKind::Ident && tok.text.as_str() == symbol_name {
-            if let Some(((start_line, start_col), (end_line, end_col))) =
+        if tok.kind == glyim_syntax::SyntaxKind::Ident && tok.text.as_str() == symbol_name
+            && let Some(((start_line, start_col), (end_line, end_col))) =
                 sm.span_to_position(tok.span.lo.to_usize(), tok.span.hi.to_usize())
             {
                 edits.push(TextEdit {
@@ -39,7 +39,6 @@ pub(crate) fn rename_text_fallback(
                     new_text: new_name.to_string(),
                 });
             }
-        }
     }
     if edits.is_empty() { None } else { Some(edits) }
 }

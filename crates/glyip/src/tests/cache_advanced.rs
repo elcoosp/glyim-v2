@@ -25,7 +25,7 @@ fn ensure_global_cache_dir_creates_dir() {
     unsafe {
         std::env::set_var("HOME", temp_home.path());
         // Some platforms compute home via USERPROFILE on Windows; best-effort.
-        let _ = std::env::set_var("USERPROFILE", temp_home.path());
+        std::env::set_var("USERPROFILE", temp_home.path());
     }
 
     let created = Cache::ensure_global_cache_dir().expect("ensure");

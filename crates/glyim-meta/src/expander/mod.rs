@@ -696,8 +696,8 @@ impl<'a> ExpanderImpl<'a> {
     /// source text from the VFS when available. Falls back to a heuristic
     /// (`lo / 80`, `lo % 80`) for call sites without a VFS/source.
     fn line_col_of(&self, span: Span) -> (u32, u32) {
-        if let Some(vfs) = self.vfs {
-            if let Some(src) = vfs.file_content(span.file) {
+        if let Some(vfs) = self.vfs
+            && let Some(src) = vfs.file_content(span.file) {
                 let offset = span.lo.to_usize();
                 let mut line = 1u32;
                 let mut col = 1u32;
@@ -714,7 +714,6 @@ impl<'a> ExpanderImpl<'a> {
                 }
                 return (line, col);
             }
-        }
         // Fallback heuristic when no source is available.
         let lo = span.lo.to_raw();
         (
@@ -788,7 +787,7 @@ fn needs_space_before(prev: &str, next: &str) -> bool {
 /// regardless of whether it is wrapped in a delimiter group. Used by `env!` /
 /// `include!` whose argument may arrive as a bare `Token` or wrapped in a
 /// `( ... )` group depending on the call path.
-fn first_string_lit<'t>(trees: &'t [TokenTree]) -> Option<&'t str> {
+fn first_string_lit(trees: &[TokenTree]) -> Option<&str> {
     for tt in trees {
         match tt {
             TokenTree::Token(SyntaxKind::StringLit, text) => {

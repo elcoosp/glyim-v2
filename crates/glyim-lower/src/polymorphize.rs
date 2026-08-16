@@ -318,11 +318,10 @@ fn mark_used_params_in_place(
     // `Index(local)`: the index operand is itself a use of that local's type
     // parameters when generic; ensure the index local's type is marked.
     for elem in place.projection.iter() {
-        if let ProjectionElem::Index(local) = elem {
-            if let Some(decl) = local_decls.get(*local) {
+        if let ProjectionElem::Index(local) = elem
+            && let Some(decl) = local_decls.get(*local) {
                 mark_used_params(decl.ty, ctx, used);
             }
-        }
     }
 }
 

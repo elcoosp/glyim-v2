@@ -35,8 +35,8 @@ fn type_ref_to_ty(
             };
             let is_generic = false; // self-type params aren't expressed here
             let _ = is_generic;
-            if let Some(seg) = p.segments.first() {
-                if let Some(args) = &seg.generic_args {
+            if let Some(seg) = p.segments.first()
+                && let Some(args) = &seg.generic_args {
                     // Generic ADT: `Name<Arg1, Arg2, ...>`.
                     let adt_id = match def_map.modules[def_map.root].scope.resolve(name) {
                         Some(res) => glyim_core::def_id::AdtId::from_raw(res.0.to_raw()),
@@ -51,7 +51,6 @@ fn type_ref_to_ty(
                     let substs = ctx.intern_substitution(generic_args);
                     return ctx.mk_ty(TyKind::Adt(adt_id, substs));
                 }
-            }
             if let Some(res) = def_map.modules[def_map.root].scope.resolve(name) {
                 let adt_id = glyim_core::def_id::AdtId::from_raw(res.0.to_raw());
                 let substs = ctx.intern_substitution(vec![]);
