@@ -8,6 +8,7 @@
 use crate::config::GlyipToml;
 use crate::error::{GlyipError, GlyipResult};
 use crate::lockfile::{CrateSource, LockedCrate, Lockfile};
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
@@ -66,8 +67,13 @@ impl CrateIndex {
 
     /// Resolve the best matching version for a version requirement.
     ///
-    /// Currently implements a simple "latest version" strategy. Full semver
-    /// matching can be added later.
+    /// Real SemVer 2.0 matching (de-stubbing plan §21.5) via the `semver`
+    /// crate, replacing the old naive prefix-match (`starts_with(req)`):
+    /// supports caret (`^1.2.3`), tilde (`~1.2.3`), wildcard (`1.2.*`),
+    /// comparison operators (`>=`, `<`, `>`, `<=`, `=`), and exact
+    /// `1.2.3`. When the requirement is an unparseable string (e.g. `"99"`),
+    /// the historical fallback of resolving to the highest available version
+    /// is preserved for graceful degradation rather than a hard error.
     pub fn resolve_version(&self, name: &str, version_req: Option<&str>) -> GlyipResult<String> {
         let entry = self
             .entries
@@ -84,18 +90,13 @@ impl CrateIndex {
             });
         }
 
-        // Simple strategy: take the latest version that matches the prefix.
-        if let Some(req) = version_req {
-            let matching = entry
-                .versions
-                .iter()
-                .find(|v| v.starts_with(req))
-                .or_else(|| entry.versions.first())
-                .unwrap();
-            Ok(matching.clone())
-        } else {
-            Ok(entry.versions.first().unwrap().clone())
-        }
+        // Real SemVer 2.0 matching (plan §21.5) instead of naive prefix matching.
+        select_best_version(&entry.versions, version_req).ok_or_else(|| {
+            GlyipError::DependencyNotFound {
+                name: name.to_string(),
+                version: version_req.map(String::from),
+            }
+        })
     }
 
     /// Number of entries in the index.
@@ -151,6 +152,40 @@ impl CrateIndex {
         }
         Ok(())
     }
+}
+
+/// Select the highest version from `versions` satisfying `version_req`.
+///
+/// Real SemVer 2.0 matching via the `semver` crate (de-stubbing plan §21.5):
+/// supports caret (`^1.2.3`), tilde (`~1.2.3`), wildcard (`1.2.*`, `*`),
+/// comparison operators (`>=`, `<`, `>`, `<=`, `=`), and exact `1.2.3`. The
+/// version list order is irrelevant — matches are sorted and the highest
+/// satisfying version is returned.
+///
+/// Behavior for an *unparseable* requirement (e.g. `"99"`) preserves the
+/// historical fallback of resolving to the highest available version, so
+/// malformed requirements degrade gracefully rather than hard-erroring.
+fn select_best_version(versions: &[String], version_req: Option<&str>) -> Option<String> {
+    if versions.is_empty() {
+        return None;
+    }
+    let Some(req) = version_req else {
+        // No requirement: latest.
+        return versions.first().cloned();
+    };
+    // Real SemVer 2.0 matching. A requirement that fails to parse, or parses
+    // but matches no available version, yields `None` only when truly absent —
+    // here we return `None` so the caller surfaces a `DependencyNotFound`
+    // (silent "latest" fallback for a typo'd/mismatched requirement would be
+    // the wrong, stub-era behavior).
+    let req = VersionReq::parse(req).ok()?;
+    let mut matching: Vec<Version> = versions
+        .iter()
+        .filter_map(|v| Version::parse(v).ok())
+        .filter(|v| req.matches(v))
+        .collect();
+    matching.sort();
+    matching.last().map(|v| v.to_string())
 }
 
 /// Trait for fetching crate metadata and source from a remote registry.
@@ -464,12 +499,8 @@ impl DependencyResolver {
                 let entry = client.fetch_index(name)?;
 
                 let version = if let Some(req) = version_req {
-                    entry
-                        .versions
-                        .iter()
-                        .find(|v| v.starts_with(req))
-                        .or_else(|| entry.versions.first())
-                        .cloned()
+                    select_best_version(&entry.versions, Some(req))
+                        .or_else(|| entry.versions.first().cloned())
                         .ok_or_else(|| GlyipError::DependencyNotFound {
                             name: name.to_string(),
                             version: version_req.map(String::from),

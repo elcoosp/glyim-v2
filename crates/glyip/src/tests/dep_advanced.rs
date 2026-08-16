@@ -142,7 +142,7 @@ fn crate_index_missing_entry() {
 }
 
 #[test]
-fn resolve_version_no_match_uses_latest() {
+fn resolve_version_no_match_is_not_found() {
     let mut index = CrateIndex::new();
     index.insert(IndexEntry { dependencies: Default::default(),
         name: "foo".to_string(),
@@ -150,9 +150,10 @@ fn resolve_version_no_match_uses_latest() {
         checksums: HashMap::new(),
     });
 
-    // "99" doesn't match any version, should fall back to latest
-    let version = index.resolve_version("foo", Some("99")).expect("version");
-    assert_eq!(version, "5.0.0");
+    // "99" parses as `^99.0.0` but no such version exists → real SemVer
+    // (plan §21.5) must error rather than silently fall back to latest.
+    let res = index.resolve_version("foo", Some("99"));
+    assert!(res.is_err(), "`99` has no matching version → must error");
 }
 
 #[test]
