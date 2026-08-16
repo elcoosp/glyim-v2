@@ -2,7 +2,7 @@ use glyim_core::interner::{Interner, Name};
 use glyim_core::path::PathKind;
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
-use glyim_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
+use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use std::collections::HashMap;
 
 /// Checks if a syntax node kind represents a pattern.
@@ -378,9 +378,11 @@ fn lower_struct_expr(
         }
     }
 
-    // Helper to collect fields from a list of sibling nodes (fallback when child extraction fails)
+    // Helper to collect fields from a list of sibling elements (nodes and
+    // tokens). It must scan tokens too, because the `..base` spread syntax
+    // produces a `DotDot` *token* directly under the StructExpr, not a node.
     fn collect_from_siblings(
-        siblings: &[SyntaxNode],
+        siblings: &[SyntaxElement],
         interner: &mut Interner,
         body: &mut Body,
         diags: &mut Vec<GlyimDiagnostic>,
@@ -390,62 +392,75 @@ fn lower_struct_expr(
     ) {
         let mut i = 0;
         while i < siblings.len() {
-            let node = &siblings[i];
-            match node.kind() {
-                SyntaxKind::StructField => {
-                    // Extract field name
-                    let field_name = first_ident_text(node).unwrap_or_default();
-                    let name = interner.intern(&field_name);
-                    // Check if the field has an expression inside it
-                    let expr_inside = node.children().find(is_expr_node);
-                    if let Some(expr_id) = expr_inside
-                        .as_ref()
-                        .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map))
-                    {
-                        fields.push((name, expr_id));
-                        i += 1;
-                        continue;
-                    }
-                    // Otherwise, assume the next sibling is the expression
-                    if i + 1 < siblings.len() {
-                        let next = &siblings[i + 1];
-                        if let Some(expr_id) =
-                            lower_expr(next, interner, body, diags, struct_field_map)
-                        {
-                            fields.push((name, expr_id));
-                            i += 2;
-                            continue;
+            let element = &siblings[i];
+            match element {
+                SyntaxElement::Token(t) => {
+                    if t.kind() == SyntaxKind::DotDot {
+                        // `..base`: the following element (a PathExpr node) is the
+                        // spread expression.
+                        if i + 1 < siblings.len() {
+                            if let SyntaxElement::Node(next) = &siblings[i + 1] {
+                                if let Some(expr_id) =
+                                    lower_expr(next, interner, body, diags, struct_field_map)
+                                {
+                                    *spread = Some(expr_id);
+                                    i += 2;
+                                    continue;
+                                }
+                            }
                         }
                     }
                     i += 1;
                 }
-                SyntaxKind::DotDot => {
-                    // Spread: find the next expression sibling
-                    if i + 1 < siblings.len()
-                        && let Some(expr_id) =
-                            lower_expr(&siblings[i + 1], interner, body, diags, struct_field_map)
-                    {
-                        *spread = Some(expr_id);
-                        i += 2;
-                        continue;
-                    }
-                    i += 1;
-                }
-                SyntaxKind::PathExpr => {
-                    // Shorthand field: single identifier
-                    if let Some(name) = path_as_name(node, interner) {
-                        // Avoid capturing the struct name itself
-                        // We'll filter later, but collect for now
-                        if let Some(expr_id) =
-                            lower_expr(node, interner, body, diags, struct_field_map)
-                        {
-                            fields.push((name, expr_id));
+                SyntaxElement::Node(node) => {
+                    match node.kind() {
+                        SyntaxKind::StructField => {
+                            // Extract field name
+                            let field_name = first_ident_text(node).unwrap_or_default();
+                            let name = interner.intern(&field_name);
+                            // Check if the field has an expression inside it
+                            let expr_inside = node.children().find(is_expr_node);
+                            if let Some(expr_id) = expr_inside
+                                .as_ref()
+                                .and_then(|n| lower_expr(n, interner, body, diags, struct_field_map))
+                            {
+                                fields.push((name, expr_id));
+                                i += 1;
+                                continue;
+                            }
+                            // Otherwise, assume the next sibling is the expression
+                            if i + 1 < siblings.len() {
+                                if let SyntaxElement::Node(next) = &siblings[i + 1] {
+                                    if let Some(expr_id) = lower_expr(
+                                        next,
+                                        interner,
+                                        body,
+                                        diags,
+                                        struct_field_map,
+                                    ) {
+                                        fields.push((name, expr_id));
+                                        i += 2;
+                                        continue;
+                                    }
+                                }
+                            }
+                            i += 1;
+                        }
+                        SyntaxKind::PathExpr => {
+                            // Shorthand field: single identifier
+                            if let Some(name) = path_as_name(node, interner) {
+                                if let Some(expr_id) =
+                                    lower_expr(node, interner, body, diags, struct_field_map)
+                                {
+                                    fields.push((name, expr_id));
+                                }
+                            }
+                            i += 1;
+                        }
+                        _ => {
+                            i += 1;
                         }
                     }
-                    i += 1;
-                }
-                _ => {
-                    i += 1;
                 }
             }
         }
@@ -463,10 +478,11 @@ fn lower_struct_expr(
     ) {
         match n.kind() {
             SyntaxKind::StructExpr => {
-                // For the top-level StructExpr, use sibling-based collection on its children
-                let children: Vec<SyntaxNode> = n.children().collect();
+                // For the top-level StructExpr, use sibling-based collection on its
+                // children *and* tokens (the `..base` spread is a token, not a node).
+                let elements: Vec<SyntaxElement> = n.children_with_tokens().collect();
                 collect_from_siblings(
-                    &children,
+                    &elements,
                     interner,
                     body,
                     diags,
@@ -475,7 +491,7 @@ fn lower_struct_expr(
                     spread,
                 );
                 // Also recurse into children for safety (but sibling collection should cover it)
-                for child in children {
+                for child in n.children() {
                     collect_fields(
                         &child,
                         interner,
@@ -549,6 +565,37 @@ fn lower_struct_expr(
     } else {
         fields
     };
+
+    // §3.4: a struct literal that omits a field *and* has no `..base` spread is
+    // a hard error (it would otherwise generate reads of uninitialized memory).
+    // List *every* missing field at once rather than just the first.
+    if spread.is_none() {
+        if let Some(name) = struct_name {
+            if let Some(def_order) = struct_field_map.get(&name) {
+                let provided: std::collections::HashSet<Name> =
+                    ordered_fields.iter().map(|(f, _)| *f).collect();
+                let missing: Vec<&Name> = def_order
+                    .iter()
+                    .filter(|declared| !provided.contains(declared))
+                    .collect();
+                if !missing.is_empty() {
+                    let missing_names: Vec<String> = missing
+                        .iter()
+                        .map(|n| interner.resolve(**n).to_string())
+                        .collect();
+                    let span = node_span(node);
+                    diags.push(GlyimDiagnostic::type_error(
+                        span,
+                        format!(
+                            "missing field(s) in struct literal: {}",
+                            missing_names.join(", ")
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
     let expr = Expr::Struct {
         path: path_struct,
         fields: ordered_fields,

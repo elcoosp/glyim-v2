@@ -126,3 +126,110 @@ fn test_struct_expr_lowering() {
         panic!("Expr is not Struct");
     }
 }
+
+// ===================== §3.4: missing-field diagnostics =====================
+
+use glyim_diag::GlyimDiagnostic;
+
+/// Like `lower_source` but returns the diagnostics instead of asserting empty.
+fn lower_source_diags(source: &str) -> (CrateHir, Interner, Vec<GlyimDiagnostic>) {
+    let trace = FrontendTester::new(source).run();
+    let root = trace.parse_tree.unwrap();
+    let mut interner = Interner::new();
+    let (hir, diags) = lower_crate_for_pipeline(&root, &mut interner);
+    (hir, interner, diags)
+}
+
+fn has_missing_field_error(diags: &[GlyimDiagnostic]) -> bool {
+    diags.iter().any(|d| d.message.contains("missing field(s)"))
+}
+
+#[test]
+fn missing_field_without_spread_is_error() {
+    let source = r#"
+        struct Point { x: i32, y: i32 }
+        fn test() { let p = Point { x: 10 }; }
+    "#;
+    let (_hir, _interner, diags) = lower_source_diags(source);
+    assert!(
+        has_missing_field_error(&diags),
+        "omitting field `y` without `..base` must be a hard error; diags={:?}",
+        diags
+    );
+    // The diagnostic must name the missing field(s).
+    assert!(
+        diags.iter().any(|d| d.message.contains("y")),
+        "diagnostic should name the missing field `y`; diags={:?}",
+        diags
+    );
+}
+
+#[test]
+fn missing_field_with_spread_compiles() {
+    let source = r#"
+        struct Point { x: i32, y: i32 }
+        fn test() {
+            let base = Point { x: 1, y: 2 };
+            let p = Point { x: 10, ..base };
+        }
+    "#;
+    let (_hir, _interner, diags) = lower_source_diags(source);
+    assert!(
+        !has_missing_field_error(&diags),
+        "missing field with `..base` must NOT be an error; diags={:?}",
+        diags
+    );
+}
+
+#[test]
+fn missing_field_lists_all_missing_at_once() {
+    let source = r#"
+        struct Triple { a: i32, b: i32, c: i32 }
+        fn test() { let p = Triple { a: 1 }; }
+    "#;
+    let (_hir, _interner, diags) = lower_source_diags(source);
+    assert!(
+        has_missing_field_error(&diags),
+        "omitting `b` and `c` must be an error; diags={:?}",
+        diags
+    );
+    // Both missing fields must be reported in a single diagnostic.
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("b") && d.message.contains("c")),
+        "diagnostic should list ALL missing fields (b, c); diags={:?}",
+        diags
+    );
+}
+
+
+fn debug_spread_dump() {
+    let source = r#"
+        struct Point { x: i32, y: i32 }
+        fn test() {
+            let base = Point { x: 1, y: 2 };
+            let p = Point { x: 10, ..base };
+        }
+    "#;
+    let trace = FrontendTester::new(source).run();
+    let root = trace.parse_tree.unwrap();
+    fn dump_all(node: &glyim_syntax::SyntaxNode, depth: usize) {
+        for _ in 0..depth {
+            eprint!("  ");
+        }
+        eprintln!("NODE {:?}", node.kind());
+        for el in node.children_with_tokens() {
+            match el {
+                glyim_syntax::SyntaxElement::Node(n) => dump_all(&n, depth + 1),
+                glyim_syntax::SyntaxElement::Token(t) => {
+                    for _ in 0..(depth + 1) {
+                        eprint!("  ");
+                    }
+                    eprintln!("TOKEN {:?} '{}'", t.kind(), t.text());
+                }
+            }
+        }
+    }
+    dump_all(&root, 0);
+}
