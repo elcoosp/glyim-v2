@@ -7,12 +7,15 @@ pub mod const_val;
 pub mod display;
 pub mod flags;
 pub mod fn_sig;
+pub mod lang_items;
 pub mod predicate;
 pub mod region;
 pub mod substitution;
 pub mod ty;
 pub mod ty_ctx;
 pub mod ty_ctx_mut;
+
+pub use lang_items::{LangItem, LangItemError, LangItems};
 
 pub use adt_def::*;
 pub use auto_trait::*;

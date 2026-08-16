@@ -7,9 +7,10 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId};
+use glyim_core::def_id::{AdtId, ClosureId, CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
+use crate::lang_items::{LangItem, LangItems};
 use indexmap::IndexSet;
 use smallvec::SmallVec;
 use std::collections::HashMap;
@@ -33,6 +34,10 @@ pub struct TyCtxMut {
     fn_sigs: HashMap<FnDefId, FnSig>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
+    /// Registry of compiler-known builtin types/traits (Option, Range, Drop,
+    /// …). The single source of truth that replaces scattered hardcoded
+    /// AdtId/DefId constants across the compiler. See `lang_items.rs`.
+    lang_items: LangItems,
     /// Counter for compiler-synthesized ADT ids (closures, etc.). Seeded far
     /// above any user-defined ADT id and the 1000-1005 builtin range ids so it
     /// can never collide.
@@ -57,6 +62,7 @@ impl TyCtxMut {
             fn_sigs: HashMap::new(),
             closure_sigs: HashMap::new(),
             body_tys: HashMap::new(),
+            lang_items: LangItems::default(),
             synthetic_adt_counter: 2_000_000,
         };
         // sentinels
@@ -406,6 +412,7 @@ impl TyCtxMut {
             fn_sigs: self.fn_sigs.clone(),
             closure_sigs: self.closure_sigs.clone(),
             body_tys: self.body_tys.clone(),
+            lang_items: self.lang_items.clone(),
         }
     }
 
@@ -425,7 +432,13 @@ impl TyCtxMut {
             fn_sigs: self.fn_sigs,
             closure_sigs: self.closure_sigs,
             body_tys: self.body_tys,
+            lang_items: self.lang_items,
         }
+    }
+
+    /// Mutable access to the language-item registry (builtin `Option`/`Range`/`Drop`/…).
+    pub fn lang_items_mut(&mut self) -> &mut LangItems {
+        &mut self.lang_items
     }
 
     pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
@@ -492,6 +505,10 @@ impl TyCtxMut {
         use glyim_core::arena::IndexVec;
         use glyim_core::def_id::AdtId;
 
+        // Builtin ADTs live in the implicit builtin/core crate (krate 0). Map a
+        // local id to its `DefId` for the lang-item registry.
+        let def_id = |n: u32| DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(n));
+
         // Helper to create a struct AdtDef with given field types.
         // This is a plain function, not a closure, so it doesn't capture self.
         // But we can't define a nested function that uses self.resolver directly.
@@ -534,22 +551,32 @@ impl TyCtxMut {
         // Register Range<T> (start, end) - ID 1000
         let def = make_struct_def(vec![t_var, t_var], self);
         self.register_adt(AdtId::from_raw(1000), def);
+        self.lang_items.register(LangItem::Range, def_id(1000))
+            .expect("builtin lang item registration must not duplicate");
 
         // Register RangeInclusive<T> (start, end) - ID 1001
         let def = make_struct_def(vec![t_var, t_var], self);
         self.register_adt(AdtId::from_raw(1001), def);
+        self.lang_items.register(LangItem::RangeInclusive, def_id(1001))
+            .expect("builtin lang item registration must not duplicate");
 
         // Register RangeFrom<T> (start) - ID 1002
         let def = make_struct_def(vec![t_var], self);
         self.register_adt(AdtId::from_raw(1002), def);
+        self.lang_items.register(LangItem::RangeFrom, def_id(1002))
+            .expect("builtin lang item registration must not duplicate");
 
         // Register RangeTo<T> (end) - ID 1003
         let def = make_struct_def(vec![t_var], self);
         self.register_adt(AdtId::from_raw(1003), def);
+        self.lang_items.register(LangItem::RangeTo, def_id(1003))
+            .expect("builtin lang item registration must not duplicate");
 
         // Register RangeToInclusive<T> (end) - ID 1004
         let def = make_struct_def(vec![t_var], self);
         self.register_adt(AdtId::from_raw(1004), def);
+        self.lang_items.register(LangItem::RangeToInclusive, def_id(1004))
+            .expect("builtin lang item registration must not duplicate");
 
         // Register UnsafeCell<T> - ID 1005
         // This is a special ADT for interior mutability.
@@ -601,6 +628,8 @@ impl TyCtxMut {
             ],
         };
         self.register_adt(AdtId::from_raw(1010), option_def);
+        self.lang_items.register(LangItem::Option, def_id(1010))
+            .expect("builtin lang item registration must not duplicate");
     }
 }
 

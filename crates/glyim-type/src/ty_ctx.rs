@@ -3,6 +3,7 @@ use crate::auto_trait::*;
 use crate::display::TypeLookup;
 use crate::flags::*;
 use crate::fn_sig::FnSig;
+use crate::lang_items::LangItems;
 use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
@@ -27,11 +28,17 @@ pub struct TyCtx {
     pub(crate) fn_sigs: HashMap<FnDefId, FnSig>,
     pub(crate) closure_sigs: HashMap<ClosureId, FnSig>,
     pub(crate) body_tys: HashMap<LocalDefId, Ty>,
+    pub(crate) lang_items: LangItems,
 }
 
 impl TyCtx {
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
         &self.types[ty.index()]
+    }
+
+    /// Access the language-item registry (builtin `Option`/`Range`/`Drop`/…).
+    pub fn lang_items(&self) -> &LangItems {
+        &self.lang_items
     }
 
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
