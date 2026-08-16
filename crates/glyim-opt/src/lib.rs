@@ -10,6 +10,7 @@ mod constant_prop;
 mod dce;
 mod slice_desugar;
 mod unreachable_elim;
+mod validate;
 
 #[derive(Clone, Debug)]
 pub struct Optimized {
@@ -18,6 +19,15 @@ pub struct Optimized {
 
 pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     let mut body = (**body).clone();
+    // Validate well-formedness up front (de-stubbing plan §8.8). Gated to debug
+    // builds so it never affects release codegen, but catches any later pass
+    // that produces an ill-formed body during development.
+    #[cfg(debug_assertions)]
+    {
+        if let Err(e) = validate::validate_body(ctx, &body) {
+            panic!("MIR failed validation before optimization: {:?}", e);
+        }
+    }
     // Runs first and unconditionally: every later pass, and codegen after
     // them, assumes `ConstantIndex`/`Subslice` projections are always
     // terminal (see slice_desugar's module doc). This is a no-op for the
@@ -34,10 +44,22 @@ pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
 #[cfg(test)]
 mod tests;
 
-/// Stub for drop elaboration. Will be implemented later.
+/// Drop elaboration (de-stubbing plan §8.2). When a `Drop` terminator's
+/// operand is definitely initialized, it is replaced with a direct `Drop`;
+/// otherwise it is lowered to a `Goto`. Also handles `Drop` on projected
+/// places (deref/index/field) by dropping through them rather than skipping.
 mod drop_elaboration;
 
 /// Run drop elaboration on the MIR body.
 pub fn elaborate_drops(ctx: &TyCtx, body: &mut Body) {
     drop_elaboration::run(ctx, body);
 }
+
+/// Validate MIR well-formedness (de-stubbing plan §8.8). Returns the first
+/// invariant violation found, or `Ok(())` if the body is well-formed. See
+/// `validate::validate_body` for the full invariant list. Wired as a
+/// debug-gated pre-check inside `optimize()` (see the `#[cfg(debug_assertions)]`
+/// block there) so it catches ill-formed bodies during development without
+/// affecting release codegen.
+pub use validate::validate_body;
+pub use validate::{MirValidationError, MirValidationErrorKind};

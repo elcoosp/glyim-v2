@@ -16,9 +16,8 @@ fn unique_name(base: &str) -> String {
 fn new_project_has_main_and_test_files() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("files-check");
-    std::env::set_current_dir(dir.path()).expect("cd");
 
-    let result = cmd_new(&name, &NewOptions::default()).expect("new");
+    let result = cmd_new(&name, &NewOptions::default(), Some(dir.path())).expect("new");
 
     assert!(result.path.join("src/main.g").exists());
     assert!(result.path.join("tests/integration.g").exists());
@@ -30,9 +29,8 @@ fn new_project_has_main_and_test_files() {
 fn new_project_has_no_lib_file_for_binary() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("bin-no-lib");
-    std::env::set_current_dir(dir.path()).expect("cd");
 
-    let result = cmd_new(&name, &NewOptions::default()).expect("new");
+    let result = cmd_new(&name, &NewOptions::default(), Some(dir.path())).expect("new");
     assert!(!result.path.join("src/lib.g").exists());
 }
 
@@ -40,13 +38,12 @@ fn new_project_has_no_lib_file_for_binary() {
 fn new_lib_project_has_no_main_file() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("lib-no-main");
-    std::env::set_current_dir(dir.path()).expect("cd");
 
     let opts = NewOptions {
         lib: true,
         edition: "2024".to_string(),
     };
-    let result = cmd_new(&name, &opts).expect("new");
+    let result = cmd_new(&name, &opts, Some(dir.path())).expect("new");
     assert!(!result.path.join("src/main.g").exists());
     assert!(result.path.join("src/lib.g").exists());
 }
@@ -55,9 +52,8 @@ fn new_lib_project_has_no_main_file() {
 fn nested_source_directories() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("nested");
-    std::env::set_current_dir(dir.path()).expect("cd");
 
-    let result = cmd_new(&name, &NewOptions::default()).expect("new");
+    let result = cmd_new(&name, &NewOptions::default(), Some(dir.path())).expect("new");
 
     // Create nested directories with source files
     let nested = result.path.join("src/submodule");

@@ -76,7 +76,7 @@ fn main() {
     let result = match cli.command {
         Commands::New { name, lib, edition } => {
             let opts = glyip::config::NewOptions { lib, edition };
-            glyip::cmd_new(&name, &opts).map(|_| ())
+            glyip::cmd_new(&name, &opts, Some(&project_dir)).map(|_| ())
         }
         Commands::Build {
             release,

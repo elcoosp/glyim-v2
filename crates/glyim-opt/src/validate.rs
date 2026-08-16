@@ -1,0 +1,304 @@
+//! MIR well-formedness validator (de-stubbing plan §8.8).
+//!
+//! After every optimization pass (and before codegen), a well-formed MIR body must
+//! satisfy a small set of structural invariants. Violations indicate a compiler
+//! bug introduced by an earlier pass, not bad user input, so the validator reports
+//! them as internal compiler errors rather than "your program is wrong" diagnostics.
+//!
+//! Invariants checked:
+//!   * `SwitchInt` targets reference blocks that exist in the body.
+//!   * `Drop`/`Goto`/`Call`/`Assert` targets (and cleanup edges) reference existing blocks.
+//!   * No `ConstantIndex`/`Subslice` projection appears except as the *last*
+//!     element of a place's projection list — `glyim-opt::slice_desugar` exists
+//!     precisely to make this hold, so a survivor mid-chain is a pass bug.
+//!
+//! The Drop-needs-drop consistency check (plan §8.8) is intentionally deferred:
+//! the workspace has two divergent `needs_drop` implementations (glyim-opt and
+//! glyim-pipeline, §12.3). Baking either into the validator would freeze a stub's
+//! behavior, so `MirValidationErrorKind::UnnecessaryDrop` is reserved for that
+//! check and will be enabled once `needs_drop` is unified (§8.2/§12.3).
+//!
+//! The validator is intentionally *not* wired into the required `optimize()` path
+//! yet: it is exposed via [`validate_body`] and exercised by the unit tests below,
+//! and by `cargo test`. Once the rest of the optimization pipeline is proven to keep
+//! these invariants, `optimize()` can call `validate_body` (debug-gated) between
+//! passes without risk to the green tree.
+
+use glyim_mir::*;
+use glyim_span::Span;
+use glyim_type::TyCtx;
+use std::fmt;
+
+/// A single well-formedness violation found by the validator.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MirValidationError {
+    pub kind: MirValidationErrorKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MirValidationErrorKind {
+    /// A terminator references a basic block that does not exist.
+    UnknownTarget(BasicBlockIdx),
+    /// A `Drop` terminator whose place type does not need drop glue.
+    /// Reserved for the Drop-needs-drop check (plan §8.8); not yet raised by
+    /// `validate_body` until `needs_drop` is unified (§8.2/§12.3).
+    #[allow(dead_code)]
+    UnnecessaryDrop,
+    /// A `ConstantIndex`/`Subslice` projection appears mid-chain (not terminal).
+    NonTerminalSliceProjection,
+}
+
+impl fmt::Display for MirValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            MirValidationErrorKind::UnknownTarget(bb) => {
+                write!(f, "MIR validation: terminator targets unknown block {bb:?}")
+            }
+            MirValidationErrorKind::UnnecessaryDrop => {
+                write!(f, "MIR validation: Drop terminator on a type that needs no drop")
+            }
+            MirValidationErrorKind::NonTerminalSliceProjection => {
+                write!(
+                    f,
+                    "MIR validation: ConstantIndex/Subslice projection is not terminal"
+                )
+            }
+        }
+    }
+}
+
+/// Validate `body`. Returns `Ok(())` if every invariant holds, otherwise the first
+/// violation found (in deterministic block/statement order).
+pub fn validate_body(ctx: &TyCtx, body: &Body) -> Result<(), MirValidationError> {
+    let n_blocks = body.basic_blocks.len();
+
+    let block_exists = |bb: BasicBlockIdx| (bb.to_raw() as usize) < n_blocks;
+
+    for (bb_idx, bb) in body.basic_blocks.iter_enumerated() {
+        // Validate each statement's places (slice-projection terminality).
+        for stmt in &bb.statements {
+            if let StatementKind::Assign(_, rvalue) = &stmt.kind {
+                check_rvalue_places(ctx, rvalue, &mut |e| Err(e))?;
+            }
+        }
+
+        // Validate the terminator.
+        match &bb.terminator.kind {
+            TerminatorKind::Goto { target } => {
+                if !block_exists(*target) {
+                    return Err(MirValidationError {
+                        kind: MirValidationErrorKind::UnknownTarget(*target),
+                        span: bb.terminator.source_info.span,
+                    });
+                }
+            }
+            TerminatorKind::Drop { target, cleanup, .. }
+            | TerminatorKind::Assert { target, cleanup, .. } => {
+                if !block_exists(*target) {
+                    return Err(MirValidationError {
+                        kind: MirValidationErrorKind::UnknownTarget(*target),
+                        span: bb.terminator.source_info.span,
+                    });
+                }
+                if let Some(c) = cleanup {
+                    if !block_exists(*c) {
+                        return Err(MirValidationError {
+                            kind: MirValidationErrorKind::UnknownTarget(*c),
+                            span: bb.terminator.source_info.span,
+                        });
+                    }
+                }
+                // NOTE: the Drop-needs-drop consistency check (plan §8.8) is
+                // intentionally NOT performed here yet: the workspace has two
+                // divergent `needs_drop` implementations (glyim-opt and
+                // glyim-pipeline, §12.3) and baking either into the validator
+                // would freeze a stub's behavior. Once `needs_drop` is unified
+                // per §8.2/§12.3, add that assertion here (it belongs on the
+                // `Drop` variant specifically, since `Goto`/`Assert` have no
+                // place-type drop-glue implication).
+            }
+            TerminatorKind::SwitchInt { targets, .. } => {
+                if !block_exists(targets.otherwise()) {
+                    return Err(MirValidationError {
+                        kind: MirValidationErrorKind::UnknownTarget(targets.otherwise()),
+                        span: bb.terminator.source_info.span,
+                    });
+                }
+                for (_, tgt) in targets.iter() {
+                    if !block_exists(tgt) {
+                        return Err(MirValidationError {
+                            kind: MirValidationErrorKind::UnknownTarget(tgt),
+                            span: bb.terminator.source_info.span,
+                        });
+                    }
+                }
+            }
+            TerminatorKind::Call { target, cleanup, .. } => {
+                if let Some(t) = target {
+                    if !block_exists(*t) {
+                        return Err(MirValidationError {
+                            kind: MirValidationErrorKind::UnknownTarget(*t),
+                            span: bb.terminator.source_info.span,
+                        });
+                    }
+                }
+                if let Some(c) = cleanup {
+                    if !block_exists(*c) {
+                        return Err(MirValidationError {
+                            kind: MirValidationErrorKind::UnknownTarget(*c),
+                            span: bb.terminator.source_info.span,
+                        });
+                    }
+                }
+            }
+            TerminatorKind::Return | TerminatorKind::Unreachable => {}
+        }
+
+        let _ = bb_idx;
+    }
+
+    Ok(())
+}
+
+/// Walk the places inside an `Rvalue`, flagging any `ConstantIndex`/`Subslice`
+/// projection that is not the final element of its place's projection list.
+fn check_rvalue_places<F: FnMut(MirValidationError) -> Result<(), MirValidationError>>(
+    ctx: &TyCtx,
+    rvalue: &Rvalue,
+    on_err: &mut F,
+) -> Result<(), MirValidationError> {
+    let mut visit_place = |place: &Place| -> Result<(), MirValidationError> {
+        let proj = &place.projection;
+        for (i, elem) in proj.iter().enumerate() {
+            let is_slice = matches!(
+                elem,
+                ProjectionElem::ConstantIndex { .. } | ProjectionElem::Subslice { .. }
+            );
+            if is_slice && i + 1 != proj.len() {
+                let err = MirValidationError {
+                    kind: MirValidationErrorKind::NonTerminalSliceProjection,
+                    span: Span::DUMMY,
+                };
+                return on_err(err);
+            }
+        }
+        let _ = ctx;
+        Ok(())
+    };
+
+    match rvalue {
+        Rvalue::Use(op) | Rvalue::UnaryOp(_, op) => {
+            if let Operand::Copy(p) | Operand::Move(p) = op {
+                visit_place(p)?;
+            }
+        }
+        Rvalue::Ref(p, _) => visit_place(p)?,
+        Rvalue::BinaryOp(_, ops) => {
+            if let Operand::Copy(p) | Operand::Move(p) = &ops.0 {
+                visit_place(p)?;
+            }
+            if let Operand::Copy(p) | Operand::Move(p) = &ops.1 {
+                visit_place(p)?;
+            }
+        }
+        Rvalue::Aggregate(_, operands) => {
+            for op in operands {
+                if let Operand::Copy(p) | Operand::Move(p) = op {
+                    visit_place(p)?;
+                }
+            }
+        }
+        Rvalue::Discriminant(p) | Rvalue::Len(p) => visit_place(p)?,
+        Rvalue::Cast(_, op, _) => {
+            if let Operand::Copy(p) | Operand::Move(p) = op {
+                visit_place(p)?;
+            }
+        }
+        Rvalue::Repeat(op, _) => {
+            if let Operand::Copy(p) | Operand::Move(p) = op {
+                visit_place(p)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::IndexVec;
+    use glyim_core::Mutability;
+    use glyim_test::with_fresh_ty_ctx;
+
+    fn empty_body(local_ty: glyim_type::Ty, return_ty: glyim_type::Ty) -> Body {
+        // Build a minimal 1-block body that just returns.
+        let mut basic_blocks = IndexVec::new();
+        basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+        let mut locals = IndexVec::new();
+        locals.push(LocalDecl {
+            ty: local_ty,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        Body {
+            owner: glyim_core::def_id::DefId::new(
+                glyim_core::def_id::CrateId::from_raw(0),
+                glyim_core::def_id::LocalDefId::from_raw(0),
+            ),
+            basic_blocks,
+            locals,
+            arg_count: 0,
+            return_ty,
+            span: Span::DUMMY,
+            var_debug_info: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn validates_trivial_return_body() {
+        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)));
+        let body = empty_body(i32_ty, i32_ty);
+        assert!(validate_body(&ctx, &body).is_ok());
+    }
+
+    #[test]
+    fn rejects_drop_to_missing_block() {
+        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)));
+        let mut body = empty_body(i32_ty, i32_ty);
+        // Inject a Drop terminator whose target block does not exist.
+        body.basic_blocks[glyim_mir::BasicBlockIdx::from_raw(0)].terminator = Terminator {
+            kind: TerminatorKind::Drop {
+                place: Place::new(LocalIdx::from_raw(0)),
+                target: glyim_mir::BasicBlockIdx::from_raw(99),
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+        let err = validate_body(&ctx, &body).expect_err("Drop to missing block should be flagged");
+        assert_eq!(
+            err.kind,
+            MirValidationErrorKind::UnknownTarget(glyim_mir::BasicBlockIdx::from_raw(99))
+        );
+    }
+
+    #[test]
+    fn rejects_terminator_to_missing_block() {
+        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)));
+        let mut body = empty_body(i32_ty, i32_ty);
+        body.basic_blocks[glyim_mir::BasicBlockIdx::from_raw(0)].terminator = Terminator {
+            kind: TerminatorKind::Goto {
+                target: glyim_mir::BasicBlockIdx::from_raw(99),
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+        let err = validate_body(&ctx, &body).expect_err("missing block should be flagged");
+        assert_eq!(
+            err.kind,
+            MirValidationErrorKind::UnknownTarget(glyim_mir::BasicBlockIdx::from_raw(99))
+        );
+    }
+}

@@ -7,6 +7,6 @@ mod dce;
 mod dce_tests;
 mod drop_elaboration;
 mod noop;
-mod testutil;
+pub mod testutil;
 mod unreachable_elim;
 mod unreachable_elim_tests;

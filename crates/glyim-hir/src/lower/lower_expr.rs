@@ -89,7 +89,6 @@ pub(crate) fn lower_block_to_expr(
                 for inner in child.children() {
                     if is_expr_node(&inner) || inner.kind() == SyntaxKind::Block {
                         expr_node = Some(inner.clone());
-                        // TODO: create is_pattern helper
                     } else if is_pattern(inner.kind()) {
                         pat_node = Some(inner);
                     }
@@ -948,8 +947,17 @@ fn lower_method_call_expr(
         }
     }
     let method = method_name?;
+    // Collect explicit arguments only. The receiver is lowered separately into
+    // `receiver_id` and must NOT be duplicated into `args` — downstream
+    // (glyim-typeck) treats `receiver` and `args` as disjoint (it builds
+    // `thir::Call { func: recv_expr, args }`), so including the receiver here
+    // would feed it as a leading explicit argument and corrupt the call's
+    // argument list. Skip the receiver node itself.
     let mut arg_ids = Vec::new();
     for child in node.children() {
+        if child == receiver {
+            continue;
+        }
         if child.kind() != SyntaxKind::PathExpr
             && (is_expr_node(&child) || child.kind() == SyntaxKind::Block)
             && let Some(id) = lower_expr(&child, interner, body, diags, struct_field_map)

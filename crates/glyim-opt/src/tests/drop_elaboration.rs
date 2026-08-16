@@ -103,3 +103,61 @@ fn array_drop_creates_loop() {
         "Array Drop terminator should have been replaced"
     );
 }
+
+#[test]
+fn drop_on_projected_place_is_not_skipped() {
+    // A Drop on a place with a projection (e.g. `*p`) must still drop the
+    // value at that place. Regression guard for the old `Goto` stub in
+    // drop_elaboration that silently skipped drops on projected places.
+    let mut ctx_mut = glyim_test::test_ty_ctx();
+    // Use a String (needs drop) behind a local, and drop through a Deref.
+    let string_ty = ctx_mut.mk_ty(TyKind::String);
+    let ref_string_ty = ctx_mut.mk_ty(TyKind::Ref(
+        glyim_type::Region::Erased,
+        string_ty,
+        Mutability::Mut,
+    ));
+    let ctx = ctx_mut.freeze();
+
+    let body_def = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    let mut body = Body::dummy(body_def);
+    let local = body.locals.push(LocalDecl {
+        ty: ref_string_ty,
+        mutability: Mutability::Mut,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    let drop_place = Place {
+        local,
+        projection: Box::new([ProjectionElem::Deref]),
+    };
+    let block0 = BasicBlockData {
+        statements: vec![],
+        terminator: Terminator {
+            kind: TerminatorKind::Drop {
+                place: drop_place,
+                target: BasicBlockIdx::from_raw(1),
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    };
+    let block1 = BasicBlockData {
+        statements: vec![],
+        terminator: Terminator {
+            kind: TerminatorKind::Return,
+            source_info: SourceInfo::new(Span::DUMMY),
+        },
+        is_cleanup: false,
+    };
+    body.basic_blocks = IndexVec::from_raw(vec![block0, block1]);
+
+    crate::drop_elaboration::run(&ctx, &mut body);
+
+    // The elaborated block 0 must still be a Drop (not a Goto that skips it).
+    let is_drop = matches!(body.basic_blocks[BasicBlockIdx::from_raw(0)].terminator.kind, TerminatorKind::Drop { .. });
+    assert!(
+        is_drop,
+        "Drop on a projected place must NOT be turned into Goto (would leak)"
+    );
+}

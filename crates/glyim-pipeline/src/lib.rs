@@ -4,6 +4,9 @@ use glyim_codegen_llvm::LlvmBackend;
 use glyim_db::Database;
 use glyim_diag::{CompResult, DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoCtx;
+use glyim_lower::post_mono_checks::{
+    check_large_mono_set, check_unsized_locals, check_unused_generic_params,
+};
 use glyim_lower::partition::partition;
 use glyim_mir::Body;
 use glyim_solve::SimpleTraitSolver;
@@ -150,6 +153,18 @@ impl Pipeline {
             let body_provider = make_mir_body_provider(&mir_bodies_map, &sink_cell, ty_ctx_ref);
             let drop_provider = make_drop_glue_provider(ty_ctx_ref);
             mono_ctx.collect(&mono_roots, &body_provider, &drop_provider);
+            // §8.12: post-monomorphization semantic checks. These were dead
+            // `#[allow(dead_code)]` functions; they now run here, immediately
+            // after monomorphization, so unsized locals / unused generic params
+            // / pathological mono-set sizes surface as diagnostics instead of
+            // being silently ignored.
+            let mut post_diags = check_unsized_locals(mono_ctx.items(), ty_ctx_ref);
+            post_diags.extend(check_unused_generic_params(
+                mono_ctx.items(),
+                ty_ctx_ref,
+            ));
+            post_diags.extend(check_large_mono_set(mono_ctx.items(), 1000));
+            sink_cell.borrow_mut().extend(post_diags);
             mono_ctx.items().to_vec()
         };
 

@@ -152,6 +152,36 @@ fn ty_field_on_tuple_returns_correct_arg() {
 }
 
 #[test]
+fn ty_subslice_on_slice_returns_slice_type() {
+    // Slicing a slice must yield a slice type `[T]`, not the element type `T`.
+    // Regression guard for the Subslice projection in `Place::ty`.
+    let (ctx, slice_i32_ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let elem = c.mk_ty(TyKind::Int(IntTy::I32));
+        c.mk_ty(TyKind::Slice(elem))
+    });
+
+    let local = LocalIdx::from_raw(0);
+    let mut locals = IndexVec::new();
+    locals.push(LocalDecl {
+        ty: slice_i32_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
+    let place = Place {
+        local,
+        projection: Box::new([ProjectionElem::Subslice {
+            from: 1,
+            to: 2,
+            from_end: false,
+        }]),
+    };
+
+    // The subslice of a slice is itself a slice (same type), not the element type.
+    assert_eq!(place.ty(&ctx, &locals), slice_i32_ty);
+}
+
+#[test]
 fn ty_field_on_tuple_second_element() {
     let (ctx, (tuple_ty, _i32_ty, u32_ty)) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
         let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));

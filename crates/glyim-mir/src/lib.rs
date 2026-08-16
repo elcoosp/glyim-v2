@@ -176,14 +176,16 @@ impl Place {
                     to: _,
                     from_end: _,
                 } => {
-                    // Subslice returns a slice of the element type.
-                    // We need to construct a slice type from the element type.
-                    // But we cannot create a new type here; we should return the element type? Or the slice type?
-                    // The standard is to return the slice type. Since we don't have a TyCtxMut here, we can't create a new type.
-                    // We'll return the element type and let the backend handle it.
-                    // For now, we'll return the element type.
+                    // A subslice projection always yields a slice type `[T]`.
+                    // If the base is already a slice, the result keeps that slice type
+                    // (return it unchanged — the common `[T]`/`&[T]` slicing case).
+                    // If the base is an array `[T; N]`, the result is `[T]`; we cannot
+                    // construct a fresh unsized slice type from a read-only `TypeLookup`,
+                    // so we fall back to the element type. The plan's dynamic-slice
+                    // fat-pointer work (§8.x) will make array-based subslicing first-class.
                     match ctx.ty_kind(ty) {
-                        TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => *inner_ty,
+                        TyKind::Slice(_) => ty,
+                        TyKind::Array(inner, _) => *inner,
                         _ => {
                             tracing::error!("Place::ty(): Subslice on non-array/slice type");
                             ctx.error_ty()

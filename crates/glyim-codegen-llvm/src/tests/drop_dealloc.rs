@@ -745,10 +745,11 @@ fn v15_t09_drop_shared_ref_non_copy_no_dealloc() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // String needs drop, so drop_in_place should be called
+    // A shared reference does NOT own its pointee, so dropping &String must emit
+    // no drop glue at all (neither drop_in_place nor dealloc).
     assert!(
-        ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for &String, got:\n{}",
+        !ir.contains("call void @glyim_drop_in_place"),
+        "IR should NOT call glyim_drop_in_place for &String (shared ref does not own), got:\n{}",
         ir
     );
     // Shared ref does not own, so no dealloc
@@ -823,16 +824,17 @@ fn v15_t10_drop_raw_ptr_non_copy_type() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // *mut String: String needs drop, so drop_in_place called
+    // *mut String is an owning raw pointer in glyim's memory model (RawPtr(Mut)
+    // with non-Copy inner), so drop_in_place is called on the pointee.
     assert!(
         ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for *mut String, got:\n{}",
+        "IR should call glyim_drop_in_place for *mut String (owning raw ptr), got:\n{}",
         ir
     );
-    // *mut String: raw ptr to non-Copy, dealloc should be called
+    // *mut String: owning raw ptr to non-Copy, dealloc should be called
     assert!(
         ir.contains("call void @glyim_dealloc"),
-        "IR should call glyim_dealloc for *mut String, got:\n{}",
+        "IR should call glyim_dealloc for *mut String (owning raw ptr), got:\n{}",
         ir
     );
 }
@@ -1043,11 +1045,11 @@ fn v15_t13_drop_nested_ref() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // The outermost ref is immutable (Mutability::Not), so no dealloc.
-    // But inner is &mut String, and String needs drop, so drop_in_place is called.
+    // References do NOT own their pointee, so dropping &&mut String emits no drop
+    // glue at all (drop_in_place would wrongly try to drop through the reference).
     assert!(
-        ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for &&mut String, got:\n{}",
+        !ir.contains("call void @glyim_drop_in_place"),
+        "IR should NOT call glyim_drop_in_place for &&mut String (refs do not own), got:\n{}",
         ir
     );
     // Outer ref is immutable, so no dealloc
@@ -2201,10 +2203,11 @@ fn v15_t28_drop_const_raw_ptr_non_copy() {
         .expect("lowering should succeed");
 
     let ir = module.print_to_string().to_string();
-    // *const String: String needs drop, so drop_in_place should be called
+    // A raw pointer never owns its pointee, so dropping *const String must emit no
+    // drop glue at all (drop_in_place would wrongly drop through the pointer).
     assert!(
-        ir.contains("call void @glyim_drop_in_place"),
-        "IR should call glyim_drop_in_place for *const String, got:\n{}",
+        !ir.contains("call void @glyim_drop_in_place"),
+        "IR should NOT call glyim_drop_in_place for *const String (raw ptr does not own), got:\n{}",
         ir
     );
     // *const T is never deallocated (only *mut T can own)

@@ -2802,7 +2802,7 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     }
     fn type_needs_drop(&self, ty: Ty) -> bool {
         match self.ty_ctx.ty_kind(ty) {
-            TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => self.type_needs_drop(*inner),
+            TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => false,
             TyKind::Array(inner, _) => self.type_needs_drop(*inner),
             TyKind::Tuple(substs) => self.ty_ctx.substitution_args(*substs).iter().any(|arg| {
                 if let glyim_type::GenericArg::Ty(t) = arg {

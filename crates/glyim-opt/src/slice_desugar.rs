@@ -259,21 +259,200 @@ fn desugar_place(
 
 #[cfg(test)]
 mod tests {
-    // NOTE: these are illustrative placeholders. Wire them up against
-    // whatever body-construction helpers `glyim-opt`'s existing test
-    // module (`glyim-opt/src/tests.rs`) already provides (e.g. a small
-    // `Body` builder used by `dce`/`cfg_simplify`'s own tests) rather than
-    // constructing `Body`/`Place`/`LocalDecl` by hand here, since this
-    // crate doesn't have visibility into `glyim-type`'s `TyCtx`
-    // construction helpers used elsewhere in the test suite.
-    //
-    // Cases worth covering once wired up:
-    //   1. A place with a single terminal `Subslice` -> unchanged.
-    //   2. A place with `Subslice` followed by `Field` -> split into a
-    //      temporary + a two-element (well, one-element) remainder place.
-    //   3. A place with no `ConstantIndex`/`Subslice` at all -> completely
-    //      unchanged, and the pass must not allocate any new locals.
-    //   4. `ConstantIndex`/`Subslice` appearing inside `Rvalue::Ref`,
-    //      `Operand` within a `Call`'s args, and a `SwitchInt` discriminant
-    //      -- confirming the terminator-side rewriting path also fires.
+    use super::*;
+    use glyim_core::primitives::IntTy;
+    use glyim_mir::BorrowKind;
+    use glyim_type::{Region, TyCtxMut, TyKind};
+
+    use crate::tests::testutil::build_test_body;
+
+    /// Build a `&[i32]` local and a single-block body whose block-0 terminator is
+    /// `Return`. Returns (ctx, body, the local index).
+    fn body_with_ref_slice(ctx: &mut TyCtxMut) -> (Body, LocalIdx) {
+        let elem = ctx.mk_ty(TyKind::Int(IntTy::I32));
+        let slice_ty = ctx.mk_ty(TyKind::Slice(elem));
+        let ref_slice_ty = ctx.mk_ref(Region::Erased, slice_ty, Mutability::Not);
+        let local = LocalIdx::from_raw(1);
+        let body = build_test_body(
+            vec![
+                (ctx.unit_ty(), Mutability::Not),
+                (ref_slice_ty, Mutability::Not),
+            ],
+            vec![BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            }],
+            0,
+            ctx.unit_ty(),
+        );
+        (body, local)
+    }
+
+    fn count_storage_live(body: &Body) -> usize {
+        body.basic_blocks
+            .iter()
+            .flat_map(|b| b.statements.iter())
+            .filter(|s| matches!(s.kind, StatementKind::StorageLive(_)))
+            .count()
+    }
+
+    #[test]
+    fn terminal_subslice_is_unchanged() {
+        // A place whose only Subslice is already the last element must be left
+        // completely untouched (no new locals, no new statements).
+        let mut ctx_mut = glyim_test::test_ty_ctx();
+        let (mut body, _) = body_with_ref_slice(&mut ctx_mut);
+        let ctx = ctx_mut.freeze();
+        let n_locals_before = body.locals.len();
+        let n_storage_before = count_storage_live(&body);
+
+        // Statement: `_2 = move (*_1)[1..]` — Subslice is terminal here.
+        let place = Place {
+            local: LocalIdx::from_raw(1),
+            projection: Box::new([
+                ProjectionElem::Deref,
+                ProjectionElem::Subslice { from: 1, to: 2, from_end: false },
+            ]),
+        };
+        body.basic_blocks[BasicBlockIdx::from_raw(0)]
+            .statements
+            .push(Statement {
+                kind: StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(2)),
+                    Rvalue::Use(Operand::Move(place)),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+
+        crate::slice_desugar::run(&ctx, &mut body);
+
+        assert_eq!(body.locals.len(), n_locals_before, "no new locals expected");
+        assert_eq!(
+            count_storage_live(&body),
+            n_storage_before,
+            "no StorageLive expected for terminal subslice"
+        );
+    }
+
+    #[test]
+    fn non_terminal_subslice_is_split() {
+        // A place with Subslice NOT last (`(*_1)[1..]` followed by Deref) must be
+        // split: a temporary is materialized and the remainder continues from it.
+        let mut ctx_mut = glyim_test::test_ty_ctx();
+        let (mut body, _) = body_with_ref_slice(&mut ctx_mut);
+        let ctx = ctx_mut.freeze();
+        let n_locals_before = body.locals.len();
+        let n_storage_before = count_storage_live(&body);
+
+        // Statement: `_2 = move (*_1)[1..][0]` — Subslice is NOT terminal.
+        let place = Place {
+            local: LocalIdx::from_raw(1),
+            projection: Box::new([
+                ProjectionElem::Deref,
+                ProjectionElem::Subslice { from: 1, to: 2, from_end: false },
+                ProjectionElem::Index(LocalIdx::from_raw(0)),
+            ]),
+        };
+        body.basic_blocks[BasicBlockIdx::from_raw(0)].statements.push(Statement {
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(2)),
+                Rvalue::Use(Operand::Move(place)),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        crate::slice_desugar::run(&ctx, &mut body);
+
+        // A new temporary must have been introduced.
+        assert_eq!(
+            body.locals.len(),
+            n_locals_before + 1,
+            "expected exactly one new temporary local"
+        );
+        assert_eq!(
+            count_storage_live(&body),
+            n_storage_before + 1,
+            "expected one StorageLive for the materialized subslice"
+        );
+        // The original statement's destination place must now root at the temp,
+        // and the subslice projection must appear only once (in the prelude assign).
+        let stmt = &body.basic_blocks[BasicBlockIdx::from_raw(0)].statements;
+        let assign = stmt
+            .iter()
+            .find(|s| matches!(s.kind, StatementKind::Assign(_, _)))
+            .unwrap();
+        if let StatementKind::Assign(dst, _) = &assign.kind {
+            assert!(
+                dst.projection.iter().all(|e| {
+                    !matches!(e, ProjectionElem::Subslice { .. })
+                }),
+                "RHS subslice must have been moved into the prelude; destination has no subslice"
+            );
+        }
+    }
+
+    #[test]
+    fn no_slice_projection_is_untouched() {
+        // A body with no ConstantIndex/Subslice at all must be a complete no-op.
+        let mut ctx_mut = glyim_test::test_ty_ctx();
+        let (mut body, _) = body_with_ref_slice(&mut ctx_mut);
+        let ctx = ctx_mut.freeze();
+        let n_locals_before = body.locals.len();
+        let n_storage_before = count_storage_live(&body);
+
+        // Add a plain copy statement with no slice projection at all.
+        body.basic_blocks[BasicBlockIdx::from_raw(0)]
+            .statements
+            .push(Statement {
+                kind: StatementKind::Assign(
+                    Place::new(LocalIdx::from_raw(2)),
+                    Rvalue::Use(Operand::Copy(Place::new(LocalIdx::from_raw(1)))),
+                ),
+                source_info: SourceInfo::new(Span::DUMMY),
+            });
+
+        crate::slice_desugar::run(&ctx, &mut body);
+
+        assert_eq!(body.locals.len(), n_locals_before);
+        assert_eq!(count_storage_live(&body), n_storage_before);
+    }
+
+    #[test]
+    fn subslice_in_rvalue_ref_operand_is_split() {
+        // A Subslice appearing inside an `Rvalue::Ref`'s operand (e.g. taking a
+        // reference to a subslice) must also be desugared on the operand side.
+        let mut ctx_mut = glyim_test::test_ty_ctx();
+        let (mut body, _) = body_with_ref_slice(&mut ctx_mut);
+        let ctx = ctx_mut.freeze();
+        let n_locals_before = body.locals.len();
+
+        // `_2 = &(*_1)[1..][0]` — Subslice inside the Ref operand, not terminal.
+        let place = Place {
+            local: LocalIdx::from_raw(1),
+            projection: Box::new([
+                ProjectionElem::Deref,
+                ProjectionElem::Subslice { from: 1, to: 2, from_end: false },
+                ProjectionElem::Index(LocalIdx::from_raw(0)),
+            ]),
+        };
+        body.basic_blocks[BasicBlockIdx::from_raw(0)].statements.push(Statement {
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(2)),
+                Rvalue::Ref(place, BorrowKind::Shared),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        crate::slice_desugar::run(&ctx, &mut body);
+
+        assert_eq!(
+            body.locals.len(),
+            n_locals_before + 1,
+            "expected a temporary for the operand-side subslice"
+        );
+    }
 }

@@ -197,8 +197,9 @@ pub(crate) fn make_mir_body_provider<'a>(
 /// Create a drop-glue provider that can generate recursive drop glue for ADTs.
 ///
 /// The provider only requires `&TyCtx` (immutable) so it fits the existing pipeline
-/// call site.  Enum discriminant locals currently use `error_ty()` as a placeholder
-/// type; once `TyCtx` grows `u8_ty()` / `u16_ty()` accessors they can be swapped in.
+/// call site.  Enum discriminant locals use the real tag type selected by
+/// `discriminant_info` (a `u8`/`u16`/`u32`/`u64` sized to the variant count,
+/// de-stubbing plan §7.1 / §13.1) — no placeholder type remains.
 pub(crate) fn make_drop_glue_provider(ty_ctx: &TyCtx) -> impl Fn(Ty) -> Arc<Body> + '_ {
     move |ty: Ty| -> Arc<Body> { generate_drop_glue(ty, ty_ctx) }
 }
@@ -393,8 +394,21 @@ fn generate_enum_drop_glue(body: &mut Body, place: &Place, adt_def: &AdtDef, ty_
         source_info: SourceInfo::new(Span::DUMMY),
     }));
 
-    // TODO: once TyCtx exposes u8_ty() / u16_ty(), use the proper width here.
-    let discr_ty = ty_ctx.error_ty();
+    // Enum discriminant local: pick the smallest unsigned integer whose value range
+    // covers every variant (de-stubbing plan §13.1 / §7.1). This matches
+    // `glyim-layout::discriminant_info` and the `U8`/`U16`/`U32` tag scheme in
+    // `glyim-codegen-llvm/abi.rs`, so the drop-glue discriminant type agrees with the
+    // layout/codegen tag type instead of being an `error_ty()` placeholder.
+    let n_variants = variants.len();
+    let discr_ty = if n_variants <= 256 {
+        glyim_type::Ty::U8
+    } else if n_variants <= 65_536 {
+        glyim_type::Ty::U16
+    } else if n_variants <= 4_294_967_296 {
+        glyim_type::Ty::U32
+    } else {
+        glyim_type::Ty::U64
+    };
 
     let discr_local = body.locals.push(LocalDecl {
         ty: discr_ty,

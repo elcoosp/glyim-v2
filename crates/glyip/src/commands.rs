@@ -29,8 +29,18 @@ pub struct NewResult {
 }
 
 /// Create a new Glyim project at the given path.
-pub fn cmd_new(name: &str, opts: &NewOptions) -> GlyipResult<NewResult> {
-    let dir = std::env::current_dir()?.join(name);
+///
+/// `dir` is the parent directory in which the project folder (named `name`)
+/// is created. When `None`, the current working directory is used. Prefer
+/// passing an explicit `dir` in callers that don't want to mutate the
+/// process-global working directory (e.g. tests, which otherwise race under
+/// parallel execution).
+pub fn cmd_new(name: &str, opts: &NewOptions, dir: Option<&Path>) -> GlyipResult<NewResult> {
+    let base = match dir {
+        Some(d) => d.to_path_buf(),
+        None => std::env::current_dir()?,
+    };
+    let dir = base.join(name);
     if dir.exists() {
         return Err(GlyipError::ProjectAlreadyExists(dir));
     }

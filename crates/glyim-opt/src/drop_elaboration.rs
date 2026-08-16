@@ -378,8 +378,16 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                         }
                     }
                 } else {
-                    // Other projections: stub with Goto
-                    TerminatorKind::Goto { target: *target }
+                    // A Drop on a place *with* a projection (e.g. `*p`, `s[i]`,
+                    // `t.f`) must still drop the value at that place — the
+                    // codegen backend resolves the projected address and runs
+                    // drop glue there. Silently skipping it (the old `Goto`
+                    // stub) would leak. This matches the empty-projection path.
+                    TerminatorKind::Drop {
+                        place: place.clone(),
+                        target: *target,
+                        cleanup: *cleanup,
+                    }
                 }
             }
             _ => terminator.kind.clone(),
@@ -407,7 +415,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
 /// Determine if a type needs drop glue.
 /// A type needs drop if it implements Drop directly, or contains a field/element that needs drop.
 /// Memoization is used to avoid repeated work.
-fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
+pub(crate) fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
     use glyim_type::GenericArg;
     use glyim_type::TyKind;
     use std::collections::HashSet;

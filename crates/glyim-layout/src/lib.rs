@@ -461,15 +461,24 @@ impl<'a> SimpleLayoutComputer<'a> {
         }
     }
 
+    /// Discriminant width selection (de-stubbing plan §7.1 / §13.1).
+    ///
+    /// Previously this always returned `bool_ty()`, which is wrong for any enum with
+    /// more than two variants: an `i64`-tagged enum or a >256-variant enum needs a
+    /// real integer tag whose width covers the variant count. `glyim-codegen-llvm`
+    /// already emits `U8`/`U16`/`U32` for the tag (see `abi.rs`), so this must agree
+    /// with that scheme or the codegen-side tag type would silently disagree with the
+    /// layout-side tag type — a latent ABI mismatch. We therefore pick the smallest
+    /// unsigned integer whose value range covers `variant_count` discriminants.
     fn discriminant_info(&self, variant_count: usize) -> (Size, Align, Ty) {
         if variant_count <= 256 {
-            (Size::bytes(1), Align::ONE, self.ctx.bool_ty())
+            (Size::bytes(1), Align::ONE, Ty::U8)
         } else if variant_count <= 65_536 {
-            (Size::bytes(2), Align::from_bytes(2), self.ctx.bool_ty())
+            (Size::bytes(2), Align::from_bytes(2), Ty::U16)
         } else if variant_count <= 4_294_967_296 {
-            (Size::bytes(4), Align::from_bytes(4), self.ctx.bool_ty())
+            (Size::bytes(4), Align::from_bytes(4), Ty::U32)
         } else {
-            (Size::bytes(8), Align::EIGHT, self.ctx.bool_ty())
+            (Size::bytes(8), Align::EIGHT, Ty::U64)
         }
     }
 

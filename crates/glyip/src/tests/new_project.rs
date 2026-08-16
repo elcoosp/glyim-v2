@@ -16,8 +16,7 @@ fn unique_name(base: &str) -> String {
 fn new_creates_binary_project() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("my-app");
-    std::env::set_current_dir(dir.path()).expect("cd");
-    let result = cmd_new(&name, &NewOptions::default()).expect("new");
+    let result = cmd_new(&name, &NewOptions::default(), Some(dir.path())).expect("new");
     assert!(result.path.exists());
     assert!(result.path.join("Glyip.toml").exists());
     assert!(result.path.join("src/main.g").exists());
@@ -37,12 +36,11 @@ fn new_creates_library_project() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("my-lib");
 
-    std::env::set_current_dir(dir.path()).expect("cd");
     let opts = NewOptions {
         lib: true,
         edition: "2024".to_string(),
     };
-    let result = cmd_new(&name, &opts).expect("new");
+    let result = cmd_new(&name, &opts, Some(dir.path())).expect("new");
     assert!(result.path.join("src/lib.g").exists());
     assert!(!result.path.join("src/main.g").exists());
 
@@ -60,8 +58,7 @@ fn new_rejects_existing_directory() {
     let project_path = dir.path().join(&name);
     std::fs::create_dir_all(&project_path).expect("mkdir");
 
-    std::env::set_current_dir(dir.path()).expect("cd");
-    let result = cmd_new(&name, &NewOptions::default());
+    let result = cmd_new(&name, &NewOptions::default(), Some(dir.path()));
     assert!(result.is_err());
 }
 
@@ -70,8 +67,7 @@ fn new_entry_point_has_content() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("hello");
 
-    std::env::set_current_dir(dir.path()).expect("cd");
-    let result = cmd_new(&name, &NewOptions::default()).expect("new");
+    let result = cmd_new(&name, &NewOptions::default(), Some(dir.path())).expect("new");
     let main_content = std::fs::read_to_string(result.path.join("src/main.g")).expect("read main");
     assert!(main_content.contains("fn main()"));
 }
@@ -81,12 +77,11 @@ fn new_with_custom_edition() {
     let dir = TempDir::new().expect("temp dir");
     let name = unique_name("ed2025");
 
-    std::env::set_current_dir(dir.path()).expect("cd");
     let opts = NewOptions {
         lib: false,
         edition: "2025".to_string(),
     };
-    let result = cmd_new(&name, &opts).expect("new");
+    let result = cmd_new(&name, &opts, Some(dir.path())).expect("new");
     let config = GlyipToml::read_from_dir(&result.path).expect("read config");
     assert_eq!(config.package.edition, "2025");
 }

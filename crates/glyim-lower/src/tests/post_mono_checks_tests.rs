@@ -504,3 +504,71 @@ fn combined_post_mono_checks() {
     let diags_unused = check_unused_generic_params(&items, &frozen);
     assert_no_errors(&diags_unused);
 }
+
+// ==================== §8.12: checks wired through MonoCtx::collect ====================
+// Proves the post-monomorphization checks run on the *collected* mono items
+// (the exact path the pipeline uses after `mono_ctx.collect(...)`), not just on
+// hand-built `Vec<MonoItemData>`.
+
+#[test]
+fn collect_then_check_unsized_local_fires() {
+    use crate::mono::MonoCtx;
+    use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+    use glyim_type::{Ty, TyKind};
+
+    let mut ctx_mut = glyim_test::test_ty_ctx();
+    let slice_ty = ctx_mut.mk_ty(TyKind::Slice(Ty::UNIT));
+    let frozen = ctx_mut.freeze();
+
+    // A function body whose local _1 is an unsized slice.
+    let body = make_body(make_def_id(90), Ty::UNIT, vec![slice_ty]);
+    let def_id = make_fn_def_id(90);
+
+    let mir_bodies = |d: DefId, _s: &glyim_type::Substitution| -> Arc<glyim_mir::Body> {
+        assert_eq!(d, DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(90)));
+        Arc::new(body.clone())
+    };
+    let drop_glue = |_t: Ty| -> Arc<glyim_mir::Body> { Arc::new(make_body(make_def_id(0), Ty::UNIT, vec![])) };
+
+    let root = crate::mono::MonoItem::Fn {
+        def_id,
+        substs: glyim_type::Substitution::empty(),
+    };
+
+    let mut mono_ctx = MonoCtx::new();
+    mono_ctx.collect(std::slice::from_ref(&root), &mir_bodies, &drop_glue);
+
+    // This mirrors `glyim-pipeline/src/lib.rs`'s post-mono check block.
+    let diags = check_unsized_locals(mono_ctx.items(), &frozen);
+    assert_has_errors(&diags);
+    assert_diag_contains(&diags, "unsized local");
+}
+
+#[test]
+fn collect_then_check_sized_local_clean() {
+    use crate::mono::MonoCtx;
+    use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+    use glyim_type::{Ty, TyKind};
+
+    let mut ctx_mut = glyim_test::test_ty_ctx();
+    let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+    let frozen = ctx_mut.freeze();
+
+    let body = make_body(make_def_id(91), Ty::UNIT, vec![i32_ty]);
+    let def_id = make_fn_def_id(91);
+    let mir_bodies = |d: DefId, _s: &glyim_type::Substitution| -> Arc<glyim_mir::Body> {
+        assert_eq!(d, DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(91)));
+        Arc::new(body.clone())
+    };
+    let drop_glue = |_t: Ty| -> Arc<glyim_mir::Body> { Arc::new(make_body(make_def_id(0), Ty::UNIT, vec![])) };
+
+    let root = crate::mono::MonoItem::Fn {
+        def_id,
+        substs: glyim_type::Substitution::empty(),
+    };
+    let mut mono_ctx = MonoCtx::new();
+    mono_ctx.collect(std::slice::from_ref(&root), &mir_bodies, &drop_glue);
+
+    let diags = check_unsized_locals(mono_ctx.items(), &frozen);
+    assert_no_errors(&diags);
+}

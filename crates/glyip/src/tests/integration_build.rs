@@ -14,8 +14,7 @@ fn unique_name(base: &str) -> String {
 }
 
 fn create_hello_world_project(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-    std::env::set_current_dir(dir).expect("cd");
-    let result = cmd_new(name, &NewOptions::default()).expect("new");
+    let result = cmd_new(name, &NewOptions::default(), Some(dir)).expect("new");
     std::fs::write(result.path.join("src/main.g"), "fn main() {}\n").expect("write main");
     result.path
 }

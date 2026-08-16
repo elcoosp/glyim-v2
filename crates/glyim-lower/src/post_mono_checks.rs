@@ -7,8 +7,7 @@ use crate::mono::MonoItem;
 use crate::mono::MonoItemData;
 
 /// Check for unsized locals in instantiated MIR bodies.
-#[allow(dead_code)]
-pub(crate) fn check_unsized_locals(items: &[MonoItemData], ctx: &TyCtx) -> Vec<GlyimDiagnostic> {
+pub fn check_unsized_locals(items: &[MonoItemData], ctx: &TyCtx) -> Vec<GlyimDiagnostic> {
     let mut diags = Vec::new();
     for item in items {
         for local_decl in item.body.locals.iter() {
@@ -30,8 +29,7 @@ pub(crate) fn check_unsized_locals(items: &[MonoItemData], ctx: &TyCtx) -> Vec<G
 }
 
 /// Warn if the number of mono items exceeds the given threshold.
-#[allow(dead_code)]
-pub(crate) fn check_large_mono_set(
+pub fn check_large_mono_set(
     items: &[MonoItemData],
     threshold: usize,
 ) -> Vec<GlyimDiagnostic> {
@@ -59,8 +57,7 @@ pub(crate) fn check_large_mono_set(
 ///
 /// If a function has type parameters (substitution non-empty) but none of those
 /// parameters appear in the body's types, a warning is emitted.
-#[allow(dead_code)]
-pub(crate) fn check_unused_generic_params(
+pub fn check_unused_generic_params(
     items: &[MonoItemData],
     ctx: &TyCtx,
 ) -> Vec<GlyimDiagnostic> {
@@ -87,7 +84,6 @@ pub(crate) fn check_unused_generic_params(
     diags
 }
 
-#[allow(dead_code)]
 fn body_uses_any_param(body: &glyim_mir::Body, ctx: &TyCtx) -> bool {
     // Check locals
     for local in body.locals.iter() {
@@ -145,7 +141,6 @@ fn body_uses_any_param(body: &glyim_mir::Body, ctx: &TyCtx) -> bool {
     false
 }
 
-#[allow(dead_code)]
 fn operand_contains_param(op: &Operand, ctx: &TyCtx) -> bool {
     match op {
         Operand::Copy(_) | Operand::Move(_) => false,
@@ -163,7 +158,6 @@ fn operand_contains_param(op: &Operand, ctx: &TyCtx) -> bool {
     }
 }
 
-#[allow(dead_code)]
 fn rvalue_contains_param(rv: &Rvalue, ctx: &TyCtx) -> bool {
     match rv {
         Rvalue::Use(op) => operand_contains_param(op, ctx),
@@ -202,7 +196,6 @@ fn rvalue_contains_param(rv: &Rvalue, ctx: &TyCtx) -> bool {
     }
 }
 
-#[allow(dead_code)]
 fn ty_contains_param(ty: glyim_type::Ty, ctx: &TyCtx) -> bool {
     let kind = ctx.ty_kind(ty);
     match kind {
@@ -234,7 +227,6 @@ fn ty_contains_param(ty: glyim_type::Ty, ctx: &TyCtx) -> bool {
     }
 }
 
-#[allow(dead_code)]
 fn subst_args_contain_param(substs: glyim_type::Substitution, ctx: &TyCtx) -> bool {
     for arg in ctx.substitution_args(substs) {
         if let glyim_type::GenericArg::Ty(ty) = arg

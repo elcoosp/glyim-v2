@@ -322,6 +322,9 @@ fn test_range_expr() {
 
 #[test]
 fn test_method_call_expr() {
+    // §3.3: the receiver must be lowered separately and MUST NOT appear in
+    // `args`. A regression here feeds the receiver as a leading explicit
+    // argument and corrupts the call's argument list.
     let (hir, _inter, body_id) = get_body_hir("fn f() { a.b(1) }");
     let body = get_body(&hir, body_id);
     let block_id = last_expr_id(body);
@@ -330,7 +333,38 @@ fn test_method_call_expr() {
             tail: Some(call_id),
             ..
         } => match &body.exprs[*call_id] {
-            Expr::MethodCall { args, .. } => assert_eq!(args.len(), 1),
+            Expr::MethodCall { receiver, args, .. } => {
+                assert_eq!(args.len(), 1, "single explicit arg expected");
+                assert!(
+                    !args.contains(receiver),
+                    "receiver must NOT be duplicated into args"
+                );
+            }
+            _ => panic!(),
+        },
+        _ => panic!(),
+    }
+}
+
+#[test]
+fn test_method_call_multi_arg_receiver_excluded() {
+    // §3.3: a 3-arg method call keeps the receiver separate and lists exactly
+    // the explicit arguments (no receiver, no dropped args).
+    let (hir, _inter, body_id) = get_body_hir("fn f() { a.b(1, 2) }");
+    let body = get_body(&hir, body_id);
+    let block_id = last_expr_id(body);
+    match &body.exprs[block_id] {
+        Expr::Block {
+            tail: Some(call_id),
+            ..
+        } => match &body.exprs[*call_id] {
+            Expr::MethodCall { receiver, args, .. } => {
+                assert_eq!(args.len(), 2, "both explicit args must be present");
+                assert!(
+                    !args.contains(receiver),
+                    "receiver must NOT be duplicated into args"
+                );
+            }
             _ => panic!(),
         },
         _ => panic!(),
