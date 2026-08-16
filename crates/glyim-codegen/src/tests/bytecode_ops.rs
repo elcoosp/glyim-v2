@@ -9,8 +9,8 @@
 //! - W5-C03-T06: zero-sized element panics (stub removed)
 
 use crate::{
-    BytecodeBackend, CodegenBackend, LayoutProvider, OP_ADD, OP_AGGREGATE, OP_DEREF, OP_LOAD_CONST,
-    OP_LOAD_LOCAL, OP_LOAD_LOCAL_ADDR, OP_MUL, OP_REPEAT,
+    BytecodeBackend, CodegenBackend, LayoutProvider, OP_ADD, OP_AGGREGATE, OP_ASSERT, OP_DEREF,
+    OP_LT, OP_LOAD_CONST, OP_LOAD_LOCAL, OP_LOAD_LOCAL_ADDR, OP_MUL, OP_REPEAT,
 };
 use glyim_core::primitives::Mutability;
 use glyim_core::{CrateId, DefId, IndexVec, LocalDefId};
@@ -429,8 +429,18 @@ fn test_zero_sized_element_handled() {
     assert!(result.is_ok(), "Should handle ZST arrays without panicking");
 
     let bc = result.unwrap();
-    // Should still emit OP_LOAD_LOCAL_ADDR and OP_DEREF, and an OP_ADD with 0
+    // Should still emit OP_LOAD_LOCAL_ADDR and OP_DEREF, and an OP_ADD with 0.
+    // §15.1: a ZST index must still *bounds-check* (panic on OOB), so the
+    // bytecode must contain the index/len comparison + assert, not just add 0.
     assert!(find_opcode(&bc, OP_LOAD_LOCAL_ADDR).is_some());
     assert!(find_opcode(&bc, OP_ADD).is_some());
     assert!(find_opcode(&bc, OP_DEREF).is_some());
+    assert!(
+        find_opcode(&bc, OP_LT).is_some(),
+        "ZST index must emit a bounds-check comparison (OP_LT)"
+    );
+    assert!(
+        find_opcode(&bc, OP_ASSERT).is_some(),
+        "ZST index must emit an OP_ASSERT so an out-of-range access traps"
+    );
 }

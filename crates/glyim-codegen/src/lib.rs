@@ -143,10 +143,48 @@ impl BytecodeBackend {
                 ProjectionElem::Index(local) => {
                     let elem_size = self.layout_provider.size_of(current_ty);
                     if elem_size == 0 {
-                        // ZST array: offset is always 0. We must still consume the index
-                        // local from the stack perspective if we were a VM, but since we
-                        // are generating linear bytecode and the offset is 0, we can just
-                        // add 0 to the base pointer to be semantically correct and safe.
+                        // ZST array/slice element: every element aliases the same
+                        // base address, so the byte offset is always 0. This is
+                        // *deliberately* correct, not an accident: adding 0 to the
+                        // base pointer is the right address for any index.
+                        //
+                        // However, indexing must still *bounds-check* and panic on an
+                        // out-of-range access, matching non-ZST semantics — a ZST
+                        // index must not silently accept `a[999]` on `[Z; 3]`.
+                        // Emit `index < len` and trap when it fails (the trap
+                        // sentinel block is the same one used by `OP_JUMP_IF` /
+                        // `Assert` for an unreachable/panic target).
+                        bc.push(OP_LOAD_LOCAL);
+                        bc.extend_from_slice(&local.to_raw().to_le_bytes());
+                        match self
+                            .ty_ctx
+                            .as_ref()
+                            .map(|c| c.ty_kind(current_ty))
+                            .unwrap_or(&TyKind::Error)
+                        {
+                            TyKind::Array(_, len_const) => {
+                                let n = match &len_const.kind {
+                                    ConstKind::Uint(n) => *n as i64,
+                                    ConstKind::Int(n) => *n as i64,
+                                    _ => 0,
+                                };
+                                bc.push(OP_LOAD_CONST);
+                                bc.extend_from_slice(&n.to_le_bytes());
+                            }
+                            TyKind::Slice(_) => {
+                                bc.push(OP_LEN);
+                                bc.extend_from_slice(&place.local.to_raw().to_le_bytes());
+                            }
+                            _ => {
+                                bc.push(OP_LOAD_CONST);
+                                bc.extend_from_slice(&0i64.to_le_bytes());
+                            }
+                        }
+                        bc.push(OP_LT);
+                        bc.push(OP_ASSERT);
+                        bc.push(1u8); // expected: index < len must hold
+                        bc.extend_from_slice(&BasicBlockIdx::from_raw(u32::MAX).to_raw().to_le_bytes());
+                        // Address is base + 0 for a ZST element.
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&0i64.to_le_bytes());
                         bc.push(OP_ADD);
