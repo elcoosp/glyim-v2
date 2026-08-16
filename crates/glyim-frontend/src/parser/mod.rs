@@ -177,6 +177,14 @@ pub fn parse_to_syntax(source: &str, file_id: FileId) -> ParseResult {
 /// real diagnostics later. This keeps fragment matching permissive about
 /// unfinished expressions while still rejecting structurally invalid input.
 pub fn try_parse_fragment(kind: &str, src: &str) -> Option<()> {
+    // `:meta` is validated by its own token-level grammar (plan §2.3),
+    // independent of the wrapper-parse below — attributes aren't a distinct
+    // syntax node in this frontend, so the surrounding `#[..] fn __f(){}`
+    // wrapper can't observe meta structure. Handling it up front keeps the
+    // real grammar authoritative and bypasses the generic diagnostics gate.
+    if kind == "meta" {
+        return validate_meta_fragment(src).then_some(());
+    }
     use glyim_syntax::SyntaxKind;
     let file_id = FileId::from_raw(0);
     // Wrap the fragment in a context that makes it a single top-level construct
@@ -295,19 +303,124 @@ pub fn try_parse_fragment(kind: &str, src: &str) -> Option<()> {
             (items.len() == 1).then_some(())
         }
         "meta" => {
-            // Attributes aren't represented as a distinct syntax node in this
-            // frontend, so we accept any non-empty `meta` content. This keeps
-            // `:meta` permissive (as Stage A did) without a fake structural
-            // check. The expander validates semantics later.
-            let content = src.trim();
-            if content.is_empty() {
-                None
-            } else {
-                Some(())
-            }
+            // De-stubbing plan §2.3: replace the old "non-empty content ⇒ accept"
+            // permissive check with a real meta-item grammar. The three valid
+            // shapes are:
+            //   * `Word`       — `Path`
+            //   * `NameValue`  — `Path '=' Lit`
+            //   * `List`       — `Path '(' MetaItemList ')'`
+            // Malformed input such as `#[attr(]` (unbalanced list) or `#[=foo]`
+            // (missing path) is now rejected instead of silently succeeding.
+            validate_meta_fragment(src).then_some(())
         }
         _ => None,
     }
+}
+
+/// Validate that `src` is a whole, well-formed meta item (de-stubbing plan
+/// §2.3). Returns `true` iff the token stream forms exactly one meta item of
+/// one of the three shapes:
+///   * `Word`       — `Path`
+///   * `NameValue`  — `Path '=' Lit`
+///   * `List`       — `Path '(' MetaItemList ')'`
+/// Malformed input such as `#[attr(]` (unbalanced list) or `#[=foo]` (missing
+/// path) returns `false`, so the macro matcher rejects it instead of silently
+/// accepting any non-empty content.
+fn validate_meta_fragment(src: &str) -> bool {
+    use crate::lexer::lex;
+    use glyim_syntax::SyntaxKind;
+    let file_id = glyim_span::FileId::from_raw(0);
+    let tokens = lex(src, file_id)
+        .tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, SyntaxKind::Whitespace))
+        .collect::<Vec<_>>();
+    let mut pos = 0;
+    let mut matched = false;
+    if parse_meta_item(&tokens, &mut pos) {
+        // Must consume *all* tokens (a trailing `)`/`,`/stray token is malformed).
+        matched = pos == tokens.len();
+    }
+    matched
+}
+
+/// Parse a single meta item starting at `tokens[pos]`, advancing `pos` past it
+/// on success. Returns `true` if a well-formed meta item was consumed.
+fn parse_meta_item(tokens: &[crate::lexer::Token], pos: &mut usize) -> bool {
+    use glyim_syntax::SyntaxKind;
+    let mut p = *pos;
+    // Path: a sequence of `Ident`/`::` segments.
+    if !parse_meta_path(tokens, &mut p) {
+        return false;
+    }
+    if p < tokens.len() && tokens[p].kind == SyntaxKind::Eq {
+        // `NameValue`: `Path '=' Lit`.
+        p += 1;
+        if p < tokens.len() && is_meta_literal(tokens[p].kind) {
+            p += 1;
+            *pos = p;
+            return true;
+        }
+        return false;
+    }
+    if p < tokens.len() && tokens[p].kind == SyntaxKind::LParen {
+        // `List`: `Path '(' MetaItemList ')'`.
+        p += 1;
+        loop {
+            if p < tokens.len() && tokens[p].kind == SyntaxKind::RParen {
+                p += 1;
+                *pos = p;
+                return true;
+            }
+            if !parse_meta_item(tokens, &mut p) {
+                return false;
+            }
+            if p < tokens.len() && tokens[p].kind == SyntaxKind::Comma {
+                p += 1;
+                continue;
+            }
+            if p < tokens.len() && tokens[p].kind == SyntaxKind::RParen {
+                p += 1;
+                *pos = p;
+                return true;
+            }
+            return false;
+        }
+    }
+    *pos = p;
+    true
+}
+
+/// Parse a meta-path: `Ident ('::' Ident)*`. Returns `true` and advances `pos`
+/// if at least one identifier segment was consumed.
+fn parse_meta_path(tokens: &[crate::lexer::Token], pos: &mut usize) -> bool {
+    use glyim_syntax::SyntaxKind;
+    let mut p = *pos;
+    if p >= tokens.len() || tokens[p].kind != SyntaxKind::Ident {
+        return false;
+    }
+    p += 1;
+    while p + 1 < tokens.len()
+        && tokens[p].kind == SyntaxKind::ColonColon
+        && tokens[p + 1].kind == SyntaxKind::Ident
+    {
+        p += 2;
+    }
+    *pos = p;
+    true
+}
+
+/// A meta literal is any literal token (string/int/float/char/bool).
+fn is_meta_literal(kind: SyntaxKind) -> bool {
+    use glyim_syntax::SyntaxKind;
+    matches!(
+        kind,
+        SyntaxKind::StringLit
+            | SyntaxKind::IntLit
+            | SyntaxKind::FloatLit
+            | SyntaxKind::CharLit
+            | SyntaxKind::BoolLit
+    )
 }
 
 /// Expression-like node kinds that can stand as a bare `:expr` tail.

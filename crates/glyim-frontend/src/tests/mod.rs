@@ -26,6 +26,7 @@ mod stress;
 mod string_recovery;
 mod strings;
 mod stub_removal;
+mod meta_fragment;
 mod suffixes;
 mod trivia;
 mod unicode;
