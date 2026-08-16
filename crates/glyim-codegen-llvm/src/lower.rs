@@ -637,7 +637,12 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     // lowering -- the subslice binding (`..rest`) is always
                     // read out whole, never projected into further within
                     // the same `Place`. `slice_desugar` (see glyim-opt)
-                    // enforces this invariant for any other Subslice uses.
+                    // removes every `Subslice` from MIR, and
+                    // `glyim_opt::validate::validate_no_subslice` (de-stubbing
+                    // plan §8.7) asserts none survive past that pass --
+                    // wired as a debug-gated panic in `optimize()`. So
+                    // reaching this code with a `Subslice` is true by
+                    // construction (proven by the validator), not by hope.
                     let (data_ptr, base_len) = match self.ty_ctx.ty_kind(current_ty) {
                         TyKind::Slice(_) => {
                             let llvm_ty = self.llvm_type_for_ty(current_ty);

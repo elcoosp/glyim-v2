@@ -47,6 +47,12 @@ pub enum MirValidationErrorKind {
     UnnecessaryDrop,
     /// A `ConstantIndex`/`Subslice` projection appears mid-chain (not terminal).
     NonTerminalSliceProjection,
+    /// A `ProjectionElem::Subslice` survives past `slice_desugar` (plan §8.7).
+    /// `slice_desugar` exists to remove every `Subslice` from MIR; any survivor
+    /// reaching codegen is a compiler bug. When this fires, codegen's
+    /// `unreachable!("Subslice")` (glyim-codegen-llvm/src/lower.rs) becomes true
+    /// by construction rather than by hope.
+    SubsliceAfterDesugar,
 }
 
 impl fmt::Display for MirValidationError {
@@ -62,6 +68,12 @@ impl fmt::Display for MirValidationError {
                 write!(
                     f,
                     "MIR validation: ConstantIndex/Subslice projection is not terminal"
+                )
+            }
+            MirValidationErrorKind::SubsliceAfterDesugar => {
+                write!(
+                    f,
+                    "MIR validation: Subslice projection survived slice_desugar (compiler bug)"
                 )
             }
         }
@@ -161,7 +173,51 @@ pub fn validate_body(ctx: &TyCtx, body: &Body) -> Result<(), MirValidationError>
     Ok(())
 }
 
-/// Walk the places inside an `Rvalue`, flagging any `ConstantIndex`/`Subslice`
+/// Assert that no `ProjectionElem::Subslice` survives in `body` (plan §8.7).
+///
+/// `slice_desugar` exists precisely to eliminate every `Subslice` from MIR.
+/// This is the post-condition check: once `slice_desugar` has run, a surviving
+/// `Subslice` is a compiler bug, not bad user input. Calling this right after
+/// `slice_desugar::run` makes codegen's `unreachable!("Subslice")`
+/// (glyim-codegen-llvm/src/lower.rs) true by construction rather than by hope.
+pub fn validate_no_subslice(body: &Body) -> Result<(), MirValidationError> {
+    for bb in body.basic_blocks.iter() {
+        for stmt in &bb.statements {
+            if let StatementKind::Assign(_, rvalue) = &stmt.kind {
+                if let Some(place) = rvalue_place(rvalue) {
+                    if place.projection.iter().any(|e| matches!(e, ProjectionElem::Subslice { .. })) {
+                        return Err(MirValidationError {
+                            kind: MirValidationErrorKind::SubsliceAfterDesugar,
+                            span: bb.statements.first().map(|s| s.source_info.span).unwrap_or(Span::DUMMY),
+                        });
+                    }
+                }
+            }
+        }
+        // Terminator operands / places don't carry Subslice (only statement
+        // Assign RHS places do in this MIR), but scan defensively anyway.
+        if let TerminatorKind::Drop { place, .. } = &bb.terminator.kind {
+            if place.projection.iter().any(|e| matches!(e, ProjectionElem::Subslice { .. })) {
+                return Err(MirValidationError {
+                    kind: MirValidationErrorKind::SubsliceAfterDesugar,
+                    span: bb.terminator.source_info.span,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Best-effort extraction of the single place an `Rvalue` reads/writes, used by
+/// `validate_no_subslice`. Returns `None` for rvalues with no place operand.
+fn rvalue_place(rvalue: &Rvalue) -> Option<&Place> {
+    match rvalue {
+        Rvalue::Ref(p, _) => Some(p),
+        Rvalue::Discriminant(p) | Rvalue::Len(p) => Some(p),
+        Rvalue::Use(Operand::Copy(p) | Operand::Move(p)) => Some(p),
+        _ => None,
+    }
+}
 /// projection that is not the final element of its place's projection list.
 fn check_rvalue_places<F: FnMut(MirValidationError) -> Result<(), MirValidationError>>(
     ctx: &TyCtx,
@@ -300,5 +356,39 @@ mod tests {
             err.kind,
             MirValidationErrorKind::UnknownTarget(glyim_mir::BasicBlockIdx::from_raw(99))
         );
+    }
+
+    #[test]
+    fn validate_no_subslice_passes_clean_body() {
+        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| {
+            c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32))
+        });
+        let body = empty_body(i32_ty, i32_ty);
+        assert!(validate_no_subslice(&body).is_ok());
+    }
+
+    #[test]
+    fn validate_no_subslice_flags_surviving_subslice() {
+        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| {
+            c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32))
+        });
+        let mut body = empty_body(i32_ty, i32_ty);
+        // Inject an `Assign` whose RHS reads a place with a `Subslice` projection.
+        let subslice_place = Place {
+            local: glyim_mir::LocalIdx::from_raw(0),
+            projection: Box::new([glyim_mir::ProjectionElem::Subslice { from: 1, to: 2, from_end: false }]),
+        };
+        body.basic_blocks[glyim_mir::BasicBlockIdx::from_raw(0)].statements.push(Statement {
+            kind: StatementKind::Assign(
+                Place::new(glyim_mir::LocalIdx::from_raw(0)),
+                Rvalue::Use(Operand::Copy(subslice_place)),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        let err = validate_no_subslice(&body)
+            .expect_err("surviving Subslice should be flagged");
+        assert_eq!(err.kind, MirValidationErrorKind::SubsliceAfterDesugar);
+        // The general validate_body (pre-pass) must NOT flag a terminal Subslice.
+        assert!(validate_body(&ctx, &body).is_ok());
     }
 }

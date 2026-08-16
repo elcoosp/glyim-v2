@@ -34,6 +34,16 @@ pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     // (overwhelming majority of) bodies that don't contain any such
     // projection.
     slice_desugar::run(ctx, &mut body);
+    // Post-condition (de-stubbing plan §8.7): `slice_desugar` must eliminate
+    // every `Subslice` projection. If one survives, codegen's
+    // `unreachable!("Subslice")` would fire — catch it here as a precise
+    // compiler-bug error instead of three passes later as an opaque panic.
+    #[cfg(debug_assertions)]
+    {
+        if let Err(e) = validate::validate_no_subslice(&body) {
+            panic!("MIR failed validation after slice_desugar: {:?}", e);
+        }
+    }
     constant_prop::run(ctx, &mut body);
     dce::run(ctx, &mut body);
     cfg_simplify::run(ctx, &mut body);
