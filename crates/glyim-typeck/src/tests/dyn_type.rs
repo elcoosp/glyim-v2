@@ -220,3 +220,152 @@ fn object_safety_helper_sanity() {
         "by-value self method must be flagged"
     );
 }
+
+/// Build a def map where `mod_name::trait_name` is resolvable: a child module
+/// whose scope contains the trait name, mapped to `trait_local_id`.
+fn def_map_with_nested_trait(
+    interner: &mut Interner,
+    mod_name: &str,
+    trait_name: &str,
+    trait_local_id: u32,
+) -> CrateDefMap {
+    let mod_n = interner.intern(mod_name);
+    let trait_n = interner.intern(trait_name);
+
+    // Root module: no direct trait, but a child named `mod_name`.
+    let mut root_scope = ItemScope::default();
+    let root_id = ModuleId::from_raw(0);
+    let child_id = ModuleId::from_raw(1);
+    root_scope.types.insert(
+        mod_n,
+        (LocalDefId::from_raw(0), Visibility::Public, Span::DUMMY),
+    );
+
+    let root_data = ModuleData {
+        parent: None,
+        children: vec![(mod_n, child_id)],
+        scope: root_scope,
+        origin: ModuleOrigin::CrateRoot,
+        span: Span::DUMMY,
+        def_id: LocalDefId::from_raw(0),
+        visibility: Visibility::Public,
+    };
+
+    // Child module: contains the trait name.
+    let mut child_scope = ItemScope::default();
+    child_scope.types.insert(
+        trait_n,
+        (
+            LocalDefId::from_raw(trait_local_id),
+            Visibility::Public,
+            Span::DUMMY,
+        ),
+    );
+    let child_data = ModuleData {
+        parent: Some(root_id),
+        children: vec![],
+        scope: child_scope,
+        origin: ModuleOrigin::CrateRoot,
+        span: Span::DUMMY,
+        def_id: LocalDefId::from_raw(1),
+        visibility: Visibility::Public,
+    };
+
+    let mut modules = glyim_core::arena::IndexVec::new();
+    modules.push(root_data);
+    modules.push(child_data);
+
+    CrateDefMap {
+        root: root_id,
+        modules,
+        krate: CrateId::from_raw(0),
+        interner: interner.clone(),
+    }
+}
+
+#[test]
+fn dyn_trait_multi_segment_path_resolves() {
+    let mut inter = global_interner();
+    let trait_name = "Animal";
+    let mod_name = "zoo";
+    // The child module maps `Animal` → LocalDefId(7); the registered TraitDefId
+    // must match so resolution lines up.
+    let trait_local_id = 7u32;
+    let def_map = def_map_with_nested_trait(&mut inter, mod_name, trait_name, trait_local_id);
+    let trait_def_id = TraitDefId::from_raw(trait_local_id);
+
+    let mut ctx = glyim_type::TyCtxMut::new(inter.clone());
+    let self_ref_ty = ctx.mk_ref(
+        Region::Erased,
+        Ty::UNIT,
+        glyim_core::primitives::Mutability::Not,
+    );
+    let method_sig = glyim_type::FnSig {
+        inputs: ctx.intern_substitution(vec![GenericArg::Ty(self_ref_ty)]),
+        output: Ty::UNIT,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    };
+    ctx.register_trait_def(
+        trait_def_id,
+        TraitDef {
+            name: inter.intern(trait_name),
+            methods: vec![glyim_type::MethodDef {
+                name: inter.intern("speak"),
+                sig: method_sig,
+                fn_def_id: None,
+            }],
+        },
+    );
+
+    let mut infer = InferenceTable::new();
+    let mut diagnostics = Vec::new();
+    let param_map: HashMap<glyim_core::Name, Ty> = HashMap::new();
+
+    // `dyn zoo::Animal` — a multi-segment trait path.
+    let mut path = Path::from_single(inter.intern(trait_name));
+    path.kind = glyim_core::path::PathKind::Plain;
+    path.segments.insert(
+        0,
+        glyim_hir::PathSegment {
+            name: inter.intern(mod_name),
+            generic_args: None,
+        },
+    );
+
+    let dyn_ty = resolve_type_ref(
+        &mut ctx,
+        &mut infer,
+        &def_map,
+        &mut diagnostics,
+        &TypeRef::Dyn(Box::new(TypeRef::Path(path))),
+        &param_map,
+        Span::DUMMY,
+    );
+
+    assert!(
+        diagnostics.is_empty(),
+        "expected no diagnostics for multi-segment object-safe trait, got: {:?}",
+        diagnostics
+    );
+    match ctx.ty_kind(dyn_ty) {
+        TyKind::Dynamic(binder, Region::Erased) => {
+            let preds = binder.as_ref().skip_binder();
+            assert_eq!(preds.len(), 1, "dyn should carry exactly one trait predicate");
+            match &preds[0] {
+                Predicate::Trait(TraitPredicate {
+                    trait_ref: TraitRef { def_id, .. },
+                    polarity: ImplPolarity::Positive,
+                }) => {
+                    assert_eq!(*def_id, trait_def_id, "predicate must reference the nested trait");
+                }
+                other => panic!("expected Trait predicate, got {:?}", other),
+            }
+        }
+        other => panic!(
+            "multi-segment dyn Trait must resolve to TyKind::Dynamic, got {:?}",
+            other
+        ),
+    }
+}

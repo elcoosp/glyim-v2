@@ -449,9 +449,15 @@ pub fn resolve_impl_header(
                         (Some(trait_def_id), path.as_name(), substs)
                     }
                     None => {
+                        let path_str = path
+                            .segments
+                            .iter()
+                            .map(|s| ctx.name_str(s.name))
+                            .collect::<Vec<_>>()
+                            .join("::");
                         diagnostics.push(GlyimDiagnostic::type_error(
                             span,
-                            "multi-segment trait paths not yet implemented",
+                            format!("cannot find trait `{}` in this scope", path_str),
                         ));
                         (None, None, ctx.intern_substitution(vec![]))
                     }
@@ -584,12 +590,42 @@ fn resolve_path_to_trait_def_id(
     path: &glyim_hir::Path,
     _span: Span,
 ) -> Option<TraitDefId> {
-    if let Some(name) = path.as_name() {
-        let res = def_map.modules[def_map.root].scope.resolve(name)?;
-        Some(TraitDefId::from_raw(res.0.to_raw()))
-    } else {
-        None
+    // Walk the module tree following the path's segments. All but the last
+    // segment name a (sub)module; the final segment names the trait and is
+    // resolved in the scope of the module reached by the prefix.
+    let mut current = match path.kind {
+        glyim_core::path::PathKind::Crate => def_map.root,
+        glyim_core::path::PathKind::SelfPath | glyim_core::path::PathKind::Plain => def_map.root,
+        glyim_core::path::PathKind::Super(n) => {
+            let mut module = def_map.root;
+            for _ in 0..n {
+                if let Some(parent) = def_map.modules[module].parent {
+                    module = parent;
+                } else {
+                    break;
+                }
+            }
+            module
+        }
+    };
+
+    for (i, seg) in path.segments.iter().enumerate() {
+        if i + 1 == path.segments.len() {
+            // Final segment: resolve the trait name in this module's scope.
+            let res = def_map.modules[current].scope.resolve(seg.name)?;
+            return Some(TraitDefId::from_raw(res.0.to_raw()));
+        } else {
+            // Intermediate segment: must name a child module.
+            let child = def_map.modules[current]
+                .children
+                .iter()
+                .find(|(name, _)| *name == seg.name)
+                .map(|(_, id)| *id)?;
+            current = child;
+        }
     }
+
+    None
 }
 
 fn resolve_primitive(ctx: &mut TyCtxMut, name: Name) -> Option<Ty> {
