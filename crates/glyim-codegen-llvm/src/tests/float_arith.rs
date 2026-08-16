@@ -96,8 +96,8 @@ fn test_feq_f64_true() {
     let mut ctx_mut = TyCtxMut::new(glyim_core::Interner::default());
     let f64_ty = ctx_mut.mk_ty(TyKind::Float(FloatTy::F64));
     let frozen = ctx_mut.freeze();
-    let lhs = const_operand_f64(3.14, f64_ty);
-    let rhs = const_operand_f64(3.14, f64_ty);
+    let lhs = const_operand_f64(std::f64::consts::PI, f64_ty);
+    let rhs = const_operand_f64(std::f64::consts::PI, f64_ty);
     let rv = Rvalue::BinaryOp(BinOp::Eq, box_operands(lhs, rhs));
     let body = simple_mir_body(Ty::BOOL, rv);
     let backend = crate::LlvmBackend::new().with_ty_ctx(frozen);

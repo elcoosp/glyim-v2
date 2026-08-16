@@ -2891,7 +2891,7 @@ fn test_float_constant_emits() {
         glyim_core::TargetInfo::default(),
     );
     let float_const = MirConst {
-        kind: MirConstKind::FloatBits(3.14159_f64.to_bits()),
+        kind: MirConstKind::FloatBits(std::f64::consts::PI.to_bits()),
         ty: Ty::UNIT,
         span: Span::DUMMY,
     };
@@ -2923,7 +2923,7 @@ fn test_float_constant_emits() {
     let result = backend.generate_function(&body);
     assert!(result.is_ok());
     let bytecode = result.unwrap();
-    let bits = 3.14159_f64.to_bits();
+    let bits = std::f64::consts::PI.to_bits();
     let expected_bytes = bits.to_le_bytes();
     let mut found = false;
     for i in 0..bytecode.len().saturating_sub(8) {

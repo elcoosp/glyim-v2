@@ -64,6 +64,7 @@ fn test_int_binary() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_float_suffix_f64() {
     let tok = token_from_literal("3.14f64");
     let mut interner = glyim_core::Interner::default();
@@ -78,6 +79,7 @@ fn test_float_suffix_f64() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_float_no_suffix() {
     let tok = token_from_literal("2.71828");
     let mut interner = glyim_core::Interner::default();

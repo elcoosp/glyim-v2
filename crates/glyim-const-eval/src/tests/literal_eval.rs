@@ -250,7 +250,7 @@ fn literal_u8() {
 #[test]
 fn literal_float() {
     let mut body = test_body();
-    let bits = 3.14f64.to_bits();
+    let bits = std::f64::consts::PI.to_bits();
     let lit = alloc_lit(&mut body, Literal::Float(bits, FloatTy::F64));
     let result = eval_ok(&body, lit);
     assert_eq!(result, ConstValue::FloatBits(bits, FloatTy::F64));
