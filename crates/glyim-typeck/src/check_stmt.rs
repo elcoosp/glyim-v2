@@ -1,8 +1,10 @@
 //! Statement checking logic for FnCtxt.
 
+use std::collections::HashMap;
+
 use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
-use glyim_hir::Expr;
+use glyim_hir::{Expr, ExprId};
 use glyim_span::Span;
 use glyim_type::Ty;
 
@@ -10,7 +12,7 @@ use crate::check_body::FnCtxt;
 use crate::thir;
 
 impl<'a> FnCtxt<'a> {
-    pub fn check(mut self, params: &[(Name, Ty, Span)]) -> thir::Body {
+    pub fn check(mut self, params: &[(Name, Ty, Span)]) -> (thir::Body, HashMap<ExprId, Ty>) {
         let mut thir_params = Vec::with_capacity(params.len());
         for (i, (name, ty, span)) in params.iter().enumerate() {
             let _local_id = thir::LocalVarId::from_raw(i as u32);
@@ -66,12 +68,20 @@ impl<'a> FnCtxt<'a> {
             }
         }
 
-        thir::Body {
+        let body = thir::Body {
             owner: self.owner,
             params: thir_params,
             return_ty: self.return_ty,
             stmts,
             span: self.body.span,
-        }
+        };
+        // The per-expression type cache is keyed by HIR ExprId and is consumed
+        // by the public `TypeckResult::expr_ty` query after inference
+        // resolution (Tier 6.4).
+        let expr_types = std::mem::take(&mut self.expr_cache)
+            .into_iter()
+            .map(|(eid, (_expr, ty))| (eid, ty))
+            .collect();
+        (body, expr_types)
     }
 }

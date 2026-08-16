@@ -64,7 +64,7 @@ pub fn check_function_body(
         capture_log: Vec::new(),
     };
 
-    let thir_body = fn_ctxt.check(params);
+    let (thir_body, _expr_types) = fn_ctxt.check(params);
     (thir_body, diagnostics)
 }
 

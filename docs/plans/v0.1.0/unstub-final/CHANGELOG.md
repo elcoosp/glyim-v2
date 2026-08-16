@@ -32,7 +32,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 6.2 — reference_graph Read/Write access classification + `&mut` lowering fix — COMMITTED
 - [x] Tier 6.3 — rename fallback lexes & only edits `Ident` tokens (skips string/char/comment) — COMMITTED
 - [x] Tier 6.5 — unused-imports via reference graph (replaces text heuristic) — COMMITTED
-- [ ] Tier 6.4 — completion type-filtered by receiver (BLOCKED: no typeck cache in LSP; TypeckResult type queries are stubs) — see note
+- [ ] Tier 6.4 — completion type-filtered by receiver — PARTIAL: `TypeckResult::expr_ty` now returns real resolved types (typeck side un-stubbed); LSP-side wiring (glyim-typeck dep + receiver-type filter in completion.rs) still pending — see note
 - [x] Tier 7.1 — PipelineCompiler surfaces MIR/def-map/typeck artifacts + per-file temp path — COMMITTED
 - [x] Tier 7.2 — RunPass/RunFail link executable via glyim_cli::linker + plumb executable_path — COMMITTED
 - [x] Tier 7.3 — mock/lower_ctx with_iterator_next override — COMMITTED
@@ -646,24 +646,33 @@ Each tier is implemented and committed atomically. Tests are run with
   - Verified: `cargo test -p glyim-lsp --lib` → 51 passed (was 47; +4
     code_action tests), 0 failed, 5 ignored.
 
-### Tier 6.4 (completion type-filtered by receiver) — BLOCKED
-- The plan assumes `database.rs` already holds a typeck-result cache that
-  `hover.rs` uses for type text. Neither is true in the current tree:
-  - `AnalysisDatabase` holds only `hirs`, not any `TypeckResult`/`def_map`/
-    type cache.
-  - `hover.rs` resolves no types — it only looks the symbol up in the
-    `SymbolIndex` by location.
-  - `glyim-lsp` does not depend on `glyim-typeck`, and `glyim-typeck`'s
-    `TypeckResult::expr_ty`/`pat_ty` are themselves **stubs** (they take
-    `_body_id`/`_expr_id` and return `None`/`&[]`). So receiver-type
-    resolution is not actually implemented anywhere yet.
-- Implementing 6.4 properly therefore requires, in order: (1) real type
-  queries in `glyim-typeck` (un-stub `expr_ty`/`pat_ty`), (2) wiring
-  `glyim-typeck` into `glyim-lsp`'s `AnalysisDatabase`, (3) method-call
-  receiver detection + `Self`-type unification — a multi-part, cross-cutting
-  effort that is explicitly a "no stubs" zone. Faking a filter would violate
-  that. Deferred until the typeck result layer exists. The completion path
-  still works (name-based symbol index), just unfiltered.
+### Tier 6.4 (completion type-filtered by receiver) — PARTIAL
+
+- **Typeck side (DONE this pass):** `glyim-typeck`'s `TypeckResult::expr_ty` /
+  `pat_ty` were stubs (`_body_id`/`_expr_id` ignored, returning `None` outside
+  `#[cfg(test)]` and a hardcoded `I32` inside it). `expr_ty` is now real:
+  - `typeck_crate` collects `FnCtxt::expr_cache` (the per-`ExprId` → `Ty` map
+    that `check_expr.rs` already populates on every checked expression) into a
+    new `TypeckResult::expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>>`.
+  - After obligation fulfillment, each cached `Ty` is run through
+    `InferenceTable::fully_resolve` so the public query returns a **concrete**
+    type, never a leftover `TyKind::Infer(..)`.
+  - `expr_ty(body_id, expr_id)` now looks the resolved type up (no `#[cfg]` fake).
+  - `pat_ty` is **honestly** `None` (no per-`PatId` cache is collected yet —
+    documented as a follow-up, not faked).
+  - `FnCtxt::check` (check_stmt.rs) now returns `(thir::Body, HashMap<ExprId, Ty>)`
+    so the cache is extracted before `self` is consumed.
+  - Added `tests/binary_i32.rs::expr_ty_returns_resolved_type` asserting a
+    binary-add of two `i32` literals resolves to `Int(I32)` via the frozen
+    `TyCtx::ty_kind`. 59 glyim-typeck lib tests pass.
+- **LSP side (still pending):** to actually filter completions by receiver type,
+  `glyim-lsp` must (1) gain a `glyim-typeck` dependency, (2) thread a
+  `TyCtx` + `TypeckResult` through `AnalysisDatabase`, and (3) detect method-call
+  receivers and unify their `Self` type. That is a separate, cross-crate
+  feature; the completion path still works (name-based symbol index), just
+  unfiltered. The typeck foundation it needs now exists.
+- This is explicitly a "no stubs" zone: receiver filtering will be wired only
+  once the LSP type layer exists, not faked with a placeholder filter.
 
 ### Tier 7.1 (PipelineCompiler surfaces intermediates + per-file temp path) — COMMITTED
 - `fix(pipeline): add compile_file_with_artifacts returning def_map/typeck_result/mir_bodies`

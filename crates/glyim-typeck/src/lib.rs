@@ -11,11 +11,13 @@ pub mod thir;
 mod tyconv;
 mod unify;
 
+use std::collections::HashMap;
+
 use glyim_core::def_id::{DefId, LocalDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
-use glyim_hir::ItemKind;
+use glyim_hir::{ItemKind, ExprId};
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
@@ -26,6 +28,13 @@ use glyim_type::{
 pub struct TypeckResult {
     pub thir_bodies: Vec<(LocalDefId, thir::Body)>,
     pub diagnostics: Vec<GlyimDiagnostic>,
+    /// Resolved type of each HIR expression, keyed by the owning function's
+    /// `LocalDefId` and the expression's `ExprId`. Populated during
+    /// `typeck_crate` from each `FnCtxt::expr_cache` (which records the type
+    /// of every checked expression) after inference variables are fully
+    /// resolved. Drives downstream consumers such as LSP completion
+    /// filtering (Tier 6.4).
+    pub expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +62,7 @@ pub fn typeck_crate(
     let mut all_obligations: Vec<Obligation> = Vec::new();
     let trait_ctx = TraitContext::new();
     let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
+    let mut all_expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>> = HashMap::new();
 
     let local_krate = def_map.krate;
 
@@ -144,6 +154,7 @@ pub fn typeck_crate(
                         local_def_id,
                         def_map,
                         &trait_ctx,
+                        &mut all_expr_types,
                     );
                 }
             }
@@ -202,6 +213,7 @@ pub fn typeck_crate(
                             local_def_id,
                             def_map,
                             &trait_ctx,
+                            &mut all_expr_types,
                         );
                     } else {
                         diagnostics.push(GlyimDiagnostic::type_error(
@@ -234,9 +246,24 @@ pub fn typeck_crate(
 
     diagnostics.extend(fulfill.into_diagnostics());
 
+    // Resolve inference variables in the collected per-expression types so the
+    // public `expr_ty` query returns concrete types, not `TyKind::Infer(..)`.
+    let mut expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>> = HashMap::new();
+    for (body_id, raw) in &all_expr_types {
+        let mut resolved: HashMap<ExprId, Ty> = HashMap::new();
+        for (eid, ty) in raw {
+            let ty = infer
+                .fully_resolve(&frozen_ctx, *ty)
+                .unwrap_or(*ty);
+            resolved.insert(*eid, ty);
+        }
+        expr_types.insert(*body_id, resolved);
+    }
+
     let result = TypeckResult {
         thir_bodies,
         diagnostics,
+        expr_types,
     };
     (frozen_ctx, result)
 }
@@ -256,6 +283,7 @@ fn check_body(
     local_def_id: LocalDefId,
     def_map: &glyim_def_map::CrateDefMap,
     trait_ctx: &TraitContext,
+    expr_types: &mut HashMap<LocalDefId, HashMap<ExprId, Ty>>,
 ) {
     let body = &hir.bodies[body_id];
     let env = env::LocalEnv::new();
@@ -276,8 +304,12 @@ fn check_body(
         capture_log: Vec::new(),
     };
 
-    let thir_body = fn_ctxt.check(params);
+    let (thir_body, body_expr_types) = fn_ctxt.check(params);
     thir_bodies.push((local_def_id, thir_body));
+    // Hoist the per-expression type cache out of the (now-dropped) FnCtxt so
+    // typeck_crate can resolve inference variables once obligation
+    // fulfillment is complete.
+    expr_types.insert(local_def_id, body_expr_types);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -376,22 +408,24 @@ fn find_trait_default_body(
 mod tests;
 
 impl TypeckResult {
-    pub fn expr_ty(&self, _body_id: LocalDefId, _expr_id: usize) -> Option<Ty> {
-        #[cfg(test)]
-        {
-            let mut ctx = glyim_test::test_ty_ctx();
-            Some(ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)))
-        }
-        #[cfg(not(test))]
-        None
+    /// Resolved type of a HIR expression.
+    ///
+    /// Returns `None` if `body_id`/`expr_id` was not checked (e.g. the body
+    /// had no `Fn` item, or the id is out of range). The type is fully
+    /// resolved (no inference variables) — see `typeck_crate`'s post-
+    /// fulfillment resolution step.
+    pub fn expr_ty(&self, body_id: LocalDefId, expr_id: usize) -> Option<Ty> {
+        self.expr_types
+            .get(&body_id)
+            .and_then(|m| m.get(&ExprId::from_raw(expr_id as u32)))
+            .copied()
     }
+    /// Resolved type of a HIR pattern.
+    ///
+    /// Patterns are not yet collected into a per-`PatId` cache during
+    /// `typeck_crate`, so this returns `None` rather than a fake value.
+    /// Wiring pattern-type collection (mirroring `expr_types`) is a follow-up.
     pub fn pat_ty(&self, _body_id: LocalDefId, _pat_id: usize) -> Option<Ty> {
-        #[cfg(test)]
-        {
-            let mut ctx = glyim_test::test_ty_ctx();
-            Some(ctx.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)))
-        }
-        #[cfg(not(test))]
         None
     }
     pub fn adjustments(&self, _body_id: LocalDefId, _expr_id: usize) -> &[Adjustment] {
