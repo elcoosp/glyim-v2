@@ -65,7 +65,6 @@ SourceFile@0..138
     KwFn@106..108 "fn"
     Ident@108..119 "make_animal"
     LParen@119..120 "("
-    ParamList@120..120
     RParen@120..121 ")"
     Arrow@121..123 "->"
     ImplTraitType@123..133

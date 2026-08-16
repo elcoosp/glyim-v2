@@ -217,7 +217,6 @@ SourceFile@0..550
     KwFn@307..309 "fn"
     Ident@309..313 "main"
     LParen@313..314 "("
-    ParamList@314..314
     RParen@314..315 ")"
     Block@315..550
       LBrace@315..316 "{"

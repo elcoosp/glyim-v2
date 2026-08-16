@@ -7,7 +7,6 @@ SourceFile@0..22
     KwFn@0..2 "fn"
     Ident@2..6 "main"
     LParen@6..7 "("
-    ParamList@7..7
     RParen@7..8 ")"
     Block@8..22
       LBrace@8..9 "{"

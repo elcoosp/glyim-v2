@@ -122,7 +122,6 @@ SourceFile@0..225
     KwFn@145..147 "fn"
     Ident@147..151 "main"
     LParen@151..152 "("
-    ParamList@152..152
     RParen@152..153 ")"
     Arrow@153..155 "->"
     PathType@155..172

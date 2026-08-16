@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
 expression: tree
 ---
 SourceFile@0..19
@@ -14,7 +13,6 @@ SourceFile@0..19
     KwFn@10..12 "fn"
     Ident@12..15 "foo"
     LParen@15..16 "("
-    ParamList@16..16
     RParen@16..17 ")"
     Block@17..19
       LBrace@17..18 "{"

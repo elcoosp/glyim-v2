@@ -362,14 +362,16 @@ impl<'a> Parser<'a> {
             self.parse_type_param_list();
         }
         self.expect(SyntaxKind::LParen);
-        self.start_node(SyntaxKind::ParamList);
-        while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
-            self.parse_param();
-            if self.current_kind() == SyntaxKind::Comma {
-                self.bump();
+        if self.current_kind() != SyntaxKind::RParen {
+            self.start_node(SyntaxKind::ParamList);
+            while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
+                self.parse_param();
+                if self.current_kind() == SyntaxKind::Comma {
+                    self.bump();
+                }
             }
+            self.finish_node(); // ParamList
         }
-        self.finish_node(); // ParamList
         self.expect(SyntaxKind::RParen);
         if self.current_kind() == SyntaxKind::Arrow {
             self.bump();

@@ -392,22 +392,44 @@ impl<'a> Parser<'a> {
         if self.current_kind() == SyntaxKind::KwMove {
             self.bump(); // move
         }
-        self.expect(SyntaxKind::Or);
-        self.start_node(SyntaxKind::ParamList);
-        while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
-            self.start_node(SyntaxKind::Param);
-            self.parse_pat_single();
-            if self.current_kind() == SyntaxKind::Colon {
+        // Opening pipe: a single `|` (Or) OR an empty-param `||` which the
+        // lexer coalesces into one `OrOr` token. The latter carries both the
+        // open and close pipe, so no separate closing pipe follows.
+        let open_double = match self.current_kind() {
+            SyntaxKind::Or => {
                 self.bump();
-                self.parse_type();
+                false
             }
-            self.finish_node(); // Param
-            if self.current_kind() == SyntaxKind::Comma {
+            SyntaxKind::OrOr => {
                 self.bump();
+                true
+            }
+            _ => {
+                self.error("expected '|' or '||' to start a closure");
+                false
+            }
+        };
+        self.start_node(SyntaxKind::ParamList);
+        if !open_double {
+            while self.current_kind() != SyntaxKind::Or && self.current().is_some() {
+                self.start_node(SyntaxKind::Param);
+                self.parse_pat_single();
+                if self.current_kind() == SyntaxKind::Colon {
+                    self.bump();
+                    self.parse_type();
+                }
+                self.finish_node(); // Param
+                if self.current_kind() == SyntaxKind::Comma {
+                    self.bump();
+                }
+            }
+            if self.current_kind() == SyntaxKind::Or {
+                self.bump(); // closing pipe
+            } else {
+                self.error("expected '|' to close closure parameters");
             }
         }
         self.finish_node(); // ParamList
-        self.expect(SyntaxKind::Or);
         if self.current_kind() == SyntaxKind::Arrow {
             self.bump();
             self.parse_type();
@@ -505,7 +527,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwMove => {
                 self.parse_closure_expr();
             }
-            SyntaxKind::Or => self.parse_closure_expr(),
+            SyntaxKind::Or | SyntaxKind::OrOr => self.parse_closure_expr(),
             SyntaxKind::KwUnsafe => {
                 self.bump(); // unsafe
                 if self.current_kind() == SyntaxKind::LBrace {

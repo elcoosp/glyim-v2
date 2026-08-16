@@ -133,8 +133,6 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    // ---- TOP LEVEL ----
-
     pub(crate) fn parse_source_file(&mut self) {
         self.start_node(SyntaxKind::SourceFile);
         while self.current().is_some() {

@@ -15,7 +15,6 @@ SourceFile@0..34
         Ident@8..9 "U"
       Gt@9..10 ">"
     LParen@10..11 "("
-    ParamList@11..11
     RParen@11..12 ")"
   KwWhere@12..17 "where"
   Ident@17..18 "T"
