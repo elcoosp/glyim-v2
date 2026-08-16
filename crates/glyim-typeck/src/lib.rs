@@ -13,15 +13,15 @@ mod unify;
 
 use std::collections::HashMap;
 
-use glyim_core::def_id::{DefId, LocalDefId, TraitDefId};
+use glyim_core::def_id::{DefId, FnDefId, LocalDefId, TraitDefId};
 use glyim_core::interner::Name;
-use glyim_core::primitives::Mutability;
+use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{ItemKind, ExprId};
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
-    GenericArg, ImplPolarity, Predicate, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut,
+    GenericArg, ImplPolarity, Predicate, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut, FnSig,
 };
 
 #[derive(Clone, Debug)]
@@ -122,6 +122,23 @@ pub fn typeck_crate(
                     item_span,
                 );
 
+                // Register the resolved signature so the LLVM codegen pass can
+                // look it up by FnDefId when lowering this body. Without this,
+                // every real function hit "no FnSig registered" at codegen time.
+                let inputs = ctx.intern_substitution(
+                    sig.param_tys.iter().map(|t| GenericArg::Ty(*t)).collect(),
+                );
+                ctx.register_fn_sig(
+                    FnDefId::from_raw(local_def_id.to_raw()),
+                    FnSig {
+                        inputs,
+                        output: sig.return_ty,
+                        c_variadic: false,
+                        unsafety: Safety::Safe,
+                        abi: Abi::Glyim,
+                    },
+                );
+
                 process_where_clauses(
                     &mut ctx,
                     &mut infer,
@@ -175,6 +192,22 @@ pub fn typeck_crate(
                         &method.return_ty,
                         &impl_item.generic_params,
                         impl_span,
+                    );
+
+                    // Register the resolved signature for the LLVM codegen pass
+                    // (see the Fn arm for rationale).
+                    let inputs = ctx.intern_substitution(
+                        sig.param_tys.iter().map(|t| GenericArg::Ty(*t)).collect(),
+                    );
+                    ctx.register_fn_sig(
+                        FnDefId::from_raw(local_def_id.to_raw()),
+                        FnSig {
+                            inputs,
+                            output: sig.return_ty,
+                            c_variadic: false,
+                            unsafety: Safety::Safe,
+                            abi: Abi::Glyim,
+                        },
                     );
 
                     process_where_clauses(
