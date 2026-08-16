@@ -585,7 +585,7 @@ fn resolve_qualified_path(
 }
 
 /// Resolve path to trait DefId
-fn resolve_path_to_trait_def_id(
+pub(crate) fn resolve_path_to_trait_def_id(
     def_map: &glyim_def_map::CrateDefMap,
     path: &glyim_hir::Path,
     _span: Span,

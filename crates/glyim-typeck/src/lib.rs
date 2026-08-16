@@ -36,7 +36,7 @@ mod unify;
 
 use std::collections::HashMap;
 
-use glyim_core::def_id::{DefId, FnDefId, LocalDefId, TraitDefId};
+use glyim_core::def_id::{DefId, FnDefId, LocalDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
@@ -397,25 +397,22 @@ fn process_where_clauses(
 
         for bound in &wc.bounds {
             let trait_path = &bound.trait_path;
-            let trait_def_id = if let Some(name) = trait_path.as_name() {
-                if let Some(res) = def_map.modules[def_map.root].scope.resolve(name) {
-                    Some(TraitDefId::from_raw(res.0.to_raw()))
-                } else {
+            let trait_def_id = match tyconv::resolve_path_to_trait_def_id(def_map, trait_path, bound.span)
+            {
+                Some(id) => Some(id),
+                None => {
+                    let path_str = trait_path
+                        .segments
+                        .iter()
+                        .map(|s| ctx.name_str(s.name))
+                        .collect::<Vec<_>>()
+                        .join("::");
                     diagnostics.push(GlyimDiagnostic::type_error(
                         bound.span,
-                        format!(
-                            "unresolved trait `{}` in where clause",
-                            def_map.interner.resolve(name)
-                        ),
+                        format!("unresolved trait `{}` in where clause", path_str),
                     ));
                     None
                 }
-            } else {
-                diagnostics.push(GlyimDiagnostic::type_error(
-                    bound.span,
-                    "multi-segment trait paths in where clauses not yet supported",
-                ));
-                None
             };
 
             if let Some(trait_def_id) = trait_def_id {

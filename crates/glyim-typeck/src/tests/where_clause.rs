@@ -395,3 +395,119 @@ fn t07_where_bound_not_satisfied_error() {
     let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
     assert_has_errors(&result.diagnostics);
 }
+
+/// Build a CrateDefMap where `mod_name::trait_name` is resolvable: a child
+/// module whose scope contains the trait name mapped to `trait_local_id`.
+fn build_def_map_with_nested_trait(
+    interner: &mut Interner,
+    krate: CrateId,
+    mod_name: &str,
+    trait_name: &str,
+    trait_local_id: u32,
+) -> CrateDefMap {
+    let mod_n = interner.intern(mod_name);
+    let trait_n = interner.intern(trait_name);
+
+    let mut root_scope = ItemScope::default();
+    let root_id = ModuleId::from_raw(0);
+    let child_id = ModuleId::from_raw(1);
+    root_scope.types.insert(
+        mod_n,
+        (LocalDefId::from_raw(0), Visibility::Public, Span::DUMMY),
+    );
+    let root_data = ModuleData {
+        parent: None,
+        children: vec![(mod_n, child_id)],
+        scope: root_scope,
+        origin: ModuleOrigin::CrateRoot,
+        span: Span::DUMMY,
+        def_id: LocalDefId::from_raw(0),
+        visibility: Visibility::Public,
+    };
+
+    let mut child_scope = ItemScope::default();
+    child_scope.types.insert(
+        trait_n,
+        (LocalDefId::from_raw(trait_local_id), Visibility::Public, Span::DUMMY),
+    );
+    let child_data = ModuleData {
+        parent: Some(root_id),
+        children: vec![],
+        scope: child_scope,
+        origin: ModuleOrigin::CrateRoot,
+        span: Span::DUMMY,
+        def_id: LocalDefId::from_raw(1),
+        visibility: Visibility::Public,
+    };
+
+    let mut modules = IndexVec::new();
+    modules.push(root_data);
+    modules.push(child_data);
+    CrateDefMap {
+        root: root_id,
+        modules,
+        krate,
+        interner: interner.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// V02-T08: Multi-segment trait path in a where clause (`inner::Clone2`) must
+// resolve through the module tree (not bail with "not yet supported").
+// ---------------------------------------------------------------------------
+#[test]
+fn t08_where_clause_multi_segment_path_resolves() {
+    let mut inter = global_interner();
+    let mod_name = "inner";
+    let trait_name = "Clone2";
+    let trait_local_id = 7u32;
+    let name_t = inter.intern("T");
+
+    let generic_params = vec![ty_param(&mut inter, "T")];
+    let t_ty = TypeRef::Path(Path::from_single(name_t));
+    let param = Param {
+        name: name_t,
+        ty: Some(t_ty.clone()),
+        span: dummy_span(),
+    };
+    let body_exprs = vec![Expr::Literal(Literal::Unit)];
+
+    // Build the multi-segment path `inner::Clone2`.
+    let mut trait_path = Path::from_single(inter.intern(trait_name));
+    trait_path.segments.insert(
+        0,
+        glyim_hir::PathSegment {
+            name: inter.intern(mod_name),
+            generic_args: None,
+        },
+    );
+    let wc = WhereClause {
+        ty: t_ty.clone(),
+        bounds: vec![TraitBound {
+            trait_path,
+            span: dummy_span(),
+        }],
+        span: dummy_span(),
+    };
+
+    let (hir, _) = build_simple_hir(
+        &mut inter,
+        generic_params,
+        vec![param],
+        None,
+        body_exprs,
+        vec![wc],
+    );
+
+    let ctx = TyCtxMut::new(inter.clone());
+    let mut solver = ApproveSolver;
+    let def_map = build_def_map_with_nested_trait(
+        &mut inter,
+        CrateId::from_raw(0),
+        mod_name,
+        trait_name,
+        trait_local_id,
+    );
+    let (_tcx, result) = crate::typeck_crate(ctx, &def_map, &hir, &mut solver);
+    assert_no_errors(&result.diagnostics);
+}
