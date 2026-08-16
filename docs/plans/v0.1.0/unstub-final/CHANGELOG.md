@@ -20,7 +20,7 @@ Each tier is implemented and committed atomically. Tests are run with
 - [x] Tier 3.1 — transitive dependency resolution (glyip) — COMMITTED
 - [x] Tier 3.2 — glyip cmd_test executes tests — COMMITTED
 - [x] Tier 3.3 — registry-disabled error message — COMMITTED
-- [ ] Tier 4.1 — fragment-spec matching (Stage A + B) — Stage A COMMITTED
+- [x] Tier 4.1 — fragment-spec matching (Stage A + B) — COMMITTED
 - [x] Tier 4.2 — line!/column! from SourceMap — COMMITTED (via Vfs source lookup)
 - [x] Tier 4.3 — include! CWD-relative fix — COMMITTED
 - [x] Tier 4.4 — stringify! normalization — COMMITTED
@@ -369,13 +369,43 @@ Each tier is implemented and committed atomically. Tests are run with
       fragment validity is Stage B).
     - `Stmt` / `Item` / `Meta` => remain `true` (too varied to validate from a
       single token; Stage B handles them).
-  - Stage B (variable-length fragment consumption via a new
-    `glyim-frontend::try_parse_fragment` entry point) is intentionally left
-    for a follow-up commit — it is a multi-file change and new surface area
-    worth landing separately.
+  - Stage B (variable-length fragment consumption) is now **COMMITTED** — see
+    the "Tier 4.1 Stage B" subsection below.
   - Tests (matcher.rs): `test_stage_a_expr_rejects_separator_token` (5
     separators rejected for `:expr`), `test_stage_a_vis_matches_pub`,
     `test_stage_a_block_matches_brace_group`. 60 glyim-meta tests pass.
+
+### Tier 4.1 Stage B (variable-length fragment consumption)
+- `feat(macro): :expr/:ty/:pat/:stmt/:item/:block/:meta consume variable-length fragments`
+  - Added `glyim-frontend::try_parse_fragment(spec: &str, src: &str) -> Option<usize>`
+    (public, string-based — takes the fragment *source text*, so it does not
+    introduce a glyim-meta → glyim-frontend type dependency). It wraps `src` in a
+    minimal valid program shape per fragment kind (`fn __f() { <src> }` for
+    expr/stmt/block, `fn __f(__x: <src>) {}` for ty, `fn __f() { let <src> = (); }`
+    for pat, `fn __f() { <src> }` and require exactly one item for item, etc.),
+    reparses with the existing `parse_to_syntax`, and accepts only when the
+    reparse emits **zero diagnostics** (this rejects over-consumed tokens such
+    as a stray `)`). The returned length is consumed by the matcher.
+  - `glyim-meta/src/expander/matcher.rs`:: `match_pieces` now routes the
+    flexible fragment specs (`Expr`/`Ty`/`Path`/`Pat`/`Stmt`/`Item`/`Block`/`Meta`)
+    through a new `consume_fragment(spec, input, pos)`:
+    - Greedy **longest-prefix** match: tries the largest candidate prefix first,
+      shrinking until `try_parse_fragment` accepts it.
+    - Bounded by top-level `,`/`;` terminators (matching `macro_rules!`
+      semantics — `:stmt` stops before a trailing `;`, `:expr` before a `,`).
+    - Returns the captured `Vec<TokenTree>` (so the binding carries the whole
+      fragment), keeping the existing `MatchResult` contract.
+    - `Ident`/`Literal`/`Lifetime`/`Vis`/`Tt` keep their single-token handling.
+  - `to_source` reconstructs lossless source from `&[TokenTree]` (delimiters
+    emitted via `delim_char`, extended to `<`/`>` so generic `Vec<i32>` and
+    calls reparse correctly); adjacent identifier/literal/kw tokens are joined
+    with a single space (Rust token grammar is space-insensitive).
+  - No regressions: all 22 existing `macro_expansion` tests still pass (the
+    single-token case is a degenerate prefix of the greedy match). Added 8
+    Stage B tests: multi-token `:expr` (`a + b * c`), `:ty` (`Vec<i32>`), `:path`
+    (`a::b::c`), `:block` (`{ x }`), `:stmt` (`let x = 1`), `:item` (`struct S {}`),
+    `:pat` (`(a, b)`), `:meta`, plus a "rejects nonsense" check. 71 glyim-meta
+    lib tests pass.
 
 ### Tier 4.4 (stringify! normalization)
 - `fix(macro): deterministic stringify! spacing`
@@ -673,7 +703,11 @@ Each tier is implemented and committed atomically. Tests are run with
     - `type_at_offset(file_id, offset) -> Option<Ty>`: walks the HIR `bodies`/`expr_spans`,
       picks the smallest expression span containing (or ending just before) the cursor, and
       returns its `expr_ty` via the stored `TypeckResult`. This is what resolves the receiver
-      type at a `.` call site.
+      type at a `.` call site. **Updated (receiver-aware):** when the cursor sits right after a
+      `.`, `type_at_offset` now prefers the **receiver** of the enclosing `MethodCall`/`Field`
+      expression (whose span encloses the `.`) rather than the innermost 1-char sub-expression
+      at the dot — that receiver is what the `.` is being called on. The general innermost-span
+      fallback is retained for non-`.` contexts.
     - `expr_ty_at(file_id, body_id, expr_id) -> Option<Ty>`: thin wrapper over `expr_ty`.
   - `driver.rs`:: `analyze_file` now runs `glyim_typeck::typeck_crate` (with the production
     `SimpleTraitSolver`) after lowering and stores the `(Arc<TyCtx>, TypeckResult)` into
@@ -688,13 +722,18 @@ Each tier is implemented and committed atomically. Tests are run with
     matches (or no receiver resolves) it falls back to the full symbol list, preserving the
     previous behavior for non-`.` contexts.
   - Tests (`tests/tier6_4_completion_tests.rs`, new): `s12_impl_methods_indexed_with_receiver_type`
-    asserts impl methods are indexed with `receiver_type == "Foo"`; `s12_dot_completion_filters_by_receiver_type`
-    builds a DB with a receiver expr resolved to `i32` and asserts `.` completion returns the
-    `i32` method while dropping the free function. 53 glyim-lsp lib tests pass (was 51; +2).
-  - Caveat (separate gap, not faked): the frontend does not yet lower `x.foo()` method-call
-    receivers, so a real `analyze()` cannot yet produce a receiver expr at a `.` for
-    end-to-end parser-driven completion. The filtering logic is verified deterministically by
-    constructing the DB directly. MethodCall lowering is the natural next step.
+    asserts impl methods are indexed with `receiver_type == "Foo"` (driven through the real
+    parser + HIR pipeline). `s12_dot_completion_filters_by_receiver_type` builds a self-consistent
+    `CrateHir` (spans in the same coordinate space as the source — receiver `x` typed `i32`,
+    matching `impl i32`) and asserts `.` completion returns the `i32` methods while dropping the
+    free function; it also asserts `type_at_offset` resolves `i32`. 53 glyim-lsp lib tests pass
+    (was 51; +2).
+  - Known follow-up (pre-existing, NOT introduced by this tier): the parser emits HIR `Span`s
+    whose byte offsets are not aligned with the original source file (a `MethodCall` span lands
+    ~38 bytes before the real `x.` in `fn main`). Until that span-coordinate bug is fixed, the
+    *real-`analyze()`* path cannot yet resolve a receiver at a `.` from a live document — but the
+    filter logic itself is verified deterministically as above. Fixing HIR span coordinates is a
+    separate parser task.
 - This is explicitly a "no stubs" zone: receiver filtering will be wired only
   once the LSP type layer exists, not faked with a placeholder filter.
 

@@ -1,5 +1,6 @@
 use crate::reference_graph::ReferenceGraph;
 use crate::symbol_index::SymbolIndex;
+use glyim_hir::Expr;
 use glyim_span::FileId;
 use glyim_type::Ty;
 use glyim_typeck::TypeckResult;
@@ -150,24 +151,59 @@ impl AnalysisDatabase {
     /// Resolve the type of the HIR expression that contains `offset` in
     /// `file_id`. Used by completion (Tier 6.4) to filter by receiver type.
     ///
-    /// Walks every body in the file's `CrateHir`, finds the innermost
-    /// expression whose span contains the offset (or ends just before it, so a
-    /// cursor placed right after a `.` still resolves the receiver), and
-    /// returns its resolved type via `TypeckResult::expr_ty`.
+    /// When the cursor sits right after a `.` (a method-call / field-access
+    /// completion trigger), we resolve the **receiver** of the enclosing
+    /// `MethodCall`/`Field` expression rather than the innermost token at the
+    /// dot — that receiver is what the `.` is being called on. Otherwise we
+    /// fall back to the innermost expression whose span contains `offset` (or
+    /// ends just before it, so a cursor placed right after a `.` still
+    /// resolves the receiver).
     pub fn type_at_offset(&self, file_id: FileId, offset: usize) -> Option<Ty> {
         let hirs = self.hirs.read();
         let hir = hirs.get(&file_id)?;
         let typeck = self.typeck.read();
         let (_, result) = typeck.get(&file_id)?;
 
+        // First pass: prefer the receiver of an enclosing MethodCall/Field
+        // whose span contains the offset (the cursor is just after its `.`).
+        let mut receiver_best: Option<(usize, glyim_core::def_id::LocalDefId, glyim_hir::ExprId)> =
+            None;
+        for (body_id, body) in hir.bodies.iter_enumerated() {
+            for (expr_id, expr) in body.exprs.iter_enumerated() {
+                let recv_id = match expr {
+                    Expr::MethodCall { receiver, .. } | Expr::Field { receiver, .. } => *receiver,
+                    _ => continue,
+                };
+                // The method-call / field-access span encloses the `.`, so the
+                // cursor placed just after the `.` still falls inside it.
+                let span = body.expr_spans.get(expr_id)?;
+                let lo = span.lo.to_usize();
+                let hi = span.hi.to_usize();
+                if lo <= offset && offset <= hi {
+                    let size = hi.saturating_sub(lo);
+                    if receiver_best
+                        .map(|(b, _, _)| size < b)
+                        .unwrap_or(true)
+                    {
+                        let owner = hir.body_owners[body_id];
+                        receiver_best = Some((size, owner, recv_id));
+                    }
+                }
+            }
+        }
+        if let Some((_, owner, recv_id)) = receiver_best {
+            if let Some(ty) = result.expr_ty(owner, recv_id.to_raw() as usize) {
+                return Some(ty);
+            }
+        }
+
+        // Fallback: innermost expression (by span) containing the offset, or
+        // ending just before it.
         let mut best: Option<(usize, glyim_core::def_id::LocalDefId, glyim_hir::ExprId)> = None;
         for (body_id, body) in hir.bodies.iter_enumerated() {
             for (expr_id, span) in body.expr_spans.iter_enumerated() {
                 let lo = span.lo.to_usize();
                 let hi = span.hi.to_usize();
-                // Innermost = smallest span; prefer spans that strictly contain
-                // the offset, else a span ending exactly at the cursor (the
-                // receiver of `obj.` sits just before the dot).
                 let contains = lo <= offset && offset <= hi;
                 let ends_before = hi == offset || hi == offset.saturating_sub(1);
                 if contains || ends_before {
