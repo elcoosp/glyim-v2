@@ -551,3 +551,111 @@ fn v03_t05_default_method_calls_missing_method_error() {
         result.diagnostics
     );
 }
+
+/// §9.2: when the same method is provided by two distinct `impl` blocks for
+/// the same self type, a call to that method is ambiguous (rustc's E0034).
+/// The type checker must surface *all* candidates rather than silently
+/// resolving to the first matching impl.
+#[test]
+fn v03_t06_ambiguous_method_in_multiple_impls() {
+    let mut interner = make_interner();
+    let method_name = make_name(&mut interner, "amb");
+    let mytype_name = make_name(&mut interner, "i32");
+
+    // Two inherent impls of `i32`, each providing `amb`. Using a primitive
+    // self type guarantees both impls resolve and unify with the receiver.
+    let mk_impl = |owner: LocalDefId| Item {
+        id: ItemId::from_raw(owner.to_raw()),
+        name: mytype_name,
+        kind: ItemKind::Impl(ImplItem {
+            trait_ref: None,
+            self_ty: TypeRef::Path(Path::from_single(mytype_name)),
+            methods: vec![ImplMethod {
+                name: method_name,
+                body: None,
+                params: vec![],
+                return_ty: None,
+            }],
+            generic_params: vec![],
+            where_clauses: vec![],
+        }),
+        visibility: Visibility::Inherited,
+        span: Span::DUMMY,
+    };
+
+    let mut items = IndexVec::new();
+    items.push(mk_impl(LocalDefId::from_raw(1)));
+    items.push(mk_impl(LocalDefId::from_raw(2)));
+
+    // fn main(x: MyType) { x.amb(); }
+    let mut pats: IndexVec<PatId, Pat> = IndexVec::new();
+    let x_pat = pats.push(Pat::Binding {
+        name: make_name(&mut interner, "x"),
+        mutability: Mutability::Not,
+        subpattern: None,
+    });
+    let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
+    let x_ref = exprs.push(Expr::Path(Path::from_single(make_name(&mut interner, "x"))));
+    let method_call = exprs.push(Expr::MethodCall {
+        receiver: x_ref,
+        method: method_name,
+        args: vec![],
+    });
+    exprs.push(Expr::Return {
+        value: Some(method_call),
+    });
+
+    let main_body = Body {
+        owner: LocalDefId::from_raw(0),
+        exprs: exprs.clone(),
+        pats,
+        params: vec![x_pat],
+        span: Span::DUMMY,
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
+    };
+    let mut bodies = IndexVec::new();
+    let main_body_id = bodies.push(main_body);
+    let mut body_owners = IndexVec::new();
+    body_owners.push(LocalDefId::from_raw(0));
+
+    items.push(Item {
+        id: ItemId::from_raw(0),
+        name: make_name(&mut interner, "main"),
+        kind: ItemKind::Fn(FnItem {
+            params: vec![glyim_hir::Param {
+                name: make_name(&mut interner, "x"),
+                ty: Some(TypeRef::Path(Path::from_single(mytype_name))),
+                span: Span::DUMMY,
+            }],
+            return_ty: None,
+            body: Some(main_body_id),
+            is_unsafe: false,
+            is_async: false,
+            generic_params: vec![],
+            where_clauses: vec![],
+        }),
+        visibility: Visibility::Public,
+        span: Span::DUMMY,
+    });
+
+    let hir = CrateHir {
+        items,
+        bodies,
+        body_owners,
+    };
+
+    let ctx = TyCtxMut::new(interner);
+    let def_map = build_empty_def_map(CrateId::from_raw(0));
+    let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);
+    let (_frozen_ctx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+
+    let ambiguous = result
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("ambiguous method"));
+    assert!(
+        ambiguous,
+        "Expected an ambiguous-method diagnostic, got: {:?}",
+        result.diagnostics
+    );
+}

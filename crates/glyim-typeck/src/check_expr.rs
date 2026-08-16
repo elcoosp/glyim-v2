@@ -9,6 +9,7 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
 use glyim_type::{GenericArg, Region, Ty, TyKind};
+use glyim_type::display::PrintTy;
 
 use crate::check_body::FnCtxt;
 use crate::thir;
@@ -951,6 +952,11 @@ impl<'a> FnCtxt<'a> {
     }
 
     fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
+        // §9.2: collect *every* impl whose Self type unifies with the receiver
+        // and that defines `method_name`. If more than one matches, this is an
+        // ambiguous method call — surface all candidates (rustc's E0034 style)
+        // instead of silently returning the first and masking the conflict.
+        let mut candidates: Vec<(Ty, Ty)> = Vec::new(); // (impl self ty, return ty)
         for (_id, item) in self.hir.items.iter_enumerated() {
             if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
                 let param_map = crate::tyconv::build_param_tys(self.ctx, &impl_item.generic_params);
@@ -966,8 +972,8 @@ impl<'a> FnCtxt<'a> {
                 if self.unify(recv_ty, impl_self_ty, span) {
                     for method in &impl_item.methods {
                         if method.name == method_name {
-                            if let Some(return_ty_ref) = &method.return_ty {
-                                return crate::tyconv::resolve_type_ref(
+                            let return_ty = if let Some(return_ty_ref) = &method.return_ty {
+                                crate::tyconv::resolve_type_ref(
                                     self.ctx,
                                     self.infer,
                                     self.def_map,
@@ -975,23 +981,48 @@ impl<'a> FnCtxt<'a> {
                                     return_ty_ref,
                                     &param_map,
                                     span,
-                                );
+                                )
                             } else {
-                                return Ty::UNIT;
-                            }
+                                Ty::UNIT
+                            };
+                            candidates.push((impl_self_ty, return_ty));
                         }
                     }
                 }
             }
         }
-        self.diagnostics.push(GlyimDiagnostic::type_error(
-            span,
-            format!(
-                "no method `{}` found for type",
-                self.ctx.name_str(method_name)
-            ),
-        ));
-        Ty::ERROR
+
+        if candidates.is_empty() {
+            self.diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                format!(
+                    "no method `{}` found for type",
+                    self.ctx.name_str(method_name)
+                ),
+            ));
+            return Ty::ERROR;
+        }
+
+        if candidates.len() > 1 {
+            let list: Vec<String> = candidates
+                .iter()
+                .map(|(self_ty, _)| format!("  {}", PrintTy::new(*self_ty, &*self.ctx)))
+                .collect();
+            self.diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                format!(
+                    "ambiguous method `{}` found in multiple impls for type `{}`:\n{}",
+                    self.ctx.name_str(method_name),
+                    PrintTy::new(recv_ty, &*self.ctx),
+                    list.join("\n")
+                ),
+            ));
+            // Still return the first candidate's type so downstream typing is
+            // not worse than before; the diagnostic is the real signal.
+            return candidates[0].1;
+        }
+
+        candidates[0].1
     }
 
     fn extract_return_ty(&mut self, fn_ty: Ty, _span: Span) -> Ty {
