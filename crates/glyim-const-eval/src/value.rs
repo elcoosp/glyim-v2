@@ -26,6 +26,9 @@ pub enum ConstValue {
     Array(Vec<ConstValue>),
     /// Struct value (fields in order of definition).
     Struct(Vec<(Name, ConstValue)>),
+    /// Range value (`start..end` / `start..=end`). Either bound may be absent
+    /// (open-ended range). Produced by constant evaluation of `Expr::Range`.
+    Range(Option<Box<ConstValue>>, Option<Box<ConstValue>>, bool),
 }
 
 impl ConstValue {
@@ -113,6 +116,7 @@ impl ConstValue {
                 };
                 if *v <= max { Some(self.clone()) } else { None }
             }
+            ConstValue::Range(..) => Some(self.clone()),
             _ => Some(self.clone()),
         }
     }

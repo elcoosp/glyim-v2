@@ -1357,6 +1357,7 @@ impl<'a> MirBuilder<'a> {
             ConstValue::Char(c) => Some(c as u128),
             ConstValue::FloatBits(..) | ConstValue::String(_) | ConstValue::Unit => None,
             ConstValue::Tuple(_) | ConstValue::Array(_) | ConstValue::Struct(_) => None,
+            ConstValue::Range(..) => None,
         }
     }
 

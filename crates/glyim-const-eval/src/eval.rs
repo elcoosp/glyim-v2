@@ -237,10 +237,17 @@ impl<'a> ConstEvaluator<'a> {
                 "closures not supported in const eval",
                 span,
             )),
-            Expr::Range { .. } => Err(ConstEvalError::new(
-                "ranges not supported in const eval",
-                span,
-            )),
+            Expr::Range { start, end, inclusive } => {
+                let start_val = match start {
+                    Some(id) => Some(Box::new(self.evaluate_at_depth(*id, depth)?)),
+                    None => None,
+                };
+                let end_val = match end {
+                    Some(id) => Some(Box::new(self.evaluate_at_depth(*id, depth)?)),
+                    None => None,
+                };
+                Ok(ConstValue::Range(start_val, end_val, *inclusive))
+            }
             Expr::While { cond, body } => self.eval_while(*cond, *body, span, depth),
             Expr::Loop { body } => self.eval_loop(*body, span, depth),
             Expr::For { .. } => Err(ConstEvalError::new(
