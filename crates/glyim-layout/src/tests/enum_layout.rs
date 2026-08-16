@@ -212,3 +212,71 @@ fn s15_t02_enum_257_variants_needs_u16() {
         "257-variant enum needs at least 2 bytes for u16 tag"
     );
 }
+
+#[test]
+fn s15_t02_enum_nested_option_niche() {
+    // §7.2: a nested enum must reuse the inner enum's *free* discriminant
+    // values as its own niche, so Option<Option<bool>> collapses to 1 byte.
+    let (ctx, outer_ty) = with_fresh_ty_ctx(|c| {
+        let bool_ty = c.bool_ty();
+        // Option<bool> = enum { None, Some(bool) }
+        let option_bool = make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(206),
+            vec![vec![bool_ty], vec![]],
+        );
+        // Option<Option<bool>> = enum { None, Some(Option<bool>) }
+        make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(207),
+            vec![vec![option_bool], vec![]],
+        )
+    });
+    let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
+    let layout = computer
+        .layout_of(outer_ty)
+        .expect("nested enum layout should succeed");
+
+    assert_eq!(
+        layout.size.0, 1,
+        "Option<Option<bool>> must collapse to a single byte via recursive niche detection"
+    );
+    match &layout.variants {
+        VariantsShape::Multiple { tag_encoding, .. } => match tag_encoding {
+            TagEncoding::Niche { .. } => {}
+            TagEncoding::Direct => panic!("nested Option should be niche-encoded"),
+        },
+        VariantsShape::Single { .. } => panic!("should have Multiple variants"),
+    }
+}
+
+#[test]
+fn s15_t02_enum_direct_tag_recursive_niche() {
+    // A Direct-tag enum (no field niche) still exposes a free discriminant
+    // tail an enclosing enum can reuse.
+    let (ctx, outer_ty) = with_fresh_ty_ctx(|c| {
+        // Inner: 3-variant fieldless enum -> Direct U8 tag, uses values 0,1,2,
+        // leaving [3,255) free.
+        let inner = make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(208),
+            vec![vec![], vec![], vec![]],
+        );
+        // Outer: Option<inner>
+        make_enum_ty(
+            c,
+            glyim_core::AdtId::from_raw(209),
+            vec![vec![inner], vec![]],
+        )
+    });
+    let computer = SimpleLayoutComputer::new(&ctx, TargetInfo::x86_64());
+    let layout = computer
+        .layout_of(outer_ty)
+        .expect("nested enum layout should succeed");
+    // inner is a Direct-tag 3-variant enum; the recursive niche must keep the
+    // outer enum to a single byte.
+    assert_eq!(
+        layout.size.0, 1,
+        "Option<3-variant-enum> must collapse to a single byte via recursive niche detection"
+    );
+}

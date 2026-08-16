@@ -443,6 +443,19 @@ impl<'a> SimpleLayoutComputer<'a> {
     }
 
     fn niche_info(&self, ty: Ty) -> Option<(u128, u128)> {
+        self.niche_info_inner(ty, 0)
+    }
+
+    /// Available niche of `ty`: the `(start, count)` of bit-patterns `ty` provably
+    /// *cannot* represent, which an enclosing enum may reuse as its discriminant niche.
+    ///
+    /// Built recursively (depth-guarded): a nested enum whose own layout already
+    /// niche-encodes exposes its *free* discriminant values, which is what makes
+    /// `Option<Option<bool>>` collapse to a single byte.
+    fn niche_info_inner(&self, ty: Ty, depth: usize) -> Option<(u128, u128)> {
+        if depth >= 8 {
+            return None;
+        }
         match self.ctx.ty_kind(ty) {
             TyKind::Bool => Some((2, 254)),
             TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => Some((0, 1)),
@@ -457,6 +470,64 @@ impl<'a> SimpleLayoutComputer<'a> {
                 }
             }
             TyKind::Char => Some((0x110000, u128::MAX - 0x110000 + 1)),
+            TyKind::Adt(adt_id, _) => {
+                let adt_def = self.ctx.adt_def(*adt_id)?;
+                if adt_def.kind != AdtKind::Enum {
+                    return None;
+                }
+                let layout = self.layout_of(ty).ok()?;
+                let VariantsShape::Multiple { tag, tag_encoding, .. } = &layout.variants else {
+                    return None;
+                };
+                let full = self.tag_value_count(*tag)?;
+                // Sound available niche: every used discriminant value is strictly
+                // below `first_free`, so the tail `[first_free, full)` is provably
+                // unused and safe for an enclosing enum to reuse.
+                let (start, count) = match tag_encoding {
+                    TagEncoding::Direct => {
+                        let used = adt_def.variants.len() as u128;
+                        if full > used {
+                            (used, full - used)
+                        } else {
+                            return None;
+                        }
+                    }
+                    TagEncoding::Niche { niche_variants, .. } => {
+                        let sv_start = *niche_variants.start();
+                        let sv_end = *niche_variants.end();
+                        if sv_start > 0 {
+                            // Free contiguous block `[0, sv_start)`.
+                            (0, sv_start as u128)
+                        } else {
+                            // Free contiguous block `[sv_end + 1, niche_start)`.
+                            let start = (sv_end as u128) + 1;
+                            let count = full.saturating_sub(start);
+                            (start, count)
+                        }
+                    }
+                };
+                if count > 0 {
+                    Some((start, count))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Number of distinct values the discriminant `tag` type can hold.
+    fn tag_value_count(&self, tag_ty: Ty) -> Option<u128> {
+        match self.ctx.ty_kind(tag_ty) {
+            TyKind::Bool => Some(256),
+            TyKind::Int(i) => {
+                let bw = i.bit_width(&self.target) as u128;
+                1u128.checked_shl(bw as u32)
+            }
+            TyKind::Uint(i) => {
+                let bw = i.bit_width(&self.target) as u128;
+                1u128.checked_shl(bw as u32)
+            }
             _ => None,
         }
     }

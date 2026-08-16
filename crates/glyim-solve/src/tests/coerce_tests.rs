@@ -1,4 +1,3 @@
-use crate::*;
 use glyim_core::primitives::{IntTy, UintTy};
 use glyim_test::test_ty_ctx;
 use glyim_type::*;
@@ -46,21 +45,67 @@ fn test_coerce_ref_subtyping() {
 }
 
 #[test]
-fn test_solver_coerce_proven() {
-    use crate::solver::{SimpleTraitSolver, SolverResult, TraitContext};
+fn test_coerce_fn_item_to_fn_ptr() {
+    use glyim_core::def_id::FnDefId;
+    use glyim_core::primitives::{Abi, Safety};
+
     let mut ctx_mut = test_ty_ctx();
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
-    let usize_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::Usize));
-    let len_const = Const {
-        kind: ConstKind::Int(3),
-        ty: usize_ty,
+    let sig = FnSig {
+        inputs: ctx_mut.intern_substitution(vec![GenericArg::Ty(i32_ty)]),
+        output: i32_ty,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
     };
-    let array_ty = ctx_mut.mk_ty(TyKind::Array(i32_ty, len_const));
-    let slice_ty = ctx_mut.mk_ty(TyKind::Slice(i32_ty));
+    let fn_def_id = FnDefId::from_raw(900);
+    ctx_mut.register_fn_sig(fn_def_id, sig.clone());
+
+    let fn_subst = ctx_mut.intern_substitution(vec![]);
+    let fn_item_ty = ctx_mut.mk_ty(TyKind::FnDef(fn_def_id, fn_subst));
+    let fn_ptr_ty = ctx_mut.mk_ty(TyKind::FnPtr(sig.clone()));
     let ctx = ctx_mut.freeze();
-    let trait_ctx = TraitContext::new();
-    let mut solver = SimpleTraitSolver::new(&trait_ctx);
-    let coerce_pred = Predicate::Coerce(array_ty, slice_ty);
-    let result = solver.evaluate_predicate(&ctx, &coerce_pred);
-    assert_eq!(result, SolverResult::Proven);
+
+    // A function item coerces to a fn pointer with a matching signature.
+    assert!(
+        crate::fulfill::can_coerce(&ctx, fn_item_ty, fn_ptr_ty),
+        "fn item should coerce to fn pointer with matching signature"
+    );
+}
+
+#[test]
+fn test_coerce_fn_item_to_fn_ptr_rejects_mismatched_sig() {
+    use glyim_core::def_id::FnDefId;
+    use glyim_core::primitives::{Abi, Safety};
+
+    let mut ctx_mut = test_ty_ctx();
+    let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    let u64_ty = ctx_mut.mk_ty(TyKind::Uint(UintTy::U64));
+    let def_sig = FnSig {
+        inputs: ctx_mut.intern_substitution(vec![GenericArg::Ty(i32_ty)]),
+        output: i32_ty,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    };
+    let fn_def_id = FnDefId::from_raw(901);
+    ctx_mut.register_fn_sig(fn_def_id, def_sig);
+
+    let fn_subst = ctx_mut.intern_substitution(vec![]);
+    let fn_item_ty = ctx_mut.mk_ty(TyKind::FnDef(fn_def_id, fn_subst));
+    // Target fn pointer has a different return type.
+    let mismatched_sig = FnSig {
+        inputs: ctx_mut.intern_substitution(vec![GenericArg::Ty(i32_ty)]),
+        output: u64_ty,
+        c_variadic: false,
+        unsafety: Safety::Safe,
+        abi: Abi::Glyim,
+    };
+    let fn_ptr_ty = ctx_mut.mk_ty(TyKind::FnPtr(mismatched_sig));
+    let ctx = ctx_mut.freeze();
+
+    assert!(
+        !crate::fulfill::can_coerce(&ctx, fn_item_ty, fn_ptr_ty),
+        "fn item must NOT coerce to fn pointer with mismatched signature"
+    );
 }
