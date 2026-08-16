@@ -6,10 +6,9 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
-use crate::where_clause::WhereClause;
 use crate::{
-    Body, BodyId, EnumItem, Field, FnItem, GenericParam, ImplItem, ImplMethod, Item, ItemId,
-    ItemKind, Param, Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
+    Body, BodyId, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId, ItemKind, Param,
+    Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
 };
 
 use super::{
