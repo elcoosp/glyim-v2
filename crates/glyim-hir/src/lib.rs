@@ -244,6 +244,10 @@ pub enum TypeRef {
     Tuple(Vec<TypeRef>),
     Never,
     Infer,
+    /// `dyn Trait` — an unsized trait object. The inner `TypeRef` is the
+    /// trait (with its bounds). Lowered from `SyntaxKind::DynType` so that
+    /// `dyn Trait` is distinguishable from merely naming the trait type.
+    Dyn(Box<TypeRef>),
     Error,
 }
 

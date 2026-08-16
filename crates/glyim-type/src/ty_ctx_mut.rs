@@ -386,6 +386,11 @@ impl TyCtxMut {
         self.trait_defs.insert(id, def);
     }
 
+    /// Get the trait definition by ID (read-only view into the type context).
+    pub fn trait_def(&self, id: glyim_core::def_id::TraitDefId) -> Option<&crate::TraitDef> {
+        self.trait_defs.get(&id)
+    }
+
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
     }

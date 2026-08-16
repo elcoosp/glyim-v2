@@ -364,6 +364,9 @@ pub fn render_type_ref(ty: &glyim_hir::TypeRef, interner: &glyim_core::Interner)
         }
         glyim_hir::TypeRef::Never => "!".to_string(),
         glyim_hir::TypeRef::Infer => "_".to_string(),
+        glyim_hir::TypeRef::Dyn(inner) => {
+            format!("dyn {}", render_type_ref(inner, interner))
+        }
         glyim_hir::TypeRef::Error => "error".to_string(),
     }
 }

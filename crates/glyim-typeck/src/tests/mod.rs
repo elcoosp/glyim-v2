@@ -8,6 +8,7 @@ mod closures;
 mod coherence;
 mod common;
 mod default_methods;
+mod dyn_type;
 mod edge_cases;
 mod empty_crate;
 mod fn_sig_inst;

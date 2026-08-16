@@ -91,12 +91,13 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
         SyntaxKind::InferType => Some(TypeRef::Infer),
         SyntaxKind::DynType => {
             let inner = node.children().find(is_type_node);
-            if let Some(ty_node) = inner {
+            let inner_ref = if let Some(ty_node) = inner {
                 lower_type_ref(&ty_node, interner)
             } else {
                 let path = lower_path_from_type(node, interner)?;
                 Some(TypeRef::Path(path))
-            }
+            };
+            inner_ref.map(|r| TypeRef::Dyn(Box::new(r)))
         }
         _ => {
             panic!("unhandled type node {:?}", node.kind());

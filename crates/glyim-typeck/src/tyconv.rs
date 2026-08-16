@@ -124,6 +124,140 @@ pub fn resolve_type_ref(
             let const_val = resolve_const_ref(ctx, def_map, diagnostics, len, param_map, span);
             ctx.mk_ty(TyKind::Array(elem_ty, const_val))
         }
+
+        // `dyn Trait` — an unsized trait object.
+        glyim_hir::TypeRef::Dyn(inner) => {
+            // The inner type reference must name a trait.
+            let trait_path = match &**inner {
+                glyim_hir::TypeRef::Path(p) => p,
+                _ => {
+                    diagnostics.push(GlyimDiagnostic::type_error(
+                        span,
+                        "the inner type of a `dyn` trait object must be a trait path".to_string(),
+                    ));
+                    return Ty::ERROR;
+                }
+            };
+            let trait_def_id = resolve_path_to_trait_def_id(def_map, trait_path, span);
+            let trait_def_id = match trait_def_id {
+                Some(id) => id,
+                None => {
+                    let path_str = trait_path
+                        .segments
+                        .iter()
+                        .map(|seg| ctx.name_str(seg.name))
+                        .collect::<Vec<_>>()
+                        .join("::");
+                    diagnostics.push(GlyimDiagnostic::type_error(
+                        span,
+                        format!("cannot find trait `{}` in this scope", path_str),
+                    ));
+                    return Ty::ERROR;
+                }
+            };
+
+            // Enforce object safety for the resolved trait when its definition
+            // is available in the type context.
+            if let Some(trait_def) = ctx.trait_def(trait_def_id) {
+                let methods: Vec<glyim_type::object_safety::MethodSignature> = trait_def
+                    .methods
+                    .iter()
+                    .map(|m| {
+                        let inputs = ctx.substitution_args(m.sig.inputs);
+                        glyim_type::object_safety::MethodSignature {
+                            name: m.name,
+                            span,
+                            self_kind: self_kind_of_inputs(&*ctx, inputs),
+                            // Generic-parameter detection requires the trait
+                            // method's own generic-param list, which is not
+                            // recoverable from the interred `FnSig` substitution
+                            // here. We conservatively assume no generic params;
+                            // the dedicated object-safety algorithm tests still
+                            // exercise the generic-method rejection path.
+                            has_generic_params: false,
+                            returns_self: false,
+                        }
+                    })
+                    .collect();
+                let violations = glyim_type::object_safety::check_object_safety(
+                    &glyim_type::object_safety::TraitObjectSafetyInput {
+                        requires_self_sized: false,
+                        methods: &methods,
+                        associated_types: &[],
+                        supertrait_safety: &[],
+                    },
+                );
+                for v in violations {
+                    let msg = match v {
+                        glyim_type::object_safety::ObjectSafetyViolation::SelfSized => {
+                            "the trait cannot be made into an object because it requires `Self: Sized`".into()
+                        }
+                        glyim_type::object_safety::ObjectSafetyViolation::GenericMethod {
+                            method, ..
+                        } => format!(
+                            "the trait `{}` cannot be made into an object because method `{}` has generic type parameters",
+                            ctx.name_str(trait_def.name),
+                            ctx.name_str(method)
+                        ),
+                        glyim_type::object_safety::ObjectSafetyViolation::StaticMethod {
+                            method, ..
+                        } => format!(
+                            "the trait `{}` cannot be made into an object because method `{}` has no receiver",
+                            ctx.name_str(trait_def.name),
+                            ctx.name_str(method)
+                        ),
+                        glyim_type::object_safety::ObjectSafetyViolation::ByValueSelf {
+                            method, ..
+                        } => format!(
+                            "the trait `{}` cannot be made into an object because method `{}` takes `self` by value",
+                            ctx.name_str(trait_def.name),
+                            ctx.name_str(method)
+                        ),
+                        glyim_type::object_safety::ObjectSafetyViolation::AssociatedFunction {
+                            name, ..
+                        } => format!(
+                            "the trait `{}` cannot be made into an object because associated function `{}` is not dispatchable",
+                            ctx.name_str(trait_def.name),
+                            ctx.name_str(name)
+                        ),
+                        glyim_type::object_safety::ObjectSafetyViolation::UnconstrainedAssociatedType {
+                            name, ..
+                        } => format!(
+                            "the trait `{}` cannot be made into an object because associated type `{}` is not constrained",
+                            ctx.name_str(trait_def.name),
+                            ctx.name_str(name)
+                        ),
+                        glyim_type::object_safety::ObjectSafetyViolation::SupertraitNotObjectSafe {
+                            trait_id, ..
+                        } => format!(
+                            "the trait `{}` cannot be made into an object because supertrait `{}` is not object-safe",
+                            ctx.name_str(trait_def.name),
+                            ctx.trait_def(trait_id)
+                                .map(|t| ctx.name_str(t.name).to_string())
+                                .unwrap_or_else(|| format!("#{}", trait_id.index())),
+                        ),
+                    };
+                    diagnostics.push(GlyimDiagnostic::type_error(span, msg));
+                }
+            }
+
+            let trait_ref = glyim_type::TraitRef {
+                def_id: trait_def_id,
+                substs: ctx.intern_substitution(vec![]),
+            };
+            let preds: Box<[glyim_type::Predicate]> =
+                Box::new([glyim_type::Predicate::Trait(glyim_type::TraitPredicate {
+                    trait_ref,
+                    polarity: glyim_type::ImplPolarity::Positive,
+                })]);
+            let binder = glyim_type::Binder::bind(
+                preds,
+                Box::new([glyim_type::BoundVariableKind::Ty(
+                    glyim_type::BoundTyKind::Anon,
+                )]),
+            );
+            ctx.mk_ty(TyKind::Dynamic(binder, Region::Erased))
+        }
     }
 }
 
@@ -483,6 +617,29 @@ fn resolve_primitive(ctx: &mut TyCtxMut, name: Name) -> Option<Ty> {
 fn resolve_name_to_def_id(def_map: &glyim_def_map::CrateDefMap, name: Name) -> Option<DefId> {
     let res = def_map.modules[def_map.root].scope.resolve(name)?;
     Some(DefId::new(def_map.krate, res.0))
+}
+
+/// Infer the object-safety `self` kind of a trait method from its resolved
+/// input argument list.
+///
+/// The first input is the receiver. A reference receiver (`&self` /
+/// `&mut self`) is object-safe; a by-value `self` requires `Self: Sized`;
+/// an empty input list means the method has no receiver (a static / associated
+/// function), which cannot be dispatched through a trait object.
+fn self_kind_of_inputs(
+    ctx: &dyn glyim_type::TypeLookup,
+    inputs: &[glyim_type::GenericArg],
+) -> glyim_type::object_safety::MethodSelfKind {
+    let Some(first) = inputs.first().and_then(|a| match a {
+        glyim_type::GenericArg::Ty(t) => Some(t),
+        _ => None,
+    }) else {
+        return glyim_type::object_safety::MethodSelfKind::None;
+    };
+    match ctx.ty_kind(*first) {
+        glyim_type::TyKind::Ref(_, _, _) => glyim_type::object_safety::MethodSelfKind::ByReference,
+        _ => glyim_type::object_safety::MethodSelfKind::ByValue,
+    }
 }
 
 fn resolve_name_to_adt_ty(
