@@ -76,6 +76,7 @@ fn closure_captures_enclosing_param() {
     let _closure = exprs.push(Expr::Closure {
         params: vec![y_pat],
         body: x_ref,
+        is_move: false,
     });
 
     let body = Body {
@@ -147,6 +148,105 @@ fn closure_captures_enclosing_param() {
     );
     // Tier 1.1b: the closure type must be a concrete ADT, not an unresolved
     // inference variable.
+    assert!(
+        matches!(ctx.ty_kind(closure_ty), glyim_type::TyKind::Adt(_, _)),
+        "closure type should resolve to a concrete Adt, got {closure_ty:?}"
+    );
+}
+
+/// §2.2: a `move` closure captures its environment *by value*.
+///
+/// `fn main(x: i32) { move |y: i32| x }` — `x` is an enclosing binding; with
+/// `move` it must be captured as `ByValue` rather than `ByRef(Not)`.
+#[test]
+fn move_closure_captures_by_value() {
+    let inter = global_interner();
+    let main_name = inter.intern("main");
+    let x_name = inter.intern("x");
+    let y_name = inter.intern("y");
+    let i32_name = inter.intern("i32");
+
+    let mut pats: IndexVec<_, Pat> = IndexVec::new();
+    let y_pat = pats.push(Pat::Binding {
+        name: y_name,
+        mutability: Mutability::Not,
+        subpattern: None,
+    });
+
+    let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
+    let x_ref = exprs.push(Expr::Path(glyim_hir::Path::from_single(x_name)));
+    let _closure = exprs.push(Expr::Closure {
+        params: vec![y_pat],
+        body: x_ref,
+        is_move: true,
+    });
+
+    let body = Body {
+        owner: LocalDefId::from_raw(0),
+        exprs: exprs.clone(),
+        pats,
+        params: vec![],
+        span: Span::DUMMY,
+        expr_spans: IndexVec::from_raw(vec![Span::DUMMY; exprs.len()]),
+    };
+    let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
+    let body_id = bodies.push(body);
+
+    let item = Item {
+        id: ItemId::from_raw(0),
+        name: main_name,
+        kind: ItemKind::Fn(FnItem {
+            params: vec![glyim_hir::Param {
+                name: x_name,
+                ty: Some(glyim_hir::TypeRef::Path(glyim_hir::Path::from_single(
+                    i32_name,
+                ))),
+                span: Span::DUMMY,
+            }],
+            return_ty: None,
+            body: Some(body_id),
+            is_unsafe: false,
+            is_async: false,
+            generic_params: vec![],
+            where_clauses: Vec::new(),
+        }),
+        visibility: Visibility::Public,
+        span: Span::DUMMY,
+    };
+
+    let mut items: IndexVec<ItemId, Item> = IndexVec::new();
+    items.push(item);
+    let mut body_owners = IndexVec::new();
+    body_owners.push(LocalDefId::from_raw(0));
+    let hir = CrateHir {
+        items,
+        bodies,
+        body_owners,
+    };
+
+    let ctx = make_ty_ctx();
+    let def_map = empty_def_map();
+    let mut solver = MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);
+    let (ctx, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);
+    for d in &result.diagnostics {
+        eprintln!("DIAG: {d:?}");
+    }
+    assert_no_errors(&result.diagnostics);
+
+    let (_, thir_body) = &result.thir_bodies[0];
+    let closures = collect_closures(thir_body);
+    assert_eq!(closures.len(), 1, "exactly one closure should be produced");
+
+    let (captures, closure_ty) = match &closures[0].kind {
+        thir::ExprKind::Closure { captures, .. } => (captures.clone(), closures[0].ty),
+        _ => panic!("expected a closure"),
+    };
+    assert_eq!(captures.len(), 1, "move closure must capture exactly one variable (x)");
+    assert_eq!(
+        captures[0].kind,
+        thir::CaptureKind::ByValue,
+        "move closure captures enclosing binding by value"
+    );
     assert!(
         matches!(ctx.ty_kind(closure_ty), glyim_type::TyKind::Adt(_, _)),
         "closure type should resolve to a concrete Adt, got {closure_ty:?}"

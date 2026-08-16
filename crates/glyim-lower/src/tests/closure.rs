@@ -27,6 +27,7 @@ fn closure_lowering_does_not_panic() {
         ExprKind::Closure {
             body: Box::new(closure_body),
             captures: vec![],
+            is_move: false,
         },
         i32_ty,
     );

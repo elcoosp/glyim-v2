@@ -373,6 +373,7 @@ pub enum Expr {
     Closure {
         params: Vec<PatId>,
         body: ExprId,
+        is_move: bool,
     },
     Array(Vec<ExprId>),
     Tuple(Vec<ExprId>),

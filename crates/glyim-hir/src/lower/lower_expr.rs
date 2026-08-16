@@ -308,8 +308,12 @@ fn lower_closure_expr(
 ) -> Option<ExprId> {
     let mut params = Vec::new();
     let mut body_expr = None;
+    let mut is_move = false;
     for child in node.children() {
         match child.kind() {
+            SyntaxKind::KwMove => {
+                is_move = true;
+            }
             SyntaxKind::ParamList => {
                 for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
                     let (_, pat_id) = lower_param(&param_node, interner, &mut body.pats);
@@ -328,6 +332,7 @@ fn lower_closure_expr(
     let expr = Expr::Closure {
         params,
         body: body_id,
+        is_move,
     };
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)

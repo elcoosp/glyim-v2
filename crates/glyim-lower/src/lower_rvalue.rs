@@ -698,6 +698,7 @@ impl<'a> MirBuilder<'a> {
             thir::ExprKind::Closure {
                 body: _thir_body,
                 captures,
+                is_move: _,
             } => {
                 let (closure_id, closure_substs) = match self.ctx.ty_ctx().ty_kind(expr.ty) {
                     TyKind::Closure(id, substs) => (id, substs),

@@ -145,6 +145,7 @@ pub enum ExprKind {
     Closure {
         body: Box<Body>,
         captures: Vec<Capture>,
+        is_move: bool,
     },
     Range {
         start: Option<Box<Expr>>,

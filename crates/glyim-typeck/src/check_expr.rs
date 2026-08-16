@@ -735,7 +735,7 @@ impl<'a> FnCtxt<'a> {
                 (thir_expr, struct_ty)
             }
 
-            Expr::Closure { params, body } => {
+            Expr::Closure { params, body, is_move } => {
                 // 1. Enter the closure's own scope and bind the parameters so
                 //    that the body's own bindings are distinguishable (by
                 //    LocalVarId boundary) from captures of the enclosing env.
@@ -764,6 +764,10 @@ impl<'a> FnCtxt<'a> {
                 // 3. Classify captures: anything resolved below the boundary
                 //    is a capture from an enclosing scope; classify mutability
                 //    from the is_mut_use flag recorded in the log.
+                //
+                //    A `move` closure takes every capture *by value*: the
+                //    captured variable is moved into the closure environment
+                //    rather than referenced. (§2.2)
                 let mut seen = std::collections::HashSet::new();
                 let mut captures = Vec::new();
                 for (id, ty, is_mut) in self.capture_log.drain(log_start..) {
@@ -773,7 +777,9 @@ impl<'a> FnCtxt<'a> {
                     if !seen.insert(id) {
                         continue; // already recorded (e.g. used twice) — keep first classification
                     }
-                    let kind = if is_mut {
+                    let kind = if *is_move {
+                        thir::CaptureKind::ByValue
+                    } else if is_mut {
                         thir::CaptureKind::ByRef(Mutability::Mut)
                     } else {
                         thir::CaptureKind::ByRef(Mutability::Not)
@@ -804,6 +810,7 @@ impl<'a> FnCtxt<'a> {
                             span,
                         }),
                         captures: capture_thir,
+                        is_move: *is_move,
                     },
                     ty: closure_ty,
                     span,

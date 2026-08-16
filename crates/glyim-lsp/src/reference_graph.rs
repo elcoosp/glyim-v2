@@ -587,6 +587,7 @@ impl ReferenceGraph {
                 Expr::Closure {
                     params,
                     body: closure_body,
+                    is_move: _,
                 } => {
                     for param in params {
                         walk_pattern(*param, body, interner, add_ref, AccessKind::Read);

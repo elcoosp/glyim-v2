@@ -42,6 +42,7 @@ fn closure_lowers_to_aggregate() {
         ExprKind::Closure {
             body: Box::new(closure_body),
             captures: vec![],
+            is_move: false,
         },
         closure_ty,
     );
@@ -117,6 +118,7 @@ fn closure_with_by_ref_capture() {
                 kind: CaptureKind::ByRef(Mutability::Not),
                 ty: ref_i32_ty,
             }],
+            is_move: false,
         },
         closure_ty,
     );
@@ -194,6 +196,7 @@ fn closure_with_by_value_capture() {
                 kind: CaptureKind::ByValue,
                 ty: i32_ty,
             }],
+            is_move: false,
         },
         closure_ty,
     );
@@ -289,6 +292,7 @@ fn closure_with_multiple_captures() {
                     ty: ref_bool_ty,
                 },
             ],
+            is_move: false,
         },
         closure_ty,
     );
