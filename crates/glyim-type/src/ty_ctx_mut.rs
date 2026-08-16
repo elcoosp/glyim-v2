@@ -580,7 +580,7 @@ impl TyCtxMut {
 
         // Register Option<T> - ID 1010
         // A two-variant enum: `None` (no fields) and `Some(T)`.
-        let mut none_fields = IndexVec::new();
+        let none_fields = IndexVec::new();
         let mut some_fields = IndexVec::new();
         some_fields.push(FieldDef {
             name: self.resolver.intern("0"),

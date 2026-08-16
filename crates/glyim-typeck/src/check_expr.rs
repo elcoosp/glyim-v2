@@ -1024,15 +1024,4 @@ impl<'a> FnCtxt<'a> {
             Ty::ERROR
         }
     }
-
-    /// Analyze free variables in a closure body, classifying each capture.
-    fn analyze_captures(
-        &mut self,
-        _body_expr: ExprId,
-        _span: Span,
-    ) -> Vec<(thir::LocalVarId, thir::CaptureKind, Ty)> {
-        // Placeholder: walk the body and collect free variables.
-        // For now, return empty.
-        Vec::new()
-    }
 }
