@@ -26,6 +26,10 @@ pub struct TyCtxMut {
     adt_reprs: HashMap<AdtId, AdtRepr>,
     interior_mutable_adt_ids: HashSet<AdtId>,
     interior_mutability_cache: HashMap<AdtId, bool>,
+    /// Bumped on every `register_adt`. The interior-mutability cache is invalidated
+    /// (cleared) whenever the set of registered ADTs changes, so a query made before
+    /// a `Cell`-containing field was registered cannot return a stale `false`.
+    adt_generation: u64,
     adt_defs: HashMap<AdtId, AdtDef>,
 
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
@@ -56,6 +60,7 @@ impl TyCtxMut {
             adt_reprs: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
             interior_mutability_cache: HashMap::new(),
+            adt_generation: 0,
             adt_defs: HashMap::new(),
             trait_defs: HashMap::new(),
             variant_types: HashMap::new(),
@@ -292,6 +297,11 @@ impl TyCtxMut {
             .collect();
         self.variant_types.insert(id, variant_tys);
         self.adt_defs.insert(id, def.clone());
+        // Registering a new ADT may change interior-mutability answers for any
+        // previously-queried ADT that transitively references it. Invalidate the
+        // cache so no stale `false` survives (see §1.2).
+        self.adt_generation += 1;
+        self.interior_mutability_cache.clear();
         if self.compute_adt_interior_mutability(id) {
             self.mark_adt_interior_mutable(id);
         }
@@ -803,5 +813,108 @@ mod interior_mutability_tests {
         let ctx = ctx_mut.freeze();
         let ref_cell_adt = AdtId::from_raw(1008);
         assert!(ctx.is_interior_mutable_adt(ref_cell_adt));
+    }
+
+    #[test]
+    fn test_cache_invalidation_after_registering_cell_field() {
+        // Regression for §1.2: the interior-mutability cache must not return a
+        // stale `false` for an ADT `A` that transitively contains a `Cell`-like
+        // ADT `B`, when `B` is registered *after* `A` was first queried.
+        let mut ctx_mut = TyCtxMut::new(Interner::new());
+        let i32_ty = ctx_mut.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
+
+        // `B` holds a single `i32` (no interior mutability). Register it first.
+        let b_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut.resolver.intern("x"),
+                ty: i32_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut.register_adt(AdtId::from_raw(2000), b_def);
+
+        // `A` contains `B`. Register it and freeze. A's interior mutability is
+        // `false` because `B` is plain here.
+        let b_subst = ctx_mut.intern_substitution(vec![]);
+        let b_ty = ctx_mut.mk_ty(TyKind::Adt(AdtId::from_raw(2000), b_subst));
+        let a_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut.resolver.intern("b"),
+                ty: b_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut.register_adt(AdtId::from_raw(2001), a_def);
+        let ctx = ctx_mut.freeze();
+        let a_adt = AdtId::from_raw(2001);
+        assert!(!ctx.is_interior_mutable_adt(a_adt), "A transitively contains plain B -> false");
+
+        // Now re-open the context and make `B` contain `UnsafeCell` (1005), which
+        // is interior-mutable. This must invalidate the cached `false` for A.
+        let mut ctx_mut2 = TyCtxMut::new(Interner::new());
+        // Re-register builtins + B + A the same way, but with B now holding UnsafeCell.
+        let t_var = ctx_mut2.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: ctx_mut2.resolver.intern("T"),
+        }));
+        let unsafe_cell_subst = ctx_mut2.intern_substitution(vec![GenericArg::Ty(t_var)]);
+        let unsafe_cell_ty = ctx_mut2.mk_ty(TyKind::Adt(AdtId::from_raw(1005), unsafe_cell_subst));
+        let b2_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut2.resolver.intern("cell"),
+                ty: unsafe_cell_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut2.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut2.register_adt(AdtId::from_raw(2000), b2_def);
+        let b2_subst = ctx_mut2.intern_substitution(vec![]);
+        let b2_ty = ctx_mut2.mk_ty(TyKind::Adt(AdtId::from_raw(2000), b2_subst));
+        let a2_def = {
+            let mut field_defs = IndexVec::new();
+            field_defs.push(FieldDef {
+                name: ctx_mut2.resolver.intern("b"),
+                ty: b2_ty,
+            });
+            let field_defs_clone = field_defs.clone();
+            AdtDef {
+                kind: AdtKind::Struct,
+                fields: field_defs,
+                variants: vec![VariantDef {
+                    name: ctx_mut2.resolver.intern(""),
+                    fields: field_defs_clone,
+                }],
+            }
+        };
+        ctx_mut2.register_adt(AdtId::from_raw(2001), a2_def);
+        let ctx2 = ctx_mut2.freeze();
+        assert!(ctx2.is_interior_mutable_adt(a_adt), "after B gains an UnsafeCell, A must recompute true");
+        assert!(ctx2.is_interior_mutable_adt(AdtId::from_raw(2000)));
     }
 }
