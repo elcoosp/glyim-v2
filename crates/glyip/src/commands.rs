@@ -373,7 +373,7 @@ pub fn cmd_run(project_dir: &Path, opts: &RunOptions) -> GlyipResult<RunResult> 
     // Build first.
     let build_opts = BuildOptions {
         release: opts.release,
-        target: None,
+        target: opts.target.clone(),
         backend: opts.backend.clone(),
         opt_level: if opts.release { 2 } else { 0 },
     };
@@ -381,7 +381,12 @@ pub fn cmd_run(project_dir: &Path, opts: &RunOptions) -> GlyipResult<RunResult> 
 
     // Execute the binary.
     info!("Executing {}", build_result.output.display());
-    let exit_code = run_binary(&build_result.output, &opts.args)?;
+    // Build-time environment: the compiled artifact may depend on a glyim
+    // runtime search path. Today there is no separate runtime library, so
+    // `env` is empty; the placeholder is wired (plan §21.4) so runtime vars
+    // can be injected here without touching the call sites later.
+    let run_env: HashMap<String, String> = HashMap::new();
+    let exit_code = run_binary(&build_result.output, &opts.args, &run_env)?;
 
     Ok(RunResult {
         binary: build_result.output,
@@ -498,7 +503,14 @@ fn compile_source(
 }
 
 /// Run a compiled binary and return its exit code.
-fn run_binary(binary: &Path, args: &[String]) -> GlyipResult<i32> {
+///
+/// `env` is an explicit set of environment variables to set on the child
+/// process (forwarded in addition to the process's inherited environment —
+/// see [`std::process::Command::envs`]). When `glyip run` later gains a
+/// runtime library, the runtime search path and any runtime configuration
+/// vars are injected here (de-stubbing plan §21.4) rather than relying on
+/// ambient shell state.
+fn run_binary(binary: &Path, args: &[String], env: &HashMap<String, String>) -> GlyipResult<i32> {
     if !binary.exists() {
         return Err(GlyipError::Other(format!(
             "binary not found: {}",
@@ -508,6 +520,7 @@ fn run_binary(binary: &Path, args: &[String]) -> GlyipResult<i32> {
 
     let status = std::process::Command::new(binary)
         .args(args)
+        .envs(env.iter().map(|(k, v)| (k.clone(), v.clone())))
         .status()
         .map_err(GlyipError::Io)?;
 

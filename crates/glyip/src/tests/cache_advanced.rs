@@ -19,6 +19,25 @@ fn cache_global_cache_dir_has_glyip() {
 }
 
 #[test]
+fn ensure_global_cache_dir_creates_dir() {
+    // Run under an isolated HOME so we don't create a real ~/.glyip.
+    let temp_home = TempDir::new().expect("temp home");
+    unsafe {
+        std::env::set_var("HOME", temp_home.path());
+        // Some platforms compute home via USERPROFILE on Windows; best-effort.
+        let _ = std::env::set_var("USERPROFILE", temp_home.path());
+    }
+
+    let created = Cache::ensure_global_cache_dir().expect("ensure");
+    assert!(created.exists(), "global cache dir must exist after ensure");
+    assert!(created.to_string_lossy().contains(".glyip/cache"));
+
+    // Idempotent: a second call must succeed and remain a directory.
+    let again = Cache::ensure_global_cache_dir().expect("ensure again");
+    assert!(again.exists());
+}
+
+#[test]
 fn cache_needs_recompile_new_file() {
     let dir = TempDir::new().expect("temp dir");
     let src = dir.path().join("src");

@@ -58,6 +58,9 @@ enum Commands {
         /// Arguments to pass to the binary.
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
+        /// Target triple.
+        #[arg(long)]
+        target: Option<String>,
     },
 }
 
@@ -105,11 +108,12 @@ fn main() {
             };
             glyip::cmd_test(&project_dir, &opts).map(|_| ())
         }
-        Commands::Run { release, args } => {
+        Commands::Run { release, args, target } => {
             let opts = glyip::config::RunOptions {
                 release,
                 args,
                 backend: "bytecode".to_string(),
+                target,
             };
             glyip::cmd_run(&project_dir, &opts).map(|_| ())
         }

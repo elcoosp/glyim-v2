@@ -230,6 +230,9 @@ pub struct RunOptions {
     pub args: Vec<String>,
     /// Codegen backend name.
     pub backend: String,
+    /// Target triple. When `None`, the host/default triple is used. (Plan §21.3:
+    /// `glyip run` must honour `--target` rather than silently dropping it.)
+    pub target: Option<String>,
 }
 
 impl Default for RunOptions {
@@ -238,6 +241,7 @@ impl Default for RunOptions {
             release: false,
             args: Vec::new(),
             backend: "bytecode".to_string(),
+            target: None,
         }
     }
 }

@@ -62,8 +62,24 @@ impl Cache {
     }
 
     /// Return the global cache directory (`~/.glyip/cache`).
+    ///
+    /// Unlike [`Cache::new`] (which operates on a project-local `target/`),
+    /// this is a process-global location for cross-project artifacts
+    /// (registry downloads, shared fingerprints). Callers that *write* here
+    /// should call [`Cache::ensure_global_cache_dir`] first; this getter is
+    /// side-effect-free so it stays cheap to call from read paths.
     pub fn global_cache_dir() -> PathBuf {
         home_dir().join(".glyip").join("cache")
+    }
+
+    /// Create the global cache directory (and its parents) if missing.
+    ///
+    /// Ensures a subsequent write to [`Cache::global_cache_dir`] cannot fail
+    /// with a "no such file or directory" error (de-stubbing plan §21.1).
+    pub fn ensure_global_cache_dir() -> GlyipResult<PathBuf> {
+        let dir = Self::global_cache_dir();
+        fs::create_dir_all(&dir)?;
+        Ok(dir)
     }
 
     /// Check whether a single source file needs recompilation.
