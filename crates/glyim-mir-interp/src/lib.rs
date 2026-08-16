@@ -1085,9 +1085,16 @@ impl<'tcx> Interpreter<'tcx> {
                     "callee must be a function reference".into(),
                 )),
             },
-            _ => Err(InterpError::Panic(
-                "indirect function calls not implemented".into(),
-            )),
+            // Indirect call: the callee is read from a place (e.g. a function
+            // pointer stored in a local). `eval_mir_const` lowers
+            // `MirConstKind::Fn` into `InterpValue::Fn(def_id)`, so a function
+            // reference copied into a local round-trips back to its DefId here.
+            Operand::Copy(place) | Operand::Move(place) => match self.read_place(place)? {
+                InterpValue::Fn(def_id) => Ok(def_id),
+                other => Err(InterpError::Panic(format!(
+                    "indirect call through non-function value: {other:?}"
+                ))),
+            },
         }
     }
 
