@@ -38,11 +38,12 @@ pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     // every `Subslice` projection. If one survives, codegen's
     // `unreachable!("Subslice")` would fire — catch it here as a precise
     // compiler-bug error instead of three passes later as an opaque panic.
-    #[cfg(debug_assertions)]
-    {
-        if let Err(e) = validate::validate_no_subslice(&body) {
-            panic!("MIR failed validation after slice_desugar: {:?}", e);
-        }
+    // Unlike the dev-time `validate_body` check above, this invariant is
+    // unconditionally enforced: codegen (glyim-codegen-llvm) treats a
+    // surviving `Subslice` as `unreachable!`, so a release build must not
+    // silently skip this check and later panic opaquely.
+    if let Err(e) = validate::validate_no_subslice(&body) {
+        panic!("MIR failed validation after slice_desugar: {:?}", e);
     }
     constant_prop::run(ctx, &mut body);
     dce::run(ctx, &mut body);
