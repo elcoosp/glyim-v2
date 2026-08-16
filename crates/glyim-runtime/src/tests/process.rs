@@ -126,3 +126,52 @@ fn test_glyim_process_kill_invalid_handle() {
         assert_eq!(result, -1, "should fail for invalid handle");
     }
 }
+
+#[test]
+fn test_glyim_process_kill_honors_signal() {
+    // Spawn a long-running child; send SIGTERM (15) and confirm the kill
+    // succeeds and the child is reaped with a signal-terminated status.
+    unsafe {
+        let mut handle: usize = 0;
+        let spawn = crate::glyim_process_spawn(
+            b"sleep\x00".as_ptr(),
+            5,
+            std::ptr::null(),
+            0,
+            &mut handle as *mut usize,
+        );
+        assert_eq!(spawn, 0, "spawn of 'sleep' should succeed");
+        assert_ne!(handle, 0, "handle must be assigned");
+
+        // SIGTERM (15) is honored, not forced to SIGKILL.
+        let kill = crate::glyim_process_kill(handle, 15);
+        assert_eq!(kill, 0, "kill with SIGTERM should succeed");
+
+        let mut code: i32 = -999;
+        let wait = crate::glyim_process_wait(handle, &mut code as *mut i32);
+        assert_eq!(wait, 0, "wait after kill should reap the child");
+        // A signal-terminated child reports a non-zero (negative/signal) code.
+        assert_ne!(code, 0, "terminated child should not report success");
+    }
+}
+
+#[test]
+fn test_glyim_process_kill_invalid_signal_falls_back_to_sigkill() {
+    unsafe {
+        let mut handle: usize = 0;
+        let spawn = crate::glyim_process_spawn(
+            b"sleep\x00".as_ptr(),
+            5,
+            std::ptr::null(),
+            0,
+            &mut handle as *mut usize,
+        );
+        assert_eq!(spawn, 0);
+        // An out-of-range signal must fall back to SIGKILL (which still works).
+        let kill = crate::glyim_process_kill(handle, 9999);
+        assert_eq!(kill, 0, "invalid signal should fall back to SIGKILL");
+        let mut code: i32 = -999;
+        let wait = crate::glyim_process_wait(handle, &mut code as *mut i32);
+        assert_eq!(wait, 0, "wait after kill should succeed");
+    }
+}

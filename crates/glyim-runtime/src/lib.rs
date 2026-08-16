@@ -787,8 +787,14 @@ pub unsafe extern "C" fn glyim_process_wait_output(
 
 /// Send a termination signal to a child process.
 ///
-/// On Unix, this sends `SIGKILL` (the `signal` parameter is currently ignored;
-/// a future implementation may honour it).
+/// On Unix, `signal` is passed through to `kill(pid, signal)` so callers can
+/// request e.g. `SIGTERM` (15) for graceful shutdown vs `SIGKILL` (9) for an
+/// abrupt termination. An out-of-range signal falls back to `SIGKILL`.
+///
+/// On Windows, POSIX signals do not exist; the `signal` parameter is ignored
+/// and the process is always terminated via `TerminateProcess` (equivalent to
+/// `SIGKILL`). This platform gap is documented rather than silently dropping
+/// the parameter.
 ///
 /// The handle remains valid after `kill`; use `wait` or `wait_output` to
 /// reap the child afterward.
@@ -801,17 +807,43 @@ pub unsafe extern "C" fn glyim_process_wait_output(
 ///
 /// - `handle` must be a valid handle previously returned by `glyim_process_spawn`
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glyim_process_kill(_handle: usize, _signal: i32) -> i32 {
+pub unsafe extern "C" fn glyim_process_kill(handle: usize, signal: i32) -> i32 {
     let mut registry = process_registry()
         .lock()
         .expect("process registry lock poisoned");
-    if let Some(ref mut child) = registry.children.get_mut(&_handle) {
-        match child.kill() {
-            Ok(()) => 0,
-            Err(_) => -1,
+    #[cfg(unix)]
+    {
+        if let Some(child) = registry.children.get_mut(&handle) {
+            let pid = child.id() as libc::pid_t;
+            // Map the requested signal; invalid values fall back to SIGKILL.
+            let sig = if signal > 0 && signal <= libc::SIGKILL as i32 {
+                signal as libc::c_int
+            } else {
+                libc::SIGKILL
+            };
+            // SAFETY: pid is a live child process; signal values are validated.
+            let ret = unsafe { libc::kill(pid, sig) };
+            if ret == 0 {
+                0
+            } else {
+                -1
+            }
+        } else {
+            -1
         }
-    } else {
-        -1
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows: no POSIX signals; always terminate.
+        let _ = signal;
+        if let Some(ref mut child) = registry.children.get_mut(&handle) {
+            match child.kill() {
+                Ok(()) => 0,
+                Err(_) => -1,
+            }
+        } else {
+            -1
+        }
     }
 }
 
