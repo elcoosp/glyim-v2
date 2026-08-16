@@ -1,7 +1,7 @@
 /// HIR `TypeRef` → `Ty` conversion.
 use std::collections::HashMap;
 
-use glyim_core::def_id::{AdtId, DefId, TraitDefId};
+use glyim_core::def_id::{AdtId, DefId, LocalDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
@@ -551,48 +551,44 @@ fn resolve_qualified_path(
         return None;
     }
 
-    if let Some(last_name) = path.segments.last().map(|s| s.name)
-        && let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, last_name)
-    {
-        if let Some(args) = path.segments.last().and_then(|s| s.generic_args.as_ref()) {
-            let mut arg_tys = Vec::with_capacity(args.len());
-            for arg in args {
-                let resolved = resolve_type_ref(
-                    ctx,
-                    infer,
-                    def_map,
-                    &mut Vec::new(),
-                    arg,
-                    &HashMap::new(),
-                    span,
-                );
-                arg_tys.push(GenericArg::Ty(resolved));
+    // Resolve the whole path (module prefix + final ADT segment) through the
+    // module tree, then build the ADT type with the final segment's generic
+    // arguments (if any).
+    let local = resolve_path_to_local_def_id(def_map, path)?;
+    let adt_id = AdtId::from_raw(local.to_raw());
+    let substs = if let Some(args) = path.segments.last().and_then(|s| s.generic_args.as_ref()) {
+        let mut arg_tys = Vec::with_capacity(args.len());
+        for arg in args {
+            let resolved = resolve_type_ref(
+                ctx,
+                infer,
+                def_map,
+                &mut Vec::new(),
+                arg,
+                &HashMap::new(),
+                span,
+            );
+            if matches!(ctx.ty_kind(resolved), TyKind::Error) {
+                return None;
             }
-            if !arg_tys
-                .iter()
-                .any(|a| matches!(a, GenericArg::Ty(Ty::ERROR)))
-            {
-                let substs = ctx.intern_substitution(arg_tys);
-                if let TyKind::Adt(adt_id, _) = ctx.ty_kind(ty) {
-                    return Some(ctx.mk_ty(TyKind::Adt(*adt_id, substs)));
-                }
-            }
+            arg_tys.push(GenericArg::Ty(resolved));
         }
-        return Some(ty);
-    }
-
-    None
+        ctx.intern_substitution(arg_tys)
+    } else {
+        ctx.intern_substitution(vec![])
+    };
+    Some(ctx.mk_ty(TyKind::Adt(adt_id, substs)))
 }
 
-/// Resolve path to trait DefId
-pub(crate) fn resolve_path_to_trait_def_id(
+/// Walk the module tree following `path`'s segments and resolve the final
+/// segment to a `LocalDefId`. Leading segments name (sub)modules (via
+/// `ModuleData::children`); the final segment is resolved in the scope of the
+/// module reached by the prefix. Handles `Crate` / `Super(n)` / `SelfPath` /
+/// `Plain` path kinds.
+fn resolve_path_to_local_def_id(
     def_map: &glyim_def_map::CrateDefMap,
     path: &glyim_hir::Path,
-    _span: Span,
-) -> Option<TraitDefId> {
-    // Walk the module tree following the path's segments. All but the last
-    // segment name a (sub)module; the final segment names the trait and is
-    // resolved in the scope of the module reached by the prefix.
+) -> Option<LocalDefId> {
     let mut current = match path.kind {
         glyim_core::path::PathKind::Crate => def_map.root,
         glyim_core::path::PathKind::SelfPath | glyim_core::path::PathKind::Plain => def_map.root,
@@ -611,11 +607,9 @@ pub(crate) fn resolve_path_to_trait_def_id(
 
     for (i, seg) in path.segments.iter().enumerate() {
         if i + 1 == path.segments.len() {
-            // Final segment: resolve the trait name in this module's scope.
             let res = def_map.modules[current].scope.resolve(seg.name)?;
-            return Some(TraitDefId::from_raw(res.0.to_raw()));
+            return Some(res.0);
         } else {
-            // Intermediate segment: must name a child module.
             let child = def_map.modules[current]
                 .children
                 .iter()
@@ -626,6 +620,15 @@ pub(crate) fn resolve_path_to_trait_def_id(
     }
 
     None
+}
+
+/// Resolve path to trait DefId
+pub(crate) fn resolve_path_to_trait_def_id(
+    def_map: &glyim_def_map::CrateDefMap,
+    path: &glyim_hir::Path,
+    _span: Span,
+) -> Option<TraitDefId> {
+    resolve_path_to_local_def_id(def_map, path).map(|l| TraitDefId::from_raw(l.to_raw()))
 }
 
 fn resolve_primitive(ctx: &mut TyCtxMut, name: Name) -> Option<Ty> {

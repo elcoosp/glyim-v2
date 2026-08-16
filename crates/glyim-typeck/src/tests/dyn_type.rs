@@ -369,3 +369,60 @@ fn dyn_trait_multi_segment_path_resolves() {
         ),
     }
 }
+
+/// Multi-segment ADT paths (e.g. `zoo::Animal`) must resolve through the module
+/// tree to a `TyKind::Adt`, not just crate-root names.
+#[test]
+fn adt_multi_segment_path_resolves_to_adt() {
+    let mut inter = global_interner();
+    let mod_name = "zoo";
+    let adt_name = "Animal";
+    let adt_local_id = 7u32;
+    let def_map = def_map_with_nested_trait(&mut inter, mod_name, adt_name, adt_local_id);
+
+    let mut ctx = glyim_type::TyCtxMut::new(inter.clone());
+    let mut infer = InferenceTable::new();
+    let mut diagnostics = Vec::new();
+    let param_map: HashMap<glyim_core::Name, Ty> = HashMap::new();
+
+    // `zoo::Animal` — a multi-segment ADT path (no traits registered).
+    let mut path = Path::from_single(inter.intern(adt_name));
+    path.kind = glyim_core::path::PathKind::Plain;
+    path.segments.insert(
+        0,
+        glyim_hir::PathSegment {
+            name: inter.intern(mod_name),
+            generic_args: None,
+        },
+    );
+
+    let ty = resolve_type_ref(
+        &mut ctx,
+        &mut infer,
+        &def_map,
+        &mut diagnostics,
+        &TypeRef::Path(path),
+        &param_map,
+        Span::DUMMY,
+    );
+
+    assert!(
+        diagnostics.is_empty(),
+        "expected no diagnostics for multi-segment ADT path, got: {:?}",
+        diagnostics
+    );
+    match ctx.ty_kind(ty) {
+        TyKind::Adt(adt_id, substs) => {
+            assert_eq!(adt_id.index(), adt_local_id as usize, "must resolve to the nested ADT");
+            assert_eq!(
+                ctx.substitution_args(*substs).len(),
+                0,
+                "ADT without generic args has empty substs"
+            );
+        }
+        other => panic!(
+            "multi-segment ADT path must resolve to TyKind::Adt, got {:?}",
+            other
+        ),
+    }
+}
