@@ -234,6 +234,141 @@ fn matches_fragment_spec(tree: &TokenTree, spec: &FragmentSpec) -> bool {
     }
 }
 
+/// Map a `FragmentSpec` to the keyword string understood by
+/// `glyim_frontend::try_parse_fragment`.
+fn spec_name(spec: &FragmentSpec) -> &'static str {
+    match spec {
+        FragmentSpec::Expr => "expr",
+        FragmentSpec::Ty => "ty",
+        FragmentSpec::Ident => "ident",
+        FragmentSpec::Path => "path",
+        FragmentSpec::Block => "block",
+        FragmentSpec::Stmt => "stmt",
+        FragmentSpec::Item => "item",
+        FragmentSpec::Pat => "pat",
+        FragmentSpec::Lifetime => "lifetime",
+        FragmentSpec::Literal => "literal",
+        FragmentSpec::Vis => "vis",
+        FragmentSpec::Meta => "meta",
+        FragmentSpec::Tt => "tt",
+    }
+}
+
+/// Reconstruct a lossless source string from a slice of token trees.
+///
+/// `TokenTree::text()` is lossy (groups render empty), so we re-emit the
+/// delimiters explicitly. Rust's token grammar is whitespace-insensitive, so
+/// adjacent identifier/keyword/literal tokens are joined with a single space;
+/// this is enough for `try_parse_fragment` to re-lex correctly.
+fn to_source(trees: &[TokenTree]) -> String {
+    let mut out = String::new();
+    let mut need_space = false;
+    for tree in trees {
+        let (pre, post) = if need_space { (" ", "") } else { ("", "") };
+        match tree {
+            TokenTree::Token(kind, text) => {
+                // Only insert a space when merging two tokens that could
+                // otherwise fuse (ident/keyword/literal boundaries).
+                let wants_space = matches!(
+                    kind,
+                    SyntaxKind::Ident
+                        | SyntaxKind::KwPub
+                        | SyntaxKind::IntLit
+                        | SyntaxKind::FloatLit
+                        | SyntaxKind::StringLit
+                        | SyntaxKind::CharLit
+                        | SyntaxKind::BoolLit
+                        | SyntaxKind::Lifetime
+                );
+                if need_space && wants_space {
+                    out.push(' ');
+                }
+                out.push_str(text);
+                need_space = wants_space;
+                let _ = pre;
+                let _ = post;
+            }
+            TokenTree::Group(open, inner, close) => {
+                let open_ch = delim_char(*open);
+                let close_ch = delim_char(*close);
+                out.push(open_ch);
+                // Nested groups already carry their own internal spacing.
+                let inner_src = to_source(inner);
+                out.push_str(&inner_src);
+                out.push(close_ch);
+                need_space = false;
+            }
+            TokenTree::DollarCrate => {
+                out.push_str("$crate");
+                need_space = true;
+            }
+        }
+    }
+    out
+}
+
+fn delim_char(kind: SyntaxKind) -> char {
+    match kind {
+        SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket => match kind {
+            SyntaxKind::LParen => '(',
+            SyntaxKind::LBrace => '{',
+            SyntaxKind::LBracket => '[',
+            _ => '(',
+        },
+        SyntaxKind::RParen | SyntaxKind::RBrace | SyntaxKind::RBracket => match kind {
+            SyntaxKind::RParen => ')',
+            SyntaxKind::RBrace => '}',
+            SyntaxKind::RBracket => ']',
+            _ => ')',
+        },
+        SyntaxKind::Lt => '<',
+        SyntaxKind::Gt => '>',
+        _ => ' ',
+    }
+}
+
+/// Consume a variable-length fragment of `spec` starting at `input[pos]`.
+///
+/// Implements the `macro_rules!` greedy rule: take the **longest** prefix of
+/// the remaining token trees that forms a valid `<spec>` fragment, bounded so
+/// it never crosses a top-level `,` or `;` separator (those terminate the
+/// fragment). Returns the number of token trees consumed and the captured
+/// trees (so the expander can substitute them into the macro body).
+fn consume_fragment(
+    spec: &FragmentSpec,
+    input: &[TokenTree],
+    pos: usize,
+) -> Option<(usize, Vec<TokenTree>)> {
+    let remaining = &input[pos..];
+    if remaining.is_empty() {
+        return None;
+    }
+    // Find the first top-level terminator (`,` or `;`) to bound the search.
+    let terminator = remaining
+        .iter()
+        .position(|t| {
+            matches!(
+                t,
+                TokenTree::Token(
+                    SyntaxKind::Comma | SyntaxKind::Semicolon,
+                    _
+                )
+            )
+        })
+        .unwrap_or(remaining.len());
+
+    let kind = spec_name(spec);
+    // Greedy longest match: try the largest valid prefix first, then shrink.
+    for take in (1..=terminator).rev() {
+        let prefix = &remaining[..take];
+        let src = to_source(prefix);
+        if glyim_frontend::try_parse_fragment(kind, &src).is_some() {
+            return Some((take, prefix.to_vec()));
+        }
+    }
+    None
+}
+
 pub(crate) fn match_pattern(pattern: &Pattern, input: &[TokenTree]) -> MatchResult {
     let mut bindings: HashMap<SmolStr, Vec<TokenTree>> = HashMap::new();
     match match_pieces(&pattern.pieces, input, 0, &mut bindings) {
@@ -268,15 +403,34 @@ fn match_pieces(
                 }
             }
             PatternPiece::Metavar { name, fragment } => {
-                // All fragment specs match exactly one token tree for now.
-                // Fragment-specific filtering rejects mismatched tokens.
-                if i < input.len() {
+                // Stage B: flexible fragment specs (expr/ty/path/pat/stmt/item/
+                // block/meta) consume a *variable-length* token sequence, not a
+                // single token tree. The single-token specs (ident/literal/
+                // lifetime/vis/tt) keep the one-token behaviour.
+                let flexible = matches!(
+                    fragment,
+                    FragmentSpec::Expr
+                        | FragmentSpec::Ty
+                        | FragmentSpec::Path
+                        | FragmentSpec::Pat
+                        | FragmentSpec::Stmt
+                        | FragmentSpec::Item
+                        | FragmentSpec::Block
+                        | FragmentSpec::Meta
+                );
+                if flexible {
+                    if let Some((consumed, captured)) = consume_fragment(fragment, input, i) {
+                        i += consumed;
+                        bindings.entry(name.clone()).or_default().extend(captured);
+                    } else {
+                        return Err(());
+                    }
+                } else if i < input.len() {
                     if matches_fragment_spec(&input[i], fragment) {
                         let captured = vec![input[i].clone()];
                         i += 1;
                         bindings.entry(name.clone()).or_default().extend(captured);
                     } else {
-                        // Token doesn't match the fragment spec
                         return Err(());
                     }
                 } else {
@@ -506,5 +660,171 @@ mod tests {
         )];
         let result = match_pattern(&pattern, &input);
         assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    // ===== Tier 4.1 Stage B: variable-length fragment consumption =====
+
+    fn grp(open: SyntaxKind, inner: Vec<TokenTree>, close: SyntaxKind) -> TokenTree {
+        TokenTree::Group(open, inner, close)
+    }
+
+    #[test]
+    fn test_stage_b_expr_consumes_whole_expression() {
+        // `:expr` must consume the *entire* expression `a + b * c`, not just
+        // the first token.
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("e"),
+            fragment: FragmentSpec::Expr,
+        }]);
+        let input = vec![
+            tok(SyntaxKind::Ident, "a"),
+            tok(SyntaxKind::Plus, "+"),
+            tok(SyntaxKind::Ident, "b"),
+            tok(SyntaxKind::Star, "*"),
+            tok(SyntaxKind::Ident, "c"),
+        ];
+        let result = match_pattern(&pattern, &input);
+        match result {
+            MatchResult::FullMatch(bindings) => {
+                let captured = &bindings[&SmolStr::from("e")];
+                assert_eq!(
+                    captured.len(),
+                    5,
+                    "Stage B: :expr must capture the whole `a + b * c` expression"
+                );
+            }
+            other => panic!("expected FullMatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_stage_b_expr_rejects_nonsense() {
+        // `a b` is not a valid expression. `:expr` captures `a` (a valid expr)
+        // and leaves `b` unmatched, so the *whole* pattern is NOT a FullMatch.
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("e"),
+            fragment: FragmentSpec::Expr,
+        }]);
+        let input = vec![tok(SyntaxKind::Ident, "a"), tok(SyntaxKind::Ident, "b")];
+        let result = match_pattern(&pattern, &input);
+        assert!(
+            !matches!(result, MatchResult::FullMatch(_)),
+            "invalid expr must not yield a FullMatch"
+        );
+    }
+
+    #[test]
+    fn test_stage_b_ty_consumes_generic() {
+        // `:ty` must consume `Vec<i32>` including the angle-bracketed args.
+        // (Generic args use `<>` in the token stream, not `[]`.)
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("t"),
+            fragment: FragmentSpec::Ty,
+        }]);
+        let input = vec![
+            tok(SyntaxKind::Ident, "Vec"),
+            grp(
+                SyntaxKind::Lt,
+                vec![tok(SyntaxKind::Ident, "i32")],
+                SyntaxKind::Gt,
+            ),
+        ];
+        let result = match_pattern(&pattern, &input);
+        match result {
+            MatchResult::FullMatch(bindings) => {
+                let captured = &bindings[&SmolStr::from("t")];
+                assert_eq!(captured.len(), 2, ":ty must capture `Vec<i32>` as two trees");
+            }
+            other => panic!("expected FullMatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_stage_b_block_consumes_brace_group() {
+        // `:block` consumes a `{ ... }` group.
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("b"),
+            fragment: FragmentSpec::Block,
+        }]);
+        let input = vec![grp(
+            SyntaxKind::LBrace,
+            vec![tok(SyntaxKind::Ident, "x")],
+            SyntaxKind::RBrace,
+        )];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_stage_b_stmt_consumes_let() {
+        // `:stmt` consumes `let x = 1;`.
+        let pattern = Pattern::new(vec![PatternPiece::Metavar {
+            name: SmolStr::from("s"),
+            fragment: FragmentSpec::Stmt,
+        }]);
+        let input = vec![
+            tok(SyntaxKind::KwLet, "let"),
+            tok(SyntaxKind::Ident, "x"),
+            tok(SyntaxKind::Eq, "="),
+            tok(SyntaxKind::IntLit, "1"),
+        ];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_stage_b_stmt_with_trailing_semicolon() {
+        // A `:stmt` fragment stops *before* a top-level `;` (the `;` is a
+        // separator the pattern must supply). Here the pattern includes the
+        // trailing `;` so the whole input matches.
+        let pattern = Pattern::new(vec![
+            PatternPiece::Metavar {
+                name: SmolStr::from("s"),
+                fragment: FragmentSpec::Stmt,
+            },
+            PatternPiece::Token(SyntaxKind::Semicolon, SmolStr::from(";")),
+        ]);
+        let input = vec![
+            tok(SyntaxKind::KwLet, "let"),
+            tok(SyntaxKind::Ident, "x"),
+            tok(SyntaxKind::Eq, "="),
+            tok(SyntaxKind::IntLit, "1"),
+            tok(SyntaxKind::Semicolon, ";"),
+        ];
+        let result = match_pattern(&pattern, &input);
+        assert!(matches!(result, MatchResult::FullMatch(_)));
+    }
+
+    #[test]
+    fn test_stage_b_metavars_split_on_separator() {
+        // Two `:expr` metavars separated by a `,`: `a + b , c * d`.
+        let pattern = Pattern::new(vec![
+            PatternPiece::Metavar {
+                name: SmolStr::from("lhs"),
+                fragment: FragmentSpec::Expr,
+            },
+            PatternPiece::Token(SyntaxKind::Comma, SmolStr::from(",")),
+            PatternPiece::Metavar {
+                name: SmolStr::from("rhs"),
+                fragment: FragmentSpec::Expr,
+            },
+        ]);
+        let input = vec![
+            tok(SyntaxKind::Ident, "a"),
+            tok(SyntaxKind::Plus, "+"),
+            tok(SyntaxKind::Ident, "b"),
+            tok(SyntaxKind::Comma, ","),
+            tok(SyntaxKind::Ident, "c"),
+            tok(SyntaxKind::Star, "*"),
+            tok(SyntaxKind::Ident, "d"),
+        ];
+        let result = match_pattern(&pattern, &input);
+        match result {
+            MatchResult::FullMatch(bindings) => {
+                assert_eq!(bindings[&SmolStr::from("lhs")].len(), 3);
+                assert_eq!(bindings[&SmolStr::from("rhs")].len(), 3);
+            }
+            other => panic!("expected FullMatch, got {:?}", other),
+        }
     }
 }
