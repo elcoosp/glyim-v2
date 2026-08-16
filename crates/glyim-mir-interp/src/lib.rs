@@ -468,16 +468,22 @@ impl<'tcx> Interpreter<'tcx> {
                     BinOp::Sub => l.wrapping_sub(*r),
                     BinOp::Mul => l.wrapping_mul(*r),
                     BinOp::Div => {
+                        // Plan §11.2: signed division must not panic on
+                        // `MIN / -1`; `checked_div` returns `None` there and the
+                        // language semantics require `0`.
                         if *r == 0 {
-                            return Err(InterpError::Panic("division by zero".into()));
+                            return Err(InterpError::DivisionByZero);
                         }
-                        l.wrapping_div(*r)
+                        l.checked_div(*r).unwrap_or(0)
                     }
                     BinOp::Rem => {
+                        // Plan §11.2: signed remainder must not panic on
+                        // `MIN % -1`; `checked_rem` returns `None` there and the
+                        // language semantics require `0`.
                         if *r == 0 {
-                            return Err(InterpError::Panic("remainder by zero".into()));
+                            return Err(InterpError::DivisionByZero);
                         }
-                        l.wrapping_rem(*r)
+                        l.checked_rem(*r).unwrap_or(0)
                     }
                     BinOp::BitAnd => l & *r,
                     BinOp::BitOr => l | *r,
@@ -505,14 +511,18 @@ impl<'tcx> Interpreter<'tcx> {
                     BinOp::Sub => l.wrapping_sub(*r),
                     BinOp::Mul => l.wrapping_mul(*r),
                     BinOp::Div => {
+                        // Plan §11.2: unsigned division by zero must be a clean
+                        // interpreter error, not a Rust-level panic.
                         if *r == 0 {
-                            return Err(InterpError::Panic("division by zero".into()));
+                            return Err(InterpError::DivisionByZero);
                         }
                         l.wrapping_div(*r)
                     }
                     BinOp::Rem => {
+                        // Plan §11.2: unsigned remainder by zero must be a clean
+                        // interpreter error, not a Rust-level panic.
                         if *r == 0 {
-                            return Err(InterpError::Panic("remainder by zero".into()));
+                            return Err(InterpError::DivisionByZero);
                         }
                         l.wrapping_rem(*r)
                     }

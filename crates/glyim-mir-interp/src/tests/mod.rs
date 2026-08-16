@@ -12,6 +12,7 @@ mod cast;
 mod common;
 mod comprehensive;
 mod discriminant;
+mod div_rem;
 mod edge_cases;
 mod helpers;
 mod interp_ops;

@@ -403,7 +403,7 @@ fn interpret_division_by_zero_panics() {
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(matches!(res, Err(InterpError::Panic(ref msg)) if msg.contains("division by zero")));
+    assert!(matches!(res, Err(InterpError::DivisionByZero)));
 }
 
 #[test]
@@ -426,7 +426,7 @@ fn interpret_remainder_by_zero_panics() {
     let tcx = tcx_mut.freeze();
     let mut interp = Interpreter::new(&tcx);
     let res = interp.run_body(&body);
-    assert!(matches!(res, Err(InterpError::Panic(ref msg)) if msg.contains("remainder by zero")));
+    assert!(matches!(res, Err(InterpError::DivisionByZero)));
 }
 
 #[test]
