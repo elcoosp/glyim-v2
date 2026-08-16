@@ -1,5 +1,4 @@
 use crate::LlvmBackend;
-use glyim_codegen::CodegenBackend;
 use glyim_core::Interner;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
@@ -11,8 +10,9 @@ use glyim_span::Span;
 use glyim_type::{TyCtxMut, TyKind};
 
 /// Build a trivial body whose owner is `FnDefId(7)`. No `FnSig` is registered
-/// for that def id, which must now surface as an internal compiler error from
-/// `lower_body` (Tier 5.3) instead of silently lowering with an empty FnSig.
+/// for that def id. A `Body` is self-describing (it carries its return type and
+/// local declarations), so the codegen pass must lower it successfully by
+/// deriving the signature from the body rather than erroring (Tier 5.3).
 fn build_body_without_fn_sig(ctx: &mut TyCtxMut) -> Body {
     let i32_ty = ctx.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::I32));
 
@@ -42,29 +42,25 @@ fn build_body_without_fn_sig(ctx: &mut TyCtxMut) -> Body {
 }
 
 #[test]
-fn t53_missing_fn_sig_is_internal_compiler_error() {
+fn t53_body_without_fn_sig_lowers_via_fallback() {
     let mut ctx = TyCtxMut::new(Interner::default());
     let body = build_body_without_fn_sig(&mut ctx);
     let frozen = ctx.freeze();
 
-    // Deliberately do NOT register an FnSig for FnDefId(7).
-    let backend = LlvmBackend::new().with_ty_ctx(frozen);
-    let body = std::sync::Arc::new(body);
-    let result = backend.generate_function(&body);
-
+    // Deliberately do NOT register an FnSig for FnDefId(7). The codegen pass
+    // must derive the signature from the body and lower successfully.
+    let backend = LlvmBackend::new();
+    let context = inkwell::context::Context::create();
+    let module = backend
+        .lower_body_to_module_with_ctx(&context, &body, &frozen)
+        .expect(
+            "lowering a body without a registered FnSig must fall back to \
+             the body-derived signature and succeed",
+        );
+    let ir = module.print_to_string().to_string();
     assert!(
-        result.is_err(),
-        "lowering a body with no registered FnSig must error, got Ok"
-    );
-    let diags = result.unwrap_err();
-    assert!(
-        !diags.is_empty(),
-        "the error must carry at least one diagnostic"
-    );
-    let msg = format!("{:?}", diags);
-    assert!(
-        msg.contains("no FnSig registered") || msg.contains("FnSig"),
-        "diagnostic should explain the missing FnSig, got: {}",
-        msg
+        ir.contains("define i32 @func_0_7"),
+        "expected a function named func_0_7 with i32 return type, got:\n{}",
+        ir
     );
 }

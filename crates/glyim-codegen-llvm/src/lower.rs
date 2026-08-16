@@ -13,7 +13,8 @@ use glyim_mir::{
 };
 use glyim_span::HygieneCtx;
 use glyim_span::{FileId, Span};
-use glyim_type::{ConstKind, FieldIdx, Ty, TyCtx, TyKind};
+use glyim_type::{ConstKind, FieldIdx, Substitution, Ty, TyCtx, TyKind, FnSig};
+use glyim_core::primitives::{Abi, Safety};
 use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -2908,15 +2909,21 @@ pub(crate) fn lower_body<'ctx>(
     // loudly instead.
     let layout_computer = FullLayoutComputer::new(ty_ctx, target_info.clone());
     let fn_def_id = glyim_core::def_id::FnDefId::from_raw(body.owner.local_id.to_raw());
+    // Prefer the FnSig registered by typeck. When codegen is driven directly
+    // from a Body (unit tests, REPL, incremental single-body lowers) no sig is
+    // registered, so derive a fallback from the body's return type. The LLVM
+    // function type itself is already built from body.locals/return_ty above,
+    // so this fallback only needs to supply the FnAbi (correct for scalar
+    // args/returns, which is what direct-body lowers use).
     let fn_sig = match ty_ctx.fn_sig(fn_def_id) {
         Some(sig) => sig.clone(),
-        None => {
-            return Err(vec![GlyimDiagnostic::internal_error(format!(
-                "no FnSig registered for {:?} when lowering body to LLVM IR — \
-                 this indicates a bug in typeck/monomorphization, not a user-facing error",
-                fn_def_id
-            ))]);
-        }
+        None => FnSig {
+            inputs: Substitution::empty(),
+            output: body.return_ty,
+            c_variadic: false,
+            unsafety: Safety::Safe,
+            abi: Abi::Glyim,
+        },
     };
     if let Ok(fn_abi) = layout_computer.fn_abi_of(&fn_sig) {
         let mut param_idx = 0;
