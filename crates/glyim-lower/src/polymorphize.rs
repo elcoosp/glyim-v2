@@ -6,8 +6,10 @@
 //! - Replace unused parameters with a canonical placeholder (unit type)
 //! - Deduplicate mono items that differ only in unused parameters
 
+use glyim_core::arena::IndexVec;
 use glyim_mir::{
-    self, AggregateKind, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKind,
+    self, AggregateKind, LocalDecl, LocalIdx, MirConstKind, Operand, ProjectionElem, Rvalue,
+    StatementKind, TerminatorKind,
 };
 use glyim_type::*;
 use std::collections::HashSet;
@@ -29,10 +31,10 @@ pub fn analyze_used_params(
     for block in body.basic_blocks.iter() {
         for stmt in &block.statements {
             if let StatementKind::Assign(_, ref rvalue) = stmt.kind {
-                mark_used_params_in_rvalue(rvalue, ctx, &mut used);
+                mark_used_params_in_rvalue(rvalue, &body.locals, ctx, &mut used);
             }
         }
-        mark_used_params_in_terminator(&block.terminator.kind, ctx, &mut used);
+        mark_used_params_in_terminator(&block.terminator.kind, &body.locals, ctx, &mut used);
     }
 
     used
@@ -275,21 +277,69 @@ fn mark_used_params_in_mir_const(c: &glyim_mir::MirConst, ctx: &dyn TypeLookup, 
     }
 }
 
-fn mark_used_params_in_operand(op: &Operand, ctx: &dyn TypeLookup, used: &mut [bool]) {
-    if let Operand::Constant(c) = op {
-        mark_used_params_in_mir_const(c, ctx, used);
+fn mark_used_params_in_operand(
+    op: &Operand,
+    local_decls: &IndexVec<LocalIdx, LocalDecl>,
+    ctx: &dyn TypeLookup,
+    used: &mut [bool],
+) {
+    match op {
+        Operand::Constant(c) => mark_used_params_in_mir_const(c, ctx, used),
+        // Copy/Move of a place: the place's *projection* may reference a generic
+        // param (e.g. indexing `[T; N]` with a generic index local, or
+        // field-projecting an ADT whose field types mention T). §8.11: recurse
+        // into the projection so these uses are recorded.
+        Operand::Copy(place) | Operand::Move(place) => {
+            mark_used_params_in_place(place, local_decls, ctx, used);
+        }
     }
 }
 
-fn mark_used_params_in_rvalue(rv: &Rvalue, ctx: &dyn TypeLookup, used: &mut [bool]) {
+/// Walk a place's projection chain, recording any generic parameters that the
+/// projections themselves reference.
+///
+/// - `Index(local)` is a *use* of that local's type parameters if generic.
+/// - `Field`/`ConstantIndex`/`Subslice` project through an ADT/tuple/array/slice
+///   whose underlying type may mention parameters not otherwise visible. We
+///   recover the projected type via [`glyim_mir::Place::ty`] and mark it, which
+///   catches field types that carry the parameter.
+fn mark_used_params_in_place(
+    place: &glyim_mir::Place,
+    local_decls: &IndexVec<LocalIdx, LocalDecl>,
+    ctx: &dyn TypeLookup,
+    used: &mut [bool],
+) {
+    // The base local's type is covered by the `for local in body.locals` pass,
+    // but the *projection* can surface a parameter that only appears inside a
+    // field/element type. Compute the projected type and mark it.
+    let ty = place.ty(ctx, local_decls);
+    mark_used_params(ty, ctx, used);
+
+    // `Index(local)`: the index operand is itself a use of that local's type
+    // parameters when generic; ensure the index local's type is marked.
+    for elem in place.projection.iter() {
+        if let ProjectionElem::Index(local) = elem {
+            if let Some(decl) = local_decls.get(*local) {
+                mark_used_params(decl.ty, ctx, used);
+            }
+        }
+    }
+}
+
+fn mark_used_params_in_rvalue(
+    rv: &Rvalue,
+    local_decls: &IndexVec<LocalIdx, LocalDecl>,
+    ctx: &dyn TypeLookup,
+    used: &mut [bool],
+) {
     match rv {
-        Rvalue::Use(op) => mark_used_params_in_operand(op, ctx, used),
+        Rvalue::Use(op) => mark_used_params_in_operand(op, local_decls, ctx, used),
         Rvalue::BinaryOp(_, boxed) => {
             let (l, r) = boxed.as_ref();
-            mark_used_params_in_operand(l, ctx, used);
-            mark_used_params_in_operand(r, ctx, used);
+            mark_used_params_in_operand(l, local_decls, ctx, used);
+            mark_used_params_in_operand(r, local_decls, ctx, used);
         }
-        Rvalue::UnaryOp(_, op) => mark_used_params_in_operand(op, ctx, used),
+        Rvalue::UnaryOp(_, op) => mark_used_params_in_operand(op, local_decls, ctx, used),
         Rvalue::Aggregate(kind, ops) => {
             match kind {
                 AggregateKind::Array(ty) => mark_used_params(*ty, ctx, used),
@@ -298,39 +348,53 @@ fn mark_used_params_in_rvalue(rv: &Rvalue, ctx: &dyn TypeLookup, used: &mut [boo
                 AggregateKind::Tuple => {}
             }
             for op in ops {
-                mark_used_params_in_operand(op, ctx, used);
+                mark_used_params_in_operand(op, local_decls, ctx, used);
             }
         }
         Rvalue::Cast(_, op, ty) => {
-            mark_used_params_in_operand(op, ctx, used);
+            mark_used_params_in_operand(op, local_decls, ctx, used);
             mark_used_params(*ty, ctx, used);
         }
         Rvalue::Repeat(op, mir_const) => {
-            mark_used_params_in_operand(op, ctx, used);
+            mark_used_params_in_operand(op, local_decls, ctx, used);
             mark_used_params_in_mir_const(mir_const, ctx, used);
         }
-        Rvalue::Ref(_, _) | Rvalue::Discriminant(_) | Rvalue::Len(_) => {}
+        // §8.11: Ref/Deref-of-place, Discriminant(place), Len(place) — the base
+        // place (and its projection) can reference a generic parameter.
+        Rvalue::Ref(place, _) => mark_used_params_in_place(place, local_decls, ctx, used),
+        Rvalue::Discriminant(place) => mark_used_params_in_place(place, local_decls, ctx, used),
+        Rvalue::Len(place) => mark_used_params_in_place(place, local_decls, ctx, used),
     }
 }
 
-fn mark_used_params_in_terminator(kind: &TerminatorKind, ctx: &dyn TypeLookup, used: &mut [bool]) {
+fn mark_used_params_in_terminator(
+    kind: &TerminatorKind,
+    local_decls: &IndexVec<LocalIdx, LocalDecl>,
+    ctx: &dyn TypeLookup,
+    used: &mut [bool],
+) {
     match kind {
-        TerminatorKind::Call { func, args, .. } => {
-            mark_used_params_in_operand(func, ctx, used);
+        TerminatorKind::Call { func, args, destination, .. } => {
+            mark_used_params_in_operand(func, local_decls, ctx, used);
             for arg in args {
-                mark_used_params_in_operand(arg, ctx, used);
+                mark_used_params_in_operand(arg, local_decls, ctx, used);
             }
+            // §8.11: the call's destination place (and its projection) may carry
+            // a parameter (e.g. storing into a field of a generic ADT).
+            mark_used_params_in_place(destination, local_decls, ctx, used);
         }
-        TerminatorKind::SwitchInt {
-            discr, switch_ty, ..
-        } => {
-            mark_used_params_in_operand(discr, ctx, used);
+        TerminatorKind::SwitchInt { discr, switch_ty, .. } => {
+            mark_used_params_in_operand(discr, local_decls, ctx, used);
             mark_used_params(*switch_ty, ctx, used);
         }
         TerminatorKind::Assert { cond, .. } => {
-            mark_used_params_in_operand(cond, ctx, used);
+            mark_used_params_in_operand(cond, local_decls, ctx, used);
         }
-        TerminatorKind::Drop { .. } => {}
+        // §8.11: Drop(place) — the dropped place (and its projection) can
+        // reference a generic parameter (e.g. dropping a field of a generic ADT).
+        TerminatorKind::Drop { place, .. } => {
+            mark_used_params_in_place(place, local_decls, ctx, used);
+        }
         TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {}
     }
 }

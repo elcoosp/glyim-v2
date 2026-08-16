@@ -1483,6 +1483,138 @@ fn param_used_in_opaque_type() {
 }
 
 // ============================================================
+// §8.11: analyze_used_params must traverse place projections
+// (Copy/Move of a projected place, Ref/Discriminant/Len of a
+// place, Drop/Call destination places) and the Index operand
+// local, recording generic parameters that appear there.
+// ============================================================
+
+/// Build a body with the given local types (local 0 = return), plus a single
+/// statement `Assign(_0, Rvalue::Use(Copy(Place { local: arr_local,
+/// projection: [Index(idx_local)] })))` and a `Drop { place: arr_local }`
+/// terminator. This exercises the Copy-operand projection path, the Index
+/// operand local path, and the Drop-destination place path.
+fn build_body_with_indexed_copy_and_drop(
+    arr_ty: Ty,
+    idx_ty: Ty,
+) -> Body {
+    let owner = dummy_def_id();
+
+    let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
+    // _0: return
+    locals.push(LocalDecl {
+        ty: Ty::UNIT,
+        mutability: Mutability::Mut,
+        source_info: dummy_source_info(),
+    });
+    // _1: array (base of the indexed place)
+    let arr_local = LocalIdx::from_raw(1);
+    locals.push(LocalDecl {
+        ty: arr_ty,
+        mutability: Mutability::Not,
+        source_info: dummy_source_info(),
+    });
+    // _2: index operand local
+    let idx_local = LocalIdx::from_raw(2);
+    locals.push(LocalDecl {
+        ty: idx_ty,
+        mutability: Mutability::Not,
+        source_info: dummy_source_info(),
+    });
+
+    let indexed_place = Place {
+        local: arr_local,
+        projection: Box::new([ProjectionElem::Index(idx_local)]),
+    };
+    let copy_op = Operand::Copy(indexed_place);
+
+    let entry = BasicBlockData {
+        statements: vec![Statement {
+            kind: StatementKind::Assign(
+                Place::new(LocalIdx::from_raw(0)),
+                Rvalue::Use(copy_op),
+            ),
+            source_info: dummy_source_info(),
+        }],
+        terminator: Terminator {
+            kind: TerminatorKind::Drop {
+                place: Place::new(arr_local),
+                target: BasicBlockIdx::from_raw(0),
+                cleanup: None,
+            },
+            source_info: dummy_source_info(),
+        },
+        is_cleanup: false,
+    };
+
+    let mut blocks: IndexVec<BasicBlockIdx, BasicBlockData> = IndexVec::new();
+    blocks.push(entry);
+
+    Body {
+        owner,
+        basic_blocks: blocks,
+        locals,
+        arg_count: 0,
+        return_ty: Ty::UNIT,
+        span: dummy_span(),
+        var_debug_info: Vec::new(),
+    }
+}
+
+#[test]
+fn param_used_via_indexed_copy_and_drop_projection() {
+    let mut ctx = test_ty_ctx();
+
+    // T appears ONLY in the index-operand local's type (local _2). The array
+    // itself (_1) is `[i32; 3]`, so T is not reachable from any local decl
+    // *except* the index local — which the §8.11 Index path must still mark.
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let usize_ty = ctx.mk_ty(TyKind::Uint(UintTy::Usize));
+    let three_const = Const {
+        kind: ConstKind::Uint(3),
+        ty: usize_ty,
+    };
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let arr_ty = ctx.mk_ty(TyKind::Array(i32_ty, three_const));
+
+    let body = build_body_with_indexed_copy_and_drop(arr_ty, param_t);
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used via the Index operand local of a Copy projection");
+}
+
+#[test]
+fn param_used_via_drop_destination_projection() {
+    let mut ctx = test_ty_ctx();
+
+    // T appears only in the array element type of a `Drop` destination place.
+    let name_t = intern_name(&mut ctx, "T");
+    let param_ty = ParamTy {
+        index: 0,
+        name: name_t,
+    };
+    let param_t = ctx.mk_ty(TyKind::Param(param_ty));
+    let usize_ty = ctx.mk_ty(TyKind::Uint(UintTy::Usize));
+    let three_const = Const {
+        kind: ConstKind::Uint(3),
+        ty: usize_ty,
+    };
+    let arr_ty = ctx.mk_ty(TyKind::Array(param_t, three_const));
+
+    let body = build_body_with_indexed_copy_and_drop(arr_ty, ctx.mk_ty(TyKind::Int(IntTy::I32)));
+
+    let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
+    let used = analyze_used_params(&body, &ctx, substs);
+    assert!(used[0], "T is used via the Drop destination place projection");
+}
+
+// ============================================================
 // Additional test: Closure type with param
 // ============================================================
 

@@ -115,7 +115,7 @@ impl Place {
         }
     }
 
-    pub fn ty(&self, ctx: &impl TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
+    pub fn ty(&self, ctx: &dyn TypeLookup, local_decls: &IndexVec<LocalIdx, LocalDecl>) -> Ty {
         let mut ty = local_decls[self.local].ty;
 
         for elem in self.projection.iter() {
