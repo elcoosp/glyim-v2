@@ -11,6 +11,7 @@ mod calls;
 mod cast;
 mod common;
 mod comprehensive;
+mod const_eval;
 mod discriminant;
 mod div_rem;
 mod edge_cases;

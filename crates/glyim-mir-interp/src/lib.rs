@@ -132,6 +132,20 @@ impl<'tcx> Interpreter<'tcx> {
         self.locals.first().and_then(|opt| opt.clone())
     }
 
+    /// §4: evaluate a `const` / `const fn` MIR body to its value.
+    ///
+    /// This is const-evaluation: run the body to completion (terminating at
+    /// `Return`) and return the value held in the return slot. Calling a
+    /// `const fn` is just evaluating its MIR body in a fresh interpreter
+    /// frame, which the runtime interpreter already supports; this wrapper
+    /// makes that usable from const-context sites (e.g. array lengths, enum
+    /// discriminants, `const` bindings) without driving the loop by hand.
+    pub fn const_eval(&mut self, body: &Body) -> InterpResult<InterpValue> {
+        self.run_body(body)?;
+        self.get_return_value()
+            .ok_or_else(|| InterpError::Panic("const-eval produced no return value".into()))
+    }
+
     pub fn run_body(&mut self, body: &Body) -> InterpResult<()> {
         self.current_body = Some(body.clone());
         self.current_bb = BasicBlockIdx::from_raw(0);
