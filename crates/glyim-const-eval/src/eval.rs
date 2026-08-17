@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use glyim_core::interner::Name;
+use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{BinOp, IntTy, UintTy, UnOp};
 use glyim_hir::{Body, Expr, ExprId, Literal, MatchArm, Pat};
 use glyim_span::Span;
@@ -14,6 +14,10 @@ pub struct ConstEvaluator<'a> {
     body: &'a Body,
     env: Vec<HashMap<Name, ConstValue>>,
     pointer_width: u32,
+    /// Optional interner used to resolve path-named `const fn` callees to their
+    /// source string for dispatch (plan §4.2). Without it, calls cannot be
+    /// resolved.
+    interner: Option<&'a Interner>,
     /// Set when a `break`/`continue` is encountered inside a loop so the loop
     /// driver can react. `None` means normal flow.
     loop_control: Option<LoopControl>,
@@ -27,14 +31,149 @@ enum LoopControl {
     Continue,
 }
 
+/// A `const fn` available to constant evaluation.
+///
+/// The first concrete carrier for plan §4.2 (const-evaluation of function
+/// calls). Calls to a path whose name maps to one of these are evaluated
+/// directly; this is the hook real `const fn`s (whether user-defined or from
+/// the std library) will plug into later — the `ConstValue` arms below list
+/// every value kind so new builtins are easy to add.
+#[derive(Debug, Clone)]
+pub enum ConstFn {
+    /// `abs(x)` — absolute value of a signed integer.
+    Abs,
+    /// `min(a, b)` — smaller of two integers of the same type.
+    Min,
+    /// `max(a, b)` — larger of two integers of the same type.
+    Max,
+    /// `sqrt(x)` — integer square root of an unsigned integer.
+    Sqrt,
+    /// `is_power_of_two(x)` — whether an unsigned integer is a power of two.
+    IsPowerOfTwo,
+}
+
+impl ConstFn {
+    /// Resolve a crate-visible builtin name to its `ConstFn`.
+    pub(crate) fn from_name(name: &str) -> Option<ConstFn> {
+        match name {
+            "abs" => Some(ConstFn::Abs),
+            "min" => Some(ConstFn::Min),
+            "max" => Some(ConstFn::Max),
+            "sqrt" => Some(ConstFn::Sqrt),
+            "is_power_of_two" => Some(ConstFn::IsPowerOfTwo),
+            _ => None,
+        }
+    }
+
+    /// Evaluate this builtin against already-evaluated arguments.
+    pub(crate) fn apply(&self, args: &[ConstValue], span: Span) -> ConstEvalResult<ConstValue> {
+        match self {
+            ConstFn::Abs => {
+                let x = args.first().ok_or_else(|| {
+                    ConstEvalError::new("abs: expected 1 argument", span)
+                })?;
+                match x {
+                    ConstValue::Int(v, ty) => Ok(ConstValue::Int(v.abs(), *ty)),
+                    _ => Err(ConstEvalError::new(
+                        "abs: argument must be a signed integer",
+                        span,
+                    )),
+                }
+            }
+            ConstFn::Min => {
+                let (a, b) = two_args(args, span)?;
+                match (a, b) {
+                    (ConstValue::Int(x, tx), ConstValue::Int(y, ty)) if tx == ty => {
+                        Ok(ConstValue::Int(*x.min(y), *tx))
+                    }
+                    (ConstValue::Uint(x, tx), ConstValue::Uint(y, ty)) if tx == ty => {
+                        Ok(ConstValue::Uint(*x.min(y), *tx))
+                    }
+                    _ => Err(ConstEvalError::new(
+                        "min: arguments must be integers of the same type",
+                        span,
+                    )),
+                }
+            }
+            ConstFn::Max => {
+                let (a, b) = two_args(args, span)?;
+                match (a, b) {
+                    (ConstValue::Int(x, tx), ConstValue::Int(y, ty)) if tx == ty => {
+                        Ok(ConstValue::Int(*x.max(y), *tx))
+                    }
+                    (ConstValue::Uint(x, tx), ConstValue::Uint(y, ty)) if tx == ty => {
+                        Ok(ConstValue::Uint(*x.max(y), *tx))
+                    }
+                    _ => Err(ConstEvalError::new(
+                        "max: arguments must be integers of the same type",
+                        span,
+                    )),
+                }
+            }
+            ConstFn::Sqrt => {
+                let x = args.first().ok_or_else(|| {
+                    ConstEvalError::new("sqrt: expected 1 argument", span)
+                })?;
+                match x {
+                    ConstValue::Uint(v, ty) => Ok(ConstValue::Uint((*v as f64).sqrt() as u128, *ty)),
+                    ConstValue::Int(v, ty) if *v >= 0 => {
+                        Ok(ConstValue::Int(((*v as f64).sqrt() as i128).abs(), *ty))
+                    }
+                    _ => Err(ConstEvalError::new(
+                        "sqrt: argument must be a non-negative integer",
+                        span,
+                    )),
+                }
+            }
+            ConstFn::IsPowerOfTwo => {
+                let x = args.first().ok_or_else(|| {
+                    ConstEvalError::new("is_power_of_two: expected 1 argument", span)
+                })?;
+                match x {
+                    ConstValue::Uint(v, _ty) => Ok(ConstValue::Bool(v.is_power_of_two())),
+                    ConstValue::Int(v, ty) if *v >= 0 => {
+                        Ok(ConstValue::Bool((*v as u128).is_power_of_two()))
+                    }
+                    _ => Err(ConstEvalError::new(
+                        "is_power_of_two: argument must be a non-negative integer",
+                        span,
+                    )),
+                }
+            }
+        }
+    }
+}
+
+/// Helper: pull exactly two arguments out of an evaluated-args slice.
+fn two_args(
+    args: &[ConstValue],
+    span: Span,
+) -> ConstEvalResult<(&ConstValue, &ConstValue)> {
+    if args.len() != 2 {
+        return Err(ConstEvalError::new(
+            "builtin expects exactly 2 arguments",
+            span,
+        ));
+    }
+    Ok((&args[0], &args[1]))
+}
+
 impl<'a> ConstEvaluator<'a> {
     pub fn new(body: &'a Body) -> Self {
         Self {
             body,
             env: vec![HashMap::new()],
             pointer_width: 64, // Default to 64-bit
+            interner: None,
             loop_control: None,
         }
+    }
+
+    /// Attach the interner used to resolve path-named `const fn` callees
+    /// (plan §4.2). Required for `Expr::Call` evaluation.
+    pub fn with_interner(mut self, interner: &'a Interner) -> Self {
+        self.interner = Some(interner);
+        self
     }
 
     pub fn with_pointer_width(mut self, width: u32) -> Self {
@@ -224,10 +363,45 @@ impl<'a> ConstEvaluator<'a> {
                     span,
                 ))
             }
-            Expr::Call { .. } => Err(ConstEvalError::new(
-                "function calls not supported in const eval",
-                span,
-            )),
+            Expr::Call { func, args } => {
+                // Plan §4.2: const-evaluation of function calls. Resolve the
+                // callee to a builtin `const fn` (by path name) and evaluate its
+                // already-const arguments. This is the first carrier for the
+                // `const fn` mechanism; user-defined / std `const fn`s with
+                // bodies plug in here later.
+                let callee = &self.body.exprs[*func];
+                let name = match callee {
+                    Expr::Path(p) => p.as_name(),
+                    _ => None,
+                };
+                let name = match name {
+                    Some(n) => n,
+                    None => {
+                        return Err(ConstEvalError::new(
+                            "only path-named const fns are supported in const eval",
+                            span,
+                        ))
+                    }
+                };
+                let interner = self.interner.ok_or_else(|| {
+                    ConstEvalError::new(
+                        "const evaluator has no interner; cannot resolve const fn name",
+                        span,
+                    )
+                })?;
+                let name_str = interner.resolve(name);
+                let cf = ConstFn::from_name(name_str).ok_or_else(|| {
+                    ConstEvalError::new(
+                        format!("unknown const fn `{}`", name_str),
+                        span,
+                    )
+                })?;
+                let mut arg_vals = Vec::with_capacity(args.len());
+                for &a in args {
+                    arg_vals.push(self.evaluate_at_depth(a, depth)?);
+                }
+                cf.apply(&arg_vals, span)
+            }
             Expr::MethodCall { .. } => Err(ConstEvalError::new(
                 "method calls not supported in const eval",
                 span,

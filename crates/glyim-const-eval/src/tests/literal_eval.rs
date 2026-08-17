@@ -3,9 +3,16 @@
 use crate::{ConstEvalError, ConstEvaluator, ConstValue};
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
+use glyim_core::interner::Interner;
 use glyim_core::primitives::{FloatTy, IntTy, UintTy};
-use glyim_hir::{Body, Expr, ExprId, Literal};
+use glyim_hir::{Body, Expr, ExprId, Literal, Path};
 use glyim_span::{ByteIdx, FileId, Span};
+
+/// Shared interner for tests that build path-named const fns.
+fn interner() -> &'static Interner {
+    static I: std::sync::OnceLock<Interner> = std::sync::OnceLock::new();
+    I.get_or_init(Interner::new)
+}
 
 /// Helper to create a dummy span.
 fn dummy_span() -> Span {
@@ -483,26 +490,33 @@ fn nested_arithmetic() {
 
 // ---- Unsupported expressions ----
 
+/// Calls to an unknown/unregistered const fn are rejected (not silently
+/// dropped). This replaced the old "calls not supported" assertion once
+/// `Expr::Call` const-evaluation (plan §4.2) was implemented — a *known*
+/// builtin now evaluates, so the error path is reserved for unknown names.
 #[test]
-fn path_expression_is_error() {
+fn unknown_const_fn_is_error() {
     let mut body = test_body();
-    let name = body.owner; // reuse LocalDefId as a dummy; just need a Name
-    let _name = name; // suppress warning
-    // We can't easily construct a Name without an Interner, so test with
-    // an expression kind we know is unsupported: Call
     let one = alloc_lit(&mut body, Literal::Int(1, Some(IntTy::I32)));
+    let func = body.alloc_expr(
+        Expr::Path(Path::from_single(interner().intern("nonexistent_fn"))),
+        dummy_span(),
+    );
     let call = body.alloc_expr(
         Expr::Call {
-            func: one,
-            args: vec![],
+            func,
+            args: vec![one],
         },
         dummy_span(),
     );
 
-    let err = eval_err(&body, call);
+    let err = ConstEvaluator::new(&body)
+        .with_interner(interner())
+        .evaluate(call)
+        .expect_err("const evaluation should fail");
     assert!(
-        err.message.contains("not supported"),
-        "Expected unsupported error, got: {}",
+        err.message.contains("unknown const fn"),
+        "Expected unknown-const-fn error, got: {}",
         err.message
     );
 }
