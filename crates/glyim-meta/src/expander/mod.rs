@@ -440,7 +440,8 @@ impl<'a> ExpanderImpl<'a> {
                 )]
             }
             BuiltinMacro::Env => {
-                // env!("VAR") reads environment variable at compile time
+                // env!("VAR") reads an environment variable at compile time and
+                // errors if it is not set.
                 let args_tt = flatten_token_tree(args_node);
                 match first_string_lit(&args_tt) {
                     Some(var_name) => match std::env::var(var_name) {
@@ -464,6 +465,30 @@ impl<'a> ExpanderImpl<'a> {
                             vec![GlyimDiagnostic::type_error(
                                 call_site,
                                 "env! expects one string literal argument".to_string(),
+                            )],
+                        );
+                    }
+                }
+            }
+            BuiltinMacro::OptionEnv => {
+                // option_env!("VAR") reads an environment variable at compile
+                // time, expanding to `None` if absent and `Some("value")` if set
+                // (sibling of `env!`, plan §21.1).
+                let args_tt = flatten_token_tree(args_node);
+                match first_string_lit(&args_tt) {
+                    Some(var_name) => {
+                        let token = match std::env::var(var_name) {
+                            Ok(val) => SmolStr::from(format!("Some(\"{}\")", val)),
+                            Err(_) => SmolStr::from("None"),
+                        };
+                        vec![TokenTree::Token(SyntaxKind::Ident, token)]
+                    }
+                    None => {
+                        return (
+                            None,
+                            vec![GlyimDiagnostic::type_error(
+                                call_site,
+                                "option_env! expects one string literal argument".to_string(),
                             )],
                         );
                     }

@@ -166,6 +166,60 @@ fn test_env_macro() {
 }
 
 #[test]
+fn test_option_env_macro() {
+    // Present case: option_env! expands to Some("value").
+    unsafe {
+        std::env::set_var("GLYIM_TEST_OPTION_VAR", "present_value");
+    }
+    let mut hygiene = HygieneCtx::default();
+    let mut expander = Expander::new(&mut hygiene);
+    register_builtin(&mut expander, "option_env", BuiltinMacro::OptionEnv);
+
+    let span = dummy_span(FileId::BOGUS, 0);
+    let mut builder = rowan::GreenNodeBuilder::new();
+    builder.start_node(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::TokenTree));
+    builder.token(
+        GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::StringLit),
+        "\"GLYIM_TEST_OPTION_VAR\"",
+    );
+    builder.finish_node();
+    let args = SyntaxNode::new_root(builder.finish());
+    let name = expander.interner().intern("option_env");
+
+    let result = expander.expand(name, &args, span);
+    assert!(result.diagnostics.is_empty());
+    let text = result.expanded.unwrap().text().to_string();
+    assert!(
+        text.contains("Some(\"present_value\")"),
+        "Expected Some(\"present_value\"), got {}",
+        text
+    );
+
+    // Absent case: option_env! expands to None rather than erroring.
+    let mut hygiene2 = HygieneCtx::default();
+    let mut expander2 = Expander::new(&mut hygiene2);
+    register_builtin(&mut expander2, "option_env", BuiltinMacro::OptionEnv);
+    // Use a var name that is not set (and ensure it is unset for the test).
+    unsafe {
+        std::env::remove_var("GLYIM_TEST_OPTION_VAR_ABSENT");
+    }
+    let mut builder2 = rowan::GreenNodeBuilder::new();
+    builder2.start_node(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::TokenTree));
+    builder2.token(
+        GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::StringLit),
+        "\"GLYIM_TEST_OPTION_VAR_ABSENT\"",
+    );
+    builder2.finish_node();
+    let args2 = SyntaxNode::new_root(builder2.finish());
+    let name2 = expander2.interner().intern("option_env");
+
+    let result2 = expander2.expand(name2, &args2, span);
+    assert!(result2.diagnostics.is_empty(), "option_env! must not error on missing var");
+    let text2 = result2.expanded.unwrap().text().to_string();
+    assert!(text2.contains("None"), "Expected None, got {}", text2);
+}
+
+#[test]
 fn test_include_macro() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("test.txt");
