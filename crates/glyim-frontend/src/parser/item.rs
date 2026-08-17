@@ -27,6 +27,17 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // Route `const fn` to parse_fn_def, which consumes the leading `const`
+        // modifier inside the FnDef node (plan §6.1). `const fn` is
+        // disambiguated from `const ITEM` by peeking the next non-trivia token.
+        // (`async fn` is not yet supported: the lexer has no `KwAsync`.)
+        if self.current_kind() == SyntaxKind::KwConst
+            && self.next_non_ws_kind() == SyntaxKind::KwFn
+        {
+            self.parse_fn_def();
+            return;
+        }
+
         match self.current_kind() {
             SyntaxKind::KwFn => self.parse_fn_def(),
             SyntaxKind::KwStruct => self.parse_struct_def(),
@@ -356,6 +367,14 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_fn_def(&mut self) {
         self.start_node(SyntaxKind::FnDef);
+        // Consume leading `const` fn modifier inside the FnDef node so lowering
+        // can detect it (plan §6.1). `async fn` is not yet supported
+        // (lexer has no `KwAsync`).
+        if self.current_kind() == SyntaxKind::KwConst
+            && self.next_non_ws_kind() == SyntaxKind::KwFn
+        {
+            self.bump(); // const
+        }
         self.bump_expected(SyntaxKind::KwFn);
         self.bump_expected(SyntaxKind::Ident);
         if self.current_kind() == SyntaxKind::Lt {

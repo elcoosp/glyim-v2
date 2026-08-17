@@ -88,6 +88,7 @@ pub struct FnItem {
     pub body: Option<BodyId>,
     pub is_unsafe: bool,
     pub is_async: bool,
+    pub is_const: bool,
     pub generic_params: Vec<GenericParam>,
     pub where_clauses: Vec<crate::where_clause::WhereClause>,
 }

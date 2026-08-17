@@ -20,6 +20,7 @@ fn build_from_hir_records_definitions_and_references() {
         body: None,
         is_unsafe: false,
         is_async: false,
+        is_const: false,
         generic_params: vec![],
         where_clauses: vec![],
     };

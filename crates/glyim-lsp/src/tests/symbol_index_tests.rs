@@ -16,6 +16,7 @@ fn create_dummy_hir(interner: &Interner) -> CrateHir {
             body: None,
             is_unsafe: false,
             is_async: false,
+            is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
         }),

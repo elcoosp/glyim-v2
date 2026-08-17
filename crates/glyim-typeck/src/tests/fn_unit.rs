@@ -37,6 +37,7 @@ fn fn_returning_unit() {
             body: Some(body_id),
             is_unsafe: false,
             is_async: false,
+            is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
         }),

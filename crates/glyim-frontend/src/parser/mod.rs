@@ -56,6 +56,19 @@ impl<'a> Parser<'a> {
         self.current().map_or(SyntaxKind::Error, |t| t.kind)
     }
 
+    /// Kind of the next non-trivia token after the current one (skips
+    /// whitespace). Used to disambiguate `const fn` from `const ITEM`.
+    fn next_non_ws_kind(&self) -> SyntaxKind {
+        let mut p = self.pos + 1;
+        while let Some(t) = self.tokens.get(p) {
+            if t.kind != SyntaxKind::Whitespace {
+                return t.kind;
+            }
+            p += 1;
+        }
+        SyntaxKind::Error
+    }
+
     fn bump(&mut self) {
         if self.pending_gt_count > 0 {
             self.builder

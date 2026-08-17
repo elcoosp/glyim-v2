@@ -112,6 +112,22 @@ pub(crate) fn lower_fn_def(
 
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
+
+    // Plan §6.1: detect `const fn` modifier (the parser embeds the leading
+    // `const` keyword token inside the FnDef node, before `fn`). `async fn` is
+    // not yet supported (lexer has no `KwAsync`).
+    let mut is_const = false;
+    for el in node.children_with_tokens() {
+        match el {
+            glyim_syntax::SyntaxElement::Token(t) => match t.kind() {
+                SyntaxKind::KwFn => break,
+                SyntaxKind::KwConst => is_const = true,
+                _ => {}
+            },
+            glyim_syntax::SyntaxElement::Node(_) => {}
+        }
+    }
+
     Some(Item {
         id,
         name,
@@ -121,6 +137,7 @@ pub(crate) fn lower_fn_def(
             body: body_id,
             is_unsafe: false,
             is_async: false,
+            is_const,
             generic_params: Vec::new(),
             where_clauses: Vec::new(),
         }),

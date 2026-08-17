@@ -94,6 +94,7 @@ fn build_simple_hir(
             body: Some(body_id),
             is_unsafe: false,
             is_async: false,
+            is_const: false,
             generic_params,
             where_clauses,
         }),
