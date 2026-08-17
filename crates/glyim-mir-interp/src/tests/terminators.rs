@@ -140,6 +140,7 @@ fn test_unreachable_panics() {
 }
 
 #[test]
+#[should_panic(expected = "Drop terminator reached the interpreter")]
 fn test_drop_terminator_proceeds() {
     let mut ctx = glyim_test::test_ty_ctx();
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
@@ -186,12 +187,10 @@ fn test_drop_terminator_proceeds() {
         DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)),
         body,
     );
-    let result = interp.run_body(&interp.function_table.values().next().unwrap().clone());
-    assert!(result.is_ok());
-    assert_eq!(
-        *interp.get_local_value(local_x).unwrap(),
-        InterpValue::Int(55)
-    );
+    // A bare `Drop` reaching the interpreter must be rejected loudly (plan
+    // §14.1): drop elaboration should have lowered it to a drop-glue Call
+    // first. This test verifies the interpreter enforces that invariant.
+    let _ = interp.run_body(&interp.function_table.values().next().unwrap().clone());
 }
 
 #[test]

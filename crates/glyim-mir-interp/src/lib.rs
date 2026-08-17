@@ -304,17 +304,33 @@ impl<'tcx> Interpreter<'tcx> {
                     }
                 }
                 TerminatorKind::Drop {
-                    place: _,
+                    place,
                     target,
                     cleanup: _,
                 } => {
                     // By the time MIR reaches the interpreter, `glyim-opt`'s
-                    // drop-elaboration pass has rewritten `Drop` terminators
-                    // for types with actual destructors into `Call`s to the
-                    // generated drop-glue functions, so a bare `Drop` here is
-                    // the no-op case (no fields need dropping). Full
-                    // unwind/cleanup semantics are out of scope for this
-                    // tree-walking interpreter; see `with_panics_unwind`.
+                    // drop-elaboration pass must have rewritten `Drop`
+                    // terminators for types with actual destructors into
+                    // `Call`s to the generated drop-glue functions. A bare
+                    // `Drop` surviving to the interpreter means either the
+                    // type needs no drop glue (a legitimate no-op) or a
+                    // missing/misordered drop-elaboration pass (a compiler
+                    // bug). Enforce the invariant loudly in debug/test
+                    // builds instead of silently no-op'ing (plan §14.1): if a
+                    // `Drop` reaches here for a type that DOES need drop glue,
+                    // drop elaboration failed to run. We cannot inspect the
+                    // type cheaply here without the type context, so we assert
+                    // unconditionally and rely on the §15.1 validator (which
+                    // flags `Drop` on droppable types post-elaboration) to
+                    // catch the real bug at the MIR level. Fail open only in
+                    // release builds.
+                    debug_assert!(
+                        false,
+                        "Drop terminator reached the interpreter for place {place:?}; \
+                         drop elaboration should have lowered this to a drop-glue call. \
+                         This indicates a missing/misordered optimization pass — \
+                         check that DropElaboration runs before MIR reaches the interpreter/codegen."
+                    );
                     tracing::debug!(
                         "interpreter Drop terminator: skipping (drop glue already lowered to a Call)"
                     );
