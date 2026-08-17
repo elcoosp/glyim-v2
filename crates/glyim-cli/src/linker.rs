@@ -1,6 +1,24 @@
 use std::path::Path;
 use std::process::Command;
 
+/// Structured linker inputs (plan §18.2). Replaces the flat user-flags string
+/// with real first-class support for `-L` search paths and `-l` libraries,
+/// which dependency-based linking (each compiled dependency's output dir becomes
+/// a `-L` path and its crate name an `-l` argument) requires.
+#[derive(Debug, Clone, Default)]
+pub struct LinkArgs {
+    /// Library search paths; each becomes `-L<path>`.
+    pub search_paths: Vec<std::path::PathBuf>,
+    /// Libraries to link; each becomes `-l<name>` (the `lib` prefix/`lib`
+    /// suffix is supplied by the linker, as with ordinary `-l`).
+    pub libs: Vec<String>,
+    /// Object files to link in addition to the primary `obj_path`.
+    pub objects: Vec<std::path::PathBuf>,
+    /// Free-form user-supplied flags, appended last so users can still
+    /// override/extend anything the structured API covers.
+    pub user_flags: Vec<String>,
+}
+
 /// Trait abstracting the system linker, allowing for different implementations
 /// for MSVC, Unix/GCC, and LLD.
 trait LinkerInvoker {
@@ -88,11 +106,53 @@ impl LinkerInvoker for MsvcLinker {
     }
 }
 
+/// Assemble the flat flag string from structured `LinkArgs` (plan §18.2):
+/// `-L<path>` for each search path, then `-l<name>` for each requested
+/// library, then the extra object files, and finally free-form `user_flags`.
+fn build_link_flags(args: &LinkArgs) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for path in &args.search_paths {
+        parts.push(format!("-L{}", path.display()));
+    }
+    for lib in &args.libs {
+        parts.push(format!("-l{}", lib));
+    }
+    for obj in &args.objects {
+        parts.push(obj.display().to_string());
+    }
+    parts.extend(args.user_flags.iter().cloned());
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
 pub fn invoke_linker(
     obj_path: &Path,
     output_path: &Path,
     linker: Option<&str>,
     link_flags: Option<&str>,
+    target_triple: Option<&str>,
+) -> Result<(), String> {
+    // Plan §18.2: route the flat-flags path through `LinkArgs` so the two APIs
+    // share one flag-assembly/linker-selection path.
+    let args = LinkArgs {
+        user_flags: link_flags
+            .map(|s| s.split_whitespace().map(|f| f.to_string()).collect())
+            .unwrap_or_default(),
+        ..Default::default()
+    };
+    link_with_args(obj_path, output_path, &args, linker, target_triple)
+}
+
+/// Link using structured `LinkArgs` (plan §18.2): emits `-L`/`-l`/objects
+/// before appending any user-supplied flags.
+pub fn link_with_args(
+    obj_path: &Path,
+    output_path: &Path,
+    args: &LinkArgs,
+    linker: Option<&str>,
     target_triple: Option<&str>,
 ) -> Result<(), String> {
     // Plan §18.1: cross-compilation support. When a target triple is supplied
@@ -133,17 +193,15 @@ pub fn invoke_linker(
         })
     };
 
-    // Combine cross-compilation flags (if any) with user-supplied flags.
-    let combined_flags = if cross_flags.is_empty() {
-        link_flags.map(|s| s.to_string())
-    } else {
-        let mut all = cross_flags.join(" ");
-        if let Some(user) = link_flags {
-            if !user.is_empty() {
-                all = format!("{} {}", all, user);
-            }
-        }
-        Some(all)
+    // Combine cross-compilation flags (if any) with the structured args, then
+    // user flags. `-L`/`-l`/objects come first (inside `build_link_flags`),
+    // cross flags next, so user flags remain last/overridable.
+    let structured_flags = build_link_flags(args);
+    let combined_flags = match (cross_flags.is_empty(), structured_flags) {
+        (true, None) => None,
+        (true, Some(s)) => Some(s),
+        (false, None) => Some(cross_flags.join(" ")),
+        (false, Some(s)) => Some(format!("{} {}", cross_flags.join(" "), s)),
     };
 
     linker_invoker.link(obj_path, output_path, combined_flags.as_deref())
@@ -228,5 +286,42 @@ mod tests {
             "detected linker '{}' must be one of the probed candidates",
             detected
         );
+    }
+
+    #[test]
+    fn test_link_args_emits_search_paths_and_libs_before_user_flags() {
+        // Plan §18.2: structured LinkArgs must emit `-L<path>` for each search
+        // path and `-l<name>` for each library *before* the free-form user
+        // flags, so dependency-style linking is honoured and user flags still
+        // append last (overridable).
+        let args = LinkArgs {
+            search_paths: vec![std::path::PathBuf::from("/deps/a"), std::path::PathBuf::from("/deps/b")],
+            libs: vec!["mylib".to_string(), "pthread".to_string()],
+            objects: vec![std::path::PathBuf::from("/tmp/extra.o")],
+            user_flags: vec!["-Wl,--as-needed".to_string(), "-static".to_string()],
+        };
+        let flags = build_link_flags(&args).expect("non-empty args must yield flags");
+        let parts: Vec<&str> = flags.split(' ').collect();
+
+        assert_eq!(parts[0], "-L/deps/a");
+        assert_eq!(parts[1], "-L/deps/b");
+        assert_eq!(parts[2], "-lmylib");
+        assert_eq!(parts[3], "-lpthread");
+        assert_eq!(parts[4], "/tmp/extra.o");
+        // User flags come last.
+        assert_eq!(parts[5], "-Wl,--as-needed");
+        assert_eq!(parts[6], "-static");
+
+        // Relative order: every structured flag precedes every user flag.
+        let user_start = parts.iter().position(|p| p.starts_with("-Wl,") || p == &"-static").unwrap();
+        assert!(parts[..user_start].iter().all(|p| p.starts_with("-L") || p.starts_with("-l") || p.ends_with(".o")));
+    }
+
+    #[test]
+    fn test_link_args_empty_yields_no_flags() {
+        // Plan §18.2: with no search paths, libs, objects, or flags, there is
+        // nothing to pass through.
+        let args = LinkArgs::default();
+        assert!(build_link_flags(&args).is_none());
     }
 }
