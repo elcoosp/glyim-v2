@@ -356,6 +356,10 @@ pub enum MirConstKind {
     Unit,
     Fn(FnDefId, Substitution),
     ConstRef(ConstDefId, Substitution),
+    /// A constant aggregate (tuple, array, or struct) whose every field is
+    /// itself a constant. Enables constant propagation of `Aggregate` rvalues
+    /// with all-constant operands (plan §15.3).
+    Aggregate(Vec<MirConst>),
     Error,
 }
 

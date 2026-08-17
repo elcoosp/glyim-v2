@@ -4,7 +4,7 @@
 
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::TyCtx;
+use glyim_type::{Ty, TyCtx};
 use std::collections::HashMap;
 
 type BlockMap = HashMap<LocalIdx, Option<MirConst>>;
@@ -23,6 +23,9 @@ fn const_eq(a: &MirConst, b: &MirConst) -> bool {
         (MirConstKind::Char(a_val), MirConstKind::Char(b_val)) => a_val == b_val,
         (MirConstKind::FloatBits(a_val), MirConstKind::FloatBits(b_val)) => a_val == b_val,
         (MirConstKind::Unit, MirConstKind::Unit) => true,
+        (MirConstKind::Aggregate(a), MirConstKind::Aggregate(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| const_eq(x, y))
+        }
         _ => false,
     }
 }
@@ -88,7 +91,7 @@ fn operand_to_const(op: &Operand, locals: &BlockMap) -> Option<MirConst> {
     }
 }
 
-fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Option<MirConst> {
+fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx, ty: Ty) -> Option<MirConst> {
     match rv {
         Rvalue::Use(op) => operand_to_const(op, locals),
         Rvalue::BinaryOp(op, box_ops) => {
@@ -283,8 +286,11 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
             }
         }
         Rvalue::Aggregate(kind, operands) => {
-            // Handle aggregates of constants (tuples, arrays, structs)
-            let mut field_consts = Vec::new();
+            // Handle aggregates of constants (tuples, arrays, structs) — plan
+            // §15.3: generalize beyond the empty-tuple (Unit) case. If every
+            // operand is itself a constant, fold the whole aggregate into a
+            // single `MirConstKind::Aggregate`.
+            let mut field_consts = Vec::with_capacity(operands.len());
             for op in operands {
                 if let Some(c) = operand_to_const(op, locals) {
                     field_consts.push(c);
@@ -292,18 +298,22 @@ fn evaluate_rvalue_to_const(rv: &Rvalue, locals: &BlockMap, ctx: &TyCtx) -> Opti
                     return None;
                 }
             }
-            // For now, only tuples are supported; arrays and structs could be added later.
             match kind {
-                AggregateKind::Tuple => {
+                AggregateKind::Tuple | AggregateKind::Array(_) | AggregateKind::Adt(_, _, _) => {
                     if field_consts.is_empty() {
-                        return Some(MirConst {
+                        // Empty tuple is the unit value.
+                        Some(MirConst {
                             kind: MirConstKind::Unit,
                             ty: ctx.unit_ty(),
                             span: Span::DUMMY,
-                        });
+                        })
+                    } else {
+                        Some(MirConst {
+                            kind: MirConstKind::Aggregate(field_consts),
+                            ty,
+                            span: Span::DUMMY,
+                        })
                     }
-                    // We cannot represent tuple constants in MIR; return None.
-                    None
                 }
                 _ => None,
             }
@@ -399,7 +409,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 if let StatementKind::Assign(place, rvalue) = &stmt.kind {
                     out.remove(&place.local);
                     if place.projection.is_empty()
-                        && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx)
+                        && let Some(c) = evaluate_rvalue_to_const(rvalue, &out, ctx, body.locals[place.local].ty)
                     {
                         out.insert(place.local, Some(c));
                     }
@@ -426,5 +436,75 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::primitives::IntTy;
+    use glyim_test::with_fresh_ty_ctx;
+    use std::collections::HashMap;
+
+    #[test]
+    fn folds_all_constant_tuple_to_aggregate_const() {
+        // Plan §15.3: an `Aggregate` rvalue whose every operand is a constant
+        // must fold to a single `MirConstKind::Aggregate`, carrying the tuple
+        // type and the element constants in order.
+        let (ctx, int_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::Int(IntTy::I32)));
+        let rv = Rvalue::Aggregate(
+            AggregateKind::Tuple,
+            vec![
+                Operand::Constant(MirConst {
+                    kind: MirConstKind::Int(1),
+                    ty: int_ty,
+                    span: Span::DUMMY,
+                }),
+                Operand::Constant(MirConst {
+                    kind: MirConstKind::Int(2),
+                    ty: int_ty,
+                    span: Span::DUMMY,
+                }),
+            ],
+        );
+        let result = evaluate_rvalue_to_const(&rv, &HashMap::new(), &ctx, int_ty);
+        let c = result.expect("tuple of constants must fold to an aggregate const");
+        assert_eq!(
+            ctx.ty_kind(c.ty),
+            ctx.ty_kind(int_ty),
+            "folded const must carry the passed type"
+        );
+        match &c.kind {
+            MirConstKind::Aggregate(elems) => {
+                assert_eq!(elems.len(), 2, "must preserve element count");
+                assert!(matches!(elems[0].kind, MirConstKind::Int(1)));
+                assert!(matches!(elems[1].kind, MirConstKind::Int(2)));
+            }
+            other => panic!("expected Aggregate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn non_constant_operand_blocks_fold() {
+        // A tuple with a non-constant operand must NOT fold to an aggregate
+        // const (the inner constant-prop map has no entry for the operand).
+        let (ctx, int_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::Int(IntTy::I32)));
+        let rv = Rvalue::Aggregate(
+            AggregateKind::Tuple,
+            vec![
+                Operand::Constant(MirConst {
+                    kind: MirConstKind::Int(1),
+                    ty: int_ty,
+                    span: Span::DUMMY,
+                }),
+                // A place that is not in the constant map → blocks folding.
+                Operand::Copy(Place::new(LocalIdx::from_raw(0))),
+            ],
+        );
+        let result = evaluate_rvalue_to_const(&rv, &HashMap::new(), &ctx, int_ty);
+        assert!(
+            result.is_none(),
+            "aggregate with a non-constant operand must not fold"
+        );
     }
 }

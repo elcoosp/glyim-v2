@@ -582,6 +582,14 @@ impl BytecodeBackend {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(def_id.to_raw() as i64).to_le_bytes());
                     }
+                    MirConstKind::Aggregate(elems) => {
+                        // Emit each element constant in order; the bytecode
+                        // runtime reconstructs the aggregate from the pushed
+                        // values (plan §15.3).
+                        for e in elems {
+                            self.emit_operand(bc, &Operand::Constant(e.clone()), local_tys)?;
+                        }
+                    }
                     MirConstKind::Unit | MirConstKind::Error => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&0i64.to_le_bytes());

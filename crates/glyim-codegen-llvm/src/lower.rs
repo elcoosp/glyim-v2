@@ -288,6 +288,41 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     .build_load(llvm_ty, global.as_pointer_value(), "const_ref_load")
                     .expect("const ref load failed"))
             }
+            MirConstKind::Aggregate(elems) => {
+                // Emit a constant aggregate (tuple/array/struct) by recursively
+                // lowering each constant element and inserting it into a zero
+                // aggregate at its index (plan §15.3). `build_insert_value`
+                // works uniformly for both struct and array LLVM types. Any
+                // element that fails to lower falls back to a zero constant so
+                // callers never observe an error.
+                let llvm_ty = self.llvm_type_for_ty(c.ty);
+                let zero = llvm_ty.const_zero();
+                let agg: inkwell::values::AggregateValueEnum = match llvm_ty {
+                    inkwell::types::BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                    inkwell::types::BasicTypeEnum::ArrayType(at) => at.const_zero().into(),
+                    // Scalars/others: nothing to aggregate; return the zero.
+                    _ => return Ok(zero.as_basic_value_enum()),
+                };
+                let mut cur = agg;
+                for (i, e) in elems.iter().enumerate() {
+                    let val = self
+                        .lower_const(e)
+                        .unwrap_or_else(|_| zero.as_basic_value_enum());
+                    cur = self
+                        .builder
+                        .build_insert_value(cur, val, i as u32, "agg_elem")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "aggregate constant insert failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                }
+                Ok(match cur {
+                    inkwell::values::AggregateValueEnum::StructValue(s) => s.as_basic_value_enum(),
+                    inkwell::values::AggregateValueEnum::ArrayValue(a) => a.as_basic_value_enum(),
+                })
+            }
             MirConstKind::Error => Err(vec![GlyimDiagnostic::internal_error(
                 "internal compiler error: MirConstKind::Error reached codegen",
             )]),

@@ -428,6 +428,10 @@ fn format_const(c: &glyim_mir::MirConst) -> String {
         glyim_mir::MirConstKind::ConstRef(def_id, substs) => {
             format!("const_ref({:?}, {:?})", def_id, substs)
         }
+        glyim_mir::MirConstKind::Aggregate(elems) => {
+            let parts: Vec<String> = elems.iter().map(format_const).collect();
+            format!("aggregate([{}])", parts.join(", "))
+        }
         glyim_mir::MirConstKind::Error => "<error>".to_string(),
     }
 }

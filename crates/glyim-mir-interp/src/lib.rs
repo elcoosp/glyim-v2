@@ -503,6 +503,13 @@ impl<'tcx> Interpreter<'tcx> {
                 let def_id = DefId::new(crate_id, local_def_id);
                 Ok(InterpValue::ConstRef(def_id))
             }
+            MirConstKind::Aggregate(elems) => {
+                let mut values = Vec::with_capacity(elems.len());
+                for e in elems {
+                    values.push(self.eval_mir_const(e)?);
+                }
+                Ok(InterpValue::Aggregate(values))
+            }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
         }
     }
