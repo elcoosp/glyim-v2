@@ -36,6 +36,7 @@ fn resolve_path(def_map: &CrateDefMap, path_str: &str) -> PerNs {
         .filter(|s| !s.is_empty())
         .map(|s| PathSegment {
             name: def_map.interner.intern(s),
+            generic_args: None,
         })
         .collect();
 
@@ -60,6 +61,7 @@ fn resolve_from(def_map: &CrateDefMap, module: ModuleId, path_str: &str) -> PerN
         .filter(|s| !s.is_empty())
         .map(|s| PathSegment {
             name: def_map.interner.intern(s),
+            generic_args: None,
         })
         .collect();
     let path = Path { kind, segments };
@@ -219,6 +221,7 @@ fn t09_crate_path_resolution() {
         kind: PathKind::Crate,
         segments: vec![PathSegment {
             name: def_map.interner.intern("top"),
+            generic_args: None,
         }],
     };
     let resolver = Resolver::new(&def_map.modules, def_map.root, inner_id);

@@ -69,3 +69,12 @@ impl Path {
         }
     }
 }
+
+impl From<Name> for PathSegment {
+    fn from(name: Name) -> Self {
+        PathSegment {
+            name,
+            generic_args: None,
+        }
+    }
+}

@@ -8,6 +8,7 @@ fn simple_path(name_str: &str, interner: &glyim_core::interner::Interner) -> Pat
     Path {
         segments: vec![PathSegment {
             name: interner.intern(name_str),
+            generic_args: None,
         }],
         kind: PathKind::Plain,
     }
@@ -18,6 +19,7 @@ fn self_path(name_str: &str, interner: &glyim_core::interner::Interner) -> Path 
     Path {
         segments: vec![PathSegment {
             name: interner.intern(name_str),
+            generic_args: None,
         }],
         kind: PathKind::SelfPath,
     }
@@ -28,6 +30,7 @@ fn super_path(name_str: &str, interner: &glyim_core::interner::Interner) -> Path
     Path {
         segments: vec![PathSegment {
             name: interner.intern(name_str),
+            generic_args: None,
         }],
         kind: PathKind::Super(1),
     }
@@ -38,6 +41,7 @@ fn crate_path(name_str: &str, interner: &glyim_core::interner::Interner) -> Path
     Path {
         segments: vec![PathSegment {
             name: interner.intern(name_str),
+            generic_args: None,
         }],
         kind: PathKind::Crate,
     }
@@ -54,6 +58,7 @@ fn multi_path(
             .iter()
             .map(|s| PathSegment {
                 name: interner.intern(s),
+                generic_args: None,
             })
             .collect(),
         kind,
@@ -204,6 +209,7 @@ fn test_resolve_double_super() {
     let path = Path {
         segments: vec![PathSegment {
             name: def_map.interner.intern("top_fn"),
+            generic_args: None,
         }],
         kind: PathKind::Super(2),
     };
@@ -222,6 +228,7 @@ fn test_resolve_super_from_root_is_noop() {
     let path = Path {
         segments: vec![PathSegment {
             name: def_map.interner.intern("foo"),
+            generic_args: None,
         }],
         kind: PathKind::Super(1),
     };
