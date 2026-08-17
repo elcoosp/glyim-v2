@@ -38,11 +38,14 @@ pub use interp_value::InterpValue;
 pub struct Interpreter<'tcx> {
     tcx: &'tcx TyCtx,
     layout: SimpleLayoutComputer<'tcx>,
-    /// When `true`, a call whose callee panics is expected to unwind to the
-    /// `cleanup` block (not yet implemented in this tree-walking interpreter).
-    /// Currently always `false`; full unwind/cleanup-block semantics are out
-    /// of scope for the interpreter (used for `const fn` evaluation and the
-    /// test harness, not full runtime semantics).
+    /// When `true`, a panic (assert failure or statement evaluation error)
+    /// routes to the current block's `cleanup` edge instead of aborting
+    /// interpretation immediately. This implements single-frame unwind
+    /// cleanup (plan §14.2): the cleanup block — which drop elaboration has
+    /// populated with drop-glue calls — runs to completion before the
+    /// function terminates. Cross-frame unwinding (walking the call stack to
+    /// cleanup blocks in caller frames) is still out of scope for this
+    /// tree-walking interpreter.
     pub panics_unwind: bool,
     pub step_limit: usize,
     pub recursion_limit: usize,
@@ -171,8 +174,26 @@ impl<'tcx> Interpreter<'tcx> {
 
             let terminator_kind = body.basic_blocks[bb_idx].terminator.kind.clone();
 
+            // Capture this block's cleanup edge (if any) before executing
+            // statements, so a panic while evaluating a statement can be routed
+            // there when unwinding is enabled (plan §14.2, single-frame).
+            let cleanup_edge = match &terminator_kind {
+                TerminatorKind::Assert { cleanup, .. }
+                | TerminatorKind::Call { cleanup, .. }
+                | TerminatorKind::Drop { cleanup, .. } => *cleanup,
+                _ => None,
+            };
+
             for stmt in &body.basic_blocks[bb_idx].statements {
-                self.execute_statement(stmt)?;
+                if let Err(e) = self.execute_statement(stmt) {
+                    if self.panics_unwind {
+                        if let Some(cb) = cleanup_edge {
+                            bb_idx = cb;
+                            continue;
+                        }
+                    }
+                    return Err(e);
+                }
             }
 
             match terminator_kind {
@@ -281,7 +302,7 @@ impl<'tcx> Interpreter<'tcx> {
                     cond,
                     expected,
                     target,
-                    cleanup: _,
+                    cleanup,
                     msg,
                 } => {
                     let val = self.eval_operand(&cond)?;
@@ -297,6 +318,19 @@ impl<'tcx> Interpreter<'tcx> {
                     };
                     if is_true == expected {
                         bb_idx = target;
+                    } else if self.panics_unwind {
+                        // Panic during unwinding: route to the cleanup block
+                        // (plan §14.2, single-frame) instead of aborting. The
+                        // cleanup block runs its drop-glue and reaches its own
+                        // terminator (typically a Goto to the normal target or
+                        // a resume that ends the function).
+                        if let Some(cb) = cleanup {
+                            bb_idx = cb;
+                        } else {
+                            self.current_body = Some(body);
+                            self.current_bb = bb_idx;
+                            return Err(InterpError::Panic(format!("assert failed: {:?}", msg)));
+                        }
                     } else {
                         self.current_body = Some(body);
                         self.current_bb = bb_idx;
