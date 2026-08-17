@@ -952,43 +952,81 @@ impl<'a> FnCtxt<'a> {
     }
 
     fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
-        // §9.2: collect *every* impl whose Self type unifies with the receiver
-        // and that defines `method_name`. If more than one matches, this is an
-        // ambiguous method call — surface all candidates (rustc's E0034 style)
-        // instead of silently returning the first and masking the conflict.
-        let mut candidates: Vec<(Ty, Ty)> = Vec::new(); // (impl self ty, return ty)
-        for (_id, item) in self.hir.items.iter_enumerated() {
-            if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
-                let param_map = crate::tyconv::build_param_tys(self.ctx, &impl_item.generic_params);
-                let impl_self_ty = crate::tyconv::resolve_type_ref(
-                    self.ctx,
-                    self.infer,
-                    self.def_map,
-                    self.diagnostics,
-                    &impl_item.self_ty,
-                    &param_map,
-                    span,
-                );
-                if self.unify(recv_ty, impl_self_ty, span) {
-                    for method in &impl_item.methods {
-                        if method.name == method_name {
-                            let return_ty = if let Some(return_ty_ref) = &method.return_ty {
-                                crate::tyconv::resolve_type_ref(
-                                    self.ctx,
-                                    self.infer,
-                                    self.def_map,
-                                    self.diagnostics,
-                                    return_ty_ref,
-                                    &param_map,
-                                    span,
-                                )
-                            } else {
-                                Ty::UNIT
-                            };
-                            candidates.push((impl_self_ty, return_ty));
+        // §9.1 / §9.2: collect *every* impl whose Self type unifies with the
+        // receiver and that defines `method_name`. If more than one matches,
+        // this is an ambiguous method call — surface all candidates (rustc's
+        // E0034 style) instead of silently returning the first.
+        //
+        // Autoref/auto-deref (de-stubbing plan §9.1): try the receiver as-is,
+        // then `&recv` / `&mut recv`, then successively deref'd receivers
+        // (`recv`, `deref(recv)`, `deref(deref(recv))`, …). Structural derefs
+        // (references / raw pointers) are resolved via `TyCtx::deref_ty`; ADT
+        // `Deref` impls require the trait-DB population and fall back to `None`.
+        // Once a step yields candidates we stop descending (standard autoref
+        // priority), so `x.method()` still prefers `x`'s own impls.
+        let mut steps: Vec<Ty> = Vec::new();
+        let mut cur = Some(recv_ty);
+        while let Some(t) = cur {
+            steps.push(t);
+            cur = self.ctx.deref_ty(t);
+            if steps.len() >= 10 {
+                break;
+            }
+        }
+        // Autoref candidates: the receiver and its mutable/shared borrows.
+        let autoref_steps = [
+            recv_ty,
+            self.ctx.mk_ref(Region::Erased, recv_ty, Mutability::Not),
+            self.ctx.mk_ref(Region::Erased, recv_ty, Mutability::Mut),
+        ];
+
+        let collect_for = |this: &mut Self, step_ty: Ty| -> Vec<(Ty, Ty)> {
+            let mut found: Vec<(Ty, Ty)> = Vec::new();
+            for (_id, item) in this.hir.items.iter_enumerated() {
+                if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
+                    let param_map =
+                        crate::tyconv::build_param_tys(this.ctx, &impl_item.generic_params);
+                    let impl_self_ty = crate::tyconv::resolve_type_ref(
+                        this.ctx,
+                        this.infer,
+                        this.def_map,
+                        this.diagnostics,
+                        &impl_item.self_ty,
+                        &param_map,
+                        span,
+                    );
+                    if this.unify(step_ty, impl_self_ty, span) {
+                        for method in &impl_item.methods {
+                            if method.name == method_name {
+                                let return_ty =
+                                    if let Some(return_ty_ref) = &method.return_ty {
+                                        crate::tyconv::resolve_type_ref(
+                                            this.ctx,
+                                            this.infer,
+                                            this.def_map,
+                                            this.diagnostics,
+                                            return_ty_ref,
+                                            &param_map,
+                                            span,
+                                        )
+                                    } else {
+                                        Ty::UNIT
+                                    };
+                                found.push((impl_self_ty, return_ty));
+                            }
                         }
                     }
                 }
+            }
+            found
+        };
+
+        let mut candidates: Vec<(Ty, Ty)> = Vec::new();
+        for &step in steps.iter().chain(autoref_steps.iter()) {
+            let found = collect_for(self, step);
+            if !found.is_empty() {
+                candidates = found;
+                break;
             }
         }
 

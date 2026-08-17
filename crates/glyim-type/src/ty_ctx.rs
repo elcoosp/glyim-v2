@@ -168,6 +168,20 @@ impl TyCtx {
             .has_negative_impl(adt_id, auto_trait)
     }
 
+    /// Mechanically dereference a type for auto-deref in method resolution
+    /// (de-stubbing plan §9.1). Handles the structural cases that need no trait
+    /// database: shared/mutable references and raw pointers. ADT `Deref` impls
+    /// (e.g. `Box<T>`, `Rc<T>`) require the `Deref` trait impl to be registered,
+    /// which is gated on the HIR → `TraitContext` population, so they return
+    /// `None` here rather than guessing.
+    pub fn deref_ty(&self, ty: Ty) -> Option<Ty> {
+        match self.ty_kind(ty) {
+            TyKind::Ref(_, inner, _) => Some(*inner),
+            TyKind::RawPtr(inner, _) => Some(*inner),
+            _ => None,
+        }
+    }
+
     pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.auto_trait_registry.has_manual_impl(adt_id, auto_trait)
     }

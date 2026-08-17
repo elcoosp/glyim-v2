@@ -165,6 +165,12 @@ impl TyCtxMut {
         &self.types[ty.index()]
     }
 
+    /// Mechanically dereference a type for auto-deref in method resolution.
+    /// Delegates to the canonical `TyCtx::deref_ty` (de-stubbing plan §9.1).
+    pub fn deref_ty(&self, ty: Ty) -> Option<Ty> {
+        self.freeze().deref_ty(ty)
+    }
+
     pub fn ty_kind_mut(&mut self, ty: Ty) -> &mut TyKind {
         &mut self.types[ty.index()]
     }
