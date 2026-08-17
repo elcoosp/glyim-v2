@@ -9,6 +9,20 @@ use glyim_span::Span;
 
 use crate::{ConstEvalError, ConstEvalResult, ConstValue, MAX_EVAL_DEPTH};
 
+/// A user-defined `const fn` available to constant evaluation (plan §4.2).
+///
+/// The function's parameter patterns and body live inside the *same* `Body`
+/// arena as the call site (they are allocated into the `Body` before the
+/// evaluator is constructed), so `body` is a valid `ExprId`/`PatId` here. This
+/// is the natural carrier for real `const fn`s once a body is available.
+#[derive(Debug, Clone)]
+pub struct BodyFn {
+    /// Parameter patterns, in declaration order.
+    pub params: Vec<glyim_hir::PatId>,
+    /// Body expression id (in the same `Body` arena).
+    pub body: glyim_hir::ExprId,
+}
+
 /// The constant expression evaluator.
 pub struct ConstEvaluator<'a> {
     body: &'a Body,
@@ -18,6 +32,8 @@ pub struct ConstEvaluator<'a> {
     /// source string for dispatch (plan §4.2). Without it, calls cannot be
     /// resolved.
     interner: Option<&'a Interner>,
+    /// Registered user-defined `const fn`s (plan §4.2), keyed by name.
+    const_fns: HashMap<Name, BodyFn>,
     /// Set when a `break`/`continue` is encountered inside a loop so the loop
     /// driver can react. `None` means normal flow.
     loop_control: Option<LoopControl>,
@@ -165,14 +181,22 @@ impl<'a> ConstEvaluator<'a> {
             env: vec![HashMap::new()],
             pointer_width: 64, // Default to 64-bit
             interner: None,
+            const_fns: HashMap::new(),
             loop_control: None,
         }
     }
 
     /// Attach the interner used to resolve path-named `const fn` callees
-    /// (plan §4.2). Required for `Expr::Call` evaluation.
+    /// (plan §4.2). Required for `Expr::Call`/`Expr::MethodCall` evaluation.
     pub fn with_interner(mut self, interner: &'a Interner) -> Self {
         self.interner = Some(interner);
+        self
+    }
+
+    /// Register a user-defined `const fn` (plan §4.2). Its parameter patterns
+    /// and body must already live in the `Body` arena passed to `new`.
+    pub fn with_const_fn(mut self, name: Name, f: BodyFn) -> Self {
+        self.const_fns.insert(name, f);
         self
     }
 
@@ -364,12 +388,17 @@ impl<'a> ConstEvaluator<'a> {
                 ))
             }
             Expr::Call { func, args } => {
-                // Plan §4.2: const-evaluation of function calls. Resolve the
-                // callee to a builtin `const fn` (by path name) and evaluate its
-                // already-const arguments. This is the first carrier for the
-                // `const fn` mechanism; user-defined / std `const fn`s with
-                // bodies plug in here later.
+                // Plan §4.2: const-evaluation of function calls. Two carriers:
+                //   * an immediately-invoked closure (`(|p| body)(a)`), and
+                //   * a path-named callee that is either a registered
+                //     user-defined `const fn` or a builtin `ConstFn`.
                 let callee = &self.body.exprs[*func];
+                if let Expr::Closure {
+                    params, body, ..
+                } = callee
+                {
+                    return self.eval_closure_call(params, *body, args, span, depth);
+                }
                 let name = match callee {
                     Expr::Path(p) => p.as_name(),
                     _ => None,
@@ -378,11 +407,21 @@ impl<'a> ConstEvaluator<'a> {
                     Some(n) => n,
                     None => {
                         return Err(ConstEvalError::new(
-                            "only path-named const fns are supported in const eval",
+                            "only path-named const fns and closures are supported in const eval",
                             span,
                         ))
                     }
                 };
+                // Evaluate arguments once; shared by user-fn and builtin paths.
+                let mut arg_vals = Vec::with_capacity(args.len());
+                for &a in args {
+                    arg_vals.push(self.evaluate_at_depth(a, depth)?);
+                }
+                // User-defined const fn (registered body in the same arena)?
+                if let Some(f) = self.const_fns.get(&name).cloned() {
+                    return self.eval_user_const_fn(&f, &arg_vals, span, depth);
+                }
+                // Builtin const fn dispatched by path name.
                 let interner = self.interner.ok_or_else(|| {
                     ConstEvalError::new(
                         "const evaluator has no interner; cannot resolve const fn name",
@@ -396,16 +435,38 @@ impl<'a> ConstEvaluator<'a> {
                         span,
                     )
                 })?;
-                let mut arg_vals = Vec::with_capacity(args.len());
+                cf.apply(&arg_vals, span)
+            }
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                // Plan §4.2: const-evaluation of method calls. The builtin
+                // `const fn`s are also available as methods on their receiver
+                // (e.g. `x.abs()`, `a.min(b)`). The receiver is prepended to the
+                // argument list and dispatched via the same `ConstFn` table.
+                let recv_val = self.evaluate_at_depth(*receiver, depth)?;
+                let interner = self.interner.ok_or_else(|| {
+                    ConstEvalError::new(
+                        "const evaluator has no interner; cannot resolve method name",
+                        span,
+                    )
+                })?;
+                let method_str = interner.resolve(*method);
+                let cf = ConstFn::from_name(method_str).ok_or_else(|| {
+                    ConstEvalError::new(
+                        format!("unknown const method `{}`", method_str),
+                        span,
+                    )
+                })?;
+                let mut arg_vals = Vec::with_capacity(args.len() + 1);
+                arg_vals.push(recv_val);
                 for &a in args {
                     arg_vals.push(self.evaluate_at_depth(a, depth)?);
                 }
                 cf.apply(&arg_vals, span)
             }
-            Expr::MethodCall { .. } => Err(ConstEvalError::new(
-                "method calls not supported in const eval",
-                span,
-            )),
             Expr::Missing => Err(ConstEvalError::new(
                 "missing expression in const evaluation",
                 span,
@@ -431,7 +492,7 @@ impl<'a> ConstEvaluator<'a> {
                 Ok(ConstValue::Unit)
             }
             Expr::Closure { .. } => Err(ConstEvalError::new(
-                "closures not supported in const eval",
+                "a bare closure is not a const value; invoke it immediately, e.g. (|x| x + 1)(2)",
                 span,
             )),
             Expr::Range { start, end, inclusive } => {
@@ -486,6 +547,77 @@ impl<'a> ConstEvaluator<'a> {
         let span = self.expr_span(expr_id);
         let expr = &self.body.exprs[expr_id];
         self.evaluate_expr(expr, span, depth + 1)
+    }
+
+    /// Evaluate an immediately-invoked closure `(|params| body)(args)`: bind
+    /// the evaluated arguments to the closure's parameter patterns in a fresh
+    /// scope, then evaluate the body (plan §4.3).
+    fn eval_closure_call(
+        &mut self,
+        params: &[glyim_hir::PatId],
+        body: ExprId,
+        args: &[ExprId],
+        span: Span,
+        depth: u32,
+    ) -> ConstEvalResult<ConstValue> {
+        if params.len() != args.len() {
+            return Err(ConstEvalError::new(
+                format!(
+                    "closure invoked with {} argument(s) but expects {}",
+                    args.len(),
+                    params.len()
+                ),
+                span,
+            ));
+        }
+        let mut arg_vals = Vec::with_capacity(args.len());
+        for &a in args {
+            arg_vals.push(self.evaluate_at_depth(a, depth)?);
+        }
+        self.bind_and_eval(params, body, &arg_vals, span, depth)
+    }
+
+    /// Evaluate a user-defined `const fn` (plan §4.2): bind the evaluated
+    /// arguments to the registered parameter patterns in a fresh scope and
+    /// evaluate the body.
+    fn eval_user_const_fn(
+        &mut self,
+        f: &BodyFn,
+        arg_vals: &[ConstValue],
+        span: Span,
+        depth: u32,
+    ) -> ConstEvalResult<ConstValue> {
+        if f.params.len() != arg_vals.len() {
+            return Err(ConstEvalError::new(
+                format!(
+                    "const fn invoked with {} argument(s) but expects {}",
+                    arg_vals.len(),
+                    f.params.len()
+                ),
+                span,
+            ));
+        }
+        self.bind_and_eval(&f.params, f.body, arg_vals, span, depth)
+    }
+
+    /// Shared tail of closure/fn invocation: push a scope, bind `arg_vals` to
+    /// `params` (via pattern matching), evaluate `body`, pop the scope, and
+    /// return the body's value.
+    fn bind_and_eval(
+        &mut self,
+        params: &[glyim_hir::PatId],
+        body: ExprId,
+        arg_vals: &[ConstValue],
+        _span: Span,
+        depth: u32,
+    ) -> ConstEvalResult<ConstValue> {
+        self.env.push(HashMap::new());
+        for (pat_id, val) in params.iter().zip(arg_vals.iter()) {
+            self.pattern_matches(pat_id, val)?;
+        }
+        let result = self.evaluate_at_depth(body, depth);
+        self.env.pop();
+        result
     }
 
     fn apply_binop(

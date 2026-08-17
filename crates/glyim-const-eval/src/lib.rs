@@ -9,7 +9,7 @@
 pub mod eval;
 pub mod value;
 
-pub use eval::ConstEvaluator;
+pub use eval::{BodyFn, ConstEvaluator};
 pub use value::ConstValue;
 
 /// Maximum recursion depth for const evaluation.
