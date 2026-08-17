@@ -41,6 +41,8 @@ pub enum SyntaxKind {
     KwStatic,
     KwMove,
     KwMacroRules,
+    KwAsync,
+    KwAwait,
     Lifetime,
     // Literals
     IntLit,

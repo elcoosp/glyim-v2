@@ -21,17 +21,19 @@ impl<'a> Parser<'a> {
                     | SyntaxKind::KwStatic
                     | SyntaxKind::KwType
                     | SyntaxKind::KwExtern
+                    | SyntaxKind::KwAsync
             ) {
                 self.error("expected item after 'unsafe'");
                 return;
             }
         }
 
-        // Route `const fn` to parse_fn_def, which consumes the leading `const`
-        // modifier inside the FnDef node (plan §6.1). `const fn` is
-        // disambiguated from `const ITEM` by peeking the next non-trivia token.
-        // (`async fn` is not yet supported: the lexer has no `KwAsync`.)
-        if self.current_kind() == SyntaxKind::KwConst
+        // Route `const fn` and `async fn` to parse_fn_def, which consumes the
+        // leading modifier token inside the FnDef node (plan §6.1). Each is
+        // disambiguated from `const ITEM` / an `async` expression by peeking the
+        // next non-trivia token.
+        if (self.current_kind() == SyntaxKind::KwConst
+            || self.current_kind() == SyntaxKind::KwAsync)
             && self.next_non_ws_kind() == SyntaxKind::KwFn
         {
             self.parse_fn_def();
@@ -367,13 +369,15 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_fn_def(&mut self) {
         self.start_node(SyntaxKind::FnDef);
-        // Consume leading `const` fn modifier inside the FnDef node so lowering
-        // can detect it (plan §6.1). `async fn` is not yet supported
-        // (lexer has no `KwAsync`).
-        if self.current_kind() == SyntaxKind::KwConst
+        // Consume a leading `const` or `async` fn modifier inside the FnDef
+        // node so lowering can detect it (plan §6.1). The modifier precedes
+        // `fn`, so we only treat it as the fn modifier when `fn` follows; an
+        // `async` expression or `const { ... }` block is handled elsewhere.
+        if (self.current_kind() == SyntaxKind::KwConst
+            || self.current_kind() == SyntaxKind::KwAsync)
             && self.next_non_ws_kind() == SyntaxKind::KwFn
         {
-            self.bump(); // const
+            self.bump(); // const | async
         }
         self.bump_expected(SyntaxKind::KwFn);
         self.bump_expected(SyntaxKind::Ident);

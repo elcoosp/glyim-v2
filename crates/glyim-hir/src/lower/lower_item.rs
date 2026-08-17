@@ -113,15 +113,16 @@ pub(crate) fn lower_fn_def(
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
 
-    // Plan §6.1: detect `const fn` modifier (the parser embeds the leading
-    // `const` keyword token inside the FnDef node, before `fn`). `async fn` is
-    // not yet supported (lexer has no `KwAsync`).
+    // Plan §6.1: detect `const fn` / `async fn` modifiers (the parser embeds
+    // the leading modifier keyword token inside the FnDef node, before `fn`).
     let mut is_const = false;
+    let mut is_async = false;
     for el in node.children_with_tokens() {
         match el {
             glyim_syntax::SyntaxElement::Token(t) => match t.kind() {
                 SyntaxKind::KwFn => break,
                 SyntaxKind::KwConst => is_const = true,
+                SyntaxKind::KwAsync => is_async = true,
                 _ => {}
             },
             glyim_syntax::SyntaxElement::Node(_) => {}
@@ -136,7 +137,7 @@ pub(crate) fn lower_fn_def(
             return_ty,
             body: body_id,
             is_unsafe: false,
-            is_async: false,
+            is_async,
             is_const,
             generic_params: Vec::new(),
             where_clauses: Vec::new(),

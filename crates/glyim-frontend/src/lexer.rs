@@ -824,6 +824,8 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
         "unsafe" => SyntaxKind::KwUnsafe,
         "const" => SyntaxKind::KwConst,
         "static" => SyntaxKind::KwStatic,
+        "async" => SyntaxKind::KwAsync,
+        "await" => SyntaxKind::KwAwait,
         "macro_rules" => SyntaxKind::KwMacroRules,
         "_" => SyntaxKind::Underscore,
         _ => SyntaxKind::Ident,
