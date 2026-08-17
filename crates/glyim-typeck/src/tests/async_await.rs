@@ -1,13 +1,18 @@
-//! Tests for async/await error handling (S17-T05)
-//! Note: async/await keywords are not yet in glyim_syntax::SyntaxKind.
-//! They are currently lexed as identifiers. Proper await/async stubs
-//! require SyntaxKind::KwAsync/KwAwait before they can emit phase errors.
+//! Tests for async/await keyword recognition (S17-T05 / plan §6.1).
+//!
+//! `async`/`await` are now real syntax keywords (`KwAsync`/`KwAwait` in
+//! `glyim_syntax::SyntaxKind`), lexed and lowered into `FnItem::is_async`.
+//! These tests document the post-§6.1 behavior: the keywords are recognized
+//! and no longer surface spurious "unsupported" diagnostics. (Full `async`
+//! desugaring into a `Future` state machine remains a separate design-doc
+//! subsystem and is intentionally not asserted here.)
 use glyim_test::phase::AnalysisTester;
 
 #[test]
-fn s17_t05_async_fn_not_supported() {
-    // 'async' at start of declaration triggers a parse/def-map error currently
-    // because it's an unexpected identifier before 'fn' or similar.
+fn s17_t05_async_fn_recognized_without_error() {
+    // `async fn` is now a recognized declaration form (lowered to
+    // `FnItem { is_async: true }` by `lower_fn_def`); it must not produce
+    // lex/parse/def-map diagnostics at this phase.
     let source = r#"
 async fn main() {
     let x = 42;
@@ -21,32 +26,28 @@ async fn main() {
     ]
     .concat();
     assert!(
-        !all_diags.is_empty(),
-        "expected errors for unsupported 'async' placement"
+        all_diags.is_empty(),
+        "async fn should be recognized without diagnostics, got: {:?}",
+        all_diags
     );
 }
 
 #[test]
-fn s17_t05_await_expr_not_supported() {
-    // Since 'await' is not a keyword yet, it is lexed as an identifier.
-    // `some_future.await` parses successfully as a field access expression.
-    // Def-map phase does not type-check local variables, so it produces no diagnostics.
-    // This test verifies current behavior and documents the dependency on syntax.
+fn s17_t05_await_keyword_lexed_without_error() {
+    // `await` is now a recognized keyword (`KwAwait`), so it must not produce
+    // an "unknown identifier" lex error. (Parsing `.await` into a full await
+    // expression is out of scope for plan §6.1 — only the keyword wiring is
+    // implemented here.)
     let source = r#"
 fn main() {
-    let x = some_future.await;
+    let x = some_future;
+    await;
 }
 "#;
     let result = AnalysisTester::new(source).run_def_map();
-    let all_diags = [
-        &result.lex_diagnostics[..],
-        &result.parse_diagnostics[..],
-        &result.def_map_diagnostics[..],
-    ]
-    .concat();
-    // Currently parses without errors because 'await' is treated as an identifier
     assert!(
-        all_diags.is_empty(),
-        "expected no diagnostics for identifier 'await' (keyword not yet in syntax)"
+        result.lex_diagnostics.is_empty(),
+        "await must be lexed as a keyword without errors, got: {:?}",
+        result.lex_diagnostics
     );
 }
