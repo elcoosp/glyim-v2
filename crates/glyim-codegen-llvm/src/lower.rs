@@ -133,16 +133,17 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 .builder
                 .build_alloca(llvm_ty, &name)
                 .expect("alloca failed");
-            // The LLVM type for an over-aligned aggregate (align > 16) is a
-            // naturally 1-aligned i8 array (see `opaque_sized_type`), so the
-            // real alignment must be enforced explicitly here.
+            // Plan §19.3: enforce the *real* computed alignment at every alloca
+            // site unconditionally (not only above a 16-byte threshold). The
+            // opaque sized type cannot carry alignment > 16 through its type
+            // alone, and even <= 16 types must get their true alignment so the
+            // backend never silently under-aligns (e.g. `#[repr(align(64))]`).
             let layout_computer = FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
             if let Ok(layout) = layout_computer.layout_of(ty) {
-                let align = layout.align.0;
-                if align > 16
-                    && let Some(alloca_inst) = alloca.as_instruction_value() {
-                        let _ = alloca_inst.set_alignment(align as u32);
-                    }
+                let align = layout.align.0.max(1) as u32;
+                if let Some(alloca_inst) = alloca.as_instruction_value() {
+                    let _ = alloca_inst.set_alignment(align);
+                }
             }
             self.locals[local] = Some(alloca);
         }
@@ -280,6 +281,13 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     global.set_initializer(&llvm_ty.const_zero());
                     global.set_constant(true);
                     global.set_linkage(inkwell::module::Linkage::Internal);
+                    // Plan §19.3: enforce the real computed alignment on the
+                    // global unconditionally (not only above 16 bytes).
+                    let layout_computer =
+                        FullLayoutComputer::new(self.ty_ctx, self.target_info.clone());
+                    if let Ok(layout) = layout_computer.layout_of(c.ty) {
+                        global.set_alignment(layout.align.0.max(1) as u32);
+                    }
                     global
                 });
                 let llvm_ty = self.llvm_type_for_ty(c.ty);

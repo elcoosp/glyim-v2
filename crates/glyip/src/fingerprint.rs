@@ -124,7 +124,10 @@ impl FingerprintStore {
         Ok(())
     }
 
-    /// Return `true` if any `.g` file under `dir` has changed.
+    /// Return `true` if any `.g` file under `dir` has changed, *or* if the
+    /// project manifest / build scripts have changed (plan §23.3 — a manifest
+    /// or dependency edit must invalidate incremental state even though those
+    /// files do not themselves carry `extension`).
     pub fn has_any_changed(&self, dir: &Path, extension: &str) -> crate::error::GlyipResult<bool> {
         let files = collect_files_with_extension(dir, extension);
         for path in &files {
@@ -132,14 +135,28 @@ impl FingerprintStore {
                 return Ok(true);
             }
         }
+        for cfg in config_files(dir) {
+            if !cfg.exists() {
+                continue;
+            }
+            if self.has_changed(&cfg)? {
+                return Ok(true);
+            }
+        }
         Ok(false)
     }
 
-    /// Update fingerprints for every file with `extension` under `dir`.
+    /// Update fingerprints for every file with `extension` under `dir`, plus
+    /// the project manifest / build scripts (plan §23.3).
     pub fn update_all(&mut self, dir: &Path, extension: &str) -> crate::error::GlyipResult<()> {
         let files = collect_files_with_extension(dir, extension);
         for path in &files {
             self.update(path)?;
+        }
+        for cfg in config_files(dir) {
+            if cfg.exists() {
+                self.update(&cfg)?;
+            }
         }
         Ok(())
     }
@@ -163,6 +180,30 @@ fn collect_files_with_extension(dir: &Path, extension: &str) -> Vec<PathBuf> {
     }
     collect_files_recursive(dir, extension, &mut result);
     result
+}
+
+/// Plan §23.3: project-wide inputs that must also invalidate incremental state
+/// but are not source files carrying `extension` (e.g. `.g`): the manifest and
+/// any build scripts. Returns their (possibly non-existent) paths.
+fn config_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = vec![
+        dir.join("glyim.toml"),
+        dir.join("glyim.lock"),
+        dir.join("build.g"),
+        dir.join("build.rs"),
+    ];
+    // Also pick up any `*.toml` build-config files alongside the manifest.
+    if dir.exists() {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "toml") && p.file_name().is_some_and(|n| n != "glyim.toml") {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    files
 }
 
 /// Recursive helper to collect files.

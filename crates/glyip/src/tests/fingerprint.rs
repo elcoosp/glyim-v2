@@ -153,3 +153,34 @@ fn fingerprint_store_is_empty() {
     assert!(store.is_empty());
     assert_eq!(store.len(), 0);
 }
+
+// Plan §23.3: a manifest / build-script change must be detected by
+// `has_any_changed` even when no `.g` source file changed. Incremental state
+// must be invalidated on dependency or manifest edits.
+#[test]
+fn has_any_changed_detects_manifest_change() {
+    let dir = TempDir::new().unwrap();
+    let src_dir = dir.path().join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+
+    let file_a = src_dir.join("a.g");
+    fs::write(&file_a, "fn a() {}\n").unwrap();
+    // Manifest present at the project root (the scan root passed below).
+    let manifest = dir.path().join("glyim.toml");
+    fs::write(&manifest, "name = \"demo\"\n").unwrap();
+
+    let mut store = FingerprintStore::new();
+    // Scan the project root so the manifest is fingerprinted alongside sources.
+    store.update_all(dir.path(), "g").unwrap();
+    assert!(
+        !store.has_any_changed(dir.path(), "g").unwrap(),
+        "no change should be reported right after update"
+    );
+
+    // Editing only the manifest (no .g change) must still flag a change.
+    fs::write(&manifest, "name = \"demo-v2\"\ndependencies = []\n").unwrap();
+    assert!(
+        store.has_any_changed(dir.path(), "g").unwrap(),
+        "manifest edit must invalidate incremental state"
+    );
+}

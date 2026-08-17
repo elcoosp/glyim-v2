@@ -102,6 +102,14 @@ impl HygieneCtx {
         self.expansions.get(id.to_raw() as usize)
     }
 
+    /// Plan §2.1: expose the syntax-context id carried by a span so the
+    /// resolver (`glyim-def-map`) can consult hygiene when two identifiers
+    /// share text but differ in syntax context (a macro-introduced `let tmp`
+    /// must not capture a use-site `tmp`). `SyntaxContext` *is* the id.
+    pub fn syntax_context(&self, span: Span) -> SyntaxContext {
+        span.ctx
+    }
+
     pub fn adjust(&mut self, span: Span, scope_ctx: SyntaxContext) -> Span {
         let mut current = span;
         while current.ctx != scope_ctx && !current.ctx.is_root() {

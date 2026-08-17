@@ -116,3 +116,39 @@ fn test_adjust_on_root_span_just_changes_ctx() {
     let adjusted = ctx.adjust(span, target_ctx);
     assert_eq!(adjusted, span);
 }
+
+// Plan §2.1: `syntax_context` exposes the id the resolver must consult so that
+// two identifiers with identical text but different syntax contexts resolve to
+// different bindings. Here two marks produce two distinct contexts; the accessor
+// must report each span's own context, and `adjust` must preserve the boundary.
+#[test]
+fn test_syntax_context_distinguishes_marked_spans() {
+    let mut ctx = HygieneCtx::new();
+    let span = Span::new(
+        FileId::from_raw(1),
+        ByteIdx::ZERO,
+        ByteIdx::from_raw(5),
+        SyntaxContext::ROOT,
+    );
+    let macro_mark = Mark {
+        expn_id: ExpnId::ROOT,
+        transparency: Transparency::Opaque,
+    };
+    let from_macro = ctx.apply_mark(span, macro_mark);
+    let use_site = ctx.apply_mark(span, macro_mark);
+
+    // Two expansion sites of the same macro get distinct syntax contexts.
+    assert_ne!(from_macro.ctx, use_site.ctx);
+    // The accessor reports each span's own context (not a shared root).
+    assert_eq!(ctx.syntax_context(from_macro), from_macro.ctx);
+    assert_eq!(ctx.syntax_context(use_site), use_site.ctx);
+    assert_ne!(ctx.syntax_context(from_macro), ctx.syntax_context(use_site));
+
+    // `adjust` strips down to a given scope but never conflates the two: after
+    // adjusting each to its OWN scope context, they remain distinct ids.
+    let a = ctx.adjust(from_macro, from_macro.ctx);
+    let b = ctx.adjust(use_site, use_site.ctx);
+    assert_eq!(a.ctx, from_macro.ctx);
+    assert_eq!(b.ctx, use_site.ctx);
+    assert_ne!(a.ctx, b.ctx);
+}
