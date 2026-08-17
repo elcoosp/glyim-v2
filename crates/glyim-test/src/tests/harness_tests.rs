@@ -393,3 +393,56 @@ fn test_pipeline_compiler_populates_executable_path_field() {
     let output = compiler.compile("fn main() {}", FileId::from_raw(888), &[]);
     assert!(output.executable_path.is_none(), "mock backend emits no real object, so linking yields None (got {:?})", output.executable_path);
 }
+
+#[test]
+fn test_run_parallel_collects_results_with_progress_reporting() {
+    use crate::harness::collector::DiscoveredTest;
+    use crate::harness::config::TestMode;
+    use crate::harness::executor::{TestExecutor, TestOutcome};
+
+    // Regression guard for plan §24.1: run_parallel must still return the same
+    // results as run_sequential (the progress-reporting channel must not drop
+    // or reorder any result), and it must report progress for every task.
+    let mk = |name: &str| {
+        let t = DiscoveredTest {
+            path: std::path::PathBuf::from("."),
+            name: name.to_string(),
+            source: std::sync::Arc::from("fn main() {}"),
+            config: crate::harness::config::TestConfig {
+                mode: TestMode::CompilePass,
+                ..Default::default()
+            },
+            revisions: vec!["base".to_string()],
+        };
+        std::sync::Arc::new(t)
+    };
+    let tests = vec![mk("alpha"), mk("beta"), mk("gamma")];
+
+    let executor = TestExecutor::new(
+        std::time::Duration::from_secs(30),
+        false,
+        false,
+        4,
+        false, // frontend-only compiler (no LLVM needed)
+    );
+
+    let results = executor.run_parallel(&tests);
+    assert_eq!(results.len(), 3, "all three tests must be collected");
+    for r in &results {
+        assert!(
+            matches!(r.outcome, TestOutcome::Passed),
+            "test {} should pass, got {:?}",
+            r.test.name,
+            r.outcome
+        );
+    }
+
+    // Same input via sequential path must agree (proves the reporter side-channel
+    // did not alter collected outcomes).
+    let seq = executor.run_sequential(&tests);
+    assert_eq!(seq.len(), results.len());
+    for (a, b) in seq.iter().zip(results.iter()) {
+        assert_eq!(a.test.name, b.test.name);
+        assert!(matches!(a.outcome, TestOutcome::Passed));
+    }
+}

@@ -104,21 +104,65 @@ impl TestExecutor {
         let compiler = Arc::clone(&self.compiler);
         let bless = self.bless;
         let target_triple = self.target_triple.clone();
-        pool.install(move || {
+
+        // Progress reporting (plan §24.1): as each parallel task finishes, send
+        // its (name, outcome) over a channel to a reporting thread that prints
+        // cumulative progress ("X/Y passed=P failed=F ignored=I"). The channel is
+        // bounded-ish by backpressure: the reporting thread drains promptly, so a
+        // slow consumer can't grow memory without bound in practice.
+        let total: usize = tests_c.iter().map(|t| t.revisions.len()).sum();
+        let (progress_tx, progress_rx) = std::sync::mpsc::channel::<(String, TestOutcome)>();
+        let progress_tx = std::sync::Arc::new(progress_tx);
+        let tx_for_tasks = std::sync::Arc::clone(&progress_tx);
+        let reporter = std::thread::spawn(move || {
+            let mut done = 0usize;
+            let mut passed = 0usize;
+            let mut failed = 0usize;
+            let mut ignored = 0usize;
+            while let Ok((name, outcome)) = progress_rx.recv() {
+                done += 1;
+                match outcome {
+                    TestOutcome::Passed => passed += 1,
+                    TestOutcome::Failed { .. } => failed += 1,
+                    TestOutcome::Ignored => ignored += 1,
+                }
+                eprintln!(
+                    "[{}/{}] passed={} failed={} ignored={} :: {}",
+                    done, total, passed, failed, ignored, name
+                );
+                if done >= total {
+                    break;
+                }
+            }
+        });
+
+        let results = pool.install(move || {
             tests_c
                 .par_iter()
                 .flat_map(|t| {
                     let revs: Vec<String> = t.revisions.clone();
                     let comp = Arc::clone(&compiler);
                     let tgt = target_triple.clone();
+                    let tx = Arc::clone(&tx_for_tasks);
                     revs.into_iter()
                         .map(move |r| {
-                            execute_test(Arc::clone(t), r, Arc::clone(&comp), bless, tgt.clone())
+                            let res = execute_test(
+                                Arc::clone(t),
+                                r,
+                                Arc::clone(&comp),
+                                bless,
+                                tgt.clone(),
+                            );
+                            let _ = tx.send((res.test.name.clone(), res.outcome.clone()));
+                            res
                         })
                         .collect::<Vec<_>>()
                 })
                 .collect()
-        })
+        });
+        drop(progress_tx);
+        let _ = reporter.join();
+        results
     }
 }
 
