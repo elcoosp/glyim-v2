@@ -8,7 +8,7 @@ use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{GenericArg, Region, Ty, TyKind};
+use glyim_type::{GenericArg, Region, Ty, TyKind, TypeLookup, AdtKind};
 use glyim_type::display::PrintTy;
 
 use crate::check_body::FnCtxt;
@@ -940,15 +940,7 @@ impl<'a> FnCtxt<'a> {
     }
 
     fn is_cast_valid(&self, from: Ty, to: Ty) -> bool {
-        use TyKind::*;
-        match (self.ctx.ty_kind(from), self.ctx.ty_kind(to)) {
-            (Int(_) | Uint(_), Int(_) | Uint(_) | Float(_)) => true,
-            (Float(_), Float(_) | Int(_) | Uint(_)) => true,
-            (RawPtr(_, _) | Ref(_, _, _), RawPtr(_, _) | Int(_)) => true,
-            (Bool, Int(_) | Uint(_)) => true,
-            _ if from == to => true,
-            _ => true,
-        }
+        is_valid_cast(self.ctx, from, to)
     }
 
     fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
@@ -1096,5 +1088,41 @@ impl<'a> FnCtxt<'a> {
             ));
             Ty::ERROR
         }
+    }
+}
+
+/// Shared cast-legality checker (plan §13.2).
+///
+/// This is the single source of truth for "is this `as` cast legal", used by
+/// both typeck (via [`FnCtxt::is_cast_valid`]) and intended for const-eval. It
+/// returns `true` only for the language's actually-legal casts:
+/// - numeric/char/bool primitives to other numeric types,
+/// - pointer/reference to pointer or integer,
+/// - **fieldless** enum to integer (struct/union/non-fieldless-enum → integer
+///   is rejected),
+/// - identity casts (`from == to`).
+pub(crate) fn is_valid_cast(ctx: &dyn TypeLookup, from: Ty, to: Ty) -> bool {
+    use TyKind::*;
+    let from_k = ctx.ty_kind(from);
+    let to_k = ctx.ty_kind(to);
+    match (from_k, to_k) {
+        (Int(_) | Uint(_), Int(_) | Uint(_) | Float(_)) => true,
+        (Float(_), Float(_) | Int(_) | Uint(_)) => true,
+        (RawPtr(_, _) | Ref(_, _, _), RawPtr(_, _) | Int(_)) => true,
+        (Bool, Int(_) | Uint(_)) => true,
+        (Char, Int(_) | Uint(_)) => true,
+        (Adt(from_id, _), Int(_) | Uint(_)) => {
+            // Only a fieldless enum may cast to an integer (plan §13.2).
+            // Structs, unions, and enums with data are rejected.
+            match ctx.adt_def(*from_id) {
+                Some(adt) => {
+                    adt.kind == AdtKind::Enum
+                        && adt.variants.iter().all(|v| v.fields.is_empty())
+                }
+                None => false,
+            }
+        }
+        _ if from == to => true,
+        _ => false,
     }
 }

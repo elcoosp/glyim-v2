@@ -1248,6 +1248,14 @@ impl<'a> ConstEvaluator<'a> {
         Ok(ConstValue::Unit)
     }
 
+    // Plan §13.2: this should reuse typeck's `is_valid_cast` (the single
+    // source of truth for cast legality in `glyim-typeck/src/check_expr.rs`)
+    // instead of maintaining a separate primitive allowlist. That requires
+    // the *source* type at this point, which const-eval does not currently
+    // track (the `ConstEvaluator` is value-only and carries no `TyCtx`/types).
+    // Wiring it needs `from_ty` plumbed through THIR `Expr::Cast` and into the
+    // evaluator — a separate change. Until then we keep the primitive allowlist
+    // (which already rejects non-primitive targets).
     fn eval_cast(
         &self,
         val: ConstValue,
