@@ -171,3 +171,107 @@ fn interpret_indirect_function_call() {
     let val = interp.get_local_value(LocalIdx::from_raw(1)).unwrap();
     assert_eq!(val, &InterpValue::Int(42));
 }
+
+/// Direct closure call (Plan §12.1): a closure value is an aggregate
+/// `[Fn(def_id), captures...]`. Calling it unpacks the Fn and passes captures
+/// as leading arguments to the closure body (lowered with
+/// `arg_count = captures + params`).
+#[test]
+fn interpret_direct_closure_call_with_capture() {
+    // Plan §12.1: a closure value is an aggregate `[Fn(def_id), captures...]`.
+    // Calling it must unpack the Fn and pass captures as leading arguments to
+    // the closure body (which was lowered with `arg_count = captures + params`).
+
+    let mut tcx_mut = test_ty_ctx();
+    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
+
+    // Closure body: `_0 = arg0 (capture) + arg1 (param)`; arg0 = capture, arg1 = param.
+    let closure_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1));
+    let closure_body = {
+        let mut body = Body::dummy(closure_id);
+        body.locals = IndexVec::from_raw(vec![
+            LocalDecl { ty: i32_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) }, // _0 return
+            LocalDecl { ty: i32_ty, mutability: Mutability::Not, source_info: SourceInfo::new(Span::DUMMY) }, // _1 capture
+            LocalDecl { ty: i32_ty, mutability: Mutability::Not, source_info: SourceInfo::new(Span::DUMMY) }, // _2 param
+        ]);
+        // _0 = _1 + _2
+        let sum = Rvalue::BinaryOp(
+            glyim_core::primitives::BinOp::Add,
+            Box::new((
+                Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+                Operand::Copy(Place::new(LocalIdx::from_raw(2))),
+            )),
+        );
+        body.basic_blocks = IndexVec::from_raw(vec![BasicBlockData {
+            statements: vec![Statement {
+                kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), sum),
+                source_info: SourceInfo::new(Span::DUMMY),
+            }],
+            terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+            is_cleanup: false,
+        }]);
+        body
+    };
+
+    // Caller: build closure aggregate `[Fn(closure_id), capture=10]`, store it,
+    // then call with argument `param=32`. Expected result = 10 + 32 = 42.
+    let caller_body = {
+        let mut body = Body::dummy(dummy_def_id());
+        let closure_local = LocalIdx::from_raw(2); // holds the closure aggregate
+        body.locals = IndexVec::from_raw(vec![
+            LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) },
+            LocalDecl { ty: i32_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) }, // _1 result
+            LocalDecl { ty: i32_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) }, // _2 closure aggregate
+        ]);
+        let closure_agg = Rvalue::Aggregate(
+            glyim_mir::AggregateKind::Closure(
+                glyim_core::def_id::ClosureId::from_raw(1),
+                glyim_type::Substitution::empty(),
+            ),
+            vec![
+                Operand::Constant(MirConst {
+                    kind: MirConstKind::Fn(FnDefId::from_raw(1), glyim_type::Substitution::empty()),
+                    ty: i32_ty,
+                    span: Span::DUMMY,
+                }),
+                Operand::Constant(MirConst { kind: MirConstKind::Int(10), ty: i32_ty, span: Span::DUMMY }),
+            ],
+        );
+        body.basic_blocks = IndexVec::from_raw(vec![
+            BasicBlockData {
+                statements: vec![Statement {
+                    kind: StatementKind::Assign(Place::new(closure_local), closure_agg),
+                    source_info: SourceInfo::new(Span::DUMMY),
+                }],
+                terminator: Terminator {
+                    kind: TerminatorKind::Call {
+                        func: Operand::Copy(Place::new(closure_local)),
+                        args: vec![Operand::Constant(MirConst {
+                            kind: MirConstKind::Int(32),
+                            ty: i32_ty,
+                            span: Span::DUMMY,
+                        })],
+                        destination: Place::new(LocalIdx::from_raw(1)),
+                        target: Some(BasicBlockIdx::from_raw(1)),
+                        cleanup: None,
+                    },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator { kind: TerminatorKind::Return, source_info: SourceInfo::new(Span::DUMMY) },
+                is_cleanup: false,
+            },
+        ]);
+        body
+    };
+
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx);
+    interp.add_function(closure_id, closure_body);
+    interp.run_body(&caller_body).unwrap();
+    let val = interp.get_local_value(LocalIdx::from_raw(1)).unwrap();
+    assert_eq!(val, &InterpValue::Int(42), "closure call must add capture (10) and param (32)");
+}

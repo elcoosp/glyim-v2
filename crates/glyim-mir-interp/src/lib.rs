@@ -255,7 +255,13 @@ impl<'tcx> Interpreter<'tcx> {
                     target,
                     cleanup: _,
                 } => {
-                    let callee_id = self.resolve_callee(&func)?;
+                    // Plan §12.1: a closure value is an aggregate
+                    // `[Fn(def_id), captures...]`. `resolve_callee` unpacks that,
+                    // returning the callee id *and* the captured values so they
+                    // can be passed as leading arguments — matching the calling
+                    // convention the closure body was lowered with
+                    // (`arg_count = captures.len() + params.len()`).
+                    let (callee_id, captured) = self.resolve_callee(&func)?;
                     let callee_body =
                         self.function_table
                             .get(&callee_id)
@@ -264,7 +270,7 @@ impl<'tcx> Interpreter<'tcx> {
                                 InterpError::Panic(format!("function not found: {:?}", callee_id))
                             })?;
 
-                    let mut arg_values = Vec::new();
+                    let mut arg_values = captured;
                     for arg_op in &args {
                         arg_values.push(self.eval_operand(arg_op)?);
                     }
@@ -1137,31 +1143,42 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
-    fn resolve_callee(&self, func: &Operand) -> InterpResult<DefId> {
+    fn resolve_callee(&self, func: &Operand) -> InterpResult<(DefId, Vec<InterpValue>)> {
         match func {
             Operand::Constant(c) => match &c.kind {
                 MirConstKind::Fn(def_id, _) => {
                     let crate_id = CrateId::from_raw(0);
                     let local_def_id = LocalDefId::from_raw(def_id.to_raw());
-                    Ok(DefId::new(crate_id, local_def_id))
+                    Ok((DefId::new(crate_id, local_def_id), Vec::new()))
                 }
                 MirConstKind::ConstRef(_, _) => Err(InterpError::Panic(
                     "ConstRef constant not interpretable as function".into(),
                 )),
-                MirConstKind::Int(id) => Ok(DefId::new(
-                    CrateId::from_raw(0),
-                    LocalDefId::from_raw(*id as u32),
+                MirConstKind::Int(id) => Ok((
+                    DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(*id as u32)),
+                    Vec::new(),
                 )),
                 _ => Err(InterpError::Panic(
                     "callee must be a function reference".into(),
                 )),
             },
             // Indirect call: the callee is read from a place (e.g. a function
-            // pointer stored in a local). `eval_mir_const` lowers
-            // `MirConstKind::Fn` into `InterpValue::Fn(def_id)`, so a function
-            // reference copied into a local round-trips back to its DefId here.
+            // pointer stored in a local, or a closure aggregate value).
+            // Plan §12.1: a closure value is an aggregate
+            // `[Fn(def_id), captures...]`; unpack it so the captured values can
+            // be passed as leading arguments to the closure body.
             Operand::Copy(place) | Operand::Move(place) => match self.read_place(place)? {
-                InterpValue::Fn(def_id) => Ok(def_id),
+                InterpValue::Fn(def_id) => Ok((def_id, Vec::new())),
+                InterpValue::Aggregate(fields) => {
+                    if let Some(InterpValue::Fn(def_id)) = fields.first() {
+                        let captured = fields[1..].to_vec();
+                        Ok((*def_id, captured))
+                    } else {
+                        Err(InterpError::Panic(format!(
+                            "indirect call through non-function value: {fields:?}"
+                        )))
+                    }
+                }
                 other => Err(InterpError::Panic(format!(
                     "indirect call through non-function value: {other:?}"
                 ))),
