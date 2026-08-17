@@ -65,6 +65,30 @@ impl<'a> ConstEvaluator<'a> {
         None
     }
 
+    /// Assign `val` to `name` in the scope stack.
+    ///
+    /// If `name` already exists in some enclosing scope, the assignment
+    /// *updates that scope* — so a mutable variable defined outside a block
+    /// (e.g. the accumulator in `for x in iter { acc = acc + x }`, where the
+    /// loop body is a block) keeps its value across the block boundary. Only a
+    /// genuinely new name (not yet present anywhere) is inserted into the
+    /// innermost scope. This mirrors how `lookup` already resolves reads from
+    /// the back of the scope stack.
+    fn assign_name(&mut self, name: Name, val: ConstValue) {
+        // Update the deepest scope that already defines `name` (so mutations of
+        // an outer variable persist across block boundaries); if `name` is new
+        // everywhere, define it in the innermost scope.
+        if let Some(idx) = self
+            .env
+            .iter()
+            .rposition(|scope| scope.contains_key(&name))
+        {
+            self.env[idx].insert(name, val);
+            return;
+        }
+        self.env.last_mut().expect("const-eval env is never empty").insert(name, val);
+    }
+
     fn evaluate_expr(
         &mut self,
         expr: &Expr,
@@ -191,9 +215,8 @@ impl<'a> ConstEvaluator<'a> {
                 let val = self.evaluate_at_depth(*rhs, depth)?;
                 if let Expr::Path(p) = &self.body.exprs[*lhs]
                     && let Some(name) = p.as_name()
-                    && let Some(scope) = self.env.last_mut()
                 {
-                    scope.insert(name, val.clone());
+                    self.assign_name(name, val);
                     return Ok(ConstValue::Unit);
                 }
                 Err(ConstEvalError::new(
@@ -250,10 +273,11 @@ impl<'a> ConstEvaluator<'a> {
             }
             Expr::While { cond, body } => self.eval_while(*cond, *body, span, depth),
             Expr::Loop { body } => self.eval_loop(*body, span, depth),
-            Expr::For { .. } => Err(ConstEvalError::new(
-                "for loops not supported in const eval",
-                span,
-            )),
+            Expr::For {
+                pat,
+                iterable,
+                body,
+            } => self.eval_for(*pat, *iterable, *body, span, depth),
         }
     }
 
@@ -812,6 +836,110 @@ impl<'a> ConstEvaluator<'a> {
             "const `loop` exceeded iteration limit (no terminating `break`?)",
             span,
         ))
+    }
+
+    /// Constant-fold a `for` loop over an *already const-evaluable* iterable.
+    ///
+    /// The desugaring the language uses at runtime (`IntoIterator::into_iter`,
+    /// then a loop calling `.next()`) requires `Expr::Call`/`Expr::MethodCall`,
+    /// which the const evaluator does not yet implement. For the common
+    /// compile-time cases — `for x in RANGE { .. }`, `for x in ARRAY { .. }`,
+    /// `for (a, b) in TUPLE { .. }` — the iterable is itself a `ConstValue`, so
+    /// we can drive the loop directly off that value without resorting to the
+    /// (unimplemented) call machinery. This is the slice the plan's "CRC table
+    /// via a `for` loop and `Range`" example depends on (§4.4).
+    ///
+    /// `break` exits the loop and yields `Unit`; `continue` advances to the next
+    /// element. Iteration is bounded by `MAX_ITERS` so a non-terminating loop
+    /// (e.g. `for _ in 0..usize::MAX {}`) surfaces a clear error instead of
+    /// hanging the compiler.
+    fn eval_for(
+        &mut self,
+        pat_id: glyim_hir::PatId,
+        iterable_id: ExprId,
+        body_id: ExprId,
+        span: Span,
+        depth: u32,
+    ) -> ConstEvalResult<ConstValue> {
+        const MAX_ITERS: u32 = 1_000_000;
+        let iterable_val = self.evaluate_at_depth(iterable_id, depth)?;
+
+        // Materialize the element values from an already-const-evaluable
+        // iterable. The element integer type is taken from the range's bound
+        // (start if present, else end) so `for x in 0u8..4u8` yields `u8`s.
+        let elements: Vec<ConstValue> = match iterable_val {
+            ConstValue::Range(start, end, inclusive) => {
+                let (s, e) = match (
+                    start.as_deref().and_then(|c| c.as_i128()),
+                    end.as_deref().and_then(|c| c.as_i128()),
+                ) {
+                    (Some(s), Some(e)) => (s, e),
+                    _ => {
+                        return Err(ConstEvalError::new(
+                            "const `for` over a range requires concrete `start` and `end` bounds",
+                            span,
+                        ))
+                    }
+                };
+                let proto = start
+                    .as_deref()
+                    .or(end.as_deref());
+                let mk = |i: i128| -> ConstValue {
+                    match proto {
+                        Some(ConstValue::Int(_, ty)) => ConstValue::Int(i, *ty),
+                        Some(ConstValue::Uint(_, ty)) => ConstValue::Uint(i as u128, *ty),
+                        _ => ConstValue::Int(i, IntTy::I32),
+                    }
+                };
+                let mut v = Vec::new();
+                if inclusive {
+                    let mut i = s;
+                    while i <= e {
+                        v.push(mk(i));
+                        i = i.saturating_add(1);
+                        if v.len() > MAX_ITERS as usize {
+                            break;
+                        }
+                    }
+                } else {
+                    let mut i = s;
+                    while i < e {
+                        v.push(mk(i));
+                        i = i.saturating_add(1);
+                        if v.len() > MAX_ITERS as usize {
+                            break;
+                        }
+                    }
+                }
+                v
+            }
+            ConstValue::Array(arr) => arr,
+            ConstValue::Tuple(tup) => tup,
+            other => {
+                let _ = other;
+                return Err(ConstEvalError::new(
+                    "`for` over this iterable kind is not supported in const evaluation",
+                    span,
+                ))
+            }
+        };
+
+        for elem in elements {
+            // Bind the pattern into the *current* scope (the scope the loop
+            // lives in), matching real `for` semantics where the loop variable
+            // shares the enclosing scope. This is also what makes the
+            // `acc = acc + x` accumulation idiom correct: assignments inside
+            // the body must persist across iterations, so they must target the
+            // same scope that holds the accumulator.
+            self.pattern_matches(&pat_id, &elem)?;
+            self.evaluate_at_depth(body_id, depth)?;
+            match self.loop_control.take() {
+                Some(LoopControl::Break) => return Ok(ConstValue::Unit),
+                Some(LoopControl::Continue) => continue,
+                None => continue,
+            }
+        }
+        Ok(ConstValue::Unit)
     }
 
     fn eval_cast(
