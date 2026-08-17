@@ -344,6 +344,41 @@ fn test_concat_macro() {
 }
 
 #[test]
+fn test_concat_idents_macro() {
+    // Helper to build args: a comma-separated token tree of identifier tokens.
+    fn ident_args(parts: &[&str]) -> SyntaxNode {
+        let mut builder = rowan::GreenNodeBuilder::new();
+        builder.start_node(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::TokenTree));
+        for (i, p) in parts.iter().enumerate() {
+            if i > 0 {
+                builder.token(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::Comma), ",");
+            }
+            builder.token(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::Ident), p);
+        }
+        builder.finish_node();
+        SyntaxNode::new_root(builder.finish())
+    }
+
+    let mut hygiene = HygieneCtx::default();
+    let mut expander = Expander::new(&mut hygiene);
+    register_builtin(&mut expander, "concat_idents", BuiltinMacro::ConcatIdents);
+
+    let span = dummy_span(FileId::BOGUS, 0);
+    let args = ident_args(&["foo", "_", "bar"]);
+    let name = expander.interner().intern("concat_idents");
+
+    let result = expander.expand(name, &args, span);
+    assert!(result.diagnostics.is_empty());
+    let expanded = result.expanded.unwrap();
+    let text = expanded.text().to_string();
+    assert!(
+        text.contains("foo_bar"),
+        "Expected identifier 'foo_bar', got {}",
+        text
+    );
+}
+
+#[test]
 fn test_stringify_macro() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);

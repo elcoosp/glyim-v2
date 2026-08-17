@@ -743,6 +743,61 @@ impl<'a> ExpanderImpl<'a> {
                 let lit = SmolStr::from(format!("\"{}\"", result));
                 vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
             }
+            BuiltinMacro::ConcatIdents => {
+                // concat_idents!(a, b, ...) joins the textual content of each
+                // identifier argument into a single new identifier token.
+                // Per plan §21.3, the synthesized identifier does NOT inherit any
+                // one argument's hygiene context; it is emitted with the root
+                // syntax context so it resolves like a regular identifier.
+                let args_tt = flatten_token_tree(args_node);
+                let mut result = String::new();
+                for tt in &args_tt {
+                    match tt {
+                        TokenTree::Token(kind, text) => {
+                            let text_str = text.as_str();
+                            // Skip punctuation separators (commas, etc.).
+                            if text_str == "," || text_str == ";" || text_str == ":"
+                                || text_str == "(" || text_str == ")"
+                                || text_str == "{" || text_str == "}"
+                                || text_str == "[" || text_str == "]"
+                            {
+                                continue;
+                            }
+                            // For string literals, strip the surrounding quotes.
+                            if *kind == SyntaxKind::StringLit {
+                                let s = &text_str[1..text_str.len().saturating_sub(1)];
+                                result.push_str(s);
+                            } else {
+                                result.push_str(text_str);
+                            }
+                        }
+                        TokenTree::Group(_open, inner, _close) => {
+                            for inner_tt in inner {
+                                if let TokenTree::Token(_kind, text) = inner_tt {
+                                    let text_str = text.as_str();
+                                    if text_str == "," || text_str == ";" || text_str == ":" {
+                                        continue;
+                                    }
+                                    result.push_str(text_str);
+                                }
+                            }
+                        }
+                        TokenTree::DollarCrate => {
+                            result.push_str("$crate");
+                        }
+                    }
+                }
+                if result.is_empty() {
+                    return (
+                        None,
+                        vec![GlyimDiagnostic::type_error(
+                            call_site,
+                            "concat_idents! requires at least one identifier argument".to_string(),
+                        )],
+                    );
+                }
+                vec![TokenTree::Token(SyntaxKind::Ident, SmolStr::from(result))]
+            }
             BuiltinMacro::Stringify => {
                 // stringify!(expr) returns the source code of expr as a string literal,
                 // with spaces between tokens.

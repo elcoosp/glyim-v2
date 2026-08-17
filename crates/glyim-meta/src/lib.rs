@@ -55,6 +55,7 @@ pub enum BuiltinMacro {
     Env,
     OptionEnv,
     Concat,
+    ConcatIdents,
     Stringify,
 }
 
