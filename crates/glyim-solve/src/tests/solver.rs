@@ -51,6 +51,77 @@ fn t02_register_impl() {
     );
 }
 
+/// §8.1: builtin/lang traits (`Copy`, `Sized`, `Send`, …) must be discharged
+/// structurally by the solver (no user `impl` required). This is the capability
+/// the de-stubbing plan flags as missing, which made `T: Copy` / `T: Sized` /
+/// `T: Send` bounds barely work.
+#[test]
+fn t08_builtin_traits_proven_structurally() {
+    use crate::BuiltinTrait;
+    use glyim_core::primitives::{IntTy, UintTy};
+    use glyim_type::{Const, ConstKind, GenericArg, TyKind};
+
+    let mut trait_ctx = TraitContext::new();
+    let copy_id = TraitDefId::from_raw(1);
+    let sized_id = TraitDefId::from_raw(2);
+    let send_id = TraitDefId::from_raw(3);
+    trait_ctx.register_lang_trait(copy_id, BuiltinTrait::Copy);
+    trait_ctx.register_lang_trait(sized_id, BuiltinTrait::Sized);
+    trait_ctx.register_lang_trait(send_id, BuiltinTrait::Send);
+
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+
+    let (ty_ctx, (i32_ty, i32_sub)) = test_ty_ctx(|c| {
+        let ty = c.mk_ty(TyKind::Int(IntTy::I32));
+        (ty, c.intern_substitution(vec![GenericArg::Ty(ty)]))
+    });
+    let (_, (arr_ty, arr_sub)) = test_ty_ctx(|c| {
+        let elem = c.mk_ty(TyKind::Int(IntTy::I32));
+        let len = Const {
+            kind: ConstKind::Uint(3),
+            ty: c.mk_ty(TyKind::Uint(UintTy::Usize)),
+        };
+        let ty = c.mk_ty(TyKind::Array(elem, len));
+        (ty, c.intern_substitution(vec![GenericArg::Ty(ty)]))
+    });
+    let (_, (str_ty, str_sub)) = test_ty_ctx(|c| {
+        let ty = c.mk_ty(TyKind::String);
+        (ty, c.intern_substitution(vec![GenericArg::Ty(ty)]))
+    });
+    let (_, (slice_ty, slice_sub)) = test_ty_ctx(|c| {
+        let elem = c.mk_ty(TyKind::Int(IntTy::I32));
+        let ty = c.mk_ty(TyKind::Slice(elem));
+        (ty, c.intern_substitution(vec![GenericArg::Ty(ty)]))
+    });
+
+    let prove = |solver: &mut SimpleTraitSolver, id: TraitDefId, sub: Substitution| -> SolverResult {
+        let pred = TraitPredicate {
+            trait_ref: TraitRef { def_id: id, substs: sub },
+            polarity: ImplPolarity::Positive,
+        };
+        solver.can_prove(&ty_ctx, &pred)
+    };
+
+    // `Copy`
+    assert_eq!(prove(&mut solver, copy_id, i32_sub), SolverResult::Proven);
+    assert_eq!(prove(&mut solver, copy_id, arr_sub), SolverResult::Proven);
+    // `String` is not `Copy` (owning, non-primitive) -> DefiniteNo.
+    assert_eq!(prove(&mut solver, copy_id, str_sub), SolverResult::DefiniteNo);
+
+    // `Sized`
+    assert_eq!(prove(&mut solver, sized_id, i32_sub), SolverResult::Proven);
+    assert_eq!(prove(&mut solver, sized_id, arr_sub), SolverResult::Proven);
+    // `[T]` (slice) is unsized -> DefiniteNo.
+    assert_eq!(
+        prove(&mut solver, sized_id, slice_sub),
+        SolverResult::DefiniteNo
+    );
+
+    // `Send`
+    assert_eq!(prove(&mut solver, send_id, i32_sub), SolverResult::Proven);
+    assert_eq!(prove(&mut solver, send_id, arr_sub), SolverResult::Proven);
+}
+
 #[test]
 fn t03_prove_with_matching_impl() {
     let interner = Interner::new();

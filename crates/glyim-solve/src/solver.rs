@@ -1,6 +1,21 @@
+use std::collections::HashMap;
+
 use glyim_core::def_id::{ImplDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_type::*;
+
+/// Builtin/lang traits whose bounds the solver can discharge *structurally*
+/// (without an explicit user `impl`), by querying `TyCtx`. These are the traits
+/// the de-stubbing plan §8.1 calls out as previously unsupported, which made
+/// generics with `T: Copy` / `T: Sized` / `T: Send` / `T: Sync` barely work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinTrait {
+    Copy,
+    Sized,
+    Send,
+    Sync,
+    Unpin,
+}
 
 /// Information returned by the trait solver for `Iterator::next`.
 #[derive(Clone, Debug)]
@@ -35,6 +50,7 @@ pub enum SolverResult {
 pub struct TraitContext {
     trait_defs: Vec<TraitDef>,
     impl_defs: Vec<ImplDef>,
+    lang_traits: HashMap<TraitDefId, BuiltinTrait>,
     pub(crate) builtin_next_fn_id: Option<glyim_core::def_id::FnDefId>,
 }
 
@@ -59,6 +75,7 @@ impl TraitContext {
         Self {
             trait_defs: Vec::new(),
             impl_defs: Vec::new(),
+            lang_traits: HashMap::new(),
             builtin_next_fn_id: None,
         }
     }
@@ -67,6 +84,18 @@ impl TraitContext {
     }
     pub fn register_impl(&mut self, def: ImplDef) {
         self.impl_defs.push(def);
+    }
+
+    /// Record that `def_id` is a builtin/lang trait (`Copy`, `Sized`, `Send`, …)
+    /// so the solver can discharge bounds on it structurally via `TyCtx` instead
+    /// of requiring a user `impl` (de-stubbing plan §8.1).
+    pub fn register_lang_trait(&mut self, def_id: TraitDefId, kind: BuiltinTrait) {
+        self.lang_traits.insert(def_id, kind);
+    }
+
+    /// If `def_id` names a builtin/lang trait, return its kind.
+    pub fn builtin_trait_kind(&self, def_id: TraitDefId) -> Option<BuiltinTrait> {
+        self.lang_traits.get(&def_id).copied()
     }
     pub fn impls_of_trait(&self, trait_id: TraitDefId) -> impl Iterator<Item = &ImplDef> {
         self.impl_defs
@@ -80,6 +109,15 @@ impl TraitContext {
     #[cfg(test)]
     pub(crate) fn impl_defs(&self) -> &[ImplDef] {
         &self.impl_defs
+    }
+
+    /// Resolve a trait `DefId` back to its registered name (used by the solver
+    /// to recognize builtin/lang traits such as `Copy`/`Send`/`Sync`/`Sized`).
+    pub fn trait_name(&self, def_id: TraitDefId) -> Option<Name> {
+        self.trait_defs
+            .iter()
+            .find(|t| t.def_id == def_id)
+            .map(|t| t.name)
     }
 
     /// Checks coherence (orphan rules and overlap detection).
@@ -292,6 +330,60 @@ impl<'a> SimpleTraitSolver<'a> {
             } else {
                 SolverResult::Ambiguous
             };
+        }
+
+        // Builtin/lang traits (`Copy`, `Sized`, `Send`, `Sync`, `Unpin`): these
+        // have no user `impl`; discharge them structurally via `TyCtx`'s
+        // existing `is_copy`/`is_sized`/`implements_auto_trait` checks
+        // (de-stubbing plan §8.1). This unblocks generics bounded by
+        // `T: Copy` / `T: Sized` / `T: Send` / `T: Sync`.
+        if let Some(builtin) = self.trait_ctx.builtin_trait_kind(predicate.trait_ref.def_id) {
+            if let Some(self_ty) = ctx
+                .substitution_args(predicate.trait_ref.substs)
+                .iter()
+                .find_map(|a| match a {
+                    GenericArg::Ty(t) => Some(*t),
+                    _ => None,
+                })
+            {
+                return match builtin {
+                    BuiltinTrait::Copy => {
+                        if ctx.is_copy(self_ty) {
+                            SolverResult::Proven
+                        } else {
+                            SolverResult::DefiniteNo
+                        }
+                    }
+                    BuiltinTrait::Sized => {
+                        if ctx.is_sized(self_ty) {
+                            SolverResult::Proven
+                        } else {
+                            SolverResult::DefiniteNo
+                        }
+                    }
+                    BuiltinTrait::Send => {
+                        if ctx.implements_auto_trait(self_ty, AutoTrait::Send) {
+                            SolverResult::Proven
+                        } else {
+                            SolverResult::DefiniteNo
+                        }
+                    }
+                    BuiltinTrait::Sync => {
+                        if ctx.implements_auto_trait(self_ty, AutoTrait::Sync) {
+                            SolverResult::Proven
+                        } else {
+                            SolverResult::DefiniteNo
+                        }
+                    }
+                    BuiltinTrait::Unpin => {
+                        if ctx.implements_auto_trait(self_ty, AutoTrait::Unpin) {
+                            SolverResult::Proven
+                        } else {
+                            SolverResult::DefiniteNo
+                        }
+                    }
+                };
+            }
         }
 
         let mut matching_impls = Vec::new();

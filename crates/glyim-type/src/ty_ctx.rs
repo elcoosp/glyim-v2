@@ -94,6 +94,43 @@ impl TyCtx {
         }
     }
 
+    /// Whether `ty` is `Sized` (has a known, non-zero/complete layout).
+    ///
+    /// Everything is sized except the genuinely unsized kinds: `str`, slice `[T]`,
+    /// `dyn Trait` (trait objects), and ADTs whose last field is itself unsized
+    /// (recursively). This is the structural `Sized` check used by the trait
+    /// solver for `T: Sized` bounds (de-stubbing plan §8.1).
+    pub fn is_sized(&self, ty: Ty) -> bool {
+        match self.ty_kind(ty) {
+            TyKind::Slice(_) | TyKind::Dynamic(..) | TyKind::Opaque(..) => false,
+            TyKind::Array(inner, _) => self.is_sized(*inner),
+            TyKind::Tuple(substs) => {
+                self.substitution_args(*substs)
+                    .iter()
+                    .all(|arg| match arg {
+                        GenericArg::Ty(t) => self.is_sized(*t),
+                        _ => true,
+                    })
+            }
+            TyKind::Adt(adt_id, _) => {
+                if let Some(adt_def) = self.adt_def(*adt_id) {
+                    // An ADT is sized unless it has a field that is unsized
+                    // (the lang-level rule for the by-value-last-field DST).
+                    adt_def.variants.iter().all(|v| {
+                        v.fields
+                            .iter()
+                            .all(|f| self.is_sized(f.ty))
+                    })
+                } else {
+                    // Unknown/unregistered ADT: assume sized (matches the
+                    // conservative default used elsewhere for unregistered types).
+                    true
+                }
+            }
+            _ => true,
+        }
+    }
+
     pub fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
