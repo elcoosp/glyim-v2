@@ -11,12 +11,9 @@
 //!   * No `ConstantIndex`/`Subslice` projection appears except as the *last*
 //!     element of a place's projection list — `glyim-opt::slice_desugar` exists
 //!     precisely to make this hold, so a survivor mid-chain is a pass bug.
-//!
-//! The Drop-needs-drop consistency check (plan §8.8) is intentionally deferred:
-//! the workspace has two divergent `needs_drop` implementations (glyim-opt and
-//! glyim-pipeline, §12.3). Baking either into the validator would freeze a stub's
-//! behavior, so `MirValidationErrorKind::UnnecessaryDrop` is reserved for that
-//! check and will be enabled once `needs_drop` is unified (§8.2/§12.3).
+//!   * A `Drop` terminator's place type must need drop glue, per the canonical
+//!     `TyCtx::needs_drop` (plan §15.1) — a `Drop` on a non-droppable type is a
+//!     compiler bug and is flagged as `UnnecessaryDrop`.
 //!
 //! The validator is intentionally *not* wired into the required `optimize()` path
 //! yet: it is exposed via [`validate_body`] and exercised by the unit tests below,
@@ -26,7 +23,7 @@
 
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::TyCtx;
+use glyim_type::{Ty, TyCtx};
 use std::fmt;
 
 /// A single well-formedness violation found by the validator.
@@ -40,11 +37,10 @@ pub struct MirValidationError {
 pub enum MirValidationErrorKind {
     /// A terminator references a basic block that does not exist.
     UnknownTarget(BasicBlockIdx),
-    /// A `Drop` terminator whose place type does not need drop glue.
-    /// Reserved for the Drop-needs-drop check (plan §8.8); not yet raised by
-    /// `validate_body` until `needs_drop` is unified (§8.2/§12.3).
-    #[allow(dead_code)]
-    UnnecessaryDrop,
+    /// A `Drop` terminator whose place type does not need drop glue, per the
+    /// canonical `TyCtx::needs_drop` (plan §15.1). Holding the offending place
+    /// and type makes the diagnostic actionable and lets tests assert on it.
+    UnnecessaryDrop { place: Place, ty: Ty },
     /// A `ConstantIndex`/`Subslice` projection appears mid-chain (not terminal).
     NonTerminalSliceProjection,
     /// A `ProjectionElem::Subslice` survives past `slice_desugar` (plan §8.7).
@@ -61,8 +57,11 @@ impl fmt::Display for MirValidationError {
             MirValidationErrorKind::UnknownTarget(bb) => {
                 write!(f, "MIR validation: terminator targets unknown block {bb:?}")
             }
-            MirValidationErrorKind::UnnecessaryDrop => {
-                write!(f, "MIR validation: Drop terminator on a type that needs no drop")
+            MirValidationErrorKind::UnnecessaryDrop { place, ty } => {
+                write!(
+                    f,
+                    "MIR validation: Drop terminator on a type that needs no drop glue: place {place:?} (ty {ty:?})"
+                )
             }
             MirValidationErrorKind::NonTerminalSliceProjection => {
                 write!(
@@ -120,14 +119,23 @@ pub fn validate_body(ctx: &TyCtx, body: &Body) -> Result<(), MirValidationError>
                             span: bb.terminator.source_info.span,
                         });
                     }
-                // NOTE: the Drop-needs-drop consistency check (plan §8.8) is
-                // intentionally NOT performed here yet: the workspace has two
-                // divergent `needs_drop` implementations (glyim-opt and
-                // glyim-pipeline, §12.3) and baking either into the validator
-                // would freeze a stub's behavior. Once `needs_drop` is unified
-                // per §8.2/§12.3, add that assertion here (it belongs on the
-                // `Drop` variant specifically, since `Goto`/`Assert` have no
-                // place-type drop-glue implication).
+                // Drop-needs-drop consistency (plan §15.1). `needs_drop` is now
+                // the single canonical implementation (`TyCtx::needs_drop`, §7.1),
+                // so this assertion is safe to enable: a `Drop` terminator whose
+                // place type needs no drop glue is a compiler bug (e.g. the
+                // array drop-glue stub of §16.1 would be caught here).
+                if let TerminatorKind::Drop { place, .. } = &bb.terminator.kind {
+                    let ty = place.ty(ctx, &body.locals);
+                    if !ctx.needs_drop(ty) {
+                        return Err(MirValidationError {
+                            kind: MirValidationErrorKind::UnnecessaryDrop {
+                                place: place.clone(),
+                                ty,
+                            },
+                            span: bb.terminator.source_info.span,
+                        });
+                    }
+                }
             }
             TerminatorKind::SwitchInt { targets, .. } => {
                 if !block_exists(targets.otherwise()) {
@@ -333,6 +341,44 @@ mod tests {
             err.kind,
             MirValidationErrorKind::UnknownTarget(glyim_mir::BasicBlockIdx::from_raw(99))
         );
+    }
+
+    /// Build a body whose sole block ends in a `Drop` of local 0 targeting block 0
+    /// (a valid, existing target) so the needs-drop check actually runs.
+    fn body_with_drop(local_ty: glyim_type::Ty, return_ty: glyim_type::Ty) -> Body {
+        let mut body = empty_body(local_ty, return_ty);
+        body.basic_blocks[glyim_mir::BasicBlockIdx::from_raw(0)].terminator = Terminator {
+            kind: TerminatorKind::Drop {
+                place: Place::new(LocalIdx::from_raw(0)),
+                target: glyim_mir::BasicBlockIdx::from_raw(0),
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+        body
+    }
+
+    #[test]
+    fn flags_drop_on_non_droppable_type() {
+        // i32 needs no drop glue; a Drop terminator over it is a compiler bug.
+        let (ctx, i32_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32)));
+        let body = body_with_drop(i32_ty, i32_ty);
+        let err = validate_body(&ctx, &body).expect_err("Drop on i32 should be flagged");
+        match err.kind {
+            MirValidationErrorKind::UnnecessaryDrop { place, ty } => {
+                assert_eq!(place, Place::new(LocalIdx::from_raw(0)));
+                assert_eq!(ty, i32_ty);
+            }
+            other => panic!("expected UnnecessaryDrop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allows_drop_on_droppable_type() {
+        // String needs drop glue; a Drop terminator over it is correct.
+        let (ctx, str_ty) = with_fresh_ty_ctx(|c| c.mk_ty(glyim_type::TyKind::String));
+        let body = body_with_drop(str_ty, str_ty);
+        assert!(validate_body(&ctx, &body).is_ok(), "Drop on String must be allowed");
     }
 
     #[test]
