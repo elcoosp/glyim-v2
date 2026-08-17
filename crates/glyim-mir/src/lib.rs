@@ -197,6 +197,116 @@ impl Place {
 
         ty
     }
+
+    /// Intern-capable variant of [`Place::ty`].
+    ///
+    /// Like `ty`, but when the projection yields a *new* type that must be
+    /// allocated in the type arena (currently only `ProjectionElem::Subslice`
+    /// applied to a fixed-size array base `[T; N]`, which produces `[T; len]`),
+    /// this method interns that type via the mutable `TyCtxMut`. The
+    /// read-only `ty` cannot do this because `Ty` is an interned index and
+    /// `TypeLookup` is immutable (see plan §11.1).
+    ///
+    /// For every other projection the behavior is identical to `ty`.
+    pub fn ty_mut(
+        &self,
+        ctx: &mut TyCtxMut,
+        local_decls: &IndexVec<LocalIdx, LocalDecl>,
+    ) -> Ty {
+        let mut ty = local_decls[self.local].ty;
+
+        for elem in self.projection.iter() {
+            ty = match elem {
+                ProjectionElem::Deref => match ctx.ty_kind(ty) {
+                    TyKind::Ref(_, inner_ty, _) => *inner_ty,
+                    TyKind::RawPtr(inner_ty, _) => *inner_ty,
+                    _ => {
+                        tracing::error!("Place::ty_mut(): Deref on non-pointer type");
+                        ctx.error_ty()
+                    }
+                },
+                ProjectionElem::Field(idx) => match ctx.ty_kind(ty) {
+                    TyKind::Tuple(substs) => {
+                        let args = ctx.substitution_args(*substs);
+                        if let Some(GenericArg::Ty(field_ty)) = args.get(idx.to_raw() as usize) {
+                            *field_ty
+                        } else {
+                            tracing::error!("Place::ty_mut(): Field index out of bounds for tuple");
+                            ctx.error_ty()
+                        }
+                    }
+                    TyKind::Adt(adt_id, _substs) => ctx.field_ty(*adt_id, idx.to_raw() as usize),
+                    _ => {
+                        tracing::error!("Place::ty_mut(): Field projection on non-tuple/ADT type");
+                        ctx.error_ty()
+                    }
+                },
+                ProjectionElem::Index(_) => match ctx.ty_kind(ty) {
+                    TyKind::Array(inner_ty, _) => *inner_ty,
+                    TyKind::Slice(inner_ty) => *inner_ty,
+                    _ => {
+                        tracing::error!("Place::ty_mut(): Index on non-array/slice type");
+                        ctx.error_ty()
+                    }
+                },
+                ProjectionElem::Downcast(_variant_idx) => ty,
+                ProjectionElem::ConstantIndex {
+                    offset: _,
+                    min_length: _,
+                    from_end: _,
+                } => match ctx.ty_kind(ty) {
+                    TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => *inner_ty,
+                    _ => {
+                        tracing::error!("Place::ty_mut(): ConstantIndex on non-array/slice type");
+                        ctx.error_ty()
+                    }
+                },
+                ProjectionElem::Subslice {
+                    from,
+                    to,
+                    from_end,
+                } => match ctx.ty_kind(ty) {
+                    TyKind::Slice(_) => ty,
+                    TyKind::Array(inner, len_const) => {
+                        // Subslice of a fixed-size array `[T; N]` yields
+                        // `[T; len]` where `len` is the subslice's element count.
+                        let n = match len_const.kind {
+                            ConstKind::Uint(v) => v as u64,
+                            ConstKind::Int(v) => v as u64,
+                            _ => {
+                                // Unknown array length: cannot compute the
+                                // subslice length without interned constants;
+                                // fall back to the element type (old behavior).
+                                tracing::warn!(
+                                    "Place::ty_mut(): Subslice on array with non-constant length"
+                                );
+                                return *inner;
+                            }
+                        };
+                        let len = if *from_end {
+                            // `to` is the number of trailing elements to drop.
+                            let end = n.saturating_sub(*to);
+                            end.saturating_sub(*from)
+                        } else {
+                            // `to` is the exclusive end index.
+                            to.saturating_sub(*from)
+                        };
+                        let subslice_const = Const {
+                            kind: ConstKind::Uint(len as u128),
+                            ty: Ty::USIZE,
+                        };
+                        ctx.alloc_ty(TyKind::Array(*inner, subslice_const))
+                    }
+                    _ => {
+                        tracing::error!("Place::ty_mut(): Subslice on non-array/slice type");
+                        ctx.error_ty()
+                    }
+                },
+            };
+        }
+
+        ty
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

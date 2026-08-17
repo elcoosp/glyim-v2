@@ -182,6 +182,126 @@ fn ty_subslice_on_slice_returns_slice_type() {
 }
 
 #[test]
+fn ty_mut_subslice_on_array_returns_array_type() {
+    // Subslice of a fixed-size array `[T; N]` must yield `[T; len]`, not the
+    // element type `T` and not the full `[T; N]`. Regression test for plan §11.1.
+    let (ctx, (expected, got)) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let elem = c.mk_ty(TyKind::Int(IntTy::I32));
+        let arr5 = c.mk_ty(TyKind::Array(elem, Const {
+            kind: ConstKind::Uint(5),
+            ty: Ty::USIZE,
+        }));
+        // `arr[1..3]` has length 3 - 1 = 2.
+        let expected = c.mk_ty(TyKind::Array(elem, Const {
+            kind: ConstKind::Uint(2),
+            ty: Ty::USIZE,
+        }));
+
+        let local = LocalIdx::from_raw(0);
+        let mut locals = IndexVec::new();
+        locals.push(LocalDecl {
+            ty: arr5,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        let place = Place {
+            local,
+            projection: Box::new([ProjectionElem::Subslice {
+                from: 1,
+                to: 3,
+                from_end: false,
+            }]),
+        };
+        let got = place.ty_mut(c, &locals);
+        (expected, got)
+    });
+    let _ = ctx;
+    assert_eq!(
+        ctx.ty_kind(expected),
+        ctx.ty_kind(got),
+        "subslice [1..3] of [i32; 5] should be [i32; 2]"
+    );
+}
+
+#[test]
+fn ty_mut_subslice_from_end_on_array_returns_array_type() {
+    // `arr[1..^2]` (from_end) drops 2 trailing elements: end index = 5 - 2 = 3,
+    // length = 3 - 1 = 2, so the result is `[i32; 2]`.
+    let (ctx, (expected, got)) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let elem = c.mk_ty(TyKind::Int(IntTy::I32));
+        let arr5 = c.mk_ty(TyKind::Array(elem, Const {
+            kind: ConstKind::Uint(5),
+            ty: Ty::USIZE,
+        }));
+        let expected = c.mk_ty(TyKind::Array(elem, Const {
+            kind: ConstKind::Uint(2),
+            ty: Ty::USIZE,
+        }));
+
+        let local = LocalIdx::from_raw(0);
+        let mut locals = IndexVec::new();
+        locals.push(LocalDecl {
+            ty: arr5,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        let place = Place {
+            local,
+            projection: Box::new([ProjectionElem::Subslice {
+                from: 1,
+                to: 2,
+                from_end: true,
+            }]),
+        };
+        let got = place.ty_mut(c, &locals);
+        (expected, got)
+    });
+    let _ = ctx;
+    assert_eq!(
+        ctx.ty_kind(expected),
+        ctx.ty_kind(got),
+        "subslice [1..^2] of [i32; 5] should be [i32; 2]"
+    );
+}
+
+#[test]
+fn ty_mut_subslice_on_slice_still_returns_slice_type() {
+    // Consistency: a subslice of a slice base via `ty_mut` returns the same
+    // slice type (no new allocation needed).
+    let (ctx, (expected, got)) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let elem = c.mk_ty(TyKind::Int(IntTy::I32));
+        let slice_ty = c.mk_ty(TyKind::Slice(elem));
+
+        let local = LocalIdx::from_raw(0);
+        let mut locals = IndexVec::new();
+        locals.push(LocalDecl {
+            ty: slice_ty,
+            mutability: Mutability::Not,
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+
+        let place = Place {
+            local,
+            projection: Box::new([ProjectionElem::Subslice {
+                from: 1,
+                to: 3,
+                from_end: false,
+            }]),
+        };
+        let got = place.ty_mut(c, &locals);
+        (slice_ty, got)
+    });
+    let _ = ctx;
+    assert_eq!(
+        ctx.ty_kind(expected),
+        ctx.ty_kind(got),
+        "subslice of a slice must stay the same slice type"
+    );
+}
+
+#[test]
 fn ty_field_on_tuple_second_element() {
     let (ctx, (tuple_ty, _i32_ty, u32_ty)) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
         let i32_ty = c.mk_ty(TyKind::Int(IntTy::I32));
