@@ -25,7 +25,7 @@
 )]
 
 use glyim_mir::Body;
-use glyim_type::TyCtx;
+use glyim_type::{TyCtx, TyCtxMut};
 use std::sync::Arc;
 
 mod cfg_simplify;
@@ -85,7 +85,7 @@ mod tests;
 mod drop_elaboration;
 
 /// Run drop elaboration on the MIR body.
-pub fn elaborate_drops(ctx: &TyCtx, body: &mut Body) {
+pub fn elaborate_drops(ctx: &mut TyCtxMut, body: &mut Body) {
     drop_elaboration::run(ctx, body);
 }
 
