@@ -21,6 +21,7 @@ mod helpers;
 mod interior_mutability;
 mod interning;
 mod lang_items;
+mod needs_drop;
 mod more_interning;
 mod no_stub_warnings;
 mod placeholder_flags;

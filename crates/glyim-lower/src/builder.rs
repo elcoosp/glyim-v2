@@ -214,40 +214,12 @@ impl<'a> MirBuilder<'a> {
 
     /// Whether a type needs a destructor call at the end of its scope.
     ///
-    /// `Copy` types never need drop. For ADTs and composites we recurse into
-    /// the registered definition's fields (via the lowering context) and
-    /// require drop if any field needs drop. References and raw pointers own no
-    /// destructor in this minimal model and are treated as no-drop even though
-    /// they are not `Copy`. `String` and other owning/user types need
-    /// destruction. Closures, function pointers, `dyn`, projections, generic
-    /// parameters, inference variables and error types are treated as
-    /// not-needing-drop here to avoid spurious destructor calls.
+    /// Delegates to the single authoritative `TyCtx::needs_drop`, which both
+    /// this crate and `glyim-opt` now share (de-stubbing plan §8.2/§12.3).
+    /// Having one implementation removes the soundness risk where MIR building
+    /// and optimization disagreed on drop-carrying-ness for an identical type.
     fn needs_drop(&self, ty: Ty) -> bool {
-        if self.ctx.ty_ctx().is_copy(ty) {
-            return false;
-        }
-        match self.ctx.ty_ctx().ty_kind(ty) {
-            glyim_type::TyKind::Ref(_, _, _) | glyim_type::TyKind::RawPtr(_, _) => false,
-            glyim_type::TyKind::Adt(adt_id, _substs) => {
-                let adt = self.ctx.adt_def(*adt_id);
-                adt.variants
-                    .iter()
-                    .any(|v| v.fields.iter().any(|f| self.needs_drop(*f)))
-            }
-            glyim_type::TyKind::Tuple(substs) => self
-                .ctx
-                .ty_ctx()
-                .substitution_args(*substs)
-                .iter()
-                .any(|a| match a {
-                    glyim_type::GenericArg::Ty(t) => self.needs_drop(*t),
-                    _ => false,
-                }),
-            glyim_type::TyKind::Array(inner, _) => self.needs_drop(*inner),
-            glyim_type::TyKind::Slice(inner) => self.needs_drop(*inner),
-            glyim_type::TyKind::String => true,
-            _ => false,
-        }
+        self.ctx.ty_ctx().needs_drop(ty)
     }
 
     /// Lower a closure expression: generate its MIR body and return an aggregate.

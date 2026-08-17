@@ -46,6 +46,9 @@ pub struct TyCtxMut {
     /// above any user-defined ADT id and the 1000-1005 builtin range ids so it
     /// can never collide.
     synthetic_adt_counter: u32,
+    /// `AdtId`s with an explicit `Drop` impl (or owning builtins). Mirrors the
+    /// `drop_impls` set on the frozen `TyCtx`, consulted by `needs_drop`.
+    drop_impls: HashSet<AdtId>,
 }
 
 impl TyCtxMut {
@@ -69,6 +72,7 @@ impl TyCtxMut {
             body_tys: HashMap::new(),
             lang_items: LangItems::default(),
             synthetic_adt_counter: 2_000_000,
+            drop_impls: HashSet::new(),
         };
         // sentinels
         assert_eq!(
@@ -428,6 +432,7 @@ impl TyCtxMut {
             closure_sigs: self.closure_sigs.clone(),
             body_tys: self.body_tys.clone(),
             lang_items: self.lang_items.clone(),
+            drop_impls: self.drop_impls.clone(),
         }
     }
 
@@ -448,6 +453,7 @@ impl TyCtxMut {
             closure_sigs: self.closure_sigs,
             body_tys: self.body_tys,
             lang_items: self.lang_items,
+            drop_impls: self.drop_impls,
         }
     }
 
@@ -459,6 +465,14 @@ impl TyCtxMut {
     pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
         self.interior_mutable_adt_ids.insert(adt_id);
         self.interior_mutability_cache.insert(adt_id, true);
+    }
+
+    /// Record that `adt_id` has an explicit `Drop` impl (or is an owning
+    /// builtin such as `String`/`Vec`/`Box`). Consulted by the unified
+    /// `TyCtx::needs_drop`; this is the single place drop-carrying-ness is
+    /// declared, replacing the previously-divergent per-crate guesses.
+    pub fn mark_has_drop(&mut self, adt_id: AdtId) {
+        self.drop_impls.insert(adt_id);
     }
 
     fn compute_adt_interior_mutability(&mut self, adt_id: AdtId) -> bool {

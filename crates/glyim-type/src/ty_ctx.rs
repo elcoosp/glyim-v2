@@ -29,6 +29,12 @@ pub struct TyCtx {
     pub(crate) closure_sigs: HashMap<ClosureId, FnSig>,
     pub(crate) body_tys: HashMap<LocalDefId, Ty>,
     pub(crate) lang_items: LangItems,
+    /// `AdtId`s that have an explicit `Drop` impl (or are owning builtins such as
+    /// `String`/`Vec`/`Box`). Consulted by `needs_drop` so that a type whose
+    /// *fields* are all primitives (e.g. `String` backed by a raw pointer) is
+    /// still correctly reported as needing drop glue. Populated via
+    /// `TyCtxMut::mark_has_drop`.
+    pub(crate) drop_impls: HashSet<AdtId>,
 }
 
 impl TyCtx {
@@ -154,6 +160,91 @@ impl TyCtx {
 
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
+    }
+
+    /// Whether `adt_id` has an explicit `Drop` impl (or is a registered owning
+    /// builtin). This is the single authority consulted by `needs_drop`; it
+    /// replaces the previous per-crate guesses (`glyim-lower` hardcoded
+    /// `String → true`, `glyim-opt` conservative `true` for unknown ADTs) which
+    /// could disagree on identical types — the soundness risk flagged by the
+    /// de-stubbing plan §8.2/§12.3.
+    pub fn has_drop_impl(&self, adt_id: AdtId) -> bool {
+        self.drop_impls.contains(&adt_id)
+    }
+
+    /// Authoritative `needs_drop` for the whole compiler.
+    ///
+    /// A type needs drop glue if it is `Copy`-adjacent (never needs drop), is a
+    /// reference/raw-pointer (pointee is not owned), is a function pointer or
+    /// function definition, or otherwise contains — transitively — a field that
+    /// needs drop. Unions need drop (the user is responsible for the active
+    /// variant). An `Adt` with a registered `Drop` impl needs drop regardless of
+    /// its field types. Recursion is guarded by `visited` so self-referential
+    /// types (e.g. `Box<Self>`) terminate; a cycle is treated as "needs drop" if
+    /// any reachable field does, which is the correct answer for `Box<Self>`
+    /// (the `Box` itself carries a `Drop` impl).
+    ///
+    /// Types the model cannot inspect (`dyn Trait`, generic parameters,
+    /// projections, error/opaque types) return `false`: dropping them is
+    /// impossible to do correctly without their concrete layout, and the
+    /// alternative (spurious drop glue) is the worse failure mode. This matches
+    /// the prior `glyim-lower` behaviour and is the safer default.
+    pub fn needs_drop(&self, ty: Ty) -> bool {
+        let mut visited = HashSet::new();
+        self.needs_drop_rec(ty, &mut visited)
+    }
+
+    fn needs_drop_rec(&self, ty: Ty, visited: &mut HashSet<Ty>) -> bool {
+        if self.is_copy(ty) {
+            return false;
+        }
+        if !visited.insert(ty) {
+            // Already exploring this type along the current path: a cycle.
+            // Conservative `false` here; an enclosing field check may still
+            // return `true` via an outer `Drop` impl or a non-cyclic field.
+            return false;
+        }
+        let result = match self.ty_kind(ty) {
+            TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => false,
+            // `String` is an owning builtin: it carries a destructor even though
+            // it is represented as a standalone `TyKind` (no embedded `AdtId`),
+            // so it must needs-drop. Mirrors the plan §8.2 intent of keying
+            // drop-carrying-ness off the `Drop` lang item for owning types.
+            TyKind::String => true,
+            TyKind::FnPtr(_) | TyKind::FnDef(_, _) => false,
+            TyKind::Slice(inner) | TyKind::Array(inner, _) => self.needs_drop_rec(*inner, visited),
+            TyKind::Tuple(substs) => self
+                .substitution_args(*substs)
+                .iter()
+                .any(|a| matches!(a, GenericArg::Ty(t) if self.needs_drop_rec(*t, visited))),
+            TyKind::Closure(_, substs) => self
+                .substitution_args(*substs)
+                .iter()
+                .any(|a| matches!(a, GenericArg::Ty(t) if self.needs_drop_rec(*t, visited))),
+            TyKind::Adt(adt_id, _substs) => {
+                if self.has_drop_impl(*adt_id) {
+                    return true;
+                }
+                match self.adt_def(*adt_id) {
+                    Some(adt) => {
+                        if adt.kind == AdtKind::Union {
+                            return true;
+                        }
+                        adt.variants.iter().any(|v| {
+                            v.fields
+                                .iter()
+                                .any(|f| self.needs_drop_rec(f.ty, visited))
+                        })
+                    }
+                    // Unregistered ADT: cannot inspect fields. Err toward no drop
+                    // (see doc comment) rather than a spurious destructor.
+                    None => false,
+                }
+            }
+            _ => false,
+        };
+        visited.remove(&ty);
+        result
     }
 
     pub fn field_index(&self, adt_id: AdtId, field_name: Name) -> Option<usize> {

@@ -10,8 +10,7 @@ use glyim_core::IndexVec;
 use glyim_core::Mutability;
 use glyim_mir::*;
 use glyim_span::Span;
-use glyim_type::AdtKind;
-use glyim_type::{ConstKind, Ty, TyCtx, TyKind};
+use glyim_type::{ConstKind, TyCtx, TyKind};
 
 // -----------------------------------------------------------------------------
 // Dataflow: which locals are definitely initialized at each program point.
@@ -85,7 +84,7 @@ impl DropFlags {
     fn new(ctx: &TyCtx, body: &Body, _analysis: &MaybeInitialized) -> Self {
         let mut flags = vec![None; body.locals.len()];
         for (local, decl) in body.locals.iter_enumerated() {
-            if needs_drop(ctx, decl.ty) {
+            if ctx.needs_drop(decl.ty) {
                 flags[local.to_raw() as usize] = Some(LocalIdx::from_raw(0));
             }
         }
@@ -205,7 +204,7 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
                 cleanup,
             } => {
                 let ty = place.ty(ctx, &body.locals);
-                if !needs_drop(ctx, ty) {
+                if !ctx.needs_drop(ty) {
                     TerminatorKind::Goto { target: *target }
                 } else if let TyKind::Array(_elem_ty, count) = ctx.ty_kind(ty) {
                     // Generate loop to drop each element
@@ -412,87 +411,4 @@ pub(crate) fn run(ctx: &TyCtx, body: &mut Body) {
     body.basic_blocks = IndexVec::from_raw(new_blocks);
 }
 
-/// Determine if a type needs drop glue.
-/// A type needs drop if it implements Drop directly, or contains a field/element that needs drop.
-/// Memoization is used to avoid repeated work.
-pub(crate) fn needs_drop(ctx: &TyCtx, ty: Ty) -> bool {
-    use glyim_type::GenericArg;
-    use glyim_type::TyKind;
-    use std::collections::HashSet;
-
-    fn needs_drop_rec(ctx: &TyCtx, ty: Ty, visited: &mut HashSet<Ty>) -> bool {
-        if visited.contains(&ty) {
-            // Recursive type: assume it needs drop if it contains a field that might need drop.
-            // For correctness, we conservatively return true.
-            return true;
-        }
-        visited.insert(ty);
-
-        match ctx.ty_kind(ty) {
-            TyKind::Adt(adt_id, _substs) => {
-                // Check if the ADT has a Drop impl (we don't have explicit Drop trait yet, so we check fields).
-                // For now, we assume any ADT that is not a primitive and has fields might need drop.
-                // But we must check its fields recursively.
-                if let Some(adt_def) = ctx.adt_def(*adt_id) {
-                    // If it's a union, we conservatively say it needs drop (user is responsible).
-                    if adt_def.kind == AdtKind::Union {
-                        return true;
-                    }
-                    // Check each variant's fields.
-                    for variant in &adt_def.variants {
-                        for field in variant.fields.iter() {
-                            if needs_drop_rec(ctx, field.ty, visited) {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                } else {
-                    // Unknown ADT: conservatively true.
-                    true
-                }
-            }
-            TyKind::Array(elem_ty, _) => needs_drop_rec(ctx, *elem_ty, visited),
-            TyKind::Slice(elem_ty) => needs_drop_rec(ctx, *elem_ty, visited),
-            TyKind::Tuple(substs) => {
-                for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg
-                        && needs_drop_rec(ctx, *t, visited)
-                    {
-                        return true;
-                    }
-                }
-                false
-            }
-            TyKind::Closure(_, substs) => {
-                for arg in ctx.substitution_args(*substs) {
-                    if let GenericArg::Ty(t) = arg
-                        && needs_drop_rec(ctx, *t, visited)
-                    {
-                        return true;
-                    }
-                }
-                false
-            }
-            // Primitive types don't need drop.
-            TyKind::Bool
-            | TyKind::Int(_)
-            | TyKind::Uint(_)
-            | TyKind::Float(_)
-            | TyKind::Char
-            | TyKind::Never
-            | TyKind::Unit => false,
-            // References and raw pointers don't need drop (the pointee is not owned).
-            TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => false,
-            // Function pointers and function definitions don't need drop.
-            TyKind::FnPtr(_) | TyKind::FnDef(_, _) => false,
-            // Opaque types, projections, etc.: conservatively true.
-            _ => true,
-        }
-    }
-
-    let mut visited = HashSet::new();
-    needs_drop_rec(ctx, ty, &mut visited)
-}
-
-// TODO: Implement per-projection MaybeInitialized dataflow
+// (no standalone `needs_drop` here — it is the shared `TyCtx::needs_drop`)
