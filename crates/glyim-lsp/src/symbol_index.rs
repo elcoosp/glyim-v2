@@ -39,6 +39,25 @@ pub struct TypeSignature {
     /// `None` for free functions / item symbols. Used by Tier 6.4 completion
     /// filtering to match a `.`-method call's receiver type.
     pub receiver_type: Option<String>,
+    /// Names of the type parameters of this item (e.g. `["T", "U"]` for
+    /// `fn f<T, U>(...)`). Used by completion (plan §22.6) to emit a generic
+    /// snippet `f::<${1:T}, ${2:U}>(...)`. Lifetime/const params are excluded
+    /// — they are not elidable in a call-site snippet the way type params are.
+    pub generic_params: Vec<String>,
+}
+
+/// Collect the names of the *type* parameters of a generic declaration.
+/// Lifetime and const generic parameters are intentionally excluded.
+fn type_param_names(params: &[glyim_hir::GenericParam], interner: &Interner) -> Vec<String> {
+    params
+        .iter()
+        .filter_map(|p| match p.kind {
+            glyim_hir::GenericParamKind::Type { .. } => {
+                Some(interner.resolve(p.name).to_string())
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 pub struct SymbolIndex {
@@ -93,6 +112,7 @@ impl SymbolIndex {
                         .return_ty
                         .as_ref()
                         .map(|t| render_type_ref(t, interner));
+                    let generics = type_param_names(&impl_item.generic_params, interner);
                     let info = SymbolInfo {
                         name: interner.resolve(method.name).to_string(),
                         kind: SymbolKind::Function,
@@ -101,6 +121,7 @@ impl SymbolIndex {
                             params,
                             return_type: return_ty,
                             receiver_type: Some(receiver_str.clone()),
+                            generic_params: generics,
                         }),
                         is_pub: matches!(item.visibility, glyim_core::Visibility::Public),
                         documentation: None,
@@ -139,6 +160,7 @@ impl SymbolIndex {
                         params,
                         return_type: return_ty,
                         receiver_type: None,
+                        generic_params: type_param_names(&fn_item.generic_params, interner),
                     })
                 }
                 ItemKind::Struct(struct_item) => {
@@ -154,6 +176,7 @@ impl SymbolIndex {
                         params: fields,
                         return_type: None,
                         receiver_type: None,
+                        generic_params: type_param_names(&struct_item.generic_params, interner),
                     })
                 }
                 ItemKind::Enum(enum_item) => {
@@ -175,6 +198,7 @@ impl SymbolIndex {
                         params: variants,
                         return_type: None,
                         receiver_type: None,
+                        generic_params: type_param_names(&enum_item.generic_params, interner),
                     })
                 }
                 _ => None,

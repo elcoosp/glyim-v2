@@ -51,6 +51,7 @@ fn document_symbols_returns_hierarchy() {
             params: vec![],
             receiver_type: None,
             return_type: Some("()".to_string()),
+            generic_params: vec![],
         }),
         is_pub: true,
         documentation: None,

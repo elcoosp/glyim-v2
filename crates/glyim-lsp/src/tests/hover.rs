@@ -41,6 +41,7 @@ fn test_provide_hover() {
                 params: vec![],
                 receiver_type: None,
                 return_type: None,
+                generic_params: vec![],
             }),
             is_pub: true,
             documentation: Some("Entry point".to_string()),

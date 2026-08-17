@@ -38,6 +38,7 @@ fn test_provide_completions() {
                 params: vec![("x".to_string(), "i32".to_string())],
                 receiver_type: None,
                 return_type: Some("i32".to_string()),
+                generic_params: vec![],
             }),
             is_pub: true,
             documentation: Some("Does something".to_string()),

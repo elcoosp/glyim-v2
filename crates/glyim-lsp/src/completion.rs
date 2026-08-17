@@ -42,16 +42,30 @@ fn completion_item(sym: &SymbolInfo) -> CompletionItem {
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         insert_text: if sym.kind == SymbolKind::Function {
             sym.type_signature.as_ref().map(|ts| {
-                if ts.params.is_empty() {
-                    format!("{}()", sym.name)
+                // Plan §22.6: generic items get a `name::<${1:T}, ${2:U}>` snippet
+                // with tab-stops, so the user can fill in type arguments inline.
+                let generics = if ts.generic_params.is_empty() {
+                    String::new()
                 } else {
+                    let g: Vec<String> = ts
+                        .generic_params
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| format!("${{{}:{}}}", i + 1, t))
+                        .collect();
+                    format!("::<{}>", g.join(", "))
+                };
+                if ts.params.is_empty() {
+                    format!("{}{}()", sym.name, generics)
+                } else {
+                    let start = ts.generic_params.len() + 1;
                     let placeholders: Vec<String> = ts
                         .params
                         .iter()
                         .enumerate()
-                        .map(|(i, (n, _))| format!("${{{}:{}}}", i + 1, n))
+                        .map(|(i, (n, _))| format!("${{{}:{}}}", start + i, n))
                         .collect();
-                    format!("{}({})", sym.name, placeholders.join(", "))
+                    format!("{}{}({})", sym.name, generics, placeholders.join(", "))
                 }
             })
         } else {

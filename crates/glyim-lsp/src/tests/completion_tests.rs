@@ -45,6 +45,7 @@ fn setup_test_db() -> (AnalysisDatabase, FileId, PathBuf) {
                     params: vec![],
                     receiver_type: None,
                     return_type: Some("i32".into()),
+                    generic_params: vec![],
                 }),
                 is_pub: true,
                 documentation: None,
@@ -63,6 +64,7 @@ fn setup_test_db() -> (AnalysisDatabase, FileId, PathBuf) {
                     params: vec![],
                     receiver_type: None,
                     return_type: Some("i32".into()),
+                    generic_params: vec![],
                 }),
                 is_pub: true,
                 documentation: None,
@@ -107,4 +109,77 @@ fn completion_provides_struct_fields() {
     } else {
         panic!("Expected CompletionList");
     }
+}
+
+#[test]
+fn completion_generic_function_emits_snippet_with_type_params() {
+    // Plan §22.6: a generic function `id<T>(x: T) -> T` must produce a snippet
+    // `id::<${1:T}>(${2:x})` (tab-stops for the type arg and the value arg),
+    // not a bare `id()`.
+    let analysis = AnalysisDatabase::new();
+    let path = PathBuf::from("/test/generic.g");
+    let file_id = {
+        let mut file_map = analysis.file_map.write();
+        file_map.get_or_create(&path)
+    };
+    let source_map = SourceMap::new(
+        path.clone(),
+        file_id,
+        "fn id<T>(x: T) -> T { x }\nfn main() { id(); }".to_string(),
+    );
+    analysis.source_maps.write().insert(file_id, source_map);
+
+    let span = make_span(file_id, 0, 2);
+    let sym = SymbolInfo {
+        name: "id".to_string(),
+        kind: SymbolKind::Function,
+        definition: DefinitionLocation { file_id, span },
+        type_signature: Some(TypeSignature {
+            params: vec![("x".to_string(), "T".to_string())],
+            receiver_type: None,
+            return_type: Some("T".to_string()),
+            generic_params: vec!["T".to_string()],
+        }),
+        is_pub: true,
+        documentation: None,
+    };
+    analysis.symbol_index.write().insert_test_symbol(file_id, sym);
+
+    let file_map_guard = analysis.file_map.read();
+    let uri = Uri::from_str(
+        &Uri::from_str(Url::from_file_path(&path).unwrap().as_ref())
+            .unwrap()
+            .to_string(),
+    )
+    .unwrap();
+    let params = CompletionParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri },
+            position: Position { line: 0, character: 0 },
+        },
+        work_done_progress_params: WorkDoneProgressParams {
+            work_done_token: None,
+        },
+        partial_result_params: PartialResultParams {
+            partial_result_token: None,
+        },
+        context: None,
+    };
+    let response = provide_completions(&analysis, &file_map_guard, &params).expect("completion response");
+    let list = match response {
+        CompletionResponse::List(list) => list,
+        _ => panic!("Expected CompletionList"),
+    };
+    let item = list
+        .items
+        .iter()
+        .find(|i| i.label == "id")
+        .expect("generic fn `id` must be a completion candidate");
+    let insert = item.insert_text.as_deref().expect("insert_text present");
+    assert_eq!(
+        insert, "id::<${1:T}>(${2:x})",
+        "generic function must emit a `::<..>` snippet, got {:?}",
+        insert
+    );
+    assert_eq!(item.insert_text_format, Some(InsertTextFormat::SNIPPET));
 }

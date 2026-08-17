@@ -44,6 +44,7 @@ fn completions_include_function_name() {
             params: vec![],
             receiver_type: None,
             return_type: Some("()".to_string()),
+            generic_params: vec![],
         }),
         is_pub: true,
         documentation: None,

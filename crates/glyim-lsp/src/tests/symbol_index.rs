@@ -20,6 +20,7 @@ fn test_lookup_by_name_returns_correct_symbol() {
             params: vec![("x".to_string(), "i32".to_string())],
             receiver_type: None,
             return_type: Some("i32".to_string()),
+            generic_params: vec![],
         }),
         is_pub: true,
         documentation: None,
