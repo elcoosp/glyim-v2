@@ -108,6 +108,58 @@ fn test_glyim_process_wait_output() {
 }
 
 #[test]
+fn test_glyim_process_spawn_preserves_spaces_in_arg() {
+    // Plan §17.2: arguments must not be re-split on whitespace. A single
+    // argument containing spaces must arrive at the child as ONE argv element.
+    // `printf` with format "%s\n" and a space-containing value prints the
+    // value verbatim; if the space arg were ever split, `printf` would receive
+    // the value as two separate args and print "with\nspace" instead.
+    unsafe {
+        // args = "%s\n" NUL "with space"
+        let args = "%s\n\0with space";
+        let mut child_handle: usize = 0;
+        let result = crate::glyim_process_spawn(
+            "printf".as_ptr(),
+            "printf".len(),
+            args.as_ptr(),
+            args.len(),
+            &mut child_handle,
+        );
+        assert_eq!(result, 0, "glyim_process_spawn should succeed for 'printf'");
+        assert_ne!(child_handle, 0, "child_handle should not be 0");
+
+        let mut stdout_ptr: *mut u8 = ptr::null_mut();
+        let mut stdout_len: usize = 0;
+        let mut stderr_ptr: *mut u8 = ptr::null_mut();
+        let mut stderr_len: usize = 0;
+        let mut exit_code: i32 = -999;
+        let wait_result = crate::glyim_process_wait_output(
+            child_handle,
+            &mut stdout_ptr,
+            &mut stdout_len,
+            &mut stderr_ptr,
+            &mut stderr_len,
+            &mut exit_code,
+        );
+        assert_eq!(wait_result, 0, "glyim_process_wait_output should succeed");
+        assert_eq!(exit_code, 0, "exit code should be 0");
+        assert!(!stdout_ptr.is_null(), "stdout_ptr should not be null");
+
+        let output = std::slice::from_raw_parts(stdout_ptr, stdout_len);
+        let output_str = std::str::from_utf8(output).expect("output should be valid UTF-8");
+        assert_eq!(
+            output_str, "with space\n",
+            "a space-containing argument must be passed as a single argv element"
+        );
+
+        crate::glyim_free_cstr(stdout_ptr);
+        if !stderr_ptr.is_null() {
+            crate::glyim_free_cstr(stderr_ptr);
+        }
+    }
+}
+
+#[test]
 fn test_glyim_process_getpid() {
     let pid = crate::glyim_process_getpid();
     assert!(pid > 0, "PID should be positive");
