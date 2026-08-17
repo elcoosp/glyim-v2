@@ -10,6 +10,37 @@ use std::path::Path;
 
 const LOCKFILE_NAME: &str = "Glyip.lock";
 
+/// A conflict between the resolved lockfile and the current manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LockConflict {
+    /// A manifest dependency is missing entirely from the lockfile.
+    Missing { name: String, version: String },
+    /// A manifest dependency's pinned version does not match the locked one.
+    VersionMismatch {
+        name: String,
+        manifest_version: String,
+        locked_version: String,
+    },
+}
+
+impl std::fmt::Display for LockConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LockConflict::Missing { name, version } => {
+                write!(f, "dependency `{name}@{version}` is not locked")
+            }
+            LockConflict::VersionMismatch {
+                name,
+                manifest_version,
+                locked_version,
+            } => write!(
+                f,
+                "dependency `{name}` manifest version `{manifest_version}` != locked `{locked_version}`"
+            ),
+        }
+    }
+}
+
 /// The source of a crate — where it was fetched from.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "source")]
@@ -112,6 +143,53 @@ impl Lockfile {
     /// Whether the lockfile contains no crates.
     pub fn is_empty(&self) -> bool {
         self.crates.is_empty()
+    }
+
+    /// Plan §23.4: validate the lockfile against the current manifest. Every
+    /// manifest dependency (runtime + dev) must have a corresponding locked
+    /// entry whose version matches the manifest's pinned version (when the
+    /// manifest pins an exact version; otherwise presence alone is required).
+    /// Returns the list of conflicts — empty means the lockfile is consistent.
+    pub fn validate_against_manifest(&self, manifest: &crate::config::GlyipToml) -> Vec<LockConflict> {
+        let mut conflicts = Vec::new();
+        for (name, dep) in manifest.all_dependencies() {
+            match dep.version() {
+                Some(manifest_version) => {
+                    match self.get_crate(name, manifest_version) {
+                        Some(_) => {}
+                        None => {
+                            // Either missing entirely, or a different version is locked.
+                            let locked = self
+                                .crates
+                                .values()
+                                .find(|c| c.name == *name)
+                                .map(|c| c.version.clone());
+                            match locked {
+                                Some(locked_version) => conflicts.push(LockConflict::VersionMismatch {
+                                    name: name.clone(),
+                                    manifest_version: manifest_version.to_string(),
+                                    locked_version,
+                                }),
+                                None => conflicts.push(LockConflict::Missing {
+                                    name: name.clone(),
+                                    version: manifest_version.to_string(),
+                                }),
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // No exact version pinned — require at least one locked entry.
+                    if !self.crates.values().any(|c| c.name == *name) {
+                        conflicts.push(LockConflict::Missing {
+                            name: name.clone(),
+                            version: "*".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        conflicts
     }
 }
 

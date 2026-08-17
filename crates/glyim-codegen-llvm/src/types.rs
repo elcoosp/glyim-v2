@@ -239,4 +239,50 @@ mod tests {
             "over-aligned (>16) fallback must preserve exact byte size"
         );
     }
+
+    #[test]
+    fn test_select_personality_three_way() {
+        // Plan §19.1 / §19.2: personality selection is a 3-way choice driven
+        // by target ABI, and a body with no cleanup blocks gets `None`
+        // regardless of target.
+        use crate::lower::select_personality;
+        use glyim_core::primitives::TargetAbi;
+
+        // No cleanup blocks -> no personality, whatever the target.
+        assert_eq!(
+            select_personality(&TargetInfo::aarch64(), false),
+            crate::lower::Personality::None
+        );
+        assert_eq!(
+            select_personality(&TargetInfo::from_triple("x86_64-pc-windows-gnu"), false),
+            crate::lower::Personality::None
+        );
+
+        // Cleanup blocks present -> Itanium on Unix-like, Seh on Windows.
+        assert_eq!(
+            select_personality(&TargetInfo::x86_64(), true),
+            crate::lower::Personality::Itanium
+        );
+        assert_eq!(
+            select_personality(&TargetInfo::aarch64(), true),
+            crate::lower::Personality::Itanium
+        );
+        assert_eq!(
+            select_personality(&TargetInfo::from_triple("x86_64-pc-windows-msvc"), true),
+            crate::lower::Personality::Seh
+        );
+        assert_eq!(
+            select_personality(&TargetInfo::from_triple("aarch64-pc-windows-msvc"), true),
+            crate::lower::Personality::Seh
+        );
+
+        // Sanity: the Windows abi variants enumerate as expected.
+        let _ = (
+            TargetAbi::X86_64Windows,
+            TargetAbi::AArch64Windows,
+            TargetAbi::X86_64SystemV,
+            TargetAbi::AArch64AAPCS,
+            TargetAbi::Wasm32,
+        );
+    }
 }

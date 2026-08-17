@@ -26,6 +26,38 @@ use inkwell::values::{
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
+/// Plan §19.1 / §19.2: personality-function selection is a proper three-way
+/// choice driven by target ABI, instead of the previous implicit
+/// "Windows or Unix, nothing else" binary. `None` means the target/profile has
+/// no unwinding support, in which case `Call` terminators with a cleanup target
+/// must lower to a plain `call` (no `invoke`/landingpad) — see `lower_call`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Personality {
+    /// Itanium C++ ABI personality (`__gcc_personality_v0` / `__gxx_personality_v0`)
+    /// used on Linux/glibc, macOS, and other Unix-like targets.
+    Itanium,
+    /// Microsoft SEH personality (`__CxxFrameHandler3`) used on Windows targets.
+    /// Requires funclet-based landingpads (`cleanuppad`/`catchpad`) rather than
+    /// the Itanium `landingpad`/`resume` pair (deferred — see §19.1).
+    Seh,
+    /// No unwinding support (e.g. `panic = "abort"` or a bare-metal target with
+    /// no unwinder). No personality function is emitted.
+    None,
+}
+
+/// Select the personality kind for the given target, given whether the body
+/// has any cleanup (unwind) blocks. Without cleanup blocks there is nothing to
+/// unwind into, so we emit no personality function regardless of target.
+pub fn select_personality(target: &TargetInfo, has_cleanup: bool) -> Personality {
+    if !has_cleanup {
+        return Personality::None;
+    }
+    match target.abi {
+        TargetAbi::X86_64Windows | TargetAbi::AArch64Windows => Personality::Seh,
+        _ => Personality::Itanium,
+    }
+}
+
 #[allow(unused_imports)]
 fn local_ty(body: &Body, local: LocalIdx) -> Ty {
     body.locals[local].ty
@@ -3058,32 +3090,33 @@ pub(crate) fn lower_body<'ctx>(
         .custom_width_int_type(NonZeroU32::new(64).unwrap())
         .unwrap();
     let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
-    let personality_fn = if has_cleanup {
-        // `__gcc_personality_v0` is the Itanium-ABI personality routine
-        // provided by libgcc on Linux/glibc targets, which is what the
-        // build's linker (see glyim-cli/src/linker.rs, which shells out to
-        // `cc`) will already be able to resolve at link time without any
-        // extra runtime support. This is declared, not defined, here: we
-        // are relying on the platform's unwinder library to supply it,
-        // exactly like a C/C++ program compiled with `-fexceptions` would.
-        //
-        // NOTE: this is Linux/glibc-specific. A different personality
-        // routine (or a custom one shipped in glyim-runtime) will be needed
-        // for other `TargetInfo` targets (e.g. macOS, or unwinding-disabled
-        // embedded targets that should instead force `has_cleanup` off).
-        let personality_name = match target_info.abi {
-            glyim_core::primitives::TargetAbi::X86_64Windows
-            | glyim_core::primitives::TargetAbi::AArch64Windows => "__CxxFrameHandler3",
-            _ => "__gcc_personality_v0",
-        };
-        let personality_fn_type = context.i32_type().fn_type(&[], true);
-        let personality_fn = module
-            .get_function(personality_name)
-            .unwrap_or_else(|| module.add_function(personality_name, personality_fn_type, None));
-        function.set_personality_function(personality_fn);
-        Some(personality_fn)
-    } else {
-        None
+    let personality_fn = match select_personality(&target_info, has_cleanup) {
+        Personality::None => None,
+        Personality::Itanium | Personality::Seh => {
+            // `__gcc_personality_v0` is the Itanium-ABI personality routine
+            // provided by libgcc on Linux/glibc (and the `__gxx_personality_v0`
+            // family on macOS) targets, which is what the build's linker (see
+            // glyim-cli/src/linker.rs, which shells out to `cc`) resolves at
+            // link time without extra runtime support. This is declared, not
+            // defined, here — exactly like a C/C++ program compiled with
+            // `-fexceptions` would.
+            //
+            // On Windows (`Seh`) the personality is `__CxxFrameHandler3`; the
+            // SEH funclet-based landingpad lowering that consumes it is tracked
+            // under §19.1 and is not yet wired (the landingpad path below is the
+            // Itanium one). For now we still emit the correct personality name
+            // so the symbol is declared for the linker.
+            let personality_name = match target_info.abi {
+                TargetAbi::X86_64Windows | TargetAbi::AArch64Windows => "__CxxFrameHandler3",
+                _ => "__gcc_personality_v0",
+            };
+            let personality_fn_type = context.i32_type().fn_type(&[], true);
+            let personality_fn = module
+                .get_function(personality_name)
+                .unwrap_or_else(|| module.add_function(personality_name, personality_fn_type, None));
+            function.set_personality_function(personality_fn);
+            Some(personality_fn)
+        }
     };
     let mut lowering_ctx = LoweringCtx {
         context,

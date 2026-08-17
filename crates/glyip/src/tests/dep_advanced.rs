@@ -246,3 +246,89 @@ fn registry_disabled_gives_actionable_error() {
         "error should hint at the registry feature / local index: {msg}"
     );
 }
+
+// Plan §23.4: lockfile validation against the manifest must report a conflict
+// when a manifest-pinned dependency is missing or version-mismatched.
+#[test]
+fn validate_lockfile_detects_missing_and_mismatched() {
+    use crate::lockfile::{LockConflict, Lockfile};
+
+    // Manifest pins exact `serde = "1.0.0"` and `log = "0.4.0"`.
+    let mut deps = BTreeMap::new();
+    deps.insert("serde".to_string(), Dependency::Simple("1.0.0".to_string()));
+    deps.insert("log".to_string(), Dependency::Simple("0.4.0".to_string()));
+    let manifest = make_config_with_deps("main", deps, BTreeMap::new());
+
+    // Lockfile has serde@1.0.0 (matches) but log under-locked at 0.3.0.
+    let mut lockfile = Lockfile::new();
+    lockfile.add_crate(LockedCrate {
+        name: "serde".to_string(),
+        version: "1.0.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://example.com".to_string(),
+            checksum: "abc".to_string(),
+        },
+        dependencies: BTreeMap::new(),
+    });
+    // log is under-locked at 0.3.0 while the manifest wants 0.4.
+    lockfile.add_crate(LockedCrate {
+        name: "log".to_string(),
+        version: "0.3.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://example.com".to_string(),
+            checksum: "def".to_string(),
+        },
+        dependencies: BTreeMap::new(),
+    });
+
+    let conflicts = lockfile.validate_against_manifest(&manifest);
+    // serde@1.0.0 satisfies the "1.0" pin → OK. log is mismatched.
+    assert_eq!(conflicts.len(), 1, "only log should conflict: {conflicts:?}");
+    assert!(matches!(
+        &conflicts[0],
+        LockConflict::VersionMismatch { name, .. } if name == "log"
+    ));
+
+    // A fully consistent lockfile yields no conflicts.
+    let mut good = Lockfile::new();
+    good.add_crate(LockedCrate {
+        name: "serde".to_string(),
+        version: "1.0.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://example.com".to_string(),
+            checksum: "abc".to_string(),
+        },
+        dependencies: BTreeMap::new(),
+    });
+    good.add_crate(LockedCrate {
+        name: "log".to_string(),
+        version: "0.4.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://example.com".to_string(),
+            checksum: "def".to_string(),
+        },
+        dependencies: BTreeMap::new(),
+    });
+    assert!(
+        good.validate_against_manifest(&manifest).is_empty(),
+        "consistent lockfile must validate clean"
+    );
+
+    // A manifest dep with no locked entry at all is a Missing conflict.
+    let mut partial = Lockfile::new();
+    partial.add_crate(LockedCrate {
+        name: "serde".to_string(),
+        version: "1.0.0".to_string(),
+        source: CrateSource::Registry {
+            url: "https://example.com".to_string(),
+            checksum: "abc".to_string(),
+        },
+        dependencies: BTreeMap::new(),
+    });
+    let partial_conflicts = partial.validate_against_manifest(&manifest);
+    assert_eq!(partial_conflicts.len(), 1);
+    assert!(matches!(
+        &partial_conflicts[0],
+        LockConflict::Missing { name, .. } if name == "log"
+    ));
+}
