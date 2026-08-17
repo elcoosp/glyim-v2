@@ -1,4 +1,5 @@
 use crate::AnalysisDatabase;
+use crate::DefinitionLocation;
 use lsp_types::*;
 
 use url::Url;
@@ -38,6 +39,19 @@ pub fn provide_hover(
     if let Some(doc) = &symbol.documentation {
         markdown.push_str(doc);
     }
+
+    // Plan §22.5: include a "go to definition" preview — a few lines of source
+    // around the definition site, so the hover shows *where* the symbol lives,
+    // not just its signature/docs. Reuses the same `SourceMap` machinery as
+    // goto-definition/rename rather than a second source lookup path.
+    if let Some(preview) = definition_preview(db, &symbol.definition) {
+        if !preview.is_empty() {
+            markdown.push_str("\n\n---\n\n```glyim\n");
+            markdown.push_str(&preview);
+            markdown.push_str("```\n");
+        }
+    }
+
     if markdown.is_empty() {
         return None;
     }
@@ -48,4 +62,28 @@ pub fn provide_hover(
         }),
         range: None,
     })
+}
+
+/// Plan §22.5: extract the source lines covering a symbol's definition span as
+/// a hover preview. Returns `None` (rather than a silent empty/placeholder) if
+/// the defining file's source isn't loaded, matching the no-fallback principle.
+fn definition_preview(db: &AnalysisDatabase, def: &DefinitionLocation) -> Option<String> {
+    let source_maps = db.source_maps.read();
+    let sm = source_maps.get(&def.file_id)?;
+    let source = sm.source();
+    let ((start_line, _), (end_line, _)) = sm.span_to_position(def.span.lo.to_usize(), def.span.hi.to_usize())?;
+
+    let mut preview_lines: Vec<&str> = Vec::new();
+    for (idx, line) in source.split_inclusive('\n').enumerate() {
+        // Trim a single trailing newline for display; keep empty lines.
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        if idx >= start_line && idx <= end_line {
+            preview_lines.push(line);
+        }
+    }
+    if preview_lines.is_empty() {
+        None
+    } else {
+        Some(preview_lines.join("\n"))
+    }
 }
