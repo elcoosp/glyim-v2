@@ -182,6 +182,67 @@ impl LlvmBackend {
         Ok(module.print_to_string().to_string())
     }
 
+    /// Lower the given MIR bodies into a single LLVM module and emit **assembly**
+    /// (`.s`) to `output`, honoring the configured target triple and opt level.
+    /// Mirrors [`CodegenBackend::generate`] but uses `FileType::Assembly` instead
+    /// of `FileType::Object` (plan §18.3: `--emit=asm`).
+    pub fn emit_assembly(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()> {
+        let context = Context::create();
+        let module = context.create_module("glyim_module");
+        let triple = TargetTriple::create(&self.target_triple);
+        module.set_triple(&triple);
+        let ty_ctx = self
+            .ty_ctx_handle
+            .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let ty_ctx = ty_ctx.as_ref();
+        for body in bodies.iter() {
+            crate::lower::lower_body(
+                &context,
+                &module,
+                body,
+                self.target_info.clone(),
+                ty_ctx,
+                self.debug_info,
+                self.source_map.clone(),
+                self.hygiene_ctx.clone(),
+            )?;
+        }
+        let target = Target::from_triple(&triple).map_err(|e| {
+            vec![GlyimDiagnostic::internal_error(format!("Target error: {}", e))]
+        })?;
+        let opt_level = match self.opt_level {
+            0 => inkwell::OptimizationLevel::None,
+            1 => inkwell::OptimizationLevel::Less,
+            2 => inkwell::OptimizationLevel::Default,
+            _ => inkwell::OptimizationLevel::Aggressive,
+        };
+        let target_machine = target
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                opt_level,
+                inkwell::targets::RelocMode::Default,
+                inkwell::targets::CodeModel::Default,
+            )
+            .ok_or_else(|| {
+                vec![GlyimDiagnostic::internal_error("Failed to create target machine")]
+            })?;
+        self.run_passes_on_module(&module, &target_machine)
+            .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
+        target_machine
+            .write_to_file(&module, inkwell::targets::FileType::Assembly, output)
+            .map_err(|e| {
+                vec![GlyimDiagnostic::internal_error(format!(
+                    "Failed to write assembly file: {:?}",
+                    e
+                ))]
+            })?;
+        Ok(())
+    }
+
     /// Lower a single body to an LLVM module using the provided TyCtx.
     pub fn lower_body_to_module_with_ctx<'ctx>(
         &self,

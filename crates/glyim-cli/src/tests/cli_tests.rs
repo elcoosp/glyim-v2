@@ -87,3 +87,38 @@ fn test_emit_llvm_ir_flag() {
     let args = CliArgs::try_parse_from(["glyim", "--emit", "llvm-ir", "input.g"]).unwrap();
     assert_eq!(args.emit, "llvm-ir");
 }
+
+/// §18.3: --emit=asm produces a `.s` assembly file containing recognizable
+/// host assembly (a function epilogue `ret` instruction at minimum).
+#[test]
+fn test_emit_asm_produces_assembly_file() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "fn main() {{}}").unwrap();
+    let src = tmp.into_temp_path();
+
+    let out_dir = tempfile::tempdir().unwrap();
+    let asm_path = out_dir.path().join("out.s");
+
+    let args = CliArgs {
+        input: src.to_path_buf(),
+        output: Some(asm_path.clone()),
+        opt_level: 0,
+        target: None,
+        backend: "llvm".to_string(),
+        emit: "asm".to_string(),
+        linker: None,
+        link_flags: None,
+    };
+    let result = run_with_args(args);
+    assert!(result.is_ok(), "asm emit should succeed, got: {:?}", result);
+
+    assert!(asm_path.exists(), "assembly output file should exist");
+    let asm = std::fs::read_to_string(&asm_path).unwrap();
+    // A trivial `fn main() {}` must lower to at least a `ret` instruction on
+    // every supported host backend.
+    assert!(
+        asm.contains("ret"),
+        "assembly output should contain a `ret` instruction; got:\n{}",
+        asm
+    );
+}

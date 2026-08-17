@@ -40,6 +40,7 @@ enum EmitKind {
     Exec,
     Mir,
     LlvmIr,
+    Asm,
 }
 
 impl EmitKind {
@@ -49,8 +50,9 @@ impl EmitKind {
             "exec" => Ok(EmitKind::Exec),
             "mir" => Ok(EmitKind::Mir),
             "llvm-ir" => Ok(EmitKind::LlvmIr),
+            "asm" => Ok(EmitKind::Asm),
             _ => Err(format!(
-                "invalid value for --emit: '{}' (expected one of: obj, exec, mir, llvm-ir)",
+                "invalid value for --emit: '{}' (expected one of: obj, exec, mir, llvm-ir, asm)",
                 s
             )),
         }
@@ -102,6 +104,14 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             });
             (out, None)
         }
+        EmitKind::Asm => {
+            let out = args.output.clone().unwrap_or_else(|| {
+                let mut p = input.clone();
+                p.set_extension("s");
+                p
+            });
+            (out, None)
+        }
     };
 
     let target_triple = args
@@ -122,11 +132,13 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     let mut db = Database::new(config);
 
-    // Early return for MIR and LLVM IR emit
+    // Early return for MIR, LLVM IR, and assembly emit
     if emit == EmitKind::Mir {
         return glyim_pipeline::emit_mir(&mut db, input, &object_path);
     } else if emit == EmitKind::LlvmIr {
         return glyim_pipeline::emit_llvm_ir(&mut db, input, &object_path);
+    } else if emit == EmitKind::Asm {
+        return glyim_pipeline::emit_asm(&mut db, input, &object_path);
     }
 
     // For obj and exec, compile to object

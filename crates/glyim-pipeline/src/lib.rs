@@ -458,6 +458,86 @@ pub fn emit_llvm_ir(
     Ok(())
 }
 
+/// Compile a single `.g` file to **assembly** (`.s`) and write it to `output`.
+/// Mirrors [`emit_llvm_ir`] but lowers through the LLVM backend's
+/// `emit_assembly` path (plan §18.3: `--emit=asm`).
+pub fn emit_asm(
+    db: &mut Database,
+    input: &Path,
+    output: &Path,
+) -> Result<(), Vec<GlyimDiagnostic>> {
+    let sink = DiagSink::new();
+    let sink_cell = RefCell::new(sink);
+
+    let file_id = db
+        .vfs()
+        .add_file_from_disk(input)
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("I/O Error: {}", e))])?;
+    let source = db
+        .vfs()
+        .file_content(file_id)
+        .unwrap_or_else(|| Arc::from(""));
+
+    let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
+    sink_cell
+        .borrow_mut()
+        .extend(parse_result.diagnostics.clone());
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    sink_cell.borrow_mut().extend(def_diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    let (hir, hir_diags) =
+        glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
+    sink_cell.borrow_mut().extend(hir_diags);
+
+    let resolver = db.interner().clone();
+    let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
+    let trait_ctx = glyim_solve::TraitContext::new();
+    let mut solver = SimpleTraitSolver::new(&trait_ctx);
+    let (ty_ctx, typeck_result) =
+        glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
+    sink_cell.borrow_mut().extend(typeck_result.diagnostics);
+    if sink_cell.borrow().has_errors() {
+        return Err(sink_cell.into_inner().into_diagnostics());
+    }
+
+    db.set_ty_ctx(ty_ctx);
+
+    let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
+    let ty_ctx_ref = ty_ctx_guard.as_ref();
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let mut mir_bodies = Vec::new();
+
+    for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
+        let lower_result = glyim_lower::lower_body(&lower_ctx, thir_body);
+        sink_cell.borrow_mut().extend(lower_result.diagnostics);
+        if sink_cell.borrow().has_errors() {
+            return Err(sink_cell.into_inner().into_diagnostics());
+        }
+        mir_bodies.push(lower_result.body);
+    }
+
+    if mir_bodies.is_empty() {
+        return Err(vec![GlyimDiagnostic::internal_error(
+            "No MIR bodies generated",
+        )]);
+    }
+
+    let backend = LlvmBackend::new().with_debug_info(false);
+    let arc_bodies: Vec<Arc<Body>> = mir_bodies.into_iter().map(Arc::new).collect();
+    backend
+        .emit_assembly(&arc_bodies, output)
+        .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("LLVM assembly generation failed: {:?}", e))])?;
+
+    Ok(())
+}
+
 fn format_body(body: &Body, ctx: &glyim_type::TyCtx) -> String {
     use std::fmt::Write;
     let mut s = String::new();
