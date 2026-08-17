@@ -6,9 +6,9 @@ use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
 use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, Operand, Place, ProjectionElem,
-    Rvalue, SourceInfo, Statement, StatementKind, SwitchTargets, Terminator, TerminatorKind,
-    VariantIdx,
+    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, MirConst, MirConstKind, Operand,
+    Place, ProjectionElem, Rvalue, SourceInfo, Statement, StatementKind, SwitchTargets, Terminator,
+    TerminatorKind, VariantIdx,
 };
 use glyim_span::Span;
 use glyim_type::{
@@ -238,12 +238,21 @@ pub(crate) fn generate_drop_glue(ty: Ty, ty_ctx: &TyCtx) -> Arc<Body> {
                 set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
             }
         }
-        TyKind::Array(_elem_ty, _) | TyKind::Slice(_elem_ty) => {
-            // Arrays and slices are dropped as a whole; the runtime or a later
-            // loop-generation pass can expand this to per-element drops if required.
-            // The collector will still enqueue `DropGlue` for the element type when
-            // it scans the terminator, so nested ADT elements are handled.
-            set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
+        TyKind::Array(elem_ty, len) if type_needs_drop(*elem_ty, ty_ctx, &mut HashSet::new()) => {
+            // For an `[T; N]` where `T` needs drop, drop every element in order.
+            // The element type's own glue is registered by the collector (it scans
+            // `Drop` terminators and enqueues the element type), so emitting a
+            // `Drop` terminator per element — exactly as `generate_struct_drop_glue`
+            // does per field — is sufficient; downstream elaboration turns each
+            // into the element's recursive drop glue. A bare `Return` here is the
+            // de-stubbing-plan §16.1 bug: it would skip every element's destructor.
+            generate_array_drop_glue(&mut body, &place, *elem_ty, len, ty_ctx);
+        }
+        TyKind::Slice(elem_ty) if type_needs_drop(*elem_ty, ty_ctx, &mut HashSet::new()) => {
+            // For a `[T]` slice, the element count is the runtime fat-pointer
+            // length (read via `Rvalue::Len`); the same per-element drop loop is
+            // driven by that length instead of a compile-time constant.
+            generate_slice_drop_glue(&mut body, &place, *elem_ty, ty_ctx);
         }
         _ => {
             set_return_terminator(&mut body, BasicBlockIdx::from_raw(0));
@@ -265,51 +274,12 @@ fn set_return_terminator(body: &mut Body, block: BasicBlockIdx) {
 
 /// Determine whether a type needs drop glue.
 ///
-/// Returns `false` for primitive types, references, and types that have already
-/// been visited (prevents infinite recursion on recursive ADTs such as linked lists).
-fn type_needs_drop(ty: Ty, ty_ctx: &TyCtx, visited: &mut HashSet<Ty>) -> bool {
-    if !visited.insert(ty) {
-        return false;
-    }
-
-    match ty_ctx.ty_kind(ty) {
-        TyKind::Adt(adt_id, _) => {
-            if let Some(adt_def) = ty_ctx.adt_def(*adt_id) {
-                match adt_def.kind {
-                    AdtKind::Union => false,
-                    _ => adt_def.variants.iter().any(|v| {
-                        v.fields
-                            .iter()
-                            .any(|f| type_needs_drop(f.ty, ty_ctx, visited))
-                    }),
-                }
-            } else {
-                false
-            }
-        }
-        TyKind::Array(elem_ty, _) | TyKind::Slice(elem_ty) => {
-            type_needs_drop(*elem_ty, ty_ctx, visited)
-        }
-        TyKind::Tuple(substs) => ty_ctx
-            .substitution_args(*substs)
-            .iter()
-            .any(|arg| match *arg {
-                GenericArg::Ty(t) => type_needs_drop(t, ty_ctx, visited),
-                _ => false,
-            }),
-        TyKind::Ref(_, _, _) | TyKind::RawPtr(_, _) => false,
-        TyKind::FnPtr(_) | TyKind::FnDef(_, _) | TyKind::Closure(_, _) => false,
-        TyKind::Never
-        | TyKind::Unit
-        | TyKind::Bool
-        | TyKind::Int(_)
-        | TyKind::Uint(_)
-        | TyKind::Float(_)
-        | TyKind::Char
-        | TyKind::String => false,
-        TyKind::Infer(_) | TyKind::Error => false,
-        _ => true,
-    }
+/// Delegates to the single canonical `TyCtx::needs_drop` (de-stubbing plan
+/// §0 rule 2 / §7.1) so there is exactly one source of truth for "does this type
+/// need dropping". The `visited` set is accepted for call-site compatibility but
+/// the canonical implementation performs its own cycle guard internally.
+fn type_needs_drop(ty: Ty, ty_ctx: &TyCtx, _visited: &mut HashSet<Ty>) -> bool {
+    ty_ctx.needs_drop(ty)
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +477,186 @@ fn generate_enum_drop_glue(body: &mut Body, place: &Place, adt_def: &AdtDef, ty_
             },
             source_info: SourceInfo::new(Span::DUMMY),
         };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Array drop glue
+// ---------------------------------------------------------------------------
+
+/// Generate drop glue for `[T; N]` where `T` needs drop: one `Drop` terminator
+/// per element, chained in forward order (element 0 → element N-1), exactly like
+/// `generate_struct_drop_glue` emits one `Drop` terminator per field. The
+/// element type's own glue is registered by the collector from each `Drop`
+/// terminator. A bare `Return` here (the previous behavior) is the de-stubbing
+/// plan §16.1 bug: it would skip every element's destructor.
+fn generate_array_drop_glue(
+    body: &mut Body,
+    place: &Place,
+    _elem_ty: Ty,
+    len: &glyim_type::Const,
+    _ty_ctx: &TyCtx,
+) {
+    let n = match len.kind {
+        glyim_type::ConstKind::Uint(n) => n,
+        glyim_type::ConstKind::Int(n) => n as u128,
+        _ => {
+            // Length isn't a plain integer constant; fall back to a single
+            // `Return` so we never generate malformed glue.
+            set_return_terminator(body, BasicBlockIdx::from_raw(0));
+            return;
+        }
+    };
+
+    let return_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    // Build the tail of the chain in reverse order so the first element re-uses
+    // basic block 0 (same shape as the struct field-drop chain).
+    let mut next_target = return_bb;
+    for i in (1..n).rev() {
+        let elem_place = element_place_at(place, i as u32);
+        let bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+            kind: TerminatorKind::Drop {
+                place: elem_place,
+                target: next_target,
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        }));
+        next_target = bb;
+    }
+
+    let first_elem = element_place_at(place, 0);
+    if let Some(block0) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
+        block0.statements.clear();
+        block0.terminator = Terminator {
+            kind: TerminatorKind::Drop {
+                place: first_elem,
+                target: next_target,
+                cleanup: None,
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+    }
+}
+
+/// Build a place that indexes `base` by the compile-time constant `index`
+/// (`base[`index`]`).
+fn element_place_at(base: &Place, index: u32) -> Place {
+    let idx_local = LocalIdx::from_raw(index);
+    let mut proj = base.projection.to_vec();
+    proj.push(ProjectionElem::Index(idx_local));
+    Place {
+        local: base.local,
+        projection: proj.into_boxed_slice(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Slice drop glue
+// ---------------------------------------------------------------------------
+
+/// Generate drop glue for `[T]` where `T` needs drop: a per-element drop loop
+/// driven by the runtime length read via `Rvalue::Len(place)` (the fat-pointer
+/// metadata word), since a slice's element count is not known at compile time
+/// (de-stubbing plan §16.1).
+fn generate_slice_drop_glue(body: &mut Body, place: &Place, _elem_ty: Ty, _ty_ctx: &TyCtx) {
+    let idx_local = body.locals.push(LocalDecl {
+        ty: Ty::USIZE,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+    let len_local = body.locals.push(LocalDecl {
+        ty: Ty::USIZE,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    });
+
+    let exit_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Return,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+    let inc_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Goto {
+            target: BasicBlockIdx::from_raw(0),
+        },
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+    let body_bb = body.basic_blocks.push(BasicBlockData::new(Terminator {
+        kind: TerminatorKind::Drop {
+            place: element_place(place, idx_local),
+            target: inc_bb,
+            cleanup: None,
+        },
+        source_info: SourceInfo::new(Span::DUMMY),
+    }));
+
+    // Increment block: idx = idx + 1.
+    if let Some(inc) = body.basic_blocks.get_mut(inc_bb) {
+        inc.statements.push(Statement {
+            kind: StatementKind::Assign(
+                Place::new(idx_local),
+                Rvalue::BinaryOp(
+                    glyim_core::primitives::BinOp::Add,
+                    Box::new((
+                        Operand::Copy(Place::new(idx_local)),
+                        Operand::Constant(MirConst {
+                            kind: MirConstKind::Uint(1),
+                            ty: Ty::USIZE,
+                            span: Span::DUMMY,
+                        }),
+                    )),
+                ),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+    }
+
+    // Header (basic block 0): read len, set idx = 0, loop while idx < len.
+    if let Some(block0) = body.basic_blocks.get_mut(BasicBlockIdx::from_raw(0)) {
+        block0.statements.clear();
+        block0.statements.push(Statement {
+            kind: StatementKind::Assign(
+                Place::new(len_local),
+                Rvalue::Len(place.clone()),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        block0.statements.push(Statement {
+            kind: StatementKind::Assign(
+                Place::new(idx_local),
+                Rvalue::Use(Operand::Constant(MirConst {
+                    kind: MirConstKind::Uint(0),
+                    ty: Ty::USIZE,
+                    span: Span::DUMMY,
+                })),
+            ),
+            source_info: SourceInfo::new(Span::DUMMY),
+        });
+        block0.terminator = Terminator {
+            kind: TerminatorKind::SwitchInt {
+                discr: Operand::Copy(Place::new(idx_local)),
+                switch_ty: Ty::USIZE,
+                targets: SwitchTargets::new(
+                    Box::new([(0, exit_bb)]),
+                    body_bb,
+                ),
+            },
+            source_info: SourceInfo::new(Span::DUMMY),
+        };
+    }
+}
+
+/// Build a place that indexes `base` by `idx_local` (`base[idx_local]`).
+fn element_place(base: &Place, idx_local: LocalIdx) -> Place {
+    let mut proj = base.projection.to_vec();
+    proj.push(ProjectionElem::Index(idx_local));
+    Place {
+        local: base.local,
+        projection: proj.into_boxed_slice(),
     }
 }
 
