@@ -981,6 +981,7 @@ dependencies = [
  "glyim-hir",
  "glyim-span",
  "glyim-test",
+ "glyim-type",
  "tracing",
 ]
 

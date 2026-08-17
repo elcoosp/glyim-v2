@@ -3,6 +3,8 @@
 pub mod adt_def;
 pub mod auto_trait;
 pub mod binder;
+pub mod cast;
+pub use cast::is_valid_cast;
 pub mod const_val;
 pub mod display;
 pub mod flags;

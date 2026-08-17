@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::{BinOp, IntTy, UintTy, UnOp};
-use glyim_hir::{Body, Expr, ExprId, Literal, MatchArm, Pat};
+use glyim_core::primitives::{BinOp, FloatTy, IntTy, UintTy, UnOp};
+use glyim_hir::{Body, Expr, ExprId, Literal, MatchArm, Pat, TypeRef};
 use glyim_span::Span;
+use glyim_type::{Ty, TyCtx, TyCtxMut, TyKind};
 
 use crate::{ConstEvalError, ConstEvalResult, ConstValue, MAX_EVAL_DEPTH};
 
@@ -32,6 +33,16 @@ pub struct ConstEvaluator<'a> {
     /// source string for dispatch (plan §4.2). Without it, calls cannot be
     /// resolved.
     interner: Option<&'a Interner>,
+    /// Optional type context used to legality-check casts via the shared
+    /// `glyim_type::is_valid_cast` (plan §13.2). When present, `eval_cast`
+    /// carries the mutable context plus a precomputed map of primitive type
+    /// names to `Ty`s (built once in `with_ty_ctx` while the context is
+    /// mutable), so the gate can derive `from`/`to` `Ty`s without allocating at
+    /// eval time. When absent (the default, preserving pre-§13.2 behavior) the
+    /// cast is unchecked at the type level and relies on the
+    /// primitive-conversion allowlist only.
+    ty_ctx: Option<&'a TyCtxMut>,
+    primitive_tys: Option<std::collections::HashMap<&'static str, Ty>>,
     /// Registered user-defined `const fn`s (plan §4.2), keyed by name.
     const_fns: HashMap<Name, BodyFn>,
     /// Set when a `break`/`continue` is encountered inside a loop so the loop
@@ -174,6 +185,64 @@ fn two_args(
     Ok((&args[0], &args[1]))
 }
 
+/// Derive the `Ty` of a `ConstValue` for cast legality checking (plan §13.2),
+/// looking the primitive type up in the precomputed name→`Ty` map. Only the
+/// primitive value kinds are present in the map; anything else returns `None`
+/// and the caller skips the gate.
+fn ty_of_value(map: &std::collections::HashMap<&'static str, Ty>, val: &ConstValue) -> Option<Ty> {
+    let key = match val {
+        ConstValue::Int(_, int_ty) => match int_ty {
+            IntTy::I8 => "i8",
+            IntTy::I16 => "i16",
+            IntTy::I32 => "i32",
+            IntTy::I64 => "i64",
+            IntTy::Isize => return None,
+        },
+        ConstValue::Uint(_, uint_ty) => match uint_ty {
+            UintTy::U8 => "u8",
+            UintTy::U16 => "u16",
+            UintTy::U32 => "u32",
+            UintTy::U64 => "u64",
+            UintTy::Usize => return None,
+        },
+        ConstValue::FloatBits(_, float_ty) => match float_ty {
+            FloatTy::F32 => "f32",
+            FloatTy::F64 => "f64",
+        },
+        ConstValue::Bool(_) => "bool",
+        // Char/other values have no precomputed primitive `Ty`; the converter
+        // handles their (legal) casts, so we skip the gate for them.
+        _ => return None,
+    };
+    map.get(key).copied()
+}
+
+/// Resolve a HIR `TypeRef` to a `Ty` via the precomputed primitive map (plan
+/// §13.2). The `interner` must be the same instance that interned the path
+/// name. Non-primitive targets (or a missing interner) return `None` and the
+/// caller skips the gate.
+fn ty_of_typeref(
+    map: &std::collections::HashMap<&'static str, Ty>,
+    ty: &TypeRef,
+    interner: &glyim_core::interner::Interner,
+) -> Option<Ty> {
+    if let TypeRef::Path(path) = ty {
+        if let Some(name) = path.as_name() {
+            let n = interner.resolve(name);
+            return map.get(n).copied();
+        }
+    }
+    None
+}
+
+/// Fallback interner used to resolve cast-target path names when the
+/// `ConstEvaluator` has no `interner` attached (backward compatibility with
+/// pre-§13.2 callers that interned names via `Interner::default`).
+fn fallback_interner() -> &'static glyim_core::interner::Interner {
+    static I: std::sync::OnceLock<glyim_core::interner::Interner> = std::sync::OnceLock::new();
+    I.get_or_init(glyim_core::interner::Interner::new)
+}
+
 impl<'a> ConstEvaluator<'a> {
     pub fn new(body: &'a Body) -> Self {
         Self {
@@ -181,9 +250,35 @@ impl<'a> ConstEvaluator<'a> {
             env: vec![HashMap::new()],
             pointer_width: 64, // Default to 64-bit
             interner: None,
+            ty_ctx: None,
+            primitive_tys: None,
             const_fns: HashMap::new(),
             loop_control: None,
         }
+    }
+
+    /// Attach a type context so `eval_cast` can consult the shared
+    /// `glyim_type::is_valid_cast` legality check (plan §13.2) before
+    /// performing a value transform. The primitive `Ty`s are built once here
+    /// (while the context is mutable) into a name→`Ty` map looked up at eval
+    /// time. Without it, casts are unchecked at the type level (pre-§13.2
+    /// behavior).
+    pub fn with_ty_ctx(mut self, ty_ctx: &'a mut TyCtxMut) -> Self {
+        let mut primitive_tys = std::collections::HashMap::new();
+        primitive_tys.insert("i8", ty_ctx.mk_ty(TyKind::Int(IntTy::I8)));
+        primitive_tys.insert("i16", ty_ctx.mk_ty(TyKind::Int(IntTy::I16)));
+        primitive_tys.insert("i32", ty_ctx.mk_ty(TyKind::Int(IntTy::I32)));
+        primitive_tys.insert("i64", ty_ctx.mk_ty(TyKind::Int(IntTy::I64)));
+        primitive_tys.insert("u8", ty_ctx.mk_ty(TyKind::Uint(UintTy::U8)));
+        primitive_tys.insert("u16", ty_ctx.mk_ty(TyKind::Uint(UintTy::U16)));
+        primitive_tys.insert("u32", ty_ctx.mk_ty(TyKind::Uint(UintTy::U32)));
+        primitive_tys.insert("u64", ty_ctx.mk_ty(TyKind::Uint(UintTy::U64)));
+        primitive_tys.insert("f32", ty_ctx.mk_ty(TyKind::Float(FloatTy::F32)));
+        primitive_tys.insert("f64", ty_ctx.mk_ty(TyKind::Float(FloatTy::F64)));
+        primitive_tys.insert("bool", ty_ctx.bool_ty());
+        self.ty_ctx = Some(ty_ctx);
+        self.primitive_tys = Some(primitive_tys);
+        self
     }
 
     /// Attach the interner used to resolve path-named `const fn` callees
@@ -1264,11 +1359,33 @@ impl<'a> ConstEvaluator<'a> {
     ) -> ConstEvalResult<ConstValue> {
         use glyim_core::primitives::{FloatTy, IntTy, UintTy};
         use glyim_hir::TypeRef;
+        // Plan §13.2: when a type context is attached, gate the cast on the
+        // shared `is_valid_cast` (single source of truth, also used by
+        // typeck). We derive `from`/`to` `Ty`s from the value and the target
+        // `TypeRef`; if either can't be typed we skip the gate and fall back to
+        // the primitive-conversion allowlist (pre-§13.2 behavior).
+        if let (Some(ctx), Some(map)) = (self.ty_ctx, &self.primitive_tys) {
+            if let Some(interner) = &self.interner {
+                if let (Some(from_ty), Some(to_ty)) =
+                    (ty_of_value(map, &val), ty_of_typeref(map, ty, interner))
+                {
+                    if !glyim_type::is_valid_cast(ctx, from_ty, to_ty) {
+                        return Err(ConstEvalError::new(
+                            "illegal cast rejected by is_valid_cast",
+                            span,
+                        ));
+                    }
+                }
+            }
+        }
         match ty {
             TypeRef::Path(path) => {
                 if let Some(name) = path.as_name() {
-                    let s = glyim_core::interner::Interner::default();
-                    let n = s.resolve(name);
+                    let interner: &glyim_core::interner::Interner = match self.interner {
+                        Some(i) => i,
+                        None => fallback_interner(),
+                    };
+                    let n = interner.resolve(name);
                     match n {
                         "i8" => val
                             .as_i128()
