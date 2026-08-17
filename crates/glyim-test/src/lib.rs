@@ -48,7 +48,7 @@ pub use harness::{
 pub use mock::{MockBorrowckCtx, MockCodegen, MockLowerCtx, MockSolver, TestDbBuilder};
 pub use phase::{AnalysisTester, CodegenTester, CompilationTrace, FrontendTester, MirGenTester};
 pub use property::check_ty_property;
-pub use snapshot::{snapshot_cst, snapshot_def_map, snapshot_mir};
+pub use snapshot::{snapshot_cst, snapshot_def_map, snapshot_mir, snapshot_mir_verbose};
 
 use glyim_type::{TyCtx, TyCtxMut};
 

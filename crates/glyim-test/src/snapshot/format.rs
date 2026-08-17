@@ -1,6 +1,36 @@
+use glyim_core::primitives::Mutability;
+use glyim_core::interner::Interner;
+use glyim_mir::{LocalDecl, LocalIdx, VarDebugInfoValue};
 use glyim_type::TyCtx;
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+// Names interned for snapshot annotations must round-trip through a single
+// interner instance (lasso's ThreadedRodeo is per-instance). The test that
+// builds a body and this formatter must share this exact instance, otherwise
+// `resolve` panics on an id it does not own.
+static SNAPSHOT_INTERNER: OnceLock<Interner> = OnceLock::new();
+
+/// Intern a name via the snapshot module's shared interner. Use this (not a
+/// fresh `Interner`) when constructing `VarDebugInfo` expected to be rendered
+/// by `format_mir_body_verbose`.
+#[allow(dead_code)]
+pub(crate) fn intern_name(s: &str) -> glyim_core::Name {
+    SNAPSHOT_INTERNER.get_or_init(Interner::new).intern(s)
+}
 
 pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
+    format_mir_body_impl(ctx, body, false)
+}
+
+/// Verbose variant (plan §24.3): annotates every place with its resolved type
+/// (e.g. `$1: i32 = ...`) and each local with its debug-info variable name
+/// (e.g. `$1 /* x */: i32`). The default `format_mir_body` stays terse.
+pub fn format_mir_body_verbose(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
+    format_mir_body_impl(ctx, body, true)
+}
+
+fn format_mir_body_impl(ctx: &TyCtx, body: &glyim_mir::Body, verbose: bool) -> String {
     let mut out = String::new();
     out.push_str(&format!("fn {}():\n", body.owner));
     out.push_str(&format!("  arg_count: {}\n", body.arg_count));
@@ -9,16 +39,45 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
         glyim_type::PrintTy::new(body.return_ty, ctx)
     ));
     out.push_str("  locals:\n");
+    // Build a map from LocalIdx -> debug variable name for verbose annotation.
+    let debug_names: HashMap<LocalIdx, String> = if verbose {
+        body.var_debug_info
+            .iter()
+            .filter_map(|info| match &info.value {
+                VarDebugInfoValue::Place(place) if place.projection.is_empty() => {
+                    Some((place.local, SNAPSHOT_INTERNER.get_or_init(Interner::new).resolve(info.name).to_string()))
+                }
+                _ => None,
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
     for (idx, local) in body.locals.iter_enumerated() {
         let mut_str = match local.mutability {
-            glyim_core::primitives::Mutability::Mut => "mut",
-            glyim_core::primitives::Mutability::Not => "imm",
+            Mutability::Mut => "mut",
+            Mutability::Not => "imm",
+        };
+        let dbg = if verbose {
+            if let Some(name) = debug_names.get(&idx) {
+                format!(" /* {} */", name)
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
         };
         out.push_str(&format!(
-            "    ${}: {} ({})\n",
+            "    ${}{}: {} ({}){}\n",
             idx.to_raw(),
+            dbg,
             glyim_type::PrintTy::new(local.ty, ctx),
             mut_str,
+            if verbose {
+                format!("  // {}", place_type_annotation(local, ctx))
+            } else {
+                String::new()
+            },
         ));
     }
     if !body.var_debug_info.is_empty() {
@@ -26,10 +85,10 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
         for info in &body.var_debug_info {
             out.push_str(&format!("    {:?}: ", info.name));
             match &info.value {
-                glyim_mir::VarDebugInfoValue::Place(place) => {
-                    out.push_str(&format!("{}\n", format_place(place)));
+                VarDebugInfoValue::Place(place) => {
+                    out.push_str(&format!("{}\n", format_place(place, verbose, ctx, &body.locals)));
                 }
-                glyim_mir::VarDebugInfoValue::Const(c) => {
+                VarDebugInfoValue::Const(c) => {
                     out.push_str(&format!("const {}\n", format_const(c)));
                 }
             }
@@ -39,20 +98,36 @@ pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
         let _cleanup_tag = if block.is_cleanup { " (cleanup)" } else { "" };
         out.push_str(&format!("  bb{}:\n", idx.to_raw()));
         for stmt in &block.statements {
-            out.push_str(&format!("    {}\n", format_statement(&stmt.kind)));
+            out.push_str(&format!(
+                "    {}\n",
+                format_statement(&stmt.kind, verbose, ctx, &body.locals)
+            ));
         }
         out.push_str(&format!(
             "    -> {}\n",
-            format_terminator(&block.terminator.kind)
+            format_terminator(&block.terminator.kind, verbose, ctx, &body.locals)
         ));
     }
     out
 }
 
-fn format_statement(kind: &glyim_mir::StatementKind) -> String {
+fn place_type_annotation(local: &LocalDecl, ctx: &TyCtx) -> String {
+    format!("{}", glyim_type::PrintTy::new(local.ty, ctx))
+}
+
+fn format_statement(
+    kind: &glyim_mir::StatementKind,
+    verbose: bool,
+    ctx: &TyCtx,
+    locals: &glyim_core::IndexVec<LocalIdx, LocalDecl>,
+) -> String {
     match kind {
         glyim_mir::StatementKind::Assign(place, rvalue) => {
-            format!("{} = {}", format_place(place), format_rvalue(rvalue))
+            format!(
+                "{} = {}",
+                format_place(place, verbose, ctx, locals),
+                format_rvalue(rvalue, verbose, ctx, locals)
+            )
         }
         glyim_mir::StatementKind::StorageLive(local) => {
             format!("StorageLive(${})", local.to_raw())
@@ -64,25 +139,41 @@ fn format_statement(kind: &glyim_mir::StatementKind) -> String {
     }
 }
 
-fn format_rvalue(rvalue: &glyim_mir::Rvalue) -> String {
+fn format_rvalue(
+    rvalue: &glyim_mir::Rvalue,
+    verbose: bool,
+    ctx: &TyCtx,
+    locals: &glyim_core::IndexVec<LocalIdx, LocalDecl>,
+) -> String {
     match rvalue {
-        glyim_mir::Rvalue::Use(op) => format!("Use({})", format_operand(op)),
+        glyim_mir::Rvalue::Use(op) => format!("Use({})", format_operand(op, verbose, ctx, locals)),
         glyim_mir::Rvalue::Ref(place, bk) => {
-            format!("Ref({}, {})", format_borrow_kind(bk), format_place(place))
+            format!(
+                "Ref({}, {})",
+                format_borrow_kind(bk),
+                format_place(place, verbose, ctx, locals)
+            )
         }
         glyim_mir::Rvalue::BinaryOp(op, pair) => {
             format!(
                 "BinaryOp({:?}, {}, {})",
                 op,
-                format_operand(&pair.0),
-                format_operand(&pair.1)
+                format_operand(&pair.0, verbose, ctx, locals),
+                format_operand(&pair.1, verbose, ctx, locals)
             )
         }
         glyim_mir::Rvalue::UnaryOp(op, val) => {
-            format!("UnaryOp({:?}, {})", op, format_operand(val))
+            format!(
+                "UnaryOp({:?}, {})",
+                op,
+                format_operand(val, verbose, ctx, locals)
+            )
         }
         glyim_mir::Rvalue::Aggregate(kind, ops) => {
-            let args: Vec<String> = ops.iter().map(format_operand).collect();
+            let args: Vec<String> = ops
+                .iter()
+                .map(|op| format_operand(op, verbose, ctx, locals))
+                .collect();
             format!(
                 "Aggregate({}, [{}])",
                 format_aggregate_kind(kind),
@@ -90,21 +181,25 @@ fn format_rvalue(rvalue: &glyim_mir::Rvalue) -> String {
             )
         }
         glyim_mir::Rvalue::Discriminant(place) => {
-            format!("Discriminant({})", format_place(place))
+            format!("Discriminant({})", format_place(place, verbose, ctx, locals))
         }
         glyim_mir::Rvalue::Len(place) => {
-            format!("Len({})", format_place(place))
+            format!("Len({})", format_place(place, verbose, ctx, locals))
         }
         glyim_mir::Rvalue::Cast(kind, op, ty) => {
             format!(
                 "Cast({}, {}, {:?})",
                 format_cast_kind(kind),
-                format_operand(op),
+                format_operand(op, verbose, ctx, locals),
                 ty
             )
         }
         glyim_mir::Rvalue::Repeat(op, count) => {
-            format!("Repeat({}, {})", format_operand(op), format_const(count))
+            format!(
+                "Repeat({}, {})",
+                format_operand(op, verbose, ctx, locals),
+                format_const(count)
+            )
         }
     }
 }
@@ -152,7 +247,12 @@ fn format_cast_kind(kind: &glyim_mir::CastKind) -> String {
     }
 }
 
-fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
+fn format_terminator(
+    kind: &glyim_mir::TerminatorKind,
+    verbose: bool,
+    ctx: &TyCtx,
+    locals: &glyim_core::IndexVec<LocalIdx, LocalDecl>,
+) -> String {
     match kind {
         glyim_mir::TerminatorKind::Goto { target } => {
             format!("Goto(bb{})", target.to_raw())
@@ -168,7 +268,7 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
                 .collect();
             format!(
                 "SwitchInt(discr={}, ty={:?}, [{}], otherwise=bb{})",
-                format_operand(discr),
+                format_operand(discr, verbose, ctx, locals),
                 switch_ty,
                 branches.join(", "),
                 targets.otherwise().to_raw()
@@ -183,7 +283,10 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
             target,
             cleanup,
         } => {
-            let args_fmt: Vec<String> = args.iter().map(format_operand).collect();
+            let args_fmt: Vec<String> = args
+                .iter()
+                .map(|op| format_operand(op, verbose, ctx, locals))
+                .collect();
             let target_fmt = match target {
                 Some(bb) => format!("Some(bb{})", bb.to_raw()),
                 None => "None".to_string(),
@@ -194,9 +297,9 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
             };
             format!(
                 "Call(func={}, args=[{}], dest={}, target={}, cleanup={})",
-                format_operand(func),
+                format_operand(func, verbose, ctx, locals),
                 args_fmt.join(", "),
-                format_place(destination),
+                format_place(destination, verbose, ctx, locals),
                 target_fmt,
                 cleanup_fmt,
             )
@@ -214,7 +317,7 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
             };
             format!(
                 "Assert(cond={}, expected={}, target=bb{}, cleanup={}, msg={})",
-                format_operand(cond),
+                format_operand(cond, verbose, ctx, locals),
                 expected,
                 target.to_raw(),
                 cleanup_fmt,
@@ -232,7 +335,7 @@ fn format_terminator(kind: &glyim_mir::TerminatorKind) -> String {
             };
             format!(
                 "Drop({}, target=bb{}, cleanup={})",
-                format_place(place),
+                format_place(place, verbose, ctx, locals),
                 target.to_raw(),
                 cleanup_fmt,
             )
@@ -249,9 +352,14 @@ fn format_assert_message(msg: &glyim_mir::AssertMessage) -> String {
     }
 }
 
-fn format_place(place: &glyim_mir::Place) -> String {
+fn format_place(
+    place: &glyim_mir::Place,
+    verbose: bool,
+    ctx: &TyCtx,
+    locals: &glyim_core::IndexVec<LocalIdx, LocalDecl>,
+) -> String {
     let base = format!("${}", place.local.to_raw());
-    if place.projection.is_empty() {
+    let mut s = if place.projection.is_empty() {
         base
     } else {
         let proj: Vec<String> = place
@@ -260,7 +368,12 @@ fn format_place(place: &glyim_mir::Place) -> String {
             .map(format_projection_elem)
             .collect();
         format!("{}.{}", base, proj.join("."))
+    };
+    if verbose {
+        let ty = place.ty(ctx, locals);
+        s.push_str(&format!(": {}", glyim_type::PrintTy::new(ty, ctx)));
     }
+    s
 }
 
 fn format_projection_elem(elem: &glyim_mir::ProjectionElem) -> String {
@@ -285,10 +398,19 @@ fn format_projection_elem(elem: &glyim_mir::ProjectionElem) -> String {
     }
 }
 
-fn format_operand(op: &glyim_mir::Operand) -> String {
+fn format_operand(
+    op: &glyim_mir::Operand,
+    verbose: bool,
+    ctx: &TyCtx,
+    locals: &glyim_core::IndexVec<LocalIdx, LocalDecl>,
+) -> String {
     match op {
-        glyim_mir::Operand::Copy(place) => format!("Copy({})", format_place(place)),
-        glyim_mir::Operand::Move(place) => format!("Move({})", format_place(place)),
+        glyim_mir::Operand::Copy(place) => {
+            format!("Copy({})", format_place(place, verbose, ctx, locals))
+        }
+        glyim_mir::Operand::Move(place) => {
+            format!("Move({})", format_place(place, verbose, ctx, locals))
+        }
         glyim_mir::Operand::Constant(c) => format!("Const({})", format_const(c)),
     }
 }
