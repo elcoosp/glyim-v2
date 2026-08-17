@@ -286,21 +286,101 @@ impl SymbolIndex {
     }
 
     pub fn query(&self, prefix: &str, limit: usize) -> Vec<&SymbolInfo> {
-        let mut results = Vec::new();
+        // Tiered matching (plan §22.3): exact > prefix > contains > fuzzy
+        // subsequence. Exact/prefix/contains stay the fast paths; fuzzy is a
+        // final fallback so common lookups stay predictable, while subsequence
+        // typos (e.g. `gsrbt` -> `get_something_related_by_type`) still surface.
+        if prefix.is_empty() {
+            return self
+                .by_name
+                .values()
+                .flat_map(|v| v.iter())
+                .take(limit)
+                .collect();
+        }
+
+        let mut exact = Vec::new();
+        let mut prefix_matches = Vec::new();
+        let mut contains = Vec::new();
+        let mut fuzzy: Vec<(usize, &SymbolInfo)> = Vec::new();
+
         for (name, symbols) in &self.by_name {
-            if name.starts_with(prefix) && results.len() < limit {
-                results.extend(symbols.iter().take(limit - results.len()));
+            if name == prefix {
+                exact.extend(symbols.iter());
+            } else if name.starts_with(prefix) {
+                prefix_matches.extend(symbols.iter());
+            } else if name.contains(prefix) {
+                contains.extend(symbols.iter());
+            } else if let Some(score) = Self::fuzzy_score(prefix, name) {
+                fuzzy.extend(symbols.iter().map(|s| (score, s)));
             }
         }
-        if results.is_empty() {
-            for (name, symbols) in &self.by_name {
-                if name.contains(prefix) && results.len() < limit {
-                    results.extend(symbols.iter().take(limit - results.len()));
-                }
-            }
+
+        let mut results: Vec<&SymbolInfo> = Vec::new();
+        results.extend(exact.iter().take(limit.saturating_sub(results.len())));
+        results.extend(
+            prefix_matches
+                .iter()
+                .take(limit.saturating_sub(results.len())),
+        );
+        results.extend(
+            contains
+                .iter()
+                .take(limit.saturating_sub(results.len())),
+        );
+        if results.len() < limit {
+            fuzzy.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
+            results.extend(
+                fuzzy
+                    .iter()
+                    .map(|(_, s)| *s)
+                    .take(limit.saturating_sub(results.len())),
+            );
         }
         results
     }
+
+/// Subsequence-based fuzzy scorer (plan §22.3), Sublime-Text-style:
+/// - requires every character of `query` to appear in order in `candidate`;
+/// - consecutive matches and word-boundary (after `_`/start) matches score higher;
+/// - returns `None` when `query` is not a subsequence of `candidate`.
+fn fuzzy_score(query: &str, candidate: &str) -> Option<usize> {
+    if query.is_empty() || query.len() > candidate.len() {
+        return None;
+    }
+    let q: Vec<char> = query.chars().collect();
+    let c: Vec<char> = candidate.chars().collect();
+    let mut qi = 0usize;
+    let mut prev_ci = None::<usize>;
+    let mut score = 0usize;
+    let mut is_first = true;
+    for (ci, &cc) in c.iter().enumerate() {
+        if qi >= q.len() {
+            break;
+        }
+        if cc != q[qi] {
+            continue;
+        }
+        score += 1;
+        if let Some(pci) = prev_ci {
+            if pci + 1 == ci {
+                score += 4;
+            }
+        }
+        let at_boundary = is_first || ci == 0 || c[ci - 1] == '_';
+        if at_boundary {
+            score += 3;
+        }
+        prev_ci = Some(ci);
+        is_first = false;
+        qi += 1;
+    }
+    if qi == q.len() {
+        Some(score * 100 + (c.len() - q.len()))
+    } else {
+        None
+    }
+}
 
     pub fn clear_file(&mut self, file_id: FileId) {
         if let Some(symbols) = self.by_file.remove(&file_id) {

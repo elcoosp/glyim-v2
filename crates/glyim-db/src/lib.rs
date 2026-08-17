@@ -66,7 +66,16 @@ impl Database {
     }
 
     pub fn set_mono_cache(&self, items: Vec<String>) {
-        *self.mono_cache.write() = Some(items);
+        // Plan §3.1: the mono cache must not silently accumulate duplicate items
+        // when the same monomorphization is requested more than once. De-duplicate
+        // while preserving first-seen order so lookups via `mono_cache()` remain
+        // stable and O(n) insertion cost stays bounded.
+        let mut seen = std::collections::HashSet::new();
+        let deduped: Vec<String> = items
+            .into_iter()
+            .filter(|item| seen.insert(item.clone()))
+            .collect();
+        *self.mono_cache.write() = Some(deduped);
     }
 
     pub fn mono_cache(&self) -> parking_lot::RwLockReadGuard<'_, Option<Vec<String>>> {
@@ -103,5 +112,29 @@ mod tests {
         assert_eq!(db.config().name, "test_crate");
         assert_eq!(db.config().target_triple, "aarch64-unknown-linux-gnu");
         assert_eq!(db.config().opt_level, 2);
+    }
+
+    #[test]
+    fn test_mono_cache_dedups_preserving_order() {
+        // Plan §3.1: set_mono_cache must not accumulate duplicates when the same
+        // monomorphization is supplied more than once; first-seen order is kept.
+        let db = Database::default();
+        db.set_mono_cache(vec![
+            "foo".to_string(),
+            "bar".to_string(),
+            "foo".to_string(),
+            "baz".to_string(),
+            "bar".to_string(),
+        ]);
+        let cache = db.mono_cache();
+        let items = cache.as_ref().expect("cache should be populated");
+        assert_eq!(
+            items,
+            &vec![
+                "foo".to_string(),
+                "bar".to_string(),
+                "baz".to_string(),
+            ]
+        );
     }
 }
