@@ -5,6 +5,7 @@ use crate::region::{BoundRegionKind, Region};
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::AdtId;
+use glyim_core::def_id::OpaqueTyId;
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use std::fmt;
@@ -22,6 +23,14 @@ pub trait TypeLookup {
     /// Returns the `AdtDef` for the given ADT, if registered.
     /// Default returns `None`.
     fn adt_def(&self, _adt_id: AdtId) -> Option<&AdtDef> {
+        None
+    }
+    /// Returns the concrete hidden type for an opaque type (`impl Trait` /
+    /// `type X = impl Trait` position), if it has been resolved at its
+    /// defining use. Used by auto-trait computation (§7.2) to recurse into the
+    /// underlying type rather than assuming zero auto traits. Defaults to
+    /// `None` (no hidden type known — treated as no auto traits).
+    fn opaque_hidden_ty(&self, _id: OpaqueTyId) -> Option<Ty> {
         None
     }
     /// Returns the type of the field at the given index in the ADT.

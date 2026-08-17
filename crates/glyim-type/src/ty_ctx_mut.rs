@@ -7,7 +7,7 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ClosureId, CrateId, DefId, FnDefId, LocalDefId};
+use glyim_core::def_id::{AdtId, ClosureId, CrateId, DefId, FnDefId, LocalDefId, OpaqueTyId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
 use crate::lang_items::{LangItem, LangItems};
@@ -24,6 +24,7 @@ pub struct TyCtxMut {
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
+    opaque_hidden: HashMap<OpaqueTyId, Ty>,
     interior_mutable_adt_ids: HashSet<AdtId>,
     interior_mutability_cache: HashMap<AdtId, bool>,
     /// Bumped on every `register_adt`. The interior-mutability cache is invalidated
@@ -61,6 +62,7 @@ impl TyCtxMut {
             resolver,
             auto_trait_registry: AutoTraitRegistry::new(),
             adt_reprs: HashMap::new(),
+            opaque_hidden: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
             interior_mutability_cache: HashMap::new(),
             adt_generation: 0,
@@ -430,6 +432,7 @@ impl TyCtxMut {
             resolver: self.resolver.clone(),
             auto_trait_registry: self.auto_trait_registry.clone(),
             adt_reprs: self.adt_reprs.clone(),
+            opaque_hidden: self.opaque_hidden.clone(),
             interior_mutable_adt_ids: self.interior_mutable_adt_ids.clone(),
             adt_defs: self.adt_defs.clone(),
             trait_defs: self.trait_defs.clone(),
@@ -451,6 +454,7 @@ impl TyCtxMut {
             resolver: self.resolver,
             auto_trait_registry: self.auto_trait_registry,
             adt_reprs: self.adt_reprs,
+            opaque_hidden: self.opaque_hidden,
             interior_mutable_adt_ids: self.interior_mutable_adt_ids,
             adt_defs: self.adt_defs,
             trait_defs: self.trait_defs.clone(),
@@ -471,6 +475,15 @@ impl TyCtxMut {
     pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
         self.interior_mutable_adt_ids.insert(adt_id);
         self.interior_mutability_cache.insert(adt_id, true);
+    }
+
+    /// Record the concrete hidden type for an opaque type (`impl Trait` /
+    /// `type X = impl Trait` position) at its defining use. Consulted by
+    /// auto-trait computation (§7.2) so an opaque type delegates its auto-trait
+    /// set to its underlying concrete type instead of being assumed to have
+    /// none.
+    pub fn register_opaque_hidden(&mut self, opaque_id: OpaqueTyId, hidden: Ty) {
+        self.opaque_hidden.insert(opaque_id, hidden);
     }
 
     /// Record that `adt_id` has an explicit `Drop` impl (or is an owning

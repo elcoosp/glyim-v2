@@ -241,7 +241,24 @@ fn compute_auto_traits_for_kind(
 
         TyKind::Dynamic(_, _) => AutoTraitFlags::empty(),
 
-        TyKind::Opaque(_, _) | TyKind::Projection(_) => AutoTraitFlags::empty(),
+        TyKind::Opaque(_, _) | TyKind::Projection(_) => {
+            // Plan §7.2: an opaque type (`impl Trait` return position) must
+            // delegate its auto-trait set to its *defining-use* concrete type
+            // rather than stopping at the wrapper with zero auto traits. The
+            // hidden type is provided by the `TypeLookup` (populated by typeck
+            // at the defining site); if known, recurse into it. The `Projection`
+            // half (generic/normalized associated-type projections) requires
+            // trait-solver normalization (§8/§9.4) and is intentionally left as
+            // empty here.
+            if let TyKind::Opaque(id, _) = lookup.ty_kind(ty) {
+                if let Some(hidden) = lookup.opaque_hidden_ty(*id) {
+                    return compute_auto_traits_recursive(
+                        hidden, lookup, registry, adt_reprs, cache, evaluating,
+                    );
+                }
+            }
+            AutoTraitFlags::empty()
+        }
 
         TyKind::Infer(_) | TyKind::Param(_) | TyKind::Bound(_, _) | TyKind::Error => {
             AutoTraitFlags::empty()

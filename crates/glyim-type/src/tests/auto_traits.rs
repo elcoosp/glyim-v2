@@ -876,6 +876,41 @@ fn opaque_type_has_no_auto_traits() {
     assert!(!ctx.auto_trait_flags(ty).contains(AutoTraitFlags::SYNC));
 }
 
+/// Plan §7.2: an opaque type (`impl Trait` return position) must delegate its
+/// auto-trait set to its *defining-use* concrete (hidden) type rather than
+/// assuming zero auto traits. Here the hidden type is a `*const i32`, which is
+/// `Unpin` only (not `Send`/`Sync`), so the opaque must be `Unpin` only too.
+#[test]
+fn opaque_type_delegates_to_registered_hidden_type() {
+    let (ctx, ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let inner = c.mk_ty(TyKind::Int(IntTy::I32));
+        let hidden = c.mk_ty(TyKind::RawPtr(inner, Mutability::Not));
+        c.register_opaque_hidden(OpaqueTyId::from_raw(0), hidden);
+        let substs = c.intern_substitution(vec![]);
+        c.mk_ty(TyKind::Opaque(OpaqueTyId::from_raw(0), substs))
+    });
+    let flags = ctx.auto_trait_flags(ty);
+    assert!(!flags.contains(AutoTraitFlags::SEND));
+    assert!(!flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
+/// Plan §7.2: when the hidden type is `Send`/`Sync` (here `i32`), the opaque
+/// must report `Send`/`Sync` instead of the old all-empty behaviour.
+#[test]
+fn opaque_type_inherits_send_from_hidden_type() {
+    let (ctx, ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {
+        let hidden = c.mk_ty(TyKind::Int(IntTy::I32));
+        c.register_opaque_hidden(OpaqueTyId::from_raw(1), hidden);
+        let substs = c.intern_substitution(vec![]);
+        c.mk_ty(TyKind::Opaque(OpaqueTyId::from_raw(1), substs))
+    });
+    let flags = ctx.auto_trait_flags(ty);
+    assert!(flags.contains(AutoTraitFlags::SEND));
+    assert!(flags.contains(AutoTraitFlags::SYNC));
+    assert!(flags.contains(AutoTraitFlags::UNPIN));
+}
+
 #[test]
 fn projection_type_has_no_auto_traits() {
     let (ctx, ty) = with_fresh_ty_ctx(|c: &mut TyCtxMut| {

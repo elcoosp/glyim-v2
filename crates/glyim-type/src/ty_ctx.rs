@@ -8,7 +8,7 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId};
+use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId, OpaqueTyId};
 use glyim_core::interner::{Interner, Name};
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
@@ -21,6 +21,11 @@ pub struct TyCtx {
     pub(crate) resolver: Interner,
     pub(crate) auto_trait_registry: AutoTraitRegistry,
     pub(crate) adt_reprs: HashMap<AdtId, AdtRepr>,
+    /// Concrete hidden types for opaque types (`impl Trait` / `type X = impl
+    /// Trait`). Populated at the opaque type's defining use (by typeck) so that
+    /// auto-trait computation (§7.2) can recurse into the underlying type
+    /// instead of assuming zero auto traits.
+    pub(crate) opaque_hidden: HashMap<OpaqueTyId, Ty>,
     pub(crate) interior_mutable_adt_ids: HashSet<AdtId>,
     pub adt_defs: HashMap<AdtId, AdtDef>,
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
@@ -350,6 +355,9 @@ impl TypeLookup for TyCtx {
     }
     fn adt_def(&self, adt_id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&adt_id)
+    }
+    fn opaque_hidden_ty(&self, id: OpaqueTyId) -> Option<Ty> {
+        self.opaque_hidden.get(&id).copied()
     }
     fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
