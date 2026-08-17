@@ -3,6 +3,7 @@
 
 use glyim_core::abi::ALIGN_MAX;
 use glyim_core::arena::IndexVec;
+use glyim_core::def_id::TraitDefId;
 use glyim_core::primitives::{Abi, TargetInfo};
 use glyim_type::adt_def::{AdtDef, AdtKind};
 use glyim_type::*;
@@ -174,6 +175,12 @@ pub enum LayoutError {
     Unsized(Ty),
     Cycle(Ty),
     AlignmentExceedsRuntime { ty: Ty, align: u64, max: u64 },
+    /// A trait object's trait definition could not be resolved during vtable
+    /// construction. This indicates a pipeline-ordering bug: an unresolvable
+    /// trait should have been caught by typeck's object-safety check long
+    /// before layout runs, so layout surfaces it as a hard error rather than
+    /// emitting a silently-empty vtable that would miscall through null slots.
+    UnknownTrait(TraitDefId),
 }
 
 pub struct SimpleLayoutComputer<'a> {
@@ -828,32 +835,32 @@ impl crate::vtable::VTableComputer for SimpleLayoutComputer<'_> {
         &self,
         trait_def_id: glyim_core::TraitDefId,
         concrete_ty: glyim_type::Ty,
-    ) -> Option<crate::vtable::VTableLayout> {
-        let concrete_layout = self.layout_of(concrete_ty).ok()?;
+    ) -> Result<crate::vtable::VTableLayout, crate::LayoutError> {
+        // Propagate any real layout error (e.g. unsized/concrete type issues)
+        // directly; it is independent of trait resolution.
+        let concrete_layout = self.layout_of(concrete_ty)?;
 
-        // Real vtable generation: the method slots are determined by the
-        // trait's actual method set, not an empty placeholder. Each trait
-        // method becomes one vtable entry carrying its signature and the
-        // (canonical) method `FnDefId` used for dispatch.
-        let methods = self
+        // Plan §10.1: a missing trait definition is a hard error, not a
+        // silently-empty vtable. An unresolvable trait should have been caught
+        // by typeck's object-safety check (§9.4) long before layout runs.
+        let trait_def = self
             .ctx
             .trait_def(trait_def_id)
-            .map(|trait_def| {
-                trait_def
-                    .methods
-                    .iter()
-                    .map(|method| crate::vtable::VTableEntry {
-                        name: method.name,
-                        sig: method.sig.clone(),
-                        fn_def_id: method
-                            .fn_def_id
-                            .unwrap_or_else(|| glyim_core::def_id::FnDefId::from_raw(u32::MAX)),
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            .ok_or(crate::LayoutError::UnknownTrait(trait_def_id))?;
 
-        Some(crate::vtable::VTableLayout {
+        let methods = trait_def
+            .methods
+            .iter()
+            .map(|method| crate::vtable::VTableEntry {
+                name: method.name,
+                sig: method.sig.clone(),
+                fn_def_id: method
+                    .fn_def_id
+                    .unwrap_or_else(|| glyim_core::def_id::FnDefId::from_raw(u32::MAX)),
+            })
+            .collect::<Vec<_>>();
+
+        Ok(crate::vtable::VTableLayout {
             trait_def_id,
             concrete_ty,
             size: concrete_layout.size,

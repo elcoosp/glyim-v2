@@ -332,7 +332,7 @@ fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Pa
                     }
                     SyntaxKind::Ident => {
                         let name = interner.intern(token.text());
-                        segments.push(PathSegment { name });
+                        segments.push(PathSegment { name, generic_args: None });
                     }
                     // Non-path tokens (punctuation, whitespace, etc.) are silently
                     // skipped — only identifiers and keywords contribute to the path.
@@ -373,6 +373,10 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
     let interner = Interner::default();
     let mut def_counter: u32 = 1;
     let mut def_to_module: HashMap<LocalDefId, ModuleId> = HashMap::new();
+    // Plan §4.1: collect `use` declarations during the structural pass instead
+    // of resolving them inline, so import resolution can run as a fixed-point
+    // loop afterward (required for cross-module globs and import cycles).
+    let mut use_decls: Vec<(SyntaxNode, ModuleId, Visibility)> = Vec::new();
 
     let root_module = modules.push(ModuleData {
         parent: None,
@@ -393,7 +397,34 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         &interner,
         &mut def_counter,
         &mut def_to_module,
+        &mut use_decls,
     );
+
+    // Plan §4.1: fixed-point import resolution. Re-run every pending `use`
+    // declaration until a full pass makes no progress (resolves no new name).
+    // `declare` is idempotent (IndexMap insert), so re-processing settled
+    // imports is a no-op. Cross-module globs / cycles can only be resolved once
+    // all modules and their public items are present, which the structural pass
+    // guarantees before this loop runs.
+    let mut prev_count = scope_entry_count(&modules);
+    loop {
+        for (node, module, vis) in &use_decls {
+            process_use_decl(node, *module, &mut modules, &interner, vis.clone());
+        }
+        let new_count = scope_entry_count(&modules);
+        if new_count == prev_count {
+            break;
+        }
+        prev_count = new_count;
+        // Guard against non-terminating resolution in pathological inputs.
+        if prev_count > modules.len() * 1024 {
+            diagnostics.push(GlyimDiagnostic::parse_error(
+                Span::DUMMY,
+                "import resolution did not reach a fixed point".to_string(),
+            ));
+            break;
+        }
+    }
 
     validate_import_visibility(&modules, &def_to_module, &interner, &mut diagnostics);
 
@@ -404,6 +435,15 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         interner,
     };
     (def_map, diagnostics)
+}
+
+/// Total number of declarations across all module scopes (used by the §4.1
+/// fixed-point import-resolution loop to detect when a pass makes no progress).
+fn scope_entry_count(modules: &IndexVec<ModuleId, ModuleData>) -> usize {
+    modules
+        .iter()
+        .map(|m| m.scope.types.len() + m.scope.values.len() + m.scope.macros.len())
+        .sum()
 }
 
 fn process_use_decl(
@@ -594,6 +634,7 @@ fn collect_items(
     interner: &Interner,
     def_counter: &mut u32,
     def_to_module: &mut HashMap<LocalDefId, ModuleId>,
+    use_decls: &mut Vec<(SyntaxNode, ModuleId, Visibility)>,
 ) {
     for child in node.children() {
         match child.kind() {
@@ -645,6 +686,7 @@ fn collect_items(
                         interner,
                         def_counter,
                         def_to_module,
+                        use_decls,
                     );
                 }
             }
@@ -686,8 +728,12 @@ fn collect_items(
             }
 
             SyntaxKind::UseDecl => {
+                // Plan §4.1: defer resolution to the fixed-point loop in
+                // `build_def_map` instead of resolving inline here. The syntax
+                // node is an Rc-backed handle and is safe to clone for later
+                // re-processing.
                 let vis = visibility_of_node(&child, interner);
-                process_use_decl(&child, parent_module, modules, interner, vis);
+                use_decls.push((child.clone(), parent_module, vis));
             }
 
             // Other syntax kinds (comments, expressions inside blocks, etc.) are
@@ -891,7 +937,7 @@ pub(crate) fn is_accessible_from(
                 &glyim_core::path::Path {
                     segments: path
                         .iter()
-                        .map(|n| glyim_core::path::PathSegment { name: *n })
+                        .map(|n| glyim_core::path::PathSegment { name: *n, generic_args: None })
                         .collect(),
                     kind: glyim_core::path::PathKind::Plain,
                 },

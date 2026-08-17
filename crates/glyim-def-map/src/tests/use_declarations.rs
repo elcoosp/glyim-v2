@@ -338,3 +338,32 @@ fn u08_t12_glob_with_nested_path() {
         "UdpSocket should be imported via glob"
     );
 }
+
+// Plan §4.1: cross-module glob resolution must work even when the glob source
+// module's own re-exports are only finalized after a fixed-point pass. Here `b`
+// globs `a`'s public items; `c` globs `b`. The import in `c` only resolves once
+// `b`'s glob (pulling `a`'s items) has itself been applied — a single forward
+// pass would leave `c`'s glob empty.
+#[test]
+fn u08_t13_cross_module_glob_fixed_point() {
+    let source = r#"
+        mod a {
+            pub struct Widget;
+        }
+        mod b {
+            pub use crate::a::*;
+        }
+        mod c {
+            pub use crate::b::*;
+        }
+        use crate::c::Widget;
+    "#;
+    let (def_map, _) = get_def_map(source);
+
+    let root_mod = def_map.root;
+    let widget_name = def_map.interner.intern("Widget");
+    assert!(
+        def_map.modules[root_mod].resolve(widget_name).is_some(),
+        "Widget should resolve in root via chained globs c -> b -> a"
+    );
+}

@@ -378,6 +378,17 @@ fn vtable_layout_offsets_with_methods() {
     use glyim_layout::vtable::{VTableComputer, VTableEntry, VTableLayout};
     use glyim_type::FnSig;
     let (ctx, dyn_ty) = with_fresh_ty_ctx(|ctx| {
+        // Register trait id 1 (no methods) so vtable_of resolves it to a
+        // legitimately-empty method list (plan §10.1: an *unregistered* trait
+        // is now a hard `UnknownTrait` error rather than a silent empty vtable).
+        let trait_name = glyim_core::Interner::new().intern("TestTrait");
+        ctx.register_trait_def(
+            TraitDefId::from_raw(1),
+            glyim_type::TraitDef {
+                name: trait_name,
+                methods: vec![],
+            },
+        );
         let empty_subst = ctx.intern_substitution(vec![]);
         let trait_ref = TraitRef {
             def_id: TraitDefId::from_raw(1),

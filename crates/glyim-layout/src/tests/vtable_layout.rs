@@ -136,3 +136,18 @@ fn s15_vtable_computer_populates_methods_from_trait_def() {
     assert_eq!(mem.size, 40);
 }
 
+// Plan §10.1: an unresolvable trait (no registered `TraitDef`) must surface as
+// a hard `LayoutError::UnknownTrait` rather than a silently-empty vtable that
+// would miscall through null slots at runtime.
+#[test]
+fn s15_vtable_unknown_trait_is_hard_error() {
+    let (_ctx, concrete_ty) = with_fresh_ty_ctx(|c| c.bool_ty());
+    let computer = SimpleLayoutComputer::new(&_ctx, TargetInfo::x86_64());
+    let result = computer.vtable_of(glyim_core::TraitDefId::from_raw(999), concrete_ty);
+    assert!(
+        matches!(result, Err(crate::LayoutError::UnknownTrait(_))),
+        "missing trait must be a hard error, got {:?}",
+        result
+    );
+}
+

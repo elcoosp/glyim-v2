@@ -71,5 +71,14 @@ impl VTableLayout {
 /// Trait for layout computers that can compute vtable layouts.
 pub trait VTableComputer {
     /// Compute the vtable layout for a given trait and concrete type.
-    fn vtable_of(&self, trait_def_id: TraitDefId, concrete_ty: Ty) -> Option<VTableLayout>;
+    ///
+    /// Returns `Err(LayoutError::UnknownTrait)` when the trait definition
+    /// cannot be resolved, rather than silently producing an empty vtable
+    /// (plan §10.1). Supertrait/associated-type ordering is coordinated with
+    /// the trait solver (§9.4).
+    fn vtable_of(
+        &self,
+        trait_def_id: TraitDefId,
+        concrete_ty: Ty,
+    ) -> Result<VTableLayout, crate::LayoutError>;
 }

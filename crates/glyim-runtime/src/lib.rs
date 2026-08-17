@@ -791,10 +791,24 @@ pub unsafe extern "C" fn glyim_process_wait_output(
 /// request e.g. `SIGTERM` (15) for graceful shutdown vs `SIGKILL` (9) for an
 /// abrupt termination. An out-of-range signal falls back to `SIGKILL`.
 ///
-/// On Windows, POSIX signals do not exist; the `signal` parameter is ignored
-/// and the process is always terminated via `TerminateProcess` (equivalent to
-/// `SIGKILL`). This platform gap is documented rather than silently dropping
-/// the parameter.
+/// On Windows (plan §17.3), POSIX signals do not exist, so the `signal`
+/// parameter must be *mapped* rather than ignored. The intended semantics are:
+///
+/// | `signal`             | Windows behavior                                              |
+/// |----------------------|--------------------------------------------------------------|
+/// | `SIGTERM` (15)       | `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)` — graceful,    |
+/// |                      |   cooperating console apps observe the event and exit cleanly|
+/// | `SIGKILL` (9) / other| `TerminateProcess(handle, 1)` — hard, immediate termination |
+/// | out-of-range         | falls back to hard `TerminateProcess`                       |
+///
+/// A hard `TerminateProcess` is equivalent to `SIGKILL`; `GenerateConsoleCtrlEvent`
+/// is the graceful counterpart to `SIGTERM`. **Current status:** the
+/// `cfg(not(unix))` branch below always performs a hard `TerminateProcess` and
+/// does not yet branch on `signal`; wiring the `GenerateConsoleCtrlEvent` path
+/// requires Windows-only `winapi`/`windows` bindings and can only be compiled
+/// and tested on a Windows host (this build is macOS, so the branch is
+/// documented but not yet behaviorally split). The platform gap is documented
+/// here rather than silently dropping the parameter.
 ///
 /// The handle remains valid after `kill`; use `wait` or `wait_output` to
 /// reap the child afterward.
