@@ -27,6 +27,7 @@ mod string_recovery;
 mod strings;
 mod stub_removal;
 mod meta_fragment;
+mod fragment_kinds;
 mod suffixes;
 mod trivia;
 mod unicode;

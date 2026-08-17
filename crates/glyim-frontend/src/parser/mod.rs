@@ -185,6 +185,22 @@ pub fn try_parse_fragment(kind: &str, src: &str) -> Option<()> {
     if kind == "meta" {
         return validate_meta_fragment(src).then_some(());
     }
+    // De-stubbing plan §5.1: the four fragment specifiers that previously fell
+    // through to `_ => None` (always rejected). Each is validated lexically so
+    // it stays permissive about later macro-expansion diagnostics while still
+    // rejecting structurally invalid input.
+    if kind == "lifetime" {
+        return is_fragment_lifetime(src).then_some(());
+    }
+    if kind == "literal" {
+        return is_fragment_literal(src).then_some(());
+    }
+    if kind == "vis" {
+        return is_fragment_vis(src).then_some(());
+    }
+    if kind == "tt" {
+        return is_fragment_tt(src).then_some(());
+    }
     use glyim_syntax::SyntaxKind;
     let file_id = FileId::from_raw(0);
     // Wrap the fragment in a context that makes it a single top-level construct
@@ -315,6 +331,110 @@ pub fn try_parse_fragment(kind: &str, src: &str) -> Option<()> {
         }
         _ => None,
     }
+}
+
+/// De-stubbing plan §5.1: `:lifetime` fragment — exactly one lifetime token (`'a`).
+fn is_fragment_lifetime(src: &str) -> bool {
+    use glyim_syntax::SyntaxKind;
+    let file_id = FileId::from_raw(0);
+    let tokens: Vec<_> = crate::lexer::lex(src, file_id)
+        .tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, SyntaxKind::Whitespace))
+        .collect();
+    tokens.len() == 1 && tokens[0].kind == SyntaxKind::Lifetime
+}
+
+/// De-stubbing plan §5.1: `:literal` fragment — one literal token, or a
+/// unary-minus literal (`-1`).
+fn is_fragment_literal(src: &str) -> bool {
+    use glyim_syntax::SyntaxKind;
+    let file_id = FileId::from_raw(0);
+    let tokens: Vec<_> = crate::lexer::lex(src, file_id)
+        .tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, SyntaxKind::Whitespace))
+        .collect();
+    match tokens.len() {
+        1 => tokens[0].kind.is_literal(),
+        2 => tokens[0].kind == SyntaxKind::Minus && tokens[1].kind.is_literal(),
+        _ => false,
+    }
+}
+
+/// De-stubbing plan §5.1: `:vis` fragment — matches *zero* tokens (private by
+/// default) or a `pub` / `pub(crate)` / `pub(super)` / `pub(self)` /
+/// `pub(in path)` visibility.
+fn is_fragment_vis(src: &str) -> bool {
+    use glyim_syntax::SyntaxKind;
+    let s = src.trim();
+    if s.is_empty() {
+        return true; // vis matches nothing
+    }
+    let file_id = FileId::from_raw(0);
+    let tokens: Vec<_> = crate::lexer::lex(src, file_id)
+        .tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, SyntaxKind::Whitespace))
+        .collect();
+    if tokens.is_empty() || tokens[0].kind != SyntaxKind::KwPub {
+        return false;
+    }
+    if tokens.len() == 1 {
+        return true; // `pub`
+    }
+    if tokens.len() >= 3
+        && tokens[1].kind == SyntaxKind::LParen
+        && tokens[tokens.len() - 1].kind == SyntaxKind::RParen
+    {
+        match tokens[2].kind {
+            SyntaxKind::KwCrate | SyntaxKind::KwSuper | SyntaxKind::KwSelf => tokens.len() == 4,
+            SyntaxKind::KwIn => true, // `pub(in path)` — path tail is permissively accepted
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+/// De-stubbing plan §5.1: `:tt` fragment — exactly one token tree: a single
+/// leaf token, or one balanced `(...)`/`[...]`/`{...}` delimited group.
+fn is_fragment_tt(src: &str) -> bool {
+    use glyim_syntax::SyntaxKind;
+    let file_id = FileId::from_raw(0);
+    let tokens: Vec<_> = crate::lexer::lex(src, file_id)
+        .tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, SyntaxKind::Whitespace))
+        .collect();
+    if tokens.is_empty() {
+        return false;
+    }
+    if tokens.len() == 1 {
+        return true; // single leaf token
+    }
+    let close = match tokens[0].kind {
+        SyntaxKind::LParen => SyntaxKind::RParen,
+        SyntaxKind::LBrace => SyntaxKind::RBrace,
+        SyntaxKind::LBracket => SyntaxKind::RBracket,
+        _ => return false,
+    };
+    if tokens[tokens.len() - 1].kind != close {
+        return false;
+    }
+    // Inner delimiters must be balanced.
+    let mut depth: i32 = 0;
+    for t in &tokens {
+        match t.kind {
+            SyntaxKind::LParen | SyntaxKind::LBrace | SyntaxKind::LBracket => depth += 1,
+            SyntaxKind::RParen | SyntaxKind::RBrace | SyntaxKind::RBracket => depth -= 1,
+            _ => {}
+        }
+        if depth < 0 {
+            return false;
+        }
+    }
+    depth == 0
 }
 
 /// Validate that `src` is a whole, well-formed meta item (de-stubbing plan
