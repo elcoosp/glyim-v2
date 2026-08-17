@@ -494,6 +494,129 @@ impl<'a> ExpanderImpl<'a> {
                     }
                 }
             }
+            BuiltinMacro::IncludeStr => {
+                // include_str!("path") reads the file as UTF-8 and expands to a
+                // string literal. Invalid UTF-8 is a hard error (no lossy
+                // conversion), per plan §21.2.
+                let args_tt = flatten_token_tree(args_node);
+                match first_string_lit(&args_tt) {
+                    Some(path_str) => {
+                        let path = Path::new(path_str);
+                        let resolved = if path.is_absolute() {
+                            path.to_path_buf()
+                        } else if let Some(vfs) = self.vfs {
+                            match vfs.file_path(call_site.file) {
+                                Some(calling) => calling
+                                    .parent()
+                                    .map(|dir| dir.join(path_str))
+                                    .unwrap_or_else(|| PathBuf::from(path_str)),
+                                None => PathBuf::from(path_str),
+                            }
+                        } else {
+                            PathBuf::from(path_str)
+                        };
+                        match fs::read_to_string(&resolved) {
+                            Ok(content) => {
+                                let escaped = content
+                                    .replace('\\', "\\\\")
+                                    .replace('"', "\\\"");
+                                let lit = SmolStr::from(format!("\"{}\"", escaped));
+                                vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
+                            }
+                            Err(e) => {
+                                return (
+                                    None,
+                                    vec![GlyimDiagnostic::type_error(
+                                        call_site,
+                                        format!(
+                                            "failed to read file '{}' as UTF-8: {}",
+                                            resolved.display(),
+                                            e
+                                        ),
+                                    )],
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        return (
+                            None,
+                            vec![GlyimDiagnostic::type_error(
+                                call_site,
+                                "include_str! expects one string literal argument".to_string(),
+                            )],
+                        );
+                    }
+                }
+            }
+            BuiltinMacro::IncludeBytes => {
+                // include_bytes!("path") reads the file as raw bytes and expands
+                // to a bracketed integer-array literal `[b0, b1, ...]` (parseable
+                // as an array of `u8`), per plan §21.2.
+                let args_tt = flatten_token_tree(args_node);
+                match first_string_lit(&args_tt) {
+                    Some(path_str) => {
+                        let path = Path::new(path_str);
+                        let resolved = if path.is_absolute() {
+                            path.to_path_buf()
+                        } else if let Some(vfs) = self.vfs {
+                            match vfs.file_path(call_site.file) {
+                                Some(calling) => calling
+                                    .parent()
+                                    .map(|dir| dir.join(path_str))
+                                    .unwrap_or_else(|| PathBuf::from(path_str)),
+                                None => PathBuf::from(path_str),
+                            }
+                        } else {
+                            PathBuf::from(path_str)
+                        };
+                        match fs::read(&resolved) {
+                            Ok(bytes) => {
+                                let mut inner = Vec::with_capacity(bytes.len() * 2);
+                                for (i, b) in bytes.iter().enumerate() {
+                                    if i > 0 {
+                                        inner.push(TokenTree::Token(
+                                            SyntaxKind::Comma,
+                                            SmolStr::from(","),
+                                        ));
+                                    }
+                                    inner.push(TokenTree::Token(
+                                        SyntaxKind::IntLit,
+                                        SmolStr::from(b.to_string()),
+                                    ));
+                                }
+                                vec![TokenTree::Group(
+                                    SyntaxKind::LBracket,
+                                    inner,
+                                    SyntaxKind::RBracket,
+                                )]
+                            }
+                            Err(e) => {
+                                return (
+                                    None,
+                                    vec![GlyimDiagnostic::type_error(
+                                        call_site,
+                                        format!(
+                                            "failed to read file '{}': {}",
+                                            resolved.display(),
+                                            e
+                                        ),
+                                    )],
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        return (
+                            None,
+                            vec![GlyimDiagnostic::type_error(
+                                call_site,
+                                "include_bytes! expects one string literal argument".to_string(),
+                            )],
+                        );
+                    }
+                }
+            }
             BuiltinMacro::Include => {
                 // include!("path") reads file content as a string literal.
                 // Resolves relative to the calling file's directory when a VFS

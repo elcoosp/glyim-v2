@@ -255,6 +255,74 @@ fn test_include_macro() {
 }
 
 #[test]
+fn test_include_str_macro() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("test_str.txt");
+    let content = "Hello, include_str!";
+    fs::write(&file_path, content).unwrap();
+
+    let mut hygiene = HygieneCtx::default();
+    let mut expander = Expander::new(&mut hygiene);
+    register_builtin(&mut expander, "include_str", BuiltinMacro::IncludeStr);
+
+    let span = dummy_span(FileId::BOGUS, 0);
+    let mut builder = rowan::GreenNodeBuilder::new();
+    builder.start_node(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::TokenTree));
+    builder.token(
+        GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::StringLit),
+        &format!("\"{}\"", file_path.to_str().unwrap()),
+    );
+    builder.finish_node();
+    let args = SyntaxNode::new_root(builder.finish());
+    let name = expander.interner().intern("include_str");
+
+    let result = expander.expand(name, &args, span);
+    assert!(result.diagnostics.is_empty());
+    let expanded = result.expanded.unwrap();
+    let text = expanded.text().to_string();
+    assert!(
+        text.contains(content),
+        "Expected '{}', got {}",
+        content,
+        text
+    );
+}
+
+#[test]
+fn test_include_bytes_macro() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("test_bytes.bin");
+    let raw: &[u8] = &[104, 105, 10]; // "hi\n"
+    fs::write(&file_path, raw).unwrap();
+
+    let mut hygiene = HygieneCtx::default();
+    let mut expander = Expander::new(&mut hygiene);
+    register_builtin(&mut expander, "include_bytes", BuiltinMacro::IncludeBytes);
+
+    let span = dummy_span(FileId::BOGUS, 0);
+    let mut builder = rowan::GreenNodeBuilder::new();
+    builder.start_node(GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::TokenTree));
+    builder.token(
+        GlyimLang::kind_to_raw(glyim_syntax::SyntaxKind::StringLit),
+        &format!("\"{}\"", file_path.to_str().unwrap()),
+    );
+    builder.finish_node();
+    let args = SyntaxNode::new_root(builder.finish());
+    let name = expander.interner().intern("include_bytes");
+
+    let result = expander.expand(name, &args, span);
+    assert!(result.diagnostics.is_empty());
+    let expanded = result.expanded.unwrap();
+    let text = expanded.text().to_string();
+    // Produces a bracketed integer-array literal `[104, 105, 10]`.
+    assert!(
+        text.contains("104") && text.contains("105") && text.contains("10"),
+        "Expected byte-array literal, got {}",
+        text
+    );
+}
+
+#[test]
 fn test_concat_macro() {
     let mut hygiene = HygieneCtx::default();
     let mut expander = Expander::new(&mut hygiene);

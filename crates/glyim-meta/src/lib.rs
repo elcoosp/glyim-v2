@@ -50,6 +50,8 @@ pub enum BuiltinMacro {
     Line,
     Column,
     Include,
+    IncludeStr,
+    IncludeBytes,
     Env,
     OptionEnv,
     Concat,
