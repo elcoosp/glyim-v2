@@ -97,7 +97,7 @@ impl TestCompiler for PipelineCompiler {
                 // linker is only invoked when codegen produced a real object
                 // (the production LLVM backend does; a mock backend that emits
                 // nothing will fail to link and we fall back to `None`).
-                let executable_path = glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None)
+                let executable_path = glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None, None)
                     .ok()
                     .map(|()| exe_path.clone());
                 CompileOutput {

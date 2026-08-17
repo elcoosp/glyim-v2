@@ -160,6 +160,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             &final_path,
             args.linker.as_deref(),
             args.link_flags.as_deref(),
+            args.target.as_deref(),
         )
         .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(&e)])?;
     }
