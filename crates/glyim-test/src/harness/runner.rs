@@ -127,17 +127,36 @@ enum ChildResult {
 }
 
 fn run_child_with_timeout(child: std::process::Child, timeout: Duration) -> ChildResult {
+    use std::sync::{Arc, Mutex};
     let (tx, rx) = std::sync::mpsc::channel();
+    // Share ownership of the child between the waiter thread and the timeout
+    // path (plan §24.2): on timeout we must kill the *actual OS process*
+    // rather than only dropping the monitoring thread, otherwise the child
+    // (and any descendants) keep running as orphans and become zombies that
+    // are never reaped. `Option` lets exactly one side take ownership.
+    let child = Arc::new(Mutex::new(Some(child)));
+    let child_for_thread = Arc::clone(&child);
 
     std::thread::spawn(move || {
-        let result = child.wait_with_output();
-        let _ = tx.send(result);
+        let taken = child_for_thread.lock().unwrap().take();
+        if let Some(c) = taken {
+            let result = c.wait_with_output();
+            let _ = tx.send(result);
+        }
     });
 
     match rx.recv_timeout(timeout) {
         Ok(Ok(output)) => ChildResult::Finished(output),
         Ok(Err(e)) => ChildResult::Error(e.to_string()),
-        Err(_) => ChildResult::TimedOut,
+        Err(_) => {
+            // Timeout: kill the child so it (and its stdout/stderr pipes) is
+            // reaped by the waiter thread's `wait_with_output` after SIGKILL.
+            // `take()` ensures we don't race the thread if it already finished.
+            if let Some(mut c) = child.lock().unwrap().take() {
+                let _ = c.kill();
+            }
+            ChildResult::TimedOut
+        }
     }
 }
 

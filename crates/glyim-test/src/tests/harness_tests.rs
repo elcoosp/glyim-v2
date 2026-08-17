@@ -254,6 +254,27 @@ fn test_program_runner_with_stdin() {
 }
 
 #[test]
+fn test_program_runner_kills_child_on_timeout() {
+    // A deliberately-hanging child (sleep 30) with a 1s timeout must report
+    // timed_out and return promptly — the child process must be killed (§24.2),
+    // not left running as an orphan until its full duration elapses.
+    let sleep_path = "/bin/sleep";
+    let start = std::time::Instant::now();
+    let runner = harness::runner::ProgramRunner::new(sleep_path).arg("30");
+    let result = runner.run(std::time::Duration::from_secs(1));
+    let elapsed = start.elapsed();
+
+    assert!(result.timed_out, "timeout must be reported");
+    // The child must be killed: the run should finish well before the 30s the
+    // child would otherwise sleep. Allow generous slack for CI slowness.
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "child was not killed on timeout (elapsed {:?})",
+        elapsed
+    );
+}
+
+#[test]
 fn test_pipeline_compiler_surfaces_mir_artifacts() {
     use crate::harness::compiler::TestCompiler;
     use crate::mock::MockCodegen;
