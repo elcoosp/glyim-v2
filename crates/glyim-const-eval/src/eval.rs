@@ -10,6 +10,11 @@ use glyim_type::{Ty, TyCtx, TyCtxMut, TyKind};
 
 use crate::{ConstEvalError, ConstEvalResult, ConstValue, MAX_EVAL_DEPTH};
 
+/// Plan §13.3 / §4.2: upper bound on the number of elements a `for` loop may
+/// materialize from a const-evaluable iterable. Prevents runaway iteration
+/// (e.g. `for _ in 0..usize::MAX {}`) from hanging the compiler.
+const MAX_FOR_ITERS: usize = 1_000_000;
+
 /// A user-defined `const fn` available to constant evaluation (plan §4.2).
 ///
 /// The function's parameter patterns and body live inside the *same* `Body`
@@ -1262,68 +1267,15 @@ impl<'a> ConstEvaluator<'a> {
         span: Span,
         depth: u32,
     ) -> ConstEvalResult<ConstValue> {
-        const MAX_ITERS: u32 = 1_000_000;
         let iterable_val = self.evaluate_at_depth(iterable_id, depth)?;
 
-        // Materialize the element values from an already-const-evaluable
-        // iterable. The element integer type is taken from the range's bound
-        // (start if present, else end) so `for x in 0u8..4u8` yields `u8`s.
-        let elements: Vec<ConstValue> = match iterable_val {
-            ConstValue::Range(start, end, inclusive) => {
-                let (s, e) = match (
-                    start.as_deref().and_then(|c| c.as_i128()),
-                    end.as_deref().and_then(|c| c.as_i128()),
-                ) {
-                    (Some(s), Some(e)) => (s, e),
-                    _ => {
-                        return Err(ConstEvalError::new(
-                            "const `for` over a range requires concrete `start` and `end` bounds",
-                            span,
-                        ))
-                    }
-                };
-                let proto = start
-                    .as_deref()
-                    .or(end.as_deref());
-                let mk = |i: i128| -> ConstValue {
-                    match proto {
-                        Some(ConstValue::Int(_, ty)) => ConstValue::Int(i, *ty),
-                        Some(ConstValue::Uint(_, ty)) => ConstValue::Uint(i as u128, *ty),
-                        _ => ConstValue::Int(i, IntTy::I32),
-                    }
-                };
-                let mut v = Vec::new();
-                if inclusive {
-                    let mut i = s;
-                    while i <= e {
-                        v.push(mk(i));
-                        i = i.saturating_add(1);
-                        if v.len() > MAX_ITERS as usize {
-                            break;
-                        }
-                    }
-                } else {
-                    let mut i = s;
-                    while i < e {
-                        v.push(mk(i));
-                        i = i.saturating_add(1);
-                        if v.len() > MAX_ITERS as usize {
-                            break;
-                        }
-                    }
-                }
-                v
-            }
-            ConstValue::Array(arr) => arr,
-            ConstValue::Tuple(tup) => tup,
-            other => {
-                let _ = other;
-                return Err(ConstEvalError::new(
-                    "`for` over this iterable kind is not supported in const evaluation",
-                    span,
-                ))
-            }
-        };
+        // Plan §13.3: uniform iteration desugaring. Instead of special-casing
+        // `Range`/`Array`/`Tuple` by type kind, materialize the element values
+        // from *any* collection-like `ConstValue` through one helper. This is
+        // the const-eval side of the `IntoIterator` desugaring: whatever the
+        // iterable is, we reduce it to a sequence of element values and iterate.
+        // Bounded by the step-budget to prevent runaway iteration.
+        let elements = materialize_elements(&iterable_val, MAX_FOR_ITERS, span)?;
 
         for elem in elements {
             // Bind the pattern into the *current* scope (the scope the loop
@@ -1439,6 +1391,77 @@ impl<'a> ConstEvaluator<'a> {
                 }
             }
             _ => Err(ConstEvalError::new("unsupported cast target type", span)),
+        }
+    }
+}
+
+/// Plan §13.3: materialize the element sequence of a const-evaluable iterable.
+///
+/// This is the single uniform desugaring point for `for` loops over any
+/// collection-like value. `Range` is expanded arithmetically; `Array`/`Tuple`
+/// already carry their elements directly. Anything else is rejected with a
+/// clear error rather than silently mis-evaluated. The `budget` bounds the
+/// number of elements produced (the step-budget from the prior report's §4.2)
+/// so an enormous or open range cannot hang const evaluation.
+fn materialize_elements(
+    val: &ConstValue,
+    budget: usize,
+    span: Span,
+) -> ConstEvalResult<Vec<ConstValue>> {
+    match val {
+        ConstValue::Range(start, end, inclusive) => {
+            let (s, e) = match (
+                start.as_deref().and_then(|c| c.as_i128()),
+                end.as_deref().and_then(|c| c.as_i128()),
+            ) {
+                (Some(s), Some(e)) => (s, e),
+                _ => {
+                    return Err(ConstEvalError::new(
+                        "const `for` over a range requires concrete `start` and `end` bounds",
+                        span,
+                    ))
+                }
+            };
+            // The element integer type is taken from the range's bound
+            // (start if present, else end) so `for x in 0u8..4u8` yields `u8`s.
+            let proto = start.as_deref().or(end.as_deref());
+            let mk = |i: i128| -> ConstValue {
+                match proto {
+                    Some(ConstValue::Int(_, ty)) => ConstValue::Int(i, *ty),
+                    Some(ConstValue::Uint(_, ty)) => ConstValue::Uint(i as u128, *ty),
+                    _ => ConstValue::Int(i, IntTy::I32),
+                }
+            };
+            let mut v = Vec::new();
+            if *inclusive {
+                let mut i = s;
+                while i <= e {
+                    v.push(mk(i));
+                    i = i.saturating_add(1);
+                    if v.len() > budget {
+                        break;
+                    }
+                }
+            } else {
+                let mut i = s;
+                while i < e {
+                    v.push(mk(i));
+                    i = i.saturating_add(1);
+                    if v.len() > budget {
+                        break;
+                    }
+                }
+            }
+            Ok(v)
+        }
+        ConstValue::Array(arr) => Ok(arr.clone()),
+        ConstValue::Tuple(tup) => Ok(tup.clone()),
+        other => {
+            let _ = other;
+            Err(ConstEvalError::new(
+                "`for` over this iterable kind is not supported in const evaluation",
+                span,
+            ))
         }
     }
 }

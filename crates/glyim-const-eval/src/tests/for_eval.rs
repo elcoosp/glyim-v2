@@ -254,6 +254,32 @@ fn for_with_break_exits_loop() {
 }
 
 #[test]
+fn for_over_struct_iterable_is_rejected_uniformly() {
+    // Plan §13.3: the type-kind special-casing in `eval_for` was deleted in
+    // favor of a single uniform `materialize_elements` helper. A value that is
+    // not a collection-like iterable (here a struct) must be rejected with a
+    // clear error through that uniform path, not silently mis-handled.
+    let mut body = test_body();
+    let s_name = name("S");
+    let struct_val = body.alloc_expr(
+        Expr::Struct {
+            path: glyim_hir::Path::from_single(s_name),
+            fields: vec![],
+            spread: None,
+        },
+        dummy_span(),
+    );
+    let empty = block(&mut body, vec![], None);
+    let for_expr = build_for(&mut body, Pat::Wild, struct_val, empty);
+    let err = eval_err(&body, for_expr);
+    assert!(
+        err.message.contains("iterable kind"),
+        "expected iterable-kind error, got: {}",
+        err.message
+    );
+}
+
+#[test]
 fn for_over_open_ended_range_is_error() {
     // `for x in ..5 { }` — open-ended range has no concrete start bound.
     let mut body = test_body();
