@@ -465,11 +465,13 @@ fn constant_in_generic_instantiated() {
             .iter()
             .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 30))
     );
+    // A `ConstRef` no longer enqueues a `MonoItem::Const`: constants are
+    // materialized by the backend as zero-initialized globals
+    // (`__glyim_const_{id}`), so they are intentionally not collected for
+    // lowering here (const value materialization is a follow-up).
     assert!(
-        ctx.items()
-            .iter()
-            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 5)),
-        "referenced constant should be collected"
+        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        "const refs must not be lowered as mono items"
     );
 }
 
@@ -798,18 +800,13 @@ fn multiple_constants_in_body() {
         &|_ty| dummy_body(),
     );
 
-    assert_eq!(ctx.item_count(), 3, "should collect main + 2 constants");
+    assert_eq!(ctx.item_count(), 1, "should collect only main (consts are not lowered)");
+    // ConstRef constants are materialized by the backend as zero-init globals
+    // and are intentionally not collected as mono items (follow-up: const
+    // value materialization).
     assert!(
-        ctx.items()
-            .iter()
-            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 10)),
-        "const A should be collected"
-    );
-    assert!(
-        ctx.items()
-            .iter()
-            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 11)),
-        "const B should be collected"
+        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        "const refs must not be lowered as mono items"
     );
 }
 
@@ -917,8 +914,8 @@ fn mixed_calls_and_constants() {
 
     assert_eq!(
         ctx.item_count(),
-        3,
-        "should collect main, helper, and const"
+        2,
+        "should collect main and helper (const is not lowered)"
     );
     assert!(
         ctx.items()
@@ -930,10 +927,10 @@ fn mixed_calls_and_constants() {
             .iter()
             .any(|d| matches!(&d.item, MonoItem::Fn { def_id, .. } if def_id.to_raw() == 2))
     );
+    // The ConstRef to const 20 must NOT be collected as a mono item.
     assert!(
-        ctx.items()
-            .iter()
-            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 20))
+        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        "const refs must not be lowered as mono items"
     );
 }
 
@@ -1032,21 +1029,12 @@ fn transitive_constant_collection() {
         &|_ty| dummy_body(),
     );
 
-    // Should collect: fn, const_a, const_b (transitive)
+    // With the new design, const refs do NOT enqueue `MonoItem::Const`
+    // items: they are materialized as zero-init globals by the backend, so
+    // neither const_a nor const_b is collected for lowering.
+    assert_eq!(ctx.item_count(), 1, "should collect only the fn");
     assert!(
-        ctx.item_count() >= 2,
-        "should collect at least fn and const_a"
-    );
-    assert!(
-        ctx.items()
-            .iter()
-            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 10)),
-        "const_a should be collected"
-    );
-    assert!(
-        ctx.items()
-            .iter()
-            .any(|d| matches!(&d.item, MonoItem::Const { def_id, .. } if def_id.to_raw() == 11)),
-        "const_b should be collected transitively"
+        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        "const refs (a and b) must not be lowered as mono items"
     );
 }

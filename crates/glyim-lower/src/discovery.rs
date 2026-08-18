@@ -1,5 +1,6 @@
 use crate::mono::MonoItem;
 use glyim_core::def_id::{FnDefId, LocalDefId, StaticDefId};
+use glyim_def_map::CrateDefMap;
 use glyim_diag::{DiagSeverity, GlyimDiagnostic, MultiSpan};
 use glyim_hir::{CrateHir, ItemKind};
 use glyim_span::Span;
@@ -10,10 +11,24 @@ use glyim_type::TyCtxMut;
 pub fn discover_mono_roots(
     root: &SyntaxNode,
     hir: &CrateHir,
+    def_map: Option<&CrateDefMap>,
     ctx: &mut TyCtxMut,
 ) -> (Vec<MonoItem>, Vec<GlyimDiagnostic>) {
     let mut items = Vec::new();
     let mut diags = Vec::new();
+
+    // Resolve a root item's `LocalDefId` from the def-map value namespace,
+    // which is the same id space typeck uses to register fn sigs/bodies and
+    // that `check_path` resolves value paths to. When no def-map is supplied
+    // or it has no entry (e.g. synthetic test harnesses), fall back to the
+    // HIR `item.id`, preserving the historical discovery behaviour.
+    let resolve_root_id =
+        |name: glyim_core::interner::Name| -> Option<LocalDefId> {
+            def_map
+                .and_then(|dm| dm.modules.get(dm.root))
+                .and_then(|m| m.scope.values.get(&name))
+                .map(|(id, _, _)| *id)
+        };
 
     for item in hir.items.iter() {
         match &item.kind {
@@ -24,7 +39,8 @@ pub fn discover_mono_roots(
                 let has_no_mangle = has_attr_in_span(root, item.span, "no_mangle");
 
                 if has_main_name || has_start_attr || has_no_mangle {
-                    let local_def_id = LocalDefId::from_raw(item.id.to_raw());
+                    let local_def_id = resolve_root_id(item.name)
+                        .unwrap_or_else(|| LocalDefId::from_raw(item.id.to_raw()));
                     let fn_def_id = FnDefId::from_raw(local_def_id.to_raw());
 
                     let empty_subst = ctx.intern_substitution(Vec::new());
@@ -37,7 +53,8 @@ pub fn discover_mono_roots(
             }
             ItemKind::Static(_static_item) => {
                 if has_attr_in_span(root, item.span, "used") {
-                    let local_def_id = LocalDefId::from_raw(item.id.to_raw());
+                    let local_def_id = resolve_root_id(item.name)
+                        .unwrap_or_else(|| LocalDefId::from_raw(item.id.to_raw()));
                     let static_def_id = StaticDefId::from_raw(local_def_id.to_raw());
 
                     let mono_item = MonoItem::Static {

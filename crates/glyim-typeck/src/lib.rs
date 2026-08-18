@@ -36,7 +36,7 @@ mod unify;
 
 use std::collections::HashMap;
 
-use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+use glyim_core::def_id::{ConstDefId, CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
@@ -342,11 +342,11 @@ fn check_fn_items_in_module(
                     .get(&item.name)
                 {
                     Some((id, _, _)) => *id,
-                    None => {
-                        let id = *next_local_def_id;
-                        *next_local_def_id += 1;
-                        LocalDefId::from_raw(id)
-                    }
+                    // Fall back to the HIR `item.id` when the def-map does not
+                    // track this item (e.g. `main`). This must match the id
+                    // `discover_mono_roots` assigns to entry points so the
+                    // MIR body is found during monomorphization.
+                    None => LocalDefId::from_raw(item.id.to_raw()),
                 };
                 let owner = DefId::new(local_krate, local_def_id);
 
@@ -434,6 +434,36 @@ fn check_fn_items_in_module(
                         next_local_def_id,
                     );
                 }
+            }
+            ItemKind::Const(c) => {
+                // Resolve the constant's value type and register it so
+                // `check_path` can produce a `ConstRef` with the right type.
+                // The constant's body is not yet evaluated/threaded to codegen
+                // (const value materialization is a follow-up); only its type
+                // is needed for path-resolution type checking.
+                let const_def_id = match def_map.modules[module_id]
+                    .scope
+                    .values
+                    .get(&item.name)
+                {
+                    Some((id, _, _)) => ConstDefId::from_raw(id.to_raw()),
+                    None => {
+                        let id = *next_local_def_id;
+                        *next_local_def_id += 1;
+                        ConstDefId::from_raw(id)
+                    }
+                };
+                let empty_params: HashMap<Name, Ty> = HashMap::new();
+                let const_ty = tyconv::resolve_type_ref(
+                    ctx,
+                    infer,
+                    def_map,
+                    diagnostics,
+                    &c.ty,
+                    &empty_params,
+                    item_span,
+                );
+                ctx.register_const_ty(const_def_id, const_ty);
             }
             _ => {}
         }

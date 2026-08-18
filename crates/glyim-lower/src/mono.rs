@@ -164,12 +164,12 @@ impl MonoCtx {
                     substs: *substs,
                 });
             }
-            MirConstKind::ConstRef(def_id, substs) => {
-                self.enqueue(MonoItem::Const {
-                    def_id: *def_id,
-                    substs: *substs,
-                });
-            }
+            // ConstRef constants are materialized by the backend as zero-
+            // initialized globals (`__glyim_const_{id}`); full const
+            // evaluation/lowering is a follow-up, so we do not enqueue a
+            // `MonoItem::Const` (which would require a lowered const body)
+            // for value-namespace const references yet.
+            MirConstKind::ConstRef(_, _) => {}
             _ => {}
         }
     }

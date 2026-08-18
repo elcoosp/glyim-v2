@@ -169,6 +169,19 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
+            thir::ExprKind::ConstRef(const_def_id) => {
+                // ConstRef lowers to a MIR constant referencing the constant's
+                // definition. `MirConstKind::ConstRef` is already handled by
+                // mono, polymorphize, and the LLVM backend (global
+                // `__glyim_const_{id}`). Substs are empty for the
+                // monomorphic consts supported here.
+                let substs = glyim_type::Substitution::empty();
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::ConstRef(*const_def_id, substs),
+                    ty: expr.ty,
+                    span: expr.span,
+                }))
+            }
             thir::ExprKind::Binary { op, lhs, rhs } => {
                 let lhs_op = self.lower_expr_to_operand(lhs);
                 let rhs_op = self.lower_expr_to_operand(rhs);

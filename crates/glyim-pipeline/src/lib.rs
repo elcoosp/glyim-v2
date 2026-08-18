@@ -141,6 +141,7 @@ impl Pipeline {
             glyim_lower::discovery::discover_mono_roots(
                 &parse_result.root,
                 &hir,
+                Some(&def_map),
                 &mut ty_ctx_mut_for_discovery,
             )
         };

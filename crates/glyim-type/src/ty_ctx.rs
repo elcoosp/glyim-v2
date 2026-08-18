@@ -8,7 +8,7 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ClosureId, FnDefId, LocalDefId, OpaqueTyId};
+use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, FnDefId, LocalDefId, OpaqueTyId};
 use glyim_core::interner::{Interner, Name};
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
@@ -31,6 +31,7 @@ pub struct TyCtx {
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
     pub(crate) variant_types: HashMap<AdtId, Vec<Ty>>,
     pub(crate) fn_sigs: HashMap<FnDefId, FnSig>,
+    pub(crate) const_tys: HashMap<ConstDefId, Ty>,
     pub(crate) closure_sigs: HashMap<ClosureId, FnSig>,
     pub(crate) body_tys: HashMap<LocalDefId, Ty>,
     pub(crate) lang_items: LangItems,
@@ -316,6 +317,12 @@ impl TyCtx {
 
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
+    }
+
+    /// The value type of a constant definition (e.g. `i32` for
+    /// `const X: i32 = ...`). Populated by typeck when checking the const.
+    pub fn const_ty(&self, def_id: ConstDefId) -> Option<Ty> {
+        self.const_tys.get(&def_id).copied()
     }
 
     pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {

@@ -71,6 +71,17 @@ impl TestCompiler for PipelineCompiler {
 
         tracing::info!(phase = "full-pipeline", file_id = file_id.to_raw());
 
+        // Each `compile()` call writes its source to a temp file that the
+        // pipeline reads back. The path must be UNIQUE per call: many tests
+        // run concurrently and several reuse the same `FileId` (e.g. `1`), so
+        // a path derived only from `file_id` collides, causing one thread to
+        // overwrite another's source and the compiler to read the wrong
+        // program ("MIR body not found"). We uniquify with a process-global
+        // counter combined with the pid.
+        static CALL_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let call_id = CALL_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let unique_tag = format!("{}_{}", std::process::id(), call_id);
+
         let config = CrateConfig {
             name: format!("test_{}", file_id.to_raw()),
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
@@ -78,11 +89,11 @@ impl TestCompiler for PipelineCompiler {
         };
 
         let mut db = Database::new(config);
-        let path = std::env::temp_dir().join(format!("glyim_test_{}.g", file_id.to_raw()));
+        let path = std::env::temp_dir().join(format!("glyim_test_{}_{}.g", unique_tag, file_id.to_raw()));
         std::fs::write(&path, source).expect("failed to write temp source file for PipelineCompiler");
         db.vfs().add_file_content(&path, Arc::from(source));
 
-        let output_path = std::env::temp_dir().join(format!("glyim_test_{}.o", file_id.to_raw()));
+        let output_path = std::env::temp_dir().join(format!("glyim_test_{}_{}.o", unique_tag, file_id.to_raw()));
         let ty_ctx = db.get_ty_ctx();
         let exe_path = output_path.with_extension("");
         match glyim_pipeline::Pipeline::compile_file_with_artifacts(

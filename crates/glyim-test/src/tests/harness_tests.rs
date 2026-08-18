@@ -299,11 +299,14 @@ fn test_pipeline_compiler_surfaces_mir_artifacts() {
         "mir_bodies must be populated (pipeline used to discard them)"
     );
 
-    // The mock backend recorded exactly one generate call, to a per-file temp path.
+    // The mock backend recorded exactly one generate call, to a per-file temp
+    // path (the path embeds the file id `777`, proving it is not a shared
+    // "test_output.o"; it is also uniquified per call to avoid collisions
+    // between concurrently-running tests that reuse the same file id).
     let calls = mock.calls();
     assert_eq!(calls.len(), 1, "expected one codegen generate call");
     let out = &calls[0].output_path;
-    assert!(out.to_string_lossy().contains("glyim_test_777.o"), "expected per-file temp path, got {:?}", out);
+    assert!(out.to_string_lossy().contains("777.o"), "expected per-file temp path, got {:?}", out);
 }
 
 #[test]

@@ -32,5 +32,6 @@ mod typeck_new_nodes;
 mod value_path;
 mod value_path_integration;
 mod module_call;
+mod const_path;
 mod where_clause;
 mod while_loop;

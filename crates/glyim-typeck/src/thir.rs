@@ -1,6 +1,6 @@
 //! Typed High-Level IR — fully typed, still generic.
 
-use glyim_core::def_id::{AdtId, DefId, FnDefId};
+use glyim_core::def_id::{AdtId, ConstDefId, DefId, FnDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_span::Span;
@@ -71,6 +71,10 @@ pub enum ExprKind {
     Literal(Literal),
     VarRef(LocalVarId),
     FnRef(FnDefId),
+    /// Reference to a constant defined in the value namespace
+    /// (`const X = ...;` / `mod::X`). The expression's type is the
+    /// constant's value type (e.g. `i32`), obtained from the def map.
+    ConstRef(ConstDefId),
     Binary {
         op: BinOp,
         lhs: Box<Expr>,

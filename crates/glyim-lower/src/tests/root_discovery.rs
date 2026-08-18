@@ -135,7 +135,7 @@ fn t01_main_function_detected() {
     let hir = make_hir(vec![item]);
     let root = empty_syntax_root();
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert_eq!(items.len(), 1);
     assert!(matches!(&items[0], MonoItem::Fn { .. }));
     assert!(diags.is_empty());
@@ -148,7 +148,7 @@ fn t02_no_entry_points_warning() {
     let hir = make_hir(vec![item]);
     let root = empty_syntax_root();
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert!(items.is_empty());
     assert!(!diags.is_empty());
 }
@@ -161,7 +161,7 @@ fn t03_multiple_entry_points() {
     let hir = make_hir(vec![main_item, other_item]);
     let root = empty_syntax_root();
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert_eq!(items.len(), 1);
     assert!(diags.is_empty());
 }
@@ -173,7 +173,7 @@ fn t04_static_without_used_not_detected() {
     let hir = make_hir(vec![item]);
     let root = empty_syntax_root();
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert!(items.is_empty());
     assert!(!diags.is_empty());
 }
@@ -185,7 +185,7 @@ fn t05_fn_not_main_not_detected() {
     let hir = make_hir(vec![item]);
     let root = empty_syntax_root();
     let mut ctx = make_ctx(interner);
-    let (items, _) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, _) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert!(items.is_empty());
 }
 
@@ -211,7 +211,7 @@ fn t06_no_mangle_function_detected() {
     };
     let hir = make_hir(vec![item]);
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert_eq!(items.len(), 1);
     assert!(diags.is_empty());
 }
@@ -238,7 +238,7 @@ fn t07_start_function_detected() {
     };
     let hir = make_hir(vec![item]);
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert_eq!(items.len(), 1);
     assert!(diags.is_empty());
 }
@@ -260,7 +260,7 @@ fn t08_used_static_detected() {
     };
     let hir = make_hir(vec![item]);
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert_eq!(items.len(), 1);
     assert!(matches!(&items[0], MonoItem::Static { .. }));
     assert!(diags.is_empty());
@@ -288,7 +288,7 @@ fn t09_unknown_attribute_not_detected() {
     };
     let hir = make_hir(vec![item]);
     let mut ctx = make_ctx(interner);
-    let (items, diags) = discover_mono_roots(&root, &hir, &mut ctx);
+    let (items, diags) = discover_mono_roots(&root, &hir, None, &mut ctx);
     assert!(items.is_empty());
     assert!(!diags.is_empty());
 }

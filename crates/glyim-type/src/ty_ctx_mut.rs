@@ -7,7 +7,7 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ClosureId, CrateId, DefId, FnDefId, LocalDefId, OpaqueTyId};
+use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, CrateId, DefId, FnDefId, LocalDefId, OpaqueTyId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
 use crate::lang_items::{LangItem, LangItems};
@@ -37,6 +37,7 @@ pub struct TyCtxMut {
 
     variant_types: HashMap<AdtId, Vec<Ty>>,
     fn_sigs: HashMap<FnDefId, FnSig>,
+    const_tys: HashMap<ConstDefId, Ty>,
     closure_sigs: HashMap<ClosureId, FnSig>,
     body_tys: HashMap<LocalDefId, Ty>,
     /// Registry of compiler-known builtin types/traits (Option, Range, Drop,
@@ -70,6 +71,7 @@ impl TyCtxMut {
             trait_defs: HashMap::new(),
             variant_types: HashMap::new(),
             fn_sigs: HashMap::new(),
+            const_tys: HashMap::new(),
             closure_sigs: HashMap::new(),
             body_tys: HashMap::new(),
             lang_items: LangItems::default(),
@@ -392,6 +394,13 @@ impl TyCtxMut {
         self.fn_sigs.insert(def_id, sig);
     }
 
+    /// Register the value type of a constant definition so `check_path` can
+    /// resolve a `const` reference to a `thir::ExprKind::ConstRef` with the
+    /// right type (plan: value-namespace const paths).
+    pub fn register_const_ty(&mut self, def_id: ConstDefId, ty: Ty) {
+        self.const_tys.insert(def_id, ty);
+    }
+
     /// Register a trait definition (its name and method set) so that vtable
     /// generation and other downstream passes can resolve the trait's methods.
     pub fn register_trait_def(&mut self, id: glyim_core::def_id::TraitDefId, def: crate::TraitDef) {
@@ -405,6 +414,11 @@ impl TyCtxMut {
 
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
+    }
+
+    /// Value type of a constant definition (mirrors `fn_sig` for consts).
+    pub fn const_ty(&self, def_id: ConstDefId) -> Option<Ty> {
+        self.const_tys.get(&def_id).copied()
     }
 
     pub fn register_closure_sig(&mut self, closure_id: ClosureId, sig: FnSig) {
@@ -438,6 +452,7 @@ impl TyCtxMut {
             trait_defs: self.trait_defs.clone(),
             variant_types: self.variant_types.clone(),
             fn_sigs: self.fn_sigs.clone(),
+            const_tys: self.const_tys.clone(),
             closure_sigs: self.closure_sigs.clone(),
             body_tys: self.body_tys.clone(),
             lang_items: self.lang_items.clone(),
@@ -460,6 +475,7 @@ impl TyCtxMut {
             trait_defs: self.trait_defs.clone(),
             variant_types: self.variant_types,
             fn_sigs: self.fn_sigs,
+            const_tys: self.const_tys,
             closure_sigs: self.closure_sigs,
             body_tys: self.body_tys,
             lang_items: self.lang_items,

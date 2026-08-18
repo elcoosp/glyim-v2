@@ -7,8 +7,8 @@ use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
 use crate::{
-    Body, BodyId, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId, ItemKind, ModItem,
-    Param, Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
+    Body, BodyId, ConstItem, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId,
+    ItemKind, ModItem, Param, Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
 };
 
 use super::{
@@ -481,6 +481,62 @@ pub(crate) fn lower_impl_def(
     })
 }
 
+/// Lower a `const NAME: TYPE = EXPR;` item into `ItemKind::Const`.
+///
+/// The type annotation is lowered to a `TypeRef` (used by typeck to register
+/// the constant's value type for value-namespace path resolution), and the
+/// initializer expression is lowered into a `Body` so the constant can be
+/// evaluated later (const value materialization is a follow-up).
+pub(crate) fn lower_const_def(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
+    bodies: &mut IndexVec<BodyId, Body>,
+    body_owners: &mut IndexVec<BodyId, LocalDefId>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<Item> {
+    let name_str = first_ident_text(node)?;
+    let name = interner.intern(&name_str);
+    let owner = next_local_def_id(local_def_counter);
+
+    // Type annotation: `const X: TYPE = ...`. The type node follows a `:`.
+    let mut ty: Option<TypeRef> = None;
+    let mut saw_colon = false;
+    for el in node.children_with_tokens() {
+        match el {
+            glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Colon => {
+                saw_colon = true;
+            }
+            glyim_syntax::SyntaxElement::Node(n) if saw_colon && is_type_node(&n) => {
+                ty = lower_type_ref(&n, interner);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let ty = ty?;
+
+    // Const value materialization (evaluating the initializer and lowering it
+    // to a MIR/const body) is a follow-up. For now we only record the declared
+    // type so value-namespace path resolution can type-check `const` references
+    // (see `check_crate` / `check_path`). The initializer is intentionally not
+    // lowered into a HIR body here, so the pipeline does not try to MIR-lower a
+    // constant before const evaluation exists.
+    let body_id: Option<BodyId> = None;
+
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
+    Some(Item {
+        id,
+        name,
+        kind: ItemKind::Const(ConstItem { ty, body: body_id }),
+        visibility: Visibility::Inherited,
+        span: node_span(node),
+    })
+}
+
 /// Lower an inline `mod name { ... }` block into `ItemKind::Mod`.
 ///
 /// The module's inner items are lowered by the same per-item lower functions
@@ -560,6 +616,21 @@ pub(crate) fn lower_mod_def(
                     local_def_counter,
                     item_id_counter,
                     items,
+                    bodies,
+                    body_owners,
+                    diags,
+                    struct_field_map,
+                ) {
+                    children.push(item.id);
+                    items.push(item);
+                }
+            }
+            SyntaxKind::ConstDef => {
+                if let Some(item) = lower_const_def(
+                    &child,
+                    interner,
+                    local_def_counter,
+                    item_id_counter,
                     bodies,
                     body_owners,
                     diags,

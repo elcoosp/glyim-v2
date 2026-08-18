@@ -201,6 +201,20 @@ pub(crate) fn lower_crate(
                     items.push(item);
                 }
             }
+            SyntaxKind::ConstDef => {
+                if let Some(item) = lower_item::lower_const_def(
+                    &child,
+                    interner,
+                    &mut local_def_counter,
+                    &mut item_id_counter,
+                    &mut bodies,
+                    &mut body_owners,
+                    diags,
+                    &struct_field_map,
+                ) {
+                    items.push(item);
+                }
+            }
             // Other item kinds (Trait, Use, Extern, etc.) are not yet lowered.
             _ => {}
         }

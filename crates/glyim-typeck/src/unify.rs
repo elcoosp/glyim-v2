@@ -1,6 +1,6 @@
 //! Unification and type resolution logic for FnCtxt.
 
-use glyim_core::def_id::{AdtId, FnDefId};
+use glyim_core::def_id::{AdtId, ConstDefId, FnDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{IntTy, UintTy};
 use glyim_diag::GlyimDiagnostic;
@@ -103,12 +103,24 @@ impl<'a> FnCtxt<'a> {
                 };
                 return (thir_expr, fn_ty);
             }
-            // Resolved to a value that is not a registered function (e.g. a
-            // const or enum variant). Those value kinds need dedicated THIR
-            // nodes and are handled separately; for now report a clear error.
+            // A constant in the value namespace: emit a `ConstRef` carrying the
+            // constant's value type. The def map is the source of truth for the
+            // LocalDefId; convert it to a ConstDefId for the THIR node.
+            let const_def_id = ConstDefId::from_raw(local.to_raw());
+            if let Some(const_ty) = self.ctx.const_ty(const_def_id) {
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::ConstRef(const_def_id),
+                    ty: const_ty,
+                    span,
+                };
+                return (thir_expr, const_ty);
+            }
+            // Resolved to a value that is neither a registered function nor a
+            // registered constant (e.g. an enum variant, which needs a
+            // dedicated `VariantRef` THIR node). Report a clear error.
             self.diagnostics.push(GlyimDiagnostic::type_error(
                 span,
-                "value paths other than functions are not yet supported".to_string(),
+                "enum-variant value paths are not yet supported".to_string(),
             ));
             return (thir::Expr::err(span), Ty::ERROR);
         }
