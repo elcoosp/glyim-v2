@@ -84,8 +84,11 @@ impl LspState {
         let file_id = self.file_id(path);
         if let Some(file_id) = file_id {
             let guard = self.analysis.diagnostics.read();
-            if let Some(lsp_diag) = guard.get(&file_id) {
-                return vec![GlyimDiagnostic::internal_error(lsp_diag.message.clone())];
+            if let Some(lsp_diags) = guard.get(&file_id) {
+                return lsp_diags
+                    .iter()
+                    .map(|d| GlyimDiagnostic::internal_error(d.message.clone()))
+                    .collect();
             }
         }
         Vec::new()

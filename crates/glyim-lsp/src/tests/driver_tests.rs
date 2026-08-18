@@ -30,9 +30,7 @@ fn s11_t02_changing_file_updates_diagnostics_incrementally() {
         if lsp_diags.is_empty() {
             db.diagnostics.write().remove(&file_id);
         } else {
-            for diag in lsp_diags {
-                db.diagnostics.write().insert(file_id, diag);
-            }
+            db.diagnostics.write().insert(file_id, lsp_diags);
         }
         all_diags.len()
     };

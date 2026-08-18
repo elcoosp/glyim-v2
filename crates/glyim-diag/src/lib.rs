@@ -192,6 +192,49 @@ impl GlyimDiagnostic {
             MultiSpan::from_span(span),
         )
     }
+
+    /// Emit when a `match` over an enum fails to cover every variant.
+    /// `missing` lists the uncovered variant names; the LSP surfaces a
+    /// "Add missing match arm(s)" code action (plan §22.1).
+    pub fn non_exhaustive_match(span: Span, missing: &[String]) -> Self {
+        let list = missing
+            .iter()
+            .map(|v| format!("`{}`", v))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Self::new(
+            ErrorCode {
+                category: ErrorCategory::Type,
+                number: 50,
+            },
+            DiagSeverity::Error,
+            format!("non-exhaustive match: missing variants {}", list),
+            MultiSpan::from_span(span),
+        )
+    }
+
+    /// Emit when a method/operation requires a trait the receiver type does
+    /// not implement. `trait_name`/`type_name` drive the "Generate impl" code
+    /// action (plan §22.1).
+    pub fn trait_not_implemented(
+        span: Span,
+        trait_name: impl Into<String>,
+        type_name: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            ErrorCode {
+                category: ErrorCategory::Type,
+                number: 51,
+            },
+            DiagSeverity::Error,
+            format!(
+                "trait `{}` is not implemented for `{}`",
+                trait_name.into(),
+                type_name.into()
+            ),
+            MultiSpan::from_span(span),
+        )
+    }
     pub fn borrow_error(span: Span, message: impl Into<String>) -> Self {
         Self::new(
             ErrorCode {

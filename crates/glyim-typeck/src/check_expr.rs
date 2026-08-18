@@ -1,6 +1,6 @@
 //! Expression checking logic for FnCtxt.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use glyim_core::def_id::{AdtId, FnDefId};
 use glyim_core::interner::Name;
@@ -14,6 +14,39 @@ use glyim_type::display::PrintTy;
 use crate::check_body::FnCtxt;
 use crate::thir;
 use crate::unify::{literal_ty, thir_literal};
+
+/// Collect the enum variant indices covered by a THIR `Pattern`. Used by the
+/// match-exhaustiveness diagnostic (plan §22.1). A `Wild` or plain `Binding`
+/// pattern is a catch-all (covers every variant); an `Or` pattern covers the
+/// union of its sub-patterns; a `Struct` variant pattern covers exactly its
+/// `variant_idx`. Other pattern kinds (literal/range/tuple/slice) do not cover
+/// enum variants.
+fn collect_covered_variants(pat: &thir::Pattern, out: &mut HashSet<u32>, has_wildcard: &mut bool) {
+    match &pat.kind {
+        thir::PatternKind::Wild => *has_wildcard = true,
+        thir::PatternKind::Binding { subpattern, .. } => {
+            if subpattern.is_none() {
+                *has_wildcard = true;
+            } else if let Some(sub) = subpattern {
+                collect_covered_variants(sub, out, has_wildcard);
+            }
+        }
+        thir::PatternKind::Struct { variant_idx, .. } => {
+            out.insert(*variant_idx);
+        }
+        thir::PatternKind::Or(pats) => {
+            for p in pats {
+                collect_covered_variants(p, out, has_wildcard);
+            }
+        }
+        thir::PatternKind::Tuple(pats) => {
+            for p in pats {
+                collect_covered_variants(p, out, has_wildcard);
+            }
+        }
+        _ => {}
+    }
+}
 
 impl<'a> FnCtxt<'a> {
     pub fn check_expr(&mut self, expr_id: ExprId) -> (thir::Expr, Ty) {
@@ -332,6 +365,37 @@ impl<'a> FnCtxt<'a> {
                 } else {
                     result_ty
                 };
+
+                // Plan §22.1 (prereq): exhaustiveness check for `match` over an
+                // enum. Collect the variant indices covered by the patterns; if
+                // the scrutinee is an enum and not every variant is covered by a
+                // concrete variant pattern (and there is no wildcard catch-all),
+                // emit a `NonExhaustiveMatch` diagnostic listing the missing
+                // variant names so the LSP can offer "Add missing match arm(s)".
+                if let TyKind::Adt(adt_id, _) = self.ctx.ty_kind(scrut_ty) {
+                    if let Some(adt) = self.ctx.adt_def(*adt_id) {
+                        if adt.kind == AdtKind::Enum {
+                            let mut covered: HashSet<u32> = HashSet::new();
+                            let mut has_wildcard = false;
+                            for arm in &thir_arms {
+                                collect_covered_variants(&arm.pat, &mut covered, &mut has_wildcard);
+                            }
+                            if !has_wildcard {
+                                let missing: Vec<String> = (0..adt.variants.len())
+                                    .filter(|i| !covered.contains(&(*i as u32)))
+                                    .map(|i| {
+                                        self.ctx.name_str(adt.variants[i as usize].name).to_string()
+                                    })
+                                    .collect();
+                                if !missing.is_empty() {
+                                    self.diagnostics.push(GlyimDiagnostic::non_exhaustive_match(
+                                        span, &missing,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
 
                 (
                     thir::Expr {
@@ -1032,6 +1096,27 @@ impl<'a> FnCtxt<'a> {
                     self.ctx.name_str(method_name)
                 ),
             ));
+            // Plan §22.1 (prereq for "Generate impl"): if the method name is
+            // declared by a trait in this crate, surface a `trait_not_implemented`
+            // diagnostic naming that trait and the receiver type, so the LSP can
+            // offer to synthesize `impl Trait for Type { }`.
+            let recv_name = PrintTy::new(recv_ty, &*self.ctx).to_string();
+            for item in self.hir.items.iter() {
+                if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
+                    if trait_item
+                        .methods
+                        .iter()
+                        .any(|m| m.name == method_name)
+                    {
+                        self.diagnostics.push(GlyimDiagnostic::trait_not_implemented(
+                            span,
+                            self.ctx.name_str(item.name),
+                            recv_name.clone(),
+                        ));
+                        break;
+                    }
+                }
+            }
             return Ty::ERROR;
         }
 

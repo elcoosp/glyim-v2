@@ -22,9 +22,7 @@ fn diagnostics_are_emitted_on_change() {
 
     let lsp_diags = crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diags);
     if !lsp_diags.is_empty() {
-        for diag in lsp_diags {
-            db.diagnostics.write().insert(file_id, diag);
-        }
+        db.diagnostics.write().insert(file_id, lsp_diags);
     }
 
     let guard = db.diagnostics.read();

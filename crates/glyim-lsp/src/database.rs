@@ -121,7 +121,7 @@ pub struct AnalysisDatabase {
     /// resolve the type of any expression via `expr_ty_at` /
     /// `type_at_offset`. Keyed by `FileId`.
     pub typeck: RwLock<HashMap<FileId, (Arc<glyim_type::TyCtx>, TypeckResult)>>,
-    pub diagnostics: RwLock<HashMap<FileId, lsp_types::Diagnostic>>,
+    pub diagnostics: RwLock<HashMap<FileId, Vec<lsp_types::Diagnostic>>>,
     pub file_access_times: RwLock<HashMap<FileId, Instant>>,
 }
 

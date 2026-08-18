@@ -118,9 +118,7 @@ impl AnalysisDriver {
         if lsp_diagnostics.is_empty() {
             self.db.diagnostics.write().remove(&file_id);
         } else {
-            for diag in lsp_diagnostics {
-                self.db.diagnostics.write().insert(file_id, diag);
-            }
+            self.db.diagnostics.write().insert(file_id, lsp_diagnostics);
         }
 
         debug!(
