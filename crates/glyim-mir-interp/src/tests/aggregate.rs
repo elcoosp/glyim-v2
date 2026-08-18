@@ -25,7 +25,7 @@ fn test_t01_struct_construction_and_field_access() {
         StatementKind::Assign(
             Place::new(local_struct),
             Rvalue::Aggregate(
-                AggregateKind::Adt(adt_id, VariantIdx::from_raw(0), subst),
+                AggregateKind::Adt(adt_id, glyim_mir::VariantIdx::from_raw(0), subst),
                 vec![const_int(42), const_int(10)],
             ),
         ),

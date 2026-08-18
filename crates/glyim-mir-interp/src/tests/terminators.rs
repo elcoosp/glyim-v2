@@ -494,7 +494,7 @@ fn test_downcast_projection_is_noop() {
             Place::new(local_result),
             Rvalue::Use(Operand::Copy(Place {
                 local: local_val,
-                projection: vec![ProjectionElem::Downcast(VariantIdx::from_raw(0))]
+                projection: vec![ProjectionElem::Downcast(glyim_mir::VariantIdx::from_raw(0))]
                     .into_boxed_slice(),
             })),
         ),

@@ -8,7 +8,7 @@ use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{GenericArg, Region, Ty, TyKind, TypeLookup, AdtKind};
+use glyim_type::{Const, ConstKind, GenericArg, Region, Ty, TyKind, TypeLookup, AdtKind};
 use glyim_type::display::PrintTy;
 
 use crate::check_body::FnCtxt;
@@ -664,7 +664,15 @@ impl<'a> FnCtxt<'a> {
                     }
                     elem_exprs.push(e_expr);
                 }
-                let arr_ty = self.ctx.mk_ty(TyKind::Slice(elem_ty));
+                let elem_const_ty =
+                    self.ctx.mk_ty(TyKind::Int(glyim_core::primitives::IntTy::Isize));
+                let arr_ty = self.ctx.mk_ty(TyKind::Array(
+                    elem_ty,
+                    Const {
+                        kind: ConstKind::Int(elements.len() as i128),
+                        ty: elem_const_ty,
+                    },
+                ));
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Array(elem_exprs),
@@ -881,6 +889,15 @@ impl<'a> FnCtxt<'a> {
                     span,
                 };
                 (closure_expr, closure_ty)
+            }
+
+            Expr::Let { pat, value } => {
+                // A `let` appearing in expression position (e.g. as a block
+                // tail) is rare; evaluate its value and bind the pattern,
+                // yielding unit.
+                let (value_expr, value_ty) = self.check_expr(*value);
+                self.check_pattern(*pat, value_ty);
+                (thir::Expr::err(span), Ty::UNIT)
             }
 
             Expr::Assign { lhs, rhs } => {

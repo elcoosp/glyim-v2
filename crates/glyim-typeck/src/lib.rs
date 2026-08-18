@@ -459,6 +459,44 @@ fn check_fn_items_in_module(
                     );
                 }
             }
+            ItemKind::Struct(struct_item) => {
+                // Register the struct as an ADT so its field types are
+                // available for struct-literal typing, field access, and
+                // pattern destructuring. Resolve the struct's `LocalDefId`
+                // from the current module's type namespace.
+                let struct_local = def_map
+                    .modules
+                    .get(module_id)
+                    .and_then(|m| m.scope.types.get(&item.name))
+                    .map(|(id, _, _)| *id);
+                if let Some(struct_local) = struct_local {
+                    let adt_id = AdtId::from_raw(struct_local.to_raw());
+                    let mut fields = IndexVec::new();
+                    for field in &struct_item.fields {
+                        let field_ty = tyconv::resolve_type_ref(
+                            ctx,
+                            infer,
+                            def_map,
+                            diagnostics,
+                            &field.ty,
+                            &HashMap::new(),
+                            field.span,
+                        );
+                        fields.push(FieldDef {
+                            name: field.name,
+                            ty: field_ty,
+                        });
+                    }
+                    ctx.register_adt(
+                        adt_id,
+                        AdtDef {
+                            kind: AdtKind::Struct,
+                            fields,
+                            variants: Vec::new(),
+                        },
+                    );
+                }
+            }
             ItemKind::Mod(m) => {
                 let child_mod = def_map.modules[module_id]
                     .children

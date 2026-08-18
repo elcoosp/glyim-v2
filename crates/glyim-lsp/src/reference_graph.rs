@@ -453,6 +453,32 @@ impl ReferenceGraph {
                     );
                 }
                 Expr::Break { value: None } => {}
+                Expr::Let { pat, value } => {
+                    // The pattern of a `let` introduces a *write* to the bound
+                    // variable (mirrors the `Expr::Assign` LHS write tracking).
+                    if let Pat::Binding { name, .. } = &body.pats[*pat] {
+                        let name_str = interner.resolve(*name).to_string();
+                        add_ref(
+                            &name_str,
+                            span,
+                            true,
+                            ReferenceKind::Variable,
+                            AccessKind::Write,
+                        );
+                    }
+                    // Walk the initializer only (not the pattern to avoid
+                    // duplicate uses of the bound name).
+                    walk_expr(
+                        *value,
+                        body,
+                        interner,
+                        _file_id,
+                        add_ref,
+                        function_names,
+                        false,
+                        AccessKind::Read,
+                    );
+                }
                 Expr::Assign { lhs, rhs } => {
                     if let Expr::Path(path) = &body.exprs[*lhs]
                         && let Some(name) = path.as_name()

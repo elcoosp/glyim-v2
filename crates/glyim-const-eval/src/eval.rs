@@ -487,6 +487,14 @@ impl<'a> ConstEvaluator<'a> {
                     span,
                 ))
             }
+            Expr::Let { pat, value } => {
+                let val = self.evaluate_at_depth(*value, depth)?;
+                // Bind a simple identifier pattern into the const environment.
+                if let glyim_hir::Pat::Binding { name, .. } = &self.body.pats[*pat] {
+                    self.assign_name(*name, val);
+                }
+                Ok(ConstValue::Unit)
+            }
             Expr::Call { func, args } => {
                 // Plan §4.2: const-evaluation of function calls. Two carriers:
                 //   * an immediately-invoked closure (`(|p| body)(a)`), and

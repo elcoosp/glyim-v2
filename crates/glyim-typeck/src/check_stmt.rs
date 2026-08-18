@@ -12,6 +12,114 @@ use crate::check_body::FnCtxt;
 use crate::thir;
 
 impl<'a> FnCtxt<'a> {
+    /// Collect the `ExprId`s that are part of a match arm's *guard* subtree
+    /// (the guard expression plus all of its descendant expressions).
+    ///
+    /// The driving `check` loop below iterates the entire flat `body.exprs`
+    /// arena and type-checks every expression as a top-level statement (the
+    /// `expr_cache` makes the resulting double-traversal a no-op for exprs that
+    /// are also reached via their parent's recursive `check_expr` call).
+    ///
+    /// A guard is special: the names it references (e.g. `y` in
+    /// `Some(y) if y > 0`) are only bound inside the arm's pattern scope, which
+    /// the arm establishes *before* calling `check_expr(guard)`. If a guard
+    /// subtree were also checked standalone by the driving loop — in the
+    /// function scope, before the arm binds `y` — it would spuriously report
+    /// "unresolved name `y`". So we skip guard subtrees here and let the arm's
+    /// own in-scope `check_expr(guard)` be their sole point of type-checking.
+    fn guard_subtree_ids(body: &glyim_hir::Body) -> std::collections::HashSet<glyim_hir::ExprId> {
+        use glyim_hir::{Expr, ExprId, MatchArm};
+        let mut skip = std::collections::HashSet::new();
+        let mut stack: Vec<ExprId> = Vec::new();
+        for (_id, expr) in body.exprs.iter_enumerated() {
+            if let Expr::Match { arms, .. } = expr {
+                for arm in arms {
+                    let arm: &MatchArm = arm;
+                    if let Some(guard) = arm.guard {
+                        stack.push(guard);
+                    }
+                }
+            }
+        }
+        while let Some(eid) = stack.pop() {
+            if skip.insert(eid) {
+                let children = match &body.exprs[eid] {
+                    Expr::Block { stmts, tail } => {
+                        let mut v: Vec<ExprId> = stmts.clone();
+                        if let Some(t) = tail {
+                            v.push(*t);
+                        }
+                        v
+                    }
+                    Expr::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                    } => {
+                        let mut v = vec![*cond, *then_branch];
+                        if let Some(e) = else_branch {
+                            v.push(*e);
+                        }
+                        v
+                    }
+                    Expr::While { cond, body } => vec![*cond, *body],
+                    Expr::Loop { body } => vec![*body],
+                    Expr::For { iterable, body, .. } => vec![*iterable, *body],
+                    Expr::Match { scrutinee, arms } => {
+                        let mut v = vec![*scrutinee];
+                        for arm in arms {
+                            let arm: &MatchArm = arm;
+                            if let Some(g) = arm.guard {
+                                v.push(g);
+                            }
+                            v.push(arm.body);
+                        }
+                        v
+                    }
+                    Expr::Call { func, args } => {
+                        let mut v = vec![*func];
+                        v.extend(args.iter().copied());
+                        v
+                    }
+                    Expr::MethodCall { receiver, args, .. } => {
+                        let mut v = vec![*receiver];
+                        v.extend(args.iter().copied());
+                        v
+                    }
+                    Expr::Field { receiver, .. } => vec![*receiver],
+                    Expr::Index { base, index } => vec![*base, *index],
+                    Expr::Unary { expr, .. } => vec![*expr],
+                    Expr::Binary { op: _, lhs, rhs } => vec![*lhs, *rhs],
+                    Expr::Cast { expr, .. } => vec![*expr],
+                    Expr::Ref { expr, .. } => vec![*expr],
+                    Expr::Assign { lhs, rhs } => vec![*lhs, *rhs],
+                    Expr::Return { value } => value.into_iter().copied().collect(),
+                    Expr::Break { value } => value.into_iter().copied().collect(),
+                    Expr::Closure { body, .. } => vec![*body],
+                    Expr::Array(es) | Expr::Tuple(es) => es.clone(),
+                    Expr::Let { value, .. } => vec![*value],
+                    Expr::Struct { fields, spread, .. } => {
+                        let mut v: Vec<ExprId> = fields.iter().map(|(_, e)| *e).collect();
+                        if let Some(s) = spread {
+                            v.push(*s);
+                        }
+                        v
+                    }
+                    Expr::Range { start, end, .. } => {
+                        start.into_iter().chain(end.into_iter()).copied().collect()
+                    }
+                    _ => vec![],
+                };
+                for c in children {
+                    if !skip.contains(&c) {
+                        stack.push(c);
+                    }
+                }
+            }
+        }
+        skip
+    }
+
     pub fn check(mut self, params: &[(Name, Ty, Span)]) -> (thir::Body, HashMap<ExprId, Ty>) {
         let mut thir_params = Vec::with_capacity(params.len());
         for (i, (name, ty, span)) in params.iter().enumerate() {
@@ -26,14 +134,47 @@ impl<'a> FnCtxt<'a> {
             });
         }
 
+        // Only the *guard* subtrees of match arms are skipped from the
+        // top-level driving loop: their names are bound inside the arm's
+        // pattern scope (which the arm sets up before checking the guard in
+        // `check_expr`), so checking them standalone in the function scope
+        // would report spurious "unresolved name" errors. Every other expr in
+        // the flat arena is checked as a top-level statement as designed; the
+        // `expr_cache` makes the resulting redundant traversal a no-op.
+        let guard_skip = Self::guard_subtree_ids(self.body);
+
         let mut stmts = Vec::new();
         let len = self.body.exprs.len();
 
         for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
+            if guard_skip.contains(&expr_id) {
+                continue;
+            }
             let is_tail = pos == len - 1;
             let span = self.expr_span(expr_id);
 
             match expr {
+                Expr::Let { pat, value } => {
+                    let (value_expr, value_ty) = self.check_expr(*value);
+                    // Bind the pattern into the local environment and build a
+                    // THIR `Let` statement (lowered to a storage-live + assign
+                    // + bind in MIR).
+                    let pat_thir = self.check_pattern(*pat, value_ty);
+                    if is_tail {
+                        self.unify(Ty::UNIT, self.return_ty, span);
+                    }
+                    let name = match &pat_thir.kind {
+                        thir::PatternKind::Binding { name, .. } => *name,
+                        _ => self.ctx.resolver().intern("_"),
+                    };
+                    stmts.push(thir::Stmt::Let {
+                        name,
+                        ty: value_ty,
+                        pat: pat_thir,
+                        init: Some(value_expr),
+                        span,
+                    });
+                }
                 Expr::Assign { lhs, rhs } => {
                     let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
                     let (rhs_expr, rhs_ty) = self.check_expr(*rhs);

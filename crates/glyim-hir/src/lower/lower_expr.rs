@@ -96,19 +96,17 @@ pub(crate) fn lower_block_to_expr(
                 if let (Some(pat), Some(rhs)) = (pat_node, expr_node.clone())
                     && let Some(pat_id) = lower_pat(&pat, interner, &mut body.pats, diags)
                 {
-                    let span = node_span(&child);
-                    let lhs_expr_id = pat_to_expr(pat_id, body, interner, span);
                     let rhs_expr_id = lower_expr(&rhs, interner, body, diags, struct_field_map);
-                    if let (Some(lhs_id), Some(rhs_id)) = (lhs_expr_id, rhs_expr_id) {
-                        let assign = Expr::Assign {
-                            lhs: lhs_id,
-                            rhs: rhs_id,
+                    if let Some(rhs_id) = rhs_expr_id {
+                        let let_expr = Expr::Let {
+                            pat: pat_id,
+                            value: rhs_id,
                         };
-                        let assign_id = body.alloc_expr(assign, node_span(&child));
+                        let let_id = body.alloc_expr(let_expr, node_span(&child));
                         if let Some(prev) = pending.take() {
                             stmts.push(prev);
                         }
-                        stmts.push(assign_id);
+                        stmts.push(let_id);
                         pending = None;
                         last_has_semi = true;
                         continue;
@@ -374,12 +372,45 @@ fn lower_struct_expr(
     let mut fields = Vec::new();
     let mut spread = None;
 
-    // First, find the path (struct name)
+    // First, find the path (struct name). Build the `HirPath` directly rather
+    // than allocating a stray `Expr::Path`, so the struct name is not
+    // independently type-checked as a value path (it is a *type*, resolved via
+    // `resolve_path_type` inside the struct literal). Mirrors the segment
+    // extraction in `lower_path_expr` but does not allocate an orphan expr.
     for child in node.children() {
         if (child.kind() == SyntaxKind::PathExpr || child.kind() == SyntaxKind::UsePath)
             && path.is_none()
         {
-            path = lower_path_expr(&child, interner, body);
+            let mut segments = Vec::new();
+            for el in child.children_with_tokens() {
+                if let glyim_syntax::SyntaxElement::Token(t) = el {
+                    if t.kind() == SyntaxKind::Ident {
+                        segments.push(PathSegment {
+                            name: interner.intern(t.text()),
+                            generic_args: None,
+                        });
+                    }
+                } else if let glyim_syntax::SyntaxElement::Node(n) = el
+                    && n.kind() == SyntaxKind::UsePath
+                {
+                    for t in n.children_with_tokens() {
+                        if let glyim_syntax::SyntaxElement::Token(tt) = t
+                            && tt.kind() == SyntaxKind::Ident
+                        {
+                            segments.push(PathSegment {
+                                name: interner.intern(tt.text()),
+                                generic_args: None,
+                            });
+                        }
+                    }
+                }
+            }
+            if !segments.is_empty() {
+                path = Some(HirPath {
+                    segments,
+                    kind: PathKind::Plain,
+                });
+            }
         }
     }
 
@@ -394,6 +425,7 @@ fn lower_struct_expr(
         struct_field_map: &HashMap<Name, Vec<Name>>,
         fields: &mut Vec<(Name, ExprId)>,
         spread: &mut Option<ExprId>,
+        skip_name: Option<Name>,
     ) {
         let mut i = 0;
         while i < siblings.len() {
@@ -448,13 +480,18 @@ fn lower_struct_expr(
                             i += 1;
                         }
                         SyntaxKind::PathExpr => {
-                            // Shorthand field: single identifier
-                            if let Some(name) = path_as_name(node, interner)
-                                && let Some(expr_id) =
-                                    lower_expr(node, interner, body, diags, struct_field_map)
-                                {
-                                    fields.push((name, expr_id));
+                            // Shorthand field: single identifier. Skip the
+                            // struct-name itself (it is a *type*, not a field,
+                            // and must not be lowered as a value path).
+                            if let Some(name) = path_as_name(node, interner) {
+                                if Some(name) != skip_name {
+                                    if let Some(expr_id) =
+                                        lower_expr(node, interner, body, diags, struct_field_map)
+                                    {
+                                        fields.push((name, expr_id));
+                                    }
                                 }
+                            }
                             i += 1;
                         }
                         _ => {
@@ -475,6 +512,7 @@ fn lower_struct_expr(
         struct_field_map: &HashMap<Name, Vec<Name>>,
         fields: &mut Vec<(Name, ExprId)>,
         spread: &mut Option<ExprId>,
+        skip_name: Option<Name>,
     ) {
         match n.kind() {
             SyntaxKind::StructExpr => {
@@ -489,6 +527,7 @@ fn lower_struct_expr(
                     struct_field_map,
                     fields,
                     spread,
+                    skip_name,
                 );
                 // Also recurse into children for safety (but sibling collection should cover it)
                 for child in n.children() {
@@ -500,6 +539,7 @@ fn lower_struct_expr(
                         struct_field_map,
                         fields,
                         spread,
+                        skip_name,
                     );
                 }
             }
@@ -514,6 +554,7 @@ fn lower_struct_expr(
                         struct_field_map,
                         fields,
                         spread,
+                        skip_name,
                     );
                 }
             }
@@ -528,18 +569,14 @@ fn lower_struct_expr(
         struct_field_map,
         &mut fields,
         &mut spread,
+        path.as_ref().and_then(|p| p.as_name()),
     );
 
     // Remove any field that matches the struct name (shorthand for the struct itself)
-    let path_id = path.unwrap_or_else(|| body.alloc_missing(node_span(node)));
-    let path_struct = if let Expr::Path(p) = &body.exprs[path_id] {
-        p.clone()
-    } else {
-        HirPath {
-            segments: vec![],
-            kind: PathKind::Plain,
-        }
-    };
+    let path_struct = path.unwrap_or_else(|| HirPath {
+        segments: vec![],
+        kind: PathKind::Plain,
+    });
     let struct_name = path_struct.as_name();
     if let Some(struct_name_val) = struct_name {
         fields.retain(|(name, _)| *name != struct_name_val);
@@ -1117,6 +1154,7 @@ fn lower_match_expr(
             let mut pat_id = None;
             let mut guard = None;
             let mut body_id = None;
+            let mut prev_expr: Option<ExprId> = None;
             for part in arm_node.children() {
                 match part.kind() {
                     SyntaxKind::PatIdent
@@ -1130,14 +1168,37 @@ fn lower_match_expr(
                         pat_id = lower_pat(&part, interner, &mut body.pats, diags)
                     }
                     _ if is_expr_node(&part) => {
-                        if body_id.is_none() {
-                            body_id = lower_expr(&part, interner, body, diags, struct_field_map);
-                        } else if guard.is_none() {
-                            guard = lower_expr(&part, interner, body, diags, struct_field_map);
+                        // In a match arm, the structure is:
+                        //   <pat> [if <guard-expr>] => <body-expr>
+                        // The first expression node after the pattern is the
+                        // guard (when `if` is present); everything after the
+                        // `=>` is the body. Since the parser represents the arm
+                        // as pattern + expr-node(s), the LAST expr node is the
+                        // body and (if there are two) the first is the guard.
+                        let eid = lower_expr(&part, interner, body, diags, struct_field_map);
+                        if let Some(eid) = eid {
+                            if body_id.is_some() {
+                                // Already have a body; this can't be a guard.
+                                // Defensive: keep the last as body.
+                                body_id = Some(eid);
+                            } else if let Some(prev) = prev_expr {
+                                // Second expr node -> body; first was the guard.
+                                guard = Some(prev);
+                                body_id = Some(eid);
+                            } else {
+                                // First expr node: tentatively a guard, but may
+                                // turn out to be the body if no second appears.
+                                prev_expr = Some(eid);
+                            }
                         }
                     }
                     _ => {}
                 }
+            }
+            // If only one expr node was seen, it is the body (no guard).
+            if body_id.is_none() {
+                body_id = prev_expr.take();
+                guard = None;
             }
             if let (Some(pat), Some(body_id_val)) = (pat_id, body_id) {
                 arms.push(MatchArm {

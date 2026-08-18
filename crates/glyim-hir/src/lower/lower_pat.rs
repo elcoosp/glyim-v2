@@ -151,15 +151,23 @@ pub(crate) fn lower_pat(
             for child in node.children_with_tokens() {
                 match &child {
                     glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::UsePath => {
-                        let text = n.text().to_string().trim().to_string();
-                        let name = interner.intern(&text);
-                        path = Some(HirPath {
-                            segments: vec![PathSegment {
-                                name,
-                                generic_args: None,
-                            }],
-                            kind: PathKind::Plain,
-                        });
+                        let mut segments = Vec::new();
+                        for el in n.children_with_tokens() {
+                            if let glyim_syntax::SyntaxElement::Token(t) = el
+                                && t.kind() == SyntaxKind::Ident
+                            {
+                                segments.push(PathSegment {
+                                    name: interner.intern(t.text()),
+                                    generic_args: None,
+                                });
+                            }
+                        }
+                        if !segments.is_empty() {
+                            path = Some(HirPath {
+                                segments,
+                                kind: PathKind::Plain,
+                            });
+                        }
                     }
                     glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::PatTuple => {
                         for el in n.children_with_tokens() {

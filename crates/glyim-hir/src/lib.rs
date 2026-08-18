@@ -382,6 +382,13 @@ pub enum Expr {
     },
     Array(Vec<ExprId>),
     Tuple(Vec<ExprId>),
+    /// `let <pat> = <value>` — a named-binding statement (and the only place a
+    /// new local is introduced). The pattern is bound into the local
+    /// environment when this is converted to THIR `Stmt::Let`.
+    Let {
+        pat: PatId,
+        value: ExprId,
+    },
     Struct {
         path: Path,
         fields: Vec<(Name, ExprId)>,

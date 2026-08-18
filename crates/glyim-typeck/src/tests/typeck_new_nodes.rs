@@ -12,20 +12,20 @@ fn compile(src: &str) -> CompileOutput {
     compiler.compile(src, FileId::from_raw(1), &[])
 }
 
-// All tests are ignored because the test infrastructure currently
-// produces an I/O error (os error 2) unrelated to type checking logic.
-// The implementation of type checking for all required nodes is complete.
-// These tests will be re-enabled when the test harness is fixed.
+// These tests exercise the real compile pipeline for `let x =` named
+// bindings, array literals, struct literals with spread, and data-variant /
+// or / range / slice pattern matching in `match` expressions. All pass through
+// the real pipeline (`PipelineCompiler` + `MockCodegen`).
 
-#[ignore]
 #[test]
 fn match_guard_uses_binding() {
     let output = compile(
         r#"
+        enum OptionI32 { None, Some(i32) }
         fn main() {
-            let x = Some(5);
+            let x = OptionI32::Some(5);
             match x {
-                Some(y) if y > 0 => {},
+                OptionI32::Some(y) if y > 0 => {},
                 _ => {}
             }
         }
@@ -34,7 +34,6 @@ fn match_guard_uses_binding() {
     assert_no_errors(&output.diagnostics);
 }
 
-#[ignore]
 #[test]
 fn or_pattern_same_types() {
     let output = compile(
@@ -50,7 +49,6 @@ fn or_pattern_same_types() {
     assert_no_errors(&output.diagnostics);
 }
 
-#[ignore]
 #[test]
 fn range_pattern_integer() {
     let output = compile(
@@ -66,7 +64,6 @@ fn range_pattern_integer() {
     assert_no_errors(&output.diagnostics);
 }
 
-#[ignore]
 #[test]
 fn slice_pattern_array() {
     let output = compile(
@@ -83,7 +80,6 @@ fn slice_pattern_array() {
     assert_no_errors(&output.diagnostics);
 }
 
-#[ignore]
 #[test]
 fn index_expression_array() {
     let output = compile(
@@ -97,7 +93,6 @@ fn index_expression_array() {
     assert_no_errors(&output.diagnostics);
 }
 
-#[ignore]
 #[test]
 fn struct_literal_with_spread() {
     let output = compile(
@@ -112,7 +107,6 @@ fn struct_literal_with_spread() {
     assert_no_errors(&output.diagnostics);
 }
 
-#[ignore]
 #[test]
 fn or_pattern_mismatched_types_fails() {
     let output = compile(

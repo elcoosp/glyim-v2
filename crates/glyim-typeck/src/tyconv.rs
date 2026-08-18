@@ -585,7 +585,7 @@ fn resolve_qualified_path(
 /// `ModuleData::children`); the final segment is resolved in the scope of the
 /// module reached by the prefix. Handles `Crate` / `Super(n)` / `SelfPath` /
 /// `Plain` path kinds.
-fn resolve_path_to_local_def_id(
+pub(crate) fn resolve_path_to_local_def_id(
     def_map: &glyim_def_map::CrateDefMap,
     path: &glyim_hir::Path,
 ) -> Option<LocalDefId> {

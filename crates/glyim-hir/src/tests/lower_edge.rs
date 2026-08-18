@@ -126,8 +126,8 @@ fn test_let_stmt() {
             assert!(!stmts.is_empty(), "Expected at least one statement");
             let assign_found = stmts
                 .iter()
-                .any(|&sid| matches!(&body.exprs[sid], Expr::Assign { .. }));
-            assert!(assign_found, "Expected an Assign for let statement");
+                .any(|&sid| matches!(&body.exprs[sid], Expr::Let { .. }));
+            assert!(assign_found, "Expected a Let for let statement");
             match tail {
                 Some(tail_id) => assert!(matches!(&body.exprs[*tail_id], Expr::Path(_))),
                 None => panic!("Expected tail expression"),

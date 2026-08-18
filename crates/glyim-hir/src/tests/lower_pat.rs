@@ -1,5 +1,5 @@
 use crate::lower::lower_crate;
-use crate::{BodyId, Expr, ExprId, ItemId, ItemKind};
+use crate::{BodyId, Expr, ExprId, ItemId, ItemKind, Pat};
 use glyim_core::interner::Interner;
 use glyim_frontend::parse_to_syntax;
 use glyim_span::FileId;
@@ -28,14 +28,14 @@ fn test_pat_binding() {
     match &body.exprs[block_id] {
         Expr::Block { stmts, .. } => {
             let found = stmts.iter().any(|&sid| {
-                if let Expr::Assign { lhs, .. } = &body.exprs[sid]
-                    && let Expr::Path(p) = &body.exprs[*lhs]
+                if let Expr::Let { pat, .. } = &body.exprs[sid]
+                    && let Pat::Binding { name: pat_name, .. } = &body.pats[*pat]
                 {
-                    return p.as_name().unwrap() == interner.intern("x");
+                    return pat_name == &interner.intern("x");
                 }
                 false
             });
-            assert!(found, "No assignment to x found in block statements");
+            assert!(found, "No let-binding of x found in block statements");
         }
         _ => panic!(),
     }
@@ -59,8 +59,8 @@ fn test_pat_struct() {
         Expr::Block { stmts, .. } => {
             let found = stmts
                 .iter()
-                .any(|&sid| matches!(&body.exprs[sid], Expr::Assign { .. }));
-            assert!(found, "Expected assignment inside block");
+                .any(|&sid| matches!(&body.exprs[sid], Expr::Let { .. }));
+            assert!(found, "Expected let-binding inside block");
         }
         _ => panic!(),
     }

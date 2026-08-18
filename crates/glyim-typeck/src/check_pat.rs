@@ -1,6 +1,7 @@
 //! Pattern checking logic for FnCtxt.
 
 use glyim_core::def_id::AdtId;
+use glyim_core::def_id::LocalDefId;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{Pat, PatId};
@@ -56,21 +57,74 @@ impl<'a> FnCtxt<'a> {
                     span,
                 }
             }
+            Pat::Path(path) => {
+                // Unit enum-variant pattern, e.g. `None` or `Color::Red`.
+                let local = self.resolve_pat_path_local(path);
+                match local {
+                    Some(local) => {
+                        if let Some((enum_local, vidx)) =
+                            self.def_map.variant_map.get(&local)
+                        {
+                            let adt_id = AdtId::from_raw(enum_local.to_raw());
+                            thir::Pattern {
+                                kind: thir::PatternKind::Struct {
+                                    adt_id,
+                                    variant_idx: vidx.index() as u32,
+                                    fields: Vec::new(),
+                                    rest: false,
+                                },
+                                ty: expected_ty,
+                                span,
+                            }
+                        } else {
+                            let label = if let Some(name) = path.as_name() {
+                                format!(
+                                    "unsupported path pattern `{}`",
+                                    self.ctx.name_str(name)
+                                )
+                            } else {
+                                "unsupported path pattern".to_string()
+                            };
+                            self.diagnostics
+                                .push(GlyimDiagnostic::type_error(span, label));
+                            thir::Pattern::err(span)
+                        }
+                    }
+                    None => {
+                        let label = if let Some(name) = path.as_name() {
+                            format!(
+                                "unresolved path pattern `{}`",
+                                self.ctx.name_str(name)
+                            )
+                        } else {
+                            "unresolved path pattern".to_string()
+                        };
+                        self.diagnostics
+                            .push(GlyimDiagnostic::type_error(span, label));
+                        thir::Pattern::err(span)
+                    }
+                }
+            }
             Pat::Struct { path, fields, rest } => {
-                // Resolve the struct name. Single‑segment paths resolve in the
-                // crate root scope; multi‑segment paths (e.g. `zoo::Point`) walk
-                // the module tree (plan §9.4). `resolve_path_to_adt_id` handles
-                // both by reusing the existing def‑map resolver.
-                let adt_id = if let Some(name) = path.as_name() {
-                    self.def_map.modules[self.def_map.root]
-                        .scope
-                        .resolve(name)
-                        .map(|res| AdtId::from_raw(res.0.to_raw()))
-                } else {
-                    crate::tyconv::resolve_path_to_adt_id(self.def_map, path)
-                };
-                let adt_id = match adt_id {
-                    Some(id) => id,
+                // The path may name an enum *variant* (data-carrying, e.g.
+                // `OptionI32::Some(y)`) or a plain *struct*. The def map
+                // registers each variant in the value namespace and provides a
+                // reverse map `variant_local -> (enum_local, VariantIdx)`.
+                let local = self.resolve_pat_path_local(path);
+                let (adt_id, variant_idx, is_variant) = match local {
+                    Some(local) => {
+                        if let Some((enum_local, vidx)) =
+                            self.def_map.variant_map.get(&local)
+                        {
+                            (
+                                AdtId::from_raw(enum_local.to_raw()),
+                                vidx.index() as u32,
+                                true,
+                            )
+                        } else {
+                            (AdtId::from_raw(local.to_raw()), 0, false)
+                        }
+                    }
                     None => {
                         let label = if let Some(name) = path.as_name() {
                             format!("unresolved struct `{}`", self.ctx.name_str(name))
@@ -81,25 +135,60 @@ impl<'a> FnCtxt<'a> {
                         return thir::Pattern::err(span);
                     }
                 };
+                let adt_def = self.ctx.adt_def(adt_id);
+                let adt_known = adt_def.is_some();
                 let mut field_pats = Vec::new();
-                for (field_name, field_pat_id) in fields {
-                    let field_ty = if self.ctx.adt_def(adt_id).is_some() {
-                        self.lookup_field_ty(adt_id, *field_name, span)
-                    } else {
-                        expected_ty
+                if is_variant {
+                    // Variant pattern: `fields` are positional (the inner
+                    // patterns, in source order). Precompute each field's name
+                    // and type so we can release the `adt_def` borrow before
+                    // recursing into `check_pattern` (which needs `&mut self`).
+                    let (field_names, field_tys): (Vec<_>, Vec<_>) = match adt_def
+                        .as_ref()
+                        .and_then(|d| d.variants.get(variant_idx as usize))
+                    {
+                        Some(variant) => (0..variant.fields.len())
+                            .map(|i| {
+                                let f = &variant.fields[glyim_type::FieldIdx::from_raw(i as u32)];
+                                (f.name, f.ty)
+                            })
+                            .unzip(),
+                        None => (Vec::new(), Vec::new()),
                     };
-                    self.env.add_binding(*field_name, field_ty, Mutability::Not);
-                    let field_pat = self.check_pattern(*field_pat_id, field_ty);
-                    field_pats.push(thir::FieldPat {
-                        field: *field_name,
-                        pattern: field_pat,
-                        span,
-                    });
+                    for (i, (_, field_pat_id)) in fields.iter().enumerate() {
+                        let field_name = field_names
+                            .get(i)
+                            .copied()
+                            .unwrap_or_else(|| self.ctx.resolver().intern(&format!("_{}", i)));
+                        let field_ty = field_tys.get(i).copied().unwrap_or(expected_ty);
+                        let field_pat = self.check_pattern(*field_pat_id, field_ty);
+                        field_pats.push(thir::FieldPat {
+                            field: field_name,
+                            pattern: field_pat,
+                            span,
+                        });
+                    }
+                } else {
+                    // Struct pattern: named fields.
+                    for (field_name, field_pat_id) in fields {
+                        let field_ty = if adt_known {
+                            self.lookup_field_ty(adt_id, *field_name, span)
+                        } else {
+                            expected_ty
+                        };
+                        self.env.add_binding(*field_name, field_ty, Mutability::Not);
+                        let field_pat = self.check_pattern(*field_pat_id, field_ty);
+                        field_pats.push(thir::FieldPat {
+                            field: *field_name,
+                            pattern: field_pat,
+                            span,
+                        });
+                    }
                 }
                 thir::Pattern {
                     kind: thir::PatternKind::Struct {
                         adt_id,
-                        variant_idx: 0,
+                        variant_idx,
                         fields: field_pats,
                         rest: *rest,
                     },
@@ -120,6 +209,10 @@ impl<'a> FnCtxt<'a> {
             }
             Pat::Literal(lit) => {
                 let thir_lit = crate::unify::thir_literal(lit);
+                if expected_ty != Ty::ERROR {
+                    let lit_ty = crate::unify::literal_ty(self.ctx, lit);
+                    self.unify(lit_ty, expected_ty, span);
+                }
                 thir::Pattern {
                     kind: thir::PatternKind::Literal(thir_lit),
                     ty: expected_ty,
@@ -235,10 +328,32 @@ impl<'a> FnCtxt<'a> {
         }
     }
 
-    
-
-
-    
-
-    
+    /// Resolve a pattern path (struct or enum-variant name) to the
+    /// `LocalDefId` of the thing it names. Variants live in the value
+    /// namespace; structs/enums live in the type namespace. Uses the def map's
+    /// `Resolver` so multi‑segment paths (e.g. `OptionI32::Some`) walk the
+    /// module tree correctly.
+    fn resolve_pat_path_local(&self, path: &glyim_hir::Path) -> Option<LocalDefId> {
+        let core_path = glyim_core::Path {
+            segments: path
+                .segments
+                .iter()
+                .map(|s| glyim_core::PathSegment {
+                    name: s.name,
+                    generic_args: None,
+                })
+                .collect(),
+            kind: path.kind,
+        };
+        let resolver = glyim_def_map::Resolver::new(
+            &self.def_map.modules,
+            self.def_map.root,
+            self.def_map.root,
+        );
+        let resolved = resolver.resolve_path(&core_path);
+        resolved
+            .values
+            .or(resolved.types)
+            .map(|(local, _vis)| local)
+    }
 }

@@ -241,10 +241,15 @@ impl InferenceTable {
             }
             (TyKind::Infer(InferVar::Ty(var)), other)
             | (other, TyKind::Infer(InferVar::Ty(var))) => {
+                // The value being bound to `var` is the *non-infer* side. When
+                // the infer var is the second argument (`b`), the trivial
+                // `occurs(var, Infer(var))` check would otherwise misfire and
+                // report a spurious infinite-type error.
+                let other_ty = if matches!(ctx.ty_kind(a), TyKind::Infer(_)) { b } else { a };
                 let tv = &self.ty_vars[var];
                 match tv.kind {
                     VariableKind::General => {
-                        if self.occurs(ctx, var, b) {
+                        if self.occurs(ctx, var, other_ty) {
                             return Err(vec![GlyimDiagnostic::type_error(
                                 span,
                                 format!(
@@ -254,12 +259,12 @@ impl InferenceTable {
                                 ),
                             )]);
                         }
-                        self.ty_vars[var].value = Some(b);
+                        self.ty_vars[var].value = Some(other_ty);
                         Ok(Vec::new())
                     }
                     VariableKind::Integer => match &other {
                         TyKind::Int(_) | TyKind::Error => {
-                            if self.occurs(ctx, var, b) {
+                            if self.occurs(ctx, var, other_ty) {
                                 return Err(vec![GlyimDiagnostic::type_error(
                                     span,
                                     format!(
@@ -269,11 +274,11 @@ impl InferenceTable {
                                     ),
                                 )]);
                             }
-                            self.ty_vars[var].value = Some(b);
+                            self.ty_vars[var].value = Some(other_ty);
                             Ok(Vec::new())
                         }
                         TyKind::Infer(InferVar::Int(_)) | TyKind::Infer(InferVar::Ty(_)) => {
-                            if self.occurs(ctx, var, b) {
+                            if self.occurs(ctx, var, other_ty) {
                                 return Err(vec![GlyimDiagnostic::type_error(
                                     span,
                                     format!(
@@ -283,7 +288,7 @@ impl InferenceTable {
                                     ),
                                 )]);
                             }
-                            self.ty_vars[var].value = Some(b);
+                            self.ty_vars[var].value = Some(other_ty);
                             Ok(Vec::new())
                         }
                         _ => Err(vec![GlyimDiagnostic::type_error(
@@ -296,7 +301,7 @@ impl InferenceTable {
                     },
                     VariableKind::Float => match &other {
                         TyKind::Float(_) | TyKind::Error => {
-                            if self.occurs(ctx, var, b) {
+                            if self.occurs(ctx, var, other_ty) {
                                 return Err(vec![GlyimDiagnostic::type_error(
                                     span,
                                     format!(
@@ -306,11 +311,11 @@ impl InferenceTable {
                                     ),
                                 )]);
                             }
-                            self.ty_vars[var].value = Some(b);
+                            self.ty_vars[var].value = Some(other_ty);
                             Ok(Vec::new())
                         }
                         TyKind::Infer(InferVar::Float(_)) | TyKind::Infer(InferVar::Ty(_)) => {
-                            if self.occurs(ctx, var, b) {
+                            if self.occurs(ctx, var, other_ty) {
                                 return Err(vec![GlyimDiagnostic::type_error(
                                     span,
                                     format!(
@@ -320,7 +325,7 @@ impl InferenceTable {
                                     ),
                                 )]);
                             }
-                            self.ty_vars[var].value = Some(b);
+                            self.ty_vars[var].value = Some(other_ty);
                             Ok(Vec::new())
                         }
                         _ => Err(vec![GlyimDiagnostic::type_error(
