@@ -8,9 +8,11 @@
 //! `glyim-const-eval` (which must reject illegal `const` casts) delegate to it
 //! so the rules live in exactly one place.
 
-use crate::adt_def::{AdtDef, AdtKind};
+use crate::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
 use crate::display::TypeLookup;
 use crate::{Ty, TyKind};
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::AdtId;
 
 /// Return `true` if a value of type `from` may be cast to type `to`.
 ///
@@ -37,8 +39,7 @@ pub fn is_valid_cast(ctx: &dyn TypeLookup, from: Ty, to: Ty) -> bool {
             // Structs, unions, and enums with data are rejected.
             match ctx.adt_def(*from_id) {
                 Some(adt) => {
-                    adt.kind == AdtKind::Enum
-                        && adt.variants.iter().all(|v| v.fields.is_empty())
+                    adt.kind == AdtKind::Enum && adt.variants.iter().all(|v| v.fields.is_empty())
                 }
                 None => false,
             }
@@ -88,10 +89,60 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a registered fieldless enum ADT to exercise the Adt arm"]
     fn fieldless_enum_to_int_is_valid() {
+        // Plan §13.2: a fieldless (C-like) enum must be castable to an integer.
+        // The previous version of this test was `#[ignore]`d because it passed
+        // `error_ty()` (no Adt arm to exercise); here we register a real
+        // fieldless enum ADT so `is_valid_cast`'s Adt arm actually runs.
         let mut tcx_mut = TyCtxMut::new(Interner::new());
+        let enum_id = AdtId::from_raw(501);
+        let variants = vec![VariantDef {
+            name: tcx_mut.resolver().intern("A"),
+            fields: IndexVec::new(),
+        }];
+        let enum_def = AdtDef {
+            kind: AdtKind::Enum,
+            fields: IndexVec::new(),
+            variants,
+        };
+        tcx_mut.register_adt(enum_id, enum_def);
+        let substs = tcx_mut.intern_substitution(vec![]);
+        let enum_ty = tcx_mut.mk_adt(enum_id, substs);
         let u8 = tcx_mut.mk_ty(TyKind::Uint(UintTy::U8));
-        assert!(is_valid_cast(&tcx_mut, tcx_mut.error_ty(), u8));
+        assert!(
+            is_valid_cast(&tcx_mut, enum_ty, u8),
+            "fieldless enum must be castable to u8"
+        );
+    }
+
+    #[test]
+    fn enum_with_data_to_int_is_invalid() {
+        // Plan §13.2: an enum carrying data (a variant with a field) is NOT a
+        // fieldless enum, so its cast to an integer must be rejected.
+        let mut tcx_mut = TyCtxMut::new(Interner::new());
+        let enum_id = AdtId::from_raw(502);
+        let u8 = tcx_mut.mk_ty(TyKind::Uint(UintTy::U8));
+        let field = FieldDef {
+            name: tcx_mut.resolver().intern("x"),
+            ty: u8,
+        };
+        let mut field_list = IndexVec::new();
+        field_list.push(field);
+        let variants = vec![VariantDef {
+            name: tcx_mut.resolver().intern("A"),
+            fields: field_list,
+        }];
+        let enum_def = AdtDef {
+            kind: AdtKind::Enum,
+            fields: IndexVec::new(),
+            variants,
+        };
+        tcx_mut.register_adt(enum_id, enum_def);
+        let substs = tcx_mut.intern_substitution(vec![]);
+        let enum_ty = tcx_mut.mk_adt(enum_id, substs);
+        assert!(
+            !is_valid_cast(&tcx_mut, enum_ty, u8),
+            "enum with data must NOT be castable to u8"
+        );
     }
 }
