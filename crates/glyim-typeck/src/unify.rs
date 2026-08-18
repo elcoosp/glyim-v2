@@ -54,6 +54,7 @@ impl<'a> FnCtxt<'a> {
     }
 
     pub fn check_path(&mut self, path: &Path, span: Span) -> (thir::Expr, Ty) {
+        // 1. Local variable (already bound in this scope).
         if let Some(name) = path.as_name() {
             if let Some(var_info) = self.env.lookup_by_name(name) {
                 self.capture_log.push((var_info.id, var_info.ty, false));
@@ -64,20 +65,78 @@ impl<'a> FnCtxt<'a> {
                 };
                 return (thir_expr, var_info.ty);
             }
+        }
+
+        // 2. Value-namespace resolution through the def map (functions, consts,
+        //    enum variants). Single- and multi-segment paths both flow through
+        //    `Resolver::resolve_path`, which walks the module tree and returns a
+        //    `PerNs` with separate type/value namespaces (plan: value paths).
+        let core_path = glyim_core::Path {
+            segments: path
+                .segments
+                .iter()
+                .map(|s| glyim_core::PathSegment {
+                    name: s.name,
+                    generic_args: None,
+                })
+                .collect(),
+            kind: path.kind,
+        };
+        let resolved = {
+            let resolver = glyim_def_map::Resolver::new(
+                &self.def_map.modules,
+                self.def_map.root,
+                self.def_map.root,
+            );
+            resolver.resolve_path(&core_path)
+        };
+
+        if let Some((local, _vis)) = resolved.values {
+            let fn_def_id = FnDefId::from_raw(local.to_raw());
+            if let Some(sig) = self.ctx.fn_sig(fn_def_id) {
+                let substs = self.ctx.intern_substitution(vec![]);
+                let fn_ty = self.ctx.mk_ty(TyKind::FnDef(fn_def_id, substs));
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::FnRef(fn_def_id),
+                    ty: fn_ty,
+                    span,
+                };
+                return (thir_expr, fn_ty);
+            }
+            // Resolved to a value that is not a registered function (e.g. a
+            // const or enum variant). Those value kinds need dedicated THIR
+            // nodes and are handled separately; for now report a clear error.
+            self.diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                "value paths other than functions are not yet supported".to_string(),
+            ));
+            return (thir::Expr::err(span), Ty::ERROR);
+        }
+
+        // 3. Type-namespace resolution (ADTs, traits) is not a value expression;
+        //    fall through to the unresolved-name diagnostic.
+        if let Some(name) = path.as_name() {
             self.diagnostics.push(GlyimDiagnostic::type_error(
                 span,
                 format!("unresolved name `{}`", self.ctx.name_str(name)),
             ));
-            return (thir::Expr::err(span), Ty::ERROR);
+        } else {
+            self.diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                "unresolved value path".to_string(),
+            ));
         }
-        self.diagnostics.push(GlyimDiagnostic::type_error(
-            span,
-            "multi-segment paths not yet implemented",
-        ));
         (thir::Expr::err(span), Ty::ERROR)
     }
 
-    pub fn instantiate_fn_sig(&mut self, _def_id: FnDefId, span: Span) -> Ty {
+    pub fn instantiate_fn_sig(&mut self, def_id: FnDefId, span: Span) -> Ty {
+        // The function's signature was registered in the type context during
+        // crate type-checking (see `register_fn_sig`). Prefer that source of
+        // truth for the return type; fall back to scanning HIR items only when
+        // no signature was registered (e.g. builtins).
+        if let Some(sig) = self.ctx.fn_sig(def_id) {
+            return sig.output;
+        }
         for (_id, item) in self.hir.items.iter_enumerated() {
             if let glyim_hir::ItemKind::Fn(fn_item) = &item.kind {
                 if let Some(return_ty_ref) = &fn_item.return_ty {

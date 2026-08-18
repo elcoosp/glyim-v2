@@ -29,5 +29,7 @@ mod test_utils;
 mod thir_body;
 mod tuple_index;
 mod typeck_new_nodes;
+mod value_path;
+mod value_path_integration;
 mod where_clause;
 mod while_loop;
