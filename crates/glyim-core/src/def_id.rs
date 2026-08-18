@@ -55,5 +55,6 @@ define_def_id!(
     OpaqueTyId,
     TypeAliasId,
     ConstDefId,
-    StaticDefId
+    StaticDefId,
+    VariantIdx
 );

@@ -95,6 +95,7 @@ fn build_empty_def_map(krate: CrateId) -> CrateDefMap {
         modules,
         krate,
         interner: global_interner(),
+    variant_map: Default::default(),
     }
 }
 
@@ -462,6 +463,7 @@ fn v03_t04_default_method_with_generic_params() {
         modules,
         krate: CrateId::from_raw(0),
         interner: interner.clone(),
+    variant_map: Default::default(),
     };
 
     let mut solver = MockSolver::new().respond_for_any(SolverResult::Proven);

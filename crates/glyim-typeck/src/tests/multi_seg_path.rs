@@ -60,6 +60,7 @@ fn nested_def_map(interner: &mut glyim_core::interner::Interner) -> CrateDefMap 
         modules,
         krate: CrateId::from_raw(0),
         interner: interner.clone(),
+    variant_map: Default::default(),
     }
 }
 
@@ -117,6 +118,7 @@ fn single_segment_struct_pattern_still_resolves() {
         modules,
         krate: CrateId::from_raw(0),
         interner: interner.clone(),
+    variant_map: Default::default(),
     };
 
     let path = Path::from_single(point);

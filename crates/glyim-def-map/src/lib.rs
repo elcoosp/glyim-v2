@@ -25,7 +25,7 @@
 )]
 
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{CrateId, LocalDefId};
+use glyim_core::def_id::{CrateId, LocalDefId, VariantIdx};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::path::{Path, PathKind, PathSegment};
 use glyim_core::primitives::Visibility;
@@ -43,6 +43,11 @@ pub struct CrateDefMap {
     pub modules: IndexVec<ModuleId, ModuleData>,
     pub krate: CrateId,
     pub interner: Interner,
+    /// Reverse map from a variant's value-namespace `LocalDefId` to the
+    /// enclosing enum's `LocalDefId` and the variant's index. Populated while
+    /// declaring enum items so value paths like `Enum::Variant` / `Variant`
+    /// resolve to a concrete `(AdtId, VariantIdx)`.
+    pub variant_map: HashMap<LocalDefId, (LocalDefId, VariantIdx)>,
 }
 
 #[derive(Clone, Debug)]
@@ -377,6 +382,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
     // of resolving them inline, so import resolution can run as a fixed-point
     // loop afterward (required for cross-module globs and import cycles).
     let mut use_decls: Vec<(SyntaxNode, ModuleId, Visibility)> = Vec::new();
+    let mut variant_map: HashMap<LocalDefId, (LocalDefId, VariantIdx)> = HashMap::new();
 
     let root_module = modules.push(ModuleData {
         parent: None,
@@ -398,6 +404,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         &mut def_counter,
         &mut def_to_module,
         &mut use_decls,
+        &mut variant_map,
     );
 
     // Plan §4.1: fixed-point import resolution. Re-run every pending `use`
@@ -433,6 +440,7 @@ pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<Gly
         modules,
         krate,
         interner,
+        variant_map,
     };
     (def_map, diagnostics)
 }
@@ -635,6 +643,7 @@ fn collect_items(
     def_counter: &mut u32,
     def_to_module: &mut HashMap<LocalDefId, ModuleId>,
     use_decls: &mut Vec<(SyntaxNode, ModuleId, Visibility)>,
+    variant_map: &mut HashMap<LocalDefId, (LocalDefId, VariantIdx)>,
 ) {
     for child in node.children() {
         match child.kind() {
@@ -687,14 +696,88 @@ fn collect_items(
                         def_counter,
                         def_to_module,
                         use_decls,
+                        variant_map,
                     );
+                }
+            }
+
+            // Enum: declare the enum type in the *type* namespace (so `Color`
+            // resolves as an ADT). Additionally create a synthetic module
+            // named after the enum that holds its variants in the *value*
+            // namespace, so `Color::Red` resolves `Color` as a module-like
+            // scope and descends into it to find `Red`. Record a reverse map
+            // from each variant's value `LocalDefId` to
+            // `(enum_local, VariantIdx)` for `check_path`.
+            SyntaxKind::EnumDef => {
+                let name_str = extract_ident(&child);
+                let name = interner.intern(&name_str);
+                let vis = visibility_of_node(&child, interner);
+                let span = node_span(&child);
+                let enum_local = LocalDefId::from_raw(*def_counter);
+                *def_counter += 1;
+                modules[parent_module].scope.declare(
+                    name,
+                    enum_local,
+                    vis.clone(),
+                    span,
+                    Namespace::Types,
+                );
+                // The enum *type* is defined in `parent_module` (so an
+                // `Inherited` enum is accessible from its own module).
+                def_to_module.insert(enum_local, parent_module);
+
+                // Synthetic module for the enum's variants, holding them in
+                // the value namespace so `Color::Red` resolves `Color` as a
+                // module-like scope. Uses its own fresh def id (distinct from
+                // `enum_local`, which identifies the type / ADT).
+                let enum_mod_local = LocalDefId::from_raw(*def_counter);
+                *def_counter += 1;
+                let enum_module = modules.push(ModuleData {
+                    parent: Some(parent_module),
+                    children: Vec::new(),
+                    scope: ItemScope::default(),
+                    origin: ModuleOrigin::Inline { span },
+                    span,
+                    def_id: enum_mod_local,
+                    visibility: vis.clone(),
+                });
+                modules[parent_module].children.push((name, enum_module));
+                def_to_module.insert(enum_mod_local, enum_module);
+
+                // Variants live inside a `VariantList` child node, not
+                // directly under `EnumDef`.
+                let mut variant_idx: u32 = 0;
+                for vlist in child.children() {
+                    if vlist.kind() != SyntaxKind::VariantList {
+                        continue;
+                    }
+                    for vchild in vlist.children() {
+                        if vchild.kind() != SyntaxKind::EnumVariant {
+                            continue;
+                        }
+                        let vname_str = extract_ident(&vchild);
+                        let vname = interner.intern(&vname_str);
+                        let vvis = visibility_of_node(&vchild, interner);
+                        let vspan = node_span(&vchild);
+                        let vlocal = LocalDefId::from_raw(*def_counter);
+                        *def_counter += 1;
+                        modules[enum_module].scope.declare(
+                            vname,
+                            vlocal,
+                            vvis,
+                            vspan,
+                            Namespace::Values,
+                        );
+                        variant_map
+                            .insert(vlocal, (enum_local, VariantIdx::from_raw(variant_idx)));
+                        variant_idx += 1;
+                    }
                 }
             }
 
             // Items that go into the namespace
             SyntaxKind::FnDef
             | SyntaxKind::StructDef
-            | SyntaxKind::EnumDef
             | SyntaxKind::TraitDef
             | SyntaxKind::ImplDef
             | SyntaxKind::TypeAlias

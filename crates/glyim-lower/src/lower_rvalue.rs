@@ -182,6 +182,21 @@ impl<'a> MirBuilder<'a> {
                     span: expr.span,
                 }))
             }
+            thir::ExprKind::VariantRef(adt_id, variant_idx) => {
+                // A unit enum variant used as a value (`Color::Red`) constructs
+                // the enum via an `Aggregate` of its ADT with no fields. Data
+                // variants (call-like constructors) are a follow-up; this
+                // covers the unit-variant value path.
+                let substs = glyim_type::Substitution::empty();
+                glyim_mir::Rvalue::Aggregate(
+                    glyim_mir::AggregateKind::Adt(
+                        *adt_id,
+                        glyim_mir::VariantIdx::from_raw(variant_idx.to_raw()),
+                        substs,
+                    ),
+                    vec![],
+                )
+            }
             thir::ExprKind::Binary { op, lhs, rhs } => {
                 let lhs_op = self.lower_expr_to_operand(lhs);
                 let rhs_op = self.lower_expr_to_operand(rhs);

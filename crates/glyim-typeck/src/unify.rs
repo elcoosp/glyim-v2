@@ -1,6 +1,6 @@
 //! Unification and type resolution logic for FnCtxt.
 
-use glyim_core::def_id::{AdtId, ConstDefId, FnDefId};
+use glyim_core::def_id::{AdtId, ConstDefId, FnDefId, VariantIdx};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{IntTy, UintTy};
 use glyim_diag::GlyimDiagnostic;
@@ -92,6 +92,22 @@ impl<'a> FnCtxt<'a> {
         };
 
         if let Some((local, _vis)) = resolved.values {
+            // Enum variant value path: `Color::Red` / `Red`. The def map
+            // registers each variant in the value namespace with a reverse
+            // map variant_local -> (enum_local, VariantIdx). The expression's
+            // type is the enclosing enum's ADT type.
+            if let Some((enum_local, variant_idx)) = self.def_map.variant_map.get(&local) {
+                let adt_id = AdtId::from_raw(enum_local.to_raw());
+                let substs = self.ctx.intern_substitution(vec![]);
+                let enum_ty = self.ctx.mk_ty(TyKind::Adt(adt_id, substs));
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::VariantRef(adt_id, *variant_idx),
+                    ty: enum_ty,
+                    span,
+                };
+                return (thir_expr, enum_ty);
+            }
+
             let fn_def_id = FnDefId::from_raw(local.to_raw());
             if let Some(sig) = self.ctx.fn_sig(fn_def_id) {
                 let substs = self.ctx.intern_substitution(vec![]);

@@ -54,6 +54,7 @@ fn build_def_map_with_names(
         modules,
         krate,
         interner: interner.clone(),
+    variant_map: Default::default(),
     }
 }
 
@@ -449,6 +450,7 @@ fn build_def_map_with_nested_trait(
         modules,
         krate,
         interner: interner.clone(),
+    variant_map: Default::default(),
     }
 }
 

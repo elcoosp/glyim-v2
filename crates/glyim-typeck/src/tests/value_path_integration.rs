@@ -69,6 +69,7 @@ fn def_map_with_module_fn() -> CrateDefMap {
         modules,
         krate: CrateId::from_raw(0),
         interner: global_interner(),
+    variant_map: Default::default(),
     }
 }
 

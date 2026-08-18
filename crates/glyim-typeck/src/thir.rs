@@ -1,6 +1,6 @@
 //! Typed High-Level IR — fully typed, still generic.
 
-use glyim_core::def_id::{AdtId, ConstDefId, DefId, FnDefId};
+use glyim_core::def_id::{AdtId, ConstDefId, DefId, FnDefId, VariantIdx};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_span::Span;
@@ -75,6 +75,11 @@ pub enum ExprKind {
     /// (`const X = ...;` / `mod::X`). The expression's type is the
     /// constant's value type (e.g. `i32`), obtained from the def map.
     ConstRef(ConstDefId),
+    /// Reference to an enum variant in the value namespace
+    /// (`Color::Red` / `Red`). The expression's type is the enclosing enum's
+    /// type (`TyKind::Adt(adt_id, substs)`); `variant_idx` selects the
+    /// constructor. Unit variants lower to an `Aggregate` of the enum.
+    VariantRef(AdtId, VariantIdx),
     Binary {
         op: BinOp,
         lhs: Box<Expr>,

@@ -33,5 +33,6 @@ mod value_path;
 mod value_path_integration;
 mod module_call;
 mod const_path;
+mod variant_path;
 mod where_clause;
 mod while_loop;

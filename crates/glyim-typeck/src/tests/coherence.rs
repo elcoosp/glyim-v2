@@ -177,6 +177,7 @@ fn build_def_map(
         modules,
         krate,
         interner: interner.clone(),
+    variant_map: Default::default(),
     }
 }
 
