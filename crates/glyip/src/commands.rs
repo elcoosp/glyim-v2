@@ -9,6 +9,7 @@ use glyim_core::def_id::DefId;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus};
 use tracing::info;
 
 use crate::cache::Cache;
@@ -269,6 +270,21 @@ pub fn cmd_test(project_dir: &Path, opts: &TestOptions) -> GlyipResult<TestResul
             continue;
         }
 
+        if opts.compiled {
+            // Plan §23.1: compiled-binary execution. Compile the whole test
+            // file to a native executable and run it as an isolated subprocess;
+            // pass/fail is determined by the child's exit code. The
+            // interpreter loop below is skipped entirely for this mode.
+            match compile_and_run_compiled(&discovered_test.file, &config, std::time::Duration::from_secs(30)) {
+                Ok(()) => passed += 1,
+                Err(e) => {
+                    eprintln!("compiled test `{}` failed: {e}", discovered_test.name);
+                    failed += 1;
+                }
+            }
+            continue;
+        }
+
         // Compile (or reuse a cached compilation of) the containing file.
         let mir = mir_cache.entry(discovered_test.file.clone()).or_insert_with(|| {
             let mut db = make_test_db(&config);
@@ -342,6 +358,119 @@ fn resolve_test_def_id(compilation: &MirCompilation, name: &str) -> Option<DefId
         }
     }
     None
+}
+
+/// Plan §23.1: compiled-binary execution path.
+///
+/// Compiles `file` to a native object file via the real LLVM backend, links it
+/// into a native executable with the system linker (`glyim_cli::linker`, the
+/// same path the `glyim-test` harness uses), and runs that executable as a real,
+/// isolated subprocess. This exercises actual compiled-binary behavior —
+/// panics, aborts, FFI, and process exit codes — which the in-process MIR
+/// interpreter cannot faithfully reproduce. The test program's `main` is
+/// expected to exit `0` on success and non-zero on failure.
+///
+/// Returns `Ok(())` when the child process exits `0`, `Err` otherwise (non-zero
+/// exit, crash, compile failure, link failure, or timeout). On any failure to
+/// even produce a runnable binary this yields `Err` so the test is reported as
+/// failed rather than silently skipped.
+///
+/// NOTE: the compiler currently targets `x86_64-unknown-linux-gnu` (the only
+/// triple wired through the codegen/ABI layers). The linked artifact is a Linux
+/// ELF, so this path is only meaningfully executable on a Linux host (e.g. the
+/// CI `test` job). On a non-Linux host the link step fails and the function
+/// returns `Err` describing the host mismatch — which is the correct, honest
+/// outcome rather than a silent pass.
+fn compile_and_run_compiled(
+    file: &Path,
+    config: &GlyipToml,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    let crate_config = CrateConfig {
+        name: config.package.name.clone(),
+        target_triple: "x86_64-unknown-linux-gnu".to_string(),
+        opt_level: 0,
+    };
+    let mut db = Database::new(crate_config);
+
+    let output_path = std::env::temp_dir().join(format!(
+        "glyim_test_compiled_{}.o",
+        file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()
+    ));
+    let exe_path = output_path.with_extension("");
+
+    let backend: Box<dyn glyim_codegen::CodegenBackend> =
+        Box::new(glyim_codegen_llvm::LlvmBackend::new());
+
+    // Stage 1: compile source -> object file via the full pipeline.
+    match glyim_pipeline::Pipeline::compile_file(&mut db, file, backend.as_ref(), &output_path) {
+        Ok(_) => {}
+        Err(diags) => {
+            return Err(format!(
+                "compilation failed: {}",
+                diags
+                    .iter()
+                    .map(|d| d.message.clone())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ));
+        }
+    }
+
+    // Stage 2: link the object file into a real executable (same path as the
+    // `glyim-test` harness' `PipelineCompiler`). The linker is selected by
+    // `glyim_cli::linker` (cc/clang/gcc on Unix, link.exe on Windows).
+    if let Err(link_err) =
+        glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None, None)
+    {
+        return Err(format!(
+            "linking compiled test binary failed: {link_err} \
+             (the compiler targets x86_64-unknown-linux-gnu; linking may be \
+             unsupported on this host)"
+        ));
+    }
+
+    // Stage 3: execute the linked binary as an isolated subprocess.
+    let mut child = Command::new(&exe_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn compiled test binary: {e}"))?;
+
+    // Per-test timeout (plan §23.1): run the child in its own thread and wait
+    // on a channel with a deadline so a hanging test cannot block the runner.
+    // Capture the PID first so a timed-out/hung child can be killed by PID
+    // (the `Child` handle is moved into the waiting thread).
+    let child_pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel::<Option<ExitStatus>>();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait().ok());
+    });
+
+    let status = match rx.recv_timeout(timeout) {
+        Ok(Some(status)) => status,
+        Ok(None) => {
+            let _ = std::process::Command::new("kill")
+                .arg(child_pid.to_string())
+                .status();
+            return Err("test subprocess wait failed".to_string());
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            let _ = std::process::Command::new("kill")
+                .arg(child_pid.to_string())
+                .status();
+            return Err(format!("test timed out after {}s", timeout.as_secs()));
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            return Err("test subprocess channel disconnected".to_string());
+        }
+    };
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("compiled test exited with status {status}"))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -525,4 +654,83 @@ fn run_binary(binary: &Path, args: &[String], env: &HashMap<String, String>) -> 
         .map_err(GlyipError::Io)?;
 
     Ok(status.code().unwrap_or(-1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::NewOptions;
+    use tempfile::TempDir;
+
+    /// Create a real `cmd_new` project whose `src/main.g` contains `body`,
+    /// mirroring the `glyip run`/`glyip build` path that is already tested
+    /// green (S23-T04). Returns the project dir and the package config.
+    fn project_with_main(body: &str) -> (TempDir, GlyipToml, PathBuf) {
+        let dir = TempDir::new().expect("temp dir");
+        let name = format!("compiled_{}", std::process::id());
+        let project = cmd_new(&name, &NewOptions::default(), Some(dir.path()))
+            .expect("cmd_new");
+        let main = project.path.join("src/main.g");
+        std::fs::write(&main, body).expect("write main.g");
+        let config = GlyipToml::read_from_dir(&project.path).expect("read config");
+        (dir, config, main)
+    }
+
+    #[test]
+    fn compile_and_run_compiled_runs_real_binary() {
+        // Plan §23.1: the compiled-binary execution path must compile a source
+        // file to an object, link it into a real executable, and run it as an
+        // isolated subprocess — verifying execution by the child's exit code.
+        //
+        // The compiler currently only emits `x86_64-unknown-linux-gnu` ELF
+        // objects, so on a Linux host this runs the binary for real and asserts
+        // exit-0. On a non-Linux host the link step cannot produce a native
+        // executable and `compile_and_run_compiled` returns Err — which is the
+        // correct, honest outcome (no silent pass). We assert both regimes
+        // explicitly rather than masking the result.
+        let (_dir, config, main) = project_with_main("fn main() {}\n");
+
+        let result = compile_and_run_compiled(
+            &main,
+            &config,
+            std::time::Duration::from_secs(30),
+        );
+
+        if cfg!(target_os = "linux") {
+            assert!(
+                result.is_ok(),
+                "compiled binary should exit 0 and be reported as passing: {:?}",
+                result.err()
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "compiled-binary path should report the host-mismatch link failure on non-Linux hosts, not silently pass"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_and_run_compiled_reports_failure() {
+        // A program whose `main` references an unresolved symbol must be reported
+        // as a failure by the compiled-binary path, never silently passed.
+        //
+        // On Linux the unresolved-symbol binary fails at link or run time; on a
+        // non-Linux host the (host-mismatch) link failure already yields Err.
+        // Either way the path must NOT report success — that is the invariant
+        // we assert on every host.
+        let (_dir, config, main) =
+            project_with_main("fn main() { undefined_symbol_xyz(); }\n");
+
+        let result = compile_and_run_compiled(
+            &main,
+            &config,
+            std::time::Duration::from_secs(30),
+        );
+
+        assert!(
+            result.is_err(),
+            "compiled binary that fails to run/link must be reported as a failure"
+        );
+    }
 }

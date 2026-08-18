@@ -1399,6 +1399,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "flate2",
+ "glyim-cli",
  "glyim-codegen",
  "glyim-codegen-llvm",
  "glyim-core",

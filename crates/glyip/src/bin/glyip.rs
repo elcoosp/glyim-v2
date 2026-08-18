@@ -49,6 +49,10 @@ enum Commands {
         /// Compile tests but don't run them.
         #[arg(long)]
         no_run: bool,
+        /// Plan §23.1: compile each test file to a native executable and run it
+        /// as a real subprocess instead of the in-process MIR interpreter.
+        #[arg(long)]
+        compiled: bool,
     },
     /// Build and execute the project's binary.
     Run {
@@ -99,12 +103,14 @@ fn main() {
             release,
             filter,
             no_run,
+            compiled,
         } => {
             let opts = glyip::config::TestOptions {
                 release,
                 filter,
                 no_run,
                 run_ignored: false,
+                compiled,
             };
             glyip::cmd_test(&project_dir, &opts).map(|_| ())
         }

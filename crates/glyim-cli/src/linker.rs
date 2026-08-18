@@ -52,16 +52,21 @@ impl LinkerInvoker for UnixLinker {
             }
         }
 
-        let status = cmd
-            .status()
+        let output = cmd
+            .output()
             .map_err(|e| format!("Failed to invoke linker '{}': {}", self.linker, e))?;
 
-        if status.success() {
+        if output.status.success() {
             Ok(())
         } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
             Err(format!(
-                "Linker '{}' failed with status {}",
-                self.linker, status
+                "Linker '{}' failed with status {}: {}{}",
+                self.linker,
+                output.status,
+                stderr.trim(),
+                stdout.trim()
             ))
         }
     }

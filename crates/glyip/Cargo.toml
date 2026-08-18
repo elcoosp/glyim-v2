@@ -11,7 +11,6 @@ path = "src/bin/glyip.rs"
 [features]
 registry = ["reqwest", "flate2", "tar"]
 default = []
-llvm = ["glyim-codegen-llvm"]
 
 [dependencies]
 semver = { workspace = true }
@@ -27,7 +26,8 @@ glyim-diag = { workspace = true }
 glyim-pipeline = { workspace = true }
 glyim-db = { workspace = true }
 glyim-codegen = { workspace = true }
-glyim-codegen-llvm = { workspace = true, optional = true }
+glyim-codegen-llvm = { workspace = true }
+glyim-cli = { workspace = true }
 glyim-vfs = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }

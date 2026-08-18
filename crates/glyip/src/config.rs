@@ -274,6 +274,11 @@ pub struct TestOptions {
     pub no_run: bool,
     /// Run tests annotated with `#[ignore]` (mirrors `cargo test -- --ignored`).
     pub run_ignored: bool,
+    /// Plan §23.1: compile each test file to a native executable and run it as
+    /// a real subprocess (instead of the in-process MIR interpreter). This
+    /// exercises actual compiled-binary behavior (panics/aborts/FFI/exit codes)
+    /// and is the preferred "real" execution path.
+    pub compiled: bool,
 }
 
 /// Options for the `glyip run` command.
