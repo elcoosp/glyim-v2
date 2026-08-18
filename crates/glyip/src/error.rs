@@ -19,6 +19,14 @@ pub enum GlyipError {
         name: String,
         version: Option<String>,
     },
+    /// Version requirements for a dependency are mutually unsatisfiable.
+    DependencyConflict {
+        name: String,
+        /// All version requirements gathered for this dependency across the graph.
+        requirements: Vec<String>,
+        /// The resolved version (if any) that failed to satisfy all requirements.
+        resolved: Option<String>,
+    },
     /// Build compilation failed.
     BuildFailed(Vec<glyim_diag::GlyimDiagnostic>),
     /// Cache corruption detected.
@@ -52,6 +60,21 @@ impl fmt::Display for GlyipError {
                 } else {
                     write!(f, "dependency not found: {}", name)
                 }
+            }
+            Self::DependencyConflict {
+                name,
+                requirements,
+                resolved,
+            } => {
+                write!(
+                    f,
+                    "dependency version conflict for `{}`: requirements {:?} cannot be satisfied",
+                    name, requirements
+                )?;
+                if let Some(r) = resolved {
+                    write!(f, " (resolved to {r})")?;
+                }
+                Ok(())
             }
             Self::BuildFailed(diags) => {
                 write!(f, "build failed with {} error(s)", diags.len())

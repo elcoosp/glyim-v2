@@ -7,6 +7,7 @@ mod config;
 mod config_advanced;
 mod crate_index_io;
 mod dep_advanced;
+mod dep_git;
 mod dep_resolution;
 mod dep_semver;
 mod error;

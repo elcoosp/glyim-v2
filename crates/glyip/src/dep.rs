@@ -340,6 +340,7 @@ fn sub_deps_from_index(
 pub struct DependencyResolver {
     index: CrateIndex,
     registry_client: Option<Box<dyn RegistryClient>>,
+    git_fetcher: Option<Box<dyn GitFetcher>>,
 }
 
 impl std::fmt::Debug for DependencyResolver {
@@ -347,6 +348,7 @@ impl std::fmt::Debug for DependencyResolver {
         f.debug_struct("DependencyResolver")
             .field("index", &self.index)
             .field("has_registry_client", &self.registry_client.is_some())
+            .field("has_git_fetcher", &self.git_fetcher.is_some())
             .finish()
     }
 }
@@ -357,6 +359,7 @@ impl DependencyResolver {
         Self {
             index,
             registry_client: None,
+            git_fetcher: None,
         }
     }
 
@@ -365,6 +368,7 @@ impl DependencyResolver {
         Self {
             index: CrateIndex::new(),
             registry_client: None,
+            git_fetcher: None,
         }
     }
 
@@ -377,11 +381,18 @@ impl DependencyResolver {
         self
     }
 
+    /// Attach a git fetcher for git-dependency resolution (plan §23.2).
+    ///
+    /// When omitted, a default [`GitCommandFetcher`] (shelling out to the
+    /// system `git`) is used. Tests inject a mock to avoid network access.
+    pub fn with_git_fetcher(mut self, fetcher: Box<dyn GitFetcher>) -> Self {
+        self.git_fetcher = Some(fetcher);
+        self
+    }
+
     /// Resolve all dependencies from a `GlyipToml` and produce a `Lockfile`.
     ///
     /// For dependencies not found in the local index, falls back to the
-    /// registry client (if one was provided via [`with_registry_client`]).
-    ///
     /// Performs a breadth-first traversal that also resolves each resolved
     /// crate's own dependencies (transitive resolution), not just the root
     /// project's direct dependencies.
@@ -395,11 +406,19 @@ impl DependencyResolver {
         // (so its nested path deps resolve relative to that crate's dir).
         let mut visit_stack: VecDeque<(String, Option<String>, Option<PathBuf>, Option<PathBuf>)> =
             VecDeque::new();
+        // Every version requirement seen for each crate name, across the whole
+        // graph (direct + transitive). Used for plan §23.2 semver conflict
+        // detection: a crate required with mutually-incompatible requirements
+        // must error rather than silently resolve to the first one.
+        let mut collected_reqs: HashMap<String, Vec<String>> = HashMap::new();
 
         // Seed the stack with direct dependencies.
         for (name, dep) in config.all_dependencies() {
             let version = dep.version().map(String::from);
             let path = dep.path().map(PathBuf::from);
+            if let Some(ref v) = version {
+                collected_reqs.entry(name.clone()).or_default().push(v.clone());
+            }
             visit_stack.push_back((name.clone(), version, path, None));
         }
 
@@ -407,9 +426,9 @@ impl DependencyResolver {
         // own (transitive) dependencies.
         while let Some((name, version_req, path, base)) = visit_stack.pop_front() {
             let key = if let Some(ref v) = version_req {
-                format!("{}-{}", name, v)
+                format!("{}-{}(git)", name, v)
             } else {
-                name.clone()
+                format!("{}(git)", name)
             };
 
             if visited.contains(&key) {
@@ -417,24 +436,52 @@ impl DependencyResolver {
             }
             visited.insert(key.clone());
 
-            // Absolute directory for a path dependency: if it's relative and we
-            // were reached from a path dep, join against that crate's dir;
-            // otherwise against the project root.
-            let abs_path = path.as_ref().map(|p| {
-                if p.is_absolute() {
-                    p.clone()
-                } else if let Some(ref b) = base {
-                    b.join(p)
-                } else {
-                    project_dir.join(p)
-                }
-            });
+            // Git dependency (plan §23.2): route to the git resolver.
+            let git_spec = config
+                .dependencies
+                .get(&name)
+                .and_then(|d| d.git_spec())
+                .or_else(|| {
+                    config
+                        .dev_dependencies
+                        .get(&name)
+                        .and_then(|d| d.git_spec())
+                });
 
-            let (locked, sub_deps) = if let Some(ref abs) = abs_path {
-                self.resolve_path_dep(&name, abs)?
+            let (locked, sub_deps) = if let Some(spec) = git_spec {
+                let url = config
+                    .dependencies
+                    .get(&name)
+                    .and_then(|d| d.git())
+                    .or_else(|| config.dev_dependencies.get(&name).and_then(|d| d.git()))
+                    .unwrap_or("")
+                    .to_string();
+                let fetched = self.fetch_git_dep(&name, &url, &spec)?;
+                (fetched, Vec::new())
+            } else if path.is_some() {
+                // Absolute directory for a path dependency: if it's relative and we
+                // were reached from a path dep, join against that crate's dir;
+                // otherwise against the project root.
+                let abs_path = path.as_ref().map(|p| {
+                    if p.is_absolute() {
+                        p.clone()
+                    } else if let Some(ref b) = base {
+                        b.join(p)
+                    } else {
+                        project_dir.join(p)
+                    }
+                });
+                if let Some(ref abs) = abs_path {
+                    self.resolve_path_dep(&name, abs)?
+                } else {
+                    unreachable!("path.is_some() but abs_path is None")
+                }
             } else {
                 // Index / registry dependency.
-                self.resolve_registry_dep(&name, version_req.as_deref())?
+                self.resolve_registry_dep(
+                    &name,
+                    version_req.as_deref(),
+                )?
             };
 
             lockfile.add_crate(locked);
@@ -444,8 +491,14 @@ impl DependencyResolver {
             // and must resolve its own nested path deps against this crate's
             // directory, so pass that as the new `base`.
             for (dep_name, dep_version_req, dep_path) in sub_deps {
+                if let Some(ref v) = dep_version_req {
+                    collected_reqs
+                        .entry(dep_name.clone())
+                        .or_default()
+                        .push(v.clone());
+                }
                 let dep_base = if dep_path.is_some() {
-                    abs_path.clone()
+                    path.clone()
                 } else {
                     None
                 };
@@ -456,7 +509,62 @@ impl DependencyResolver {
         // Cycle detection on the resolved graph.
         self.detect_cycles(&lockfile)?;
 
+        // Plan §23.2: semver conflict detection. For every crate name that was
+        // required with multiple distinct version requirements across the
+        // graph, the single version we locked must satisfy ALL of them; if it
+        // does not, the requirements are mutually unsatisfiable.
+        self.check_version_conflicts(&lockfile, &collected_reqs)?;
+
         Ok(lockfile)
+    }
+
+    /// Verify that each locked crate satisfies every version requirement
+    /// gathered for it across the dependency graph (plan §23.2).
+    fn check_version_conflicts(
+        &self,
+        lockfile: &Lockfile,
+        collected_reqs: &HashMap<String, Vec<String>>,
+    ) -> GlyipResult<()> {
+        for (name, reqs) in collected_reqs {
+            // Deduplicate requirements before checking.
+            let unique: Vec<&String> = {
+                let mut seen: Vec<&String> = Vec::new();
+                for r in reqs {
+                    if !seen.iter().any(|s| *s == r) {
+                        seen.push(r);
+                    }
+                }
+                seen
+            };
+            if unique.len() < 2 {
+                continue;
+            }
+            // Find the version actually locked for this crate name.
+            let locked_version = lockfile
+                .crates()
+                .find(|c| c.name == *name)
+                .map(|c| c.version.clone());
+            let satisfied = if let Some(ref v) = locked_version {
+                match Version::parse(v) {
+                    Ok(parsed) => unique.iter().all(|req| {
+                        VersionReq::parse(req)
+                            .map(|r| r.matches(&parsed))
+                            .unwrap_or(false)
+                    }),
+                    Err(_) => false,
+                }
+            } else {
+                false
+            };
+            if !satisfied {
+                return Err(GlyipError::DependencyConflict {
+                    name: name.clone(),
+                    requirements: unique.into_iter().map(|s| s.clone()).collect(),
+                    resolved: locked_version,
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Resolve a dependency from the local index or remote registry.
@@ -592,6 +700,83 @@ impl DependencyResolver {
         Ok((locked, sub_deps))
     }
 
+    /// Resolve a git dependency (plan §23.2):
+    ///
+    /// 1. Resolve the [`GitSpec`] to a concrete commit via the [`GitFetcher`].
+    /// 2. Fetch/checkout the source into the shared git cache keyed by the
+    ///    repository URL, so repeated resolves reuse the clone.
+    /// 3. Read the checked-out `Glyip.toml` for the real version and the
+    ///    crate's own (transitive) dependencies.
+    /// 4. Produce a [`LockedCrate`] with `CrateSource::Git` recording the URL
+    ///    and resolved commit.
+    fn fetch_git_dep(
+        &self,
+        name: &str,
+        url: &str,
+        spec: &crate::config::GitSpec,
+    ) -> GlyipResult<LockedCrate> {
+        let owned_fetcher: Box<dyn GitFetcher> =
+            Box::new(GitCommandFetcher::new(global_git_cache_dir()));
+        let fetcher: &dyn GitFetcher = self
+            .git_fetcher
+            .as_ref()
+            .map(|b| b.as_ref())
+            .unwrap_or(owned_fetcher.as_ref());
+
+        let rev = fetcher.resolve_rev(url, spec)?;
+
+        // Cache checkout keyed by a stable hash of the URL so two deps pointing
+        // at the same repo share one clone.
+        let repo_dir = global_git_cache_dir().join(repo_cache_name(url));
+        std::fs::create_dir_all(&repo_dir)?;
+        let checkout = fetcher.fetch(url, &rev, &repo_dir)?;
+
+        let config = GlyipToml::read_from_dir(&checkout).unwrap_or_else(|_| GlyipToml {
+            package: crate::config::PackageConfig {
+                name: name.to_string(),
+                version: rev.clone(),
+                edition: "2024".to_string(),
+                authors: Vec::new(),
+                description: None,
+                bin: None,
+                lib: None,
+            },
+            dependencies: BTreeMap::new(),
+            dev_dependencies: BTreeMap::new(),
+        });
+
+        let mut sub_deps: Vec<(String, Option<String>, Option<PathBuf>)> = Vec::new();
+        for (dep_name, dep) in config.all_dependencies() {
+            sub_deps.push((
+                dep_name.clone(),
+                dep.version().map(String::from),
+                dep.path().map(PathBuf::from),
+            ));
+        }
+
+        let (branch, tag) = match spec {
+            crate::config::GitSpec::Branch(b) => (Some(b.clone()), None),
+            crate::config::GitSpec::Tag(t) => (None, Some(t.clone())),
+            _ => (None, None),
+        };
+
+        let locked = LockedCrate {
+            name: name.to_string(),
+            version: config.package.version.clone(),
+            source: CrateSource::Git {
+                url: url.to_string(),
+                rev: Some(rev),
+                branch,
+                tag,
+            },
+            dependencies: sub_deps
+                .iter()
+                .map(|(n, v, _)| (n.clone(), v.clone().unwrap_or_default()))
+                .collect(),
+        };
+        Ok(locked)
+    }
+
     /// Download a crate's source code from the registry.
     ///
     /// Returns the path to the extracted source directory.
@@ -665,5 +850,125 @@ impl DependencyResolver {
         gray.remove(node);
         black.insert(node.to_string());
         Ok(())
+    }
+}
+
+/// Trait for fetching git repositories and resolving refs to commits.
+///
+/// Plan §23.2: abstracted so tests can inject a mock that returns
+/// deterministic commits and checkouts without touching the network. The
+/// production implementation ([`GitCommandFetcher`]) shells out to the system
+/// `git`.
+pub trait GitFetcher {
+    /// Resolve a [`GitSpec`] to a concrete commit hash (or ref) for `url`.
+    fn resolve_rev(&self, url: &str, spec: &crate::config::GitSpec) -> GlyipResult<String>;
+
+    /// Ensure `url`@`rev` is checked out into `dest`, returning the checkout
+    /// directory. Reuses an existing clone when present.
+    fn fetch(&self, url: &str, rev: &str, dest: &Path) -> GlyipResult<PathBuf>;
+}
+
+/// Returns the shared git cache directory.
+///
+/// Honours `GLYIM_GIT_CACHE` if set, otherwise `$HOME/.cache/glyip/git`
+/// (falling back to a temp dir if `$HOME` is unavailable).
+fn global_git_cache_dir() -> PathBuf {
+    if let Ok(p) = std::env::var("GLYIM_GIT_CACHE") {
+        return PathBuf::from(p);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+    PathBuf::from(home).join(".cache").join("glyip").join("git")
+}
+
+/// Derive a filesystem-safe directory name for a git URL (stable hash).
+fn repo_cache_name(url: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    url.hash(&mut h);
+    format!("{:x}", h.finish())
+}
+
+/// Production [`GitFetcher`] that drives the system `git` binary.
+#[derive(Debug, Clone)]
+pub struct GitCommandFetcher {
+    /// Shared cache root for cloned repositories.
+    pub cache_dir: PathBuf,
+}
+
+impl GitCommandFetcher {
+    /// Create a fetcher with an explicit cache directory.
+    pub fn new(cache_dir: PathBuf) -> Self {
+        Self { cache_dir }
+    }
+
+    fn git(&self, args: &[&str], cwd: Option<&Path>) -> GlyipResult<std::process::Output> {
+        let mut cmd = std::process::Command::new("git");
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+        let output = cmd
+            .args(args)
+            .output()
+            .map_err(|e| GlyipError::RegistryError(format!("failed to invoke git: {e}")))?;
+        if !output.status.success() {
+            return Err(GlyipError::RegistryError(format!(
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        Ok(output)
+    }
+}
+
+impl GitFetcher for GitCommandFetcher {
+    fn resolve_rev(&self, url: &str, spec: &crate::config::GitSpec) -> GlyipResult<String> {
+        let refspec = match spec {
+            crate::config::GitSpec::Branch(b) => format!("refs/heads/{b}"),
+            crate::config::GitSpec::Tag(t) => format!("refs/tags/{t}"),
+            // For an exact rev or default branch, resolve after clone.
+            crate::config::GitSpec::Rev(_) | crate::config::GitSpec::DefaultBranch => {
+                return Ok(match spec {
+                    crate::config::GitSpec::Rev(r) => r.clone(),
+                    _ => "HEAD".to_string(),
+                });
+            }
+        };
+        // `git ls-remote` resolves the ref to a commit without cloning.
+        let output = self.git(&["ls-remote", url, &refspec], None)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let first_line = stdout
+            .lines()
+            .next()
+            .ok_or_else(|| GlyipError::RegistryError(format!("git ls-remote {url} returned no refs")))?;
+        let commit = first_line
+            .split_whitespace()
+            .next()
+            .ok_or_else(|| GlyipError::RegistryError(format!("malformed ls-remote output: {first_line}")))?;
+        Ok(commit.to_string())
+    }
+
+    fn fetch(&self, url: &str, rev: &str, dest: &Path) -> GlyipResult<PathBuf> {
+        let clone_target = dest.join(repo_cache_name(url));
+        if clone_target.join(".git").exists() {
+            // Existing clone: fetch latest and checkout the requested rev.
+            self.git(&["fetch", "--all"], Some(&clone_target))?;
+        } else {
+            std::fs::create_dir_all(&clone_target)?;
+            self.git(
+                &["clone", "--no-checkout", url, clone_target.to_str().unwrap()],
+                None,
+            )?;
+        }
+        // Resolve a symbolic rev (e.g. HEAD or a branch name) to a concrete commit.
+        let resolved = if rev == "HEAD" {
+            let out = self.git(&["rev-parse", "HEAD"], Some(&clone_target))?;
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        } else {
+            rev.to_string()
+        };
+        self.git(&["checkout", &resolved], Some(&clone_target))?;
+        Ok(clone_target)
     }
 }

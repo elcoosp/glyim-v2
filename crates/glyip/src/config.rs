@@ -71,6 +71,35 @@ pub struct LibTarget {
     pub path: Option<PathBuf>,
 }
 
+/// A git dependency specification — which ref of a repository to pin.
+///
+/// Plan §23.2: supports `branch`, `tag`, exact `rev`, or the repository's
+/// default branch. Exactly one is active; `DefaultBranch` is used when none of
+/// the others is supplied.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum GitSpec {
+    /// Track a named branch (resolved to its current tip commit).
+    Branch(String),
+    /// Track a named tag (resolved to the commit the tag points at).
+    Tag(String),
+    /// Pin an exact revision hash (must exist in the repository).
+    Rev(String),
+    /// Use the repository's default branch tip.
+    DefaultBranch,
+}
+
+impl GitSpec {
+    /// Human-readable label used for diagnostics and lockfile round-tripping.
+    pub fn label(&self) -> String {
+        match self {
+            GitSpec::Branch(b) => format!("branch {b}"),
+            GitSpec::Tag(t) => format!("tag {t}"),
+            GitSpec::Rev(r) => format!("rev {r}"),
+            GitSpec::DefaultBranch => "default branch".to_string(),
+        }
+    }
+}
+
 /// A dependency specification — either a bare version string or a detailed table.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -126,6 +155,32 @@ impl Dependency {
         match self {
             Dependency::Simple(_) => None,
             Dependency::Detailed(d) => d.git.as_deref(),
+        }
+    }
+
+    /// Return the resolved [`GitSpec`] if this is a git dependency, or `None`.
+    ///
+    /// Plan §23.2: `rev` takes precedence over `tag` over `branch`; if none are
+    /// set but a `git` URL is present, the default branch is used.
+    pub fn git_spec(&self) -> Option<GitSpec> {
+        match self {
+            Dependency::Simple(_) => None,
+            Dependency::Detailed(d) => {
+                let git = d.git.as_deref()?;
+                if git.is_empty() {
+                    return None;
+                }
+                let spec = if let Some(rev) = &d.rev {
+                    GitSpec::Rev(rev.clone())
+                } else if let Some(tag) = &d.tag {
+                    GitSpec::Tag(tag.clone())
+                } else if let Some(branch) = &d.branch {
+                    GitSpec::Branch(branch.clone())
+                } else {
+                    GitSpec::DefaultBranch
+                };
+                Some(spec)
+            }
         }
     }
 }
