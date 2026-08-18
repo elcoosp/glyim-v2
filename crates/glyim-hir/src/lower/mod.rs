@@ -186,7 +186,22 @@ pub(crate) fn lower_crate(
                     }
                 }
             }
-            // Other item kinds (Trait, Impl, Mod, etc.) are not yet lowered.
+            SyntaxKind::Module => {
+                if let Some(item) = lower_item::lower_mod_def(
+                    &child,
+                    interner,
+                    &mut local_def_counter,
+                    &mut item_id_counter,
+                    &mut items,
+                    &mut bodies,
+                    &mut body_owners,
+                    diags,
+                    &struct_field_map,
+                ) {
+                    items.push(item);
+                }
+            }
+            // Other item kinds (Trait, Use, Extern, etc.) are not yet lowered.
             _ => {}
         }
     }

@@ -31,5 +31,6 @@ mod tuple_index;
 mod typeck_new_nodes;
 mod value_path;
 mod value_path_integration;
+mod module_call;
 mod where_clause;
 mod while_loop;

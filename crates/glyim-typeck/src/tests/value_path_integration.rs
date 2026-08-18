@@ -40,7 +40,7 @@ fn def_map_with_module_fn() -> CrateDefMap {
         origin: ModuleOrigin::CrateRoot,
         span: Span::DUMMY,
         def_id: LocalDefId::from_raw(0),
-        visibility: glyim_core::primitives::Visibility::Public,
+        visibility: Visibility::Public,
     });
     // math module (ModuleId 1)
     let math_mod = modules.push(ModuleData {
@@ -50,7 +50,7 @@ fn def_map_with_module_fn() -> CrateDefMap {
         origin: ModuleOrigin::Inline { span: Span::DUMMY },
         span: Span::DUMMY,
         def_id: LocalDefId::from_raw(1),
-        visibility: glyim_core::primitives::Visibility::Public,
+        visibility: Visibility::Public,
     });
     // root.child[math] = math_mod
     modules[root].children.push((math_name, math_mod));
@@ -59,7 +59,7 @@ fn def_map_with_module_fn() -> CrateDefMap {
     modules[math_mod].scope.declare(
         square_name,
         square_def,
-        glyim_core::primitives::Visibility::Public,
+        Visibility::Public,
         Span::DUMMY,
         Namespace::Values,
     );

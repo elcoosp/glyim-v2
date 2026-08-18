@@ -36,11 +36,12 @@ mod unify;
 
 use std::collections::HashMap;
 
-use glyim_core::def_id::{DefId, FnDefId, LocalDefId};
+use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
-use glyim_hir::{ItemKind, ExprId};
+use glyim_hir::{ItemId, ItemKind, ExprId};
+use glyim_def_map::{CrateDefMap, ModuleId};
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
@@ -90,10 +91,10 @@ pub fn typeck_crate(
     let local_krate = def_map.krate;
 
     let mut next_local_def_id: u32 = 0;
-    let mut alloc_local_def_id = |diags: &mut Vec<GlyimDiagnostic>| -> LocalDefId {
-        let id = next_local_def_id;
-        next_local_def_id += 1;
-        if next_local_def_id == u32::MAX {
+    let mut alloc_local_def_id = |counter: &mut u32, diags: &mut Vec<GlyimDiagnostic>| -> LocalDefId {
+        let id = *counter;
+        *counter += 1;
+        if *counter == u32::MAX {
             diags.push(GlyimDiagnostic::type_error(
                 Span::DUMMY,
                 "exhausted LocalDefId space",
@@ -126,84 +127,33 @@ pub fn typeck_crate(
     }
 
     // 2. Body checking pass
-    for (_item_id, item) in hir.items.iter_enumerated() {
+    // Gather ItemIds that are children of a ModItem so the flat pass skips
+    // them — they are handled by the recursive fn walker below, which tracks
+    // the def-map module context for correct LocalDefId alignment.
+    let mut child_set: std::collections::HashSet<ItemId> =
+        std::collections::HashSet::new();
+    for (_id, item) in hir.items.iter_enumerated() {
+        if let ItemKind::Mod(m) = &item.kind {
+            for c in &m.children {
+                child_set.insert(*c);
+            }
+        }
+    }
+
+    for (item_id, item) in hir.items.iter_enumerated() {
+        if child_set.contains(&item_id) {
+            continue;
+        }
         let item_span = item.span;
 
         match &item.kind {
-            ItemKind::Fn(f) => {
-                let local_def_id = alloc_local_def_id(&mut diagnostics);
-                let owner = DefId::new(local_krate, local_def_id);
-
-                let sig = tyconv::resolve_fn_sig(
-                    &mut ctx,
-                    &mut infer,
-                    def_map,
-                    &mut diagnostics,
-                    &f.params,
-                    &f.return_ty,
-                    &f.generic_params,
-                    item_span,
-                );
-
-                // Register the resolved signature so the LLVM codegen pass can
-                // look it up by FnDefId when lowering this body. Without this,
-                // every real function hit "no FnSig registered" at codegen time.
-                let inputs = ctx.intern_substitution(
-                    sig.param_tys.iter().map(|t| GenericArg::Ty(*t)).collect(),
-                );
-                ctx.register_fn_sig(
-                    FnDefId::from_raw(local_def_id.to_raw()),
-                    FnSig {
-                        inputs,
-                        output: sig.return_ty,
-                        c_variadic: false,
-                        unsafety: Safety::Safe,
-                        abi: Abi::Glyim,
-                    },
-                );
-
-                process_where_clauses(
-                    &mut ctx,
-                    &mut infer,
-                    def_map,
-                    &mut diagnostics,
-                    &mut all_obligations,
-                    &f.generic_params,
-                    &f.where_clauses,
-                    item_span,
-                );
-
-                if let Some(body_id) = f.body {
-                    let params: Vec<(Name, Ty, Span)> = f
-                        .params
-                        .iter()
-                        .zip(sig.param_tys.iter())
-                        .map(|(p, ty)| (p.name, *ty, p.span))
-                        .collect();
-                    check_body(
-                        &mut ctx,
-                        &mut infer,
-                        &mut diagnostics,
-                        &mut all_obligations,
-                        hir,
-                        body_id,
-                        owner,
-                        sig.return_ty,
-                        &params,
-                        &mut thir_bodies,
-                        local_def_id,
-                        def_map,
-                        &trait_ctx,
-                        &mut all_expr_types,
-                    );
-                }
-            }
+            ItemKind::Fn(_) => {}
 
             ItemKind::Impl(impl_item) => {
                 let impl_span = item_span;
 
                 for method in &impl_item.methods {
-                    let local_def_id = alloc_local_def_id(&mut diagnostics);
+                    let local_def_id = alloc_local_def_id(&mut next_local_def_id, &mut diagnostics);
                     let owner = DefId::new(local_krate, local_def_id);
 
                     let sig = tyconv::resolve_fn_sig(
@@ -287,6 +237,31 @@ pub fn typeck_crate(
         }
     }
 
+    // Function definitions (top-level and nested in `mod`) are registered
+    // under the def-map's LocalDefId so value-namespace path resolution lines
+    // up with the id `check_path` derives from the def map.
+    let top_level_ids: Vec<ItemId> = hir
+        .items
+        .iter_enumerated()
+        .filter(|(id, _)| !child_set.contains(id))
+        .map(|(id, _)| id)
+        .collect();
+    check_fn_items_in_module(
+        &mut ctx,
+        &mut infer,
+        def_map,
+        &mut diagnostics,
+        &mut all_obligations,
+        hir,
+        local_krate,
+        &trait_ctx,
+        &mut all_expr_types,
+        &mut thir_bodies,
+        &top_level_ids,
+        def_map.root,
+        &mut next_local_def_id,
+    );
+
     // 3. Obligation fulfillment
     let frozen_ctx = ctx.freeze();
 
@@ -322,6 +297,147 @@ pub fn typeck_crate(
         expr_types,
     };
     (frozen_ctx, result)
+}
+
+/// Recursively type-check function definitions, walking the HIR `ModItem`
+/// tree in lockstep with the def-map module tree.
+///
+/// Each function is registered under the def-map's `LocalDefId` (looked up by
+/// name within its enclosing module), so the `FnDefId` used here matches the
+/// one `check_path` derives from the def map when resolving a value-namespace
+/// path (`foo`, `mod::foo`). The flat body-check loop in `typeck_crate` skips
+/// `ModItem` children and delegates them here.
+#[allow(clippy::too_many_arguments)]
+fn check_fn_items_in_module(
+    ctx: &mut TyCtxMut,
+    infer: &mut InferenceTable,
+    def_map: &CrateDefMap,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+    all_obligations: &mut Vec<Obligation>,
+    hir: &glyim_hir::CrateHir,
+    local_krate: CrateId,
+    trait_ctx: &TraitContext,
+    all_expr_types: &mut HashMap<LocalDefId, HashMap<ExprId, Ty>>,
+    thir_bodies: &mut Vec<(LocalDefId, thir::Body)>,
+    item_ids: &[ItemId],
+    module_id: ModuleId,
+    next_local_def_id: &mut u32,
+) {
+    for item_id in item_ids {
+        let item = match hir.items.get(*item_id) {
+            Some(i) => i,
+            None => continue,
+        };
+        let item_span = item.span;
+        match &item.kind {
+            ItemKind::Fn(f) => {
+                // The def map is the source of truth for a function's
+                // LocalDefId; resolve it by name within the current module.
+                // Functions not present in the def-map scope (e.g. `main`,
+                // which the def-map treats specially) fall back to the legacy
+                // per-item counter so they still get checked.
+                let local_def_id = match def_map.modules[module_id]
+                    .scope
+                    .values
+                    .get(&item.name)
+                {
+                    Some((id, _, _)) => *id,
+                    None => {
+                        let id = *next_local_def_id;
+                        *next_local_def_id += 1;
+                        LocalDefId::from_raw(id)
+                    }
+                };
+                let owner = DefId::new(local_krate, local_def_id);
+
+                let sig = tyconv::resolve_fn_sig(
+                    ctx,
+                    infer,
+                    def_map,
+                    diagnostics,
+                    &f.params,
+                    &f.return_ty,
+                    &f.generic_params,
+                    item_span,
+                );
+
+                let inputs = ctx.intern_substitution(
+                    sig.param_tys.iter().map(|t| GenericArg::Ty(*t)).collect(),
+                );
+                ctx.register_fn_sig(
+                    FnDefId::from_raw(local_def_id.to_raw()),
+                    FnSig {
+                        inputs,
+                        output: sig.return_ty,
+                        c_variadic: false,
+                        unsafety: Safety::Safe,
+                        abi: Abi::Glyim,
+                    },
+                );
+
+                process_where_clauses(
+                    ctx,
+                    infer,
+                    def_map,
+                    diagnostics,
+                    all_obligations,
+                    &f.generic_params,
+                    &f.where_clauses,
+                    item_span,
+                );
+
+                if let Some(body_id) = f.body {
+                    let params: Vec<(Name, Ty, Span)> = f
+                        .params
+                        .iter()
+                        .zip(sig.param_tys.iter())
+                        .map(|(p, ty)| (p.name, *ty, p.span))
+                        .collect();
+                    check_body(
+                        ctx,
+                        infer,
+                        diagnostics,
+                        all_obligations,
+                        hir,
+                        body_id,
+                        owner,
+                        sig.return_ty,
+                        &params,
+                        thir_bodies,
+                        local_def_id,
+                        def_map,
+                        trait_ctx,
+                        all_expr_types,
+                    );
+                }
+            }
+            ItemKind::Mod(m) => {
+                let child_mod = def_map.modules[module_id]
+                    .children
+                    .iter()
+                    .find(|(n, _)| *n == item.name)
+                    .map(|(_, id)| *id);
+                if let Some(child_mod) = child_mod {
+                    check_fn_items_in_module(
+                        ctx,
+                        infer,
+                        def_map,
+                        diagnostics,
+                        all_obligations,
+                        hir,
+                        local_krate,
+                        trait_ctx,
+                        all_expr_types,
+                        thir_bodies,
+                        &m.children,
+                        child_mod,
+                        next_local_def_id,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

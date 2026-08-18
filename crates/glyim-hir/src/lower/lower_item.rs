@@ -7,8 +7,8 @@ use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
 use crate::{
-    Body, BodyId, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId, ItemKind, Param,
-    Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
+    Body, BodyId, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId, ItemKind, ModItem,
+    Param, Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
 };
 
 use super::{
@@ -476,6 +476,109 @@ pub(crate) fn lower_impl_def(
             generic_params: Vec::new(),
             where_clauses: Vec::new(),
         }),
+        visibility: Visibility::Inherited,
+        span: node_span(node),
+    })
+}
+
+/// Lower an inline `mod name { ... }` block into `ItemKind::Mod`.
+///
+/// The module's inner items are lowered by the same per-item lower functions
+/// used at the crate root, and pushed into the shared `items`/`bodies`
+/// collections so that they participate in type checking in source order
+/// (which keeps their `LocalDefId`s aligned with the def-map that the
+/// value-namespace path resolver walks). The returned `ModItem` records the
+/// `ItemId`s of its children so the module structure is preserved for later
+/// passes (privacy, path resolution).
+pub(crate) fn lower_mod_def(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
+    items: &mut IndexVec<ItemId, Item>,
+    bodies: &mut IndexVec<BodyId, Body>,
+    body_owners: &mut IndexVec<BodyId, LocalDefId>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<Item> {
+    let name_str = first_ident_text(node)?;
+    let name = interner.intern(&name_str);
+
+    let mut children = Vec::new();
+    for child in node.children() {
+        match child.kind() {
+            SyntaxKind::FnDef => {
+                if let Some(item) = lower_fn_def(
+                    &child,
+                    interner,
+                    local_def_counter,
+                    item_id_counter,
+                    bodies,
+                    body_owners,
+                    diags,
+                    struct_field_map,
+                ) {
+                    children.push(item.id);
+                    items.push(item);
+                }
+            }
+            SyntaxKind::StructDef => {
+                if let Some(item) =
+                    lower_struct_def(&child, interner, local_def_counter, item_id_counter)
+                {
+                    children.push(item.id);
+                    items.push(item);
+                }
+            }
+            SyntaxKind::EnumDef => {
+                if let Some(item) =
+                    lower_enum_def(&child, interner, local_def_counter, item_id_counter)
+                {
+                    children.push(item.id);
+                    items.push(item);
+                }
+            }
+            SyntaxKind::ImplDef => {
+                if let Some(item) = lower_impl_def(
+                    &child,
+                    interner,
+                    local_def_counter,
+                    item_id_counter,
+                    bodies,
+                    body_owners,
+                    diags,
+                    struct_field_map,
+                ) {
+                    children.push(item.id);
+                    items.push(item);
+                }
+            }
+            SyntaxKind::Module => {
+                if let Some(item) = lower_mod_def(
+                    &child,
+                    interner,
+                    local_def_counter,
+                    item_id_counter,
+                    items,
+                    bodies,
+                    body_owners,
+                    diags,
+                    struct_field_map,
+                ) {
+                    children.push(item.id);
+                    items.push(item);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
+    Some(Item {
+        id,
+        name,
+        kind: ItemKind::Mod(ModItem { children }),
         visibility: Visibility::Inherited,
         span: node_span(node),
     })
