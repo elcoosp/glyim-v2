@@ -622,6 +622,16 @@ fn resolve_path_to_local_def_id(
     None
 }
 
+/// Resolve a (possibly multi‑segment) path to an `AdtId`, walking the module
+/// tree like `resolve_path_to_local_def_id`. Used by struct/variant *patterns*
+/// (plan §9.4 multi‑segment path support) where the final segment names an ADT.
+pub(crate) fn resolve_path_to_adt_id(
+    def_map: &glyim_def_map::CrateDefMap,
+    path: &glyim_hir::Path,
+) -> Option<AdtId> {
+    resolve_path_to_local_def_id(def_map, path).map(|l| AdtId::from_raw(l.to_raw()))
+}
+
 /// Resolve path to trait DefId
 pub(crate) fn resolve_path_to_trait_def_id(
     def_map: &glyim_def_map::CrateDefMap,

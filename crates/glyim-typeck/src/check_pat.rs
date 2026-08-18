@@ -57,22 +57,29 @@ impl<'a> FnCtxt<'a> {
                 }
             }
             Pat::Struct { path, fields, rest } => {
+                // Resolve the struct name. Single‑segment paths resolve in the
+                // crate root scope; multi‑segment paths (e.g. `zoo::Point`) walk
+                // the module tree (plan §9.4). `resolve_path_to_adt_id` handles
+                // both by reusing the existing def‑map resolver.
                 let adt_id = if let Some(name) = path.as_name() {
-                    if let Some(res) = self.def_map.modules[self.def_map.root].scope.resolve(name) {
-                        AdtId::from_raw(res.0.to_raw())
-                    } else {
-                        self.diagnostics.push(GlyimDiagnostic::type_error(
-                            span,
-                            format!("unresolved struct `{}`", self.ctx.name_str(name)),
-                        ));
+                    self.def_map.modules[self.def_map.root]
+                        .scope
+                        .resolve(name)
+                        .map(|res| AdtId::from_raw(res.0.to_raw()))
+                } else {
+                    crate::tyconv::resolve_path_to_adt_id(self.def_map, path)
+                };
+                let adt_id = match adt_id {
+                    Some(id) => id,
+                    None => {
+                        let label = if let Some(name) = path.as_name() {
+                            format!("unresolved struct `{}`", self.ctx.name_str(name))
+                        } else {
+                            "unresolved struct path".to_string()
+                        };
+                        self.diagnostics.push(GlyimDiagnostic::type_error(span, label));
                         return thir::Pattern::err(span);
                     }
-                } else {
-                    self.diagnostics.push(GlyimDiagnostic::type_error(
-                        span,
-                        "multi-segment struct paths not yet implemented",
-                    ));
-                    return thir::Pattern::err(span);
                 };
                 let mut field_pats = Vec::new();
                 for (field_name, field_pat_id) in fields {
