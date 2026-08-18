@@ -1033,5 +1033,101 @@ fn validate_import_visibility(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Plan §22.6: `insert_use` — the missing def-map mutation API for auto-import.
+//
+// Given a source file and an import path (e.g. `std::collections::HashMap`),
+// return edited source that adds the `use` statement. Existing top-level `use`
+// lines are reused: the new path is appended to the contiguous `use` block at
+// the top of the file (deduplicated), otherwise a new `use <path>;` line is
+// inserted at the top (after any leading shebang / license comments).
+// ---------------------------------------------------------------------------
+
+/// Parse the import path out of a top-level `use` statement line.
+/// Handles `use a::b;`, `pub use a::b;`, and `use a::{b, c};` (returns the
+/// group head `a::{b, c}` so dedup against the exact same group works).
+fn use_line_path(trimmed: &str) -> Option<String> {
+    let rest = trimmed.strip_prefix("pub use ").or_else(|| trimmed.strip_prefix("use "))?;
+    let without_semi = rest.strip_suffix(';').unwrap_or(rest).trim();
+    if without_semi.is_empty() {
+        None
+    } else {
+        Some(without_semi.to_string())
+    }
+}
+
+/// Plan §22.6 auto-import: compute where to insert a `use <import_path>;`
+/// statement into `source` and what to insert, returning the byte offset at which
+/// to place the insertion and the exact text (newline-terminated) to insert.
+/// Reuses the existing top-level `use` block when present. Returns `None` when
+/// the path is already imported (idempotent).
+pub fn insert_use_edit(source: &str, import_path: &str) -> Option<(usize, String)> {
+    let lines: Vec<&str> = source.lines().collect();
+
+    // Collect indices of top-level (non-indented) `use`/`pub use` lines.
+    let mut use_lines: Vec<usize> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        if (trimmed.starts_with("use ") || trimmed.starts_with("pub use "))
+            && !line.starts_with(' ')
+            && !line.starts_with('\t')
+        {
+            use_lines.push(i);
+        }
+    }
+
+    // Idempotency: already imported (exact path, ignoring `pub`)?
+    for &i in &use_lines {
+        if let Some(p) = use_line_path(lines[i].trim_start()) {
+            if p == import_path {
+                return None;
+            }
+        }
+    }
+
+    // The text to insert: a newline-terminated `use` line.
+    let new_text = format!("use {};\n", import_path);
+
+    if use_lines.is_empty() {
+        // No existing use block: insert at the top, after any leading shebang.
+        let mut insert_line = 0usize;
+        if let Some(first) = lines.first() {
+            if first.starts_with("#!") {
+                insert_line = 1;
+            }
+        }
+        // Byte offset of the start of `insert_line`.
+        let offset = lines
+            .iter()
+            .take(insert_line)
+            .map(|l| l.len() + 1) // +1 for the '\n'
+            .sum();
+        Some((offset, new_text))
+    } else {
+        // Append after the last existing `use` line (newline-terminated already).
+        let last_use = *use_lines.last().unwrap();
+        let offset = lines
+            .iter()
+            .take(last_use + 1)
+            .map(|l| l.len() + 1)
+            .sum();
+        Some((offset, new_text))
+    }
+}
+
+/// Insert a `use <import_path>;` statement into `source`, reusing the existing
+/// top-level `use` block when one is present. Idempotent: returns `source`
+/// unchanged when the path is already imported.
+pub fn insert_use(source: &str, import_path: &str) -> String {
+    let Some((offset, new_text)) = insert_use_edit(source, import_path) else {
+        return source.to_string();
+    };
+    let mut out = String::with_capacity(source.len() + new_text.len());
+    out.push_str(&source[..offset]);
+    out.push_str(&new_text);
+    out.push_str(&source[offset..]);
+    out
+}
+
 #[cfg(test)]
 mod tests;

@@ -131,6 +131,8 @@ pub fn provide_completions(
     // site. When a receiver type resolves, prefer methods whose recorded
     // receiver type matches; if nothing matches, fall back to the full list so
     // completion is never empty for an incomplete expression.
+    // NOTE: `receiver_type_at_cursor` acquires its own `source_maps` read lock,
+    // so it must run before we take that lock below (std RwLock is not reentrant).
     let receiver_ty = receiver_type_at_cursor(db, file_id, params);
     let filtered: Vec<&SymbolInfo> = if let Some(rt) = &receiver_ty {
         let methods: Vec<&SymbolInfo> = symbols
@@ -143,12 +145,72 @@ pub fn provide_completions(
             })
             .cloned()
             .collect();
-        if methods.is_empty() { symbols } else { methods }
+        if methods.is_empty() {
+            symbols
+        } else {
+            methods
+        }
     } else {
         symbols
     };
 
-    let items: Vec<CompletionItem> = filtered.iter().map(|sym| completion_item(sym)).collect();
+    let mut items: Vec<CompletionItem> = filtered.iter().map(|sym| completion_item(sym)).collect();
+
+    // --- Plan §22.6: auto-import -------------------------------------------
+    // When the user is typing an identifier, also offer symbols *declared in other
+    // files* whose name matches the prefix. Each such candidate carries an
+    // `additional_text_edits` that inserts the corresponding `use` statement via
+    // the def-map `insert_use` helper (which is idempotent and reuses an existing
+    // `use` block).
+    if let Some(prefix) = typed_identifier_prefix(db, file_id, params) {
+        if !prefix.is_empty() {
+            let source_maps = db.source_maps.read();
+            let src = source_maps
+                .get(&file_id)
+                .map(|sm| sm.source().to_string());
+            if let Some(src) = src {
+                for cand in symbol_index.query(&prefix, 50) {
+                    if cand.definition.file_id == file_id {
+                        continue; // already in this file; no import needed.
+                    }
+                    let Some(import_path) =
+                        symbol_index.import_path_for(cand.definition.file_id, &cand.name)
+                    else {
+                        continue;
+                    };
+                    let Some((offset, text)) = glyim_def_map::insert_use_edit(&src, import_path)
+                    else {
+                        continue; // already imported (idempotent) or no path.
+                    };
+                    let Some((line, col)) = crate::uri::offset_to_position(&src, offset).ok() else {
+                        continue;
+                    };
+                    let mut item = completion_item(cand);
+                    let pos = Position {
+                        line: line as u32,
+                        character: col as u32,
+                    };
+                    let edit = TextEdit {
+                        range: Range {
+                            start: pos,
+                            end: pos,
+                        },
+                        new_text: text,
+                    };
+                    item.additional_text_edits = Some(vec![edit]);
+                    item.detail = Some(format!("(auto-import) {}", import_path));
+                    // Avoid duplicate suggestions for the same symbol+import.
+                    if !items
+                        .iter()
+                        .any(|i| i.label == item.label && i.detail == item.detail)
+                    {
+                        items.push(item);
+                    }
+                }
+            }
+        }
+    }
+
     if items.is_empty() {
         None
     } else {
@@ -156,5 +218,33 @@ pub fn provide_completions(
             is_incomplete: false,
             items,
         }))
+    }
+}
+
+/// Plan §22.6 auto-import: return the identifier immediately preceding the cursor
+/// (the token the user is currently typing), or `None` if there is no identifier
+/// being typed. Used to scope auto-import suggestions to the typed prefix.
+fn typed_identifier_prefix(
+    db: &AnalysisDatabase,
+    file_id: glyim_span::FileId,
+    params: &CompletionParams,
+) -> Option<String> {
+    let source_maps = db.source_maps.read();
+    let sm = source_maps.get(&file_id)?;
+    let pos = params.text_document_position.position;
+    let offset = sm.line_col_to_offset(pos.line as usize, pos.character as usize)?;
+    let src = sm.source();
+    if offset == 0 {
+        return None;
+    }
+    let bytes = src.as_bytes();
+    let mut start = offset;
+    while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+        start -= 1;
+    }
+    if start == offset {
+        None
+    } else {
+        Some(src[start..offset].to_string())
     }
 }

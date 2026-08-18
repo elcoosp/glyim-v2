@@ -64,6 +64,10 @@ pub struct SymbolIndex {
     by_name: HashMap<String, Vec<SymbolInfo>>,
     by_file: HashMap<FileId, Vec<SymbolInfo>>,
     by_location: HashMap<(u32, usize), SymbolInfo>,
+    /// Plan §22.6 auto-import: maps `(file_id, symbol_name)` -> fully-qualified
+    /// import path (e.g. `crate::foo::Bar`) so completion can offer to insert a
+    /// `use` statement for symbols declared in *other* files.
+    import_paths: HashMap<(u32, String), String>,
 }
 
 impl Default for SymbolIndex {
@@ -78,11 +82,29 @@ impl SymbolIndex {
             by_name: HashMap::new(),
             by_file: HashMap::new(),
             by_location: HashMap::new(),
+            import_paths: HashMap::new(),
         }
     }
 
     pub fn build_from_hir(&mut self, file_id: FileId, hir: &CrateHir, interner: &Interner) {
         self.clear_file(file_id);
+
+        // Plan §22.6 auto-import: build a parent map (`child -> parent module
+        // item`) so each item's fully-qualified import path can be derived, then
+        // record it under `(file_id, name)` for completion to look up later.
+        let mut parent: HashMap<glyim_hir::ItemId, glyim_hir::ItemId> = HashMap::new();
+        for it in hir.items.iter() {
+            if let ItemKind::Mod(m) = &it.kind {
+                for &child in &m.children {
+                    parent.insert(child, it.id);
+                }
+            }
+        }
+        for it in hir.items.iter() {
+            let path = Self::module_path_of(it.id, &parent, hir, interner);
+            self.import_paths
+                .insert((file_id.to_raw(), interner.resolve(it.name).to_string()), path);
+        }
 
         for item in hir.items.iter() {
             let name = interner.resolve(item.name).to_string();
@@ -364,6 +386,38 @@ impl SymbolIndex {
         results
     }
 
+    /// Plan §22.6 auto-import: return the fully-qualified import path recorded
+    /// for `name` in `file_id` (e.g. `crate::foo::Bar`), if indexed.
+    pub fn import_path_for(&self, file_id: FileId, name: &str) -> Option<&String> {
+        self.import_paths
+            .get(&(file_id.to_raw(), name.to_string()))
+    }
+
+/// Plan §22.6 auto-import: derive a fully-qualified import path for `id` by
+/// walking up the module-parent chain (built in `build_from_hir`). An item at
+/// the crate root yields its bare name; a nested item yields
+/// `crate::mod1::mod2::Name`.
+fn module_path_of(
+    id: glyim_hir::ItemId,
+    parent: &HashMap<glyim_hir::ItemId, glyim_hir::ItemId>,
+    hir: &glyim_hir::CrateHir,
+    interner: &glyim_core::Interner,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut cur = Some(id);
+    while let Some(c) = cur {
+        let item = &hir.items[c];
+        parts.push(interner.resolve(item.name).to_string());
+        cur = parent.get(&c).copied();
+    }
+    parts.reverse();
+    if parts.len() <= 1 {
+        parts.join("::")
+    } else {
+        format!("crate::{}", parts.join("::"))
+    }
+}
+
 /// Subsequence-based fuzzy scorer (plan §22.3), Sublime-Text-style:
 /// - requires every character of `query` to appear in order in `candidate`;
 /// - consecutive matches and word-boundary (after `_`/start) matches score higher;
@@ -419,11 +473,20 @@ fn fuzzy_score(query: &str, candidate: &str) -> Option<usize> {
                     .remove(&(file_id.to_raw(), sym.definition.span.lo.to_usize()));
             }
         }
+        self.import_paths.retain(|(fid, _), _| *fid != file_id.to_raw());
     }
 
     #[doc(hidden)]
     pub fn insert_test_symbol(&mut self, file_id: FileId, sym: SymbolInfo) {
         self.insert_symbol(file_id, sym);
+    }
+
+    /// Test-only: record an import path for `(file_id, name)` so auto-import
+    /// completion tests can look it up via `import_path_for`.
+    #[doc(hidden)]
+    pub fn insert_test_import_path(&mut self, file_id: FileId, name: &str, path: &str) {
+        self.import_paths
+            .insert((file_id.to_raw(), name.to_string()), path.to_string());
     }
 }
 
