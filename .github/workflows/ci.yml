@@ -50,3 +50,38 @@ jobs:
             echo "Found STUB warnings that should be compile errors"
             exit 1
           fi
+
+  # Plan §19.1: the SEH-based unwinding codegen path (`__CxxFrameHandler3`
+  # personality + funclet landingpads) is structurally different from the
+  # Itanium path and can only be exercised on a Windows target triple. This job
+  # builds the compiler on `windows-latest` so the Windows-specific codegen path
+  # at least compiles under the Windows LLVM target, and runs the platform-
+  # agnostic test suite. (Funclet emission itself requires an `inkwell` version
+  # that wraps `cleanuppad`/`cleanupret`; see lower.rs §19.1 for the status.)
+  test-windows:
+    runs-on: windows-latest
+    env:
+      LLVM_SYS_221_PREFIX: "C:\\Program Files\\LLVM"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v5
+        with:
+          path: "C:\\Program Files\\LLVM"
+          key: llvm-22-${{ runner.os }}
+
+      - name: Install LLVM 22
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-win64.exe" -OutFile "llvm-installer.exe"
+          Start-Process -FilePath "llvm-installer.exe" -ArgumentList "/S" -Wait
+          Remove-Item "llvm-installer.exe"
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test --release --workspace

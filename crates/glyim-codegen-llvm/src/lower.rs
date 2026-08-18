@@ -74,6 +74,11 @@ struct LoweringCtx<'ctx, 'a> {
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
     _personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
+    /// The resolved personality for this body (§19.1). Drives landingpad
+    /// emission: `Itanium` uses `landingpad`/`resume`, `Seh` requires
+    /// funclet-based `cleanuppad`/`cleanupret` (not yet wired — see §19.1),
+    /// `None` emits no landingpad.
+    personality: Personality,
     debug_ctx: Option<DebugInfoCtx<'ctx>>,
     /// The landingpad result value for the cleanup block currently being
     /// lowered, if any. Set at the top of `lower_body`'s block loop (via
@@ -2861,6 +2866,21 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             self.current_landingpad = None;
             return Ok(());
         };
+        // Plan §19.1: SEH targets require funclet-based landingpads
+        // (`cleanuppad`/`cleanupret`) rather than the Itanium `landingpad`/
+        // `resume` pair. `inkwell` 0.10 does not wrap the funclet builder APIs,
+        // so emitting a correct SEH landingpad is not possible from this crate
+        // version. Surface a precise diagnostic instead of silently lowering the
+        // wrong (Itanium) unwinding, which would miscompile Windows exception
+        // handling. The personality symbol is still declared by `lower_body`.
+        if self.personality == Personality::Seh {
+            return Err(vec![GlyimDiagnostic::internal_error(
+                "SEH unwinding codegen (cleanuppad/cleanupret funclets) requires an \
+                 inkwell version that wraps the LLVM funclet builder APIs; \
+                 personality symbol `__CxxFrameHandler3` is declared but landingpad \
+                 emission is unimplemented",
+            )]);
+        }
         let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());
         let i32_ty = self.context.i32_type();
         let landingpad_ty = self
@@ -3090,7 +3110,8 @@ pub(crate) fn lower_body<'ctx>(
         .custom_width_int_type(NonZeroU32::new(64).unwrap())
         .unwrap();
     let has_cleanup = body.basic_blocks.iter().any(|bb| bb.is_cleanup);
-    let personality_fn = match select_personality(&target_info, has_cleanup) {
+    let personality = select_personality(&target_info, has_cleanup);
+    let personality_fn = match personality {
         Personality::None => None,
         Personality::Itanium | Personality::Seh => {
             // `__gcc_personality_v0` is the Itanium-ABI personality routine
@@ -3129,6 +3150,7 @@ pub(crate) fn lower_body<'ctx>(
         locals,
         bb_map,
         _personality_fn: personality_fn,
+        personality,
         debug_ctx,
         current_landingpad: None,
     };
@@ -3154,4 +3176,44 @@ pub(crate) fn lower_body<'ctx>(
         di.finalize();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::primitives::{TargetAbi, TargetInfo};
+
+    // Plan §19.1: personality selection must be a proper three-way choice
+    // driven by target ABI — Windows targets use SEH, everyone else Itanium,
+    // and a body with no cleanup blocks uses `None` (no unwinding).
+    #[test]
+    fn select_personality_windows_uses_seh() {
+        let win = TargetInfo::from_triple("x86_64-pc-windows-msvc");
+        assert_eq!(win.abi, TargetAbi::X86_64Windows);
+        assert_eq!(
+            select_personality(&win, true),
+            Personality::Seh,
+            "Windows target with cleanup must select SEH personality"
+        );
+    }
+
+    #[test]
+    fn select_personality_linux_uses_itanium() {
+        let linux = TargetInfo::from_triple("x86_64-unknown-linux-gnu");
+        assert_eq!(
+            select_personality(&linux, true),
+            Personality::Itanium,
+            "Linux/Unix target with cleanup must select Itanium personality"
+        );
+    }
+
+    #[test]
+    fn select_personality_no_cleanup_is_none() {
+        let linux = TargetInfo::from_triple("x86_64-unknown-linux-gnu");
+        assert_eq!(
+            select_personality(&linux, false),
+            Personality::None,
+            "a body with no cleanup blocks needs no personality function"
+        );
+    }
 }
