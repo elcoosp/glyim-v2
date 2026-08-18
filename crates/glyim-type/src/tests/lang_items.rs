@@ -49,7 +49,28 @@ fn re_register_same_def_id_is_idempotent() {
     let mut items = LangItems::default();
     let d = def(1, 42);
     items.register(LangItem::Box, d).unwrap();
-    // Re-registering the identical DefId must succeed (no spurious Duplicate).
+    // Re-Registering the identical DefId must succeed (no spurious Duplicate).
     items.register(LangItem::Box, d).expect("idempotent re-registration");
     assert_eq!(items.require(LangItem::Box).unwrap(), d);
+}
+
+/// Plan §6.1: the `Future` lang item is the foundation the `async fn`
+/// desugaring depends on (`impl Future<Output = T>`). Confirm the variant
+/// registers, looks up, and `require`s like every other lang item.
+#[test]
+fn future_lang_item_registers_and_resolves() {
+    let mut items = LangItems::default();
+    let d = def(2, 7);
+    assert!(items.get(LangItem::Future).is_none());
+    items.register(LangItem::Future, d).unwrap();
+    assert_eq!(items.get(LangItem::Future), Some(d));
+    assert_eq!(items.require(LangItem::Future).unwrap(), d);
+
+    // Unregistered → Missing error (so async desugar can surface a precise
+    // "core is missing `Future`" diagnostic instead of a bogus id).
+    let empty = LangItems::default();
+    assert!(matches!(
+        empty.require(LangItem::Future),
+        Err(LangItemError::Missing(LangItem::Future))
+    ));
 }

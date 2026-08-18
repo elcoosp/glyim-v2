@@ -39,6 +39,7 @@ pub enum LangItem {
     FnOnce,
     FnMut,
     Fn,
+    Future,
     GlobalAlloc,
     Allocator,
 }
