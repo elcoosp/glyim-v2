@@ -80,6 +80,12 @@ pub enum ExprKind {
     /// type (`TyKind::Adt(adt_id, substs)`); `variant_idx` selects the
     /// constructor. Unit variants lower to an `Aggregate` of the enum.
     VariantRef(AdtId, VariantIdx),
+    /// Reference to an enum variant *constructor* in the value namespace
+    /// (`Some`, `Color::Green`) used as a call target: `Some(x)` /
+    /// `Color::Green(x)`. The expression's type is a function type
+    /// `fn(field_tys) -> Enum` (registered as a `FnDefId` fn-sig). MIR
+    /// lowers the surrounding `Call` to an `Aggregate` of the enum ADT.
+    VariantCtor { adt_id: AdtId, variant_idx: VariantIdx },
     Binary {
         op: BinOp,
         lhs: Box<Expr>,

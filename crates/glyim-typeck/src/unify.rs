@@ -1,12 +1,12 @@
 //! Unification and type resolution logic for FnCtxt.
 
-use glyim_core::def_id::{AdtId, ConstDefId, FnDefId, VariantIdx};
+use glyim_core::def_id::{AdtId, ConstDefId, FnDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{IntTy, UintTy};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{FieldIdx, InferVar, Ty, TyCtxMut, TyKind};
+use glyim_type::{FieldIdx, FnSig, GenericArg, InferVar, Substitution, Ty, TyCtxMut, TyKind};
 
 use crate::check_body::FnCtxt;
 use crate::thir;
@@ -92,14 +92,66 @@ impl<'a> FnCtxt<'a> {
         };
 
         if let Some((local, _vis)) = resolved.values {
-            // Enum variant value path: `Color::Red` / `Red`. The def map
-            // registers each variant in the value namespace with a reverse
-            // map variant_local -> (enum_local, VariantIdx). The expression's
-            // type is the enclosing enum's ADT type.
+            // Enum variant value path. `Color::Red` (unit) is a value of the
+            // enum type; `Some` / `Color::Green` (data-carrying) is a
+            // constructor callable as `Some(x)`. The def map registers each
+            // variant in the value namespace with a reverse map
+            // variant_local -> (enum_local, VariantIdx).
             if let Some((enum_local, variant_idx)) = self.def_map.variant_map.get(&local) {
                 let adt_id = AdtId::from_raw(enum_local.to_raw());
                 let substs = self.ctx.intern_substitution(vec![]);
                 let enum_ty = self.ctx.mk_ty(TyKind::Adt(adt_id, substs));
+
+                // Data-carrying variant (has fields) => a constructor value
+                // of function type `fn(field_tys) -> Enum`. Reuse the existing
+                // `FnDefId` call machinery by registering a fn-sig for the
+                // variant's value `LocalDefId`.
+                let has_fields = self
+                    .ctx
+                    .adt_def(adt_id)
+                    .and_then(|def| def.variants.get(variant_idx.index()))
+                    .map(|v| !v.fields.is_empty())
+                    .unwrap_or(false);
+
+                if has_fields {
+                    let ctor_fn_def_id = FnDefId::from_raw(local.to_raw());
+                    let field_tys: Vec<Ty> = self
+                        .ctx
+                        .adt_def(adt_id)
+                        .and_then(|def| def.variants.get(variant_idx.index()))
+                        .map(|v| v.fields.iter().map(|f| f.ty).collect())
+                        .unwrap_or_default();
+                    let inputs = self.ctx.intern_substitution(
+                        field_tys
+                            .iter()
+                            .map(|t| GenericArg::Ty(*t))
+                            .collect(),
+                    );
+                    self.ctx.register_fn_sig(
+                        ctor_fn_def_id,
+                        FnSig {
+                            inputs,
+                            output: enum_ty,
+                            c_variadic: false,
+                            unsafety: glyim_core::primitives::Safety::Safe,
+                            abi: glyim_core::primitives::Abi::Glyim,
+                        },
+                    );
+                    let fn_ty = self
+                        .ctx
+                        .mk_ty(TyKind::FnDef(ctor_fn_def_id, substs));
+                    let thir_expr = thir::Expr {
+                        kind: thir::ExprKind::VariantCtor {
+                            adt_id,
+                            variant_idx: *variant_idx,
+                        },
+                        ty: fn_ty,
+                        span,
+                    };
+                    return (thir_expr, fn_ty);
+                }
+
+                // Unit variant => a value of the enum type.
                 let thir_expr = thir::Expr {
                     kind: thir::ExprKind::VariantRef(adt_id, *variant_idx),
                     ty: enum_ty,

@@ -220,6 +220,29 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Rvalue::Ref(place, borrow_kind)
             }
             thir::ExprKind::Call { func, args } => {
+                // Data-carrying variant constructor call (`Some(x)` /
+                // `Color::Green(x)`): lower to an `Aggregate` of the enum ADT
+                // instead of a function call.
+                if let thir::ExprKind::VariantCtor {
+                    adt_id,
+                    variant_idx,
+                } = &func.kind
+                {
+                    let mut mir_args = Vec::new();
+                    for arg in args {
+                        mir_args.push(self.lower_expr_to_operand(arg));
+                    }
+                    let substs = glyim_type::Substitution::empty();
+                    return glyim_mir::Rvalue::Aggregate(
+                        glyim_mir::AggregateKind::Adt(
+                            *adt_id,
+                            glyim_mir::VariantIdx::from_raw(variant_idx.to_raw()),
+                            substs,
+                        ),
+                        mir_args,
+                    );
+                }
+
                 let mut mir_args = Vec::new();
                 for arg in args {
                     mir_args.push(self.lower_expr_to_operand(arg));
@@ -241,6 +264,17 @@ impl<'a> MirBuilder<'a> {
                 );
                 self.current_block = Some(next_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
+            }
+            thir::ExprKind::VariantCtor { .. } => {
+                // A bare variant constructor value is not yet supported as a
+                // first-class function value; it is only valid as a call
+                // target (handled in the `Call` arm above). Emit an error
+                // rvalue to keep lowering exhaustive.
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Error,
+                    ty: expr.ty,
+                    span: expr.span,
+                }))
             }
             thir::ExprKind::If {
                 cond,

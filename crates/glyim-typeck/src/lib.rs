@@ -36,7 +36,8 @@ mod unify;
 
 use std::collections::HashMap;
 
-use glyim_core::def_id::{ConstDefId, CrateId, DefId, FnDefId, LocalDefId};
+use glyim_core::arena::IndexVec;
+use glyim_core::def_id::{AdtId, ConstDefId, CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
@@ -45,7 +46,8 @@ use glyim_def_map::{CrateDefMap, ModuleId};
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
-    GenericArg, ImplPolarity, Predicate, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut, FnSig,
+    AdtDef, AdtKind, FieldDef, FieldIdx, GenericArg, ImplPolarity, Predicate, TraitPredicate,
+    TraitRef, Ty, TyCtx, TyCtxMut, VariantDef, FnSig,
 };
 
 #[derive(Clone, Debug)]
@@ -408,6 +410,52 @@ fn check_fn_items_in_module(
                         def_map,
                         trait_ctx,
                         all_expr_types,
+                    );
+                }
+            }
+            ItemKind::Enum(enum_item) => {
+                // Register the enum as an ADT so variant field types are
+                // available for data-carrying variant constructors and pattern
+                // matching. Resolve the enum's `LocalDefId` from the current
+                // module's type namespace (works for both top-level and
+                // module-nested enums).
+                let enum_local = def_map
+                    .modules
+                    .get(module_id)
+                    .and_then(|m| m.scope.types.get(&item.name))
+                    .map(|(id, _, _)| *id);
+                if let Some(enum_local) = enum_local {
+                    let adt_id = AdtId::from_raw(enum_local.to_raw());
+                    let mut variants = Vec::new();
+                    for variant in &enum_item.variants {
+                        let mut fields = IndexVec::new();
+                        for field in &variant.fields {
+                            let field_ty = tyconv::resolve_type_ref(
+                                ctx,
+                                infer,
+                                def_map,
+                                diagnostics,
+                                &field.ty,
+                                &HashMap::new(),
+                                field.span,
+                            );
+                            fields.push(FieldDef {
+                                name: field.name,
+                                ty: field_ty,
+                            });
+                        }
+                        variants.push(VariantDef {
+                            name: variant.name,
+                            fields,
+                        });
+                    }
+                    ctx.register_adt(
+                        adt_id,
+                        AdtDef {
+                            kind: AdtKind::Enum,
+                            fields: IndexVec::new(),
+                            variants,
+                        },
                     );
                 }
             }
