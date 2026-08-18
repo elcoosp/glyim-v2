@@ -10,9 +10,9 @@ use crate::auto_trait::AutoTraitFlags;
 use crate::ty::{FieldIdx, TyKind};
 
 /// S04-T04: Computing auto traits for a registered ADT should NOT emit
-/// the "STUB: no AdtRepr registered" warning. When AdtDef is registered
+/// the "no AdtRepr registered" warning. When AdtDef is registered
 /// via register_adt, compute_auto_traits uses it and does not fall through
-/// to the stub path.
+/// to the unregistered-adt warning path.
 #[test]
 fn no_stub_warning_when_adt_def_registered() {
     let (frozen, adt_ty) = with_fresh_ty_ctx(|ctx| {

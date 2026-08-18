@@ -607,7 +607,7 @@ fn compile_source(
     let backend: Box<dyn glyim_codegen::CodegenBackend> = {
         if opts.backend == "llvm" {
             tracing::warn!(
-                "STUB: LLVM backend requested but not compiled in, falling back to bytecode"
+                "LLVM backend requested but not compiled in, falling back to bytecode"
             );
         }
         let ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
