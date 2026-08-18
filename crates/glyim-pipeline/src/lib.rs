@@ -110,7 +110,7 @@ impl Pipeline {
             let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
             let ty_ctx_ref = ty_ctx_guard.as_ref();
 
-            let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+            let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir, typeck_result.const_values.clone());
             let mut bodies = std::collections::HashMap::new();
 
             for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
@@ -283,7 +283,7 @@ pub fn compile_file_to_mir(
 
     let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
     let ty_ctx_ref = ty_ctx_guard.as_ref();
-    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir, typeck_result.const_values.clone());
 
     let mut bodies = std::collections::HashMap::new();
     for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
@@ -354,7 +354,7 @@ pub fn emit_mir(
 
     let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
     let ty_ctx_ref = ty_ctx_guard.as_ref();
-    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir, typeck_result.const_values.clone());
     let mut mir_bodies = Vec::new();
 
     for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
@@ -427,7 +427,7 @@ pub fn emit_llvm_ir(
 
     let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
     let ty_ctx_ref = ty_ctx_guard.as_ref();
-    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir, typeck_result.const_values.clone());
     let mut mir_bodies = Vec::new();
 
     for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {
@@ -512,7 +512,7 @@ pub fn emit_asm(
 
     let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
     let ty_ctx_ref = ty_ctx_guard.as_ref();
-    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir);
+    let lower_ctx = PipelineLowerCtx::new(ty_ctx_ref, &hir, typeck_result.const_values.clone());
     let mut mir_bodies = Vec::new();
 
     for (_owner_def_id, thir_body) in &typeck_result.thir_bodies {

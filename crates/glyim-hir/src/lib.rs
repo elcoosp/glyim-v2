@@ -167,6 +167,9 @@ pub struct TypeAliasItem {
 pub struct ConstItem {
     pub ty: TypeRef,
     pub body: Option<BodyId>,
+    /// Root expression of the constant's initializer body, used by const
+    /// evaluation (Part C: const value materialization) to evaluate the value.
+    pub root_expr: Option<ExprId>,
 }
 
 #[derive(Clone, Debug)]

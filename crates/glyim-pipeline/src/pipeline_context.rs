@@ -1,24 +1,34 @@
 use glyim_borrowck::BorrowckCtx;
-use glyim_core::def_id::AdtId;
+use glyim_core::def_id::{AdtId, ConstDefId};
 use glyim_hir::{CrateHir, ItemKind};
 use glyim_lower::{AdtDef, AdtKind, AdtVariant, LowerCtx};
-use glyim_mir::{Body, LocalDecl, LocalIdx};
+use glyim_mir::{Body, LocalDecl, LocalIdx, MirConst, MirConstKind};
 use glyim_span::Span;
 use glyim_type::TyCtx;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use tracing::warn;
 
 pub(crate) struct PipelineLowerCtx<'a> {
     ty_ctx: &'a TyCtx,
     hir: &'a CrateHir,
+    /// Evaluated const values (Part C: const value materialization), owned so
+    /// the context does not borrow `TypeckResult` for its whole lifetime (the
+    /// result is also moved/consumed elsewhere in the pipeline).
+    const_values: HashMap<ConstDefId, glyim_const_eval::ConstValue>,
     span_stack: RefCell<Vec<Span>>,
 }
 
 impl<'a> PipelineLowerCtx<'a> {
-    pub(crate) fn new(ty_ctx: &'a TyCtx, hir: &'a CrateHir) -> Self {
+    pub(crate) fn new(
+        ty_ctx: &'a TyCtx,
+        hir: &'a CrateHir,
+        const_values: HashMap<ConstDefId, glyim_const_eval::ConstValue>,
+    ) -> Self {
         PipelineLowerCtx {
             ty_ctx,
             hir,
+            const_values,
             span_stack: RefCell::new(Vec::new()),
         }
     }
@@ -114,6 +124,39 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
 
     fn pop_span(&self) {
         self.span_stack.borrow_mut().pop();
+    }
+
+    fn const_value(
+        &self,
+        def_id: glyim_core::def_id::ConstDefId,
+        _substs: glyim_type::Substitution,
+    ) -> Option<glyim_mir::MirConst> {
+        // Part C: const value materialization. Fold a `ConstRef` into a
+        // concrete `MirConst` from the const-evaluated value produced by
+        // typeck (stored in `TypeckResult::const_values`). Scalar constants
+        // (integers, floats, bool, char, str, unit) fold fully; aggregate
+        // constants (tuple/array/struct) and ranges fall back to `None` so the
+        // caller emits a `ConstRef` (zero-initialized global) as before.
+        let value = self.const_values.get(&def_id)?;
+        let ty = self.ty_ctx.const_ty(def_id).unwrap_or_else(|| self.ty_ctx.error_ty());
+        let kind = match value {
+            glyim_const_eval::ConstValue::Int(v, _) => MirConstKind::Int(*v),
+            glyim_const_eval::ConstValue::Uint(v, _) => MirConstKind::Uint(*v),
+            glyim_const_eval::ConstValue::FloatBits(b, _) => MirConstKind::FloatBits(*b),
+            glyim_const_eval::ConstValue::Bool(b) => MirConstKind::Bool(*b),
+            glyim_const_eval::ConstValue::Char(c) => MirConstKind::Char(*c),
+            glyim_const_eval::ConstValue::String(n) => MirConstKind::String(*n),
+            glyim_const_eval::ConstValue::Unit => MirConstKind::Unit,
+            glyim_const_eval::ConstValue::Tuple(_)
+            | glyim_const_eval::ConstValue::Array(_)
+            | glyim_const_eval::ConstValue::Struct(_)
+            | glyim_const_eval::ConstValue::Range(..) => return None,
+        };
+        Some(MirConst {
+            kind,
+            ty,
+            span: Span::DUMMY,
+        })
     }
 }
 

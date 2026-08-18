@@ -254,6 +254,7 @@ fn main() {
     let typeck = TypeckResult {
         thir_bodies: vec![],
         diagnostics: vec![],
+        const_values: std::collections::HashMap::new(),
         expr_types,
     };
     db.typeck

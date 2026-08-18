@@ -170,12 +170,19 @@ impl<'a> MirBuilder<'a> {
                 }))
             }
             thir::ExprKind::ConstRef(const_def_id) => {
-                // ConstRef lowers to a MIR constant referencing the constant's
-                // definition. `MirConstKind::ConstRef` is already handled by
-                // mono, polymorphize, and the LLVM backend (global
-                // `__glyim_const_{id}`). Substs are empty for the
-                // monomorphic consts supported here.
+                // Part C: const value materialization. If typeck const-
+                // evaluated this constant, fold it into a concrete `MirConst`
+                // via `LowerCtx::const_value` (scalar constants fold fully;
+                // aggregate/range constants return `None` here and fall back to
+                // the `ConstRef` zero-initialized global below).
                 let substs = glyim_type::Substitution::empty();
+                if let Some(mir_const) = self.ctx.const_value(*const_def_id, substs) {
+                    return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(mir_const));
+                }
+                // Fallback: emit a `ConstRef` referencing the constant's
+                // definition. Handled by mono, polymorphize, and the LLVM
+                // backend (global `__glyim_const_{id}`). Substs are empty for
+                // the monomorphic consts supported here.
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
                     kind: glyim_mir::MirConstKind::ConstRef(*const_def_id, substs),
                     ty: expr.ty,

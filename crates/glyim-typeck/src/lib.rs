@@ -54,6 +54,11 @@ use glyim_type::{
 pub struct TypeckResult {
     pub thir_bodies: Vec<(LocalDefId, thir::Body)>,
     pub diagnostics: Vec<GlyimDiagnostic>,
+    /// Evaluated values of constant definitions (Part C: const value
+    /// materialization). Populated during `typeck_crate` by const-evaluating
+    /// each `const` initializer; consumed by MIR lowering (via `LowerCtx::
+    /// const_value`) to fold `ConstRef` into a concrete `MirConstKind`.
+    pub const_values: HashMap<ConstDefId, glyim_const_eval::ConstValue>,
     /// Resolved type of each HIR expression, keyed by the owning function's
     /// `LocalDefId` and the expression's `ExprId`. Populated during
     /// `typeck_crate` from each `FnCtxt::expr_cache` (which records the type
@@ -89,6 +94,7 @@ pub fn typeck_crate(
     let trait_ctx = TraitContext::new();
     let mut thir_bodies: Vec<(LocalDefId, thir::Body)> = Vec::new();
     let mut all_expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>> = HashMap::new();
+    let mut all_const_values: HashMap<ConstDefId, glyim_const_eval::ConstValue> = HashMap::new();
 
     let local_krate = def_map.krate;
 
@@ -259,6 +265,7 @@ pub fn typeck_crate(
         &trait_ctx,
         &mut all_expr_types,
         &mut thir_bodies,
+        &mut all_const_values,
         &top_level_ids,
         def_map.root,
         &mut next_local_def_id,
@@ -296,6 +303,7 @@ pub fn typeck_crate(
     let result = TypeckResult {
         thir_bodies,
         diagnostics,
+        const_values: all_const_values.clone(),
         expr_types,
     };
     (frozen_ctx, result)
@@ -321,6 +329,7 @@ fn check_fn_items_in_module(
     trait_ctx: &TraitContext,
     all_expr_types: &mut HashMap<LocalDefId, HashMap<ExprId, Ty>>,
     thir_bodies: &mut Vec<(LocalDefId, thir::Body)>,
+    all_const_values: &mut HashMap<ConstDefId, glyim_const_eval::ConstValue>,
     item_ids: &[ItemId],
     module_id: ModuleId,
     next_local_def_id: &mut u32,
@@ -515,6 +524,7 @@ fn check_fn_items_in_module(
                         trait_ctx,
                         all_expr_types,
                         thir_bodies,
+                        all_const_values,
                         &m.children,
                         child_mod,
                         next_local_def_id,
@@ -550,6 +560,25 @@ fn check_fn_items_in_module(
                     item_span,
                 );
                 ctx.register_const_ty(const_def_id, const_ty);
+
+                // Part C: const value materialization. Evaluate the constant's
+                // initializer body (lowered in HIR) to a `ConstValue` and store
+                // it so MIR lowering can fold `ConstRef` into a concrete
+                // `MirConstKind`. Evaluation failures are surfaced as
+                // diagnostics rather than silently producing a wrong value.
+                if let (Some(body_id), Some(root_expr)) = (c.body, c.root_expr) {
+                    let body = &hir.bodies[body_id];
+                    let mut evaluator = glyim_const_eval::ConstEvaluator::new(body)
+                        .with_interner(ctx.resolver());
+                    match evaluator.evaluate(root_expr) {
+                        Ok(value) => {
+                            all_const_values.insert(const_def_id, value);
+                        }
+                        Err(e) => {
+                            diagnostics.push(e.into_diagnostic());
+                        }
+                    }
+                }
             }
             _ => {}
         }

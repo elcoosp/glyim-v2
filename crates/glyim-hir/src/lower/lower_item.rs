@@ -12,8 +12,8 @@ use crate::{
 };
 
 use super::{
-    first_ident_text, is_type_node, lower_expr::lower_block_to_expr, lower_type::lower_type_ref,
-    next_local_def_id, node_span,
+    first_ident_text, is_type_node, lower_expr::lower_block_to_expr, lower_expr::lower_expr,
+    lower_type::lower_type_ref, next_local_def_id, node_span,
 };
 
 pub(crate) fn collect_struct_fields(
@@ -518,20 +518,48 @@ pub(crate) fn lower_const_def(
     }
     let ty = ty?;
 
-    // Const value materialization (evaluating the initializer and lowering it
-    // to a MIR/const body) is a follow-up. For now we only record the declared
-    // type so value-namespace path resolution can type-check `const` references
-    // (see `check_crate` / `check_path`). The initializer is intentionally not
-    // lowered into a HIR body here, so the pipeline does not try to MIR-lower a
-    // constant before const evaluation exists.
-    let body_id: Option<BodyId> = None;
+    // Const initializer: `const X: TYPE = EXPR;`. Find the `=` token, then
+    // the expression node immediately following it, and lower that expression
+    // into a fresh `Body` so the constant can be const-evaluated later (Part C:
+    // const value materialization).
+    let mut init_node: Option<SyntaxNode> = None;
+    let mut saw_eq = false;
+    for el in node.children_with_tokens() {
+        match el {
+            glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Eq => {
+                saw_eq = true;
+            }
+            glyim_syntax::SyntaxElement::Node(n) if saw_eq && !is_type_node(&n) => {
+                init_node = Some(n);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let mut root_expr: Option<crate::ExprId> = None;
+    let body_id: Option<BodyId> = if let Some(init) = init_node {
+        let mut body = Body {
+            owner,
+            exprs: IndexVec::new(),
+            pats: IndexVec::new(),
+            params: Vec::new(),
+            span: node_span(node),
+            expr_spans: IndexVec::new(),
+        };
+        root_expr = lower_expr(&init, interner, &mut body, diags, struct_field_map);
+        let bid = bodies.push(body);
+        body_owners.push(owner);
+        Some(bid)
+    } else {
+        None
+    };
 
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
     Some(Item {
         id,
         name,
-        kind: ItemKind::Const(ConstItem { ty, body: body_id }),
+        kind: ItemKind::Const(ConstItem { ty, body: body_id, root_expr }),
         visibility: Visibility::Inherited,
         span: node_span(node),
     })
