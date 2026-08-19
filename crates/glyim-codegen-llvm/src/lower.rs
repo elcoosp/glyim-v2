@@ -3024,6 +3024,22 @@ pub(crate) fn lower_body<'ctx>(
             abi: Abi::Glyim,
         },
     };
+    // Emit the calling convention for FFI functions (unstub-5 Phase 4.3).
+    // `extern "C" fn` / `extern fn` compile to the platform C calling
+    // convention so the symbol is callable from C; the default Glyim ABI uses
+    // the LLVM `Fast` convention (not externally callable). `system` maps to
+    // the target's system convention (Win64 on Windows, C elsewhere).
+    // inkwell 0.10 exposes this via `set_call_conventions(u32)` using the raw
+    // LLVM calling-convention IDs (C=0, Fast=8, Win64=64).
+    let cc = match fn_sig.abi {
+        Abi::Glyim => 8u32, // LLVMCCallConv::Fast
+        Abi::C => 0u32,     // LLVMCCallConv::C
+        Abi::System => match target_info.abi {
+            TargetAbi::X86_64Windows | TargetAbi::AArch64Windows => 64u32, // Win64
+            _ => 0u32,                                              // C
+        },
+    };
+    function.set_call_conventions(cc);
     if let Ok(fn_abi) = layout_computer.fn_abi_of(&fn_sig) {
         let mut param_idx = 0;
         if matches!(fn_abi.ret.mode, glyim_layout::PassMode::Indirect { .. }) {
