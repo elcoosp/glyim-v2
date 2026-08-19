@@ -165,6 +165,7 @@ fn test_glyim_process_getpid() {
     assert!(pid > 0, "PID should be positive");
 }
 
+#[cfg(unix)]
 #[test]
 fn test_glyim_process_getppid() {
     let ppid = crate::glyim_process_getppid();

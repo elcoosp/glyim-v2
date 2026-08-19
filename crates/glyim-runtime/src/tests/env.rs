@@ -8,16 +8,22 @@ fn test_glyim_env_var_home() {
         let mut out_len: usize = 0;
         let result =
             crate::glyim_env_var("HOME".as_ptr(), "HOME".len(), &mut out_ptr, &mut out_len);
-        assert!(
-            result >= 0,
-            "glyim_env_var should return non-negative on success"
-        );
-        assert!(!out_ptr.is_null(), "out_ptr should not be null on success");
-        assert!(out_len > 0, "out_len should be > 0 for HOME");
-        let home = std::slice::from_raw_parts(out_ptr, out_len);
-        let home_str = std::str::from_utf8(home).expect("HOME should be valid UTF-8");
-        assert!(!home_str.is_empty(), "HOME should not be empty");
-        crate::glyim_free_cstr(out_ptr);
+        // HOME may be unset on platforms where it is not conventionally defined
+        // (e.g. Windows, which uses USERPROFILE). Tolerate both outcomes.
+        if result >= 0 {
+            assert!(
+                !out_ptr.is_null(),
+                "out_ptr should not be null on success"
+            );
+            assert!(out_len > 0, "out_len should be > 0 for HOME");
+            let home = std::slice::from_raw_parts(out_ptr, out_len);
+            let home_str =
+                std::str::from_utf8(home).expect("HOME should be valid UTF-8");
+            assert!(!home_str.is_empty(), "HOME should not be empty");
+            crate::glyim_free_cstr(out_ptr);
+        } else {
+            assert_eq!(result, -1, "HOME unset should return -1");
+        }
     }
 }
 
