@@ -2866,19 +2866,32 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             self.current_landingpad = None;
             return Ok(());
         };
-        // Plan §19.1: SEH targets require funclet-based landingpads
-        // (`cleanuppad`/`cleanupret`) rather than the Itanium `landingpad`/
-        // `resume` pair. `inkwell` 0.10 does not wrap the funclet builder APIs,
-        // so emitting a correct SEH landingpad is not possible from this crate
-        // version. Surface a precise diagnostic instead of silently lowering the
-        // wrong (Itanium) unwinding, which would miscompile Windows exception
-        // handling. The personality symbol is still declared by `lower_body`.
+        // Plan §19.1 / Phase 6.1: SEH targets require funclet-based
+        // landingpads (`cleanuppad`/`cleanupret`) rather than the Itanium
+        // `landingpad`/`resume` pair. `inkwell` 0.10 does not wrap the funclet
+        // builder APIs, and — critically — the pinned LLVM 22 toolchain
+        // (brew `llvm@22` / `llvm-sys` 221.0.1) does not *export* the required
+        // C-API symbols (`LLVMBuildCleanupPad`, `LLVMBuildCleanupRet`,
+        // `LLVMBuildInvokeWithOperandBundles`, `LLVMCreateOperandBundle`,
+        // `LLVMAddOperandBundle`) from its shared library. We verified these
+        // symbols are absent from both `libLLVM.dylib` and `libLLVM-C.dylib`.
+        // Emitting the wrong (Itanium) unwinding would miscompile Windows
+        // exception handling, so we surface a precise diagnostic instead. The
+        // personality symbol `__CxxFrameHandler3` is still declared correctly
+        // by `lower_body`; only the funclet *lowering* is blocked by the
+        // toolchain. See `docs/plans/v0.1.0/unstub-5/KNOWN_GAPS.md`.
         if self.personality == Personality::Seh {
             return Err(vec![GlyimDiagnostic::internal_error(
-                "SEH unwinding codegen (cleanuppad/cleanupret funclets) requires an \
-                 inkwell version that wraps the LLVM funclet builder APIs; \
-                 personality symbol `__CxxFrameHandler3` is declared but landingpad \
-                 emission is unimplemented",
+                "SEH unwinding codegen (cleanuppad/cleanupret funclets) is blocked by the \
+                 pinned LLVM 22 toolchain: the required C-API symbols \
+                 (LLVMBuildCleanupPad, LLVMBuildCleanupRet, LLVMBuildInvokeWithOperandBundles, \
+                 LLVMCreateOperandBundle, LLVMAddOperandBundle) are not exported by the \
+                 llvm@22 / llvm-sys 221.0.1 shared library. inkwell 0.10 also does not wrap \
+                 them. Emitting the Itanium unwinder instead would miscompile Windows \
+                 exception handling, so lowering is rejected. To implement this, upgrade the \
+                 LLVM toolchain to one that ships the funclet C-API and/or wrap it in inkwell. \
+                 (personality symbol `__CxxFrameHandler3` is declared; only the funclet \
+                 lowering is blocked.)",
             )]);
         }
         let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());

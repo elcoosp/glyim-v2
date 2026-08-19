@@ -103,17 +103,47 @@ Verified green (glyim-borrowck: 165 tests).
   exceeds 1 byte this is slightly inaccurate; the correct width needs the
   discriminant layout from `layout_computer`. Minor; tracked.
 
-### 6.1 SEH unwinding on Windows — NOT started
+### 6.1 SEH unwinding on Windows — BLOCKED (toolchain limitation, verified)
 `emit_landingpad` only does the Itanium (DWARF) path. Funclet-based SEH
-(`cleanuppad`/`cleanupret`/`catchswitch`) needs raw `llvm-sys` FFI
-(`LLVMBuildCleanupPad` etc.) and is Windows-only — cannot be executed/verified
-on this macOS CI host. Large, platform-specific; deferred. The plan permits
-shipping the raw-FFI approach, but it cannot be green-verified here.
+(`cleanuppad`/`cleanupret`/`catchswitch`) needs raw `llvm-sys` FFI and is
+Windows-only. **Verification (2026-08-20): this cannot be implemented with the
+pinned LLVM 22 toolchain.** Concretely:
+- `inkwell` 0.10 does not wrap `LLVMBuildCleanupPad` / `LLVMBuildCleanupRet` /
+  `LLVMBuildInvokeWithOperandBundles` / `LLVMCreateOperandBundle` /
+  `LLVMAddOperandBundle`.
+- `llvm-sys` 221.0.1 does NOT declare those symbols (confirmed by grepping the
+  vendored `lib.rs`).
+- **Decisive:** `nm -gU` shows those symbols are **absent** from both
+  `/opt/homebrew/opt/llvm@22/lib/libLLVM.dylib` and `libLLVM-C.dylib`. The brew
+  LLVM 22 shared library simply does not export the funclet C-API entry points.
+- Additionally, even if the symbols linked, `inkwell`'s `CallSiteValue::new` /
+  `AnyValueEnum::new` require a *private* `llvm_sys::LLVMValueRef` type, so a raw
+  FFI result cannot be wrapped back into an inkwell value from outside the crate.
 
-### 6.4 Windows graceful process signaling — NOT started
-`glyim-runtime` Windows branch needs `windows-sys` `GenerateConsoleCtrlEvent` /
-`TerminateProcess` wiring. Entirely Windows-specific; cannot be compiled or
-verified on this macOS host. Deferred.
+Because emitting the Itanium unwinder on Windows would **miscompile** Windows
+exception handling, the SEH branch in `emit_landingpad` now returns a precise
+diagnostic naming the toolchain gap rather than lowering wrong code. The
+*feasible* parts of P6.1 ARE done and green: personality selection is the
+correct 3-way choice (`select_personality` → `Seh` on Windows w/ cleanup,
+`Itanium` elsewhere, `None` w/o cleanup), and the `__CxxFrameHandler3`
+personality symbol is declared for Windows targets.
+
+**To truly implement P6.1**, the LLVM toolchain must be upgraded to a build that
+ships the funclet C-API (and/or inkwell must wrap it). That is a toolchain/CI
+migration, not a codegen change, and is outside this phase's scope.
+
+### 6.4 Windows graceful process signaling — DONE
+`glyim-runtime` Windows branch now uses `windows-sys` 0.59
+(`Win32_System_Console`/`Threading`/`Foundation`). `glyim_process_kill` maps
+SIGTERM(15)/SIGINT(2) → `GenerateConsoleCtrlEvent` (CTRL_BREAK_EVENT, graceful
+shutdown of the process group) and SIGKILL(9)/other → `TerminateProcess` (hard
+kill). Process spawn on Windows passes `CREATE_NEW_PROCESS_GROUP` so the child
+is its own group leader (only it receives the ctrl-event, not the whole
+console). `OpenProcess` null checks use `.is_null()`. Verified green on the
+Windows CI runner (`test_glyim_process_kill_graceful_signal_windows`), and the
+three pre-existing Unix-only runtime tests were correctly gated (`getppid`,
+`env_var_home`, `spawn_preserves_spaces_in_arg` → `#[cfg(unix)]` /
+HOME-unset-tolerant) so they no longer fail on Windows.
 
 ## Phase 5 — async/.await — NOT started
 Largest single gap. No `Future`/`Poll`/`Context` lang-item exists anywhere
