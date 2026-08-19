@@ -659,6 +659,16 @@ pub unsafe extern "C" fn glyim_process_spawn(
     if !arg_strings.is_empty() {
         command.args(&arg_strings);
     }
+    #[cfg(windows)]
+    {
+        // Spawn the child in its own process group so that a later
+        // `GenerateConsoleCtrlEvent` (SIGTERM-equivalent graceful signal) can
+        // reach it. Without this flag the console-control event only goes to the
+        // caller's own group and graceful signaling silently fails.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
@@ -801,14 +811,13 @@ pub unsafe extern "C" fn glyim_process_wait_output(
 /// | `SIGKILL` (9) / other| `TerminateProcess(handle, 1)` — hard, immediate termination |
 /// | out-of-range         | falls back to hard `TerminateProcess`                       |
 ///
-/// A hard `TerminateProcess` is equivalent to `SIGKILL`; `GenerateConsoleCtrlEvent`
-/// is the graceful counterpart to `SIGTERM`. **Current status:** the
-/// `cfg(not(unix))` branch below always performs a hard `TerminateProcess` and
-/// does not yet branch on `signal`; wiring the `GenerateConsoleCtrlEvent` path
-/// requires Windows-only `winapi`/`windows` bindings and can only be compiled
-/// and tested on a Windows host (this build is macOS, so the branch is
-/// documented but not yet behaviorally split). The platform gap is documented
-/// here rather than silently dropping the parameter.
+/// `GenerateConsoleCtrlEvent` is the graceful counterpart to `SIGTERM`. The
+/// Windows branch now branches on `signal`: `SIGTERM` (15) / `SIGINT` (2) send a
+/// `GenerateConsoleCtrlEvent` (CTRL_BREAK_EVENT / CTRL_C_EVENT) to the child's
+/// process group (the child is spawned with `CREATE_NEW_PROCESS_GROUP` on
+/// Windows so it can receive the event), while `SIGKILL` (9) / out-of-range
+/// values perform a hard `TerminateProcess`. A graceful event that fails to
+/// deliver falls back to a hard kill.
 ///
 /// The handle remains valid after `kill`; use `wait` or `wait_output` to
 /// reap the child afterward.
@@ -848,12 +857,54 @@ pub unsafe extern "C" fn glyim_process_kill(handle: usize, signal: i32) -> i32 {
     }
     #[cfg(not(unix))]
     {
-        // Windows: no POSIX signals; always terminate.
-        let _ = signal;
+        // Windows: no POSIX signals, so map the requested signal to a Windows
+        // console-control event for graceful shutdown, falling back to a hard
+        // `TerminateProcess` for `SIGKILL`/out-of-range values (see the doc
+        // comment on the function for the full signal mapping table).
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Console::{
+            GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT, CTRL_C_EVENT,
+        };
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+        };
+
         if let Some(ref mut child) = registry.children.get_mut(&handle) {
-            match child.kill() {
-                Ok(()) => 0,
-                Err(_) => -1,
+            // Map SIGTERM (15) / SIGINT (2) to a graceful console event;
+            // everything else (incl. SIGKILL 9 and out-of-range) hard-kills.
+            let graceful = matches!(signal, 2 | 15);
+            if graceful {
+                let ctrl_event = if signal == 2 {
+                    CTRL_C_EVENT
+                } else {
+                    CTRL_BREAK_EVENT
+                };
+                // pid must be the actual child process id; the registry stores a
+                // synthetic handle, so read the child's real pid.
+                let pid = child.id();
+                // 0 as the second arg targets the whole process group, which is
+                // why spawn sets CREATE_NEW_PROCESS_GROUP on Windows.
+                let ok = unsafe { GenerateConsoleCtrlEvent(ctrl_event, pid) };
+                if ok != 0 {
+                    return 0;
+                }
+                // If the graceful event didn't deliver (e.g. the child isn't in
+                // a console), fall through to a hard kill below.
+            }
+            // Hard terminate path (SIGKILL, out-of-range, or graceful fallback).
+            let pid = child.id();
+            let raw = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+            if raw == 0 {
+                return -1;
+            }
+            let ok = unsafe { TerminateProcess(raw, 1) };
+            unsafe {
+                CloseHandle(raw);
+            }
+            if ok != 0 {
+                0
+            } else {
+                -1
             }
         } else {
             -1

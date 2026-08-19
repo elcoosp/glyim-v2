@@ -207,23 +207,54 @@ fn test_glyim_process_kill_honors_signal() {
     }
 }
 
+#[cfg(windows)]
 #[test]
-fn test_glyim_process_kill_invalid_signal_falls_back_to_sigkill() {
+fn test_glyim_process_kill_graceful_signal_windows() {
+    // Spawn a long-running child in its own process group, then send SIGTERM
+    // (15) and assert the new Windows graceful path returns success and the
+    // child is eventually reaped. `ping -n 20 127.0.0.1` runs ~20s on Windows
+    // and is a reliable long-running stand-in (no `sleep` on cmd.exe).
     unsafe {
         let mut handle: usize = 0;
         let spawn = crate::glyim_process_spawn(
-            b"sleep\x00".as_ptr(),
-            5,
-            std::ptr::null(),
-            0,
+            b"ping\x00".as_ptr(),
+            4,
+            b"-n\x0020\x00127.0.0.1\x00".as_ptr(),
+            19,
+            &mut handle as *mut usize,
+        );
+        assert_eq!(spawn, 0, "spawn of 'ping' should succeed");
+        assert_ne!(handle, 0, "handle must be assigned");
+
+        // SIGTERM (15) must take the graceful GenerateConsoleCtrlEvent path
+        // (possibly falling back to a hard kill) and report success.
+        let kill = crate::glyim_process_kill(handle, 15);
+        assert_eq!(kill, 0, "graceful kill on Windows should succeed");
+
+        let mut code: i32 = -999;
+        let wait = crate::glyim_process_wait(handle, &mut code as *mut i32);
+        assert_eq!(wait, 0, "wait after kill should reap the child");
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn test_glyim_process_kill_hard_signal_windows() {
+    // SIGKILL (9) must take the hard TerminateProcess path on Windows.
+    unsafe {
+        let mut handle: usize = 0;
+        let spawn = crate::glyim_process_spawn(
+            b"ping\x00".as_ptr(),
+            4,
+            b"-n\x0020\x00127.0.0.1\x00".as_ptr(),
+            19,
             &mut handle as *mut usize,
         );
         assert_eq!(spawn, 0);
-        // An out-of-range signal must fall back to SIGKILL (which still works).
-        let kill = crate::glyim_process_kill(handle, 9999);
-        assert_eq!(kill, 0, "invalid signal should fall back to SIGKILL");
+        let kill = crate::glyim_process_kill(handle, 9);
+        assert_eq!(kill, 0, "hard kill on Windows should succeed");
         let mut code: i32 = -999;
         let wait = crate::glyim_process_wait(handle, &mut code as *mut i32);
-        assert_eq!(wait, 0, "wait after kill should succeed");
+        assert_eq!(wait, 0);
     }
 }
