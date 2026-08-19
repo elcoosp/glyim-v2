@@ -138,7 +138,7 @@ pub fn resolve_type_ref(
                     return Ty::ERROR;
                 }
             };
-            let trait_def_id = resolve_path_to_trait_def_id(def_map, trait_path, span);
+            let trait_def_id = resolve_path_to_trait_def_id(def_map, ctx, trait_path, span);
             let trait_def_id = match trait_def_id {
                 Some(id) => id,
                 None => {
@@ -443,7 +443,7 @@ pub fn resolve_impl_header(
                     }
                 }
             } else {
-                match resolve_path_to_trait_def_id(def_map, path, span) {
+                match resolve_path_to_trait_def_id(def_map, ctx, path, span) {
                     Some(trait_def_id) => {
                         let substs = ctx.intern_substitution(vec![]);
                         (Some(trait_def_id), path.as_name(), substs)
@@ -625,6 +625,9 @@ pub(crate) fn resolve_path_to_local_def_id(
 /// Resolve a (possibly multi‑segment) path to an `AdtId`, walking the module
 /// tree like `resolve_path_to_local_def_id`. Used by struct/variant *patterns*
 /// (plan §9.4 multi‑segment path support) where the final segment names an ADT.
+/// Referenced from the `multi_seg_path` test module; kept available for
+/// pattern-path lowering once that tier lands.
+#[allow(dead_code)]
 pub(crate) fn resolve_path_to_adt_id(
     def_map: &glyim_def_map::CrateDefMap,
     path: &glyim_hir::Path,
@@ -635,9 +638,19 @@ pub(crate) fn resolve_path_to_adt_id(
 /// Resolve path to trait DefId
 pub(crate) fn resolve_path_to_trait_def_id(
     def_map: &glyim_def_map::CrateDefMap,
+    _ctx: &mut TyCtxMut,
     path: &glyim_hir::Path,
     _span: Span,
 ) -> Option<TraitDefId> {
+    // NOTE: we intentionally do NOT gate on `ctx.trait_def(tid).is_some()`
+    // here. Traits may be known to the compiler purely via the def-map (e.g.
+    // hand-built test HIRs / where-clause bounds that reference a trait name
+    // registered only as a def-map type), and the caller performs its own
+    // validation. In particular, the *call* dispatcher in `check_expr` adds a
+    // stricter `ctx.trait_def(tid).is_some()` guard so that module-qualified
+    // function calls (`mod::fn`) and enum-variant paths are NOT misclassified
+    // as trait-method calls — but where-clause resolution and type-position
+    // trait lookups rely on the lenient cast below.
     resolve_path_to_local_def_id(def_map, path).map(|l| TraitDefId::from_raw(l.to_raw()))
 }
 
