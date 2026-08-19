@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, info};
 
 /// A dependency declared by a published crate version in the index.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

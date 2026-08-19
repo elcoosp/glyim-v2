@@ -11,7 +11,7 @@ path = "src/bin/glyip.rs"
 [features]
 registry = ["reqwest", "flate2", "tar"]
 llvm = []
-default = []
+default = ["registry"]
 
 [dependencies]
 semver = { workspace = true }
