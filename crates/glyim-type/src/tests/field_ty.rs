@@ -35,7 +35,8 @@ fn field_ty_returns_correct_type_from_adt_def() {
                 name: name_a,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         let substs = ctx.intern_substitution(vec![]);
@@ -86,7 +87,8 @@ fn field_ty_mut_returns_correct_type_from_adt_def() {
             name: name_a,
             fields: IndexVec::new(),
         }],
-    };
+        generic_params: vec![],
+};
 
     ctx.register_adt(adt_id, adt_def);
     let substs = ctx.intern_substitution(vec![]);
