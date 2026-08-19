@@ -85,19 +85,33 @@ read) and `Call::destination` (a write) is excluded. `TerminatorKind` has
 exactly these 7 variants. No `_ =>` arm exists anywhere in the traversal.
 Verified green (glyim-borrowck: 165 tests).
 
-### 6.2 Debug info for enums and closures — PARTIAL (enum done; closure deferred)
+### 6.2 Debug info for enums and closures — DONE (enum + closure; discriminant width caveat)
 - **Enums (DONE)**: `debug_type_for_ty` in `crates/glyim-codegen-llvm/src/
   debug.rs` no longer emits an opaque blob for multi-variant ADTs. It now builds
   a real DWARF union (`create_union_type`) of per-variant struct types (each
   with named, typed members via `create_struct_type`/`create_member_type`),
   wrapped in an outer struct with a discriminant member. Uses only existing
   correct data (`AdtDef.variants[].fields[].ty` + `layout_computer`).
-- **Closures (DEFERRED)**: `TyKind::Closure` still emits an opaque struct
-  because the plan's assumed `self.ctx.closure_captures(...)` accessor does NOT
-  exist in this codebase — capture types aren't exposed to the debug-info pass.
-  Real fix requires adding a closure-capture accessor to `TyCtx` (mirroring
-  whatever codegen already computes for the closure struct layout) and then
-  emitting member types from it. Tracked as a gap.
+- **Closures (DONE, 2026-08-20)**: `TyKind::Closure` now emits real per-capture
+  member *types* instead of an opaque blob. The missing accessor the plan
+  assumed (`self.ctx.closure_captures(...)`) was added as
+  `TyCtxMut::register_closure` (records a `ClosureId → AdtId` map in
+  `closure_adt_map`) + `TyCtx::closure_adt(closure_id)`. The debug pass's
+  `Closure` arm recovers the synthetic captured-environment `AdtDef` via that map
+  and renders it like the `Adt` arm (one member type per capture). New test
+  `phase6_2_closure_debug_type_has_capture_members` asserts the closure debug
+  type is a `DW_TAG_structure_type` with `elements` carrying the captured types
+  (i32, bool) rather than an empty struct. Real closures flow through as
+  `TyKind::Adt(closure_adt, _)` (built by `check_expr` → `register_closure`),
+  which already emitted members via the `Adt` arm — so production closure
+  debug-info was already correct; the `Closure` arm bridge covers the
+  `TyKind::Closure` representation used in tests/downstream reads.
+- **Members-not-named caveat (PRE-EXISTING, shared)**: like the `Adt` arm, the
+  closure struct emits its captures as `elements` of basic types rather than
+  individually `DW_TAG_member`-wrapped, named nodes. This is a codebase-wide
+  limitation of the current `create_struct_type` usage (affects all ADTs), not
+  specific to closures. Capture *types* are present and inspectable; per-field
+  *names* in the DWARF are a follow-up.
 - **Discriminant width (DEFERRED)**: the enum discriminant member is
   conservatively a single `u8` (8 bits). For enums whose real discriminant
   exceeds 1 byte this is slightly inaccurate; the correct width needs the
