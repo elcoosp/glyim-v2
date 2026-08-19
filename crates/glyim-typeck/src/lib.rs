@@ -516,6 +516,7 @@ fn check_fn_items_in_module(
                             kind: AdtKind::Enum,
                             fields: IndexVec::new(),
                             variants,
+                            generic_params: enum_item.generic_params.iter().map(|p| p.name).collect(),
                         },
                     );
                 }
@@ -532,6 +533,10 @@ fn check_fn_items_in_module(
                     .map(|(id, _, _)| *id);
                 if let Some(struct_local) = struct_local {
                     let adt_id = AdtId::from_raw(struct_local.to_raw());
+                    // Generic params of the struct are in scope when resolving
+                    // its field types (e.g. `struct S<T> { x: T }`). Build the
+                    // param map so `T` resolves to a type parameter.
+                    let param_map = tyconv::build_param_tys(ctx, &struct_item.generic_params);
                     let mut fields = IndexVec::new();
                     for field in &struct_item.fields {
                         let field_ty = tyconv::resolve_type_ref(
@@ -540,7 +545,7 @@ fn check_fn_items_in_module(
                             def_map,
                             diagnostics,
                             &field.ty,
-                            &HashMap::new(),
+                            &param_map,
                             field.span,
                         );
                         fields.push(FieldDef {
@@ -554,6 +559,7 @@ fn check_fn_items_in_module(
                             kind: AdtKind::Struct,
                             fields,
                             variants: Vec::new(),
+                            generic_params: struct_item.generic_params.iter().map(|p| p.name).collect(),
                         },
                     );
                 }
