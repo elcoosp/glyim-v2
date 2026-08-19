@@ -159,11 +159,40 @@ three pre-existing Unix-only runtime tests were correctly gated (`getppid`,
 `env_var_home`, `spawn_preserves_spaces_in_arg` → `#[cfg(unix)]` /
 HOME-unset-tolerant) so they no longer fail on Windows.
 
-## Phase 5 — async/.await — NOT started
-Largest single gap. No `Future`/`Poll`/`Context` lang-item exists anywhere
-(`grep` finds none). Requires: a `future.g` std lib trait, async-fn →
-state-machine desugaring (new `lower_async.rs`), `.await` typeck, and a
-`block_on` executor in `glyim-runtime`. Multi-feature, foundational; deferred.
+## Phase 5 — async/.await — PARTIAL (5.1 std types done; executor MVP done; desugar tracked)
+Largest single gap. The `Future`/`Poll`/`Context`/`Waker` lang-item types and a
+single-threaded `block_on` executor are now in place (2026-08-20). The
+remaining piece — `async fn`/`.await` state-machine desugaring
+(`lower_async.rs`) + wiring `block_on` to compiled glyim futures — is the
+large front-end + codegen effort, tracked below.
+
+### 5.1 Minimum viable scope — PARTIAL
+- **`Future`/`Poll`/`Context`/`Waker` std types** added in
+  `crates/glyim-lang-core/lib/future.g` (mirrors `ops.g`/`vec.g` associated-type
+  trait syntax). The `Waker`/`Context` are intentionally minimal: a no-op,
+  single-threaded waker is enough to drive straight-line futures to completion.
+  `future` registered in `core_source`/`core_modules` (now 16 modules); lex/parse
+  coverage added (`t07_future_lex`/`t07_future_parse_soft`) and the module-count
+  assertion updated. `glyim-lang-core` full suite (60 tests) passes.
+- **`block_on` executor** added in `crates/glyim-runtime/src/async_runtime.rs`:
+  a `poll`-to-completion loop over a `Future` trait (mirroring `future.g`'s
+  model) with `Poll`/`Context`/`Waker` Rust equivalents. Unit-tested
+  (`block_on_returns_ready_value`, `block_on_polls_until_ready`,
+  `poll_enum_roundtrip`) — verifies the executor drives a future that resolves
+  on first poll and one that returns `Pending` N times then `Ready`.
+- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4)**: the parser
+  already has `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering that splits
+  an `async fn` body into a state-machine enum + generated `poll` method, and
+  the `.await` typeck (resolving `expr: impl Future<Output=T>` → `T`), are not
+  implemented. Until that desugar exists, `block_on` cannot yet be driven by a
+  *compiled glyim* future (only by the Rust-side executor primitive). This is
+  the large, foundational remaining piece of P5 — tracked, not silently dropped.
+  A real multi-threaded waker / I/O reactor is also a follow-up.
+
+### 5.2 Executor — DONE (single-threaded MVP)
+`block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop
+the plan specified (§5.2). Enough to make `async fn` testable once the desugar
+lands; deliberately not a full reactor.
 
 ## Phase 7 — Execution Backends — NOT started
 Bytecode VM (no interpreter exists; golden tests only assert emitted bytes) and
