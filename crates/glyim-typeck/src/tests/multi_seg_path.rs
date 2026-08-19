@@ -95,7 +95,7 @@ fn multi_segment_struct_pattern_resolves_to_adt() {
 
 #[test]
 fn single_segment_struct_pattern_still_resolves() {
-    let mut interner = glyim_core::interner::Interner::new();
+    let interner = glyim_core::interner::Interner::new();
     let point = interner.intern("Point");
     // Single-segment: register directly in root scope.
     let mut root_scope = ItemScope::default();
