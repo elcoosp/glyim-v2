@@ -24,7 +24,7 @@ fn cast_i32_to_f64() {
 /// illegal casts (e.g. int → String, struct → int).
 #[test]
 fn is_valid_cast_rules() {
-    use crate::check_expr::is_valid_cast;
+    use glyim_type::is_valid_cast;
 
     let mut ctx = make_ty_ctx();
     let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
