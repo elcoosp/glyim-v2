@@ -25,7 +25,8 @@ fn make_struct_ty(
             name: ctx.resolver().intern("S"),
             fields: IndexVec::new(),
         }],
-    };
+        generic_params: vec![],
+};
     ctx.register_adt(adt_id, def);
     let substs = ctx.intern_substitution(vec![]);
     ctx.mk_adt(adt_id, substs)
