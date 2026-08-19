@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use crate::{
     Body, BodyId, ConstItem, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId,
-    ItemKind, ModItem, Param, Pat, PatId, Path, StructItem, TypeRef, Variant, Visibility,
+    ItemKind, ModItem, Param, Pat, PatId, Path, StructItem, TraitItem, TraitMethod, TypeRef,
+    Variant, Visibility,
 };
 
 use super::{
@@ -393,23 +394,38 @@ pub(crate) fn lower_impl_def(
 ) -> Option<Item> {
     let mut self_ty: Option<TypeRef> = None;
     let mut trait_ref: Option<Path> = None;
-    let mut saw_for = false;
-    for child in node.children() {
-        match child.kind() {
-            SyntaxKind::TypeParamList => continue,
-            SyntaxKind::KwFor => saw_for = true,
-            _ if is_type_node(&child) => {
-                if saw_for {
-                    if trait_ref.is_none()
-                        && let TypeRef::Path(p) = lower_type_ref(&child, interner)? {
+    // `for` is emitted as a *token* (not a node) by the parser for
+    // `impl Trait for Self`. When present, the first type node before `for`
+    // is the trait and the first type node after `for` is `Self`. When absent
+    // (a plain `impl Foo`), the lone type node is `Self`.
+    let saw_for_token = node
+        .children_with_tokens()
+        .any(|el| matches!(el, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::KwFor));
+    if saw_for_token {
+        let mut saw_for = false;
+        for el in node.children_with_tokens() {
+            match el {
+                glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::KwFor => {
+                    saw_for = true;
+                }
+                glyim_syntax::SyntaxElement::Node(child) if is_type_node(&child) => {
+                    if saw_for {
+                        // After `for`: this is the `Self` type.
+                        if self_ty.is_none() {
+                            self_ty = lower_type_ref(&child, interner);
+                        }
+                    } else if trait_ref.is_none() {
+                        // Before `for`: this is the trait.
+                        if let TypeRef::Path(p) = lower_type_ref(&child, interner)? {
                             trait_ref = Some(p);
                         }
-                } else if self_ty.is_none() {
-                    self_ty = lower_type_ref(&child, interner);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
+    } else if let Some(child) = node.children().find(|c| is_type_node(c)) {
+        self_ty = lower_type_ref(&child, interner);
     }
     let self_ty = self_ty?;
 
@@ -493,6 +509,102 @@ pub(crate) fn lower_impl_def(
         kind: ItemKind::Impl(ImplItem {
             trait_ref,
             self_ty,
+            methods,
+            generic_params: Vec::new(),
+            where_clauses: Vec::new(),
+        }),
+        visibility: Visibility::Inherited,
+        span: node_span(node),
+    })
+}
+
+/// Lower a `trait Name { fn method(...) -> ...; ... }` item into
+/// `ItemKind::Trait`. Mirrors `lower_impl_def` for method extraction; the trait
+/// body's `fn`s become `TraitMethod` entries (with optional default bodies),
+/// which typeck registers so trait paths resolve and default-method bodies are
+/// reachable.
+pub(crate) fn lower_trait_def(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    local_def_counter: &mut u32,
+    item_id_counter: &mut u32,
+    bodies: &mut IndexVec<BodyId, Body>,
+    body_owners: &mut IndexVec<BodyId, LocalDefId>,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<Item> {
+    let name_str = first_ident_text(node)?;
+    let name = interner.intern(&name_str);
+
+    let mut methods = Vec::new();
+    for method_node in node.children().filter(|c| c.kind() == SyntaxKind::FnDef) {
+        let mname_str = first_ident_text(&method_node)?;
+        let mname = interner.intern(&mname_str);
+
+        let owner = next_local_def_id(local_def_counter);
+        let mut params = Vec::new();
+        let mut body_params = Vec::new();
+        let mut temp_pats = IndexVec::new();
+        for child in method_node.children() {
+            if child.kind() == SyntaxKind::ParamList {
+                for param_node in child.children().filter(|c| c.kind() == SyntaxKind::Param) {
+                    let (p, pat_id) = lower_param(&param_node, interner, &mut temp_pats);
+                    params.push(p);
+                    body_params.push(pat_id);
+                }
+            }
+        }
+
+        let mut return_ty = None;
+        let mut arrow_seen = false;
+        for el in method_node.children_with_tokens() {
+            match el {
+                glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Arrow => {
+                    arrow_seen = true;
+                }
+                glyim_syntax::SyntaxElement::Node(n) if arrow_seen && is_type_node(&n) => {
+                    return_ty = lower_type_ref(&n, interner);
+                    arrow_seen = false;
+                }
+                _ => {}
+            }
+        }
+
+        let default_body = if let Some(block_node) = method_node
+            .children()
+            .find(|c| c.kind() == SyntaxKind::Block)
+        {
+            let mut body = Body {
+                owner,
+                exprs: IndexVec::new(),
+                pats: temp_pats,
+                params: body_params,
+                span: node_span(&method_node),
+                expr_spans: IndexVec::new(),
+            };
+            lower_block_to_expr(&block_node, interner, &mut body, diags, struct_field_map);
+            let bid = bodies.push(body);
+            body_owners.push(owner);
+            Some(bid)
+        } else {
+            None
+        };
+
+        methods.push(TraitMethod {
+            name: mname,
+            params,
+            return_ty,
+            default_body,
+        });
+    }
+
+    let id = ItemId::from_raw(*item_id_counter);
+    *item_id_counter += 1;
+    Some(Item {
+        id,
+        name,
+        kind: ItemKind::Trait(TraitItem {
+            associated_types: Vec::new(),
             methods,
             generic_params: Vec::new(),
             where_clauses: Vec::new(),
