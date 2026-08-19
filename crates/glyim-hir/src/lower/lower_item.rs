@@ -7,11 +7,35 @@ use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
 use crate::{
-    Body, BodyId, ConstItem, EnumItem, Field, FnItem, ImplItem, ImplMethod, Item, ItemId,
-    ItemKind, ModItem, Param, Pat, PatId, Path, StructItem, TraitItem, TraitMethod, TypeRef,
-    Variant, Visibility,
+    Body, BodyId, ConstItem, EnumItem, Field, FnItem, GenericParam, GenericParamKind, ImplItem,
+    ImplMethod, Item, ItemId, ItemKind, ModItem, Param, Pat, PatId, Path, StructItem, TraitItem,
+    TraitMethod, TypeRef, Variant, Visibility,
 };
 
+/// Collect generic type parameters from a `TypeParamList` child node (e.g. the
+/// `<T, U>` of `struct S<T, U>` / `enum E<T>` / `fn f<T>`). The parser emits a
+/// `TypeParamList` of `TypeParam` nodes; a type-param whose body is a bare
+/// identifier exposes its name only as a *token* (not a child node), so use
+/// `first_ident_text`.
+pub(crate) fn collect_generic_params(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+) -> Vec<GenericParam> {
+    let mut generic_params = Vec::new();
+    if let Some(tp_list) = node.children().find(|c| c.kind() == SyntaxKind::TypeParamList) {
+        for tp in tp_list.children().filter(|c| c.kind() == SyntaxKind::TypeParam) {
+            if let Some(name_str) = first_ident_text(&tp) {
+                let name = interner.intern(&name_str);
+                generic_params.push(GenericParam {
+                    name,
+                    kind: GenericParamKind::Type { default: None },
+                    span: node_span(&tp),
+                });
+            }
+        }
+    }
+    generic_params
+}
 use super::{
     first_ident_text, is_type_node, lower_expr::lower_block_to_expr, lower_expr::lower_expr,
     lower_type::lower_type_ref, next_local_def_id, node_span,
@@ -268,7 +292,7 @@ pub(crate) fn lower_struct_def(
         kind: ItemKind::Struct(StructItem {
             fields,
             kind,
-            generic_params: Vec::new(),
+            generic_params: collect_generic_params(node, interner),
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
@@ -305,7 +329,7 @@ pub(crate) fn lower_enum_def(
         name,
         kind: ItemKind::Enum(EnumItem {
             variants,
-            generic_params: Vec::new(),
+            generic_params: collect_generic_params(node, interner),
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,
