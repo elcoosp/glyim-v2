@@ -6,7 +6,7 @@ use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{BinOp, FloatTy, IntTy, UintTy, UnOp};
 use glyim_hir::{Body, Expr, ExprId, Literal, MatchArm, Pat, TypeRef};
 use glyim_span::Span;
-use glyim_type::{Ty, TyCtx, TyCtxMut, TyKind};
+use glyim_type::{Ty, TyCtxMut, TyKind};
 
 use crate::{ConstEvalError, ConstEvalResult, ConstValue, MAX_EVAL_DEPTH};
 
