@@ -37,7 +37,7 @@ mod unify;
 use std::collections::HashMap;
 
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ConstDefId, CrateId, DefId, FnDefId, LocalDefId};
+use glyim_core::def_id::{AdtId, ConstDefId, CrateId, DefId, FnDefId, LocalDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
@@ -46,8 +46,8 @@ use glyim_def_map::{CrateDefMap, ModuleId};
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
-    AdtDef, AdtKind, FieldDef, FieldIdx, GenericArg, ImplPolarity, Predicate, TraitPredicate,
-    TraitRef, Ty, TyCtx, TyCtxMut, VariantDef, FnSig,
+    AdtDef, AdtKind, FieldDef, GenericArg, ImplPolarity, MethodDef, Predicate,
+    TraitDef, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut, VariantDef, FnSig,
 };
 
 #[derive(Clone, Debug)]
@@ -96,10 +96,18 @@ pub fn typeck_crate(
     let mut all_expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>> = HashMap::new();
     let mut all_const_values: HashMap<ConstDefId, glyim_const_eval::ConstValue> = HashMap::new();
 
+    // Maps each impl-method `BodyId` (assigned by the HIR def-counter) to the
+    // `LocalDefId` typeck allocates for that method's MIR body. The two
+    // counters are independent (HIR lowers all items in source order; typeck
+    // uses its own `alloc_local_def_id`), so resolving a trait method to its
+    // concrete impl function must translate through this map to hit the MIR
+    // body key actually stored during monomorphization.
+    let mut body_owner_map: HashMap<glyim_hir::BodyId, LocalDefId> = HashMap::new();
+
     let local_krate = def_map.krate;
 
     let mut next_local_def_id: u32 = 0;
-    let mut alloc_local_def_id = |counter: &mut u32, diags: &mut Vec<GlyimDiagnostic>| -> LocalDefId {
+    let alloc_local_def_id = |counter: &mut u32, diags: &mut Vec<GlyimDiagnostic>| -> LocalDefId {
         let id = *counter;
         *counter += 1;
         if *counter == u32::MAX {
@@ -113,6 +121,43 @@ pub fn typeck_crate(
 
     // 1. Coherence pass
     let mut coherence = coherence::CoherenceChecker::new(def_map);
+
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        if let ItemKind::Trait(trait_item) = &item.kind {
+            // Register the trait definition on the type context so that
+            // `resolve_path_to_trait_def_id` (and other trait-namespace
+            // lookups) can confirm a path names a *trait* rather than an ADT
+            // or module. Method `fn_def_id`s are not tracked at the trait
+            // level here (dispatch resolves to the concrete impl method), so
+            // they stay `None`.
+            let trait_path = glyim_hir::Path {
+                segments: vec![glyim_hir::PathSegment {
+                    name: item.name,
+                    generic_args: None,
+                }],
+                kind: glyim_core::path::PathKind::Plain,
+            };
+            if let Some(local) = tyconv::resolve_path_to_local_def_id(def_map, &trait_path) {
+                let trait_def_id = TraitDefId::from_raw(local.to_raw());
+                let methods = trait_item
+                    .methods
+                    .iter()
+                    .map(|m| MethodDef {
+                        name: m.name,
+                        sig: FnSig {
+                            inputs: ctx.intern_substitution(vec![]),
+                            output: Ty::UNIT,
+                            c_variadic: false,
+                            unsafety: Safety::Safe,
+                            abi: Abi::Glyim,
+                        },
+                        fn_def_id: None,
+                    })
+                    .collect();
+                ctx.register_trait_def(trait_def_id, TraitDef { name: item.name, methods });
+            }
+        }
+    }
 
     for (_item_id, item) in hir.items.iter_enumerated() {
         if let ItemKind::Impl(impl_item) = &item.kind {
@@ -163,6 +208,9 @@ pub fn typeck_crate(
                 for method in &impl_item.methods {
                     let local_def_id = alloc_local_def_id(&mut next_local_def_id, &mut diagnostics);
                     let owner = DefId::new(local_krate, local_def_id);
+                    if let Some(bid) = method.body {
+                        body_owner_map.insert(bid, local_def_id);
+                    }
 
                     let sig = tyconv::resolve_fn_sig(
                         &mut ctx,
@@ -227,6 +275,7 @@ pub fn typeck_crate(
                             local_def_id,
                             def_map,
                             &trait_ctx,
+                            &body_owner_map,
                             &mut all_expr_types,
                         );
                     } else {
@@ -269,6 +318,7 @@ pub fn typeck_crate(
         &top_level_ids,
         def_map.root,
         &mut next_local_def_id,
+        &body_owner_map,
     );
 
     // 3. Obligation fulfillment
@@ -333,6 +383,7 @@ fn check_fn_items_in_module(
     item_ids: &[ItemId],
     module_id: ModuleId,
     next_local_def_id: &mut u32,
+    body_owner_map: &HashMap<glyim_hir::BodyId, LocalDefId>,
 ) {
     for item_id in item_ids {
         let item = match hir.items.get(*item_id) {
@@ -418,6 +469,7 @@ fn check_fn_items_in_module(
                         local_def_id,
                         def_map,
                         trait_ctx,
+                        &body_owner_map,
                         all_expr_types,
                     );
                 }
@@ -528,6 +580,7 @@ fn check_fn_items_in_module(
                         &m.children,
                         child_mod,
                         next_local_def_id,
+                        &body_owner_map,
                     );
                 }
             }
@@ -600,6 +653,7 @@ fn check_body(
     local_def_id: LocalDefId,
     def_map: &glyim_def_map::CrateDefMap,
     trait_ctx: &TraitContext,
+    body_owner_map: &HashMap<glyim_hir::BodyId, LocalDefId>,
     expr_types: &mut HashMap<LocalDefId, HashMap<ExprId, Ty>>,
 ) {
     let body = &hir.bodies[body_id];
@@ -619,6 +673,7 @@ fn check_body(
         def_map,
         trait_ctx,
         capture_log: Vec::new(),
+        body_owner_map,
     };
 
     let (thir_body, body_expr_types) = fn_ctxt.check(params);
@@ -658,7 +713,7 @@ fn process_where_clauses(
 
         for bound in &wc.bounds {
             let trait_path = &bound.trait_path;
-            let trait_def_id = match tyconv::resolve_path_to_trait_def_id(def_map, trait_path, bound.span)
+            let trait_def_id = match tyconv::resolve_path_to_trait_def_id(def_map, ctx, trait_path, bound.span)
             {
                 Some(id) => Some(id),
                 None => {
