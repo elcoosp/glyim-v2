@@ -15,6 +15,7 @@ struct TestLayoutProvider {
     offsets: std::collections::HashMap<(Ty, FieldIdx), u64>,
     sizes: std::collections::HashMap<Ty, u64>,
     variant_types: std::collections::HashMap<(Ty, VariantIdx), Ty>,
+    tag_offsets: std::collections::HashMap<Ty, u64>,
 }
 
 impl TestLayoutProvider {
@@ -23,6 +24,7 @@ impl TestLayoutProvider {
             offsets: std::collections::HashMap::new(),
             sizes: std::collections::HashMap::new(),
             variant_types: std::collections::HashMap::new(),
+            tag_offsets: std::collections::HashMap::new(),
         }
     }
 
@@ -41,6 +43,12 @@ impl TestLayoutProvider {
             .insert((enum_ty, variant_idx), variant_ty);
         self
     }
+
+    /// Set the discriminant tag byte-offset for a (direct-tagged) enum type.
+    fn with_tag_offset(mut self, ty: Ty, offset: u64) -> Self {
+        self.tag_offsets.insert(ty, offset);
+        self
+    }
 }
 
 impl LayoutProvider for TestLayoutProvider {
@@ -56,6 +64,61 @@ impl LayoutProvider for TestLayoutProvider {
             .get(&(enum_ty, variant_idx))
             .unwrap_or(&Ty::ERROR)
     }
+    fn tag_offset(&self, ty: Ty) -> u64 {
+        *self.tag_offsets.get(&ty).unwrap_or(&0)
+    }
+}
+
+#[test]
+fn downcast_on_direct_tagged_enum_emits_tag_offset() {
+    // A direct-tagged enum stores the discriminant in the leading `tag_size`
+    // bytes, so downcasting to a variant must advance the address by that
+    // offset before the field projections run (plan §20.1).
+    let enum_ty = Ty::ERROR;
+    let variant_struct_ty = Ty::UNIT;
+    let field_idx = FieldIdx::from_raw(0);
+    let tag_offset = 4u64;
+    let field_offset = 8u64;
+
+    let layout_provider = TestLayoutProvider::new()
+        .with_tag_offset(enum_ty, tag_offset)
+        .with_field_offset(variant_struct_ty, field_idx, field_offset)
+        .with_size(enum_ty, 32)
+        .with_variant_type(enum_ty, VariantIdx::from_raw(0), variant_struct_ty);
+
+    let backend = BytecodeBackend::with_ty_ctx(
+        std::sync::Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    )
+    .with_layout_provider(Box::new(layout_provider));
+    let local = LocalIdx::from_raw(0);
+    let place = Place {
+        local,
+        projection: Box::new([
+            ProjectionElem::Downcast(VariantIdx::from_raw(0)),
+            ProjectionElem::Field(field_idx),
+        ]),
+    };
+    let local_tys = IndexVec::from_raw(vec![LocalDecl {
+        ty: enum_ty,
+        mutability: Mutability::Not,
+        source_info: SourceInfo::new(Span::DUMMY),
+    }]);
+
+    let mut bc = Vec::new();
+    backend
+        .emit_place_address(&mut bc, &place, &local_tys)
+        .unwrap();
+
+    // Expected: LOAD_LOCAL_ADDR, const(tag_offset), ADD, const(field_offset), ADD.
+    let mut expected = vec![crate::OP_LOAD_LOCAL_ADDR, 0, 0, 0, 0, crate::OP_LOAD_CONST];
+    expected.extend_from_slice(&(tag_offset as i64).to_le_bytes());
+    expected.push(crate::OP_ADD);
+    expected.push(crate::OP_LOAD_CONST);
+    expected.extend_from_slice(&(field_offset as i64).to_le_bytes());
+    expected.push(crate::OP_ADD);
+
+    assert_eq!(bc, expected);
 }
 
 #[test]
