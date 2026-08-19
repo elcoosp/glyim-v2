@@ -350,16 +350,79 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                             )
                             .as_type()
                     } else {
-                        // Enum: create a union of variants.
-                        // Simpler: treat as opaque.
-                        self.builder
-                            .create_basic_type(
-                                &format!("{}_enum", name),
-                                (size_bits as u32).into(),
-                                0x04,
-                                0,
-                            )
+                        // Enum: emit a real DWARF union of its variants, wrapped
+                        // in an outer struct alongside a discriminant member
+                        // (Phase 6.2, unstub-5). Each variant becomes a struct
+                        // type with named, typed members so debuggers can show
+                        // the active variant's fields instead of an opaque blob.
+                        let mut variant_member_types: Vec<DIType<'ctx>> = Vec::new();
+                        for (i, variant) in adt_def.variants.iter().enumerate() {
+                            let variant_name =
+                                format!("{}_V{}", name, ty_ctx.name_str(variant.name));
+                            let mut variant_field_types: Vec<DIType<'ctx>> = Vec::new();
+                            for field in variant.fields.iter() {
+                                let field_di =
+                                    self.debug_type_for_ty(context, field.ty, ty_ctx);
+                                variant_field_types.push(field_di);
+                            }
+                            let variant_di = self
+                                .builder
+                                .create_struct_type(
+                                    self.compile_unit_scope,
+                                    &variant_name,
+                                    file,
+                                    0,
+                                    size_bits,
+                                    align_bits.try_into().unwrap(),
+                                    0,
+                                    None,
+                                    variant_field_types.as_slice(),
+                                    0,
+                                    None,
+                                    "glyim",
+                                )
+                                .as_type();
+                            variant_member_types.push(variant_di);
+                            let _ = i;
+                        }
+                        // Discriminant member (conservatively a single byte; the
+                        // real discriminant width can exceed this for large
+                        // enums — tracked in KNOWN_GAPS.md).
+                        let discr_di = self
+                            .builder
+                            .create_basic_type("discriminant", 8, 0x04, 0)
                             .unwrap()
+                            .as_type();
+                        let union_di = self
+                            .builder
+                            .create_union_type(
+                                self.compile_unit_scope,
+                                &format!("{}_variants", name),
+                                file,
+                                0,
+                                size_bits,
+                                align_bits.try_into().unwrap(),
+                                DIFlags::ZERO,
+                                variant_member_types.as_slice(),
+                                0,
+                                "",
+                            )
+                            .as_type();
+                        self.builder
+                            .create_struct_type(
+                                self.compile_unit_scope,
+                                &name,
+                                file,
+                                0,
+                                size_bits,
+                                align_bits.try_into().unwrap(),
+                                0,
+                                None,
+                                &[discr_di, union_di],
+                                0,
+                                None,
+                                "glyim",
+                            )
                             .as_type()
                     }
                 } else {

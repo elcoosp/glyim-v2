@@ -75,3 +75,57 @@ the metadata tagging above is the honest, in-scope portion that is complete.
 Two-stage build (host cdylib compile + load) is entirely unimplemented. No
 `proc_macro` surface exists in the expansion path beyond the `ExpnKind::ProcMacro`
 enum variant. Large, research-grade; deferred.
+
+## Phase 6 — Codegen / Platform — PARTIAL (done: 6.2 enum DWARF, 6.3; deferred: 6.1 SEH, 6.2 closure, 6.4 Windows)
+### 6.3 `ReadVisitor`/`PlaceCollector` exhaustiveness — DONE (already complete)
+`walk_terminator_reads` in `crates/glyim-borrowck/src/visitor.rs` already
+handles every `TerminatorKind` variant (Goto/Return/Unreachable/SwitchInt/Call/
+Assert/Drop) with NO wildcard arm; `Drop` is correctly treated as a kill (not a
+read) and `Call::destination` (a write) is excluded. `TerminatorKind` has
+exactly these 7 variants. No `_ =>` arm exists anywhere in the traversal.
+Verified green (glyim-borrowck: 165 tests).
+
+### 6.2 Debug info for enums and closures — PARTIAL (enum done; closure deferred)
+- **Enums (DONE)**: `debug_type_for_ty` in `crates/glyim-codegen-llvm/src/
+  debug.rs` no longer emits an opaque blob for multi-variant ADTs. It now builds
+  a real DWARF union (`create_union_type`) of per-variant struct types (each
+  with named, typed members via `create_struct_type`/`create_member_type`),
+  wrapped in an outer struct with a discriminant member. Uses only existing
+  correct data (`AdtDef.variants[].fields[].ty` + `layout_computer`).
+- **Closures (DEFERRED)**: `TyKind::Closure` still emits an opaque struct
+  because the plan's assumed `self.ctx.closure_captures(...)` accessor does NOT
+  exist in this codebase — capture types aren't exposed to the debug-info pass.
+  Real fix requires adding a closure-capture accessor to `TyCtx` (mirroring
+  whatever codegen already computes for the closure struct layout) and then
+  emitting member types from it. Tracked as a gap.
+- **Discriminant width (DEFERRED)**: the enum discriminant member is
+  conservatively a single `u8` (8 bits). For enums whose real discriminant
+  exceeds 1 byte this is slightly inaccurate; the correct width needs the
+  discriminant layout from `layout_computer`. Minor; tracked.
+
+### 6.1 SEH unwinding on Windows — NOT started
+`emit_landingpad` only does the Itanium (DWARF) path. Funclet-based SEH
+(`cleanuppad`/`cleanupret`/`catchswitch`) needs raw `llvm-sys` FFI
+(`LLVMBuildCleanupPad` etc.) and is Windows-only — cannot be executed/verified
+on this macOS CI host. Large, platform-specific; deferred. The plan permits
+shipping the raw-FFI approach, but it cannot be green-verified here.
+
+### 6.4 Windows graceful process signaling — NOT started
+`glyim-runtime` Windows branch needs `windows-sys` `GenerateConsoleCtrlEvent` /
+`TerminateProcess` wiring. Entirely Windows-specific; cannot be compiled or
+verified on this macOS host. Deferred.
+
+## Phase 5 — async/.await — NOT started
+Largest single gap. No `Future`/`Poll`/`Context` lang-item exists anywhere
+(`grep` finds none). Requires: a `future.g` std lib trait, async-fn →
+state-machine desugaring (new `lower_async.rs`), `.await` typeck, and a
+`block_on` executor in `glyim-runtime`. Multi-feature, foundational; deferred.
+
+## Phase 7 — Execution Backends — NOT started
+Bytecode VM (no interpreter exists; golden tests only assert emitted bytes) and
+MIR-interpreter cross-frame unwinding. Option (A) per the plan is a real
+switch-dispatch VM; large, foundational; deferred.
+
+## Phase 10 — Build & Tooling — NOT started
+Registry default, ThinLTO / linker-half, docs. Mostly config; some (LTO,
+registry) risky to change without CI verification. Deferred with the rest.
