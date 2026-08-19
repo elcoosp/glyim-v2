@@ -1459,7 +1459,10 @@ pub unsafe extern "C" fn glyim_thread_current_id() -> usize {
     // Use libc::pthread_self() for a numeric thread ID (Unix).
     #[cfg(unix)]
     {
-        unsafe { libc::pthread_self() }
+        // libc::pthread_self() returns pthread_t (u64 on Linux x86_64, u64 on
+        // macOS arm64). Cast to usize; on 64-bit targets this is a no-op that
+        // satisfies the type checker across both platforms.
+        unsafe { libc::pthread_self() as usize }
     }
     #[cfg(not(unix))]
     {
