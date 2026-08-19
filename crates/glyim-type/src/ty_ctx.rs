@@ -219,6 +219,17 @@ impl TyCtx {
         self.adt_defs.get(&id)
     }
 
+    /// Number of generic type parameters declared on `adt_id`
+    /// (`struct S<T, U>` → 2). Returns 0 for non-generic ADTs and for unknown
+    /// ADT ids. Drives substitution-arity checking in type resolution
+    /// (unstub-5 P1.4).
+    pub fn adt_generic_arity(&self, adt_id: AdtId) -> usize {
+        self.adt_defs
+            .get(&adt_id)
+            .map(|d| d.generic_params.len())
+            .unwrap_or(0)
+    }
+
     /// Whether `adt_id` has an explicit `Drop` impl (or is a registered owning
     /// builtin). This is the single authority consulted by `needs_drop`; it
     /// replaces the previous per-crate guesses (`glyim-lower` hardcoded
