@@ -10,12 +10,10 @@ use super::common::*;
 use glyim_core::primitives::{Abi, Safety, Visibility};
 use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
 use glyim_core::interner::Name;
-use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin, Namespace};
+use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleOrigin, Namespace};
 use glyim_hir::*;
 use glyim_span::Span;
 use glyim_type::{FnSig, Substitution, Ty, TyCtxMut, TyKind};
-
-use crate::thir;
 
 fn owner_def_id() -> DefId {
     DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0))
