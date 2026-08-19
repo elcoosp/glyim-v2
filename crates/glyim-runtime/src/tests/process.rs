@@ -107,6 +107,7 @@ fn test_glyim_process_wait_output() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn test_glyim_process_spawn_preserves_spaces_in_arg() {
     // Plan §17.2: arguments must not be re-split on whitespace. A single
