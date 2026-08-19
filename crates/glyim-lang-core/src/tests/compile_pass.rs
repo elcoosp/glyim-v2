@@ -196,3 +196,15 @@ fn convert_lex() {
 fn convert_parse_soft() {
     parse_module_soft("convert");
 }
+
+// V16-T07: Future module (Phase 5) lexes cleanly and parses (soft, as it uses
+// associated types which the v0.1.0 parser may partially handle).
+#[test]
+fn t07_future_lex() {
+    lex_module("future");
+}
+
+#[test]
+fn t07_future_parse_soft() {
+    parse_module_soft("future");
+}

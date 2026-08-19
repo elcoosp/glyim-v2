@@ -44,5 +44,5 @@ fn core_source_all_contains_all_modules() {
 
 #[test]
 fn core_modules_count() {
-    assert_eq!(core_modules().len(), 15, "should have 15 core modules");
+    assert_eq!(core_modules().len(), 16, "should have 16 core modules");
 }

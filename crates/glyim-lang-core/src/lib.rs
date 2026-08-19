@@ -23,6 +23,7 @@ pub fn core_source(name: &str) -> Option<&'static str> {
         "hint" => Some(include_str!("../lib/hint.g")),
         "convert" => Some(include_str!("../lib/convert.g")),
         "default" => Some(include_str!("../lib/default.g")),
+        "future" => Some(include_str!("../lib/future.g")),
         _ => None,
     }
 }
@@ -31,7 +32,7 @@ pub fn core_source(name: &str) -> Option<&'static str> {
 pub fn core_modules() -> &'static [&'static str] {
     &[
         "option", "result", "iter", "slice", "str", "cell", "mem", "ptr", "ops", "cmp", "marker",
-        "panic", "hint", "convert", "default",
+        "panic", "hint", "convert", "default", "future",
     ]
 }
 
