@@ -307,7 +307,31 @@ impl<'a> FnCtxt<'a> {
                         suffix.push(self.check_pattern(sub_id, elem_ty));
                     }
                 }
-                // No length check here; it will be done during match lowering.
+                // Fixed-size array patterns without a `..` must name exactly
+                // `N` elements; otherwise the pattern can never match. (Plan
+                // §9.2: slice-pattern length must be validated. Slices `[T]`
+                // are runtime-sized and cannot be checked statically, so only
+                // `Array` subjects get the arity check.)
+                if let TyKind::Array(_, len_const) = self.ctx.ty_kind(expected_ty) {
+                    if slice_pat.is_none() {
+                        let n = match &len_const.kind {
+                            glyim_type::ConstKind::Uint(n) => *n as usize,
+                            glyim_type::ConstKind::Int(n) => *n as usize,
+                            _ => usize::MAX,
+                        };
+                        let named = prefix.len() + suffix.len();
+                        if named != n {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                format!(
+                                    "slice pattern matches {named} element(s) but array has {n} element(s)"
+                                ),
+                            ));
+                        }
+                    }
+                }
+                // No length check needed for `..`-containing or slice-typed
+                // patterns; the runtime match handles those.
                 thir::Pattern {
                     kind: thir::PatternKind::Slice {
                         prefix,
