@@ -74,6 +74,27 @@ pub(crate) fn lower_fn_def(
         }
     }
 
+    // Collect generic type parameters (plan §9.A): the parser emits a
+    // `TypeParamList` of `TypeParam` nodes for `fn f<T, U>(...)`. Previously
+    // this was hardcoded to `Vec::new()`, so a generic parameter name like `T`
+    // never reached typeck and resolved as `unresolved type T`. A `TypeParam`
+    // whose body is a bare identifier exposes that name only as a *token*
+    // (not a child node), so use `first_ident_text`, which scans
+    // `children_with_tokens`.
+    let mut generic_params = Vec::new();
+    if let Some(tp_list) = node.children().find(|c| c.kind() == SyntaxKind::TypeParamList) {
+        for tp in tp_list.children().filter(|c| c.kind() == SyntaxKind::TypeParam) {
+            if let Some(name_str) = first_ident_text(&tp) {
+                let name = interner.intern(&name_str);
+                generic_params.push(crate::GenericParam {
+                    name,
+                    kind: crate::GenericParamKind::Type { default: None },
+                    span: node_span(&tp),
+                });
+            }
+        }
+    }
+
     // Parse return type
     let mut arrow_seen = false;
     for el in node.children_with_tokens() {
@@ -139,7 +160,7 @@ pub(crate) fn lower_fn_def(
             is_unsafe: false,
             is_async,
             is_const,
-            generic_params: Vec::new(),
+            generic_params,
             where_clauses: Vec::new(),
         }),
         visibility: Visibility::Inherited,

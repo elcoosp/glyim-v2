@@ -36,3 +36,4 @@ mod const_path;
 mod variant_path;
 mod where_clause;
 mod while_loop;
+mod generics;
