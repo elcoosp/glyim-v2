@@ -112,6 +112,17 @@ impl<'a> Parser<'a> {
                 self.parse_macro_def();
             }
             SyntaxKind::KwExtern => {
+                // `extern "C" fn foo() {}` routes to parse_fn_def, which
+                // consumes the `extern "C"` prefix. Otherwise treat as a bare
+                // `extern { }` block (unstub-5 Phase 4).
+                if self.next_non_ws_kind() == SyntaxKind::KwFn
+                    || (self.current_kind() == SyntaxKind::KwExtern
+                        && self.next_non_ws_kind() == SyntaxKind::StringLit
+                        && self.peek_non_ws_kind(1) == SyntaxKind::KwFn)
+                {
+                    self.parse_fn_def();
+                    return;
+                }
                 self.start_node(SyntaxKind::ExternBlock);
                 self.bump(); // extern
                 if self.current_kind() == SyntaxKind::StringLit {
@@ -369,6 +380,15 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_fn_def(&mut self) {
         self.start_node(SyntaxKind::FnDef);
+        // Consume a leading `extern "C"` FFI prefix so lowering can read the
+        // ABI (unstub-5 Phase 4). `extern` is only the fn prefix when `fn`
+        // follows (possibly after an ABI string literal).
+        if self.current_kind() == SyntaxKind::KwExtern {
+            self.bump(); // extern
+            if self.current_kind() == SyntaxKind::StringLit {
+                self.bump(); // "C" / ABI string
+            }
+        }
         // Consume a leading `const` or `async` fn modifier inside the FnDef
         // node so lowering can detect it (plan §6.1). The modifier precedes
         // `fn`, so we only treat it as the fn modifier when `fn` follows; an
