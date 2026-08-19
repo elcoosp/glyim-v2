@@ -433,7 +433,7 @@ fn check_fn_items_in_module(
                         output: sig.return_ty,
                         c_variadic: false,
                         unsafety: Safety::Safe,
-                        abi: Abi::Glyim,
+                        abi: abi_from_name(f.abi, ctx),
                     },
                 );
 
@@ -755,6 +755,21 @@ fn process_where_clauses(
                 });
             }
         }
+    }
+}
+
+/// Map an HIR `extern "C"` ABI name (if any) to a `glyim_core::Abi`.
+/// `None` (no `extern` qualifier) is the default Glyim ABI. The recognized
+/// strings are "C" and "system"; anything else falls back to Glyim
+/// (unstub-5 Phase 4).
+fn abi_from_name(abi: Option<Name>, ctx: &TyCtxMut) -> Abi {
+    match abi {
+        None => Abi::Glyim,
+        Some(name) => match ctx.name_str(name) {
+            "C" | "c" => Abi::C,
+            "system" => Abi::System,
+            _ => Abi::Glyim,
+        },
     }
 }
 
