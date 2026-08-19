@@ -166,10 +166,10 @@ pub fn link_with_args(
     // prepend them to any user-supplied flags. An unmapped target is a hard
     // error rather than silently passing host flags to a cross target.
     let mut cross_flags: Vec<String> = Vec::new();
-    if let Some(triple) = target_triple {
-        if !triple.is_empty() {
-            cross_flags = linker_flags_for_target(triple)?;
-        }
+    if let Some(triple) = target_triple
+        && !triple.is_empty()
+    {
+        cross_flags = linker_flags_for_target(triple)?;
     }
 
     // Detect platform to choose default linker

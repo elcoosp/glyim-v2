@@ -250,12 +250,12 @@ fn compute_auto_traits_for_kind(
             // half (generic/normalized associated-type projections) requires
             // trait-solver normalization (§8/§9.4) and is intentionally left as
             // empty here.
-            if let TyKind::Opaque(id, _) = lookup.ty_kind(ty) {
-                if let Some(hidden) = lookup.opaque_hidden_ty(*id) {
-                    return compute_auto_traits_recursive(
-                        hidden, lookup, registry, adt_reprs, cache, evaluating,
-                    );
-                }
+            if let TyKind::Opaque(id, _) = lookup.ty_kind(ty)
+                && let Some(hidden) = lookup.opaque_hidden_ty(*id)
+            {
+                return compute_auto_traits_recursive(
+                    hidden, lookup, registry, adt_reprs, cache, evaluating,
+                );
             }
             AutoTraitFlags::empty()
         }

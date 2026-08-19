@@ -176,17 +176,16 @@ pub(crate) fn lower_fn_def(
                     if let Some(next) = node
                         .children_with_tokens()
                         .find(|c| c.kind() == SyntaxKind::StringLit)
+                        && let glyim_syntax::SyntaxElement::Token(st) = next
                     {
-                        if let glyim_syntax::SyntaxElement::Token(st) = next {
-                            // Strip the surrounding quotes from the string
-                            // literal so the ABI name is `C`, not `"C"`.
-                            let text = st.text();
-                            let trimmed = text
-                                .strip_prefix('"')
-                                .and_then(|t| t.strip_suffix('"'))
-                                .unwrap_or(text);
-                            abi = Some(interner.intern(trimmed));
-                        }
+                        // Strip the surrounding quotes from the string
+                        // literal so the ABI name is `C`, not `"C"`.
+                        let text = st.text();
+                        let trimmed = text
+                            .strip_prefix('"')
+                            .and_then(|t| t.strip_suffix('"'))
+                            .unwrap_or(text);
+                        abi = Some(interner.intern(trimmed));
                     }
                     if abi.is_none() {
                         // Bare `extern fn` defaults to the C ABI.
@@ -473,7 +472,7 @@ pub(crate) fn lower_impl_def(
                 _ => {}
             }
         }
-    } else if let Some(child) = node.children().find(|c| is_type_node(c)) {
+    } else if let Some(child) = node.children().find(is_type_node) {
         self_ty = lower_type_ref(&child, interner);
     }
     let self_ty = self_ty?;

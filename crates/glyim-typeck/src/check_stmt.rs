@@ -93,8 +93,8 @@ impl<'a> FnCtxt<'a> {
                     Expr::Cast { expr, .. } => vec![*expr],
                     Expr::Ref { expr, .. } => vec![*expr],
                     Expr::Assign { lhs, rhs } => vec![*lhs, *rhs],
-                    Expr::Return { value } => value.into_iter().copied().collect(),
-                    Expr::Break { value } => value.into_iter().copied().collect(),
+                    Expr::Return { value } => value.iter().copied().collect(),
+                    Expr::Break { value } => value.iter().copied().collect(),
                     Expr::Closure { body, .. } => vec![*body],
                     Expr::Array(es) | Expr::Tuple(es) => es.clone(),
                     Expr::Let { value, .. } => vec![*value],
@@ -106,7 +106,7 @@ impl<'a> FnCtxt<'a> {
                         v
                     }
                     Expr::Range { start, end, .. } => {
-                        start.into_iter().chain(end.into_iter()).copied().collect()
+                        start.iter().chain(end.iter()).copied().collect()
                     }
                     _ => vec![],
                 };

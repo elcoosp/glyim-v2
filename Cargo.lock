@@ -923,6 +923,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyim-bytecode-vm"
+version = "0.1.0"
+
+[[package]]
 name = "glyim-cli"
 version = "0.1.0"
 dependencies = [
@@ -1271,14 +1275,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyim-proc-macro"
+version = "0.1.0"
+dependencies = [
+ "glyim-syntax",
+ "libc",
+]
+
+[[package]]
 name = "glyim-runtime"
 version = "0.1.0"
 dependencies = [
  "glyim-core",
- "glyim-test",
  "libc",
  "socket2 0.5.10",
  "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

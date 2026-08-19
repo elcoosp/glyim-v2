@@ -530,7 +530,7 @@ impl DependencyResolver {
             let unique: Vec<&String> = {
                 let mut seen: Vec<&String> = Vec::new();
                 for r in reqs {
-                    if !seen.iter().any(|s| *s == r) {
+                    if !seen.contains(&r) {
                         seen.push(r);
                     }
                 }
@@ -559,7 +559,7 @@ impl DependencyResolver {
             if !satisfied {
                 return Err(GlyipError::DependencyConflict {
                     name: name.clone(),
-                    requirements: unique.into_iter().map(|s| s.clone()).collect(),
+                    requirements: unique.into_iter().cloned().collect(),
                     resolved: locked_version,
                 });
             }

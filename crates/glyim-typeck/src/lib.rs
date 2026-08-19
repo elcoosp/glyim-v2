@@ -469,7 +469,7 @@ fn check_fn_items_in_module(
                         local_def_id,
                         def_map,
                         trait_ctx,
-                        &body_owner_map,
+                        body_owner_map,
                         all_expr_types,
                     );
                 }
@@ -586,7 +586,7 @@ fn check_fn_items_in_module(
                         &m.children,
                         child_mod,
                         next_local_def_id,
-                        &body_owner_map,
+                        body_owner_map,
                     );
                 }
             }

@@ -271,7 +271,6 @@ mod tests {
 
     #[test]
     fn test_lto_fat_merges_modules_and_optimizes() {
-        use inkwell::builder::Builder;
         use inkwell::types::IntType;
 
         let ctx = Context::create();

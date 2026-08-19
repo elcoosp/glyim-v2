@@ -231,11 +231,11 @@ fn ty_of_typeref(
     ty: &TypeRef,
     interner: &glyim_core::interner::Interner,
 ) -> Option<Ty> {
-    if let TypeRef::Path(path) = ty {
-        if let Some(name) = path.as_name() {
-            let n = interner.resolve(name);
-            return map.get(n).copied();
-        }
+    if let TypeRef::Path(path) = ty
+        && let Some(name) = path.as_name()
+    {
+        let n = interner.resolve(name);
+        return map.get(n).copied();
     }
     None
 }
@@ -1324,19 +1324,16 @@ impl<'a> ConstEvaluator<'a> {
         // typeck). We derive `from`/`to` `Ty`s from the value and the target
         // `TypeRef`; if either can't be typed we skip the gate and fall back to
         // the primitive-conversion allowlist (pre-§13.2 behavior).
-        if let (Some(ctx), Some(map)) = (self.ty_ctx, &self.primitive_tys) {
-            if let Some(interner) = &self.interner {
-                if let (Some(from_ty), Some(to_ty)) =
-                    (ty_of_value(map, &val), ty_of_typeref(map, ty, interner))
-                {
-                    if !glyim_type::is_valid_cast(ctx, from_ty, to_ty) {
-                        return Err(ConstEvalError::new(
-                            "illegal cast rejected by is_valid_cast",
-                            span,
-                        ));
-                    }
-                }
-            }
+        if let (Some(ctx), Some(map)) = (self.ty_ctx, &self.primitive_tys)
+            && let Some(interner) = &self.interner
+            && let (Some(from_ty), Some(to_ty)) =
+                (ty_of_value(map, &val), ty_of_typeref(map, ty, interner))
+            && !glyim_type::is_valid_cast(ctx, from_ty, to_ty)
+        {
+            return Err(ConstEvalError::new(
+                "illegal cast rejected by is_valid_cast",
+                span,
+            ));
         }
         match ty {
             TypeRef::Path(path) => {

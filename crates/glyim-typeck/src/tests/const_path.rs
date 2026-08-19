@@ -65,13 +65,13 @@ fn aggregate_const_folds_to_aggregate_mir_const() {
     for body in &output.mir_bodies {
         for bb in body.basic_blocks.iter() {
             for stmt in &bb.statements {
-                if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind {
-                    if let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue {
-                        match c.kind {
-                            glyim_mir::MirConstKind::Aggregate(_) => aggregate_count += 1,
-                            glyim_mir::MirConstKind::ConstRef(..) => constref_count += 1,
-                            _ => {}
-                        }
+                if let glyim_mir::StatementKind::Assign(_, rvalue) = &stmt.kind
+                    && let glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(c)) = rvalue
+                {
+                    match c.kind {
+                        glyim_mir::MirConstKind::Aggregate(_) => aggregate_count += 1,
+                        glyim_mir::MirConstKind::ConstRef(..) => constref_count += 1,
+                        _ => {}
                     }
                 }
             }
