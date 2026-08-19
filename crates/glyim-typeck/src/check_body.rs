@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use glyim_core::def_id::DefId;
+use glyim_core::def_id::{DefId, LocalDefId};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_solve::{InferenceTable, Obligation, TraitContext};
@@ -31,4 +31,8 @@ pub struct FnCtxt<'a> {
     /// out bindings that belong to the closure's own scope via the
     /// `LocalVarId` boundary.
     pub capture_log: Vec<(thir::LocalVarId, Ty, bool /* is_mut_use */)>,
+    /// Maps each impl-method `BodyId` (HIR def-counter) to the `LocalDefId`
+    /// typeck allocated for its MIR body, so trait-method static dispatch can
+    /// resolve to the body key stored during monomorphization.
+    pub body_owner_map: &'a HashMap<glyim_hir::BodyId, LocalDefId>,
 }
