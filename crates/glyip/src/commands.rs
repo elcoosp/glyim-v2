@@ -435,7 +435,7 @@ fn compile_and_run_compiled(
     // `glyim-test` harness' `PipelineCompiler`). The linker is selected by
     // `glyim_cli::linker` (cc/clang/gcc on Unix, link.exe on Windows).
     if let Err(link_err) =
-        glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None, Some(&host))
+        glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None, None)
     {
         return Err(format!(
             "linking compiled test binary failed: {link_err} \
