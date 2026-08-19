@@ -931,6 +931,13 @@ impl<'a> MirBuilder<'a> {
                 self.current_block = Some(next_bb);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(dest_place))
             }
+
+            // `TraitMethodRef` is always resolved to a concrete `FnRef` +
+            // `Call` at the typeck call site (static dispatch), so it never
+            // reaches MIR lowering. Kept for exhaustiveness.
+            thir::ExprKind::TraitMethodRef { .. } => unreachable!(
+                "TraitMethodRef should have been resolved to FnRef+Call during type-checking"
+            ),
         }
     }
 
