@@ -70,7 +70,8 @@ fn array_drop_creates_loop() {
         kind: glyim_type::AdtKind::Struct,
         fields: field_defs.clone(),
         variants: vec![variant],
-    };
+        generic_params: vec![],
+};
     ctx_mut.register_adt(adt_id, adt_def);
     let struct_ty = ctx_mut.mk_ty(TyKind::Adt(adt_id, subst));
 
@@ -182,7 +183,8 @@ fn loop_built_array_uses_per_element_flags() {
         kind: glyim_type::AdtKind::Struct,
         fields: field_defs.clone(),
         variants: vec![variant],
-    };
+        generic_params: vec![],
+};
     ctx_mut.register_adt(adt_id, adt_def);
     let struct_ty = ctx_mut.mk_ty(TyKind::Adt(adt_id, subst));
 
