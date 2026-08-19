@@ -194,10 +194,36 @@ large front-end + codegen effort, tracked below.
 the plan specified (§5.2). Enough to make `async fn` testable once the desugar
 lands; deliberately not a full reactor.
 
-## Phase 7 — Execution Backends — NOT started
-Bytecode VM (no interpreter exists; golden tests only assert emitted bytes) and
-MIR-interpreter cross-frame unwinding. Option (A) per the plan is a real
-switch-dispatch VM; large, foundational; deferred.
+## Phase 7 — Execution Backends — PARTIAL (7.1 VM MVP done; MIR unwind tracked)
+Bytecode VM (no interpreter existed; golden tests only asserted emitted bytes)
+and MIR-interpreter cross-frame unwinding.
+
+### 7.1 Bytecode VM (report #4, #26) — PARTIAL (core opcode subset executes)
+New crate `crates/glyim-bytecode-vm` implementing a real switch-dispatch VM:
+- **`Value`** (i64 scalar — matches the emitter's `OP_LOAD_CONST` i64 payload),
+  **`Opcode`** (numeric values mirror `crates/glyim-codegen/src/lib.rs` exactly),
+  **`Chunk`**, **`Vm`** with `run(&Chunk) -> ExecResult<Value>`.
+- **Implemented & executing**: `OP_LOAD_CONST`, `OP_ADD/SUB/MUL/DIV/REM`,
+  `OP_EQ/NE/LT/GT/LE/GE`, `OP_AND/OR`, `OP_NOT/NEG`, `OP_BITAND/BITOR/BITXOR/
+  SHL/SHR`, `OP_LOAD_LOCAL`/`OP_STORE_LOCAL`, `OP_JUMP`/`OP_JUMP_IF`,
+  `OP_RETURN`. Unit-tested: arithmetic expression `(3+4)*2==14`, conditional
+  `JumpIf` skipping dead code, logical-AND semantics, and explicit unknown-opcode
+  error. The decoder returns `VmError::UnknownOpcode` / `UnsupportedOpcode`
+  rather than silently mis-executing, so adding an emitter opcode forces a
+  deliberate VM decision.
+- **TRACKED GAP — remaining opcodes**: `OP_CALL`/`OP_CALL_INDIRECT`,
+  `OP_AGGREGATE`, `OP_DEREF`/`OP_STORE_FIELD`/`OP_LOAD_LOCAL_ADDR`,
+  `OP_SWITCH_INT`, `OP_REPEAT`, `OP_DROP`, `OP_ASSERT`, `OP_DISCRIMINANT`,
+  `OP_LEN`, `OP_CAST`, `OP_TRAP` are not yet executed. Wiring the existing
+  golden-pattern tests to *also* execute the emitted bytecode and assert the
+  runtime result matches the LLVM-compiled-and-run result (the plan's
+  cross-backend consistency loop, §7.1 step 3) and implementing `Index`
+  projection against the VM's memory model (step 4) are the tracked remaining
+  pieces. A correct-but-unoptimized v1 is the honest milestone here.
+
+### 7.2 Cross-frame unwinding in the MIR interpreter (report #8) — NOT started
+Adds `Frame` stack + `Unwind` propagation to `glyim-mir-interp`. Large,
+foundational; deferred (tracked with 7.1).
 
 ## Phase 10 — Build & Tooling — PARTIAL (10.1 done, 10.2 partial, 10.3 deferred)
 
