@@ -32,7 +32,8 @@ fn send_computed_for_struct_with_raw_ptr_field() {
                 name: name_field,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         let substs = ctx.intern_substitution(vec![]);
@@ -83,7 +84,8 @@ fn send_computed_for_struct_with_primitive_fields() {
                 name: name_a,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         let substs = ctx.intern_substitution(vec![]);
@@ -125,7 +127,8 @@ fn send_negative_impl_overrides_field_computation() {
                 name: name_field,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         ctx.register_negative_impl(adt_id, AutoTrait::Send);
