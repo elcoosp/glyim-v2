@@ -56,6 +56,25 @@ impl<'a> Parser<'a> {
         self.current().map_or(SyntaxKind::Error, |t| t.kind)
     }
 
+    /// Kind of the `n`th non-trivia token after the current one (skips
+    /// whitespace). `n == 0` is the next non-ws token; `n == 1` the one after.
+    /// Used to disambiguate `extern "C" fn` (string then fn) from a bare
+    /// `extern { }` block (unstub-5 Phase 4).
+    fn peek_non_ws_kind(&self, n: usize) -> SyntaxKind {
+        let mut p = self.pos + 1;
+        let mut seen = 0;
+        while let Some(t) = self.tokens.get(p) {
+            if t.kind != SyntaxKind::Whitespace {
+                if seen == n {
+                    return t.kind;
+                }
+                seen += 1;
+            }
+            p += 1;
+        }
+        SyntaxKind::Error
+    }
+
     /// Kind of the next non-trivia token after the current one (skips
     /// whitespace). Used to disambiguate `const fn` from `const ITEM`.
     fn next_non_ws_kind(&self) -> SyntaxKind {
