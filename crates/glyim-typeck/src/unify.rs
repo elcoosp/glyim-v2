@@ -6,7 +6,7 @@ use glyim_core::primitives::{IntTy, UintTy};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{FieldIdx, FnSig, GenericArg, InferVar, Substitution, Ty, TyCtxMut, TyKind};
+use glyim_type::{FieldIdx, FnSig, GenericArg, InferVar, Ty, TyCtxMut, TyKind};
 
 use crate::check_body::FnCtxt;
 use crate::thir;
@@ -161,7 +161,7 @@ impl<'a> FnCtxt<'a> {
             }
 
             let fn_def_id = FnDefId::from_raw(local.to_raw());
-            if let Some(sig) = self.ctx.fn_sig(fn_def_id) {
+            if self.ctx.fn_sig(fn_def_id).is_some() {
                 let substs = self.ctx.intern_substitution(vec![]);
                 let fn_ty = self.ctx.mk_ty(TyKind::FnDef(fn_def_id, substs));
                 let thir_expr = thir::Expr {
@@ -193,7 +193,59 @@ impl<'a> FnCtxt<'a> {
             return (thir::Expr::err(span), Ty::ERROR);
         }
 
-        // 3. Type-namespace resolution (ADTs, traits) is not a value expression;
+        // 2b. Trait-method path `Trait::method`. The first segment resolves to
+        //     a trait definition; the second is a method name. The concrete
+        //     impl is selected by the receiver type at the `Call` site
+        //     (static dispatch) — see `check_expr`'s `Call` handling. The
+        //     resolution happens there, so here we only need to avoid emitting
+        //     a dangling node; return a benign `Err` (the call site either
+        //     rewrites the callee to a concrete `FnRef` or reports the error).
+        if path.segments.len() == 2 {
+            let trait_path = glyim_hir::Path {
+                segments: vec![glyim_hir::PathSegment {
+                    name: path.segments[0].name,
+                    generic_args: None,
+                }],
+                kind: path.kind,
+            };
+            if crate::tyconv::resolve_path_to_trait_def_id(self.def_map, self.ctx, &trait_path, span)
+                .is_some()
+            {
+                return (thir::Expr::err(span), Ty::ERROR);
+            }
+        }
+
+        // 3. Type-namespace resolution. A path that resolves to a *type* may
+        //    still be a value expression when it names a unit struct: in Rust
+        //    `let d = Dog;` is a value of type `Dog` for `struct Dog;` (a
+        //    zero-field ADT). Treat such a path as a field-less struct literal.
+        //    (Structs with fields must use `Dog { .. }`, handled in
+        //    `check_expr` via `Expr::Struct`.)
+        if let Some((type_local, _vis)) = resolved.types {
+            let adt_id = AdtId::from_raw(type_local.to_raw());
+            let is_unit_struct = self
+                .ctx
+                .adt_def(adt_id)
+                .map(|def| def.fields.is_empty())
+                .unwrap_or(false);
+            if is_unit_struct {
+                let substs = self.ctx.intern_substitution(vec![]);
+                let adt_ty = self.ctx.mk_ty(TyKind::Adt(adt_id, substs));
+                let thir_expr = thir::Expr {
+                    kind: thir::ExprKind::Struct {
+                        adt_id,
+                        variant_idx: 0,
+                        fields: Vec::new(),
+                        spread: None,
+                    },
+                    ty: adt_ty,
+                    span,
+                };
+                return (thir_expr, adt_ty);
+            }
+        }
+
+        // Type-namespace resolution (ADTs, traits) is not a value expression;
         //    fall through to the unresolved-name diagnostic.
         if let Some(name) = path.as_name() {
             self.diagnostics.push(GlyimDiagnostic::type_error(
