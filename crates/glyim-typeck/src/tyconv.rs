@@ -510,8 +510,8 @@ pub fn resolve_path_type(
     }
 
     // Check ADTs (structs, enums, unions)
-    if let Some(name) = path.as_name()
-        && let Some(ty) = resolve_name_to_adt_ty(ctx, def_map, name)
+    if path.as_name().is_some()
+        && let Some(ty) = resolve_name_to_adt_ty(ctx, infer, def_map, diagnostics, path, span)
     {
         return ty;
     }
@@ -706,11 +706,60 @@ fn self_kind_of_inputs(
 
 fn resolve_name_to_adt_ty(
     ctx: &mut TyCtxMut,
+    infer: &mut InferenceTable,
     def_map: &glyim_def_map::CrateDefMap,
-    name: Name,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+    path: &glyim_hir::Path,
+    span: Span,
 ) -> Option<Ty> {
-    let def_id = resolve_name_to_def_id(def_map, name)?;
+    let def_id = resolve_name_to_def_id(def_map, path.as_name()?)?;
     let adt_id = AdtId::from_raw(def_id.local_id.to_raw());
-    let substs = ctx.intern_substitution(vec![]);
-    Some(ctx.mk_ty(TyKind::Adt(adt_id, substs)))
+    let arity = ctx.adt_generic_arity(adt_id);
+
+    // Generic arguments live on the final path segment (the ADT itself).
+    let args = path.segments.last().and_then(|s| s.generic_args.as_deref());
+
+    let mut substs: Vec<GenericArg> = Vec::with_capacity(arity);
+    if let Some(args) = args {
+        if args.len() != arity {
+            let path_str = path
+                .segments
+                .iter()
+                .map(|seg| ctx.name_str(seg.name))
+                .collect::<Vec<_>>()
+                .join("::");
+            diagnostics.push(GlyimDiagnostic::type_error(
+                span,
+                format!(
+                    "generic type `{}` expects {} type argument(s), found {}",
+                    path_str,
+                    arity,
+                    args.len()
+                ),
+            ));
+            let subst = ctx.intern_substitution(vec![]);
+            return Some(ctx.mk_ty(TyKind::Adt(adt_id, subst)));
+        }
+        for arg in args {
+            let resolved =
+                resolve_type_ref(ctx, infer, def_map, diagnostics, arg, &HashMap::new(), span);
+            if matches!(ctx.ty_kind(resolved), TyKind::Error) {
+                let subst = ctx.intern_substitution(vec![]);
+                return Some(ctx.mk_ty(TyKind::Adt(adt_id, subst)));
+            }
+            substs.push(GenericArg::Ty(resolved));
+        }
+    } else {
+        // No explicit args. For a generic ADT, fill the substitution with fresh
+        // inference variables so downstream inference can unify them (e.g.
+        // field-access on `Vec<_>` infers the element type).
+        for _ in 0..arity {
+            let var = infer.new_ty_var(ctx);
+            let ty = ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)));
+            substs.push(GenericArg::Ty(ty));
+        }
+    }
+
+    let subst = ctx.intern_substitution(substs);
+    Some(ctx.mk_ty(TyKind::Adt(adt_id, subst)))
 }
