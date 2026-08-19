@@ -23,7 +23,7 @@ fn build_from_hir_records_definitions_and_references() {
         is_const: false,
         generic_params: vec![],
         where_clauses: vec![],
-    };
+    abi: None,};
     let item = Item {
         id: ItemId::from_raw(0),
         name: fn_name,

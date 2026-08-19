@@ -227,7 +227,7 @@ fn main() {
             is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
-        }),
+        abi: None,}),
         visibility: Visibility::Inherited,
         span: span_for(0, source.len()),
     };

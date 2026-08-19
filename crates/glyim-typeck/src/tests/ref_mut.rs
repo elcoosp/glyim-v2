@@ -61,7 +61,7 @@ fn ref_mutable() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };

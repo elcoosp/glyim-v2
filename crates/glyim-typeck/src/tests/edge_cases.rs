@@ -46,7 +46,7 @@ fn multiple_functions() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     });
@@ -62,7 +62,7 @@ fn multiple_functions() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     });
@@ -153,7 +153,7 @@ fn multiple_params() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };
@@ -215,7 +215,7 @@ fn binary_multiply() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };
@@ -277,7 +277,7 @@ fn binary_comparison() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };
@@ -340,7 +340,7 @@ fn if_expression() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };
@@ -402,7 +402,7 @@ fn block_expression() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };
@@ -460,7 +460,7 @@ fn unresolved_variable() {
             is_const: false,
             generic_params: vec![],
             where_clauses: Vec::new(),
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     };

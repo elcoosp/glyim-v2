@@ -98,7 +98,7 @@ fn build_simple_hir(
             is_const: false,
             generic_params,
             where_clauses,
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: dummy_span(),
     };

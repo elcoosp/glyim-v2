@@ -636,7 +636,7 @@ fn v03_t06_ambiguous_method_in_multiple_impls() {
             is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: Span::DUMMY,
     });

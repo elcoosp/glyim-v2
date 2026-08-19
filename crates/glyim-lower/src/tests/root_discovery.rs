@@ -51,7 +51,7 @@ fn fn_item(interner: &mut Interner, id: u32, name: &str, body: Option<BodyId>) -
             is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span: dummy_span(),
     }
@@ -205,7 +205,7 @@ fn t06_no_mangle_function_detected() {
             is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span,
     };
@@ -232,7 +232,7 @@ fn t07_start_function_detected() {
             is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span,
     };
@@ -282,7 +282,7 @@ fn t09_unknown_attribute_not_detected() {
             is_const: false,
             generic_params: vec![],
             where_clauses: vec![],
-        }),
+        abi: None,}),
         visibility: Visibility::Public,
         span,
     };
