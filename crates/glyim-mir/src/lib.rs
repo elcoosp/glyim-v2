@@ -176,13 +176,13 @@ impl Place {
                     to: _,
                     from_end: _,
                 } => {
-                    // A subslice projection always yields a slice type `[T]`.
-                    // If the base is already a slice, the result keeps that slice type
-                    // (return it unchanged — the common `[T]`/`&[T]` slicing case).
-                    // If the base is an array `[T; N]`, the result is `[T]`; we cannot
-                    // construct a fresh unsized slice type from a read-only `TypeLookup`,
-                    // so we fall back to the element type. The plan's dynamic-slice
-                    // fat-pointer work (§8.x) will make array-based subslicing first-class.
+                    // A subslice projection yields a slice type `[T]`. If the
+                    // base is already a slice, keep it unchanged (the common
+                    // `[T]`/`&[T]` slicing case). If the base is an array
+                    // `[T; N]`, the read-only `TypeLookup` cannot intern a new
+                    // `[T; len]` type, so we fall back to the element type; the
+                    // allocating `ty_mut` computes the precise `[T; len]` (plan
+                    // §11.1).
                     match ctx.ty_kind(ty) {
                         TyKind::Slice(_) => ty,
                         TyKind::Array(inner, _) => *inner,
