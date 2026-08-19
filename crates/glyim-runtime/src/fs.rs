@@ -20,7 +20,7 @@ use libc;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 // ---------------------------------------------------------------------------
@@ -112,15 +112,16 @@ fn fs_table() -> &'static Mutex<FsTable> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a raw byte pointer + length to a `&Path`.
+/// Convert a raw byte pointer + length to an owned `PathBuf`.
 ///
-/// Returns `None` if the pointer is null or the bytes are not valid UTF-8.
+/// Returns `None` if the pointer is null or the bytes are not valid UTF-8
+/// (after the platform-specific fallback conversions). The result is owned so
+/// callers do not need to keep any local borrow alive across the call.
 ///
 /// # Safety
 ///
-/// Caller must ensure `[ptr, ptr + len)` is a valid, readable memory region
-/// that remains live for the returned reference's lifetime.
-unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
+/// Caller must ensure `[ptr, ptr + len)` is a valid, readable memory region.
+unsafe fn path_from_raw(ptr: *const u8, len: usize) -> Option<PathBuf> {
     if ptr.is_null() {
         return None;
     }
@@ -133,7 +134,7 @@ unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
         let os_str = OsStr::from_bytes(bytes);
-        Some(Path::new(os_str))
+        Some(PathBuf::from(os_str))
     }
 
     #[cfg(windows)]
@@ -147,7 +148,7 @@ unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
 
         // Try UTF-8 first (common case).
         if let Ok(s) = std::str::from_utf8(bytes) {
-            return Some(Path::new(s));
+            return Some(PathBuf::from(s));
         }
         // If UTF-8 fails, try to interpret as UTF-16 (WTF-8? no, just attempt).
         // We'll do a simple conversion: assume bytes are little-endian UTF-16.
@@ -159,15 +160,14 @@ unsafe fn path_from_raw<'a>(ptr: *const u8, len: usize) -> Option<&'a Path> {
                 .collect();
             // Filter out null terminators.
             let os_str = OsString::from_wide(&u16_vals);
-            let path = Path::new(&os_str);
             // If the path is empty, fall back to lossy UTF-8.
-            if !path.as_os_str().is_empty() {
-                return Some(path);
+            if !os_str.is_empty() {
+                return Some(PathBuf::from(os_str));
             }
         }
         // Ultimate fallback: lossy UTF-8 conversion.
         let s = String::from_utf8_lossy(bytes);
-        Some(Path::new(s.as_ref()))
+        Some(PathBuf::from(s.to_string()))
     }
 }
 

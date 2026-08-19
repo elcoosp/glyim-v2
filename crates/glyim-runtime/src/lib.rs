@@ -894,7 +894,7 @@ pub unsafe extern "C" fn glyim_process_kill(handle: usize, signal: i32) -> i32 {
             // Hard terminate path (SIGKILL, out-of-range, or graceful fallback).
             let pid = child.id();
             let raw = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
-            if raw == 0 {
+            if raw.is_null() {
                 return -1;
             }
             let ok = unsafe { TerminateProcess(raw, 1) };
