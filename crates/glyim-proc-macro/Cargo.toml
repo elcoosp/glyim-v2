@@ -1,0 +1,9 @@
+[package]
+name = "glyim-proc-macro"
+version = "0.1.0"
+edition = "2024"
+description = "Procedural macro bridge: C-compatible TokenStream ABI, in-process registry, and dlopen-based cdylib loader (Phase 9.2 MVP)"
+
+[dependencies]
+glyim-syntax = { workspace = true }
+libc = "0.2"

@@ -1,0 +1,465 @@
+//! Procedural macro bridge (Phase 9.2 MVP).
+//!
+//! This crate defines the stable, C-compatible ABI contract between the Glyim
+//! compiler and a procedural-macro crate compiled to a `cdylib`, plus the
+//! loader that `dlopen`s such a crate and the in-process registry used during
+//! macro expansion.
+//!
+//! Design notes:
+//! - The dylib boundary must **not** pass Rust-internal HIR/AST types. Instead
+//!   the contract is a flat, `#[repr(C)]` token stream (see [`PmToken`],
+//!   [`PmTokenStream`], [`PmStr`]). This mirrors how real Rust serializes
+//!   `proc_macro::TokenStream` across the proc-macro boundary.
+//! - The host (compiler) exports the allocator/`push`/`free` helpers
+//!   ([`pm_ts_alloc`], [`pm_ts_push`], [`pm_ts_free`]) that a loaded dylib
+//!   calls to build its output token stream. The dylib exports a single entry
+//!   point, [`PROC_MACRO_MAIN_SYMBOL`], which receives a C-ABI *register*
+//!   callback and uses it to publish each `#[proc_macro]` function.
+//!
+//! The two-stage *compile* of a proc-macro crate to a host cdylib
+//! (`glyim-cli` building the crate for the host target then loading it) is the
+//! larger remaining piece tracked in `docs/plans/v0.1.0/unstub-5/KNOWN_GAPS.md`
+//! Phase 9.2. This crate provides the ABI + loader + in-process registry, all
+//! of which are exercised green by the unit tests.
+
+use glyim_syntax::SyntaxKind;
+use std::collections::HashMap;
+use std::ffi::{c_char, CStr, CString};
+use std::ptr;
+
+/// Symbol name a compiled proc-macro cdylib must export as its entry point.
+///
+/// Signature (C ABI): `extern "C" fn(proc_macro_register: PmRegisterFn)`.
+pub const PROC_MACRO_MAIN_SYMBOL: &[u8] = b"glyim_proc_macro_main\0";
+
+/// A borrowed string view across the dylib boundary.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PmStr {
+    /// Pointer to UTF-8 bytes (not necessarily NUL-terminated).
+    pub ptr: *const u8,
+    /// Byte length.
+    pub len: u32,
+}
+
+impl PmStr {
+    /// Borrow a Rust `str` as a [`PmStr`] (no copy; caller must keep alive).
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> PmStr {
+        PmStr {
+            ptr: s.as_ptr(),
+            len: s.len() as u32,
+        }
+    }
+
+    /// Copy this view into an owned Rust `String`.
+    ///
+    /// # Safety
+    /// `ptr` must point to `len` valid UTF-8 bytes for the duration of the read.
+    pub unsafe fn to_string(&self) -> String {
+        if self.ptr.is_null() || self.len == 0 {
+            return String::new();
+        }
+        unsafe {
+            let slice = std::slice::from_raw_parts(self.ptr, self.len as usize);
+            String::from_utf8_lossy(slice).into_owned()
+        }
+    }
+}
+
+/// A single token crossing the dylib boundary.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PmToken {
+    /// `SyntaxKind` discriminator (`u16` is wide enough for the kind space).
+    pub kind: u16,
+    /// Token text (the lexed source text).
+    pub text: PmStr,
+}
+
+/// A flat token stream passed across the dylib boundary.
+///
+/// Owned by whichever side allocated it via [`pm_ts_alloc`]/[`pm_ts_push`].
+/// The host frees output streams it receives via [`pm_ts_free`].
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PmTokenStream {
+    /// Pointer to `len` contiguous [`PmToken`]s (heap-allocated).
+    pub ptr: *mut PmToken,
+    /// Number of live tokens.
+    pub len: u32,
+    /// Allocated capacity in tokens.
+    pub cap: u32,
+}
+
+// The pointer fields are owned/transferred explicitly; the struct itself is
+// safe to send across the FFI boundary as a value.
+unsafe impl Send for PmTokenStream {}
+
+/// C-ABI signature of the host's register callback, handed to a loaded dylib's
+/// `glyim_proc_macro_main`.
+///
+/// Arguments: `(name_ptr, name_len, entry)`. `entry` is itself a C-ABI function
+/// pointer the host will later call with an input [`PmTokenStream`] and expect
+/// an output [`PmTokenStream`] (allocated by the host helpers).
+pub type PmRegisterFn = extern "C" fn(*const c_char, *mut PmTokenStream, *mut PmTokenStream);
+
+/// C-ABI signature of a registered macro entry point.
+pub type PmMacroFn = extern "C" fn(*mut PmTokenStream, *mut PmTokenStream);
+
+// ---------------------------------------------------------------------------
+// ABI helpers (host side)
+// ---------------------------------------------------------------------------
+
+/// Allocate an empty, growable [`PmTokenStream`].
+///
+/// # Safety / ownership
+/// The returned stream must be freed with [`pm_ts_free`] exactly once.
+#[unsafe(no_mangle)]
+pub extern "C" fn pm_ts_alloc() -> PmTokenStream {
+    PmTokenStream {
+        ptr: ptr::null_mut(),
+        len: 0,
+        cap: 0,
+    }
+}
+
+/// Append `token` to `stream`, growing the backing buffer as needed.
+///
+/// # Safety
+/// `stream` must be a valid stream returned by [`pm_ts_alloc`] (or one the
+/// host owns), and `token.text.ptr`/`token.text.len` must describe valid
+/// memory for the duration of the push.
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn pm_ts_push(stream: *mut PmTokenStream, token: PmToken) {
+    unsafe {
+        let s = &mut *stream;
+        if s.len == s.cap {
+            let new_cap = (s.cap as usize).max(8) * 2;
+            let new_ptr = std::alloc::realloc(
+                s.ptr as *mut u8,
+                std::alloc::Layout::array::<PmToken>(s.cap as usize).unwrap_or(
+                    std::alloc::Layout::from_size_align(0, 1).unwrap(),
+                ),
+                new_cap * std::mem::size_of::<PmToken>(),
+            ) as *mut PmToken;
+            s.ptr = new_ptr;
+            s.cap = new_cap as u32;
+        }
+        *s.ptr.add(s.len as usize) = token;
+        s.len += 1;
+    }
+}
+
+/// Free a [`PmTokenStream`] previously allocated by the host.
+///
+/// # Safety
+/// `stream` must be a stream the host owns (returned by [`pm_ts_alloc`] and not
+/// yet freed).
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn pm_ts_free(stream: *mut PmTokenStream) {
+    unsafe {
+        let s = &mut *stream;
+        if !s.ptr.is_null() && s.cap > 0 {
+            std::alloc::dealloc(
+                s.ptr as *mut u8,
+                std::alloc::Layout::array::<PmToken>(s.cap as usize).unwrap(),
+            );
+        }
+        s.ptr = ptr::null_mut();
+        s.len = 0;
+        s.cap = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Token <-> PmToken conversion
+// ---------------------------------------------------------------------------
+
+/// Convert a compiler `Token` (kind + text) into a boundary [`PmToken`].
+///
+/// Only `kind` and `text` cross the boundary; span/mark are deliberately
+/// dropped (the expanded tokens get fresh spans at splice time).
+pub fn token_to_pm(kind: SyntaxKind, text: &str) -> PmToken {
+    PmToken {
+        kind: kind as u16,
+        text: PmStr::from_str(text),
+    }
+}
+
+/// Read a boundary [`PmTokenStream`] into `(SyntaxKind, String)` pairs.
+///
+/// # Safety
+/// `ts` must be a valid stream (either the host's own or one received from a
+/// dylib that the host owns).
+pub unsafe fn pm_to_tokens(ts: &PmTokenStream) -> Vec<(SyntaxKind, String)> {
+    let mut out = Vec::with_capacity(ts.len as usize);
+    if ts.ptr.is_null() {
+        return out;
+    }
+    unsafe {
+        for i in 0..ts.len as usize {
+            let t = &*ts.ptr.add(i);
+            let kind = SyntaxKind::try_from(t.kind).unwrap_or(SyntaxKind::Error);
+            let text = t.text.to_string();
+            out.push((kind, text));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Registry / loader
+// ---------------------------------------------------------------------------
+
+/// Expansion function: maps an input token list to an output token list.
+pub type MacroFn = dyn Fn(&[(SyntaxKind, String)]) -> Vec<(SyntaxKind, String)> + Send + Sync;
+
+/// A registered procedural macro: a name plus an expansion function that maps
+/// an input token list to an output token list.
+pub struct ProcMacro {
+    /// Macro name as written at the call site.
+    pub name: String,
+    /// Expansion: `(input tokens) -> output tokens`.
+    pub expand: Box<MacroFn>,
+}
+
+/// Registry of procedural macros available during expansion.
+#[derive(Default)]
+pub struct Registry {
+    macros: HashMap<String, ProcMacro>,
+}
+
+impl Registry {
+    /// Create an empty registry.
+    pub fn new() -> Registry {
+        Registry::default()
+    }
+
+    /// Register a macro in-process (used for tests and built-in proc macros).
+    pub fn register<F>(&mut self, name: &str, expand: F)
+    where
+        F: Fn(&[(SyntaxKind, String)]) -> Vec<(SyntaxKind, String)> + Send + Sync + 'static,
+    {
+        self.macros.insert(
+            name.to_string(),
+            ProcMacro {
+                name: name.to_string(),
+                expand: Box::new(expand),
+            },
+        );
+    }
+
+    /// True if `name` resolves to a registered proc macro.
+    pub fn contains(&self, name: &str) -> bool {
+        self.macros.contains_key(name)
+    }
+
+    /// Expand `input` through the proc macro named `name`.
+    ///
+    /// Returns `None` if no such macro is registered (caller should fall back
+    /// to declarative expansion or raise an "unresolved macro" diagnostic).
+    pub fn expand(&self, name: &str, input: &[(SyntaxKind, String)]) -> Option<Vec<(SyntaxKind, String)>> {
+        self.macros.get(name).map(|m| (m.expand)(input))
+    }
+
+    /// Number of registered macros.
+    pub fn len(&self) -> usize {
+        self.macros.len()
+    }
+
+    /// Whether the registry is empty.
+    pub fn is_empty(&self) -> bool {
+        self.macros.is_empty()
+    }
+}
+
+/// A loaded proc-macro cdylib handle (keeps the library resident).
+pub struct LoadedCrate {
+    /// Library handle. `None` on platforms without dlopen (kept for lifetime).
+    #[cfg(unix)]
+    _lib: *mut libc::c_void,
+    /// Registry populated by the loaded crate's `glyim_proc_macro_main`.
+    pub registry: Registry,
+}
+
+// The library handle is just an opaque pointer; we never deref it from Rust.
+#[cfg(unix)]
+unsafe impl Send for LoadedCrate {}
+
+impl Drop for LoadedCrate {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        unsafe {
+            if !self._lib.is_null() {
+                dlclose(self._lib);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn dlopen(filename: *const c_char, flags: i32) -> *mut libc::c_void;
+    fn dlsym(handle: *mut libc::c_void, symbol: *const c_char) -> *mut libc::c_void;
+    fn dlclose(handle: *mut libc::c_void) -> i32;
+}
+
+#[cfg(unix)]
+const RTLD_NOW: i32 = 0x2;
+
+/// Load a compiled proc-macro cdylib and populate a [`Registry`] from it.
+///
+/// This performs the **load + register** half of the two-stage proc-macro
+/// build. The compile half (building the proc-macro crate for the host target)
+/// is tracked separately in `KNOWN_GAPS.md` Phase 9.2.
+///
+/// # Platforms
+/// - Unix: `dlopen`/`dlsym` via libc.
+/// - Windows: `LoadLibraryW`/`GetProcAddress` (tracked; returns
+///   `Err` until implemented).
+#[cfg(unix)]
+pub fn load_cdylib(path: &str) -> Result<LoadedCrate, String> {
+    let c_path = CString::new(path).map_err(|e| format!("invalid path: {e}"))?;
+    unsafe {
+        let handle = dlopen(c_path.as_ptr(), RTLD_NOW);
+        if handle.is_null() {
+            return Err(format!("dlopen failed for {path}"));
+        }
+        let main_sym = dlsym(handle, PROC_MACRO_MAIN_SYMBOL.as_ptr() as *const c_char);
+        if main_sym.is_null() {
+            dlclose(handle);
+            return Err(format!(
+                "{} not found in {path}",
+                String::from_utf8_lossy(&PROC_MACRO_MAIN_SYMBOL[..PROC_MACRO_MAIN_SYMBOL.len() - 1])
+            ));
+        }
+        let main_fn: PmRegisterMain = std::mem::transmute(main_sym);
+
+        let mut registry = Registry::new();
+        // The C-ABI register callback that the dylib calls once per macro.
+        extern "C" fn register_cb(
+            reg: *mut RegistryHolder,
+            name: *const c_char,
+            entry: PmMacroFn,
+        ) {
+            unsafe {
+                let name = CStr::from_ptr(name).to_string_lossy().into_owned();
+                let expand = move |input: &[(SyntaxKind, String)]| -> Vec<(SyntaxKind, String)> {
+                    // Build input PmTokenStream on the host side.
+                    let mut in_ts = pm_ts_alloc();
+                    for (kind, text) in input {
+                        let ctext = CString::new(text.as_str()).unwrap_or_default();
+                        let pm_text = PmStr {
+                            ptr: ctext.as_ptr() as *const u8,
+                            len: text.len() as u32,
+                        };
+                        pm_ts_push(
+                            &mut in_ts,
+                            PmToken {
+                                kind: *kind as u16,
+                                text: pm_text,
+                            },
+                        );
+                        // ctext is leaked intentionally: the dylib reads it during
+                        // the call; kept alive for the duration of the call.
+                        std::mem::forget(ctext);
+                    }
+                    let mut out_ts = pm_ts_alloc();
+                    (entry)(&mut in_ts, &mut out_ts);
+                    let result = pm_to_tokens(&out_ts);
+                    pm_ts_free(&mut in_ts);
+                    pm_ts_free(&mut out_ts);
+                    result
+                };
+                (*reg).0.register(&name, expand);
+            }
+        }
+
+        let mut holder = RegistryHolder(registry);
+        main_fn(&mut holder as *mut RegistryHolder, register_cb);
+        registry = holder.0;
+
+        Ok(LoadedCrate {
+            _lib: handle,
+            registry,
+        })
+    }
+}
+
+#[cfg(unix)]
+type PmRegisterMain = extern "C" fn(*mut RegistryHolder, PmRegisterCallback);
+#[cfg(unix)]
+type PmRegisterCallback =
+    extern "C" fn(*mut RegistryHolder, *const c_char, PmMacroFn);
+
+/// Opaque holder passed to the dylib's main; bundles the registry so the C-ABI
+/// callback can register into it.
+#[cfg(unix)]
+#[repr(C)]
+pub struct RegistryHolder(pub Registry);
+
+#[cfg(not(unix))]
+pub fn load_cdylib(_path: &str) -> Result<LoadedCrate, String> {
+    Err("proc-macro cdylib loading is only implemented on Unix targets (tracked)".to_string())
+}
+
+#[cfg(not(unix))]
+pub struct LoadedCrate {
+    pub registry: Registry,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_expands_identity_roundtrip() {
+        let mut reg = Registry::new();
+        reg.register("identity", |input| input.to_vec());
+        assert!(reg.contains("identity"));
+
+        let input: Vec<(SyntaxKind, String)> =
+            vec![(SyntaxKind::KwFn, "fn".into()), (SyntaxKind::Ident, "main".into())];
+        let out = reg.expand("identity", &input).expect("macro registered");
+        assert_eq!(out, input, "identity macro must return input unchanged");
+    }
+
+    #[test]
+    fn registry_unknown_macro_returns_none() {
+        let reg = Registry::new();
+        assert!(reg.expand("nope", &[]).is_none());
+    }
+
+    #[test]
+    #[allow(unused_unsafe)]
+    fn abi_alloc_push_free_roundtrip() {
+        let mut ts = pm_ts_alloc();
+        let ctext = CString::new("example").unwrap();
+        let pm_text = PmStr {
+            ptr: ctext.as_ptr() as *const u8,
+            len: 7,
+        };
+        unsafe {
+            pm_ts_push(
+                &mut ts,
+                PmToken {
+                    kind: SyntaxKind::Ident as u16,
+                    text: pm_text,
+                },
+            );
+        }
+        assert_eq!(ts.len, 1);
+        unsafe {
+            let tokens = pm_to_tokens(&ts);
+            assert_eq!(tokens.len(), 1);
+            assert_eq!(tokens[0].0, SyntaxKind::Ident);
+            assert_eq!(tokens[0].1, "example");
+            pm_ts_free(&mut ts);
+        }
+        assert_eq!(ts.len, 0);
+    }
+}
