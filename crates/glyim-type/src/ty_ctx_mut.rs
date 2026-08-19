@@ -352,12 +352,23 @@ impl TyCtxMut {
                 name: self.resolver.intern(""),
                 fields: field_defs,
             }],
-        };
+            generic_params: vec![],
+};
         self.register_adt(id, def);
         id
     }
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
+    }
+
+    /// Number of generic type parameters declared on `adt_id`
+    /// (`struct S<T, U>` → 2). Returns 0 for non-generic ADTs and unknown ids.
+    /// Drives substitution-arity checking in type resolution (unstub-5 P1.4).
+    pub fn adt_generic_arity(&self, adt_id: AdtId) -> usize {
+        self.adt_defs
+            .get(&adt_id)
+            .map(|d| d.generic_params.len())
+            .unwrap_or(0)
     }
 
     pub fn field_index(&self, adt_id: AdtId, field_name: Name) -> Option<usize> {
@@ -609,7 +620,8 @@ impl TyCtxMut {
                     name: this.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
 
         // Register Range<T> (start, end) - ID 1000
@@ -663,7 +675,8 @@ impl TyCtxMut {
                     name: self.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         self.register_adt(AdtId::from_raw(1005), unsafe_cell_def);
         // Mark it as interior mutable.
@@ -690,7 +703,8 @@ impl TyCtxMut {
                     fields: some_fields.clone(),
                 },
             ],
-        };
+            generic_params: vec![],
+};
         self.register_adt(AdtId::from_raw(1010), option_def);
         self.lang_items.register(LangItem::Option, def_id(1010))
             .expect("builtin lang item registration must not duplicate");
@@ -778,7 +792,8 @@ mod interior_mutability_tests {
                     name: ctx_mut.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut.register_adt(AdtId::from_raw(1006), cell_def);
         let ctx = ctx_mut.freeze();
@@ -829,7 +844,8 @@ mod interior_mutability_tests {
                     name: ctx_mut.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut.register_adt(AdtId::from_raw(1007), plain_def);
         let ctx = ctx_mut.freeze();
@@ -861,7 +877,8 @@ mod interior_mutability_tests {
                     name: ctx_mut.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut.register_adt(AdtId::from_raw(1008), ref_cell_def);
         let ctx = ctx_mut.freeze();
@@ -892,7 +909,8 @@ mod interior_mutability_tests {
                     name: ctx_mut.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut.register_adt(AdtId::from_raw(2000), b_def);
 
@@ -914,7 +932,8 @@ mod interior_mutability_tests {
                     name: ctx_mut.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut.register_adt(AdtId::from_raw(2001), a_def);
         let ctx = ctx_mut.freeze();
@@ -945,7 +964,8 @@ mod interior_mutability_tests {
                     name: ctx_mut2.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut2.register_adt(AdtId::from_raw(2000), b2_def);
         let b2_subst = ctx_mut2.intern_substitution(vec![]);
@@ -964,7 +984,8 @@ mod interior_mutability_tests {
                     name: ctx_mut2.resolver.intern(""),
                     fields: field_defs_clone,
                 }],
-            }
+                generic_params: vec![],
+}
         };
         ctx_mut2.register_adt(AdtId::from_raw(2001), a2_def);
         let ctx2 = ctx_mut2.freeze();
