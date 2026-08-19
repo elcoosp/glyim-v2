@@ -30,7 +30,8 @@ fn is_interior_mutable_adt_true_when_marked() {
                 name: name_field,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         ctx.mark_adt_interior_mutable(adt_id);
@@ -73,7 +74,8 @@ fn is_interior_mutable_adt_true_on_mut_ctx() {
             name: name_field,
             fields: IndexVec::new(),
         }],
-    };
+        generic_params: vec![],
+};
 
     ctx.register_adt(adt_id, adt_def);
     ctx.mark_adt_interior_mutable(adt_id);
@@ -111,7 +113,8 @@ fn is_interior_mutable_adt_false_when_not_marked() {
                 name: name_field,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         // Do NOT mark as interior mutable
