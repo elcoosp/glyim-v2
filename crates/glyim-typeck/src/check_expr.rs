@@ -2,13 +2,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glyim_core::def_id::{AdtId, FnDefId};
+use glyim_core::def_id::{AdtId, FnDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{Const, ConstKind, GenericArg, Region, Ty, TyKind, TypeLookup, AdtKind};
+use glyim_type::{Const, ConstKind, GenericArg, Region, Ty, TyKind, AdtKind};
 use glyim_type::display::PrintTy;
 
 use crate::check_body::FnCtxt;
@@ -411,11 +411,82 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Call { func, args } => {
+                // Detect a path-qualified trait method call
+                // `Trait::method(receiver, ..)` *before* resolving the callee,
+                // so we can statically dispatch to the concrete impl function
+                // selected by the receiver's type (see
+                // `resolve_trait_method_fn`). We read the HIR callee path here
+                // (not the THIR node) because trait-method resolution needs the
+                // receiver, which only the `Call` has.
+                let trait_call = match &self.body.exprs[*func] {
+                    Expr::Path(path) if path.segments.len() == 2 => {
+                        let trait_path = glyim_hir::Path {
+                            segments: vec![glyim_hir::PathSegment {
+                                name: path.segments[0].name,
+                                generic_args: None,
+                            }],
+                            kind: path.kind,
+                        };
+                        crate::tyconv::resolve_path_to_trait_def_id(
+                            self.def_map,
+                            self.ctx,
+                            &trait_path,
+                            span,
+                        )
+                        .filter(|tid| self.ctx.trait_def(*tid).is_some())
+                        .map(|tid| (tid, path.segments[1].name))
+                    }
+                    _ => None,
+                };
+
                 let (func_expr, func_ty) = self.check_expr(*func);
 
                 let mut arg_exprs = Vec::with_capacity(args.len());
                 for &arg_id in args {
                     arg_exprs.push(self.check_expr(arg_id).0);
+                }
+
+                if let Some((trait_def_id, method_name)) = trait_call {
+                    let recv_ty = arg_exprs
+                        .first()
+                        .map(|e| e.ty)
+                        .unwrap_or(Ty::ERROR);
+                    if let Some(fn_def_id) =
+                        self.resolve_trait_method_fn(recv_ty, trait_def_id, method_name, span)
+                    {
+                        let substs = self.ctx.intern_substitution(vec![]);
+                        let fn_ty = self.ctx.mk_ty(TyKind::FnDef(fn_def_id, substs));
+                        let ret_ty = self.instantiate_fn_sig(fn_def_id, span);
+                        let callee = thir::Expr {
+                            kind: thir::ExprKind::FnRef(fn_def_id),
+                            ty: fn_ty,
+                            span,
+                        };
+                        // Overwrite the standalone callee node (which
+                        // `check_path` left as `Err`) so no stray
+                        // trait-method node survives into MIR lowering.
+                        self.expr_cache.insert(*func, (callee.clone(), fn_ty));
+                        return (
+                            thir::Expr {
+                                kind: thir::ExprKind::Call {
+                                    func: Box::new(callee),
+                                    args: arg_exprs,
+                                },
+                                ty: ret_ty,
+                                span,
+                            },
+                            ret_ty,
+                        );
+                    } else {
+                        self.diagnostics.push(GlyimDiagnostic::type_error(
+                            span,
+                            format!(
+                                "no impl of trait method `{}` found for receiver type",
+                                self.ctx.name_str(method_name)
+                            ),
+                        ));
+                        return (thir::Expr::err(span), Ty::ERROR);
+                    }
                 }
 
                 let (is_fn_def, def_id, is_error) = match self.ctx.ty_kind(func_ty) {
@@ -895,7 +966,7 @@ impl<'a> FnCtxt<'a> {
                 // A `let` appearing in expression position (e.g. as a block
                 // tail) is rare; evaluate its value and bind the pattern,
                 // yielding unit.
-                let (value_expr, value_ty) = self.check_expr(*value);
+                let (_value_expr, value_ty) = self.check_expr(*value);
                 self.check_pattern(*pat, value_ty);
                 (thir::Expr::err(span), Ty::UNIT)
             }
@@ -1159,6 +1230,108 @@ impl<'a> FnCtxt<'a> {
         candidates[0].1
     }
 
+    /// Resolve a path-qualified trait method call `Trait::method(receiver, ..)`
+    /// to the concrete impl function for the given *receiver* type (static
+    /// dispatch). Scans `impl Trait for Type` items, selects the one whose
+    /// trait matches `trait_def_id` and whose `Self` type unifies with the
+    /// receiver (with autoref/auto-deref, mirroring `resolve_method_call`),
+    /// and returns that impl method's `FnDefId`.
+    fn resolve_trait_method_fn(
+        &mut self,
+        recv_ty: Ty,
+        trait_def_id: TraitDefId,
+        method_name: Name,
+        span: Span,
+    ) -> Option<FnDefId> {
+        // Receiver candidate types: the receiver as-is, then autoref
+        // (`&`/`&mut`), then successive structural derefs — same priority as
+        // `resolve_method_call`.
+        let mut steps: Vec<Ty> = Vec::new();
+        let mut cur = Some(recv_ty);
+        while let Some(t) = cur {
+            steps.push(t);
+            cur = self.ctx.deref_ty(t);
+            if steps.len() >= 10 {
+                break;
+            }
+        }
+        let autoref_steps = [
+            recv_ty,
+            self.ctx.mk_ref(Region::Erased, recv_ty, Mutability::Not),
+            self.ctx.mk_ref(Region::Erased, recv_ty, Mutability::Mut),
+        ];
+
+        for _step in steps.iter().chain(autoref_steps.iter()) {
+            for (_id, item) in self.hir.items.iter_enumerated() {
+                if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
+                    // The impl must be for the target trait.
+                    let Some(trait_path) = &impl_item.trait_ref else {
+                        continue;
+                    };
+                    let Some(impl_trait_id) = crate::tyconv::resolve_path_to_trait_def_id(
+                        self.def_map,
+                        self.ctx,
+                        trait_path,
+                        span,
+                    ) else {
+                        continue;
+                    };
+                    if impl_trait_id != trait_def_id {
+                        continue;
+                    }
+                    let param_map = crate::tyconv::build_param_tys(
+                        self.ctx,
+                        &impl_item.generic_params,
+                    );
+                    let impl_self_ty = crate::tyconv::resolve_type_ref(
+                        self.ctx,
+                        self.infer,
+                        self.def_map,
+                        self.diagnostics,
+                        &impl_item.self_ty,
+                        &param_map,
+                        span,
+                    );
+                    // Probe receiver compatibility *without* emitting
+                    // diagnostics: `InferCtx::unify` returns `Result` and only
+                    // `FnCtxt::unify` pushes to the diagnostics vec. The
+                    // receiver may match `Self`, `&Self` (for `&self`
+                    // methods), or `&mut Self`.
+                    let ref_self = self.ctx.mk_ref(Region::Erased, impl_self_ty, Mutability::Not);
+                    let ref_mut_self =
+                        self.ctx.mk_ref(Region::Erased, impl_self_ty, Mutability::Mut);
+                    let infer = &mut *self.infer;
+                    let recv_steps = steps
+                        .iter()
+                        .chain(autoref_steps.iter())
+                        .copied()
+                        .collect::<Vec<_>>();
+                    let self_matches = recv_steps.iter().any(|&rt| {
+                        infer.unify(self.ctx, rt, impl_self_ty, span).is_ok()
+                            || infer.unify(self.ctx, rt, ref_self, span).is_ok()
+                            || infer.unify(self.ctx, rt, ref_mut_self, span).is_ok()
+                    });
+                    if !self_matches {
+                        continue;
+                    }
+                    for method in &impl_item.methods {
+                        if method.name == method_name {
+                            if let Some(body_id) = method.body {
+                                let local = self
+                                    .body_owner_map
+                                    .get(&body_id)
+                                    .copied()
+                                    .unwrap_or_else(|| self.hir.body_owners[body_id]);
+                                return Some(FnDefId::from_raw(local.to_raw()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn extract_return_ty(&mut self, fn_ty: Ty, _span: Span) -> Ty {
         match self.ctx.ty_kind(fn_ty) {
             TyKind::FnDef(_, _) | TyKind::FnPtr(_) => self.fresh_infer_ty(),
@@ -1194,11 +1367,4 @@ impl<'a> FnCtxt<'a> {
         }
     }
 }
-
-/// Cast-legality checker (plan §13.2).
-///
-/// Re-exported from `glyim_type::is_valid_cast` so existing call sites keep
-/// working; the implementation now lives in `glyim-type` as the single source
-/// of truth shared with constant evaluation.
-pub(crate) use glyim_type::is_valid_cast;
 
