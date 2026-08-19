@@ -91,6 +91,9 @@ pub struct FnItem {
     pub is_const: bool,
     pub generic_params: Vec<GenericParam>,
     pub where_clauses: Vec<crate::where_clause::WhereClause>,
+    /// Calling convention for FFI (`extern "C" fn`), if declared. `None`
+    /// means the default Glyim ABI (unstub-5 Phase 4).
+    pub abi: Option<Name>,
 }
 
 #[derive(Clone, Debug)]
