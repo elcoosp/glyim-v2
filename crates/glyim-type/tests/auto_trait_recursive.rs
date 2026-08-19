@@ -30,6 +30,7 @@ fn mk_struct_def(ctx: &mut TyCtxMut, fields: Vec<(&str, Ty)>) -> AdtDef {
         kind: AdtKind::Struct,
         fields: field_defs,
         variants: variant_defs,
+        generic_params: vec![],
     }
 }
 
