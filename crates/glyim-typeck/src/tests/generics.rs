@@ -29,3 +29,19 @@ fn generic_fn_typechecks_and_lowers() {
     let output = compile(src);
     assert_no_errors(&output.diagnostics);
 }
+
+#[test]
+fn generic_struct_resolves_with_args() {
+    // `struct Pair<T, U>` carries generic params; instantiating `Pair { .. }`
+    // must produce a well-formed ADT type (plan unstub-5 P1.4). The element
+    // types are inferred from the struct literal fields.
+    let src = r#"
+        struct Pair<T, U> { first: T, second: U }
+        fn main() -> i32 {
+            let p = Pair { first: 1, second: true };
+            p.first
+        }
+    "#;
+    let output = compile(src);
+    assert_no_errors(&output.diagnostics);
+}
