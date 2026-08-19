@@ -141,7 +141,9 @@ pub(crate) fn lower_block_to_expr(
     body.alloc_expr(expr, node_span(node))
 }
 
-/// Convert a pattern into an expression (for LHS of assignment)
+/// Convert a pattern into an expression (for LHS of assignment). Kept for the
+/// planned assignment-desugaring tier; not yet wired into lowering.
+#[allow(dead_code)]
 fn pat_to_expr(
     pat_id: PatId,
     body: &mut Body,
