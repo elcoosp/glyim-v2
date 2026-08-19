@@ -8,10 +8,17 @@
 //! `glyim-const-eval` (which must reject illegal `const` casts) delegate to it
 //! so the rules live in exactly one place.
 
-use crate::adt_def::{AdtDef, AdtKind, FieldDef, VariantDef};
+use crate::adt_def::AdtKind;
 use crate::display::TypeLookup;
 use crate::{Ty, TyKind};
+
+// The following are referenced only by the `#[cfg(test)]` module below
+// (via `use super::*`). Gated so the non-test lib build stays warning-free.
+#[cfg(test)]
+use crate::adt_def::{AdtDef, FieldDef, VariantDef};
+#[cfg(test)]
 use glyim_core::arena::IndexVec;
+#[cfg(test)]
 use glyim_core::def_id::AdtId;
 
 /// Return `true` if a value of type `from` may be cast to type `to`.
