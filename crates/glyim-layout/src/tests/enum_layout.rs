@@ -47,7 +47,8 @@ fn make_enum_ty(
         kind: glyim_type::AdtKind::Enum,
         fields: top_fields,
         variants: variant_defs,
-    };
+        generic_params: vec![],
+};
     ctx.register_adt(adt_id, def);
     let substs = ctx.intern_substitution(vec![]);
     ctx.mk_adt(adt_id, substs)
