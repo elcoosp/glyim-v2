@@ -62,6 +62,7 @@ pub fn check_function_body(
         def_map,
         trait_ctx: &trait_ctx,
         capture_log: Vec::new(),
+        body_owner_map: &HashMap::new(),
     };
 
     let (thir_body, _expr_types) = fn_ctxt.check(params);
