@@ -40,23 +40,41 @@ pub(crate) fn run_llvm_passes<'ctx>(
     opt_level: u8,
     opt_for_size: bool,
 ) -> Result<(), String> {
+    run_llvm_passes_with(module, target_machine, opt_level, opt_for_size, None)
+}
+
+/// Like [`run_llvm_passes`] but allows an explicit custom pass pipeline string
+/// (e.g. `"instcombine,simplifycfg"`) to override the built-in `default<Ox>`
+/// selection (plan §19.4). When `custom` is `None`, behaviour is identical to
+/// `run_llvm_passes`.
+pub(crate) fn run_llvm_passes_with<'ctx>(
+    module: &Module<'ctx>,
+    target_machine: &TargetMachine,
+    opt_level: u8,
+    opt_for_size: bool,
+    custom: Option<&str>,
+) -> Result<(), String> {
     check_llvm_version_and_passes();
 
-    let pass_str = match (opt_level, opt_for_size) {
-        // Level 0: no optimization
-        (0, _) => "default<O0>",
-        // Level 1: light optimization
-        (1, false) => "default<O1>",
-        (1, true) => "default<Os>",
-        // Level 2: standard optimization
-        (2, false) => "default<O2>",
-        (2, true) => "default<Oz>",
-        // Level 3: aggressive optimization
-        (3, false) => "default<O3>",
-        (3, true) => "default<Oz>",
-        // Level 4+: still O3 (or Oz if size-optimizing)
-        (_, false) => "default<O3>",
-        (_, true) => "default<Oz>",
+    let pass_str: &str = if let Some(custom) = custom {
+        custom
+    } else {
+        match (opt_level, opt_for_size) {
+            // Level 0: no optimization
+            (0, _) => "default<O0>",
+            // Level 1: light optimization
+            (1, false) => "default<O1>",
+            (1, true) => "default<Os>",
+            // Level 2: standard optimization
+            (2, false) => "default<O2>",
+            (2, true) => "default<Oz>",
+            // Level 3: aggressive optimization
+            (3, false) => "default<O3>",
+            (3, true) => "default<Oz>",
+            // Level 4+: still O3 (or Oz if size-optimizing)
+            (_, false) => "default<O3>",
+            (_, true) => "default<Oz>",
+        }
     };
 
     let opts = PassBuilderOptions::create();
@@ -169,5 +187,15 @@ mod tests {
         let (module, tm) = create_test_module(&ctx);
         let result = run_llvm_passes(&module, &tm, 5, true);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_custom_pass_pipeline_override() {
+        let ctx = Context::create();
+        let (module, tm) = create_test_module(&ctx);
+        // Explicit custom pipeline overrides the built-in default<Ox> selection.
+        let result =
+            run_llvm_passes_with(&module, &tm, 3, false, Some("instcombine,simplifycfg"));
+        assert!(result.is_ok(), "custom pass pipeline must run");
     }
 }
