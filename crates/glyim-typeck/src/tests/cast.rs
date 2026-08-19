@@ -55,7 +55,8 @@ fn is_valid_cast_rules() {
             name: name("E0"),
             fields: IndexVec::new(),
         }],
-    };
+        generic_params: vec![],
+};
     ctx.register_adt(enum_id, fieldless_enum);
     let enum_ty = ctx.mk_adt(enum_id, Substitution::empty());
     assert!(
@@ -72,7 +73,8 @@ fn is_valid_cast_rules() {
             name: name("S0"),
             fields: IndexVec::new(),
         }],
-    };
+        generic_params: vec![],
+};
     ctx.register_adt(struct_id, struct_def);
     let struct_ty = ctx.mk_adt(struct_id, Substitution::empty());
     assert!(
