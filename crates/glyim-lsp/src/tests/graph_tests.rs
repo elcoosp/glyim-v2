@@ -23,7 +23,8 @@ fn build_from_hir_records_definitions_and_references() {
         is_const: false,
         generic_params: vec![],
         where_clauses: vec![],
-    abi: None,};
+        abi: None,
+    };
     let item = Item {
         id: ItemId::from_raw(0),
         name: fn_name,
@@ -37,11 +38,17 @@ fn build_from_hir_records_definitions_and_references() {
         body_owners: glyim_core::IndexVec::new(),
     };
     let mut graph = ReferenceGraph::new();
+    // `build_from_hir` records top-level item names as definitions, so after
+    // building the graph `my_function` must be present (as a definition).
     graph.build_from_hir(file_id, &hir, &interner);
     let name_str = interner.resolve(fn_name).to_string();
-    let _refs = graph.find_references(&name_str);
-    // Note: build_from_hir currently does nothing (placeholder), so we expect empty.
-    // This test will be updated when build_from_hir is implemented.
-    // For now, we assert that the method runs without panic.
-    assert!(true);
+    let refs = graph.find_references(&name_str);
+    assert!(
+        !refs.is_empty(),
+        "build_from_hir must record the top-level fn as a definition"
+    );
+    assert!(
+        refs.iter().any(|r| r.is_definition),
+        "the recorded reference must be a definition"
+    );
 }
