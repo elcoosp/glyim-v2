@@ -1534,5 +1534,11 @@ pub unsafe extern "C" fn glyim_time_system_nanos() -> u64 {
 
 pub mod fs;
 
+// ---------------------------------------------------------------------------
+// Async executor (Phase 5 MVP)
+// ---------------------------------------------------------------------------
+
+pub mod async_runtime;
+
 #[cfg(test)]
 mod tests;
