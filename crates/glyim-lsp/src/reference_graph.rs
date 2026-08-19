@@ -708,10 +708,13 @@ impl ReferenceGraph {
                         operand_access,
                     );
                 }
-                _ => {
-                    // Fallback: if we don't handle a variant, we still might need to recurse.
-                    // We'll just do nothing to avoid infinite recursion.
-                }
+                // These variants carry no sub-expressions to recurse into, so a
+                // no-op traversal is the correct (exhaustive) handling. Listing
+                // them explicitly — instead of a `_ => {}` wildcard — means a
+                // future `Expr` variant that DOES carry children will be a
+                // compile error here, forcing a real traversal to be written
+                // (Phase 8.1, unstub-5).
+                Expr::Missing | Expr::Literal(_) | Expr::Continue | Expr::Err => {}
             }
         }
 
