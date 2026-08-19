@@ -88,7 +88,7 @@ pub(crate) fn expand_macro_invocation(
             current_file,
             vfs,
         };
-        return expander.expand_builtin(handler, args, call_site, depth);
+        return expander.expand_builtin(handler, name, args, call_site, depth);
     }
 
     let mut expander = ExpanderImpl {
@@ -337,7 +337,7 @@ impl<'a> ExpanderImpl<'a> {
 
         // Check registered builtins first
         if let Some(handler) = self.registered_builtins.get(&name).copied() {
-            return self.expand_builtin(handler, &args_node, call_site, depth);
+            return self.expand_builtin(handler, name, &args_node, call_site, depth);
         }
 
         self.expand_macro_call(name, &args_node, call_site, depth)
@@ -365,7 +365,7 @@ impl<'a> ExpanderImpl<'a> {
                     match substitution::substitute(&arm.expansion, &bindings) {
                         Ok(expanded) => {
                             let expanded_green =
-                                self.build_expansion_green(&expanded, call_site, depth);
+                                self.build_expansion_green(&expanded, call_site, depth, name, false);
                             return (Some(expanded_green), Vec::new());
                         }
                         Err(unbound) => {
@@ -401,6 +401,7 @@ impl<'a> ExpanderImpl<'a> {
     fn expand_builtin(
         &mut self,
         handler: BuiltinMacro,
+        name: Name,
         args_node: &SyntaxNode,
         call_site: Span,
         _depth: u32,
@@ -833,7 +834,8 @@ impl<'a> ExpanderImpl<'a> {
                 vec![TokenTree::Token(SyntaxKind::StringLit, lit)]
             }
         };
-        let expanded_green = self.build_expansion_green(&expanded_trees, call_site, _depth);
+        let expanded_green =
+            self.build_expansion_green(&expanded_trees, call_site, _depth, name, true);
         (Some(expanded_green), Vec::new())
     }
 
@@ -842,13 +844,18 @@ impl<'a> ExpanderImpl<'a> {
         trees: &[TokenTree],
         call_site: Span,
         _depth: u32,
+        name: Name,
+        is_builtin: bool,
     ) -> GreenNode {
+        let kind = if is_builtin {
+            ExpnKind::Builtin { name }
+        } else {
+            ExpnKind::MacroRules { name }
+        };
         let expn_id = self.hygiene.push_expansion(ExpnData {
             expn_id: glyim_span::ExpnId::ROOT,
             parent: glyim_span::ExpnId::ROOT,
-            kind: ExpnKind::MacroRules {
-                name: self.interner.intern("macro_rules"),
-            },
+            kind,
             call_site,
             def_site: call_site,
             transparency: Transparency::SemiTransparent,
