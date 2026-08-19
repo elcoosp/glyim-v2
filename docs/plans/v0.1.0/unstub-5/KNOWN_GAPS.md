@@ -71,10 +71,32 @@ Real fix requires plumbing `apply_mark` through token production in
 consultation — a multi-file cross-crate effort. Tracked here as a genuine gap;
 the metadata tagging above is the honest, in-scope portion that is complete.
 
-### 9.2 proc macros (report #28) — NOT started
-Two-stage build (host cdylib compile + load) is entirely unimplemented. No
-`proc_macro` surface exists in the expansion path beyond the `ExpnKind::ProcMacro`
-enum variant. Large, research-grade; deferred.
+### 9.2 proc macros (report #28) — PARTIAL (ABI + loader + registry MVP done; two-stage compile tracked)
+New crate `crates/glyim-proc-macro` implements the stable, C-compatible ABI
+contract and the loader:
+- **`PmToken`/`PmTokenStream`/`PmStr`** `#[repr(C)]` boundary types (no
+  Rust-internal HIR/AST crosses the dylib boundary — only `kind: u16` +
+  text), mirroring real Rust's `proc_macro::TokenStream` serialization.
+- **Host ABI helpers** `pm_ts_alloc`/`pm_ts_push`/`pm_ts_free` (C-ABI, the
+  dylib calls these to build its output stream).
+- **`Registry`** with in-process `register` + `expand` (name →
+  `(input tokens) -> output tokens`), and a `load_cdylib(path)` that
+  `dlopen`s a compiled proc-macro cdylib, resolves its
+  `glyim_proc_macro_main` entry point, and populates the registry via a C-ABI
+  register callback. Unix (`dlopen`/`dlsym`) implemented; Windows returns a
+  tracked `Err` until `LoadLibraryW`/`GetProcAddress` is wired.
+- **Unit-tested** green: `registry_expands_identity_roundtrip` (in-process
+  identity macro returns input unchanged), `registry_unknown_macro_returns_none`,
+  `abi_alloc_push_free_roundtrip` (C-ABI alloc/push/free round-trips a token).
+  `cargo clippy -p glyim-proc-macro --all-targets` is clean.
+- **TRACKED GAP — two-stage host compile**: `glyim-cli` does not yet *build* a
+  proc-macro crate for the host target (cdylib) and invoke `load_cdylib` during
+  macro expansion, nor dispatch `ExpnKind::ProcMacro` invocations through the
+  registry inside `glyim-meta`'s expansion pipeline (the plan's steps 2 & 4).
+  The ABI + loader + registry (the load/register half) are done and green; the
+  compile-half + `glyim-meta` dispatch wiring is the larger remaining piece,
+  tracked here, not silently dropped. Derive/attribute proc macros are a
+  follow-up once function-like macros round-trip end to end.
 
 ## Phase 6 — Codegen / Platform — PARTIAL (done: 6.2 enum DWARF, 6.3; deferred: 6.1 SEH, 6.2 closure, 6.4 Windows)
 ### 6.3 `ReadVisitor`/`PlaceCollector` exhaustiveness — DONE (already complete)
