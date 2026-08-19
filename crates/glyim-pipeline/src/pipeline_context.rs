@@ -4,7 +4,7 @@ use glyim_hir::{CrateHir, ItemKind};
 use glyim_lower::{AdtDef, AdtKind, AdtVariant, LowerCtx};
 use glyim_mir::{Body, LocalDecl, LocalIdx, MirConst, MirConstKind};
 use glyim_span::Span;
-use glyim_type::TyCtx;
+use glyim_type::{TyCtx, TyKind};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use tracing::warn;
@@ -134,29 +134,107 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
         // Part C: const value materialization. Fold a `ConstRef` into a
         // concrete `MirConst` from the const-evaluated value produced by
         // typeck (stored in `TypeckResult::const_values`). Scalar constants
-        // (integers, floats, bool, char, str, unit) fold fully; aggregate
-        // constants (tuple/array/struct) and ranges fall back to `None` so the
-        // caller emits a `ConstRef` (zero-initialized global) as before.
+        // (integers, floats, bool, char, str, unit) and aggregate constants
+        // (tuple/array/struct) fold fully; range constants have no `MirConst`
+        // representation yet and fall back to `None` so the caller emits a
+        // `ConstRef` (zero-initialized global) as before.
         let value = self.const_values.get(&def_id)?;
-        let ty = self.ty_ctx.const_ty(def_id).unwrap_or_else(|| self.ty_ctx.error_ty());
-        let kind = match value {
-            glyim_const_eval::ConstValue::Int(v, _) => MirConstKind::Int(*v),
-            glyim_const_eval::ConstValue::Uint(v, _) => MirConstKind::Uint(*v),
-            glyim_const_eval::ConstValue::FloatBits(b, _) => MirConstKind::FloatBits(*b),
-            glyim_const_eval::ConstValue::Bool(b) => MirConstKind::Bool(*b),
-            glyim_const_eval::ConstValue::Char(c) => MirConstKind::Char(*c),
-            glyim_const_eval::ConstValue::String(n) => MirConstKind::String(*n),
-            glyim_const_eval::ConstValue::Unit => MirConstKind::Unit,
-            glyim_const_eval::ConstValue::Tuple(_)
-            | glyim_const_eval::ConstValue::Array(_)
-            | glyim_const_eval::ConstValue::Struct(_)
-            | glyim_const_eval::ConstValue::Range(..) => return None,
-        };
+        let ty = self
+            .ty_ctx
+            .const_ty(def_id)
+            .unwrap_or_else(|| self.ty_ctx.error_ty());
+        let kind = self.cv_const(value, ty)?;
         Some(MirConst {
             kind,
             ty,
             span: Span::DUMMY,
         })
+    }
+}
+
+impl<'a> PipelineLowerCtx<'a> {
+    /// Recursively convert a `ConstValue` into a `MirConst`, deriving each
+    /// element's type from the value's declared `Ty` (`ty`):
+    /// - tuple element types come from `TyKind::Tuple`'s substitution;
+    /// - array element types are the array's element type;
+    /// - struct field types come from the ADT definition via `field_ty`.
+    fn cv_const(
+        &self,
+        value: &glyim_const_eval::ConstValue,
+        ty: glyim_type::Ty,
+    ) -> Option<glyim_mir::MirConstKind> {
+        use glyim_const_eval::ConstValue;
+        let kind = match value {
+            ConstValue::Int(v, _) => MirConstKind::Int(*v),
+            ConstValue::Uint(v, _) => MirConstKind::Uint(*v),
+            ConstValue::FloatBits(b, _) => MirConstKind::FloatBits(*b),
+            ConstValue::Bool(b) => MirConstKind::Bool(*b),
+            ConstValue::Char(c) => MirConstKind::Char(*c),
+            ConstValue::String(n) => MirConstKind::String(*n),
+            ConstValue::Unit => MirConstKind::Unit,
+            ConstValue::Tuple(vals) => {
+                let elem_tys: Vec<glyim_type::Ty> = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Tuple(substs) => self
+                        .ty_ctx
+                        .substitution_args(*substs)
+                        .iter()
+                        .filter_map(|a| match a {
+                            glyim_type::GenericArg::Ty(t) => Some(*t),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => return None,
+                };
+                let elems = vals
+                    .iter()
+                    .zip(elem_tys.iter())
+                    .map(|(v, &et)| Some(MirConst {
+                        kind: self.cv_const(v, et)?,
+                        ty: et,
+                        span: Span::DUMMY,
+                    }))
+                    .collect::<Option<Vec<_>>>()?;
+                MirConstKind::Aggregate(elems)
+            }
+            ConstValue::Array(vals) => {
+                let elem_ty: glyim_type::Ty = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Array(inner, _) => *inner,
+                    _ => return None,
+                };
+                let elems = vals
+                    .iter()
+                    .map(|v| Some(MirConst {
+                        kind: self.cv_const(v, elem_ty)?,
+                        ty: elem_ty,
+                        span: Span::DUMMY,
+                    }))
+                    .collect::<Option<Vec<_>>>()?;
+                MirConstKind::Aggregate(elems)
+            }
+            ConstValue::Struct(vals) => {
+                let adt_id = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Adt(adt_id, _) => *adt_id,
+                    _ => return None,
+                };
+                let elems = vals
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_, v))| {
+                        let field_ty = self.ty_ctx.field_ty(adt_id, i);
+                        Some(MirConst {
+                            kind: self.cv_const(v, field_ty)?,
+                            ty: field_ty,
+                            span: Span::DUMMY,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                MirConstKind::Aggregate(elems)
+            }
+            // Range has no `MirConst` representation yet — fall back to a
+            // `ConstRef` (zero-initialized global) at the call site.
+            ConstValue::Range(..) => return None,
+        };
+        Some(kind)
     }
 }
 

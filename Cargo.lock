@@ -1376,6 +1376,7 @@ dependencies = [
  "glyim-def-map",
  "glyim-diag",
  "glyim-hir",
+ "glyim-mir",
  "glyim-solve",
  "glyim-span",
  "glyim-test",
