@@ -37,3 +37,4 @@ mod variant_path;
 mod where_clause;
 mod while_loop;
 mod generics;
+mod dyn_dispatch;
