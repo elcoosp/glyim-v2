@@ -142,7 +142,61 @@ fn main() {
     );
 }
 
-/// Tier 6.2: `find_references` must distinguish `Read` from `Write` accesses.
+/// Phase 8.1 (unstub-5): after removing the `walk_expr` wildcard arm, the now
+/// exhaustive traversal must reach variable uses inside `for` loop bodies,
+/// closure captures, and struct-literal field values. Each probe variable
+/// below is bound once and used in exactly ONE of those expression forms, so a
+/// correct walk yields at least 2 references (the `let`-init `Write` plus the
+/// construct-specific use). Before the fix these constructs fell through to the
+/// `_ => {}` arm and silently skipped their children, so the use was missing.
+#[test]
+fn test_reference_graph_walks_for_closure_struct_field() {
+    let src = r#"
+struct Foo { field: i32 }
+fn main() {
+    let for_only = 0;
+    let closure_only = 0;
+    let struct_only = 0;
+    for _i in 0..3 {
+        let _ = for_only;
+    }
+    let _f = |a| closure_only + a;
+    let _s = Foo { field: struct_only };
+}
+"#;
+    let mut interner = Interner::new();
+    let file_id = create_test_file_id(1);
+    let (hir, diags) = compile_to_hir(src, file_id, &mut interner);
+    assert!(diags.is_empty(), "Compilation had diagnostics: {:?}", diags);
+
+    let mut ref_graph = ReferenceGraph::new();
+    ref_graph.build_from_hir(file_id, &hir, &interner);
+
+    // `for_only` is used *only* inside the `for` loop body.
+    let for_refs = ref_graph.find_references("for_only");
+    assert!(
+        for_refs.len() >= 2,
+        "for-loop-body variable must be found via the For arm; got {:?}",
+        for_refs
+    );
+
+    // `closure_only` is used *only* inside the closure body.
+    let closure_refs = ref_graph.find_references("closure_only");
+    assert!(
+        closure_refs.len() >= 2,
+        "closure-capture variable must be found via the Closure arm; got {:?}",
+        closure_refs
+    );
+
+    // `struct_only` is used *only* inside the struct-literal field value.
+    let struct_refs = ref_graph.find_references("struct_only");
+    assert!(
+        struct_refs.len() >= 2,
+        "struct-field-value variable must be found via the Struct arm; got {:?}",
+        struct_refs
+    );
+}
+
 /// A reference is a `Write` when it is the direct LHS of an assignment or the
 /// operand of a `&mut` borrow; everything else (including `&x` immutable
 /// borrows and plain reads) is a `Read`. This mirrors Tier 1.1's `is_mut_use`
