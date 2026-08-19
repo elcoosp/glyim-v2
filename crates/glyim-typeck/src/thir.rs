@@ -1,6 +1,6 @@
 //! Typed High-Level IR — fully typed, still generic.
 
-use glyim_core::def_id::{AdtId, ConstDefId, DefId, FnDefId, VariantIdx};
+use glyim_core::def_id::{AdtId, ConstDefId, DefId, FnDefId, TraitDefId, VariantIdx};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_span::Span;
@@ -86,6 +86,15 @@ pub enum ExprKind {
     /// `fn(field_tys) -> Enum` (registered as a `FnDefId` fn-sig). MIR
     /// lowers the surrounding `Call` to an `Aggregate` of the enum ADT.
     VariantCtor { adt_id: AdtId, variant_idx: VariantIdx },
+    /// Reference to a trait method written as a path-qualified call
+    /// `Trait::method(receiver, ..)`. The receiver type selects the
+    /// concrete impl at type-check time (static dispatch); downstream this
+    /// lowers to a normal `Call` of the resolved impl function. (Full
+    /// dynamic dispatch via trait objects uses `DynamicCall`.)
+    TraitMethodRef {
+        trait_def_id: TraitDefId,
+        method_name: Name,
+    },
     Binary {
         op: BinOp,
         lhs: Box<Expr>,
