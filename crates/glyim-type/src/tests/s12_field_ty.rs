@@ -31,7 +31,8 @@ fn field_ty_from_adt_def() {
         kind: AdtKind::Struct,
         fields,
         variants: vec![],
-    };
+        generic_params: vec![],
+};
     ctx.register_adt(adt_id, def);
     assert_eq!(ctx.field_ty(adt_id, 0), i32_ty);
     assert_eq!(ctx.field_ty(adt_id, 1), bool_ty);
@@ -76,7 +77,8 @@ fn field_ty_adt_def_takes_priority_over_repr() {
         kind: AdtKind::Struct,
         fields,
         variants: vec![],
-    };
+        generic_params: vec![],
+};
     ctx.register_adt(adt_id, def);
     assert_eq!(
         ctx.field_ty(adt_id, 0),
@@ -101,7 +103,8 @@ fn frozen_field_ty_from_adt_def() {
             kind: AdtKind::Struct,
             fields,
             variants: vec![],
-        };
+            generic_params: vec![],
+};
         ctx.register_adt(adt_id, def);
         i32_ty
     });
