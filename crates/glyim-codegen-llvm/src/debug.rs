@@ -432,28 +432,104 @@ impl<'ctx> DebugInfoCtx<'ctx> {
                         .as_type()
                 }
             }
-            TyKind::Closure(_, _substs) => {
-                let name = "closure";
-                // Treat as opaque struct.
-                let layout = layout_computer.layout_of(ty).unwrap_or(Layout::unit());
-                let size_bits = layout.size.0 * 8;
-                let align_bits = layout.align.0 * 8;
-                self.builder
-                    .create_struct_type(
-                        self.compile_unit_scope,
-                        name,
-                        file,
-                        0,
-                        size_bits,
-                        align_bits.try_into().unwrap(),
-                        0,
-                        None,
-                        &[],
-                        0,
-                        None,
-                        "glyim",
-                    )
-                    .as_type()
+            TyKind::Closure(closure_id, _substs) => {
+                // A closure's captured environment is registered as a synthetic
+                // ADT (one field per captured variable) via
+                // `TyCtxMut::register_closure`. If we have that mapping, render
+                // it exactly like the `Adt` arm so debuggers can inspect each
+                // captured field by name/type (Phase 6.2, unstub-5). Otherwise
+                // fall back to an opaque struct.
+                if let Some(adt_id) = ty_ctx.closure_adt(*closure_id) {
+                    let adt_def_opt = ty_ctx.adt_def(adt_id);
+                    let name = format!("closure{}", closure_id.to_raw());
+                    let layout = layout_computer.layout_of(ty).unwrap_or(Layout::unit());
+                    let size_bits = layout.size.0 * 8;
+                    let align_bits = layout.align.0 * 8;
+                    if let Some(adt_def) = adt_def_opt {
+                        if adt_def.variants.len() == 1 {
+                            let variant = &adt_def.variants[0];
+                            let mut field_types = Vec::new();
+                            for field in variant.fields.iter() {
+                                let field_ty = self.debug_type_for_ty(context, field.ty, ty_ctx);
+                                field_types.push(field_ty);
+                            }
+                            self.builder
+                                .create_struct_type(
+                                    self.compile_unit_scope,
+                                    &name,
+                                    file,
+                                    0,
+                                    size_bits,
+                                    align_bits.try_into().unwrap(),
+                                    0,
+                                    None,
+                                    field_types.as_slice(),
+                                    0,
+                                    None,
+                                    "glyim",
+                                )
+                                .as_type()
+                        } else {
+                            // Multi-variant (shouldn't happen for closures);
+                            // emit the opaque fallback.
+                            self.builder
+                                .create_struct_type(
+                                    self.compile_unit_scope,
+                                    &name,
+                                    file,
+                                    0,
+                                    size_bits,
+                                    align_bits.try_into().unwrap(),
+                                    0,
+                                    None,
+                                    &[],
+                                    0,
+                                    None,
+                                    "glyim",
+                                )
+                                .as_type()
+                        }
+                    } else {
+                        self.builder
+                            .create_struct_type(
+                                self.compile_unit_scope,
+                                &name,
+                                file,
+                                0,
+                                size_bits,
+                                align_bits.try_into().unwrap(),
+                                0,
+                                None,
+                                &[],
+                                0,
+                                None,
+                                "glyim",
+                            )
+                            .as_type()
+                    }
+                } else {
+                    let name = "closure";
+                    // Treat as opaque struct.
+                    let layout = layout_computer.layout_of(ty).unwrap_or(Layout::unit());
+                    let size_bits = layout.size.0 * 8;
+                    let align_bits = layout.align.0 * 8;
+                    self.builder
+                        .create_struct_type(
+                            self.compile_unit_scope,
+                            name,
+                            file,
+                            0,
+                            size_bits,
+                            align_bits.try_into().unwrap(),
+                            0,
+                            None,
+                            &[],
+                            0,
+                            None,
+                            "glyim",
+                        )
+                        .as_type()
+                }
             }
             TyKind::Dynamic(_, _) => {
                 // Trait object: { data_ptr, vtable_ptr }

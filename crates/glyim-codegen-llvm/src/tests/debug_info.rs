@@ -10,7 +10,8 @@ use glyim_mir::{
 use glyim_span::{
     ByteIdx, ExpnData, ExpnId, ExpnKind, FileId, HygieneCtx, Span, SyntaxContext, Transparency,
 };
-use glyim_type::TyCtxMut;
+use glyim_core::def_id::{AdtId, ClosureId};
+use glyim_type::{TyCtxMut, TyKind};
 use inkwell::context::Context;
 use std::collections::HashMap;
 
@@ -807,6 +808,77 @@ fn tier5_2_reference_debug_type_is_real_pointer() {
     assert!(
         ir.contains("DW_TAG_pointer_type"),
         "Ref/RawPtr/Slice debug types should emit DW_TAG_pointer_type (real pointer shape).\nIR:\n{}",
+        ir
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6.2 (unstub-5): closure debug types must emit real per-capture member
+// types (DW_TAG_member) instead of an opaque blob, so debuggers can inspect a
+// closure's captured environment by name/type.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase6_2_closure_debug_type_has_capture_members() {
+    use glyim_core::primitives::IntTy;
+
+    let mut ctx_mut = TyCtxMut::new(Interner::default());
+    let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
+    let bool_ty = ctx_mut.mk_ty(TyKind::Bool);
+
+    // Register a closure capturing two variables; this builds the synthetic
+    // captured-environment ADT and records the ClosureId -> AdtId mapping.
+    let name_a = ctx_mut.resolver().intern("captured_x");
+    let name_b = ctx_mut.resolver().intern("captured_flag");
+    let adt_id: AdtId = ctx_mut.register_closure(vec![(name_a, i32_ty), (name_b, bool_ty)]);
+    let closure_id = ClosureId::from_raw(adt_id.to_raw());
+
+    // The debug pass sees a `TyKind::Closure(closure_id, _)`; it must recover
+    // the captured-environment ADT via `closure_adt` and emit member types.
+    let closure_substs = ctx_mut.intern_substitution(vec![]);
+    let closure_ty = ctx_mut.mk_ty(TyKind::Closure(closure_id, closure_substs));
+
+    let context = Context::create();
+    let module = context.create_module("phase6_2_closure_dbg");
+    let source_map: HashMap<FileId, (String, String)> = HashMap::from([(
+        FileId::from_raw(0),
+        ("test.g".to_string(), "fn main() {}".to_string()),
+    )]);
+    let mut debug_ctx =
+        crate::debug::DebugInfoCtx::new(&context, &module, source_map, true, None);
+
+    let file = debug_ctx.builder.create_file("test.g", ".");
+    let closure_di = debug_ctx.debug_type_for_ty(&context, closure_ty, &ctx_mut.freeze());
+    let gv = debug_ctx.builder.create_global_variable_expression(
+        debug_ctx.compile_unit_scope,
+        "closure_v",
+        "",
+        file,
+        1,
+        closure_di,
+        true,
+        None,
+        None,
+        0,
+    );
+    module
+        .add_global_metadata("glyim.dbg.types", &gv.as_metadata_value(&context))
+        .unwrap();
+    debug_ctx.finalize();
+
+    let ir = module.print_to_string().to_string();
+    // The closure must be a real composite (struct) type whose `elements`
+    // list carries the captured types — NOT an opaque empty struct.
+    assert!(
+        ir.contains("DW_TAG_structure_type") && ir.contains("elements:"),
+        "Closure debug type should be a real struct with captured-member elements, not an opaque blob.\nIR:\n{}",
+        ir
+    );
+    // The captured types must actually appear as members of the closure struct
+    // (i32 for `captured_x`, bool for `captured_flag`).
+    assert!(
+        ir.contains("closure2000000") && ir.contains("i32") && ir.contains("bool"),
+        "Closure debug type should reference its captured value types (i32, bool).\nIR:\n{}",
         ir
     );
 }
