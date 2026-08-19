@@ -14,5 +14,4 @@ windows-sys = { version = "0.59", features = [
 ] }
 
 [dev-dependencies]
-glyim-test = { workspace = true }
 libc = "0.2"
