@@ -111,7 +111,8 @@ mod tests {
             kind: AdtKind::Enum,
             fields: IndexVec::new(),
             variants,
-        };
+            generic_params: vec![],
+};
         tcx_mut.register_adt(enum_id, enum_def);
         let substs = tcx_mut.intern_substitution(vec![]);
         let enum_ty = tcx_mut.mk_adt(enum_id, substs);
@@ -143,7 +144,8 @@ mod tests {
             kind: AdtKind::Enum,
             fields: IndexVec::new(),
             variants,
-        };
+            generic_params: vec![],
+};
         tcx_mut.register_adt(enum_id, enum_def);
         let substs = tcx_mut.intern_substitution(vec![]);
         let enum_ty = tcx_mut.mk_adt(enum_id, substs);
