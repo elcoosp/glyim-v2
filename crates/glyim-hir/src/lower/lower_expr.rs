@@ -4,6 +4,7 @@ use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use std::collections::HashMap;
+use crate::TypeRef;
 
 /// Checks if a syntax node kind represents a pattern.
 /// This is an exhaustive match to ensure new pattern kinds are added here explicitly.
@@ -771,30 +772,58 @@ fn lower_if_expr(
 }
 
 fn lower_path_expr(node: &SyntaxNode, interner: &mut Interner, body: &mut Body) -> Option<ExprId> {
+    // NOTE: generic args always belong to the *preceding* path segment in this
+    // grammar (no per-segment turbofish like `Foo::<T>::Bar::<U>`). The type
+    // nodes emitted by `parse_type_arg_list` are siblings of the `Ident`
+    // tokens, so when we encounter a type node we attach the collected args to
+    // the segment pushed just before it (this is what makes `Vec::<i32>::new`
+    // put `<i32>` on `Vec`, not on `new`).
     let mut segments = Vec::new();
+    let mut pending_args: Vec<TypeRef> = Vec::new();
+
+    let flush_pending = |segments: &mut Vec<PathSegment>, pending_args: &mut Vec<TypeRef>| {
+        if !pending_args.is_empty() {
+            if let Some(last) = segments.last_mut() {
+                last.generic_args = Some(std::mem::take(pending_args));
+            }
+        }
+    };
+
     for el in node.children_with_tokens() {
-        if let glyim_syntax::SyntaxElement::Token(t) = el {
-            if t.kind() == SyntaxKind::Ident {
+        match el {
+            glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Ident => {
+                flush_pending(&mut segments, &mut pending_args);
                 segments.push(PathSegment {
                     name: interner.intern(t.text()),
                     generic_args: None,
                 });
             }
-        } else if let glyim_syntax::SyntaxElement::Node(n) = el
-            && n.kind() == SyntaxKind::UsePath
-        {
-            for t in n.children_with_tokens() {
-                if let glyim_syntax::SyntaxElement::Token(tt) = t
-                    && tt.kind() == SyntaxKind::Ident
-                {
-                    segments.push(PathSegment {
-                        name: interner.intern(tt.text()),
-                        generic_args: None,
-                    });
+            glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::UsePath => {
+                for t in n.children_with_tokens() {
+                    if let glyim_syntax::SyntaxElement::Token(tt) = t
+                        && tt.kind() == SyntaxKind::Ident
+                    {
+                        flush_pending(&mut segments, &mut pending_args);
+                        segments.push(PathSegment {
+                            name: interner.intern(tt.text()),
+                            generic_args: None,
+                        });
+                    }
                 }
             }
+            // Turbofish type args are lowered with the same lower_type_ref used
+            // by ordinary type positions, so `Vec::<i32>` and `Vec<i32>`
+            // produce identical TypeRef::Path shapes.
+            glyim_syntax::SyntaxElement::Node(n) if super::is_type_node(&n) => {
+                if let Some(ty) = super::lower_type::lower_type_ref(&n, interner) {
+                    pending_args.push(ty);
+                }
+            }
+            _ => {}
         }
     }
+    // Flush any trailing args (e.g. `Vec<i32>` with no further segment).
+    flush_pending(&mut segments, &mut pending_args);
     if segments.is_empty() {
         return None;
     }

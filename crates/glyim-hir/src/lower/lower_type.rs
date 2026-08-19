@@ -106,10 +106,23 @@ pub(crate) fn lower_type_ref(node: &SyntaxNode, interner: &mut Interner) -> Opti
 }
 
 pub(crate) fn lower_path_from_type(node: &SyntaxNode, interner: &mut Interner) -> Option<HirPath> {
+    // NOTE: generic args belong to the *preceding* path segment; type nodes
+    // emitted by parse_type_arg_list are siblings of the Ident tokens.
     let mut segments = Vec::new();
+    let mut pending_args: Vec<TypeRef> = Vec::new();
+
+    let flush_pending = |segments: &mut Vec<PathSegment>, pending_args: &mut Vec<TypeRef>| {
+        if !pending_args.is_empty() {
+            if let Some(last) = segments.last_mut() {
+                last.generic_args = Some(std::mem::take(pending_args));
+            }
+        }
+    };
+
     for el in node.children_with_tokens() {
         match el {
             glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Ident => {
+                flush_pending(&mut segments, &mut pending_args);
                 segments.push(PathSegment {
                     name: interner.intern(t.text()),
                     generic_args: None,
@@ -120,6 +133,7 @@ pub(crate) fn lower_path_from_type(node: &SyntaxNode, interner: &mut Interner) -
                     if let glyim_syntax::SyntaxElement::Token(tt) = t
                         && tt.kind() == SyntaxKind::Ident
                     {
+                        flush_pending(&mut segments, &mut pending_args);
                         segments.push(PathSegment {
                             name: interner.intern(tt.text()),
                             generic_args: None,
@@ -127,9 +141,15 @@ pub(crate) fn lower_path_from_type(node: &SyntaxNode, interner: &mut Interner) -
                     }
                 }
             }
+            glyim_syntax::SyntaxElement::Node(n) if super::is_type_node(&n) => {
+                if let Some(ty) = lower_type_ref(&n, interner) {
+                    pending_args.push(ty);
+                }
+            }
             _ => {}
         }
     }
+    flush_pending(&mut segments, &mut pending_args);
     if segments.is_empty() {
         None
     } else {
