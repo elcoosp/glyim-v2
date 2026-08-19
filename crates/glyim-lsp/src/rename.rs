@@ -11,6 +11,13 @@ use std::str::FromStr;
 /// `StringLit`/`CharLit` tokens and comments (which the lexer excludes from
 /// the token stream as trivia), so a name that also appears in a string
 /// literal or comment is never corrupted.
+///
+/// Per Phase 8.2 (unstub-5) this is no longer the *primary* rename path — the
+/// reference graph is authoritative for ordinary expressions. It is retained
+/// as a production safety net for symbols the graph misses (e.g. variables
+/// used only inside a macro call, which `lower_expr` currently drops — tracked
+/// gap in KNOWN_GAPS.md), and is also exercised as a consistency check in
+/// tests.
 pub(crate) fn rename_text_fallback(
     sm: &SourceMap,
     file_id: FileId,
@@ -78,7 +85,14 @@ pub fn rename_symbol(
     }
     let symbol_name = &source[start..end];
 
-    // First, try using the reference graph.
+    // Primary path: use the reference graph. Per Phase 8.2 (unstub-5) this
+    // graph is the authoritative rename source for ordinary expressions.
+    // NOTE: macro-call arguments are NOT yet lowered into the HIR body (the
+    // frontend drops `MacroCall` exprs in `lower_expr`), so a variable used
+    // only inside a `println!(...)`-style invocation is absent from the graph.
+    // The text fallback below is therefore retained as a safety net for those
+    // cases (tracked gap — see KNOWN_GAPS.md). It is no longer the primary
+    // path; we only reach it when the graph has no entries for the symbol.
     let ref_graph = db.reference_graph.read();
 
     let references = ref_graph.find_references(symbol_name);
@@ -124,7 +138,9 @@ pub fn rename_symbol(
 
     // Fallback: text-based search within the current file only. Lex first and
     // only replace `Ident` tokens (string/char literals and comments are
-    // skipped automatically by the lexer).
+    // skipped automatically by the lexer). Reached only when the reference
+    // graph had no entries for `symbol_name` (e.g. a symbol used solely inside
+    // a macro call, which the HIR lowering currently drops — tracked gap).
     let edits = rename_text_fallback(sm, file_id, symbol_name, &params.new_name)?;
     let mut changes = HashMap::new();
 
