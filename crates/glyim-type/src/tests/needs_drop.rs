@@ -63,7 +63,8 @@ fn struct_of_primitives_does_not_need_drop() {
             kind: AdtKind::Struct,
             fields: fields.clone(),
             variants: vec![VariantDef { name, fields }],
-        };
+            generic_params: vec![],
+};
         c.register_adt(adt_id, adt_def);
         let substs = c.intern_substitution(vec![]);
         c.mk_adt(adt_id, substs)
@@ -85,7 +86,8 @@ fn struct_containing_droppable_field_needs_drop() {
                 name: f,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
         c.register_adt(inner_id, inner_def);
         c.mark_has_drop(inner_id);
         let inner_substs = c.intern_substitution(vec![]);
@@ -99,7 +101,8 @@ fn struct_containing_droppable_field_needs_drop() {
             kind: AdtKind::Struct,
             fields: of.clone(),
             variants: vec![VariantDef { name: f, fields: of }],
-        };
+            generic_params: vec![],
+};
         c.register_adt(outer_id, outer_def);
         let outer_substs = c.intern_substitution(vec![]);
         let outer_ty = c.mk_adt(outer_id, outer_substs);
@@ -124,7 +127,8 @@ fn array_and_slice_of_droppable_need_drop() {
                 name: f,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
         c.register_adt(id, def);
         c.mark_has_drop(id);
         let substs = c.intern_substitution(vec![]);
@@ -179,7 +183,8 @@ fn union_always_needs_drop() {
                 name: f,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
         c.register_adt(id, def);
         let substs = c.intern_substitution(vec![]);
         c.mk_adt(id, substs)
