@@ -1,0 +1,41 @@
+//! Trait-method static dispatch: `Trait::method(receiver, ..)` resolves to the
+//! concrete impl function selected by the receiver's type (no vtable / dyn
+//! object needed for concrete receivers).
+
+use glyim_span::FileId;
+use glyim_test::assert_no_errors;
+use glyim_test::harness::compiler::{CompileOutput, PipelineCompiler, TestCompiler};
+use glyim_test::mock::MockCodegen;
+use std::sync::Arc;
+
+fn compile(src: &str) -> CompileOutput {
+    let backend = Arc::new(MockCodegen::new());
+    let compiler = PipelineCompiler::new(backend);
+    compiler.compile(src, FileId::from_raw(1), &[])
+}
+
+#[test]
+fn trait_method_path_dispatch_resolves() {
+    let src = r#"
+        trait Animal { fn speak(&self) -> i32; }
+        struct Dog;
+        struct Cat;
+        impl Animal for Dog { fn speak(&self) -> i32 { 1 } }
+        impl Animal for Cat { fn speak(&self) -> i32 { 2 } }
+        fn main() -> i32 { let d = Dog; let c = Cat; Animal::speak(&d) + Animal::speak(&c) }
+    "#;
+    let output = compile(src);
+    assert_no_errors(&output.diagnostics);
+}
+
+#[test]
+fn unit_struct_construction_resolves() {
+    let src = r#"
+        struct Dog;
+        struct Cat;
+        fn id(x: Dog) -> Dog { x }
+        fn main() -> i32 { let d = Dog; let _ = id(d); 0 }
+    "#;
+    let output = compile(src);
+    assert_no_errors(&output.diagnostics);
+}
