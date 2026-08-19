@@ -33,6 +33,10 @@ pub struct TyCtx {
     pub(crate) fn_sigs: HashMap<FnDefId, FnSig>,
     pub(crate) const_tys: HashMap<ConstDefId, Ty>,
     pub(crate) closure_sigs: HashMap<ClosureId, FnSig>,
+    /// `ClosureId` → synthetic `AdtId` for the closure's captured environment
+    /// (populated by `TyCtxMut::register_closure`). Lets the debug-info pass
+    /// recover per-capture member types from a `TyKind::Closure`.
+    pub(crate) closure_adt_map: HashMap<ClosureId, AdtId>,
     pub(crate) body_tys: HashMap<LocalDefId, Ty>,
     pub(crate) lang_items: LangItems,
     /// `AdtId`s that have an explicit `Drop` impl (or are owning builtins such as
@@ -338,6 +342,11 @@ impl TyCtx {
 
     pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {
         self.closure_sigs.get(&closure_id)
+    }
+
+    /// Recover the synthetic `AdtId` for a closure's captured environment.
+    pub fn closure_adt(&self, closure_id: ClosureId) -> Option<AdtId> {
+        self.closure_adt_map.get(&closure_id).copied()
     }
 
     pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {

@@ -933,7 +933,11 @@ impl<'a> FnCtxt<'a> {
                 self.env.leave_scope();
 
                 // 4. Build a real closure type (see Tier 1.1b).
-                let capture_tys: Vec<Ty> = captures.iter().map(|(_, _, ty)| *ty).collect();
+                let capture_tys: Vec<(Name, Ty)> = captures
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_, _, ty))| (self.ctx.resolver().intern(&format!("capture_{i}")), *ty))
+                    .collect();
                 let closure_adt = self.ctx.register_closure(capture_tys.clone());
                 let closure_substs = self.ctx.intern_substitution(vec![]);
                 let closure_ty = self.ctx.mk_adt(closure_adt, closure_substs);

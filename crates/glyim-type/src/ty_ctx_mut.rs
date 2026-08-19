@@ -48,6 +48,13 @@ pub struct TyCtxMut {
     /// above any user-defined ADT id and the 1000-1005 builtin range ids so it
     /// can never collide.
     synthetic_adt_counter: u32,
+    /// Maps a closure's `ClosureId` to the synthetic `AdtId` representing its
+    /// captured environment. Populated by `register_closure` so downstream
+    /// passes (e.g. the DWARF debug-info pass) can recover the per-capture
+    /// field types from a `TyKind::Closure` value. Real closure types are
+    /// `TyKind::Adt(closure_adt, _)`; this map also covers the `TyKind::Closure`
+    /// representation used in tests and downstream reads.
+    closure_adt_map: HashMap<ClosureId, AdtId>,
     /// `AdtId`s with an explicit `Drop` impl (or owning builtins). Mirrors the
     /// `drop_impls` set on the frozen `TyCtx`, consulted by `needs_drop`.
     drop_impls: HashSet<AdtId>,
@@ -73,6 +80,7 @@ impl TyCtxMut {
             fn_sigs: HashMap::new(),
             const_tys: HashMap::new(),
             closure_sigs: HashMap::new(),
+            closure_adt_map: HashMap::new(),
             body_tys: HashMap::new(),
             lang_items: LangItems::default(),
             synthetic_adt_counter: 2_000_000,
@@ -336,12 +344,12 @@ impl TyCtxMut {
     /// closure a real, concrete `TyKind::Adt` so downstream passes (MIR
     /// lowering, layout, codegen) have a genuine type to work with instead of
     /// an unconstrained inference variable.
-    pub fn register_closure(&mut self, capture_tys: Vec<Ty>) -> AdtId {
+    pub fn register_closure(&mut self, capture_tys: Vec<(Name, Ty)>) -> AdtId {
         let id = self.next_synthetic_adt_id();
         let mut field_defs = IndexVec::new();
-        for (i, ty) in capture_tys.iter().enumerate() {
+        for (name, ty) in capture_tys.iter() {
             field_defs.push(FieldDef {
-                name: self.resolver.intern(&format!("capture_{i}")),
+                name: *name,
                 ty: *ty,
             });
         }
@@ -355,6 +363,11 @@ impl TyCtxMut {
             generic_params: vec![],
 };
         self.register_adt(id, def);
+        // Record the 1:1 mapping from the synthetic ClosureId (derived from the
+        // ADT id) to the ADT so the DWARF debug pass can recover per-capture
+        // member types from a `TyKind::Closure` value (Phase 6.2).
+        self.closure_adt_map
+            .insert(ClosureId::from_raw(id.to_raw()), id);
         id
     }
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
@@ -440,6 +453,13 @@ impl TyCtxMut {
         self.closure_sigs.get(&closure_id)
     }
 
+    /// Recover the synthetic `AdtId` representing a closure's captured
+    /// environment. Used by the DWARF debug-info pass to emit real per-capture
+    /// member types for a `TyKind::Closure` value.
+    pub fn closure_adt(&self, closure_id: ClosureId) -> Option<AdtId> {
+        self.closure_adt_map.get(&closure_id).copied()
+    }
+
     pub fn register_body_ty(&mut self, def_id: LocalDefId, ty: Ty) {
         self.body_tys.insert(def_id, ty);
     }
@@ -465,6 +485,7 @@ impl TyCtxMut {
             fn_sigs: self.fn_sigs.clone(),
             const_tys: self.const_tys.clone(),
             closure_sigs: self.closure_sigs.clone(),
+            closure_adt_map: self.closure_adt_map.clone(),
             body_tys: self.body_tys.clone(),
             lang_items: self.lang_items.clone(),
             drop_impls: self.drop_impls.clone(),
@@ -488,6 +509,7 @@ impl TyCtxMut {
             fn_sigs: self.fn_sigs,
             const_tys: self.const_tys,
             closure_sigs: self.closure_sigs,
+            closure_adt_map: self.closure_adt_map,
             body_tys: self.body_tys,
             lang_items: self.lang_items,
             drop_impls: self.drop_impls,
