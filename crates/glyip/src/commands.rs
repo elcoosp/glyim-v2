@@ -506,6 +506,7 @@ pub fn cmd_run(project_dir: &Path, opts: &RunOptions) -> GlyipResult<RunResult> 
         target: opts.target.clone(),
         backend: opts.backend.clone(),
         opt_level: if opts.release { 2 } else { 0 },
+        lto: opts.lto,
     };
     let build_result = cmd_build(project_dir, &build_opts)?;
 
@@ -596,7 +597,9 @@ fn compile_source(
     // Select the codegen backend.
     #[cfg(feature = "llvm")]
     let backend: Box<dyn glyim_codegen::CodegenBackend> = if opts.backend == "llvm" {
-        Box::new(glyim_codegen_llvm::LlvmBackend::new())
+        Box::new(glyim_codegen_llvm::LlvmBackend::new().with_lto(
+            opts.lto.unwrap_or(glyim_codegen_llvm::passes::LtoKind::None),
+        ))
     } else {
         let ctx = glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze();
         Box::new(glyim_codegen::BytecodeBackend::with_ty_ctx(

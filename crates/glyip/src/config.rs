@@ -250,6 +250,10 @@ pub struct BuildOptions {
     pub backend: String,
     /// Optimisation level (0–3).
     pub opt_level: u8,
+    /// Link-time optimization strategy (Phase 10.2): `"off"`, `"thin"`, or
+    /// `"fat"`. Mapped onto `glyim_codegen_llvm::passes::LtoKind` at the
+    /// backend boundary. `None`/`off` is the default.
+    pub lto: Option<glyim_codegen_llvm::passes::LtoKind>,
 }
 
 impl Default for BuildOptions {
@@ -259,6 +263,7 @@ impl Default for BuildOptions {
             target: None,
             backend: "bytecode".to_string(),
             opt_level: 0,
+            lto: None,
         }
     }
 }
@@ -293,6 +298,9 @@ pub struct RunOptions {
     /// Target triple. When `None`, the host/default triple is used. (Plan §21.3:
     /// `glyip run` must honour `--target` rather than silently dropping it.)
     pub target: Option<String>,
+    /// Link-time optimization strategy (Phase 10.2), forwarded to the build
+    /// step. `None`/`off` is the default.
+    pub lto: Option<glyim_codegen_llvm::passes::LtoKind>,
 }
 
 impl Default for RunOptions {
@@ -302,6 +310,7 @@ impl Default for RunOptions {
             args: Vec::new(),
             backend: "bytecode".to_string(),
             target: None,
+            lto: None,
         }
     }
 }

@@ -37,6 +37,9 @@ enum Commands {
         /// Optimisation level (0–3).
         #[arg(long, default_value_t = 0)]
         opt_level: u8,
+        /// Link-time optimization: `off`, `thin`, or `fat` (Phase 10.2).
+        #[arg(long, default_value = "off")]
+        lto: String,
     },
     /// Run the project's tests.
     Test {
@@ -65,6 +68,9 @@ enum Commands {
         /// Target triple.
         #[arg(long)]
         target: Option<String>,
+        /// Link-time optimization: `off`, `thin`, or `fat` (Phase 10.2).
+        #[arg(long, default_value = "off")]
+        lto: String,
     },
 }
 
@@ -90,12 +96,14 @@ fn main() {
             target,
             backend,
             opt_level,
+            lto,
         } => {
             let opts = glyip::config::BuildOptions {
                 release,
                 target,
                 backend,
                 opt_level,
+                lto: parse_lto(&lto),
             };
             glyip::cmd_build(&project_dir, &opts).map(|_| ())
         }
@@ -114,12 +122,18 @@ fn main() {
             };
             glyip::cmd_test(&project_dir, &opts).map(|_| ())
         }
-        Commands::Run { release, args, target } => {
+        Commands::Run {
+            release,
+            args,
+            target,
+            lto,
+        } => {
             let opts = glyip::config::RunOptions {
                 release,
                 args,
                 backend: "bytecode".to_string(),
                 target,
+                lto: parse_lto(&lto),
             };
             glyip::cmd_run(&project_dir, &opts).map(|_| ())
         }
@@ -128,5 +142,17 @@ fn main() {
     if let Err(e) = result {
         eprintln!("error: {}", e);
         std::process::exit(1);
+    }
+}
+
+/// Translate the CLI `--lto` string (`off`/`thin`/`fat`) into an
+/// `LtoKind`. Unknown values default to `None` (off) rather than failing the
+/// whole build — the codegen side treats `None` as a no-op.
+fn parse_lto(value: &str) -> Option<glyim_codegen_llvm::passes::LtoKind> {
+    match value {
+        "off" | "none" | "" => None,
+        "thin" => Some(glyim_codegen_llvm::passes::LtoKind::Thin),
+        "fat" => Some(glyim_codegen_llvm::passes::LtoKind::Fat),
+        _ => None,
     }
 }
