@@ -37,7 +37,7 @@ use std::sync::Arc;
 mod abi;
 mod debug;
 mod lower;
-mod passes;
+pub mod passes;
 mod types;
 
 pub struct LlvmBackend {
@@ -50,6 +50,10 @@ pub struct LlvmBackend {
     opt_level: u8,
     opt_for_size: bool,
     hygiene_ctx: Option<HygieneCtx>,
+    /// Link-time optimization strategy requested for this compilation
+    /// (Phase 10.2). `None` is the default; `Fat` merges modules inside the
+    /// compiler; `Thin` is a tracked gap (linker-driver integration).
+    lto: crate::passes::LtoKind,
 }
 
 impl Default for LlvmBackend {
@@ -75,6 +79,7 @@ impl LlvmBackend {
             opt_level: 0,
             opt_for_size: false,
             hygiene_ctx: None,
+            lto: crate::passes::LtoKind::None,
         }
     }
 
@@ -91,6 +96,7 @@ impl LlvmBackend {
             opt_level: 0,
             opt_for_size: false,
             hygiene_ctx: None,
+            lto: crate::passes::LtoKind::None,
         }
     }
 
@@ -161,6 +167,15 @@ impl LlvmBackend {
 
     pub fn with_opt_for_size(mut self, size: bool) -> Self {
         self.opt_for_size = size;
+        self
+    }
+
+    /// Request a link-time optimization strategy for this compilation
+    /// (Phase 10.2). `LtoKind::None` is the default; `Fat` merges modules
+    /// inside the compiler; `Thin` is a tracked gap (linker-driver integration)
+    /// and will surface an error at codegen time rather than silently no-op.
+    pub fn with_lto(mut self, lto: crate::passes::LtoKind) -> Self {
+        self.lto = lto;
         self
     }
 
@@ -271,7 +286,20 @@ impl LlvmBackend {
         module: &inkwell::module::Module<'ctx>,
         target_machine: &inkwell::targets::TargetMachine,
     ) -> Result<(), String> {
-        crate::passes::run_llvm_passes(module, target_machine, self.opt_level, self.opt_for_size)
+        // Honour the requested link-time optimization strategy (Phase 10.2).
+        // `run_lto` treats `None`/`Fat` as running the standard pipeline once
+        // (Fat with no secondary modules is just a single-module pass run), and
+        // surfaces `Thin` as an explicit tracked-gap error rather than silently
+        // no-op. Full multi-module merge requires the multi-CGU compilation
+        // driver, which is a tracked gap (KNOWN_GAPS.md Phase 10.2).
+        crate::passes::run_lto(
+            module,
+            &[],
+            self.lto,
+            target_machine,
+            self.opt_level,
+            self.opt_for_size,
+        )
     }
 
     #[allow(dead_code)]

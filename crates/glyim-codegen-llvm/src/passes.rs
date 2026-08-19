@@ -2,6 +2,68 @@ use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::TargetMachine;
 
+/// Link-time optimization strategy.
+///
+/// `None` is a no-op. `Fat` merges every module of the program into one and
+/// runs the optimization pipeline once over the merged module (cross-module
+/// inlining/specialization possible entirely inside `glyim-codegen-llvm` via
+/// `Module::link_in_module`, which wraps `LLVMLinkModules2`). `Thin` requires
+/// per-module summary emission *and* a link-time thin-link step driven by the
+/// linker (`glyim-cli`'s linker invocation) — that half is a tracked gap (see
+/// `KNOWN_GAPS.md` Phase 10.2); this crate can only validate the request and
+/// hand control to the linker driver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LtoKind {
+    None,
+    Thin,
+    Fat,
+}
+
+/// Run link-time optimization over the program's modules.
+///
+/// `primary` is the module that receives every other module's contents (it is
+/// the module that will subsequently be passed to `run_llvm_passes`). `others`
+/// are the remaining per-crate / per-CGU modules to merge into `primary` for
+/// `Fat` LTO. For `None`, nothing is done. For `Thin`, the merge is intentionally
+/// *not* performed here (it would defeat ThinLTO's incremental design); callers
+/// must instead drive the thin-link via the linker and only pass `-flto=thin`
+/// flags. Returns an error describing the gap if `Thin` is requested, so the
+/// limitation is explicit rather than silent.
+pub(crate) fn run_lto<'ctx>(
+    primary: &Module<'ctx>,
+    others: &[Module<'ctx>],
+    kind: LtoKind,
+    target_machine: &TargetMachine,
+    opt_level: u8,
+    opt_for_size: bool,
+) -> Result<(), String> {
+    match kind {
+        LtoKind::None => Ok(()),
+        LtoKind::Thin => Err(
+            "ThinLTO requires linker-driver integration (per-module summary emission + a \
+             thin-link step in glyim-cli's linker invocation). The merge cannot be performed \
+             inside glyim-codegen-llvm. This is a tracked gap (KNOWN_GAPS.md Phase 10.2); pass \
+             `-flto=thin` to the linker driver instead, or use `Fat` LTO for an in-compiler \
+             merge."
+                .to_string(),
+        ),
+        LtoKind::Fat => {
+            // Merge every other module into the primary. `link_in_module` takes
+            // ownership of `other` (it is `forget`ten inside), so we clone the
+            // shared borrows first to avoid moving out of the slice.
+            for other in others {
+                let cloned = other.clone();
+                primary
+                    .link_in_module(cloned)
+                    .map_err(|e| format!("Fat LTO module merge failed: {}", e))?;
+            }
+            // Run the optimization pipeline once over the merged module so
+            // cross-module optimizations (inlining, etc.) actually fire.
+            run_llvm_passes(primary, target_machine, opt_level, opt_for_size)
+        }
+    }
+}
+
 /// Run LLVM optimization passes based on the given optimization level and size hint.
 ///
 /// Optimization levels:
@@ -197,5 +259,88 @@ mod tests {
         let result =
             run_llvm_passes_with(&module, &tm, 3, false, Some("instcombine,simplifycfg"));
         assert!(result.is_ok(), "custom pass pipeline must run");
+    }
+
+    #[test]
+    fn test_lto_none_is_noop() {
+        let ctx = Context::create();
+        let (module, tm) = create_test_module(&ctx);
+        let result = run_lto(&module, &[], LtoKind::None, &tm, 2, false);
+        assert!(result.is_ok(), "LtoKind::None must be a no-op");
+    }
+
+    #[test]
+    fn test_lto_fat_merges_modules_and_optimizes() {
+        use inkwell::builder::Builder;
+        use inkwell::types::IntType;
+
+        let ctx = Context::create();
+        let (primary, tm) = create_test_module(&ctx);
+        let builder = ctx.create_builder();
+
+        // `primary` declares an external `callee` we will inline-cross-module.
+        let i32_ty: IntType = ctx.i32_type();
+        let callee_ty = i32_ty.fn_type(&[], false);
+        let callee = primary.add_function("callee", callee_ty, None);
+        let entry = ctx.append_basic_block(callee, "entry");
+        builder.position_at_end(entry);
+        builder.build_return(Some(&i32_ty.const_int(7, false))).unwrap();
+
+        // A second module that calls `callee` (declared, not defined there).
+        let other = ctx.create_module("other");
+        other.set_triple(&inkwell::targets::TargetTriple::create(
+            "x86_64-unknown-linux-gnu",
+        ));
+        let other_callee = other.add_function("callee", callee_ty, None);
+        let caller_ty = i32_ty.fn_type(&[], false);
+        let caller = other.add_function("caller", caller_ty, None);
+        let centry = ctx.append_basic_block(caller, "entry");
+        builder.position_at_end(centry);
+        let call = builder
+            .build_call(other_callee, &[], "call")
+            .unwrap();
+        builder
+            .build_return(Some(&call.try_as_basic_value().basic().unwrap()))
+            .unwrap();
+
+        // Fat LTO merges `other` into `primary` and runs the pipeline.
+        let result = run_lto(&primary, &[other], LtoKind::Fat, &tm, 2, false);
+        assert!(
+            result.is_ok(),
+            "Fat LTO must merge modules without error: {:?}",
+            result.err()
+        );
+
+        // After merge, `primary` must contain `caller` (it was only defined in
+        // the secondary module). It should also have been cross-module
+        // inlined — `caller` returns the same constant `callee` does.
+        assert!(
+            primary.get_function("caller").is_some(),
+            "Fat LTO must bring `caller` from the secondary module into the primary"
+        );
+        let ir = primary.print_to_string().to_string();
+        assert!(
+            ir.contains("@caller"),
+            "merged module should contain the caller definition"
+        );
+        assert!(
+            ir.contains("ret i32 7"),
+            "caller should be cross-module inlined to callee's constant"
+        );
+    }
+
+    #[test]
+    fn test_lto_thin_is_tracked_gap() {
+        let ctx = Context::create();
+        let (module, tm) = create_test_module(&ctx);
+        let result = run_lto(&module, &[], LtoKind::Thin, &tm, 2, false);
+        assert!(
+            result.is_err(),
+            "ThinLTO must surface its linker-driver gap as an error, not silently no-op"
+        );
+        assert!(
+            result.unwrap_err().contains("ThinLTO"),
+            "error should name the ThinLTO gap"
+        );
     }
 }
