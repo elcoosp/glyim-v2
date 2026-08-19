@@ -163,12 +163,36 @@ pub(crate) fn lower_fn_def(
     // the leading modifier keyword token inside the FnDef node, before `fn`).
     let mut is_const = false;
     let mut is_async = false;
+    let mut abi: Option<Name> = None;
     for el in node.children_with_tokens() {
         match el {
             glyim_syntax::SyntaxElement::Token(t) => match t.kind() {
                 SyntaxKind::KwFn => break,
                 SyntaxKind::KwConst => is_const = true,
                 SyntaxKind::KwAsync => is_async = true,
+                SyntaxKind::KwExtern => {
+                    // An `extern "C"` fn. The ABI string literal (if any) is a
+                    // sibling token inside the FnDef node (unstub-5 Phase 4).
+                    if let Some(next) = node
+                        .children_with_tokens()
+                        .find(|c| c.kind() == SyntaxKind::StringLit)
+                    {
+                        if let glyim_syntax::SyntaxElement::Token(st) = next {
+                            // Strip the surrounding quotes from the string
+                            // literal so the ABI name is `C`, not `"C"`.
+                            let text = st.text();
+                            let trimmed = text
+                                .strip_prefix('"')
+                                .and_then(|t| t.strip_suffix('"'))
+                                .unwrap_or(text);
+                            abi = Some(interner.intern(trimmed));
+                        }
+                    }
+                    if abi.is_none() {
+                        // Bare `extern fn` defaults to the C ABI.
+                        abi = Some(interner.intern("C"));
+                    }
+                }
                 _ => {}
             },
             glyim_syntax::SyntaxElement::Node(_) => {}
@@ -187,6 +211,7 @@ pub(crate) fn lower_fn_def(
             is_const,
             generic_params,
             where_clauses: Vec::new(),
+            abi,
         }),
         visibility: Visibility::Inherited,
         span: node_span(node),
