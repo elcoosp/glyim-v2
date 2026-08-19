@@ -47,16 +47,31 @@ struct-literal field values are all found.
   ordinary call typechecking — those tests must be checked so the workspace
   stays green when this is done.
 
-## Remaining phases NOT yet started (tracked, not blocked)
-- **Phase 5 — async/.await**: state-machine desugaring + minimal executor.
-- **Phase 6 — Codegen/Platform**: SEH, debug-info enums/closures,
-  PlaceCollector, Windows signaling.
-- **Phase 7 — Execution Backends**: bytecode VM, MIR interp cross-frame
-  unwind.
-- **Phase 9 — Macro System**: `concat_idents!` hygiene (see `glyim-meta`),
-  proc macros (two-stage build + host cdylib loading).
-- **Phase 10 — Build & Tooling**: registry default, LTO, docs.
+## Phase 9 — Macro System — PARTIAL (done: 9.1 metadata; deferred: 9.1 token-hygiene, 9.2 proc-macros)
+### 9.1 `concat_idents!` expansion metadata — DONE (bookkeeping only)
+`build_expansion_green` in `crates/glyim-meta/src/expander/mod.rs` previously
+forced `ExpnKind::MacroRules { name: "macro_rules" }` for EVERY expansion —
+builtins AND declarative macros — discarding the real per-macro identity. It now
+takes `name: Name` + `is_builtin: bool` and records `ExpnKind::Builtin { name }`
+for builtin expansions and `ExpnKind::MacroRules { name }` for declarative ones,
+threaded through all four call sites. This makes expansion metadata correct
+(consumed by `glyim-codegen-llvm/src/debug.rs` for call-site attribution).
 
-Each of 5/6/7/9/10 is research-grade; the plan permits delivering a minimal
-real implementation and recording the remainder here. They are NOT yet
-attempted in this session.
+**DEFERRED — true token-level hygiene is NOT yet implemented.** The plan's
+intent for `concat_idents!` was that the synthesized identifier is hygienic to
+the macro's own expansion site. Investigation shows the `glyim-span` hygiene
+machinery (`HygieneCtx::apply_mark` / `remove_mark` / `SyntaxContext`) exists but
+is **never invoked** anywhere in non-test code, and `TokenTree::Token` carries
+only `(SyntaxKind, text)` with no `Span`/`SyntaxContext`. So:
+- The synthesized `Ident` token is still emitted without a per-expansion context.
+- Two `concat_idents!` invocations that produce the same textual name are NOT
+  yet kept distinct at resolution time.
+Real fix requires plumbing `apply_mark` through token production in
+`build_token_tree_green` AND building resolver-side (`glyim-def-map`) context
+consultation — a multi-file cross-crate effort. Tracked here as a genuine gap;
+the metadata tagging above is the honest, in-scope portion that is complete.
+
+### 9.2 proc macros (report #28) — NOT started
+Two-stage build (host cdylib compile + load) is entirely unimplemented. No
+`proc_macro` surface exists in the expansion path beyond the `ExpnKind::ProcMacro`
+enum variant. Large, research-grade; deferred.
