@@ -25,7 +25,7 @@
 use glyim_core::primitives::{BinOp, UnOp};
 use glyim_core::{FnDefId, IndexVec, TargetInfo};
 use glyim_diag::{CompResult, GlyimDiagnostic};
-use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer};
+use glyim_layout::{FieldsShape, LayoutComputer, SimpleLayoutComputer, TagEncoding, VariantsShape};
 use glyim_mir::*;
 use glyim_type::{ConstKind, TyKind};
 use glyim_type::{FieldIdx, Substitution, Ty, TyCtx};
@@ -44,6 +44,12 @@ pub trait LayoutProvider {
     fn field_offset(&self, ty: Ty, field_idx: FieldIdx) -> u64;
     fn size_of(&self, ty: Ty) -> u64;
     fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty;
+    /// Byte offset of a downcasted enum variant's data payload from the start
+    /// of the enum value. For enums using a *direct* discriminant tag, the tag
+    /// occupies the leading bytes and variant data begins at `tag_size`; for
+    /// single-variant types and niche-encoded enums the data overlaps the tag,
+    /// so the offset is 0. Used by `Downcast` projections (plan §20.1).
+    fn tag_offset(&self, ty: Ty) -> u64;
 }
 
 /// Real layout provider using glyim-layout.
@@ -88,6 +94,24 @@ impl LayoutProvider for GlyimLayoutProvider {
         match self.ty_ctx.ty_kind(enum_ty) {
             TyKind::Adt(adt_id, _substs) => self.ty_ctx.variant_type(*adt_id, variant_idx.to_raw()),
             _ => Ty::ERROR,
+        }
+    }
+
+    fn tag_offset(&self, ty: Ty) -> u64 {
+        let computer = SimpleLayoutComputer::new(&self.ty_ctx, self.target.clone());
+        if let Ok(layout) = computer.layout_of(ty) {
+            if let VariantsShape::Multiple {
+                tag_encoding: TagEncoding::Direct,
+                tag_size,
+                ..
+            } = &layout.variants
+            {
+                tag_size.0
+            } else {
+                0
+            }
+        } else {
+            0
         }
     }
 }
@@ -232,7 +256,19 @@ impl BytecodeBackend {
                     };
                 }
                 ProjectionElem::Downcast(_) => {
-                    // Downcast does not change the address
+                    // Downcast to an enum variant. For a *direct*-tagged enum
+                    // the discriminant tag occupies the leading `tag_size`
+                    // bytes, so the variant's data payload begins at that
+                    // offset; subsequent `Field` projections must be relative
+                    // to the data region. Niche-encoded enums and
+                    // single-variant types overlap the tag, so the offset is 0
+                    // (plan §20.1).
+                    let tag_off = self.layout_provider.tag_offset(current_ty);
+                    if tag_off != 0 {
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&(tag_off as i64).to_le_bytes());
+                        bc.push(OP_ADD);
+                    }
                 }
                 ProjectionElem::ConstantIndex {
                     offset,
@@ -480,7 +516,16 @@ impl BytecodeBackend {
                 });
                 Ok(())
             }
-            Rvalue::Ref(place, _) => self.emit_place_address(bc, place, local_tys),
+            Rvalue::Ref(place, _borrow_kind) => {
+                // `&T` and `&mut T` both lower to the same address-taking
+                // opcode: in this address-only bytecode model the reference is
+                // just a pointer, and mutability is enforced by the
+                // borrow-checker (glyim-borrowck), not the codegen backend. The
+                // borrow kind is bound (not silently discarded) to document
+                // that the distinction lives at the borrow-check layer (plan
+                // §20.2).
+                self.emit_place_address(bc, place, local_tys)
+            }
             Rvalue::Aggregate(_, operands) => {
                 bc.push(OP_AGGREGATE);
                 bc.extend_from_slice(&(operands.len() as u32).to_le_bytes());
