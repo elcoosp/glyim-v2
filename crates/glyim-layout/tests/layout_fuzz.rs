@@ -88,7 +88,8 @@ fn fuzz_random_adt_layouts() {
                 name: ctx_mut.resolver().intern("v0"),
                 fields: variant_fields,
             }],
-        };
+            generic_params: vec![],
+};
         let adt_id = AdtId::from_raw(rng.gen_range(1000..2000));
         ctx_mut.register_adt(adt_id, adt_def.clone());
 
@@ -180,7 +181,8 @@ fn fuzz_random_enum_layouts() {
             kind: AdtKind::Enum,
             fields: IndexVec::from_raw(all_fields),
             variants: variants.clone(),
-        };
+            generic_params: vec![],
+};
         let adt_id = AdtId::from_raw(rng.gen_range(3000..4000));
         ctx_mut.register_adt(adt_id, adt_def);
 
@@ -274,7 +276,8 @@ fn test_niche_encoding_option_like() {
         kind: AdtKind::Enum,
         fields: IndexVec::from_raw(all_fields),
         variants: variant_defs,
-    };
+        generic_params: vec![],
+};
     let adt_id = AdtId::from_raw(5000);
     ctx_mut.register_adt(adt_id, adt_def);
 
