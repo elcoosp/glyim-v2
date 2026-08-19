@@ -39,11 +39,13 @@ members = [
     "tools/glyim-pilot",
 
     "crates/glyim-const-eval",
+    "crates/glyim-bytecode-vm",
 ]
 
 [workspace.dependencies]
 semver = "1.0"
 glyim-const-eval = { path = "crates/glyim-const-eval" }
+glyim-bytecode-vm = { path = "crates/glyim-bytecode-vm" }
 glyim-core = { path = "crates/glyim-core" }
 glyim-span = { path = "crates/glyim-span" }
 glyim-diag = { path = "crates/glyim-diag" }
