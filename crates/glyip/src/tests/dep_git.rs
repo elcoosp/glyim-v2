@@ -8,7 +8,7 @@
 use crate::config::{Dependency, GitSpec, GlyipToml, PackageConfig};
 use crate::dep::{CrateIndex, DependencyResolver, GitFetcher, IndexDependency, IndexEntry};
 use crate::error::GlyipError;
-use crate::lockfile::{CrateSource, Lockfile};
+use crate::lockfile::CrateSource;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -80,7 +80,7 @@ fn root_config(deps: &[(&str, &str)]) -> GlyipToml {
 fn git_branch_dependency_resolves_to_locked_git_source() {
     let mut config = root_config(&[]);
     // Root depends on a git crate via branch `main`.
-    let mut detail = crate::config::DependencyDetail {
+    let detail = crate::config::DependencyDetail {
         version: None,
         path: None,
         git: Some("https://example.com/foo/bar.git".to_string()),
