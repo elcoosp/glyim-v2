@@ -47,6 +47,9 @@ impl LayoutProvider for TestLayoutProvider {
     fn variant_type(&self, _enum_ty: Ty, _variant_idx: VariantIdx) -> Ty {
         Ty::ERROR
     }
+    fn tag_offset(&self, _ty: Ty) -> u64 {
+        0
+    }
 }
 
 /// Build a frozen `TyCtx` holding `[i32; 4]` and `[i32]`, returning both types.
