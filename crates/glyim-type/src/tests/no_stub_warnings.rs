@@ -32,7 +32,8 @@ fn no_stub_warning_when_adt_def_registered() {
                 name: name_field,
                 fields: IndexVec::new(),
             }],
-        };
+            generic_params: vec![],
+};
 
         ctx.register_adt(adt_id, adt_def);
         let substs = ctx.intern_substitution(vec![]);
