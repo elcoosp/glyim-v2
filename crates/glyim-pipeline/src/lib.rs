@@ -9,7 +9,11 @@ use glyim_lower::post_mono_checks::{
 };
 use glyim_lower::partition::partition;
 use glyim_mir::Body;
-use glyim_solve::SimpleTraitSolver;
+use glyim_solve::{InferenceTable, SimpleTraitSolver, TraitContext};
+use glyim_solve::solver::ImplDef;
+use glyim_core::def_id::ImplDefId;
+use glyim_type::TraitRef;
+use glyim_typeck::tyconv;
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::path::Path;
@@ -93,9 +97,45 @@ impl Pipeline {
             glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
         sink_cell.borrow_mut().extend(hir_diags);
 
+        // Plan unstub-5 P5: populate `glyim_solve::TraitContext` with the user's
+        // trait impls so `SimpleTraitSolver::prove_trait` can actually find them
+        // (previously `trait_ctx` was constructed empty, so every
+        // `impl Trait for T` was invisible to the solver and any bound like
+        // `F: Trait` resolved to `DefiniteNo`). This mirrors the impl
+        // registration done for `TyCtx` inside `typeck_crate`, but targets the
+        // solver's own `TraitContext`.
         let resolver = db.interner().clone();
-        let ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
-        let trait_ctx = glyim_solve::TraitContext::new();
+        let mut ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
+        let mut trait_ctx = glyim_solve::TraitContext::new();
+        {
+            let mut infer = InferenceTable::new();
+            let mut impl_diags = Vec::new();
+            for (_id, item) in hir.items.iter_enumerated() {
+                if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
+                    let header = tyconv::resolve_impl_header(
+                        &mut ty_ctx_mut,
+                        &mut infer,
+                        &def_map,
+                        &mut impl_diags,
+                        impl_item,
+                        item.span,
+                    );
+                    if let Some(trait_def_id) = header.trait_def_id {
+                        let impl_def_id = glyim_core::def_id::ImplDefId::from_raw(item.id.to_raw());
+                        let substs = ty_ctx_mut
+                            .intern_substitution(vec![glyim_type::GenericArg::Ty(header.self_ty)]);
+                        trait_ctx.register_impl(ImplDef {
+                            def_id: impl_def_id,
+                            trait_ref: TraitRef {
+                                def_id: trait_def_id,
+                                substs,
+                            },
+                            predicates: Vec::new(),
+                        });
+                    }
+                }
+            }
+        }
         let mut solver = SimpleTraitSolver::new(&trait_ctx);
         let (ty_ctx, typeck_result) =
             glyim_typeck::typeck_crate(ty_ctx_mut, &def_map, &hir, &mut solver);
