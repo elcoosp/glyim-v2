@@ -1,7 +1,7 @@
 //! S12-T01 extended: Tests for register_fn_sig, fn_sig, register_closure_sig,
 //! closure_sig, register_body_ty, body_ty methods.
 
-use glyim_core::def_id::{ClosureId, FnDefId, LocalDefId};
+use glyim_core::def_id::{ClosureId, FnDefId, LocalDefId, TraitDefId};
 use glyim_core::primitives::{Abi, IntTy, Safety, UintTy};
 
 use super::helpers::{test_ty_ctx, with_fresh_ty_ctx};
@@ -206,4 +206,49 @@ fn register_body_ty_overwrites() {
     ctx.register_body_ty(def_id, i32_ty);
     ctx.register_body_ty(def_id, bool_ty);
     assert_eq!(ctx.body_ty(def_id), Some(bool_ty));
+}
+
+// ---- P5 associated-type projection table ----
+
+#[test]
+fn impl_assoc_type_projection_resolves() {
+    // Plan unstub-5 P5: an impl's `type Output = i32;` must be resolvable via
+    // the projection table keyed by (self_ty, trait_def_id). Mirrors the
+    // `impl MyFuture for AddOne { type Output = i32; }` desugar target.
+    let mut ctx = test_ty_ctx();
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+    let self_ty = ctx.mk_ty(TyKind::Int(IntTy::I64)); // stand-in for `AddOne`
+    let trait_def_id = TraitDefId::from_raw(7);
+    let output_name = ctx.resolver().intern("Output");
+
+    ctx.register_impl_assoc_types(self_ty, trait_def_id, vec![(output_name, i32_ty)]);
+
+    let resolved = ctx.resolve_associated_type(self_ty, trait_def_id, output_name);
+    assert_eq!(resolved, Some(i32_ty));
+
+    // Unknown associated type on a known impl → None.
+    let other_name = ctx.resolver().intern("Other");
+    assert_eq!(ctx.resolve_associated_type(self_ty, trait_def_id, other_name), None);
+
+    // Wrong self type → None (projection is keyed by the concrete self type).
+    let other_self = ctx.mk_ty(TyKind::Int(IntTy::I8));
+    assert_eq!(ctx.resolve_associated_type(other_self, trait_def_id, output_name), None);
+}
+
+#[test]
+fn impl_assoc_type_projection_survives_freeze() {
+    // The projection table must survive `freeze` so the frozen `TyCtx` (used
+    // by codegen) can resolve `Self::Output` too.
+    let (frozen, (i32_ty, self_ty, trait_def_id, output_name)) = with_fresh_ty_ctx(|ctx| {
+        let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+        let self_ty = ctx.mk_ty(TyKind::Int(IntTy::I64));
+        let trait_def_id = TraitDefId::from_raw(7);
+        let output_name = ctx.resolver().intern("Output");
+        ctx.register_impl_assoc_types(self_ty, trait_def_id, vec![(output_name, i32_ty)]);
+        (i32_ty, self_ty, trait_def_id, output_name)
+    });
+    assert_eq!(
+        frozen.resolve_associated_type(self_ty, trait_def_id, output_name),
+        Some(i32_ty)
+    );
 }

@@ -37,6 +37,9 @@ pub struct TyCtx {
     /// (populated by `TyCtxMut::register_closure`). Lets the debug-info pass
     /// recover per-capture member types from a `TyKind::Closure`.
     pub(crate) closure_adt_map: HashMap<ClosureId, AdtId>,
+    /// Concrete associated-type projection table (see `TyCtxMut::impl_assoc_types`).
+    pub(crate) impl_assoc_types:
+        HashMap<(Ty, glyim_core::def_id::TraitDefId), Vec<(Name, Ty)>>,
     pub(crate) body_tys: HashMap<LocalDefId, Ty>,
     pub(crate) lang_items: LangItems,
     /// `AdtId`s that have an explicit `Drop` impl (or are owning builtins such as
@@ -78,6 +81,25 @@ impl TyCtx {
 
     pub fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)
+    }
+
+    /// Resolve an associated-type projection `Self::Item` / `Type::Item` to its
+    /// defining type via the projection table populated at impl-registration
+    /// time (plan unstub-5 P5). Returns `None` when no matching impl exists.
+    pub fn resolve_associated_type(
+        &self,
+        self_ty: Ty,
+        trait_def_id: glyim_core::def_id::TraitDefId,
+        assoc_name: Name,
+    ) -> Option<Ty> {
+        self.impl_assoc_types
+            .get(&(self_ty, trait_def_id))
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|(name, _)| *name == assoc_name)
+                    .map(|(_, ty)| *ty)
+            })
     }
 
     pub fn is_copy(&self, ty: Ty) -> bool {

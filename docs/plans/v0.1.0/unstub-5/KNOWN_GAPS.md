@@ -257,8 +257,19 @@ large front-end + codegen effort, tracked below.
   the data the projection machinery needs, but projection *resolution* itself
   (`Self::Output` / `F::Output` → the defining type) is still unimplemented
   (`auto_trait.rs:244` intentionally leaves `TyKind::Projection` normalization
-  empty). Net blocker unchanged: needs (a) trait-bound solver + assoc-type
-  projection, then (b) coroutine desugar.
+  empty).
+  PROGRESS (2026-08-20, pt.3): the **projection lookup table** is now built in
+  `TyCtx`/`TyCtxMut` — `impl_assoc_types: HashMap<(Ty, TraitDefId), Vec<(Name, Ty)>>`,
+  populated during the impl-registration loop in `typeck_crate` from the
+  HIR-captured `ImplItem.associated_types` (each `type Output = i32;` resolved
+  to its `Ty`), with `register_impl_assoc_types` + `resolve_associated_type`
+  (on both `TyCtxMut` and frozen `TyCtx`). `glyim-type` tests
+  `impl_assoc_type_projection_resolves` / `_survives_freeze` pin it. This is
+  the *concrete-self* projection data path. Remaining: wire `resolve_path_type`
+  (and impl-method `Self` plumbing) to *use* it for `Self::Output` /
+  `Type::Output`, and the abstract/generic `F::Output` case still needs the full
+  trait solver. Net blocker still: (a) trait-bound solver + assoc-type
+  projection wiring, then (b) coroutine desugar.
   coroutine pass. Until (a) lands, `block_on` can only be driven by the
   Rust-side executor primitive, not a *compiled glyim* future. A real
   multi-threaded waker / I/O reactor is also a follow-up.

@@ -171,6 +171,31 @@ pub fn typeck_crate(
                 span,
             );
 
+            // Plan unstub-5 P5: register the impl's associated-type definitions
+            // into the projection table so `Self::Output` / `Type::Output` can
+            // later be resolved to their defining type.
+            if let (Some(trait_def_id), self_ty) = (header.trait_def_id, header.self_ty) {
+                let param_map = tyconv::build_param_tys(&mut ctx, &impl_item.generic_params);
+                let mut assoc_types = Vec::new();
+                for at in &impl_item.associated_types {
+                    if let Some(default_ty) = at.default.as_ref() {
+                        let ty = tyconv::resolve_type_ref(
+                            &mut ctx,
+                            &mut infer,
+                            def_map,
+                            &mut diagnostics,
+                            default_ty,
+                            &param_map,
+                            span,
+                        );
+                        assoc_types.push((at.name, ty));
+                    }
+                }
+                if !assoc_types.is_empty() {
+                    ctx.register_impl_assoc_types(self_ty, trait_def_id, assoc_types);
+                }
+            }
+
             if let Err(mut cohesion_diags) =
                 coherence.check_and_register(header, &mut ctx, &mut infer)
             {

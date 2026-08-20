@@ -55,6 +55,14 @@ pub struct TyCtxMut {
     /// `TyKind::Adt(closure_adt, _)`; this map also covers the `TyKind::Closure`
     /// representation used in tests and downstream reads.
     closure_adt_map: HashMap<ClosureId, AdtId>,
+    /// Concrete associated-type projection table: `(impl_self_ty, trait_def_id)`
+    /// → `[(assoc_name, defining_ty)]`. Populated during the impl-registration
+    /// loop from `HIR ImplItem.associated_types` so that `Self::Output` /
+    /// `Type::Output` can be resolved to its defining type (plan unstub-5 P5).
+    /// Resolved via `resolve_associated_type`.
+    pub(crate) impl_assoc_types:
+        HashMap<(Ty, glyim_core::def_id::TraitDefId), Vec<(Name, Ty)>>,
+
     /// `AdtId`s with an explicit `Drop` impl (or owning builtins). Mirrors the
     /// `drop_impls` set on the frozen `TyCtx`, consulted by `needs_drop`.
     drop_impls: HashSet<AdtId>,
@@ -81,6 +89,7 @@ impl TyCtxMut {
             const_tys: HashMap::new(),
             closure_sigs: HashMap::new(),
             closure_adt_map: HashMap::new(),
+            impl_assoc_types: HashMap::new(),
             body_tys: HashMap::new(),
             lang_items: LangItems::default(),
             synthetic_adt_counter: 2_000_000,
@@ -431,6 +440,38 @@ impl TyCtxMut {
         self.trait_defs.insert(id, def);
     }
 
+    /// Register a concrete impl's associated-type definitions for projection
+    /// resolution (plan unstub-5 P5). `self_ty` + `trait_def_id` key the entry;
+    /// each `(assoc_name, defining_ty)` is the resolved `type X = ...;`.
+    pub fn register_impl_assoc_types(
+        &mut self,
+        self_ty: Ty,
+        trait_def_id: glyim_core::def_id::TraitDefId,
+        assoc_types: Vec<(Name, Ty)>,
+    ) {
+        self.impl_assoc_types.insert((self_ty, trait_def_id), assoc_types);
+    }
+
+    /// Resolve an associated-type projection `Self::Item` / `Type::Item` to its
+    /// defining type, given the concrete `self_ty` and the trait it's bound to.
+    /// Returns `None` when no matching impl registration exists (the abstract /
+    /// generic-param case, which requires the full trait solver).
+    pub fn resolve_associated_type(
+        &self,
+        self_ty: Ty,
+        trait_def_id: glyim_core::def_id::TraitDefId,
+        assoc_name: Name,
+    ) -> Option<Ty> {
+        self.impl_assoc_types
+            .get(&(self_ty, trait_def_id))
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|(name, _)| *name == assoc_name)
+                    .map(|(_, ty)| *ty)
+            })
+    }
+
     /// Get the trait definition by ID (read-only view into the type context).
     pub fn trait_def(&self, id: glyim_core::def_id::TraitDefId) -> Option<&crate::TraitDef> {
         self.trait_defs.get(&id)
@@ -486,6 +527,7 @@ impl TyCtxMut {
             const_tys: self.const_tys.clone(),
             closure_sigs: self.closure_sigs.clone(),
             closure_adt_map: self.closure_adt_map.clone(),
+            impl_assoc_types: self.impl_assoc_types.clone(),
             body_tys: self.body_tys.clone(),
             lang_items: self.lang_items.clone(),
             drop_impls: self.drop_impls.clone(),
@@ -510,6 +552,7 @@ impl TyCtxMut {
             const_tys: self.const_tys,
             closure_sigs: self.closure_sigs,
             closure_adt_map: self.closure_adt_map,
+            impl_assoc_types: self.impl_assoc_types,
             body_tys: self.body_tys,
             lang_items: self.lang_items,
             drop_impls: self.drop_impls,
