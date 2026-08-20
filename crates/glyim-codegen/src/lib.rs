@@ -709,12 +709,12 @@ impl BytecodeBackend {
                         _ => self.emit_operand(bc, arg, local_tys)?,
                     }
                 }
-                bc.extend_from_slice(&(args.len() as u32).to_le_bytes());
                 bc.push(if is_indirect {
                     OP_CALL_INDIRECT
                 } else {
                     OP_CALL
                 });
+                bc.extend_from_slice(&(args.len() as u32).to_le_bytes());
                 bc.extend_from_slice(&destination.local.to_raw().to_le_bytes());
                 let t = target.unwrap_or_else(|| BasicBlockIdx::from_raw(u32::MAX));
                 bc.extend_from_slice(&t.to_raw().to_le_bytes());

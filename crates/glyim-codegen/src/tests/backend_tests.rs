@@ -2934,3 +2934,86 @@ fn test_float_constant_emits() {
     }
     assert!(found, "Float constant not found in bytecode");
 }
+
+// ============================================================================
+// Cross-backend consistency: compile a real MIR `Body`, execute the emitted
+// bytecode on the production-grade VM, and assert the computed value.
+// ============================================================================
+#[test]
+fn t99_cross_backend_execution_computes_value() {
+    use glyim_bytecode_vm::{Module, Vm, Value};
+
+    // Body computes: l1 = 3; l2 = 4; l3 = l1 + l2; l4 = 2; l5 = l3 * l4;
+    // (i.e. (3 + 4) * 2 == 14, stored in local 5). Straight-line, no control
+    // flow, so a single-function `Chunk` is sufficient for the VM.
+    let locals: Vec<LocalDecl> = (0..6).map(|_| local_decl(Ty::ERROR)).collect();
+    let stmts = vec![
+        stmt(StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(1)),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(3),
+                ty: Ty::ERROR,
+                span: Span::DUMMY,
+            })),
+        )),
+        stmt(StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(2)),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(4),
+                ty: Ty::ERROR,
+                span: Span::DUMMY,
+            })),
+        )),
+        stmt(StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(3)),
+            Rvalue::BinaryOp(
+                BinOp::Add,
+                Box::new((
+                    Operand::Copy(Place::new(LocalIdx::from_raw(1))),
+                    Operand::Copy(Place::new(LocalIdx::from_raw(2))),
+                )),
+            ),
+        )),
+        stmt(StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(4)),
+            Rvalue::Use(Operand::Constant(MirConst {
+                kind: MirConstKind::Int(2),
+                ty: Ty::ERROR,
+                span: Span::DUMMY,
+            })),
+        )),
+        stmt(StatementKind::Assign(
+            Place::new(LocalIdx::from_raw(5)),
+            Rvalue::BinaryOp(
+                BinOp::Mul,
+                Box::new((
+                    Operand::Copy(Place::new(LocalIdx::from_raw(3))),
+                    Operand::Copy(Place::new(LocalIdx::from_raw(4))),
+                )),
+            ),
+        )),
+    ];
+    let body = make_body(
+        vec![block(stmts, term(TerminatorKind::Return))],
+        locals,
+        0,
+    );
+
+    let backend = BytecodeBackend::with_ty_ctx(
+        Arc::new(glyim_type::TyCtxMut::new(glyim_core::Interner::default()).freeze()),
+        glyim_core::TargetInfo::default(),
+    );
+    let bytes = backend.generate_function(&body).expect("generate_function ok");
+
+    // Execute the *emitted* bytecode on the VM. The bare `Return` terminator
+    // leaves the stack empty, so we assert the computed value via the
+    // destination local.
+    let module = Module::new(vec![glyim_bytecode_vm::Function::new(bytes, 6, 0)], 0);
+    let mut vm = Vm::new();
+    let _ = vm.run_module(&module);
+    assert_eq!(
+        vm.local(5),
+        Some(Value::Int(14)),
+        "cross-backend (3+4)*2 must compute 14 in local 5"
+    );
+}
