@@ -222,14 +222,31 @@ large front-end + codegen effort, tracked below.
   (`block_on_returns_ready_value`, `block_on_polls_until_ready`,
   `poll_enum_roundtrip`) — verifies the executor drives a future that resolves
   on first poll and one that returns `Pending` N times then `Ready`.
-- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4)**: the parser
-  already has `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering that splits
-  an `async fn` body into a state-machine enum + generated `poll` method, and
-  the `.await` typeck (resolving `expr: impl Future<Output=T>` → `T`), are not
-  implemented. Until that desugar exists, `block_on` cannot yet be driven by a
-  *compiled glyim* future (only by the Rust-side executor primitive). This is
-  the large, foundational remaining piece of P5 — tracked, not silently dropped.
-  A real multi-threaded waker / I/O reactor is also a follow-up.
+- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4) — BLOCKED BELOW
+  THE COROUTINE LAYER (diagnosed 2026-08-20)**: the parser already has
+  `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering that splits an `async fn`
+  body into a state-machine enum + generated `poll` method, and the `.await`
+  typeck, are not implemented. The deeper blocker discovered while probing the
+  desugaring *target* directly: the compiler **cannot yet express the
+  desugared form** — `impl Future for X { type Output; fn poll(&mut self) -> Poll<Output> }`
+  plus a generic `block_on<F: Future>` driving it. Concrete probes:
+  - Generic trait bounds with associated types (`F: MyFuture`, `F::Output`)
+    fail typeck: `trait MyFuture is not implemented for F`, `unresolved type F::Output`.
+  - Even **concrete** trait-method dispatch is incomplete: typeck reports
+    `() vs i32` for a `fn show(&self) -> i32` method (method return types not
+    plumbed through trait impls), and the **bytecode backend panics**
+    (`lasso` interner "Key out of bounds") on any trait dispatch — so the
+    desugar's generated `poll` call cannot even codegen.
+  - `println!` is unresolved in a plain `glyim-cli` compile (std macros are not
+    loaded by the direct CLI path; `future.g` lives in `glyim-lang-core`, not
+    the CLI's std).
+  Net: P5 needs (a) trait-impl method return-type plumbing + generic associated
+  types in typeck, (b) a non-panicking trait-dispatch codegen path (at least in
+  the LLVM backend; bytecode panics), and (c) the coroutine state-machine
+  desugar itself. (a)+(b) are Phase-2/codegen-depth prerequisites that currently
+  block P5 independent of the coroutine pass. Until those land, `block_on` can
+  only be driven by the Rust-side executor primitive, not a *compiled glyim*
+  future. A real multi-threaded waker / I/O reactor is also a follow-up.
 
 ### 5.2 Executor — DONE (single-threaded MVP)
 `block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop
