@@ -157,6 +157,11 @@ pub struct ImplItem {
     pub methods: Vec<ImplMethod>,
     pub generic_params: Vec<GenericParam>,
     pub where_clauses: Vec<crate::where_clause::WhereClause>,
+    /// Associated type definitions, e.g. `type Output = i32;` inside
+    /// `impl MyFuture for AddOne`. Captured so projection (`Self::Output`,
+    /// `F::Output`) can be resolved to the defining type. Previously dropped,
+    /// which is why associated-type projection had nothing to resolve against.
+    pub associated_types: Vec<AssociatedTy>,
 }
 
 #[derive(Clone, Debug)]

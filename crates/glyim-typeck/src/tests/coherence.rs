@@ -190,6 +190,7 @@ fn make_impl_item(interner: &mut Interner, trait_name: &str, self_ty_name: &str)
         methods: vec![],
         generic_params: vec![],
         where_clauses: vec![],
+        associated_types: vec![],
     }
 }
 
@@ -205,6 +206,7 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
             span: Span::DUMMY,
         }],
         where_clauses: vec![],
+        associated_types: vec![],
     }
 }
 
@@ -500,6 +502,7 @@ fn make_generic_impl_item(
         methods: vec![],
         generic_params: vec![],
         where_clauses: vec![],
+        associated_types: vec![],
     }
 }
 

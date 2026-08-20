@@ -7,9 +7,9 @@ use glyim_syntax::{SyntaxKind, SyntaxNode};
 use std::collections::HashMap;
 
 use crate::{
-    Body, BodyId, ConstItem, EnumItem, Field, FnItem, GenericParam, GenericParamKind, ImplItem,
-    ImplMethod, Item, ItemId, ItemKind, ModItem, Param, Pat, PatId, Path, StructItem, TraitItem,
-    TraitMethod, TypeRef, Variant, Visibility,
+    AssociatedTy, Body, BodyId, ConstItem, EnumItem, Field, FnItem, GenericParam, GenericParamKind,
+    ImplItem, ImplMethod, Item, ItemId, ItemKind, ModItem, Param, Pat, PatId, Path, StructItem,
+    TraitItem, TraitMethod, TypeRef, Variant, Visibility,
 };
 
 /// Collect generic type parameters from a `TypeParamList` child node (e.g. the
@@ -568,6 +568,27 @@ pub(crate) fn lower_impl_def(
         _ => interner.intern("impl"),
     };
 
+    // Capture associated-type definitions (`type Output = i32;`) from the impl
+    // body so projection (`Self::Output` / `F::Output`) has something to
+    // resolve against. The parser emits a `TypeAlias` node with an `Ident`
+    // (name) and a `Type` (the `=` RHS).
+    let mut associated_types = Vec::new();
+    for ta_node in node.children().filter(|c| c.kind() == SyntaxKind::TypeAlias) {
+        let name_str = first_ident_text(&ta_node);
+        let Some(name_str) = name_str else { continue };
+        let name = interner.intern(&name_str);
+        // The defining type is the first type node child (the RHS after `=`).
+        let ty = ta_node
+            .children()
+            .find(is_type_node)
+            .and_then(|t| lower_type_ref(&t, interner));
+        associated_types.push(AssociatedTy {
+            name,
+            bounds: Vec::new(),
+            default: ty,
+        });
+    }
+
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
     Some(Item {
@@ -579,6 +600,7 @@ pub(crate) fn lower_impl_def(
             methods,
             generic_params: Vec::new(),
             where_clauses: Vec::new(),
+            associated_types,
         }),
         visibility: Visibility::Inherited,
         span: node_span(node),

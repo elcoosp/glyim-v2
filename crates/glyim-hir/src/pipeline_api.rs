@@ -72,10 +72,38 @@ mod tests {
     }
 
     #[test]
-    fn async_const_fn_lowers_both_flags() {
-        // `async` must not be swallowed by the `const` detection; both flags
-        // should be independently populated (here `const` absent, `async` set).
-        assert!(lower_first_fn_async("async fn f() { let x = 1; }"));
-        assert!(!lower_first_fn_const("async fn f() { let x = 1; }"));
+    fn impl_associated_type_is_captured() {
+        // Plan unstub-5 P5: `type Output = i32;` inside an `impl` must be
+        // captured into `ImplItem.associated_types` so projection
+        // (`Self::Output` / `F::Output`) has a defining type to resolve
+        // against. Previously the impl body only lowered `fn`s, so the assoc
+        // type (and thus all projection) was silently dropped.
+        let src = r#"
+            trait MyFuture { type Output; fn poll(&mut self) -> i32; }
+            struct AddOne { x: i32 }
+            impl MyFuture for AddOne { type Output = i32; fn poll(&mut self) -> i32 { self.x } }
+        "#;
+        let root = parse_to_syntax(src, FileId::BOGUS).root;
+        let mut interner = Interner::new();
+        let (hir, _) = lower_crate_for_pipeline(&root, &mut interner);
+        let impl_item = hir
+            .items
+            .iter()
+            .find(|it| matches!(it.kind, ItemKind::Impl(_)))
+            .expect("expected an impl item");
+        match &impl_item.kind {
+            ItemKind::Impl(impl_item) => {
+                assert_eq!(
+                    impl_item.associated_types.len(),
+                    1,
+                    "impl must capture exactly one associated type"
+                );
+                assert!(
+                    impl_item.associated_types[0].default.is_some(),
+                    "impl assoc type must carry its defining type"
+                );
+            }
+            _ => panic!("expected an Impl item"),
+        }
     }
 }

@@ -248,16 +248,17 @@ large front-end + codegen effort, tracked below.
   the real pipeline. The async blocker is specifically generic bounds +
   associated types, a Phase-2/typeck-depth prerequisite, NOT a general trait
   dispatch failure.
-  PROGRESS (2026-08-20): generic *param* trait bounds (`F: MyFuture`) are now
-  captured in HIR — `GenericParamKind::Type` gained a `bounds: Vec<TypeRef>`
-  field and `collect_generic_params` lowers the bound node emitted by the
-  parser (previously dropped). `generics::generic_param_bounds_are_captured`
-  pins that lowering no longer hard-errors. Solving the bound + projecting
-  `F::Output` / `Self::Output` (a trait-solver + projection subsystem) remains
-  the open blocker; `dyn_dispatch::async_desugar_target_compiles` (`#[ignore]`d)
-  tracks it. Net: P5 needs (a) that trait-bound solver + associated-type
-  projection in typeck, and (b) the coroutine state-machine desugar itself.
-  (a) is the foundational blocker that currently gates P5 independent of the
+  PROGRESS (2026-08-20, pt.2): impl **associated-type definitions** are now
+  captured in HIR — `ImplItem` gained an `associated_types: Vec<AssociatedTy>`
+  field and `lower_impl_def` lowers `type Output = i32;` (`TypeAlias` nodes)
+  from the impl body (previously the impl body only lowered `fn`s, so assoc
+  types — and thus all projection — had nothing to resolve against).
+  `glyim-hir::pipeline_api::impl_associated_type_is_captured` pins it. This is
+  the data the projection machinery needs, but projection *resolution* itself
+  (`Self::Output` / `F::Output` → the defining type) is still unimplemented
+  (`auto_trait.rs:244` intentionally leaves `TyKind::Projection` normalization
+  empty). Net blocker unchanged: needs (a) trait-bound solver + assoc-type
+  projection, then (b) coroutine desugar.
   coroutine pass. Until (a) lands, `block_on` can only be driven by the
   Rust-side executor primitive, not a *compiled glyim* future. A real
   multi-threaded waker / I/O reactor is also a follow-up.
