@@ -110,3 +110,64 @@ fn test_rename_graph_agrees_with_text_fallback() {
         assert_eq!(te.new_text, "renamed");
     }
 }
+
+/// Phase 8.2 (unstub-5): a variable used ONLY inside a macro-call argument
+/// (`println!("{x}", x)`) must be recorded by the reference graph so that
+/// rename / find-references see it. Previously the `MacroCall` expression was
+/// dropped by `lower_expr` (it hit the `_ =>` arm), so such a variable was
+/// invisible to graph-based rename. `lower_macro_call_expr` now lowers the
+/// macro's argument expressions into the HIR, making them reachable.
+#[test]
+fn test_rename_finds_variable_used_only_in_macro_arg() {
+    let source = "fn main() {
+    let msg = 42;
+    println!(\"{}\", msg);
+}
+";
+    let (db, file_map, uri, file_id) = setup_test_db(source, "/test/main.g");
+    build_graph(&db, file_id, source);
+
+    // Phase 8.2 (unstub-5): the variable `msg` is used only inside a macro-call
+    // argument (`println!("{}", msg)`). Previously `lower_expr` dropped the
+    // `MacroCall` (the `_ =>` arm), so the macro-arg use never reached the HIR
+    // and the reference graph recorded zero references for `msg`. Now
+    // `lower_macro_call_expr` lowers the argument expressions, so the graph must
+    // record the macro-arg use of `msg`.
+    let refs = db.reference_graph.read().find_references("msg").to_vec();
+    assert!(
+        !refs.is_empty(),
+        "expected the reference graph to record the macro-arg use of `msg` \
+         (previously the macro-arg use was dropped by HIR lowering)"
+    );
+    // The recorded reference must be a *use* (not just the `let` binding), i.e.
+    // it originates from the `msg` inside `println!(..)`.
+    let has_use = refs.iter().any(|r| !r.is_definition);
+    assert!(
+        has_use,
+        "expected at least one non-definition reference for `msg` (the macro-arg use)"
+    );
+
+    // And graph-based rename must succeed and rename every recorded occurrence.
+    let params = RenameParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 1,
+                character: 8,
+            },
+        },
+        new_name: "renamed".to_string(),
+        work_done_progress_params: Default::default(),
+    };
+    let edit = rename_symbol(&db, &file_map, &params);
+    assert!(
+        edit.is_some(),
+        "macro-arg variable must be renameable via the reference graph"
+    );
+    let edit = edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.get(&uri).unwrap();
+    for te in edits {
+        assert_eq!(te.new_text, "renamed");
+    }
+}

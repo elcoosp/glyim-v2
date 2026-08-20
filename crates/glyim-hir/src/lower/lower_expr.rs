@@ -50,7 +50,10 @@ pub(crate) fn lower_block_to_expr(
                 });
                 let mut chain_base: Option<ExprId> = None;
                 for inner in child.children() {
-                    if !is_expr_node(&inner) && inner.kind() != SyntaxKind::Block {
+                    if !is_expr_node(&inner)
+                        && inner.kind() != SyntaxKind::Block
+                        && inner.kind() != SyntaxKind::MacroCall
+                    {
                         continue;
                     }
                     if (inner.kind() == SyntaxKind::FieldExpr
@@ -290,6 +293,21 @@ pub(crate) fn lower_expr(
             lower_closure_expr(node, interner, body, diags, struct_field_map)
         }
         SyntaxKind::StructExpr => lower_struct_expr(node, interner, body, diags, struct_field_map),
+        // A bare `Path` node (e.g. an identifier inside a macro token tree that
+        // the parser didn't wrap in `PathExpr`) is a variable/name reference.
+        // Token-tree contents may be `UsePath` nodes (the inner node of a path),
+        // which `lower_path_expr` also handles.
+        SyntaxKind::UsePath => lower_path_expr(node, interner, body),
+        // Phase 8.2 (unstub-5): a macro call (`println!(...)`, `vec![...)`, ...)
+        // lowered so its *argument expressions* become real HIR nodes. This makes
+        // variables used only inside a macro argument visible to consumers that
+        // walk the HIR — most importantly the LSP reference graph (rename/find-
+        // references), which previously lost them because the `_ =>` arm dropped
+        // the whole `MacroCall`. The macro name is carried as the call's `func`
+        // path so the call site is represented; typeck/codegen for builtin macros
+        // is handled by the macro-expansion pass that runs before lowering in the
+        // full pipeline. See docs/plans/v0.1.0/unstub-5/KNOWN_GAPS.md §8.2.
+        SyntaxKind::MacroCall => lower_macro_call_expr(node, interner, body, diags, struct_field_map),
         _ => {
             diags.push(GlyimDiagnostic::internal_error(format!(
                 "Unhandled expression kind: {:?}",
@@ -1020,6 +1038,112 @@ fn lower_call_expr(
             arg_ids.push(id);
         }
     }
+    let expr = Expr::Call {
+        func: func_id,
+        args: arg_ids,
+    };
+    let eid = body.alloc_expr(expr, node_span(node));
+    Some(eid)
+}
+
+/// Lower a `MacroCall` (`println!(..)`, `vec![..]`, user `macro_rules!`) so its
+/// *argument expressions* become real HIR nodes. Phase 8.2 (unstub-5): variables
+/// used only inside a macro argument were previously invisible to HIR consumers
+/// (the `_ =>` arm in `lower_expr` dropped the whole node). We now emit an
+/// `Expr::Call` whose `func` is the macro's name path and whose `args` are the
+/// lowered argument expressions, so the reference graph (rename / find-references)
+/// can see them.
+///
+/// Note: this is the *pre-expansion* representation. In the full codegen pipeline
+/// the macro-expansion pass (`glyim_meta::expand_crate`) runs before HIR lowering,
+/// so builtin/declarative macro calls are rewritten into ordinary code and never
+/// reach this path. This handler exists for the LSP analysis path (which walks the
+/// unexpanded HIR) and as a safe fallback that preserves macro-call arguments
+/// instead of discarding them.
+fn lower_macro_call_expr(
+    node: &SyntaxNode,
+    interner: &mut Interner,
+    body: &mut Body,
+    diags: &mut Vec<GlyimDiagnostic>,
+    struct_field_map: &HashMap<Name, Vec<Name>>,
+) -> Option<ExprId> {
+    // The macro name is the first child (a `PathExpr` holding the macro
+    // identifier, e.g. `println` in `println!(..)`). The identifier is nested
+    // inside `UsePath`, so search descendants for the first `Ident` token.
+    fn first_ident_deep(node: &SyntaxNode) -> Option<String> {
+        for el in node.children_with_tokens() {
+            match el {
+                glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Ident => {
+                    return Some(t.text().to_string());
+                }
+                glyim_syntax::SyntaxElement::Node(n) => {
+                    if let Some(s) = first_ident_deep(&n) {
+                        return Some(s);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    let macro_name = node
+        .children()
+        .next()
+        .and_then(|c| first_ident_deep(&c))
+        .map(|s| interner.intern(&s));
+    let macro_name = macro_name?;
+
+    // The arguments live in the *second* `TokenTree` child (the first holds the
+    // macro path). Token trees nest arbitrarily and their leaves are raw tokens
+    // (the parser does not build `PathExpr`/`UsePath` nodes inside them), so we
+    // collect every `Ident` token *and* every expression node that appears
+    // anywhere beneath the args token tree. Variable idents become `Expr::Path`
+    // nodes; nested expressions (e.g. another macro call) are lowered normally.
+    // This is what makes variables used only inside macro arguments visible to
+    // HIR consumers such as the reference graph (rename / find-references).
+    fn collect_arg_elements(node: &SyntaxNode, out: &mut Vec<glyim_syntax::SyntaxElement>) {
+        for el in node.children_with_tokens() {
+            match &el {
+                glyim_syntax::SyntaxElement::Node(n) => {
+                    if is_expr_node(n) || n.kind() == SyntaxKind::UsePath {
+                        // Owned expression node: lower it as a whole (its own
+                        // idents are handled inside `lower_expr`), so do not
+                        // descend into it.
+                        out.push(el.clone());
+                    } else {
+                        collect_arg_elements(n, out);
+                    }
+                }
+                glyim_syntax::SyntaxElement::Token(t) => {
+                    if t.kind() == SyntaxKind::Ident {
+                        out.push(el.clone());
+                    }
+                }
+            }
+        }
+    }
+    let mut arg_elements: Vec<glyim_syntax::SyntaxElement> = Vec::new();
+    if let Some(args_tree) = node.children().nth(1) {
+        collect_arg_elements(&args_tree, &mut arg_elements);
+    }
+    let mut arg_ids = Vec::new();
+    for el in arg_elements {
+        match el {
+            glyim_syntax::SyntaxElement::Node(n) => {
+                if let Some(id) = lower_expr(&n, interner, body, diags, struct_field_map) {
+                    arg_ids.push(id);
+                }
+            }
+            glyim_syntax::SyntaxElement::Token(t) => {
+                let name = interner.intern(t.text());
+                let path = HirPath::from_single(name);
+                arg_ids.push(body.alloc_expr(Expr::Path(path), node_span(node)));
+            }
+        }
+    }
+
+    let func_path = HirPath::from_single(macro_name);
+    let func_id = body.alloc_expr(Expr::Path(func_path), node_span(node));
     let expr = Expr::Call {
         func: func_id,
         args: arg_ids,
