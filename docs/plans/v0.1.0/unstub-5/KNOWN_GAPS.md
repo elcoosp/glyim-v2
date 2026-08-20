@@ -31,21 +31,21 @@ struct-literal field values are all found.
   `resolve_method_call` with typeck. Glyim-lsp does not currently depend on
   `glyim-typeck`'s method-resolution, so completion does not consult trait
   impls the way diagnostics do. This is a real remaining item.
-- **GAP — macro-call arguments are not lowered into HIR**:
-  `lower_expr` (`crates/glyim-hir/src/lower/lower_expr.rs`) has NO
-  `SyntaxKind::MacroCall` handler. The frontend parser produces a `MacroCall`
-  node for `path!(...)` (incl. `println!(...)`), but `lower_expr` hits its
-  `_ =>` arm and returns `None` with an internal error, dropping the macro's
-  arguments entirely. Consequence: a variable used ONLY inside a macro call
-  (e.g. `println!("{}", x)`) is absent from the reference graph, so graph-only
-  rename misses it — which is exactly why the text fallback is retained.
-  **Fix (deferred to avoid a large typeck/codegen ripple):** add
-  `lower_macro_call_expr` that lowers `MacroCall` → `Expr::Call` (func = the
-  path expr, args = the expression nodes inside the `TokenTree`), then the
-  graph will cover macro arguments and the text fallback can be removed.
-  NOTE: lowering macros to `Call` will make `println!` etc. flow through
-  ordinary call typechecking — those tests must be checked so the workspace
-  stays green when this is done.
+- **GAP — macro-call arguments not lowered into HIR (DEFERRED, verified 2026-08-20)**:
+  lower_expr has NO `SyntaxKind::MacroCall` handler and hits its `_ =>` arm
+  (returns None, internal error), dropping the macro's arguments. A variable
+  used ONLY inside a macro call is absent from the reference graph, so graph-only
+  rename misses it — exactly why the text fallback is retained.
+  **Verified reason for deferral:** the pipeline (compile_file_to_mir ->
+  glyim_hir::pipeline_api::lower_crate_for_pipeline) lowers HIR BEFORE
+  glyim_meta::expand_crate runs. So println!/eprintln! (real macros in io.g)
+  reach lowering UNEXPANDED. Lowering MacroCall -> Expr::Call{func: Path(println),
+  args} routes builtin macros through ordinary fn typechecking, where println is
+  a macro, not a fn — breaking compile-pass/println.g and the std compile_pass
+  suite. The fix requires either (a) macro expansion before HIR lowering, or
+  (b) typeck/codegen skipping Calls whose func resolves to a macro — both larger
+  typeck/codegen ripples, the exact risk the plan flagged. Deferred until that
+  ordering is decided; the `_ =>` arm is the honest, green-preserving behavior.
 
 ## Phase 9 — Macro System — PARTIAL (done: 9.1 metadata; deferred: 9.1 token-hygiene, 9.2 proc-macros)
 ### 9.1 `concat_idents!` expansion metadata — DONE (bookkeeping only)
@@ -259,9 +259,15 @@ switch-dispatch VM with a non-recursive driver (heap call stack bounded by
 - No warnings. Committed `26bcb30` (VM) + `b879918` (codegen/VM wire-format
   fix + cross-backend test), pushed to `origin`.
 
-### 7.2 Cross-frame unwinding in the MIR interpreter (report #8) — NOT started
-Adds `Frame` stack + `Unwind` propagation to `glyim-mir-interp`. Large,
-foundational; deferred (tracked with 7.1).
+### 7.2 Cross-frame unwinding in the MIR interpreter (report #8) — COMPLETE (2026-08-20)
+`InterpError::Unwind` added; `unwind_step` walks the call stack on panic: a
+panic with no local cleanup edge pops to the caller and resumes at its
+`unwind_target` (the `Call` terminator's `cleanup`), carrying the original
+payload in `pending_unwind`, until the top frame returns `Unwind`. Normal
+`Return` clears `pending_unwind`. New test
+`nested_panic_unwinds_through_all_caller_frames` proves a nested panic runs
+every caller's cleanup block and reaches the top with `Unwind`. Committed
+`f282df1` (green, 4027-workspace).
 
 ## Phase 10 — Build & Tooling — PARTIAL (10.1 done, 10.2 partial, 10.3 deferred)
 
