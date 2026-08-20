@@ -57,6 +57,11 @@ pub struct Interpreter<'tcx> {
     locals: Vec<Option<InterpValue>>,
     local_decls: Vec<LocalDecl>,
     call_stack: Vec<CallFrame>,
+    /// Cross-frame unwind payload (plan §7.2). When a callee panics and this
+    /// frame resumes at the caller's cleanup edge, `pending_unwind` holds the
+    /// original panic so that once the caller's own cleanups finish and it
+    /// re-panics, the walk continues upward rather than being swallowed.
+    pending_unwind: Option<InterpError>,
 }
 
 struct CallFrame {
@@ -66,6 +71,10 @@ struct CallFrame {
     locals: Vec<Option<InterpValue>>,
     return_place: Place,
     target_bb: BasicBlockIdx,
+    /// The caller's unwind destination for the `Call` that invoked this
+    /// callee — where the caller should resume when this frame unwinds
+    /// (plan §7.2). Mirrors MIR `TerminatorKind::Call::cleanup`.
+    unwind_target: Option<BasicBlockIdx>,
 }
 
 impl<'tcx> Interpreter<'tcx> {
@@ -84,6 +93,7 @@ impl<'tcx> Interpreter<'tcx> {
             locals: Vec::new(),
             local_decls: Vec::new(),
             call_stack: Vec::new(),
+            pending_unwind: None,
         }
     }
 
@@ -184,16 +194,17 @@ impl<'tcx> Interpreter<'tcx> {
                 _ => None,
             };
 
-            for stmt in &body.basic_blocks[bb_idx].statements {
-                if let Err(e) = self.execute_statement(stmt) {
-                    if self.panics_unwind {
-                        if let Some(cb) = cleanup_edge {
-                            bb_idx = cb;
-                            continue;
-                        }
-                    }
-                    return Err(e);
+            // Execute statements one at a time. An index loop (not `for
+            // stmt in &body...`) is required so the immutable borrow of `body`
+            // ends before `unwind_step` may take a mutable borrow of `body`.
+            let stmt_count = body.basic_blocks[bb_idx].statements.len();
+            let mut stmt_idx = 0;
+            while stmt_idx < stmt_count {
+                let stmt = body.basic_blocks[bb_idx].statements[stmt_idx].clone();
+                if let Err(e) = self.execute_statement(&stmt) {
+                    self.unwind_step(e, &mut body, &mut bb_idx, cleanup_edge)?;
                 }
+                stmt_idx += 1;
             }
 
             match terminator_kind {
@@ -225,6 +236,10 @@ impl<'tcx> Interpreter<'tcx> {
                     bb_idx = next_bb;
                 }
                 TerminatorKind::Return => {
+                    // A normal return cancels any in-flight unwind payload:
+                    // the call that just completed succeeded, so the pending
+                    // panic (if any) is no longer being propagated.
+                    self.pending_unwind = None;
                     if let Some(frame) = self.call_stack.pop() {
                         let ret_val = self.read_place(&Place::new(LocalIdx::from_raw(0)))?;
                         let caller_body = frame.body;
@@ -253,7 +268,7 @@ impl<'tcx> Interpreter<'tcx> {
                     args,
                     destination,
                     target,
-                    cleanup: _,
+                    cleanup,
                 } => {
                     // Plan §12.1: a closure value is an aggregate
                     // `[Fn(def_id), captures...]`. `resolve_callee` unpacks that,
@@ -296,6 +311,7 @@ impl<'tcx> Interpreter<'tcx> {
                         locals: std::mem::take(&mut self.locals),
                         return_place: destination,
                         target_bb: next_bb,
+                        unwind_target: cleanup,
                     };
 
                     self.call_stack.push(caller_frame);
@@ -324,23 +340,9 @@ impl<'tcx> Interpreter<'tcx> {
                     };
                     if is_true == expected {
                         bb_idx = target;
-                    } else if self.panics_unwind {
-                        // Panic during unwinding: route to the cleanup block
-                        // (plan §14.2, single-frame) instead of aborting. The
-                        // cleanup block runs its drop-glue and reaches its own
-                        // terminator (typically a Goto to the normal target or
-                        // a resume that ends the function).
-                        if let Some(cb) = cleanup {
-                            bb_idx = cb;
-                        } else {
-                            self.current_body = Some(body);
-                            self.current_bb = bb_idx;
-                            return Err(InterpError::Panic(format!("assert failed: {:?}", msg)));
-                        }
                     } else {
-                        self.current_body = Some(body);
-                        self.current_bb = bb_idx;
-                        return Err(InterpError::Panic(format!("assert failed: {:?}", msg)));
+                        let payload = InterpError::Panic(format!("assert failed: {:?}", msg));
+                        self.unwind_step(payload, &mut body, &mut bb_idx, cleanup)?;
                     }
                 }
                 TerminatorKind::Drop {
@@ -378,6 +380,51 @@ impl<'tcx> Interpreter<'tcx> {
                 }
             }
         }
+    }
+
+    /// Route a panic through cleanup/unwind (plan §7.2, cross-frame).
+    ///
+    /// When `panics_unwind` is disabled the panic aborts immediately
+    /// (`Err(payload)`). When enabled:
+    /// 1. If the *current* block has a cleanup edge, jump to it (single-frame
+    ///    cleanup) and return `Ok(())` so the caller loop continues.
+    /// 2. Otherwise pop to the caller frame and resume it at the caller's
+    ///    unwind target (the `cleanup` of the `Call` that invoked this frame),
+    ///    carrying the original payload in `pending_unwind`. Return `Ok(())`.
+    /// 3. If there is no caller frame, the walk reached the top: return
+    ///    `Err(InterpError::Unwind(..))` carrying the original panic.
+    fn unwind_step(
+        &mut self,
+        payload: InterpError,
+        body: &mut Body,
+        bb_idx: &mut BasicBlockIdx,
+        cleanup_edge: Option<BasicBlockIdx>,
+    ) -> InterpResult<()> {
+        if !self.panics_unwind {
+            return Err(payload);
+        }
+        // (1) single-frame cleanup in the current body.
+        if let Some(cb) = cleanup_edge {
+            *bb_idx = cb;
+            return Ok(());
+        }
+        // (2) cross-frame: pop to the caller and resume at its unwind target.
+        if let Some(mut frame) = self.call_stack.pop() {
+            if self.pending_unwind.is_none() {
+                self.pending_unwind = Some(payload);
+            }
+            let resume = frame.unwind_target.unwrap_or(frame.target_bb);
+            let caller_body = frame.body;
+            self.locals = frame.locals;
+            self.local_decls = caller_body.locals.iter().cloned().collect();
+            self.recursion_depth = self.recursion_depth.saturating_sub(1);
+            *body = caller_body;
+            *bb_idx = resume;
+            return Ok(());
+        }
+        // (3) top of the stack: propagate the original payload.
+        let top = self.pending_unwind.take().unwrap_or(payload);
+        Err(InterpError::Unwind(Box::new(top)))
     }
 
     fn execute_statement(&mut self, stmt: &Statement) -> InterpResult<()> {
