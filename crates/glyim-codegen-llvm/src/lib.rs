@@ -135,7 +135,9 @@ impl LlvmBackend {
     }
 
     pub fn with_target(mut self, target_triple: impl Into<String>) -> Self {
-        self.target_triple = target_triple.into();
+        let triple = target_triple.into();
+        self.target_info = TargetInfo::from_triple(&triple);
+        self.target_triple = triple;
         self
     }
 

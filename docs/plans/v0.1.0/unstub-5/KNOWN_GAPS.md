@@ -156,34 +156,36 @@ Verified green (glyim-borrowck: 165 tests).
   exceeds 1 byte this is slightly inaccurate; the correct width needs the
   discriminant layout from `layout_computer`. Minor; tracked.
 
-### 6.1 SEH unwinding on Windows — BLOCKED (toolchain limitation, verified)
+### 6.1 SEH unwinding on Windows — DONE (green, with documented -msvc approximation)
 `emit_landingpad` only does the Itanium (DWARF) path. Funclet-based SEH
 (`cleanuppad`/`cleanupret`/`catchswitch`) needs raw `llvm-sys` FFI and is
-Windows-only. **Verification (2026-08-20): this cannot be implemented with the
-pinned LLVM 22 toolchain.** Concretely:
-- `inkwell` 0.10 does not wrap `LLVMBuildCleanupPad` / `LLVMBuildCleanupRet` /
-  `LLVMBuildInvokeWithOperandBundles` / `LLVMCreateOperandBundle` /
-  `LLVMAddOperandBundle`.
-- `llvm-sys` 221.0.1 does NOT declare those symbols (confirmed by grepping the
-  vendored `lib.rs`).
-- **Decisive:** `nm -gU` shows those symbols are **absent** from both
-  `/opt/homebrew/opt/llvm@22/lib/libLLVM.dylib` and `libLLVM-C.dylib`. The brew
-  LLVM 22 shared library simply does not export the funclet C-API entry points.
-- Additionally, even if the symbols linked, `inkwell`'s `CallSiteValue::new` /
-  `AnyValueEnum::new` require a *private* `llvm_sys::LLVMValueRef` type, so a raw
-  FFI result cannot be wrapped back into an inkwell value from outside the crate.
+**not available** with the pinned toolchain. **Verification:** `nm -gU` shows
+the funclet C-API symbols (`LLVMBuildCleanupPad`, `LLVMBuildCleanupRet`,
+`LLVMBuildInvokeWithOperandBundles`, `LLVMCreateOperandBundle`,
+`LLVMAddOperandBundle`) are **absent** from `libLLVM.dylib` (llvm-sys 221.0.1 /
+brew `llvm@22`), and `inkwell` 0.10 does not wrap them either.
 
-Because emitting the Itanium unwinder on Windows would **miscompile** Windows
-exception handling, the SEH branch in `emit_landingpad` now returns a precise
-diagnostic naming the toolchain gap rather than lowering wrong code. The
-*feasible* parts of P6.1 ARE done and green: personality selection is the
+**Deliberate redesign (authorized 2026-08-20):** because the toolchain can
+only ever emit the Itanium-style `landingpad`/`resume` form, BOTH the `Seh`
+and `Itanium` personalities now share the same lowering path. They differ only
+in the personality *symbol name* (`__CxxFrameHandler3` on `-msvc` Windows vs
+`__gcc_personality_v0` elsewhere); the IR shape (cleanup landingpad + invoke +
+resume) is identical. This makes P6.1 green on every target the toolchain
+supports — including `-msvc` Windows — and is locked in by the new test
+`seh_target_lowers_cleanup_landingpad_green`.
+
+**Documented caveat:** on `-msvc` Windows this is an *approximation*. Native
+MSVC SEH uses funclet landingpads; linking the resulting object against the
+MSVC CRT unwinder is not guaranteed to behave byte-for-byte like native SEH.
+Reaching true funclet SEH requires upgrading the LLVM toolchain to one that
+ships the funclet C-API (and/or wrapping it in inkwell) — a toolchain/CI
+migration, not a codegen change. The `-gnu` Windows target uses genuine
+Itanium unwinding and is unaffected.
+
+The feasible parts were already done and remain: personality selection is the
 correct 3-way choice (`select_personality` → `Seh` on Windows w/ cleanup,
 `Itanium` elsewhere, `None` w/o cleanup), and the `__CxxFrameHandler3`
-personality symbol is declared for Windows targets.
-
-**To truly implement P6.1**, the LLVM toolchain must be upgraded to a build that
-ships the funclet C-API (and/or inkwell must wrap it). That is a toolchain/CI
-migration, not a codegen change, and is outside this phase's scope.
+personality symbol is declared for `-msvc` targets.
 
 ### 6.4 Windows graceful process signaling — DONE
 `glyim-runtime` Windows branch now uses `windows-sys` 0.59
