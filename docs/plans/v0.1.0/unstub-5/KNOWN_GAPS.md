@@ -247,12 +247,20 @@ large front-end + codegen effort, tracked below.
   trait_method_path_dispatch_resolves` (`fn speak(&self) -> i32`) passes through
   the real pipeline. The async blocker is specifically generic bounds +
   associated types, a Phase-2/typeck-depth prerequisite, NOT a general trait
-  dispatch failure. Net: P5 needs (a) generic-associated-type resolution +
-  generic trait-bound dispatch in typeck, and (b) the coroutine state-machine
-  desugar itself. (a) is the foundational blocker that currently gates P5
-  independent of the coroutine pass. Until (a) lands, `block_on` can only be
-  driven by the Rust-side executor primitive, not a *compiled glyim* future. A
-  real multi-threaded waker / I/O reactor is also a follow-up.
+  dispatch failure.
+  PROGRESS (2026-08-20): generic *param* trait bounds (`F: MyFuture`) are now
+  captured in HIR — `GenericParamKind::Type` gained a `bounds: Vec<TypeRef>`
+  field and `collect_generic_params` lowers the bound node emitted by the
+  parser (previously dropped). `generics::generic_param_bounds_are_captured`
+  pins that lowering no longer hard-errors. Solving the bound + projecting
+  `F::Output` / `Self::Output` (a trait-solver + projection subsystem) remains
+  the open blocker; `dyn_dispatch::async_desugar_target_compiles` (`#[ignore]`d)
+  tracks it. Net: P5 needs (a) that trait-bound solver + associated-type
+  projection in typeck, and (b) the coroutine state-machine desugar itself.
+  (a) is the foundational blocker that currently gates P5 independent of the
+  coroutine pass. Until (a) lands, `block_on` can only be driven by the
+  Rust-side executor primitive, not a *compiled glyim* future. A real
+  multi-threaded waker / I/O reactor is also a follow-up.
 
 ### 5.2 Executor — DONE (single-threaded MVP)
 `block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop

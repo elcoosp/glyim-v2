@@ -362,7 +362,7 @@ fn v03_t04_default_method_with_generic_params() {
 
     let generic_params = vec![GenericParam {
         name: t_name,
-        kind: GenericParamKind::Type { default: None },
+        kind: GenericParamKind::Type { default: None, bounds: Vec::new() },
         span: Span::DUMMY,
     }];
 

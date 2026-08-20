@@ -162,7 +162,7 @@ impl TraitSolver for RejectSolver {
 fn ty_param(inter: &mut Interner, name: &str) -> GenericParam {
     GenericParam {
         name: inter.intern(name),
-        kind: GenericParamKind::Type { default: None },
+        kind: GenericParamKind::Type { default: None, bounds: Vec::new() },
         span: dummy_span(),
     }
 }

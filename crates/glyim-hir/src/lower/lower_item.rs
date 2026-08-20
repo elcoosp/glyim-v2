@@ -26,9 +26,20 @@ pub(crate) fn collect_generic_params(
         for tp in tp_list.children().filter(|c| c.kind() == SyntaxKind::TypeParam) {
             if let Some(name_str) = first_ident_text(&tp) {
                 let name = interner.intern(&name_str);
+                // Capture trait bounds declared after `:`, e.g. the `MyFuture`
+                // in `F: MyFuture`. The bound is a type node child of the
+                // `TypeParam` (the `:` itself is a token, not a node).
+                let bounds: Vec<TypeRef> = tp
+                    .children()
+                    .filter(|c| is_type_node(c))
+                    .filter_map(|b| lower_type_ref(&b, interner))
+                    .collect();
                 generic_params.push(GenericParam {
                     name,
-                    kind: GenericParamKind::Type { default: None },
+                    kind: GenericParamKind::Type {
+                        default: None,
+                        bounds,
+                    },
                     span: node_span(&tp),
                 });
             }
@@ -111,9 +122,17 @@ pub(crate) fn lower_fn_def(
         for tp in tp_list.children().filter(|c| c.kind() == SyntaxKind::TypeParam) {
             if let Some(name_str) = first_ident_text(&tp) {
                 let name = interner.intern(&name_str);
+                let bounds: Vec<TypeRef> = tp
+                    .children()
+                    .filter(|c| is_type_node(c))
+                    .filter_map(|b| lower_type_ref(&b, interner))
+                    .collect();
                 generic_params.push(crate::GenericParam {
                     name,
-                    kind: crate::GenericParamKind::Type { default: None },
+                    kind: crate::GenericParamKind::Type {
+                        default: None,
+                        bounds,
+                    },
                     span: node_span(&tp),
                 });
             }

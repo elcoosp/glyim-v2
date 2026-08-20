@@ -201,7 +201,7 @@ fn make_blanket_impl_item(interner: &mut Interner, trait_name: &str, param_name:
         methods: vec![],
         generic_params: vec![GenericParam {
             name: param,
-            kind: GenericParamKind::Type { default: None },
+            kind: GenericParamKind::Type { default: None, bounds: Vec::new() },
             span: Span::DUMMY,
         }],
         where_clauses: vec![],

@@ -224,6 +224,10 @@ pub struct GenericParam {
 pub enum GenericParamKind {
     Type {
         default: Option<TypeRef>,
+        /// Trait bounds declared on the param, e.g. the `MyFuture` in
+        /// `fn block_on<F: MyFuture>`. Captured so typeck can solve the bound
+        /// and project associated types (`F::Output`); previously dropped.
+        bounds: Vec<TypeRef>,
     },
     Lifetime,
     Const {
