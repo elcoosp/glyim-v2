@@ -687,13 +687,33 @@ pub(crate) fn lower_trait_def(
         });
     }
 
+    // Plan unstub-5 P5: capture the trait's associated-type declarations
+    // (`type Output;`) so `TraitDef` knows the trait carries them. The parser
+    // emits a `TypeAlias` node; the trait form has no RHS (`default = None`),
+    // while an impl's `type Output = i32;` (lowered by `lower_impl_def`) does.
+    let mut associated_types = Vec::new();
+    for ta_node in node.children().filter(|c| c.kind() == SyntaxKind::TypeAlias) {
+        let name_str = first_ident_text(&ta_node);
+        let Some(name_str) = name_str else { continue };
+        let name = interner.intern(&name_str);
+        let ty = ta_node
+            .children()
+            .find(is_type_node)
+            .and_then(|t| lower_type_ref(&t, interner));
+        associated_types.push(AssociatedTy {
+            name,
+            bounds: Vec::new(),
+            default: ty,
+        });
+    }
+
     let id = ItemId::from_raw(*item_id_counter);
     *item_id_counter += 1;
     Some(Item {
         id,
         name,
         kind: ItemKind::Trait(TraitItem {
-            associated_types: Vec::new(),
+            associated_types,
             methods,
             generic_params: Vec::new(),
             where_clauses: Vec::new(),

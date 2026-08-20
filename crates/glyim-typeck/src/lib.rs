@@ -154,7 +154,14 @@ pub fn typeck_crate(
                         fn_def_id: None,
                     })
                     .collect();
-                ctx.register_trait_def(trait_def_id, TraitDef { name: item.name, methods });
+                ctx.register_trait_def(
+                    trait_def_id,
+                    TraitDef {
+                        name: item.name,
+                        methods,
+                        associated_types: trait_item.associated_types.iter().map(|a| a.name).collect(),
+                    },
+                );
             }
         }
     }

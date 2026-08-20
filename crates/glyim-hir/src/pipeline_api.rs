@@ -106,4 +106,45 @@ mod tests {
             _ => panic!("expected an Impl item"),
         }
     }
+
+    #[test]
+    fn trait_associated_type_is_captured() {
+        // Plan unstub-5 P5: `type Output;` inside a `trait` must be captured
+        // into `TraitItem.associated_types` so `TraitDef` (and thus the
+        // impl-check / projection machinery) knows the trait carries an
+        // associated type. Previously `lower_trait_def` hardcoded
+        // `associated_types: Vec::new()`, dropping the declaration.
+        let src = r#"
+            trait MyFuture { type Output; fn poll(&mut self) -> i32; }
+            struct AddOne { x: i32 }
+            impl MyFuture for AddOne { type Output = i32; fn poll(&mut self) -> i32 { self.x } }
+        "#;
+        let root = parse_to_syntax(src, FileId::BOGUS).root;
+        let mut interner = Interner::new();
+        let (hir, _) = lower_crate_for_pipeline(&root, &mut interner);
+        let trait_item = hir
+            .items
+            .iter()
+            .find(|it| matches!(it.kind, ItemKind::Trait(_)))
+            .expect("expected a trait item");
+        match &trait_item.kind {
+            ItemKind::Trait(trait_item) => {
+                assert_eq!(
+                    trait_item.associated_types.len(),
+                    1,
+                    "trait must capture exactly one associated type"
+                );
+                assert_eq!(
+                    trait_item.associated_types[0].name,
+                    interner.intern("Output"),
+                    "trait assoc type must be named `Output`"
+                );
+                assert!(
+                    trait_item.associated_types[0].default.is_none(),
+                    "trait assoc-type declaration must not carry a defining type (that lives on the impl)"
+                );
+            }
+            _ => panic!("expected a Trait item"),
+        }
+    }
 }

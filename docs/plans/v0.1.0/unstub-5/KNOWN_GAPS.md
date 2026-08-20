@@ -258,6 +258,18 @@ large front-end + codegen effort, tracked below.
   (`Self::Output` / `F::Output` → the defining type) is still unimplemented
   (`auto_trait.rs:244` intentionally leaves `TyKind::Projection` normalization
   empty).
+  PROGRESS (2026-08-20, pt.5): `TraitDef` now **carries its associated-type
+  surface** — `associated_types: Vec<Name>` added, and `lower_trait_def`
+  captures `type Output;` declarations from the trait body (previously
+  hardcoded `Vec::new()`, so the trait silently had no assoc types). The impl
+  registration loop now populates `TraitDef.associated_types` from the HIR
+  `TraitItem.associated_types`. `glyim-hir::trait_associated_type_is_captured`
+  pins the HIR capture. This is the trait-side mirror of the impl-side capture
+  (pt.2) and is required before impl/assoc-type conformance checking or
+  projection can reason about *which* assoc types a trait declares. The probe's
+  12 diagnostics are unchanged by this step: they are downstream of the abstract
+  trait solver (bound `F: MyFuture` discharge, `F::Output`/`Self::Output`
+  projection + normalization), not the trait's assoc-type surface.
   PROGRESS (2026-08-20, pt.3): the **projection lookup table** is now built in
   `TyCtx`/`TyCtxMut` — `impl_assoc_types: HashMap<(Ty, TraitDefId), Vec<(Name, Ty)>>`,
   populated during the impl-registration loop in `typeck_crate` from the

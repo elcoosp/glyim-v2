@@ -73,6 +73,7 @@ fn dyn_trait_resolves_to_dynamic_type() {
                 sig: method_sig,
                 fn_def_id: None,
             }],
+            associated_types: vec![],
         },
     );
 
@@ -169,6 +170,7 @@ fn dyn_trait_non_object_safe_reports_diagnostic() {
                 sig: method_sig,
                 fn_def_id: None,
             }],
+            associated_types: vec![],
         },
     );
 
@@ -319,6 +321,7 @@ fn dyn_trait_multi_segment_path_resolves() {
                 sig: method_sig,
                 fn_def_id: None,
             }],
+            associated_types: vec![],
         },
     );
 

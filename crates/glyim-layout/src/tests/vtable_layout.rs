@@ -111,6 +111,7 @@ fn s15_vtable_computer_populates_methods_from_trait_def() {
                 fn_def_id: Some(glyim_core::FnDefId::from_raw(11)),
             },
         ],
+        associated_types: vec![],
     };
     ctx_mut.register_trait_def(glyim_core::TraitDefId::from_raw(7), trait_def);
     let ctx = ctx_mut.freeze();

@@ -43,6 +43,11 @@ mod tests;
 pub struct TraitDef {
     pub name: glyim_core::interner::Name,
     pub methods: Vec<MethodDef>,
+    /// Associated-type names declared by the trait (e.g. `Output` in
+    /// `trait Future { type Output; }`). Populated during HIR lowering
+    /// (plan unstub-5 P5) so impls can be checked against the trait's
+    /// associated-type surface and projections resolved.
+    pub associated_types: Vec<glyim_core::interner::Name>,
 }
 
 /// Definition of a method in a trait.

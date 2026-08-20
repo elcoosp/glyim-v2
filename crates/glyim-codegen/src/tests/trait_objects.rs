@@ -387,6 +387,7 @@ fn vtable_layout_offsets_with_methods() {
             glyim_type::TraitDef {
                 name: trait_name,
                 methods: vec![],
+                associated_types: vec![],
             },
         );
         let empty_subst = ctx.intern_substitution(vec![]);
