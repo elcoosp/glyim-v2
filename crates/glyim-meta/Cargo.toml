@@ -13,6 +13,7 @@ glyim-diag = { workspace = true }
 tracing = { workspace = true }
 glyim-frontend = { workspace = true }
 glyim-vfs = { workspace = true }
+glyim-proc-macro = { workspace = true }
 
 [dev-dependencies]
 glyim-test = { workspace = true }

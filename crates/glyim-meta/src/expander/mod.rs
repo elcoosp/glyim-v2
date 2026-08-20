@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use matcher::{MatchResult, Pattern, match_pattern};
 use token_tree::{TokenTree, flatten_token_tree};
+use glyim_proc_macro::Registry;
 
 static RECURSION_LIMIT: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
 
@@ -46,8 +47,9 @@ pub(crate) fn expand_crate(
     registered: &[crate::MacroDef],
     current_file: FileId,
     vfs: Option<&Vfs>,
+    proc_registry: Option<&Registry>,
 ) -> (GreenNode, Vec<GlyimDiagnostic>) {
-    let mut expander = ExpanderImpl::new(hygiene, interner.clone(), current_file, vfs);
+    let mut expander = ExpanderImpl::new(hygiene, interner.clone(), current_file, vfs, proc_registry);
     // Register builtins from the public API
     for def in registered {
         if let crate::MacroKind::Builtin { handler, .. } = &def.kind {
@@ -69,6 +71,7 @@ pub(crate) fn expand_macro_invocation(
     current_file: FileId,
     vfs: Option<&Vfs>,
     depth: u32,
+    proc_registry: Option<&Registry>,
 ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
     let mut registered_builtins: HashMap<Name, BuiltinMacro> = HashMap::new();
     for def in registered {
@@ -87,6 +90,7 @@ pub(crate) fn expand_macro_invocation(
             interner: interner.clone(),
             current_file,
             vfs,
+            proc_registry,
         };
         return expander.expand_builtin(handler, name, args, call_site, depth);
     }
@@ -99,6 +103,7 @@ pub(crate) fn expand_macro_invocation(
         interner: interner.clone(),
         current_file,
         vfs,
+        proc_registry,
     };
     let (green, diags) = expander.expand_macro_call(name, args, call_site, depth);
     expander.diagnostics.extend(diags);
@@ -116,6 +121,11 @@ pub(crate) struct ExpanderImpl<'a> {
     current_file: FileId,
     /// Optional VFS for resolving include! paths and computing real line/col.
     vfs: Option<&'a Vfs>,
+    /// Optional registry of procedural macros (loaded via `glyim-proc-macro`'s
+    /// two-stage compile, or registered in-process for tests). When a
+    /// `MacroKind::Proc` invocation is found and the registry contains its
+    /// name, the expansion is delegated to the registered function (Phase 9.2).
+    proc_registry: Option<&'a Registry>,
 }
 
 impl<'a> ExpanderImpl<'a> {
@@ -124,6 +134,7 @@ impl<'a> ExpanderImpl<'a> {
         interner: Interner,
         current_file: FileId,
         vfs: Option<&'a Vfs>,
+        proc_registry: Option<&'a Registry>,
     ) -> Self {
         Self {
             hygiene,
@@ -133,6 +144,7 @@ impl<'a> ExpanderImpl<'a> {
             interner,
             current_file,
             vfs,
+            proc_registry,
         }
     }
 
@@ -350,6 +362,29 @@ impl<'a> ExpanderImpl<'a> {
         call_site: Span,
         depth: u32,
     ) -> (Option<GreenNode>, Vec<GlyimDiagnostic>) {
+        // Phase 9.2: procedural macro dispatch. Proc macros are dispatched via
+        // the registry and are NOT present in `self.macros` (which only holds
+        // declarative macro arms), so this check runs before the declarative
+        // lookup. The registry is populated by the two-stage proc-macro build
+        // (`glyim_proc_macro::load_cdylib`) or registered in-process for tests.
+        if let Some(reg) = self.proc_registry {
+            let name_str = self.interner.resolve(name);
+            if reg.contains(name_str) {
+                let input: Vec<(SyntaxKind, String)> = flatten_token_tree(args_node)
+                    .iter()
+                    .map(|t| (t.kind().unwrap_or(SyntaxKind::Error), t.text().to_string()))
+                    .collect();
+                if let Some(output) = reg.expand(name_str, &input) {
+                    let trees: Vec<TokenTree> = output
+                        .into_iter()
+                        .map(|(k, txt)| TokenTree::Token(k, SmolStr::from(txt)))
+                        .collect();
+                    let green = self.build_expansion_green(&trees, call_site, depth, name, true);
+                    return (Some(green), Vec::new());
+                }
+            }
+        }
+
         let def = match self.macros.get(&name) {
             Some(d) => d.clone(),
             None => return (None, Vec::new()),

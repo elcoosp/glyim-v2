@@ -519,3 +519,52 @@ fn main() {
     assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
     assert_eq!(count_macro_calls(&expanded), 0);
 }
+
+/// V19-T23 (Phase 9.2): a `MacroKind::Proc` invocation is dispatched through a
+/// `glyim_proc_macro::Registry` supplied to the expander. The registry is
+/// populated in-process here (the two-stage cdylib build populates it via
+/// `load_cdylib`); the expander must delegate the call to the registered
+/// expansion function and splice its output back as the expanded tokens.
+#[test]
+fn proc_macro_invocation_dispatches_through_registry() {
+    use glyim_proc_macro::Registry;
+    use glyim_syntax::SyntaxKind;
+
+    // A proc macro that doubles its input: `double!(x)` -> `x x`.
+    let mut registry = Registry::new();
+    registry.register("double", |input: &[(SyntaxKind, String)]| -> Vec<(SyntaxKind, String)> {
+        let mut out = Vec::with_capacity(input.len() * 2);
+        for tok in input {
+            out.push(tok.clone());
+            out.push(tok.clone());
+        }
+        out
+    });
+    assert!(registry.contains("double"));
+
+    let src = r#"
+fn main() {
+    double!(seven);
+}
+"#;
+    let root = parse_source(src);
+    let mut hygiene = HygieneCtx::new();
+    let mut expander = Expander::new(&mut hygiene);
+    expander.with_proc_registry(Some(&registry));
+    let (expanded, diags) = expander.expand_crate(&root);
+    assert!(diags.is_empty(), "Diagnostics: {:?}", diags);
+
+    let text = expanded.text().to_string();
+    // The expanded tokens (`seven seven`) must appear in the result.
+    assert!(
+        text.contains("seven") && count_occurrences(&text, "seven") >= 2,
+        "proc macro expansion must double `seven`, got: {}",
+        text
+    );
+}
+
+/// Count how many times `needle` appears in `haystack`.
+fn count_occurrences(haystack: &str, needle: &str) -> usize {
+    haystack.matches(needle).count()
+}
+

@@ -83,6 +83,9 @@ pub struct Expander<'a> {
     /// Optional virtual file system, used to resolve `include!` paths relative
     /// to the calling file and to compute real `line!`/`column!` offsets.
     vfs: Option<&'a Vfs>,
+    /// Optional registry of procedural macros (Phase 9.2). When set, a
+    /// `MacroKind::Proc` invocation is delegated to the registered function.
+    proc_registry: Option<&'a glyim_proc_macro::Registry>,
 }
 
 impl<'a> Expander<'a> {
@@ -93,7 +96,16 @@ impl<'a> Expander<'a> {
             interner: Interner::default(),
             current_file: FileId::BOGUS,
             vfs: None,
+            proc_registry: None,
         }
+    }
+
+    /// Provide a procedural-macro [`Registry`](glyim_proc_macro::Registry) so
+    /// `MacroKind::Proc` invocations are dispatched to their registered
+    /// expansion functions (Phase 9.2). Returns `&mut Self` for chaining.
+    pub fn with_proc_registry(&mut self, registry: Option<&'a glyim_proc_macro::Registry>) -> &mut Self {
+        self.proc_registry = registry;
+        self
     }
 
     /// Set the `FileId` of the source being expanded. Enables `file!`,
@@ -132,6 +144,7 @@ impl<'a> Expander<'a> {
             self.current_file,
             self.vfs,
             0,
+            self.proc_registry,
         );
         let expanded = green_opt.map(SyntaxNode::new_root);
         ExpansionResult {
@@ -149,6 +162,7 @@ impl<'a> Expander<'a> {
             &self.macros,
             self.current_file,
             self.vfs,
+            self.proc_registry,
         );
         let expanded = SyntaxNode::new_root(green);
         (expanded, diags)
