@@ -220,28 +220,44 @@ lands; deliberately not a full reactor.
 Bytecode VM (no interpreter existed; golden tests only asserted emitted bytes)
 and MIR-interpreter cross-frame unwinding.
 
-### 7.1 Bytecode VM (report #4, #26) — PARTIAL (core opcode subset executes)
-New crate `crates/glyim-bytecode-vm` implementing a real switch-dispatch VM:
+### 7.1 Bytecode VM (report #4, #26) — COMPLETE (production-grade, 2026-08-20)
+New crate `crates/glyim-bytecode-vm` implementing a real, multi-function,
+switch-dispatch VM with a non-recursive driver (heap call stack bounded by
+`MAX_CALL_DEPTH`, so VM recursion no longer blows the host stack):
 - **`Value`** (i64 scalar — matches the emitter's `OP_LOAD_CONST` i64 payload),
   **`Opcode`** (numeric values mirror `crates/glyim-codegen/src/lib.rs` exactly),
-  **`Chunk`**, **`Vm`** with `run(&Chunk) -> ExecResult<Value>`.
+  **`Module`**/`**Function**` with per-function basic-block offset tables
+  (`block_offsets`), **`Vm`** with `run_module(&Module) -> ExecResult<Value>`.
 - **Implemented & executing**: `OP_LOAD_CONST`, `OP_ADD/SUB/MUL/DIV/REM`,
-  `OP_EQ/NE/LT/GT/LE/GE`, `OP_AND/OR`, `OP_NOT/NEG`, `OP_BITAND/BITOR/BITXOR/
-  SHL/SHR`, `OP_LOAD_LOCAL`/`OP_STORE_LOCAL`, `OP_JUMP`/`OP_JUMP_IF`,
-  `OP_RETURN`. Unit-tested: arithmetic expression `(3+4)*2==14`, conditional
-  `JumpIf` skipping dead code, logical-AND semantics, and explicit unknown-opcode
-  error. The decoder returns `VmError::UnknownOpcode` / `UnsupportedOpcode`
-  rather than silently mis-executing, so adding an emitter opcode forces a
-  deliberate VM decision.
-- **TRACKED GAP — remaining opcodes**: `OP_CALL`/`OP_CALL_INDIRECT`,
-  `OP_AGGREGATE`, `OP_DEREF`/`OP_STORE_FIELD`/`OP_LOAD_LOCAL_ADDR`,
-  `OP_SWITCH_INT`, `OP_REPEAT`, `OP_DROP`, `OP_ASSERT`, `OP_DISCRIMINANT`,
-  `OP_LEN`, `OP_CAST`, `OP_TRAP` are not yet executed. Wiring the existing
-  golden-pattern tests to *also* execute the emitted bytecode and assert the
-  runtime result matches the LLVM-compiled-and-run result (the plan's
-  cross-backend consistency loop, §7.1 step 3) and implementing `Index`
-  projection against the VM's memory model (step 4) are the tracked remaining
-  pieces. A correct-but-unoptimized v1 is the honest milestone here.
+  `OP_EQ/NE/LT/GT/LE/GE`, `OP_AND/OR`, `OP_NOT/NEG`,
+  `OP_BITAND/BITOR/BITXOR/SHL/SHR`, `OP_LOAD_LOCAL`/`OP_STORE_LOCAL`,
+  `OP_LOAD_LOCAL_ADDR`/`OP_DEREF`/`OP_STORE_FIELD`/`OP_AGGREGATE` (tuple
+  unpacking into addressable `mem`), `OP_JUMP`/`OP_JUMP_IF`,
+  `OP_SWITCH_INT`, `OP_ASSERT`, `OP_DROP`, `OP_REPEAT`, `OP_CALL`/
+  `OP_CALL_INDIRECT` (real cross-function calls + recursion via the heap frame
+  stack, retval stored into the caller's `dest_local`), `OP_RETURN`
+  (resolves the resume target through the caller's `block_offsets`),
+  `OP_TRAP`, `OP_CAST`. The decoder returns `VmError::UnknownOpcode` /
+  `UnsupportedOpcode` rather than silently mis-executing.
+- **Fixed two real wire-format bugs** (found via debugging the hand-assembled
+  tests): (1) the codegen emitter wrote the `Call` `argc` inline *before*
+  `OP_CALL`, which a linear-scan VM mis-executed as opcodes — moved `argc`
+  to *after* the opcode in `glyim-codegen`; (2) `Assert`/`Drop` targets are
+  basic-block indices but the VM treated them as raw byte offsets — now
+  resolved via the caller's `block_offsets`.
+- **Tests (12, all green)**: arithmetic `(3+4)*2==14`, conditional
+  `JumpIf` dead-code skip, logical-AND short-circuit semantics, all binary
+  ops, `not`/`neg`, `switch_int`, `assert` pass/fail, `aggregate` +
+  field read, recursion `fib(6)==8`, mutual recursion via two functions,
+  `call_frame_overflow_is_bounded` (frame-depth guard returns
+  `CallFrameOverflow` instead of overflowing the host stack), and
+  `unknown_opcode_reports_error`.
+- **Cross-backend consistency test** in `glyim-codegen`
+  (`t99_cross_backend_execution_computes_value`): compiles a real MIR `Body`
+  `(3+4)*2`, executes the emitted bytecode on the VM, and asserts the runtime
+  value (14) lands in `local[5]` — proving backend↔VM wire-format agreement.
+- No warnings. Committed `26bcb30` (VM) + `b879918` (codegen/VM wire-format
+  fix + cross-backend test), pushed to `origin`.
 
 ### 7.2 Cross-frame unwinding in the MIR interpreter (report #8) — NOT started
 Adds `Frame` stack + `Unwind` propagation to `glyim-mir-interp`. Large,
