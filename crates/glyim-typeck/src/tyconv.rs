@@ -516,6 +516,30 @@ pub fn resolve_path_type(
         return ty;
     }
 
+    // Associated-type projection: `Type::Item` (concrete self type). Resolve
+    // the first segment to a type, then look up its associated type via the
+    // projection table populated at impl-registration time (plan unstub-5 P5).
+    // Must run BEFORE `resolve_qualified_path` so that `AddOne::Output` is not
+    // mistaken for a qualified ADT path. Abstract `Self::Item` / `F::Item`
+    // (where the self type is a generic param or trait `Self`) still requires
+    // the full trait solver and is not handled here.
+    if path.segments.len() == 2 {
+        let first = &path.segments[0];
+        let assoc_name = path.segments[1].name;
+        let mut first_diags = Vec::new();
+        let first_path = glyim_hir::Path {
+            segments: vec![first.clone()],
+            kind: glyim_core::path::PathKind::Plain,
+        };
+        let self_ty =
+            resolve_path_type(ctx, infer, def_map, &mut first_diags, &first_path, param_map, span);
+        if !matches!(ctx.ty_kind(self_ty), TyKind::Error) {
+            if let Some(ty) = ctx.resolve_associated_type_by_self_ty(self_ty, assoc_name) {
+                return ty;
+            }
+        }
+    }
+
     // Multi-segment paths: try to resolve fully
     if !path.segments.is_empty()
         && let Some(resolved) = resolve_qualified_path(ctx, def_map, path, param_map, span, infer)

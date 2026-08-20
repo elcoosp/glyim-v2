@@ -270,6 +270,19 @@ large front-end + codegen effort, tracked below.
   `Type::Output`, and the abstract/generic `F::Output` case still needs the full
   trait solver. Net blocker still: (a) trait-bound solver + assoc-type
   projection wiring, then (b) coroutine desugar.
+  PROGRESS (2026-08-20, pt.4): `resolve_path_type` now **consumes** the
+  projection table for 2-segment `Type::Item` paths (`AddOne::Output` → `i32`),
+  wired before `resolve_qualified_path` so a qualified ADT path doesn't swallow
+  it. Lookup matches by `AdtId` identity (not the full `Ty`, which differs only
+  in `Substitution` index between the registered self type and the resolved one).
+  `glyim-typeck` test `concrete_associated_type_projection_resolves` exercises
+  the pipeline. **Caveat:** end-to-end signature projection is gated on
+  two-phase item resolution — the impl must be registered before a `fn` that
+  names `AddOne::Output`; the current single-pass item loop checks `fn`
+  signatures before the impl's projection is in the table, so such a `fn`
+  lowers without an *internal* error but the param resolves to `()`. That
+  ordering is part of the item-pass restructure (tracked below). The abstract
+  `Self::Output` / `F::Output` cases still require the full trait solver.
   coroutine pass. Until (a) lands, `block_on` can only be driven by the
   Rust-side executor primitive, not a *compiled glyim* future. A real
   multi-threaded waker / I/O reactor is also a follow-up.

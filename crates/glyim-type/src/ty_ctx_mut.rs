@@ -452,6 +452,41 @@ impl TyCtxMut {
         self.impl_assoc_types.insert((self_ty, trait_def_id), assoc_types);
     }
 
+    /// Reverse-lookup variant of `resolve_associated_type` that finds the entry
+    /// by `self_ty` + assoc name alone (no trait needed); used for concrete
+    /// `Type::Item` paths (plan unstub-5 P5).
+    ///
+    /// Matching is by ADT identity (`AdtId`) when `self_ty` is an ADT, so that
+    /// distinct `Ty` handles with the same underlying struct/enum (e.g.
+    /// differing only in their `Substitution` index) still resolve. This is the
+    /// correct semantics: an impl's associated type is keyed by the self type's
+    /// ADT, not by a specific substitution.
+    pub fn resolve_associated_type_by_self_ty(
+        &self,
+        self_ty: Ty,
+        assoc_name: Name,
+    ) -> Option<Ty> {
+        let self_adt = match self.ty_kind(self_ty) {
+            TyKind::Adt(adt_id, _) => Some(*adt_id),
+            _ => None,
+        };
+        self.impl_assoc_types
+            .iter()
+            .find(|((sty, _), entries)| {
+                let sty_matches = match self_adt {
+                    Some(a) => matches!(self.ty_kind(*sty), TyKind::Adt(b, _) if b == &a),
+                    None => *sty == self_ty,
+                };
+                sty_matches && entries.iter().any(|(n, _)| *n == assoc_name)
+            })
+            .and_then(|((_, _), entries)| {
+                entries
+                    .iter()
+                    .find(|(name, _)| *name == assoc_name)
+                    .map(|(_, ty)| *ty)
+            })
+    }
+
     /// Resolve an associated-type projection `Self::Item` / `Type::Item` to its
     /// defining type, given the concrete `self_ty` and the trait it's bound to.
     /// Returns `None` when no matching impl registration exists (the abstract /

@@ -8,7 +8,7 @@ use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
 use glyim_core::arena::IndexVec;
-use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, FnDefId, LocalDefId, OpaqueTyId};
+use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, FnDefId, LocalDefId, OpaqueTyId, TraitDefId};
 use glyim_core::interner::{Interner, Name};
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
@@ -89,12 +89,44 @@ impl TyCtx {
     pub fn resolve_associated_type(
         &self,
         self_ty: Ty,
-        trait_def_id: glyim_core::def_id::TraitDefId,
+        trait_def_id: TraitDefId,
         assoc_name: Name,
     ) -> Option<Ty> {
         self.impl_assoc_types
             .get(&(self_ty, trait_def_id))
             .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|(name, _)| *name == assoc_name)
+                    .map(|(_, ty)| *ty)
+            })
+    }
+
+    /// Resolve an associated-type projection `Self::Item` / `Type::Item` to its
+    /// defining type via the projection table populated at impl-registration
+    /// time (plan unstub-5 P5). Returns `None` when no matching impl exists.
+    /// Unlike `resolve_associated_type`, this reverse lookup finds the entry by
+    /// `self_ty` + assoc name alone (the bug-aware variant used when the trait
+    /// is not yet known at the call site) — used for concrete `Type::Item` paths.
+    pub fn resolve_associated_type_by_self_ty(
+        &self,
+        self_ty: Ty,
+        assoc_name: Name,
+    ) -> Option<Ty> {
+        let self_adt = match self.ty_kind(self_ty) {
+            TyKind::Adt(adt_id, _) => Some(*adt_id),
+            _ => None,
+        };
+        self.impl_assoc_types
+            .iter()
+            .find(|((sty, _), entries)| {
+                let sty_matches = match self_adt {
+                    Some(a) => matches!(self.ty_kind(*sty), TyKind::Adt(b, _) if b == &a),
+                    None => *sty == self_ty,
+                };
+                sty_matches && entries.iter().any(|(n, _)| *n == assoc_name)
+            })
+            .and_then(|((_, _), entries)| {
                 entries
                     .iter()
                     .find(|(name, _)| *name == assoc_name)

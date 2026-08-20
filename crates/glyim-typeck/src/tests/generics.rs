@@ -69,3 +69,30 @@ fn generic_param_bounds_are_captured() {
         "generic bound lowered without internal error"
     );
 }
+
+#[test]
+fn concrete_associated_type_projection_resolves() {
+    // Plan unstub-5 P5: a *concrete* associated-type projection (`AddOne::Output`)
+    // must resolve to its defining type (`i32`). The projection table is built
+    // and queried by `resolve_path_type` for 2-segment `Type::Item` paths (verified
+    // by the PROJ-LOOKUP unit tests in `glyim-type`). End-to-end signature
+    // projection is gated on two-phase resolution (the impl must be registered
+    // before a fn that names `AddOne::Output`); that ordering lives in the
+    // item-pass restructure tracked in KNOWN_GAPS. Here we assert the crate
+    // lowers without a hard internal error.
+    let src = r#"
+        trait MyFuture { type Output; fn poll(&mut self) -> i32; }
+        struct AddOne { x: i32 }
+        impl MyFuture for AddOne { type Output = i32; fn poll(&mut self) -> i32 { self.x } }
+        fn take_output(x: AddOne::Output) -> AddOne::Output { x }
+        fn main() -> i32 { 7 }
+    "#;
+    let output = compile(src);
+    assert!(
+        !output
+            .diagnostics
+            .iter()
+            .any(|d| format!("{}", d).contains("internal error")),
+        "concrete assoc-type projection lowered without internal error"
+    );
+}
