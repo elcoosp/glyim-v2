@@ -39,3 +39,44 @@ fn unit_struct_construction_resolves() {
     let output = compile(src);
     assert_no_errors(&output.diagnostics);
 }
+
+/// Probe the `async fn` desugaring *target* through the real pipeline:
+/// a trait with an associated type + method, an impl providing it, and a
+/// generic `block_on<F: MyFuture>` that drives it.
+///
+/// `#[ignore]`d because this currently FAILS (12 diagnostics) — the compiler
+/// does not yet resolve generic trait bounds (`F: MyFuture`) or associated
+/// types (`F::Output`) in typeck, which is the foundational blocker for P5
+/// (async) *below* the coroutine state-machine pass. This test locks in the
+/// current blocked behavior; remove `#[ignore]` and flip the assertion to
+/// `assert_no_errors` once generic-associated-type resolution + generic
+/// trait-bound dispatch land. See `KNOWN_GAPS.md` Phase 5.
+#[test]
+#[ignore = "P5 async: generic trait bounds + associated types not yet resolved in typeck"]
+fn async_desugar_target_compiles() {
+    let src = r#"
+        enum Poll<T> { Ready(T), Pending }
+        trait MyFuture {
+            type Output;
+            fn poll(&mut self) -> Poll<Self::Output>;
+        }
+        struct AddOne { x: i32 }
+        impl MyFuture for AddOne {
+            type Output = i32;
+            fn poll(&mut self) -> Poll<i32> { Poll::Ready(self.x + 1) }
+        }
+        fn block_on<F: MyFuture>(mut f: F) -> F::Output {
+            loop {
+                match f.poll() {
+                    Poll::Ready(v) => return v,
+                    Poll::Pending => { }
+                }
+            }
+        }
+        fn main() -> i32 { let f = AddOne { x: 41 }; block_on(f) }
+    "#;
+    let output = compile(src);
+    // Characterization of the current blocker (12 diagnostics rooted in
+    // generic trait bounds + associated types).
+    assert!(!output.diagnostics.is_empty(), "expected P5 blocker diagnostics");
+}

@@ -223,30 +223,36 @@ large front-end + codegen effort, tracked below.
   `poll_enum_roundtrip`) — verifies the executor drives a future that resolves
   on first poll and one that returns `Pending` N times then `Ready`.
 - **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4) — BLOCKED BELOW
-  THE COROUTINE LAYER (diagnosed 2026-08-20)**: the parser already has
-  `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering that splits an `async fn`
-  body into a state-machine enum + generated `poll` method, and the `.await`
-  typeck, are not implemented. The deeper blocker discovered while probing the
-  desugaring *target* directly: the compiler **cannot yet express the
-  desugared form** — `impl Future for X { type Output; fn poll(&mut self) -> Poll<Output> }`
-  plus a generic `block_on<F: Future>` driving it. Concrete probes:
-  - Generic trait bounds with associated types (`F: MyFuture`, `F::Output`)
-    fail typeck: `trait MyFuture is not implemented for F`, `unresolved type F::Output`.
-  - Even **concrete** trait-method dispatch is incomplete: typeck reports
-    `() vs i32` for a `fn show(&self) -> i32` method (method return types not
-    plumbed through trait impls), and the **bytecode backend panics**
-    (`lasso` interner "Key out of bounds") on any trait dispatch — so the
-    desugar's generated `poll` call cannot even codegen.
-  - `println!` is unresolved in a plain `glyim-cli` compile (std macros are not
-    loaded by the direct CLI path; `future.g` lives in `glyim-lang-core`, not
-    the CLI's std).
-  Net: P5 needs (a) trait-impl method return-type plumbing + generic associated
-  types in typeck, (b) a non-panicking trait-dispatch codegen path (at least in
-  the LLVM backend; bytecode panics), and (c) the coroutine state-machine
-  desugar itself. (a)+(b) are Phase-2/codegen-depth prerequisites that currently
-  block P5 independent of the coroutine pass. Until those land, `block_on` can
-  only be driven by the Rust-side executor primitive, not a *compiled glyim*
-  future. A real multi-threaded waker / I/O reactor is also a follow-up.
+  THE COROUTINE LAYER (diagnosed 2026-08-20 via the real `PipelineCompiler`)**:
+  the parser already has `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering
+  that splits an `async fn` body into a state-machine enum + generated `poll`
+  method, and the `.await` typeck, are not implemented. The deeper blocker,
+  confirmed by compiling the desugaring *target* through the real pipeline
+  (`glyim-typeck/src/tests/dyn_dispatch.rs::async_desugar_target_compiles`,
+  currently `#[ignore]`d), is that the compiler **cannot yet express the
+  desugared form** — `impl Future for X { type Output; fn poll(&mut self) ->
+  Poll<Output> }` plus a generic `block_on<F: Future>` driving it. It emits **12
+  diagnostics**, all rooted in generic trait bounds + associated types:
+  - `unresolved type F::Output` and `trait MyFuture is not implemented for F`
+    — generic associated types and `F: Trait` bounds are not resolved in typeck.
+  - `mismatched types: F vs Adt1` (×4, incl. `&F`/`&mut F`) — generic type
+    params are not resolved as types at the call site.
+  - `no method poll found for type` — method dispatch on a generic `F: Trait`
+    bound is not resolved.
+  - cascade `unresolved type Poll` / `unresolved name block_on` / `unresolved
+    value path` — the generic-resolution failures break item registration for the
+    rest of the crate.
+  IMPORTANT correction to an earlier note: **concrete** (non-generic) trait-method
+  dispatch with non-unit return types DOES work — `dyn_dispatch::
+  trait_method_path_dispatch_resolves` (`fn speak(&self) -> i32`) passes through
+  the real pipeline. The async blocker is specifically generic bounds +
+  associated types, a Phase-2/typeck-depth prerequisite, NOT a general trait
+  dispatch failure. Net: P5 needs (a) generic-associated-type resolution +
+  generic trait-bound dispatch in typeck, and (b) the coroutine state-machine
+  desugar itself. (a) is the foundational blocker that currently gates P5
+  independent of the coroutine pass. Until (a) lands, `block_on` can only be
+  driven by the Rust-side executor primitive, not a *compiled glyim* future. A
+  real multi-threaded waker / I/O reactor is also a follow-up.
 
 ### 5.2 Executor — DONE (single-threaded MVP)
 `block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop
