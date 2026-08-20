@@ -31,7 +31,7 @@ mod check_stmt;
 mod coherence;
 mod env;
 pub mod thir;
-mod tyconv;
+pub mod tyconv;
 mod unify;
 
 use std::collections::HashMap;
@@ -788,6 +788,7 @@ fn process_where_clauses(
             }
         }
     }
+
 }
 
 /// Map an HIR `extern "C"` ABI name (if any) to a `glyim_core::Abi`.
