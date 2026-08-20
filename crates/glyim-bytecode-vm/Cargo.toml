@@ -2,6 +2,12 @@
 name = "glyim-bytecode-vm"
 version = "0.1.0"
 edition = "2024"
-description = "Switch-dispatch bytecode virtual machine for the Glyim bytecode backend (Phase 7.1 MVP)"
+description = "Switch-dispatch bytecode virtual machine for the Glyim bytecode backend (Phase 7 production-grade)"
 
 [dependencies]
+
+[dev-dependencies]
+glyim-core = { path = "../glyim-core" }
+glyim-mir = { path = "../glyim-mir" }
+glyim-type = { path = "../glyim-type" }
+glyim-span = { path = "../glyim-span" }
