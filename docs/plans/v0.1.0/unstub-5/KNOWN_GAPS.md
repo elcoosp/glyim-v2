@@ -89,14 +89,24 @@ contract and the loader:
   identity macro returns input unchanged), `registry_unknown_macro_returns_none`,
   `abi_alloc_push_free_roundtrip` (C-ABI alloc/push/free round-trips a token).
   `cargo clippy -p glyim-proc-macro --all-targets` is clean.
-- **TRACKED GAP — two-stage host compile**: `glyim-cli` does not yet *build* a
-  proc-macro crate for the host target (cdylib) and invoke `load_cdylib` during
-  macro expansion, nor dispatch `ExpnKind::ProcMacro` invocations through the
-  registry inside `glyim-meta`'s expansion pipeline (the plan's steps 2 & 4).
-  The ABI + loader + registry (the load/register half) are done and green; the
-  compile-half + `glyim-meta` dispatch wiring is the larger remaining piece,
-  tracked here, not silently dropped. Derive/attribute proc macros are a
-  follow-up once function-like macros round-trip end to end.
+- **DONE (2026-08-20) — `glyim-meta` dispatch wiring (plan step 4)**:
+  `glyim-meta` now threads an `Option<&glyim_proc_macro::Registry>` through
+  `ExpanderImpl` / `Expander` (`with_proc_registry`) and the two free entry
+  points, and dispatches `MacroKind::Proc` invocations through the registry
+  BEFORE the declarative lookup (proc macros are not in the declarative
+  `self.macros` map). The registry is populated by `load_cdylib` (the
+  load/register half) or registered in-process for tests. New test
+  `proc_macro_invocation_dispatches_through_registry` proves an in-process
+  proc macro is expanded and its output spliced back. Committed `11b9008`
+  (glyim-meta green, 77 tests; workspace 4028).
+- **TRACKED GAP — two-stage host compile (plan step 2)**: `glyim-cli` does
+  not yet *build* a proc-macro crate for the host target (cdylib) and invoke
+  `load_cdylib` during macro expansion. The ABI + loader + registry + the
+  `glyim-meta` dispatch wiring are all done and green; the only remaining
+  piece is the build driver that compiles a proc-macro crate to a host cdylib
+  and loads it before expansion. Tracked here, not silently dropped.
+  Derive/attribute proc macros are a follow-up once function-like macros
+  round-trip end to end.
 
 ## Phase 6 — Codegen / Platform — PARTIAL (done: 6.2 enum DWARF, 6.3; deferred: 6.1 SEH, 6.2 closure, 6.4 Windows)
 ### 6.3 `ReadVisitor`/`PlaceCollector` exhaustiveness — DONE (already complete)
