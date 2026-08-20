@@ -27,10 +27,17 @@ struct-literal field values are all found.
   fallback is RETAINED as a production safety net, NOT deleted, because the
   graph is not yet complete (see gap below). It is reached only when the graph
   has zero entries for the symbol.
-- **Completion / hover (8.2 report #27)**: NOT yet refactored to share
-  `resolve_method_call` with typeck. Glyim-lsp does not currently depend on
-  `glyim-typeck`'s method-resolution, so completion does not consult trait
-  impls the way diagnostics do. This is a real remaining item.
+- **Completion / hover (8.2 report #27) — trait-impl completion VERIFIED (2026-08-20)**:
+  `symbol_index::build_from_hir` iterates *every* `ItemKind::Impl`, including
+  `impl Trait for T` (`trait_ref: Some`), indexing each method with its
+  `receiver_type` = the impl's `self_ty`. The receiver-type completion filter in
+  `completion.rs` therefore already offers trait-impl methods at `.`-sites
+  (e.g. `impl Show for i32 { fn show }` surfaces `show` for an `i32` receiver).
+  New test `s12_trait_impl_methods_completed` locks this in (green, glyim-lsp
+  70 passed). Hover over trait-impl methods is served by the same indexed
+  symbol data, so it resolves correctly too. The only remaining refinement is
+  sharing typeck's richer `resolve_method_call` for ambiguous/overloaded
+  receiver resolution, which is a polish item, not a gap.
 - **GAP — macro-call arguments not lowered into HIR (DEFERRED, verified 2026-08-20)**:
   lower_expr has NO `SyntaxKind::MacroCall` handler and hits its `_ =>` arm
   (returns None, internal error), dropping the macro's arguments. A variable

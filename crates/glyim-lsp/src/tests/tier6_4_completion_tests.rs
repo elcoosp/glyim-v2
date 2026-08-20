@@ -298,3 +298,155 @@ fn main() {
         labels
     );
 }
+
+/// Tier 6.4 (Plan §8.2, report #27): trait-impl method completion.
+///
+/// `build_from_hir` indexes *every* `ItemKind::Impl`, including `impl Trait for
+/// T` (where `trait_ref` is `Some`). Such methods must be offered at a `.`
+/// call site whose receiver resolves to `T`, exactly like inherent-impl
+/// methods. This test proves the `trait_ref: Some` indexing path participates
+/// in receiver-type completion rather than being skipped.
+#[test]
+fn s12_trait_impl_methods_completed() {
+    let source = "\
+trait Show { fn show(&self); }
+impl Show for i32 {
+    fn show(&self) {}
+}
+fn main() {
+    let x = 1 + 2;
+    x.
+}
+";
+    let dot_pos = source.find("x.").expect("`x.` present");
+    let offset = dot_pos + "x.".len();
+    let (line, character) = line_col_of(source, offset);
+
+    let db = AnalysisDatabase::new();
+    let path = PathBuf::from("/test/trait_impl.g");
+    let file_id = db.file_map.write().get_or_create(&path);
+    db.source_maps.write().insert(
+        file_id,
+        SourceMap::new(path.clone(), file_id, source.to_string()),
+    );
+
+    let interner = glyim_core::Interner::new();
+    let i32_name = interner.intern("i32");
+    let show_name = interner.intern("Show");
+    let method_name = interner.intern("show");
+    let main_name = interner.intern("main");
+
+    let receiver_id = ExprId::from_raw(0);
+    let main_owner = LocalDefId::from_raw(0);
+
+    let ctx = SyntaxContext::ROOT;
+    let span_for = |lo: usize, hi: usize| {
+        Span::new(
+            file_id,
+            ByteIdx::from_raw(lo as u32),
+            ByteIdx::from_raw(hi as u32),
+            ctx,
+        )
+    };
+    let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
+    exprs.push(Expr::Path(Path::from_single(i32_name)));
+    exprs.push(Expr::MethodCall {
+        receiver: receiver_id,
+        method: method_name,
+        args: vec![],
+    });
+    let mut expr_spans: IndexVec<ExprId, Span> = IndexVec::new();
+    expr_spans.push(span_for(dot_pos, dot_pos + 1));
+    expr_spans.push(span_for(dot_pos, dot_pos + 2));
+    let body = Body {
+        owner: main_owner,
+        exprs,
+        pats: IndexVec::new(),
+        params: vec![],
+        span: span_for(0, source.len()),
+        expr_spans,
+    };
+    let mut bodies: IndexVec<glyim_hir::BodyId, Body> = IndexVec::new();
+    bodies.push(body);
+    let mut body_owners: IndexVec<glyim_hir::BodyId, LocalDefId> = IndexVec::new();
+    body_owners.push(main_owner);
+
+    let mut items: IndexVec<ItemId, Item> = IndexVec::new();
+    let trait_impl_item = Item {
+        id: ItemId::from_raw(0),
+        name: i32_name,
+        kind: ItemKind::Impl(ImplItem {
+            trait_ref: Some(Path::from_single(show_name)),
+            self_ty: TypeRef::Path(Path::from_single(i32_name)),
+            methods: vec![ImplMethod {
+                name: method_name,
+                body: None,
+                params: vec![],
+                return_ty: None,
+            }],
+            generic_params: vec![],
+            where_clauses: vec![],
+        }),
+        visibility: Visibility::Inherited,
+        span: span_for(0, source.len()),
+    };
+    items.push(trait_impl_item);
+    items.push(Item {
+        id: ItemId::from_raw(1),
+        name: main_name,
+        kind: ItemKind::Fn(FnItem {
+            params: vec![],
+            return_ty: None,
+            body: Some(glyim_hir::BodyId::from_raw(0)),
+            is_unsafe: false,
+            is_async: false,
+            is_const: false,
+            generic_params: vec![],
+            where_clauses: vec![],
+            abi: None,
+        }),
+        visibility: Visibility::Inherited,
+        span: span_for(0, source.len()),
+    });
+
+    let hir = CrateHir {
+        items,
+        bodies,
+        body_owners,
+    };
+    db.hirs.write().insert(file_id, hir.clone());
+    db.symbol_index.write().build_from_hir(file_id, &hir, &interner);
+
+    // Type the receiver `x` as `i32`.
+    let mut ty_ctx_mut = TyCtxMut::new(interner.clone());
+    let i32_ty: Ty = ty_ctx_mut.mk_ty(glyim_type::TyKind::Int(glyim_core::primitives::IntTy::I32));
+    let ty_ctx = ty_ctx_mut.freeze();
+    let mut type_map: HashMap<ExprId, Ty> = HashMap::new();
+    type_map.insert(receiver_id, i32_ty);
+    let mut expr_types: HashMap<LocalDefId, HashMap<ExprId, Ty>> = HashMap::new();
+    expr_types.insert(main_owner, type_map);
+    let typeck = TypeckResult {
+        thir_bodies: vec![],
+        diagnostics: vec![],
+        const_values: std::collections::HashMap::new(),
+        expr_types,
+    };
+    db.typeck
+        .write()
+        .insert(file_id, (Arc::new(ty_ctx), typeck));
+
+    let params = completion_params(&path, line, character);
+    let file_map_guard = db.file_map.read();
+    let result = provide_completions(&db, &file_map_guard, &params);
+    drop(file_map_guard);
+    let items = match result {
+        Some(CompletionResponse::List(list)) => list.items,
+        other => panic!("expected a completion list, got {:?}", other),
+    };
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(
+        labels.contains(&"show"),
+        "expected trait-impl method `show` (receiver i32) in completions, got {:?}",
+        labels
+    );
+}
