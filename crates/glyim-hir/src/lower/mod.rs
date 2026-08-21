@@ -2,6 +2,7 @@ pub(crate) mod lower_expr;
 pub(crate) mod lower_item;
 pub(crate) mod lower_pat;
 pub(crate) mod lower_type;
+pub(crate) mod lower_async;
 
 #[cfg(test)]
 pub(crate) use lower_expr::{lower_expr, lower_literal};
@@ -111,7 +112,25 @@ fn next_local_def_id(counter: &mut u32) -> LocalDefId {
 
 // ---------- entry ----------
 
+/// Lower the parsed AST into a `CrateHir`, running the `async fn` / `.await`
+/// desugar (`lower_async`) so the resulting HIR is the future state-machine
+/// shape the type-checker understands. Used by the real compile pipeline
+/// (`lower_crate_for_pipeline`) and by the lowering unit tests.
 pub(crate) fn lower_crate(
+    root: &SyntaxNode,
+    interner: &mut Interner,
+    diags: &mut Vec<GlyimDiagnostic>,
+) -> CrateHir {
+    let mut hir = lower_crate_raw(root, interner, diags);
+    lower_async::desugar_async(&mut hir);
+    hir
+}
+
+/// Raw syntax → HIR lowering WITHOUT the `async fn` / `.await` desugar. Used by
+/// `lower_crate_for_pipeline` (and thus the plan §6.1 plumbing tests, which
+/// assert the `async fn` keyword lowers to `FnItem { is_async: true }` before
+/// desugaring rewrites the item into a synchronous future-returning wrapper).
+pub(crate) fn lower_crate_raw(
     root: &SyntaxNode,
     interner: &mut Interner,
     diags: &mut Vec<GlyimDiagnostic>,
@@ -256,10 +275,12 @@ pub(crate) fn lower_crate(
         }
     }
 
-    CrateHir {
+    let mut hir = CrateHir {
         items,
         bodies,
         body_owners,
         interner: interner.clone(),
-    }
+    };
+
+    hir
 }
