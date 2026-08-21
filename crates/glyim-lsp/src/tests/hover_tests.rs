@@ -14,7 +14,6 @@ fn get_test_path(filename: &str) -> PathBuf {
 }
 
 #[test]
-#[ignore]
 fn hover_shows_type_signature_and_doc() {
     let analysis = AnalysisDatabase::new();
     let path = get_test_path("test.g");

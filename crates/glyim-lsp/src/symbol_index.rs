@@ -321,7 +321,18 @@ impl SymbolIndex {
     }
 
     pub fn lookup_by_location(&self, file_id: FileId, offset: usize) -> Option<&SymbolInfo> {
-        self.by_location.get(&(file_id.to_raw(), offset))
+        // A hover/click position falls *somewhere inside* a symbol's definition
+        // span, not necessarily on its start byte. Match by span containment
+        // (lo <= offset < hi) rather than an exact start-offset key, so any
+        // position within the symbol resolves to it.
+        self.by_file
+            .get(&file_id)?
+            .iter()
+            .find(|sym| {
+                let lo = sym.definition.span.lo.to_usize();
+                let hi = sym.definition.span.hi.to_usize();
+                offset >= lo && offset < hi
+            })
     }
 
     pub fn symbols_in_file(&self, file_id: FileId) -> Vec<&SymbolInfo> {
