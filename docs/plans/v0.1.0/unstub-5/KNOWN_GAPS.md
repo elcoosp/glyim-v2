@@ -324,16 +324,28 @@ large front-end + codegen effort, tracked below.
     (regression test `generic_fn_typechecks_and_lowers` now passes) and unblocks
     `block_on<F>`'s return type — but NOT its *body*, which is still checked with
     rigid `F` (see `F vs Adt6` above; that requires full body monomorphization).
-  The `F vs Adt6` body errors + `<F as Trait5>::Output` projection + variant
-  pattern binding (`v`/`Pending`) are the remaining P5 depth. They share a root
-  cause: the compiler lacks generic-function-body monomorphization AND abstract
-  (`F::Output`) associated-type projection normalization. Real fix = (1) re-check
-  generic fn bodies per call with the type params bound to the argument types,
-  and (2) normalize `ProjectionTy` to concrete via the projection lookup table
-  even when the self type is a generic `Param` (requires the trait-bound solver
-  to first bind `F: MyFuture` to `AddOne`). Until (1)+(2) land, `block_on` can
-  only be driven by the Rust-side executor primitive, not a *compiled glyim*
-  future. A real multi-threaded waker / I/O reactor is also a follow-up.
+  - **Match-arm unit-variant pattern lowering (commit e61a86f)**: `lower_match_expr`
+    now accepts `PathExpr`/`UsePath` arm patterns, so a unit enum-variant arm
+    like `Poll::Pending` is lowered into a HIR pattern instead of being skipped
+    (which dropped the arm and tripped `non-exhaustive match: missing variants`).
+    The probe is now **7 diagnostics** (was 12), all rooted in one wall:
+    generic fn-body monomorphization + abstract associated-type projection.
+  The remaining 7 diagnostics are ALL the same root cause: `block_on<F>`'s body
+  is checked exactly once with the rigid type param `F`, so —
+  - `F vs Adt6` (×4: `F`, `&F`, `&mut F`, and the call arg `AddOne`) — the body's
+    `f: F` never unifies with the concrete `AddOne`;
+  - `unresolved name v` — `v` from `Poll::Ready(v)` is looked up inside the
+    rigid-`F` body where the arm binding isn't established;
+  - `<F as Trait5>::Output vs i32` — `F::Output` projection can't normalize
+    because `Self=F` is rigid (no concrete impl to key the lookup table);
+  - `unresolved type T` / `mismatched type argument counts` — `Poll<T>` /
+    `Poll<Self::Output>` generic-param arity in projection.
+  Real fix = re-check generic fn bodies **per call site** with the type params
+  bound to the argument types (monomorphization), and normalize `ProjectionTy`
+  to concrete via the impl-keyed lookup table once `Self` is concrete. This is a
+  designed epic (refs #23 async), not a one-patch fix. Until it lands, `block_on`
+  can only be driven by the Rust-side executor primitive, not a *compiled glyim*
+  future. The probe stays `#[ignore]`d as a characterization lock.
 
 ### 5.2 Executor — DONE (single-threaded MVP)
 `block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop
