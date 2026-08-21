@@ -71,6 +71,7 @@ fn build_simple_hir(
         items: IndexVec::new(),
         bodies: IndexVec::new(),
         body_owners: IndexVec::new(),
+        interner: Default::default(),
     };
     let mut exprs = IndexVec::new();
     for e in body_exprs {

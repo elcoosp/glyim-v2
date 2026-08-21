@@ -61,6 +61,7 @@ fn binary_i32_add_ok() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -126,6 +127,7 @@ fn expr_ty_returns_resolved_type() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();

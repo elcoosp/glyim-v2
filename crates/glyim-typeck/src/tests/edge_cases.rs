@@ -75,6 +75,7 @@ fn multiple_functions() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -167,6 +168,7 @@ fn multiple_params() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -229,6 +231,7 @@ fn binary_multiply() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -291,6 +294,7 @@ fn binary_comparison() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -354,6 +358,7 @@ fn if_expression() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -416,6 +421,7 @@ fn block_expression() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -474,6 +480,7 @@ fn unresolved_variable() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();

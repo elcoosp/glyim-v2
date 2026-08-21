@@ -185,6 +185,7 @@ fn make_simple_hir_with_trait_and_impl(override_default: bool) -> (TyCtxMut, Cra
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = TyCtxMut::new(interner);
@@ -321,6 +322,7 @@ fn v03_t03_default_method_calling_another_default_method() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = TyCtxMut::new(interner);
@@ -435,6 +437,7 @@ fn v03_t04_default_method_with_generic_params() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = TyCtxMut::new(interner.clone());
@@ -536,6 +539,7 @@ fn v03_t05_default_method_calls_missing_method_error() {
         items,
         bodies: IndexVec::new(),
         body_owners: IndexVec::new(),
+        interner: Default::default(),
     };
 
     let ctx = TyCtxMut::new(interner);
@@ -650,6 +654,7 @@ fn v03_t06_ambiguous_method_in_multiple_impls() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = TyCtxMut::new(interner);

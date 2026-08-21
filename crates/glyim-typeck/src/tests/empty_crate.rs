@@ -11,6 +11,7 @@ fn empty_crate_no_errors() {
         items: Default::default(),
         bodies: Default::default(),
         body_owners: Default::default(),
+        interner: Default::default(),
     };
     let mut solver = MockSolver::new().respond_for_any(glyim_solve::SolverResult::Proven);
     let (_, result) = typeck_crate(ctx, &def_map, &hir, &mut solver);

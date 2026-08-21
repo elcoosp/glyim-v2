@@ -80,6 +80,7 @@ pub fn make_single_body_hir(
         items: IndexVec::new(),
         bodies: IndexVec::new(),
         body_owners: IndexVec::new(),
+        interner: Default::default(),
     };
     let mut expr_vec = IndexVec::new();
     for expr in exprs {

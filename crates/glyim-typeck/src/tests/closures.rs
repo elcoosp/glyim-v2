@@ -121,6 +121,7 @@ fn closure_captures_enclosing_param() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
@@ -224,6 +225,7 @@ fn move_closure_captures_by_value() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();

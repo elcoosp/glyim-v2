@@ -75,6 +75,7 @@ fn ref_mutable() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
 
     let ctx = make_ty_ctx();
