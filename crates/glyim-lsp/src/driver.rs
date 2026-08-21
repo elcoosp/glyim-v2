@@ -79,9 +79,10 @@ impl AnalysisDriver {
         let crate_id = CrateId::from_raw(0);
         let lex_result = lex(content, file_id);
         let parse_result = parse_to_syntax(content, file_id);
-        let (def_map, def_diagnostics) = build_def_map(&parse_result.root, crate_id);
-
         let mut interner = Interner::new();
+        let (def_map, def_diagnostics) =
+            build_def_map(&parse_result.root, crate_id, interner.clone());
+
         let (hir, _hir_diags) = lower_crate_for_pipeline(&parse_result.root, &mut interner);
 
         // Tier 6.4: run the type checker so completions/hover can resolve

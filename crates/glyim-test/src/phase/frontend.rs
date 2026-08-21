@@ -33,9 +33,14 @@ impl FrontendTester {
             return trace;
         }
 
-        // Phase 2: DefMap
-        let (def_map, def_diags) =
-            glyim_def_map::build_def_map(&result.root, glyim_core::def_id::CrateId::from_raw(0));
+        // Phase 2: DefMap — build with a shared interner so that HIR lowering
+        // (Phase 3) and the def-map agree on `Name` ids.
+        let mut interner = glyim_core::interner::Interner::new();
+        let (def_map, def_diags) = glyim_def_map::build_def_map(
+            &result.root,
+            glyim_core::def_id::CrateId::from_raw(0),
+            interner.clone(),
+        );
         trace.def_map_diagnostics = def_diags.clone();
         trace.def_map = Some(def_map.clone());
 
@@ -43,8 +48,7 @@ impl FrontendTester {
             return trace;
         }
 
-        // Phase 3: HIR lowering
-        let mut interner = def_map.interner.clone();
+        // Phase 3: HIR lowering — reuse the same interner.
         let (hir, hir_diags) =
             glyim_hir::pipeline_api::lower_crate_for_pipeline(&result.root, &mut interner);
         trace.typeck_diagnostics.extend(hir_diags.clone());

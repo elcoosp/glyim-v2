@@ -87,7 +87,7 @@ impl Pipeline {
         }
 
         let (def_map, def_diagnostics) =
-            glyim_def_map::build_def_map(&parse_result.root, db.krate());
+            glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
         sink_cell.borrow_mut().extend(def_diagnostics);
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
@@ -298,7 +298,7 @@ pub fn compile_file_to_mir(
         return Err(sink_cell.into_inner().into_diagnostics());
     }
 
-    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
     sink_cell.borrow_mut().extend(def_diagnostics);
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
@@ -369,7 +369,7 @@ pub fn emit_mir(
         return Err(sink_cell.into_inner().into_diagnostics());
     }
 
-    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
     sink_cell.borrow_mut().extend(def_diagnostics);
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
@@ -442,7 +442,7 @@ pub fn emit_llvm_ir(
         return Err(sink_cell.into_inner().into_diagnostics());
     }
 
-    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
     sink_cell.borrow_mut().extend(def_diagnostics);
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());
@@ -527,7 +527,7 @@ pub fn emit_asm(
         return Err(sink_cell.into_inner().into_diagnostics());
     }
 
-    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate());
+    let (def_map, def_diagnostics) = glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
     sink_cell.borrow_mut().extend(def_diagnostics);
     if sink_cell.borrow().has_errors() {
         return Err(sink_cell.into_inner().into_diagnostics());

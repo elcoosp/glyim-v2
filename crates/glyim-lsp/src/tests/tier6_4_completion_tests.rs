@@ -81,8 +81,8 @@ fn s12_impl_methods_indexed_with_receiver_type() {
     );
     let crate_id = glyim_core::CrateId::from_raw(0);
     let parse_result = glyim_frontend::parse_to_syntax(source, file_id);
-    let def_map = glyim_def_map::build_def_map(&parse_result.root, crate_id).0;
     let mut interner = glyim_core::Interner::new();
+    let def_map = glyim_def_map::build_def_map(&parse_result.root, crate_id, interner.clone()).0;
     let (hir, _hir_diags) =
         glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, &mut interner);
     let ty_ctx_mut = glyim_type::TyCtxMut::new(interner.clone());
