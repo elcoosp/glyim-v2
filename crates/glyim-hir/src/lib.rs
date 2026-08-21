@@ -34,7 +34,7 @@
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
-use glyim_core::interner::Name;
+use glyim_core::interner::{Interner, Name};
 use glyim_core::path::PathKind;
 use glyim_core::primitives::*;
 use glyim_span::Span;
@@ -55,6 +55,14 @@ pub struct CrateHir {
     pub items: IndexVec<ItemId, Item>,
     pub bodies: IndexVec<BodyId, Body>,
     pub body_owners: IndexVec<BodyId, LocalDefId>,
+    /// The `Interner` used while lowering this crate. Names embedded in the
+    /// HIR (`Body::pats`, `PathSegment`s, …) are valid `Name` ids in THIS
+    /// interner. The type-checker is typically built from the same shared
+    /// database interner, but in some call paths (e.g. a freshly lowered HIR
+    /// paired with a separately-constructed `TyCtx`) the two can diverge, so
+    /// pattern/reference names must be re-mapped through this interner before
+    /// being added to the lexical environment.
+    pub interner: Interner,
 }
 
 #[derive(Clone, Debug)]

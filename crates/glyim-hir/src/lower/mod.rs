@@ -260,5 +260,6 @@ pub(crate) fn lower_crate(
         items,
         bodies,
         body_owners,
+        interner: interner.clone(),
     }
 }

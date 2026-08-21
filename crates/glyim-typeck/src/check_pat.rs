@@ -2,6 +2,7 @@
 
 use glyim_core::def_id::AdtId;
 use glyim_core::def_id::LocalDefId;
+use glyim_core::interner::Name;
 use glyim_core::primitives::Mutability;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{Pat, PatId};
@@ -13,6 +14,18 @@ use crate::thir;
 
 
 impl<'a> FnCtxt<'a> {
+    /// Re-map a `Name` taken from the HIR (valid in `self.hir.interner`) into
+    /// the type-checker's interner (`self.ctx.resolver()`). The HIR body and
+    /// the `TyCtx` are sometimes built from different `Interner` instances, so
+    /// a `Name` id that means `"y"` in one can mean `"x"` in the other.
+    /// Resolving through the HIR interner recovers the textual identifier,
+    /// which is then interned in the type-checker's interner so lexical
+    /// lookups (guard/body `VarRef`s) match the binding.
+    pub fn remap_name(&self, name: Name) -> Name {
+        let s = self.hir.interner.resolve(name);
+        self.ctx.resolver().intern(s)
+    }
+
     /// Bind a HIR pattern into the local environment, returning the
     /// `LocalVarId` of the (first) binding it introduces. Used for closure
     /// parameters, mirroring how `check_pattern` / `let` statements bind
@@ -42,12 +55,18 @@ impl<'a> FnCtxt<'a> {
                 mutability,
                 subpattern,
             } => {
-                self.env.add_binding(*name, expected_ty, *mutability);
+                // Re-map the HIR `Name` (valid in `self.hir.interner`) into the
+                // type-checker's interner so lexical lookups in the guard/body
+                // (which use `self.ctx.resolver()`) resolve against the same
+                // identifier. See `CrateHir::interner` for why the two can
+                // diverge.
+                let ctx_name = self.remap_name(*name);
+                self.env.add_binding(ctx_name, expected_ty, *mutability);
                 let sub =
                     subpattern.map(|sub_id| Box::new(self.check_pattern(sub_id, expected_ty)));
                 thir::Pattern {
                     kind: thir::PatternKind::Binding {
-                        name: *name,
+                        name: ctx_name,
                         mutability: *mutability,
                         subpattern: sub,
                     },

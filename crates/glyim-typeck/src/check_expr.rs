@@ -358,12 +358,13 @@ impl<'a> FnCtxt<'a> {
                     });
                 }
 
-                let final_ty = if result_ty == Ty::ERROR {
+                let resolved_result = self.infer.resolve_ty_shallow(self.ctx, result_ty);
+                let final_ty = if resolved_result == Ty::ERROR {
                     Ty::ERROR
-                } else if matches!(self.ctx.ty_kind(result_ty), TyKind::Infer(_)) {
+                } else if matches!(self.ctx.ty_kind(resolved_result), TyKind::Infer(_)) {
                     Ty::UNIT
                 } else {
-                    result_ty
+                    resolved_result
                 };
 
                 // Plan §22.1 (prereq): exhaustiveness check for `match` over an
