@@ -76,6 +76,10 @@ fn async_desugar_target_compiles() {
         fn main() -> i32 { let f = AddOne { x: 41 }; block_on(f) }
     "#;
     let output = compile(src);
+    eprintln!("PROBE COUNT={}", output.diagnostics.len());
+    for d in &output.diagnostics {
+        eprintln!("  {:?}", d.message);
+    }
     // Characterization of the current blocker (12 diagnostics rooted in
     // generic trait bounds + associated types).
     assert!(!output.diagnostics.is_empty(), "expected P5 blocker diagnostics");

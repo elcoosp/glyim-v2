@@ -538,6 +538,35 @@ pub fn resolve_path_type(
                 return ty;
             }
         }
+        // Plan unstub-5 P5: associated-type projection for an abstract self
+        // type. When the qualifier is a generic parameter (`F::Output`) or
+        // `Self` (`Self::Output`), there is no concrete impl to look the
+        // defining type up in, so we synthesize a `ProjectionTy` that names
+        // the bound trait instead. This keeps `F::Output` / `Self::Output`
+        // well-typed (no spurious `unresolved type` diagnostic) and lets the
+        // rest of typeck treat it as a real, comparable type.
+        if matches!(ctx.ty_kind(self_ty), TyKind::Param(_)) || ctx.name_str(first.name) == "Self" {
+            let trait_def_id = if matches!(ctx.ty_kind(self_ty), TyKind::Param(_)) {
+                // For a generic param, use its registered trait bound(s).
+                ctx.param_bounds_for(first.name)
+                    .and_then(|traits| traits.first().copied())
+            } else {
+                // `Self::Item` — find the trait that declares `Item`.
+                ctx.find_trait_with_assoc_type(assoc_name)
+            };
+            if let Some(tid) = trait_def_id {
+                let substs = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
+                let trait_ref = TraitRef {
+                    def_id: tid,
+                    substs,
+                };
+                let proj = ProjectionTy {
+                    trait_ref,
+                    item_name: assoc_name,
+                };
+                return ctx.mk_ty(TyKind::Projection(proj));
+            }
+        }
     }
 
     // Multi-segment paths: try to resolve fully
@@ -578,7 +607,7 @@ fn resolve_qualified_path(
     // Resolve the whole path (module prefix + final ADT segment) through the
     // module tree, then build the ADT type with the final segment's generic
     // arguments (if any).
-    let local = resolve_path_to_local_def_id(def_map, path)?;
+    let local = resolve_path_to_local_def_id(ctx, def_map, path)?;
     let adt_id = AdtId::from_raw(local.to_raw());
     let substs = if let Some(args) = path.segments.last().and_then(|s| s.generic_args.as_ref()) {
         let mut arg_tys = Vec::with_capacity(args.len());
@@ -610,6 +639,7 @@ fn resolve_qualified_path(
 /// module reached by the prefix. Handles `Crate` / `Super(n)` / `SelfPath` /
 /// `Plain` path kinds.
 pub(crate) fn resolve_path_to_local_def_id(
+    _ctx: &TyCtxMut,
     def_map: &glyim_def_map::CrateDefMap,
     path: &glyim_hir::Path,
 ) -> Option<LocalDefId> {
@@ -630,6 +660,13 @@ pub(crate) fn resolve_path_to_local_def_id(
     };
 
     for (i, seg) in path.segments.iter().enumerate() {
+        // NOTE: the HIR `Path` segment `Name`s already live in the def-map's
+        // interner in the pipeline (the lowering and `build_def_map` share a
+        // rodeo via the database), so a direct `scope.resolve(seg.name)`
+        // lookup is correct. We intentionally do NOT re-intern through
+        // `def_map.interner` here — that path produced wrong strings when
+        // `seg.name` belonged to a different rodeo than `ctx` (plan unstub-5
+        // P5).
         if i + 1 == path.segments.len() {
             let res = def_map.modules[current].scope.resolve(seg.name)?;
             return Some(res.0);
@@ -653,16 +690,17 @@ pub(crate) fn resolve_path_to_local_def_id(
 /// pattern-path lowering once that tier lands.
 #[allow(dead_code)]
 pub(crate) fn resolve_path_to_adt_id(
+    ctx: &TyCtxMut,
     def_map: &glyim_def_map::CrateDefMap,
     path: &glyim_hir::Path,
 ) -> Option<AdtId> {
-    resolve_path_to_local_def_id(def_map, path).map(|l| AdtId::from_raw(l.to_raw()))
+    resolve_path_to_local_def_id(ctx, def_map, path).map(|l| AdtId::from_raw(l.to_raw()))
 }
 
 /// Resolve path to trait DefId
 pub(crate) fn resolve_path_to_trait_def_id(
     def_map: &glyim_def_map::CrateDefMap,
-    _ctx: &mut TyCtxMut,
+    ctx: &TyCtxMut,
     path: &glyim_hir::Path,
     _span: Span,
 ) -> Option<TraitDefId> {
@@ -675,7 +713,7 @@ pub(crate) fn resolve_path_to_trait_def_id(
     // function calls (`mod::fn`) and enum-variant paths are NOT misclassified
     // as trait-method calls — but where-clause resolution and type-position
     // trait lookups rely on the lenient cast below.
-    resolve_path_to_local_def_id(def_map, path).map(|l| TraitDefId::from_raw(l.to_raw()))
+    resolve_path_to_local_def_id(ctx, def_map, path).map(|l| TraitDefId::from_raw(l.to_raw()))
 }
 
 fn resolve_primitive(ctx: &mut TyCtxMut, name: Name) -> Option<Ty> {
@@ -736,8 +774,17 @@ fn resolve_name_to_adt_ty(
     path: &glyim_hir::Path,
     span: Span,
 ) -> Option<Ty> {
-    let def_id = resolve_name_to_def_id(def_map, path.as_name()?)?;
-    let adt_id = AdtId::from_raw(def_id.local_id.to_raw());
+    // Plan unstub-5 P5: ADTs are registered in `TyCtxMut` under their
+    // *HIR-interned* name (`adt_by_name`), which is independent of the
+    // def-map's interner. Look the path name up there first; fall back to the
+    // def-map scope (def-map-interned) for builtins/legacy lookups.
+    let adt_id = match path.as_name().and_then(|name| ctx.adt_id_by_name(name)) {
+        Some(id) => id,
+        None => {
+            let def_id = resolve_name_to_def_id(def_map, path.as_name()?)?;
+            AdtId::from_raw(def_id.local_id.to_raw())
+        }
+    };
     let arity = ctx.adt_generic_arity(adt_id);
 
     // Generic arguments live on the final path segment (the ADT itself).

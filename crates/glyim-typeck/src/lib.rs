@@ -81,6 +81,95 @@ pub enum AdjustKind {
     NeverToAny,
 }
 
+/// Register a top-level `enum`/`struct` as an ADT (variants/fields + generic
+/// params) so that type resolution, struct-literal typing, field access, and
+/// pattern matching can find it. The HIR and the def-map use distinct
+/// interners, so the local id is resolved through `def_map.interner` (plan
+/// unstub-5 P5). Returns `true` if the item was an ADT and got registered.
+fn register_adt_item(
+    ctx: &mut TyCtxMut,
+    infer: &mut InferenceTable,
+    def_map: &glyim_def_map::CrateDefMap,
+    diagnostics: &mut Vec<GlyimDiagnostic>,
+    item: &glyim_hir::Item,
+    module_id: glyim_def_map::ModuleId,
+) -> bool {
+    match &item.kind {
+        glyim_hir::ItemKind::Enum(enum_item) => {
+            let local = def_map
+                .modules
+                .get(module_id)
+                .and_then(|m| m.scope.types.get(&item.name))
+                .map(|(id, _, _)| *id);
+            let adt_id = match local {
+                Some(l) => AdtId::from_raw(l.to_raw()),
+                None => ctx.next_synthetic_adt_id(),
+            };
+            {
+                // The enum's own generic params (e.g. `T` in `Poll<T>`) must be
+                // in scope when resolving variant field types, so `Ready(T)`
+                // yields a `TyKind::Param` rather than an `unresolved type`.
+                let param_map = tyconv::build_param_tys(ctx, &enum_item.generic_params);
+                let mut variants = Vec::new();
+                for variant in &enum_item.variants {
+                    let mut fields = IndexVec::new();
+                    for field in &variant.fields {
+                        let field_ty = tyconv::resolve_type_ref(
+                            ctx, infer, def_map, diagnostics, &field.ty, &param_map, field.span,
+                        );
+                        fields.push(FieldDef { name: field.name, ty: field_ty });
+                    }
+                    variants.push(VariantDef { name: variant.name, fields });
+                }
+                ctx.register_adt_with_name(
+                    item.name,
+                    adt_id,
+                    AdtDef {
+                        kind: AdtKind::Enum,
+                        fields: IndexVec::new(),
+                        variants,
+                        generic_params: enum_item.generic_params.iter().map(|p| p.name).collect(),
+                    },
+                );
+            }
+            true
+        }
+        glyim_hir::ItemKind::Struct(struct_item) => {
+            let local = def_map
+                .modules
+                .get(module_id)
+                .and_then(|m| m.scope.types.get(&item.name))
+                .map(|(id, _, _)| *id);
+            let adt_id = match local {
+                Some(l) => AdtId::from_raw(l.to_raw()),
+                None => ctx.next_synthetic_adt_id(),
+            };
+            {
+                let param_map = tyconv::build_param_tys(ctx, &struct_item.generic_params);
+                let mut fields = IndexVec::new();
+                for field in &struct_item.fields {
+                    let field_ty = tyconv::resolve_type_ref(
+                        ctx, infer, def_map, diagnostics, &field.ty, &param_map, field.span,
+                    );
+                    fields.push(FieldDef { name: field.name, ty: field_ty });
+                }
+                ctx.register_adt_with_name(
+                    item.name,
+                    adt_id,
+                    AdtDef {
+                        kind: AdtKind::Struct,
+                        fields,
+                        variants: Vec::new(),
+                        generic_params: struct_item.generic_params.iter().map(|p| p.name).collect(),
+                    },
+                );
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 #[tracing::instrument(level = "info", skip(ctx, solver))]
 pub fn typeck_crate(
     mut ctx: TyCtxMut,
@@ -119,6 +208,23 @@ pub fn typeck_crate(
         LocalDefId::from_raw(id)
     };
 
+    // any trait/impl/function type resolution. The coherence pass and the
+    // signature-resolution loops below resolve types that reference these ADTs
+    // (`Poll<...>` in a trait method return type, `AddOne { .. }` in a body),
+    // so the ADTs must already be in `TyCtxMut`; otherwise `Poll`/`AddOne`-
+    // style types are reported unresolved. Registration is idempotent, so the
+    // later `register_adt` calls in `check_fn_items_in_module` are harmless.
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        register_adt_item(
+            &mut ctx,
+            &mut infer,
+            def_map,
+            &mut diagnostics,
+            item,
+            def_map.root,
+        );
+    }
+
     // 1. Coherence pass
     let mut coherence = coherence::CoherenceChecker::new(def_map);
 
@@ -137,7 +243,7 @@ pub fn typeck_crate(
                 }],
                 kind: glyim_core::path::PathKind::Plain,
             };
-            if let Some(local) = tyconv::resolve_path_to_local_def_id(def_map, &trait_path) {
+            if let Some(local) = tyconv::resolve_path_to_local_def_id(&ctx, def_map, &trait_path) {
                 let trait_def_id = TraitDefId::from_raw(local.to_raw());
                 let methods = trait_item
                     .methods
@@ -207,6 +313,64 @@ pub fn typeck_crate(
                 coherence.check_and_register(header, &mut ctx, &mut infer)
             {
                 diagnostics.append(&mut cohesion_diags);
+            }
+        }
+    }
+
+    // 1b. Plan unstub-5 P5: populate `ctx.param_bounds` (param name → bound
+    // trait def ids) from every function's / impl's generic params and
+    // where-clauses. This lets associated-type projection (`F::Output`) and
+    // method dispatch on a generic receiver (`f.poll()`) locate the bound
+    // trait without a full trait solver. Name-keyed and crate-wide; parameter
+    // names are interned and unique within a function.
+    {
+        let mut register_bounds = |ctx: &mut TyCtxMut, params: &[glyim_hir::GenericParam],
+                                   where_clauses: &[glyim_hir::where_clause::WhereClause]| {
+            for gp in params {
+                if let glyim_hir::GenericParamKind::Type { bounds, .. } = &gp.kind {
+                    for bound in bounds {
+                        if let glyim_hir::TypeRef::Path(p) = bound {
+                            if let Some(name) = p.as_name() {
+                                if let Some(local) = tyconv::resolve_path_to_local_def_id(ctx, def_map, p)
+                                {
+                                    let tid = TraitDefId::from_raw(local.to_raw());
+                                    ctx.param_bounds
+                                        .entry(gp.name)
+                                        .or_default()
+                                        .push(tid);
+                                }
+                                // avoid unused warning for `name`
+                                let _ = name;
+                            }
+                        }
+                    }
+                }
+            }
+            for wc in where_clauses {
+                let wc_ty_name = match &wc.ty {
+                    glyim_hir::TypeRef::Path(p) => p.as_name(),
+                    _ => None,
+                };
+                if let Some(pname) = wc_ty_name {
+                    for bound in &wc.bounds {
+                        let p = &bound.trait_path;
+                        if let Some(local) = tyconv::resolve_path_to_local_def_id(ctx, def_map, p) {
+                            let tid = TraitDefId::from_raw(local.to_raw());
+                            ctx.param_bounds.entry(pname).or_default().push(tid);
+                        }
+                    }
+                }
+            }
+        };
+        for (_item_id, item) in hir.items.iter_enumerated() {
+            match &item.kind {
+                ItemKind::Fn(f) => {
+                    register_bounds(&mut ctx, &f.generic_params, &f.where_clauses);
+                }
+                ItemKind::Impl(impl_item) => {
+                    register_bounds(&mut ctx, &impl_item.generic_params, &impl_item.where_clauses);
+                }
+                _ => {}
             }
         }
     }

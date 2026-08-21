@@ -520,7 +520,28 @@ impl<'a> FnCtxt<'a> {
                 };
 
                 let ret_ty = if is_fn_def {
-                    self.instantiate_fn_sig(def_id, span)
+                    // Plan unstub-5 P5: generic call instantiation. For a generic
+                    // function `fn id<T>(x: T) -> T`, build a substitution from
+                    // the formal parameter types (which carry the type params)
+                    // to the *call argument* types, then instantiate the
+                    // registered return type through it. This makes
+                    // `id(40)` return `i32` (not the rigid `T`) and is what
+                    // unblocks `block_on<F: MyFuture>`-style dispatch.
+                    if let Some(sig) = self.ctx.fn_sig(def_id) {
+                        let mut subst: std::collections::HashMap<u32, Ty> =
+                            std::collections::HashMap::new();
+                        let inputs = self.ctx.substitution_args(sig.inputs);
+                        for (i, arg_expr) in arg_exprs.iter().enumerate() {
+                            if let Some(GenericArg::Ty(param_ty)) = inputs.get(i) {
+                                if let TyKind::Param(pt) = self.ctx.ty_kind(*param_ty) {
+                                    subst.insert(pt.index, arg_expr.ty);
+                                }
+                            }
+                        }
+                        self.ctx.subst_ty(sig.output, &subst)
+                    } else {
+                        self.instantiate_fn_sig(def_id, span)
+                    }
                 } else if is_error {
                     Ty::ERROR
                 } else {
@@ -1181,35 +1202,95 @@ impl<'a> FnCtxt<'a> {
         }
 
         if candidates.is_empty() {
-            self.diagnostics.push(GlyimDiagnostic::type_error(
-                span,
-                format!(
-                    "no method `{}` found for type",
-                    self.ctx.name_str(method_name)
-                ),
-            ));
-            // Plan §22.1 (prereq for "Generate impl"): if the method name is
-            // declared by a trait in this crate, surface a `trait_not_implemented`
-            // diagnostic naming that trait and the receiver type, so the LSP can
-            // offer to synthesize `impl Trait for Type { }`.
-            let recv_name = PrintTy::new(recv_ty, &*self.ctx).to_string();
-            for item in self.hir.items.iter() {
-                if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
-                    if trait_item
-                        .methods
-                        .iter()
-                        .any(|m| m.name == method_name)
-                    {
-                        self.diagnostics.push(GlyimDiagnostic::trait_not_implemented(
-                            span,
-                            self.ctx.name_str(item.name),
-                            recv_name.clone(),
-                        ));
-                        break;
+            // Plan unstub-5 P5: method dispatch on a *generic* receiver
+            // (`f.poll()` where `f: F` and `F: MyFuture`). No impl's `Self`
+            // unifies with a type param, so the impl scan above finds nothing.
+            // Instead, resolve the method from the bound trait's HIR
+            // definition, substituting `Self` → the receiver type so associated
+            // types in the signature (`Self::Output`) project correctly.
+            if let TyKind::Param(param) = self.ctx.ty_kind(recv_ty) {
+                let traits = self.ctx.param_bounds_for(param.name).map(|t| t.to_vec());
+                if let Some(traits) = traits {
+                    let self_name = self.ctx.resolver().intern("Self");
+                    let mut pm: HashMap<Name, Ty> = HashMap::new();
+                    pm.insert(self_name, recv_ty);
+                    for tid in traits {
+                        for item in self.hir.items.iter() {
+                            if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
+                                let trait_path = glyim_hir::Path {
+                                    segments: vec![glyim_hir::PathSegment {
+                                        name: item.name,
+                                        generic_args: None,
+                                    }],
+                                    kind: glyim_core::path::PathKind::Plain,
+                                };
+                                let Some(local) =
+                                    crate::tyconv::resolve_path_to_local_def_id(self.ctx, self.def_map, &trait_path)
+                                else {
+                                    continue;
+                                };
+                                if TraitDefId::from_raw(local.to_raw()) != tid {
+                                    continue;
+                                }
+                                for m in &trait_item.methods {
+                                    if m.name == method_name {
+                                        let return_ty = if let Some(rt) = &m.return_ty {
+                                            crate::tyconv::resolve_type_ref(
+                                                self.ctx,
+                                                self.infer,
+                                                self.def_map,
+                                                self.diagnostics,
+                                                rt,
+                                                &pm,
+                                                span,
+                                            )
+                                        } else {
+                                            Ty::UNIT
+                                        };
+                                        candidates.push((recv_ty, return_ty));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if !candidates.is_empty() {
+                            break;
+                        }
                     }
                 }
             }
-            return Ty::ERROR;
+
+            if candidates.is_empty() {
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    format!(
+                        "no method `{}` found for type",
+                        self.ctx.name_str(method_name)
+                    ),
+                ));
+                // Plan §22.1 (prereq for "Generate impl"): if the method name is
+                // declared by a trait in this crate, surface a `trait_not_implemented`
+                // diagnostic naming that trait and the receiver type, so the LSP can
+                // offer to synthesize `impl Trait for Type { }`.
+                let recv_name = PrintTy::new(recv_ty, &*self.ctx).to_string();
+                for item in self.hir.items.iter() {
+                    if let glyim_hir::ItemKind::Trait(trait_item) = &item.kind {
+                        if trait_item
+                            .methods
+                            .iter()
+                            .any(|m| m.name == method_name)
+                        {
+                            self.diagnostics.push(GlyimDiagnostic::trait_not_implemented(
+                                span,
+                                self.ctx.name_str(item.name),
+                                recv_name.clone(),
+                            ));
+                            break;
+                        }
+                    }
+                }
+                return Ty::ERROR;
+            }
         }
 
         if candidates.len() > 1 {

@@ -11,6 +11,7 @@ use glyim_core::def_id::{AdtId, CrateId, LocalDefId};
 use glyim_def_map::{CrateDefMap, ItemScope, ModuleData, ModuleId, ModuleOrigin};
 use glyim_hir::Path;
 use glyim_span::Span;
+use glyim_type::TyCtxMut;
 
 use crate::tyconv::resolve_path_to_adt_id;
 
@@ -68,6 +69,7 @@ fn nested_def_map(interner: &mut glyim_core::interner::Interner) -> CrateDefMap 
 fn multi_segment_struct_pattern_resolves_to_adt() {
     let mut interner = glyim_core::interner::Interner::new();
     let def_map = nested_def_map(&mut interner);
+    let ctx = TyCtxMut::new(interner.clone());
 
     let zoo = interner.intern("zoo");
     let point = interner.intern("Point");
@@ -81,7 +83,7 @@ fn multi_segment_struct_pattern_resolves_to_adt() {
         },
     );
 
-    let resolved = resolve_path_to_adt_id(&def_map, &path);
+    let resolved = resolve_path_to_adt_id(&ctx, &def_map, &path);
     assert!(
         resolved.is_some(),
         "multi-segment struct path `zoo::Point` must resolve"
@@ -118,11 +120,12 @@ fn single_segment_struct_pattern_still_resolves() {
         modules,
         krate: CrateId::from_raw(0),
         interner: interner.clone(),
-    variant_map: Default::default(),
+        variant_map: Default::default(),
     };
+    let ctx = TyCtxMut::new(interner.clone());
 
     let path = Path::from_single(point);
-    let resolved = resolve_path_to_adt_id(&def_map, &path);
+    let resolved = resolve_path_to_adt_id(&ctx, &def_map, &path);
     assert_eq!(resolved, Some(AdtId::from_raw(7)));
 }
 
