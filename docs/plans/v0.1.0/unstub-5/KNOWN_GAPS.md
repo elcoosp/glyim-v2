@@ -231,17 +231,26 @@ large front-end + codegen effort, tracked below.
   (`glyim-typeck/src/tests/dyn_dispatch.rs::async_desugar_target_compiles`,
   currently `#[ignore]`d), is that the compiler **cannot yet express the
   desugared form** — `impl Future for X { type Output; fn poll(&mut self) ->
-  Poll<Output> }` plus a generic `block_on<F: Future>` driving it. It emits **12
-  diagnostics**, all rooted in generic trait bounds + associated types:
-  - `unresolved type F::Output` and `trait MyFuture is not implemented for F`
-    — generic associated types and `F: Trait` bounds are not resolved in typeck.
-  - `mismatched types: F vs Adt1` (×4, incl. `&F`/`&mut F`) — generic type
-    params are not resolved as types at the call site.
-  - `no method poll found for type` — method dispatch on a generic `F: Trait`
-    bound is not resolved.
-  - cascade `unresolved type Poll` / `unresolved name block_on` / `unresolved
-    value path` — the generic-resolution failures break item registration for the
-    rest of the crate.
+  Poll<Output> }` plus a generic `block_on<F: Future>` driving it. It emits **9
+  diagnostics** (down from 12), characterizing the genuine P5 depth that remains:
+  - `unresolved type T` (×1) — `Poll<T>`'s own generic param `T` surfaces in
+    `Poll<Self::Output>`; enum generic params now resolve in variant *fields*
+    (so `Ready(T)` no longer errors) but the `Self::Output` projection arg still
+    fails to resolve as a concrete `T`.
+  - `mismatched type argument counts` — unifying `Poll<ProjectionTy>` (from
+    `F::Output`) against `Poll<i32>` fails because the projection is not yet
+    normalized to its concrete type.
+  - `unresolved name v` / `non-exhaustive match: missing variants Pending` —
+    enum variant *pattern* binding resolution (`Poll::Ready(v)`, `Poll::Pending`)
+    is not yet wired for the generic `Poll` enum (variants are registered but the
+    pattern path → variant_idx resolution is incomplete).
+  - `mismatched types: F vs Adt6` (×4, incl. `&F`/`&mut F`) — `block_on<F:
+    MyFuture>`'s *body* is checked with a rigid `F`; at the call `block_on(f)`
+    with `f: AddOne`, the argument is checked against the rigid param and the
+    body is not re-instantiated. This is the generic-body monomorphization wall.
+  - `mismatched types: <F as Trait5>::Output vs i32` — associated-type
+    projection under a generic param (`F::Output`) is not normalized; the
+    projection lookup table only covers the *concrete-self* case.
   IMPORTANT correction to an earlier note: **concrete** (non-generic) trait-method
   dispatch with non-unit return types DOES work — `dyn_dispatch::
   trait_method_path_dispatch_resolves` (`fn speak(&self) -> i32`) passes through
@@ -295,9 +304,36 @@ large front-end + codegen effort, tracked below.
   lowers without an *internal* error but the param resolves to `()`. That
   ordering is part of the item-pass restructure (tracked below). The abstract
   `Self::Output` / `F::Output` cases still require the full trait solver.
-  coroutine pass. Until (a) lands, `block_on` can only be driven by the
-  Rust-side executor primitive, not a *compiled glyim* future. A real
-  multi-threaded waker / I/O reactor is also a follow-up.
+  PROGRESS (2026-08-21, P5 generic-instantiation fixes — COMMITTED, suite green):
+  - **Interner fix (commits 2140007 / 07deedf / 8112dee)**: `build_def_map`
+    now takes the DB `Interner` so HIR and the def-map share one `Name` space.
+    This eliminated the cascade `unresolved value path` / `unresolved struct
+    path` / `unresolved name block_on` errors — value/pattern paths crossing
+    HIR→def-map now resolve. (Earlier attempts to "fix" this by re-interning
+    names inside `resolve_path_to_local_def_id` broke concrete-receiver dispatch
+    and were reverted; threading the shared interner is the correct fix.)
+  - **Enum generic-param resolution**: `register_adt_item` now builds a
+    `param_map` from the enum's own generic params (e.g. `T` in `Poll<T>`) when
+    resolving variant field types, so `Ready(T)` yields `TyKind::Param(T)` instead
+    of `unresolved type T`.
+  - **Generic call instantiation (commit ecef611 + 8112dee)**: `TyCtxMut::subst_ty`
+    substitutes `TyKind::Param` by a caller map, and `check_expr`'s `Expr::Call`
+    handler now, for a generic `FnDef` callee, matches call-argument types
+    against the registered `FnSig` inputs to build the substitution and
+    instantiates the *return* type through it. This makes `id(40)` return `i32`
+    (regression test `generic_fn_typechecks_and_lowers` now passes) and unblocks
+    `block_on<F>`'s return type — but NOT its *body*, which is still checked with
+    rigid `F` (see `F vs Adt6` above; that requires full body monomorphization).
+  The `F vs Adt6` body errors + `<F as Trait5>::Output` projection + variant
+  pattern binding (`v`/`Pending`) are the remaining P5 depth. They share a root
+  cause: the compiler lacks generic-function-body monomorphization AND abstract
+  (`F::Output`) associated-type projection normalization. Real fix = (1) re-check
+  generic fn bodies per call with the type params bound to the argument types,
+  and (2) normalize `ProjectionTy` to concrete via the projection lookup table
+  even when the self type is a generic `Param` (requires the trait-bound solver
+  to first bind `F: MyFuture` to `AddOne`). Until (1)+(2) land, `block_on` can
+  only be driven by the Rust-side executor primitive, not a *compiled glyim*
+  future. A real multi-threaded waker / I/O reactor is also a follow-up.
 
 ### 5.2 Executor — DONE (single-threaded MVP)
 `block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop
