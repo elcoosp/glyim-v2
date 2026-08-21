@@ -1319,7 +1319,9 @@ fn lower_match_expr(
                     | SyntaxKind::PatTuple
                     | SyntaxKind::PatStruct
                     | SyntaxKind::PatOr
-                    | SyntaxKind::PatSlice => {
+                    | SyntaxKind::PatSlice
+                    | SyntaxKind::PathExpr
+                    | SyntaxKind::UsePath => {
                         pat_id = lower_pat(&part, interner, &mut body.pats, diags)
                     }
                     _ if is_expr_node(&part) => {

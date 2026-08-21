@@ -44,15 +44,20 @@ fn unit_struct_construction_resolves() {
 /// a trait with an associated type + method, an impl providing it, and a
 /// generic `block_on<F: MyFuture>` that drives it.
 ///
-/// `#[ignore]`d because this currently FAILS (12 diagnostics) — the compiler
-/// does not yet resolve generic trait bounds (`F: MyFuture`) or associated
-/// types (`F::Output`) in typeck, which is the foundational blocker for P5
-/// (async) *below* the coroutine state-machine pass. This test locks in the
-/// current blocked behavior; remove `#[ignore]` and flip the assertion to
-/// `assert_no_errors` once generic-associated-type resolution + generic
-/// trait-bound dispatch land. See `KNOWN_GAPS.md` Phase 5.
+/// `#[ignore]`d because this currently FAILS (8 diagnostics) — the compiler
+/// does not yet monomorphize generic function bodies (`block_on<F>`'s body is
+/// checked with the rigid param `F`, so `F` never unifies with the concrete
+/// `AddOne` and `F::Output` associated-type projection is not normalized).
+/// Value/struct/variant path resolution, enum generic-param fields, generic
+/// call *return-type* instantiation, and enum-variant pattern matching all
+/// land. The remaining gap is full generic-body monomorphization + associated
+/// type projection normalization, the foundational blocker for P5 (async)
+/// *below* the coroutine state-machine pass. This test locks in the current
+/// blocked behavior; remove `#[ignore]` and flip the assertion to
+/// `assert_no_errors` once generic-body monomorphization + associated-type
+/// projection land. See `KNOWN_GAPS.md` Phase 5.
 #[test]
-#[ignore = "P5 async: generic trait bounds + associated types not yet resolved in typeck"]
+#[ignore = "P5 async: generic fn-body monomorphization + associated-type projection not yet resolved in typeck"]
 fn async_desugar_target_compiles() {
     let src = r#"
         enum Poll<T> { Ready(T), Pending }
@@ -76,11 +81,7 @@ fn async_desugar_target_compiles() {
         fn main() -> i32 { let f = AddOne { x: 41 }; block_on(f) }
     "#;
     let output = compile(src);
-    eprintln!("PROBE COUNT={}", output.diagnostics.len());
-    for d in &output.diagnostics {
-        eprintln!("  {:?}", d.message);
-    }
-    // Characterization of the current blocker (12 diagnostics rooted in
-    // generic trait bounds + associated types).
+    // Characterization of the current blocker (8 diagnostics rooted in
+    // generic fn-body monomorphization + associated-type projection).
     assert!(!output.diagnostics.is_empty(), "expected P5 blocker diagnostics");
 }
