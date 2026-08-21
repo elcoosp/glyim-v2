@@ -143,6 +143,7 @@ pub enum SyntaxKind {
     ClosureExpr,
     PathExpr,
     TryExpr,
+    AwaitExpr,
     ImplTraitType,
     LitExpr,
     ArrayExpr,
@@ -308,6 +309,7 @@ ast_node!(CallExpr, SyntaxKind::CallExpr);
 ast_node!(BinaryExpr, SyntaxKind::BinaryExpr);
 ast_node!(PathExpr, SyntaxKind::PathExpr);
 ast_node!(TryExpr, SyntaxKind::TryExpr);
+ast_node!(AwaitExpr, SyntaxKind::AwaitExpr);
 ast_node!(ImplTraitType, SyntaxKind::ImplTraitType);
 ast_node!(LitExpr, SyntaxKind::LitExpr);
 ast_node!(Module, SyntaxKind::Module);
