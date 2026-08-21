@@ -297,6 +297,52 @@ impl TyCtxMut {
                 let new_substs = self.intern_substitution(new_args);
                 self.mk_ty(TyKind::FnDef(id, new_substs))
             }
+            TyKind::Projection(proj) => {
+                // Plan unstub-5 P5: substitute the projection's self type. When
+                // the substituted self type becomes a concrete ADT that has a
+                // registered impl for the bound trait, normalize the projection
+                // to the concrete associated type (e.g. `F::Output` with
+                // `F = AddOne` -> `i32`). This is what lets `block_on<F>`'s
+                // return type `F::Output` resolve to the caller's concrete type
+                // at the call site.
+                let trait_ref = proj.trait_ref;
+                let self_ty = self.substitution_args(trait_ref.substs).first().cloned();
+                let new_self = match self_ty {
+                    Some(GenericArg::Ty(t)) => self.subst_ty(t, subst),
+                    Some(_) | None => {
+                        // No self type to substitute; keep the projection as-is.
+                        return ty;
+                    }
+                };
+                // If the self type is unchanged (no substitution applied), keep
+                // the original projection.
+                let changed = match self_ty {
+                    Some(GenericArg::Ty(orig)) => orig != new_self,
+                    _ => false,
+                };
+                if !changed {
+                    return ty;
+                }
+                let new_args = vec![GenericArg::Ty(new_self)];
+                let new_substs = self.intern_substitution(new_args);
+                let new_trait_ref = crate::predicate::TraitRef {
+                    def_id: trait_ref.def_id,
+                    substs: new_substs,
+                };
+                let new_proj = ProjectionTy {
+                    trait_ref: new_trait_ref,
+                    item_name: proj.item_name,
+                };
+                // Attempt normalization: only succeeds when `new_self` is a
+                // concrete type with a registered associated-type impl.
+                if let Some(resolved) =
+                    self.resolve_associated_type(new_self, trait_ref.def_id, proj.item_name)
+                {
+                    resolved
+                } else {
+                    self.mk_ty(TyKind::Projection(new_proj))
+                }
+            }
             _ => ty,
         }
     }
@@ -585,6 +631,17 @@ impl TyCtxMut {
             })
     }
 
+    /// Structural ADT-type equality with the arena: two `Ty`s that both denote
+    /// the same `Adt(adt_id, _)` compare equal even when they are distinct arena
+    /// allocations. Used to key associated-type lookups by logical type rather
+    /// than by `Ty` handle (plan unstub-5 P5).
+    fn same_adt(&self, a: Ty, b: Ty) -> bool {
+        match (self.ty_kind(a), self.ty_kind(b)) {
+            (TyKind::Adt(id_a, _), TyKind::Adt(id_b, _)) => id_a == id_b,
+            _ => a == b,
+        }
+    }
+
     /// Resolve an associated-type projection `Self::Item` / `Type::Item` to its
     /// defining type, given the concrete `self_ty` and the trait it's bound to.
     /// Returns `None` when no matching impl registration exists (the abstract /
@@ -596,8 +653,11 @@ impl TyCtxMut {
         assoc_name: Name,
     ) -> Option<Ty> {
         self.impl_assoc_types
-            .get(&(self_ty, trait_def_id))
-            .and_then(|entries| {
+            .iter()
+            .find(|((key_self, key_trait), _)| {
+                *key_trait == trait_def_id && self.same_adt(self_ty, *key_self)
+            })
+            .and_then(|(_, entries)| {
                 entries
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
