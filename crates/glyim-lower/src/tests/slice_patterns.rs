@@ -86,7 +86,6 @@ fn make_slice_pattern_body(ctx_mut: &mut TyCtxMut) -> Body {
 }
 
 #[test]
-#[ignore = "frontend slice pattern syntax not yet implemented; lowering code is complete and ready"]
 fn slice_pattern_lowering_emits_len_and_switch() {
     let mut ctx_mut = glyim_test::test_ty_ctx();
     let body = make_slice_pattern_body(&mut ctx_mut);
@@ -107,9 +106,26 @@ fn slice_pattern_lowering_emits_len_and_switch() {
         .any(|s| matches!(s.kind, StatementKind::Assign(_, Rvalue::Len(_))));
     assert!(has_len, "No Rvalue::Len in entry block");
 
+    // The SwitchInt must discriminate on the slice *length* computed by the
+    // `Rvalue::Len` assignment in the entry block. Recover that target local and
+    // assert the switch reads from it.
+    let len_target = entry_block
+        .statements
+        .iter()
+        .find_map(|s| match &s.kind {
+            StatementKind::Assign(place, Rvalue::Len(_)) => Some(place.local),
+            _ => None,
+        })
+        .expect("Rvalue::Len target local");
+
     match &entry_block.terminator.kind {
         glyim_mir::TerminatorKind::SwitchInt { discr, .. } => {
-            assert!(matches!(discr, Operand::Copy(p) if p.local == LocalIdx::from_raw(1)));
+            assert!(
+                matches!(discr, Operand::Copy(p) if p.local == len_target),
+                "SwitchInt should discriminate on the slice length local {:?}, got {:?}",
+                len_target,
+                discr
+            );
         }
         _ => panic!("Expected SwitchInt terminator"),
     }

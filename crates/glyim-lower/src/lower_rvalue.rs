@@ -1291,10 +1291,39 @@ impl<'a> MirBuilder<'a> {
         result_ty: Ty,
         span: glyim_span::Span,
     ) -> glyim_mir::Rvalue {
-        let discr_op = self.lower_expr_to_operand(scrutinee);
         let merge_bb = self.new_block();
         let dest_local = self.alloc_local(result_ty, glyim_core::primitives::Mutability::Mut, span);
         let dest_place = glyim_mir::Place::new(dest_local);
+
+        // Slice/array matches dispatch on the *length* of the scrutinee rather
+        // than its value. `[a, b, c]` matches precisely when the slice has 3
+        // elements, so we compute `len = Len(scrutinee)` and `SwitchInt` on it.
+        let slice_dispatch = matches!(
+            self.ctx.ty_ctx().ty_kind(scrutinee.ty),
+            TyKind::Slice(_) | TyKind::Array(_, _)
+        ) && arms
+            .iter()
+            .any(|a| matches!(&a.pat.kind, thir::PatternKind::Slice { .. }));
+
+        let (discr_op, switch_ty) = if slice_dispatch {
+            let scrutinee_place = self.lower_expr_to_place(scrutinee);
+            let len_local =
+                self.alloc_local(Ty::USIZE, glyim_core::primitives::Mutability::Not, span);
+            self.push_stmt(
+                glyim_mir::StatementKind::Assign(
+                    glyim_mir::Place::new(len_local),
+                    glyim_mir::Rvalue::Len(scrutinee_place),
+                ),
+                span,
+            );
+            (
+                glyim_mir::Operand::Copy(glyim_mir::Place::new(len_local)),
+                Ty::USIZE,
+            )
+        } else {
+            let discr_op = self.lower_expr_to_operand(scrutinee);
+            (discr_op, scrutinee.ty)
+        };
 
         let mut switch_targets: Vec<(u128, BasicBlockIdx)> = Vec::new();
         let mut arm_blocks: Vec<(BasicBlockIdx, &thir::MatchArm)> = Vec::new();
@@ -1316,7 +1345,7 @@ impl<'a> MirBuilder<'a> {
         self.terminate(
             glyim_mir::TerminatorKind::SwitchInt {
                 discr: discr_op,
-                switch_ty: scrutinee.ty,
+                switch_ty,
                 targets,
             },
             span,
@@ -1394,6 +1423,11 @@ impl<'a> MirBuilder<'a> {
                 for sub in subpats {
                     self.collect_switch_values(sub, targets, arm_bb);
                 }
+            }
+            thir::PatternKind::Slice { prefix, suffix, .. } => {
+                // A `[prefix..suffix]` pattern matches when the slice length
+                // equals `prefix.len() + suffix.len()`; switch on that length.
+                targets.push(((prefix.len() + suffix.len()) as u128, arm_bb));
             }
             thir::PatternKind::ConstBlock(const_body) => {
                 match self.const_block_to_u128(const_body) {
