@@ -187,7 +187,47 @@ fn test_lto_thin_surfaces_tracked_gap() {
     );
 }
 
-/// Phase 10.2: an invalid `--lto` value is rejected with a parse error.
+/// Phase 9.2: `--emit=cdylib` compiles the program to an object then links it
+/// into a position-independent shared library (`-shared`). This is the host
+/// artifact a proc-macro crate compiles to so `load_cdylib` can dlopen it
+/// during macro expansion. We assert the shared object is produced.
+///
+/// Gated to Linux: glyim's default target triple is `x86_64-unknown-linux-gnu`
+/// (it emits ELF objects), and the host `cc`/`ld` on Linux links ELF cleanly.
+/// On macOS the host linker expects Mach-O, so it cannot link the default ELF
+/// object — that host/target mismatch is a separate cross-compilation concern,
+/// not a cdylib-emit defect.
+#[cfg(target_os = "linux")]
+#[test]
+fn test_emit_cdylib_produces_shared_library() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "fn main() {{}}").unwrap();
+    let src = tmp.into_temp_path();
+
+    let out_dir = tempfile::tempdir().unwrap();
+    let cdylib_path = out_dir.path().join("out.so");
+
+    let args = CliArgs {
+        input: src.to_path_buf(),
+        output: Some(cdylib_path.clone()),
+        opt_level: 0,
+        target: None,
+        backend: "llvm".to_string(),
+        emit: "cdylib".to_string(),
+        linker: None,
+        link_flags: None,
+        lto: "off".to_string(),
+    };
+    let result = run_with_args(args);
+    assert!(
+        result.is_ok(),
+        "cdylib emit should succeed, got: {:?}",
+        result
+    );
+    assert!(cdylib_path.exists(), "cdylib output should exist");
+    let meta = std::fs::metadata(&cdylib_path).unwrap();
+    assert!(meta.len() > 0, "cdylib output should be non-empty");
+}
 #[test]
 fn test_lto_invalid_value_rejected() {
     let mut tmp = NamedTempFile::new().unwrap();

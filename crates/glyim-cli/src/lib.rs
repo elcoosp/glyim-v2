@@ -48,6 +48,10 @@ enum EmitKind {
     Mir,
     LlvmIr,
     Asm,
+    /// Emit a position-independent shared library (cdylib). Phase 9.2: this is
+    /// the host artifact a procedural-macro crate compiles to so it can be
+    /// `dlopen`ed by `glyim_proc_macro::load_cdylib` during macro expansion.
+    Cdylib,
 }
 
 impl EmitKind {
@@ -58,8 +62,9 @@ impl EmitKind {
             "mir" => Ok(EmitKind::Mir),
             "llvm-ir" => Ok(EmitKind::LlvmIr),
             "asm" => Ok(EmitKind::Asm),
+            "cdylib" => Ok(EmitKind::Cdylib),
             _ => Err(format!(
-                "invalid value for --emit: '{}' (expected one of: obj, exec, mir, llvm-ir, asm)",
+                "invalid value for --emit: '{}' (expected one of: obj, exec, mir, llvm-ir, asm, cdylib)",
                 s
             )),
         }
@@ -100,6 +105,24 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             } else {
                 obj.clone()
             };
+            (obj, Some(final_out))
+        }
+        EmitKind::Cdylib => {
+            // Compile to a private object, then link it into a shared library.
+            let obj = {
+                let mut p = input.clone();
+                p.set_extension("o");
+                p
+            };
+            let final_out = args.output.clone().unwrap_or_else(|| {
+                let mut p = input.clone();
+                p.set_extension(if cfg!(target_os = "macos") {
+                    "dylib"
+                } else {
+                    "so"
+                });
+                p
+            });
             (obj, Some(final_out))
         }
         EmitKind::Mir | EmitKind::LlvmIr => {
@@ -200,13 +223,21 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     Pipeline::compile_file(&mut db, input, &*backend, &object_path)?;
 
-    if emit == EmitKind::Exec {
-        let final_path = final_output_path.expect("exec should have final output");
+    if emit == EmitKind::Exec || emit == EmitKind::Cdylib {
+        let final_path = final_output_path.expect("emit should have final output");
+        // `cdylib` produces a position-independent shared library (`-shared`);
+        // `exec` produces a runnable binary. Phase 9.2: the cdylib is the host
+        // artifact a proc-macro crate compiles to so `load_cdylib` can dlopen it.
+        let extra_flags = if emit == EmitKind::Cdylib {
+            Some("-shared")
+        } else {
+            None
+        };
         linker::invoke_linker(
             &object_path,
             &final_path,
             args.linker.as_deref(),
-            args.link_flags.as_deref(),
+            extra_flags.or(args.link_flags.as_deref()),
             args.target.as_deref(),
         )
         .map_err(|e| vec![glyim_diag::GlyimDiagnostic::internal_error(&e)])?;
