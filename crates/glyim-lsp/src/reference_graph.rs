@@ -714,7 +714,7 @@ impl ReferenceGraph {
                 // future `Expr` variant that DOES carry children will be a
                 // compile error here, forcing a real traversal to be written
                 // (Phase 8.1, unstub-5).
-                Expr::Missing | Expr::Literal(_) | Expr::Continue | Expr::Err => {}
+                Expr::Missing | Expr::Literal(_) | Expr::Continue | Expr::Err | Expr::Await { .. } => {}
             }
         }
 
