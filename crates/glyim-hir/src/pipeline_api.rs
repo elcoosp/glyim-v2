@@ -11,6 +11,9 @@ pub fn lower_crate_for_pipeline(
     interner: &mut Interner,
 ) -> (CrateHir, Vec<GlyimDiagnostic>) {
     let mut diags = Vec::new();
+    // `lower_crate` performs the raw syntax→HIR lowering AND the `async fn` /
+    // `.await` desugar, producing the future state-machine shape the
+    // type-checker understands.
     let hir = lower_crate(root, interner, &mut diags);
     (hir, diags)
 }
@@ -21,6 +24,7 @@ mod tests {
     use glyim_frontend::parse_to_syntax;
     use glyim_span::FileId;
     use crate::ItemKind;
+    use crate::lower::lower_crate_raw;
 
     /// Plan §6.1: `const fn` must lower to an `FnItem` with `is_const == true`,
     /// while a plain `fn` stays `is_const == false`.
@@ -43,7 +47,14 @@ mod tests {
     fn lower_first_fn_async(src: &str) -> bool {
         let root = parse_to_syntax(src, FileId::BOGUS).root;
         let mut interner = Interner::new();
-        let (hir, _) = lower_crate_for_pipeline(&root, &mut interner);
+        // Use the RAW lower (no async desugar) so we assert the keyword →
+        // `FnItem.is_async` plumbing before desugaring rewrites the item into a
+        // synchronous future-returning wrapper.
+        let (hir, _) = {
+            let mut diags = Vec::new();
+            let h = lower_crate_raw(&root, &mut interner, &mut diags);
+            (h, diags)
+        };
         let item = hir.items.iter().next().expect("expected at least one item");
         match &item.kind {
             ItemKind::Fn(f) => f.is_async,
