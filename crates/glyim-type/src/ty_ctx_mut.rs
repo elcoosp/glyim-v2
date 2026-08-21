@@ -32,6 +32,13 @@ pub struct TyCtxMut {
     /// a `Cell`-containing field was registered cannot return a stale `false`.
     adt_generation: u64,
     adt_defs: HashMap<AdtId, AdtDef>,
+    /// Maps an ADT's (HIR-interned) name to its `AdtId`. Populated alongside
+    /// `adt_defs` by `register_adt_with_name` so that ADT *type* resolution
+    /// (`resolve_name_to_adt_ty`) can find user ADTs by name even though the
+    /// HIR and def-map use distinct interners (the def-map scope is keyed by
+    /// the def-map interner, which differs from the HIR/typeck interner).
+    /// Plan unstub-5 P5.
+    adt_by_name: HashMap<Name, AdtId>,
 
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
 
@@ -63,6 +70,16 @@ pub struct TyCtxMut {
     pub(crate) impl_assoc_types:
         HashMap<(Ty, glyim_core::def_id::TraitDefId), Vec<(Name, Ty)>>,
 
+    /// Parameter-name → trait-def-ids for generic params bound by
+    /// `T: Trait` (inline `fn f<T: Trait>` or `where T: Trait`). Populated
+    /// during `typeck_crate` from every function's `generic_params` /
+    /// `where_clauses` so that associated-type projection and method dispatch
+    /// on a generic receiver (`F::Output`, `f.poll()`) can find the bound
+    /// trait without a full trait solver (plan unstub-5 P5). Name-keyed and
+    /// crate-wide; sufficient because parameter names are interned and unique
+    /// within a function.
+    pub param_bounds: HashMap<Name, Vec<glyim_core::def_id::TraitDefId>>,
+
     /// `AdtId`s with an explicit `Drop` impl (or owning builtins). Mirrors the
     /// `drop_impls` set on the frozen `TyCtx`, consulted by `needs_drop`.
     drop_impls: HashSet<AdtId>,
@@ -83,6 +100,7 @@ impl TyCtxMut {
             interior_mutability_cache: HashMap::new(),
             adt_generation: 0,
             adt_defs: HashMap::new(),
+            adt_by_name: HashMap::new(),
             trait_defs: HashMap::new(),
             variant_types: HashMap::new(),
             fn_sigs: HashMap::new(),
@@ -90,6 +108,7 @@ impl TyCtxMut {
             closure_sigs: HashMap::new(),
             closure_adt_map: HashMap::new(),
             impl_assoc_types: HashMap::new(),
+            param_bounds: HashMap::new(),
             body_tys: HashMap::new(),
             lang_items: LangItems::default(),
             synthetic_adt_counter: 2_000_000,
@@ -218,6 +237,70 @@ impl TyCtxMut {
         self.alloc_ty(kind)
     }
 
+    /// Substitute generic type parameters (`TyKind::Param`) inside `ty` using
+    /// `subst`, which maps a parameter's `index` to its replacement type.
+    /// Used for generic call / instantiation: when a generic function
+    /// `fn id<T>(x: T) -> T` is called with a concrete argument, each formal
+    /// parameter type (which may carry `T`) is matched against the argument
+    /// type to build `subst`, and the return type is instantiated through it
+    /// (plan unstub-5 P5: generic call instantiation).
+    pub fn subst_ty(&mut self, ty: Ty, subst: &std::collections::HashMap<u32, Ty>) -> Ty {
+        if subst.is_empty() {
+            return ty;
+        }
+        let kind = self.ty_kind(ty).clone();
+        match kind {
+            TyKind::Param(pt) => {
+                if let Some(&repl) = subst.get(&pt.index) {
+                    repl
+                } else {
+                    ty
+                }
+            }
+            TyKind::Ref(region, inner, mutability) => {
+                let new_inner = self.subst_ty(inner, subst);
+                self.mk_ref(region, new_inner, mutability)
+            }
+            TyKind::Adt(adt_id, substs) => {
+                let args: Vec<GenericArg> = self.substitution_args(substs).to_vec();
+                let new_args: Vec<GenericArg> = args
+                    .into_iter()
+                    .map(|a| match a {
+                        GenericArg::Ty(t) => GenericArg::Ty(self.subst_ty(t, subst)),
+                        other => other,
+                    })
+                    .collect();
+                let new_substs = self.intern_substitution(new_args);
+                self.mk_adt(adt_id, new_substs)
+            }
+            TyKind::Tuple(substs) => {
+                let args: Vec<GenericArg> = self.substitution_args(substs).to_vec();
+                let new_args: Vec<GenericArg> = args
+                    .into_iter()
+                    .map(|a| match a {
+                        GenericArg::Ty(t) => GenericArg::Ty(self.subst_ty(t, subst)),
+                        other => other,
+                    })
+                    .collect();
+                let new_substs = self.intern_substitution(new_args);
+                self.mk_tuple(new_substs)
+            }
+            TyKind::FnDef(id, substs) => {
+                let args: Vec<GenericArg> = self.substitution_args(substs).to_vec();
+                let new_args: Vec<GenericArg> = args
+                    .into_iter()
+                    .map(|a| match a {
+                        GenericArg::Ty(t) => GenericArg::Ty(self.subst_ty(t, subst)),
+                        other => other,
+                    })
+                    .collect();
+                let new_substs = self.intern_substitution(new_args);
+                self.mk_ty(TyKind::FnDef(id, new_substs))
+            }
+            _ => ty,
+        }
+    }
+
     pub fn mk_ref(&mut self, region: Region, ty: Ty, mutability: Mutability) -> Ty {
         self.mk_ty(TyKind::Ref(region, ty, mutability))
     }
@@ -338,6 +421,14 @@ impl TyCtxMut {
         }
     }
 
+    /// Register an ADT together with its (HIR-interned) name, so that ADT *type*
+    /// resolution by name (`resolve_name_to_adt_ty`) can find it regardless of
+    /// the def-map interner (plan unstub-5 P5).
+    pub fn register_adt_with_name(&mut self, name: Name, id: AdtId, def: AdtDef) {
+        self.adt_by_name.insert(name, id);
+        self.register_adt(id, def);
+    }
+
     /// Allocate a fresh compiler-synthesized `AdtId` that cannot collide with
     /// user-defined ADTs or the builtin fixed-id ADTs (ranges, etc.).
     pub fn next_synthetic_adt_id(&mut self) -> AdtId {
@@ -381,6 +472,13 @@ impl TyCtxMut {
     }
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
+    }
+
+    /// Look up a registered ADT by its (HIR-interned) name. Used by type
+    /// resolution so user ADTs resolve regardless of the def-map interner
+    /// (plan unstub-5 P5).
+    pub fn adt_id_by_name(&self, name: Name) -> Option<AdtId> {
+        self.adt_by_name.get(&name).copied()
     }
 
     /// Number of generic type parameters declared on `adt_id`
@@ -505,6 +603,24 @@ impl TyCtxMut {
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
             })
+    }
+
+    /// Query the traits a generic parameter (by name) is bound to. Populated
+    /// during `typeck_crate` from `generic_params` / `where_clauses` (plan
+    /// unstub-5 P5). Used for associated-type projection and method dispatch
+    /// on a generic receiver.
+    pub fn param_bounds_for(&self, name: Name) -> Option<&[glyim_core::def_id::TraitDefId]> {
+        self.param_bounds.get(&name).map(|v| v.as_slice())
+    }
+
+    /// Find a registered trait definition that declares an associated type
+    /// with the given name. Used to resolve `Self::Item` to a projection
+    /// against the enclosing trait (plan unstub-5 P5). Returns the first match.
+    pub fn find_trait_with_assoc_type(&self, assoc_name: Name) -> Option<glyim_core::def_id::TraitDefId> {
+        self.trait_defs
+            .iter()
+            .find(|(_, def)| def.associated_types.iter().any(|n| *n == assoc_name))
+            .map(|(id, _)| *id)
     }
 
     /// Get the trait definition by ID (read-only view into the type context).
