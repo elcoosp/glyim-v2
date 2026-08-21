@@ -51,3 +51,46 @@ fn main() {
         result.lex_diagnostics
     );
 }
+
+use glyim_span::FileId;
+use glyim_test::assert_no_errors;
+use glyim_test::harness::compiler::{CompileOutput, PipelineCompiler, TestCompiler};
+use glyim_test::mock::MockCodegen;
+use std::sync::Arc;
+
+fn compile(src: &str) -> CompileOutput {
+    let backend = Arc::new(MockCodegen::new());
+    let compiler = PipelineCompiler::new(backend);
+    compiler.compile(src, FileId::from_raw(1), &[])
+}
+
+/// Drive a real `async fn` + `.await` program through the full
+/// `PipelineCompiler` (parser → lower → async desugar → typeck). The
+/// desugar rewrites `async fn` into a `Future` state machine and `.await`
+/// into a poll `Match`; the program defines `Future`/`Poll`/`block_on` in the
+/// same crate. It must compile with ZERO diagnostics.
+#[test]
+fn desugar_async_fn_compiles() {
+    let src = r#"
+        enum Poll<T> { Ready(T), Pending }
+        trait Future {
+            type Output;
+            fn poll(&mut self) -> Poll<Self::Output>;
+        }
+        fn block_on<F: Future>(mut f: F) -> F::Output {
+            loop {
+                match f.poll() {
+                    Poll::Ready(v) => return v,
+                    Poll::Pending => { }
+                }
+            }
+        }
+        async fn add_one(x: i32) -> i32 { x + 1 }
+        fn main() -> i32 {
+            let f = add_one(41);
+            block_on(f)
+        }
+    "#;
+    let output = compile(src);
+    assert_no_errors(&output.diagnostics);
+}
