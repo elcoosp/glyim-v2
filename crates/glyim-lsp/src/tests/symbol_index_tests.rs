@@ -33,6 +33,7 @@ fn create_dummy_hir(interner: &Interner) -> CrateHir {
         items,
         bodies: IndexVec::new(),
         body_owners: IndexVec::new(),
+        interner: Default::default(),
     }
 }
 

@@ -240,6 +240,7 @@ fn main() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
     db.hirs.write().insert(file_id, hir.clone());
     db.symbol_index.write().build_from_hir(file_id, &hir, &interner);
@@ -415,6 +416,7 @@ fn main() {
         items,
         bodies,
         body_owners,
+        interner: Default::default(),
     };
     db.hirs.write().insert(file_id, hir.clone());
     db.symbol_index.write().build_from_hir(file_id, &hir, &interner);
