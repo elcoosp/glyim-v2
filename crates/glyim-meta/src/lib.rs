@@ -1,8 +1,5 @@
 //! Metaprogramming support: macro expansion, comptime evaluation coordination.
 //!
-//! For v0.1.0, this crate provides the expansion framework but
-//! delegates actual evaluation to `glyim-mir-interp`.
-//!
 //! Uses `HygieneCtx` from `glyim-span` (the merged hygiene crate).
 #![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
@@ -34,6 +31,36 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_span::{FileId, HygieneCtx, Span};
 use glyim_syntax::SyntaxNode;
 use glyim_vfs::Vfs;
+
+/// Re-serialize an expanded token stream into a parseable program.
+///
+/// `glyim_meta::Expander::expand_crate` reconstructs the tree from tokens and,
+/// like all token streams, the reconstructed text carries no whitespace
+/// between adjacent tokens (e.g. `fn` + `main` → `fnmain` when the source's
+/// whitespace is not materialized as tree tokens). Re-serializing from the
+/// *merged* text would lose token boundaries, so instead we walk the green
+/// token stream and insert a single space between two adjacent word-like
+/// tokens. That is a faithful serialization: rowan reparses it identically
+/// (whitespace is trivia), and it avoids spurious token merging. This is the
+/// bridge between the token-oriented expander and the text-oriented pipeline
+/// (Phase 9.2).
+pub fn join_tokens_with_spaces(token_stream: &SyntaxNode) -> String {
+    let mut out = String::new();
+    let mut prev_was_word = false;
+    for event in token_stream.descendants_with_tokens() {
+        if let rowan::NodeOrToken::Token(tok) = event {
+            let text = tok.text();
+            let is_word = text.chars().all(|c: char| c.is_alphanumeric() || c == '_')
+                && !text.is_empty();
+            if prev_was_word && is_word {
+                out.push(' ');
+            }
+            out.push_str(text);
+            prev_was_word = is_word;
+        }
+    }
+    out
+}
 
 mod expander;
 
