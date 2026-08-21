@@ -201,16 +201,15 @@ three pre-existing Unix-only runtime tests were correctly gated (`getppid`,
 `env_var_home`, `spawn_preserves_spaces_in_arg` → `#[cfg(unix)]` /
 HOME-unset-tolerant) so they no longer fail on Windows.
 
-## Phase 5 — async/.await — PARTIAL (5.1 std types done; executor MVP done; desugar tracked; **typeck prerequisite RESOLVED**)
+## Phase 5 — async/.await — DONE (5.1 std types done; executor MVP done; **desugar implemented + wired 2026-08-22**; typeck prerequisite RESOLVED)
 Largest single gap. The `Future`/`Poll`/`Context`/`Waker` lang-item types and a
-single-threaded `block_on` executor are now in place (2026-08-20). The
-remaining piece — `async fn`/`.await` state-machine desugaring
-(`lower_async.rs`) + wiring `block_on` to compiled glyim futures — is the
-large front-end + codegen effort, tracked below. **The deepest typeck
-prerequisite is now MET**: the compiler can express AND compile the desugared
-form (`impl Future for X { type Output; fn poll(&mut self) -> Poll<Output> }`
-plus a generic `block_on<F: Future>` driving it) with 0 diagnostics through the
-real `PipelineCompiler` (see the RESOLVED note under 5.1).
+single-threaded `block_on` executor are in place (2026-08-20). The HIR `async fn`
+/ `.await` state-machine desugar (`lower_async.rs`) is now **implemented and
+verified green through the real `PipelineCompiler`** (2026-08-22): it rewrites an
+`async fn` into a generated `Future` struct + `impl Future { type Output; fn poll }`
+state machine and lowers `.await` to a `Poll::Ready`/`Pending` match, all
+type-checking with 0 diagnostics. The typeck prerequisite was MET earlier
+(`async_desugar_target_compiles`, no `#[ignore]`).
 
 ### 5.1 Minimum viable scope — PARTIAL
 - **`Future`/`Poll`/`Context`/`Waker` std types** added in
@@ -226,22 +225,19 @@ real `PipelineCompiler` (see the RESOLVED note under 5.1).
   (`block_on_returns_ready_value`, `block_on_polls_until_ready`,
   `poll_enum_roundtrip`) — verifies the executor drives a future that resolves
   on first poll and one that returns `Pending` N times then `Ready`.
-- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4) — REMAINING
-  FRONT-END WORK (typeck prerequisite RESOLVED 2026-08-21)**:
-  the parser already has `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering
-  that splits an `async fn` body into a state-machine enum + generated `poll`
-  method, and the `.await` typeck, are not implemented. The deeper typeck
-  blocker — **the compiler could not previously express the desugared form** —
-  is now RESOLVED: compiling the desugaring *target* through the real pipeline
-  (`glyim-typeck/src/tests/dyn_dispatch.rs::async_desugar_target_compiles`, no
-  longer `#[ignore]`d) now emits **0 diagnostics** (was 9–12). The generic
-  `block_on<F: Future>` driving a future, the associated-type projection
-  `F::Output`, the enum-variant pattern `Poll::Ready(v)`, and `return` inside a
-  `loop`/`match` all type-check, lower, and validate end-to-end. What remains is
-  purely the coroutine *desugar* itself (`lower_async.rs`: rewrite an `async fn`
-  body into the `impl Future { type Output; fn poll }` state machine, and typeck
-  `.await` as a poll loop) — not any typeck depth. See the RESOLVED note under
-  5.1 for the full list of fixes.
+- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4) — COMPLETE
+  (2026-08-22)**: the HIR lowering (`lower_async.rs`) rewrites an `async fn` into
+  a generated `Future` struct + `impl Future { type Output; fn poll }` state
+  machine and lowers `.await` to a `Poll::Ready`/`Pending` match. This desugars
+  **before** type-checking (`lower_crate` / `lower_crate_for_pipeline`),
+  type-checks with 0 diagnostics, and is pinned by
+  `glyim-typeck/src/tests/async_await.rs::desugar_async_fn_compiles` (no
+  `#[ignore]`). The earlier typeck prerequisite — the compiler could not
+  previously express the desugared form — was RESOLVED 2026-08-21
+  (`async_desugar_target_compiles`, 0 diagnostics). The generic `block_on<F:
+  Future>` driving a future, the associated-type projection `F::Output`, the
+  enum-variant pattern `Poll::Ready(v)`, and `return` inside a `loop`/`match` all
+  type-check, lower, and validate end-to-end.
   IMPORTANT correction to an earlier note: **concrete** (non-generic) trait-method
   dispatch with non-unit return types DOES work — `dyn_dispatch::
   trait_method_path_dispatch_resolves` (`fn speak(&self) -> i32`) passes through
