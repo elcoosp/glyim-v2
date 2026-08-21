@@ -2,6 +2,7 @@
 use clap::Parser;
 use glyim_codegen::BytecodeBackend;
 use glyim_codegen_llvm::LlvmBackend;
+use glyim_codegen_llvm::passes::LtoKind;
 use glyim_db::{CrateConfig, Database};
 use glyim_pipeline::Pipeline;
 use std::path::PathBuf;
@@ -27,6 +28,12 @@ pub struct CliArgs {
     pub linker: Option<String>,
     #[arg(long = "link-flags")]
     pub link_flags: Option<String>,
+    /// Link-time optimization strategy: `off` (default), `fat` (in-compiler
+    /// module merge + optimize), or `thin` (tracked gap — requires linker
+    /// driver integration; surfaces an explicit error rather than silently
+    /// no-op). Phase 10.2.
+    #[arg(long = "lto", default_value = "off")]
+    pub lto: String,
 }
 
 pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
@@ -119,6 +126,33 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         .clone()
         .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string());
 
+    // Parse the requested LTO strategy (Phase 10.2). `Thin` is a tracked gap
+    // (linker-driver integration); surface it as an explicit error rather than
+    // silently degrading to a no-op.
+    let lto = match args.lto.as_str() {
+        "off" | "none" | "false" => LtoKind::None,
+        "fat" => LtoKind::Fat,
+        "thin" => LtoKind::Thin,
+        other => {
+            return Err(vec![glyim_diag::GlyimDiagnostic::parse_error(
+                glyim_diag::Span::DUMMY,
+                format!(
+                    "invalid value for --lto: '{}' (expected one of: off, fat, thin)",
+                    other
+                ),
+            )]);
+        }
+    };
+    // `Thin` LTO cannot be performed inside the compiler; the gap is explicit.
+    if lto == LtoKind::Thin {
+        return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+            "ThinLTO requires linker-driver integration (per-module summary emission + a \
+             thin-link step in glyim-cli's linker invocation). This is a tracked gap \
+             (KNOWN_GAPS.md Phase 10.2); use `fat` LTO for an in-compiler merge, or pass \
+             `-flto=thin` to the linker driver instead.",
+        )]);
+    }
+
     let config = CrateConfig {
         name: args
             .input
@@ -159,7 +193,8 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             LlvmBackend::with_db(&db)
                 .with_target(&target_triple)
                 .with_opt_level(args.opt_level)
-                .with_opt_for_size(false),
+                .with_opt_for_size(false)
+                .with_lto(lto),
         )
     };
 
