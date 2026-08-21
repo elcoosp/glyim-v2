@@ -86,6 +86,35 @@ pub enum AdjustKind {
 /// pattern matching can find it. The HIR and the def-map use distinct
 /// interners, so the local id is resolved through `def_map.interner` (plan
 /// unstub-5 P5). Returns `true` if the item was an ADT and got registered.
+fn adt_id_for_item(
+    ctx: &mut TyCtxMut,
+    def_map: &glyim_def_map::CrateDefMap,
+    module_id: glyim_def_map::ModuleId,
+    name: glyim_core::interner::Name,
+) -> AdtId {
+    // Prefer a def-map-derived id (stable across all resolution passes) when
+    // the item was lowered from source. For *generated* items (e.g. the future
+    // struct produced by `async fn` desugaring) that are not in the def map,
+    // reuse any synthetic id already assigned to this name during an earlier
+    // pass so the same type gets a single, consistent `AdtId` everywhere.
+    // Without this, two `register_adt_item` passes would each mint a distinct
+    // synthetic id for a generated ADT, and type resolution (which keys on the
+    // `AdtId`) would never reconcile them — producing an infinite loop when
+    // projecting associated types through that ADT.
+    if let Some(l) = def_map
+        .modules
+        .get(module_id)
+        .and_then(|m| m.scope.types.get(&name))
+        .map(|(id, _, _)| *id)
+    {
+        return AdtId::from_raw(l.to_raw());
+    }
+    if let Some(existing) = ctx.adt_id_by_name(name) {
+        return existing;
+    }
+    ctx.next_synthetic_adt_id()
+}
+
 fn register_adt_item(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -96,15 +125,7 @@ fn register_adt_item(
 ) -> bool {
     match &item.kind {
         glyim_hir::ItemKind::Enum(enum_item) => {
-            let local = def_map
-                .modules
-                .get(module_id)
-                .and_then(|m| m.scope.types.get(&item.name))
-                .map(|(id, _, _)| *id);
-            let adt_id = match local {
-                Some(l) => AdtId::from_raw(l.to_raw()),
-                None => ctx.next_synthetic_adt_id(),
-            };
+            let adt_id = adt_id_for_item(ctx, def_map, module_id, item.name);
             {
                 // The enum's own generic params (e.g. `T` in `Poll<T>`) must be
                 // in scope when resolving variant field types, so `Ready(T)`
@@ -135,15 +156,7 @@ fn register_adt_item(
             true
         }
         glyim_hir::ItemKind::Struct(struct_item) => {
-            let local = def_map
-                .modules
-                .get(module_id)
-                .and_then(|m| m.scope.types.get(&item.name))
-                .map(|(id, _, _)| *id);
-            let adt_id = match local {
-                Some(l) => AdtId::from_raw(l.to_raw()),
-                None => ctx.next_synthetic_adt_id(),
-            };
+            let adt_id = adt_id_for_item(ctx, def_map, module_id, item.name);
             {
                 let param_map = tyconv::build_param_tys(ctx, &struct_item.generic_params);
                 let mut fields = IndexVec::new();
@@ -400,6 +413,16 @@ pub fn typeck_crate(
 
             ItemKind::Impl(impl_item) => {
                 let impl_span = item_span;
+                let param_map = tyconv::build_param_tys(&mut ctx, &impl_item.generic_params);
+                let self_ty_opt = Some(tyconv::resolve_type_ref(
+                    &mut ctx,
+                    &mut infer,
+                    def_map,
+                    &mut diagnostics,
+                    &impl_item.self_ty,
+                    &param_map,
+                    impl_span,
+                ));
 
                 for method in &impl_item.methods {
                     let local_def_id = alloc_local_def_id(&mut next_local_def_id, &mut diagnostics);
@@ -417,6 +440,7 @@ pub fn typeck_crate(
                         &method.return_ty,
                         &impl_item.generic_params,
                         impl_span,
+                        self_ty_opt,
                     );
 
                     // Register the resolved signature for the LLVM codegen pass
@@ -617,6 +641,7 @@ fn check_fn_items_in_module(
                     &f.return_ty,
                     &f.generic_params,
                     item_span,
+                    None,
                 );
 
                 let inputs = ctx.intern_substitution(
