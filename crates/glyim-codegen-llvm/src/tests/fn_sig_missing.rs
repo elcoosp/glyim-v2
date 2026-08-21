@@ -59,8 +59,8 @@ fn t53_body_without_fn_sig_lowers_via_fallback() {
         );
     let ir = module.print_to_string().to_string();
     assert!(
-        ir.contains("@func_0_7"),
-        "expected a function named func_0_7, got:\n{}",
+        ir.contains("@__glyim_fn_7"),
+        "expected a function named __glyim_fn_7, got:\n{}",
         ir
     );
     // The default Glyim ABI emits the `fastcc` calling convention (distinct

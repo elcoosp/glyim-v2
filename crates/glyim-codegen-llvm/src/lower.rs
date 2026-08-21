@@ -2982,8 +2982,7 @@ pub(crate) fn lower_body<'ctx>(
     hygiene: Option<HygieneCtx>,
 ) -> CompResult<()> {
     let fn_name = format!(
-        "func_{}_{}",
-        body.owner.krate.to_raw(),
+        "__glyim_fn_{}",
         body.owner.local_id.to_raw()
     );
     let ret_llvm_ty = llvm_type_for_ty(ty_ctx, &target_info, context, body.return_ty)?;
