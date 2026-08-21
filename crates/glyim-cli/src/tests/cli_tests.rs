@@ -18,6 +18,7 @@ fn test_compile_valid_file() {
         emit: "obj".to_string(),
         linker: None,
         link_flags: None,
+        lto: "off".to_string(),
     };
     let result = run_with_args(args);
     assert!(
@@ -42,6 +43,7 @@ fn test_compile_invalid_file() {
         emit: "obj".to_string(),
         linker: None,
         link_flags: None,
+        lto: "off".to_string(),
     };
     let result = run_with_args(args);
     assert!(result.is_err(), "Expected compilation to fail");
@@ -108,6 +110,7 @@ fn test_emit_asm_produces_assembly_file() {
         emit: "asm".to_string(),
         linker: None,
         link_flags: None,
+        lto: "off".to_string(),
     };
     let result = run_with_args(args);
     assert!(result.is_ok(), "asm emit should succeed, got: {:?}", result);
@@ -121,4 +124,87 @@ fn test_emit_asm_produces_assembly_file() {
         "assembly output should contain a `ret` instruction; got:\n{}",
         asm
     );
+}
+
+/// Phase 10.2: `--lto fat` engages the in-compiler Fat LTO pass
+/// (`run_lto`) over the compiled module. With a single entry file there is no
+/// second module to merge, so Fat degrades to running the optimization pipeline
+/// once (which is exactly the documented single-module behaviour) and the
+/// compile must still succeed. opt_level is kept at 0 here so the test
+/// exercises the LTO *wiring* (run_lto is invoked with `Fat`) rather than the
+/// unrelated O2 codegen path.
+#[test]
+fn test_lto_fat_compiles_to_object() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "fn main() {{}}").unwrap();
+    let path = tmp.into_temp_path();
+    let out_dir = tempfile::tempdir().unwrap();
+    let obj_path = out_dir.path().join("out.o");
+
+    let args = CliArgs {
+        input: path.to_path_buf(),
+        output: Some(obj_path.clone()),
+        opt_level: 0,
+        target: None,
+        backend: "llvm".to_string(),
+        emit: "obj".to_string(),
+        linker: None,
+        link_flags: None,
+        lto: "fat".to_string(),
+    };
+    let result = run_with_args(args);
+    assert!(
+        result.is_ok(),
+        "LTO=fat compile should succeed (engages run_lto Fat), got: {:?}",
+        result
+    );
+    assert!(obj_path.exists(), "object output should exist for LTO=fat");
+}
+
+/// Phase 10.2: `--lto thin` is a tracked gap (linker-driver integration) and
+/// must surface an explicit error rather than silently degrading to a no-op.
+#[test]
+fn test_lto_thin_surfaces_tracked_gap() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "fn main() {{}}").unwrap();
+    let path = tmp.into_temp_path();
+
+    let args = CliArgs {
+        input: path.to_path_buf(),
+        output: None,
+        opt_level: 2,
+        target: None,
+        backend: "llvm".to_string(),
+        emit: "obj".to_string(),
+        linker: None,
+        link_flags: None,
+        lto: "thin".to_string(),
+    };
+    let result = run_with_args(args);
+    assert!(
+        result.is_err(),
+        "LTO=thin must surface its tracked-gap error, not silently no-op"
+    );
+}
+
+/// Phase 10.2: an invalid `--lto` value is rejected with a parse error.
+#[test]
+fn test_lto_invalid_value_rejected() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "fn main() {{}}").unwrap();
+    let path = tmp.into_temp_path();
+
+    let args = CliArgs {
+        input: path.to_path_buf(),
+        output: None,
+        opt_level: 0,
+        target: None,
+        backend: "llvm".to_string(),
+        emit: "obj".to_string(),
+        linker: None,
+        link_flags: None,
+        lto: "bogus".to_string(),
+    };
+    let result = run_with_args(args);
+    assert!(result.is_err(), "invalid --lto value must be rejected");
 }

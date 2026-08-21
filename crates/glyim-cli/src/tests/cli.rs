@@ -15,6 +15,7 @@ mod tests {
             backend: "llvm".to_string(),
             linker: None,
             link_flags: None,
+            lto: "off".to_string(),
         };
         let result = run_with_args(args);
         assert!(result.is_err());
@@ -46,6 +47,7 @@ mod tests {
             backend: "llvm".to_string(),
             linker: None,
             link_flags: None,
+            lto: "off".to_string(),
         };
         let result = run_with_args(args);
         assert!(result.is_ok(), "emit_mir failed: {:?}", result.err());
@@ -71,6 +73,7 @@ mod tests {
             backend: "llvm".to_string(),
             linker: None,
             link_flags: None,
+            lto: "off".to_string(),
         };
         let result = run_with_args(args);
         assert!(result.is_ok(), "emit_llvm_ir failed: {:?}", result.err());
