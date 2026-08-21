@@ -186,6 +186,14 @@ impl<'a> Parser<'a> {
             match self.current_kind() {
                 SyntaxKind::Dot => {
                     self.bump();
+                    if self.current_kind() == SyntaxKind::KwAwait {
+                        // `.await` postfix: wrap the already-parsed operand
+                        // (everything before the `.`) into an `AwaitExpr`.
+                        self.bump(); // await
+                        self.start_node_at(cp, SyntaxKind::AwaitExpr);
+                        self.finish_node();
+                        continue;
+                    }
                     if matches!(
                         self.current_kind(),
                         SyntaxKind::Ident | SyntaxKind::IntLit | SyntaxKind::FloatLit
