@@ -146,6 +146,7 @@ impl Pipeline {
 
         db.set_ty_ctx(ty_ctx);
 
+        let mut closure_bodies_codegen: Vec<Arc<Body>> = Vec::new();
         let mir_bodies_map: std::collections::HashMap<glyim_core::def_id::DefId, Arc<Body>> = {
             let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized");
             let ty_ctx_ref = ty_ctx_guard.as_ref();
@@ -172,6 +173,23 @@ impl Pipeline {
 
                 let opt_body = glyim_opt::optimize(ty_ctx_ref, &mir_arc);
                 bodies.insert(owner, Arc::new(opt_body.body));
+
+                // P6.2: closures captured while lowering this function are real
+                // MIR bodies that must also be optimized, registered, and emitted
+                // as `__glyim_fn_{closure_id}` by codegen.
+                for (_cid, _substs, cbody) in lower_result.closure_bodies {
+                    let c_mir_arc = Arc::new(cbody);
+                    let c_borrowck_ctx =
+                        PipelineBorrowckCtx::new(ty_ctx_ref, &c_mir_arc);
+                    let c_borrowck_result =
+                        glyim_borrowck::check_borrows(&c_borrowck_ctx, &c_mir_arc);
+                    sink_cell.borrow_mut().extend(c_borrowck_result.errors);
+                    if sink_cell.borrow().has_errors() {
+                        return Err(sink_cell.into_inner().into_diagnostics());
+                    }
+                    let c_opt = glyim_opt::optimize(ty_ctx_ref, &c_mir_arc);
+                    closure_bodies_codegen.push(Arc::new(c_opt.body));
+                }
             }
             bodies
         };
@@ -238,6 +256,10 @@ impl Pipeline {
                 .flat_map(|cgu_indices| cgu_indices.iter().map(|&idx| mono_items[idx].body.clone()))
                 .collect()
         };
+        // Closure bodies are emitted after the functions that call them; LLVM
+        // resolves the call via a forward-declared symbol, so order is fine.
+        let mut all_bodies = all_bodies;
+        all_bodies.extend(closure_bodies_codegen);
 
         let out_path = if output_path.as_os_str().is_empty() {
             Path::new("output.o")

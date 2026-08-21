@@ -1,6 +1,7 @@
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_const_eval::{ConstEvaluator, ConstValue};
+use glyim_core::def_id::ClosureId;
 use glyim_core::TargetInfo;
 use glyim_core::primitives::{BinOp, Mutability};
 use glyim_diag::GlyimDiagnostic;
@@ -9,7 +10,7 @@ use glyim_mir::{
     self, BasicBlockIdx, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, StatementKind, SwitchTargets, TerminatorKind,
 };
-use glyim_type::{self, FieldIdx, Ty, TyKind};
+use glyim_type::{self, FieldIdx, Substitution, Ty, TyKind};
 use glyim_typeck::thir;
 
 impl<'a> MirBuilder<'a> {
@@ -801,6 +802,10 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
+                // Build the closure's own MIR body so codegen can emit it as
+                // `__glyim_fn_{closure_id}`. The captures come first, followed
+                // by the closure's own parameters (see `lower_closure`).
+                self.lower_closure(&_thir_body, &captures, *closure_id, *closure_substs, expr.span);
                 let mut capture_operands = Vec::with_capacity(captures.len());
                 for capture in captures {
                     let capture_local = LocalIdx::from_raw(capture.local.to_raw());

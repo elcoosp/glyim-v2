@@ -256,16 +256,15 @@ impl<'a> MirBuilder<'a> {
         }
 
         // Allocate locals for parameters and populate param_map.
-        // Assume parameter LocalVarId is sequential starting from 0.
-        for (idx, param) in thir_body.params.iter().enumerate() {
+        // Map each parameter's real LocalVarId (from the THIR Param) to its MIR
+        // local so the body's VarRefs resolve correctly.
+        for param in thir_body.params.iter() {
             let mutability = match &param.pat.kind {
                 thir::PatternKind::Binding { mutability, .. } => *mutability,
                 _ => glyim_core::primitives::Mutability::Not,
             };
             let local = builder.alloc_local(param.ty, mutability, param.span);
-            // Use idx as LocalVarId (since they are assigned in order).
-            let var_id = thir::LocalVarId::from_raw(idx as u32);
-            builder.param_map.insert(var_id, local);
+            builder.param_map.insert(param.local, local);
         }
 
         // Set arg_count to include captures + original params.

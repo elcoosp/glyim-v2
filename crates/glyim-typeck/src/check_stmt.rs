@@ -47,6 +47,13 @@ impl<'a> FnCtxt<'a> {
                     }
                     stack.push(arm.body);
                 }
+            } else if let Expr::Closure { body, .. } = expr {
+                // A closure's body is checked only inside `Expr::Closure`
+                // (which enters the closure's own scope and binds its
+                // parameters); checking it at the top-level loop would resolve
+                // `n` against the enclosing scope and emit a spurious
+                // "unresolved name".
+                stack.push(*body);
             }
         }
         while let Some(eid) = stack.pop() {
@@ -139,6 +146,7 @@ impl<'a> FnCtxt<'a> {
                 ty: *ty,
                 span: *span,
                 pat: thir::Pattern::binding(*name, Mutability::Not, *ty, *span),
+                local: _local_id,
             });
         }
 

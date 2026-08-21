@@ -69,6 +69,7 @@ fn s15_t02_lower_params() {
             ty: Ty::BOOL,
             span: Span::DUMMY,
         },
+        local: thir::LocalVarId::from_raw(0),
     });
 
     let result = lower_body(&lower_ctx, &thir);

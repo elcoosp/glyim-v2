@@ -63,6 +63,7 @@ fn create_for_loop_body(
             },
             ty: iter_ty,
             span,
+            local: thir::LocalVarId::from_raw(0),
         }],
         stmts: vec![stmt],
         return_ty: Ty::UNIT,

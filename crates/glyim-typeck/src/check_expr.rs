@@ -906,9 +906,23 @@ impl<'a> FnCtxt<'a> {
                 //    LocalVarId boundary) from captures of the enclosing env.
                 self.env.enter_scope();
                 let boundary = self.env.next_var_id();
+                let mut thir_params: Vec<thir::Param> = Vec::with_capacity(params.len());
                 for pat_id in params {
                     let ty = self.fresh_infer_ty();
-                    self.bind_pattern(*pat_id, ty, Mutability::Not);
+                    let local = self.bind_pattern(*pat_id, ty, Mutability::Not);
+                    // Recover the binding name from the HIR pattern for the
+                    // THIR param (used as the MIR local debug name).
+                    let name = match &self.body.pats[*pat_id] {
+                        glyim_hir::Pat::Binding { name, .. } => *name,
+                        _ => self.ctx.resolver().intern("_"),
+                    };
+                    thir_params.push(thir::Param {
+                        name,
+                        ty,
+                        span,
+                        pat: thir::Pattern::binding(name, Mutability::Not, ty, span),
+                        local,
+                    });
                 }
 
                 // 2. Check the body exactly once. The capture log records every
@@ -973,7 +987,7 @@ impl<'a> FnCtxt<'a> {
                     kind: thir::ExprKind::Closure {
                         body: Box::new(thir::Body {
                             owner: self.owner,
-                            params: Vec::new(), // closure params lowered separately
+                            params: thir_params, // closure's own parameters
                             return_ty: body_ty,
                             stmts: vec![thir::Stmt::Expr { expr: body_expr }],
                             span,

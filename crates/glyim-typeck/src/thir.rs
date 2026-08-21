@@ -23,6 +23,10 @@ pub struct Param {
     pub ty: Ty,
     pub span: Span,
     pub pat: Pattern,
+    /// The `LocalVarId` this parameter is bound to in the enclosing type-check
+    /// scope. Mirrored into the closure body so the lowering can map it to the
+    /// parameter's MIR local.
+    pub local: LocalVarId,
 }
 
 #[derive(Clone, Debug)]
