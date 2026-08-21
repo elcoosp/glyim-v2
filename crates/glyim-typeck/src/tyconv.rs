@@ -357,6 +357,7 @@ pub fn resolve_fn_sig(
     return_ty_ref: &Option<glyim_hir::TypeRef>,
     generic_params: &[glyim_hir::GenericParam],
     span: Span,
+    self_ty: Option<Ty>,
 ) -> FnSig {
     let param_map = build_param_tys(ctx, generic_params);
 
@@ -377,6 +378,19 @@ pub fn resolve_fn_sig(
                 ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
             } else {
                 resolved
+            }
+        } else if param.name == ctx.resolver().intern("self") {
+            // Impl/trait method `self` (e.g. `&mut self`) with no explicit
+            // HIR type. Mirror Rust: type it as the impl's `Self` so it does
+            // not fall through to an unconstrained inference variable (which
+            // would later recurse infinitely when the body accesses fields
+            // through `self`).
+            match self_ty {
+                Some(st) => st,
+                None => {
+                    let var = infer.new_ty_var(ctx);
+                    ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+                }
             }
         } else {
             let var = infer.new_ty_var(ctx);
