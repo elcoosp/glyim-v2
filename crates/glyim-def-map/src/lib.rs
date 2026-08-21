@@ -372,10 +372,13 @@ fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Pa
 }
 
 #[tracing::instrument(skip(root))]
-pub fn build_def_map(root: &SyntaxNode, krate: CrateId) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
+pub fn build_def_map(
+    root: &SyntaxNode,
+    krate: CrateId,
+    interner: Interner,
+) -> (CrateDefMap, Vec<GlyimDiagnostic>) {
     let mut diagnostics = Vec::new();
     let mut modules: IndexVec<ModuleId, ModuleData> = IndexVec::new();
-    let interner = Interner::default();
     let mut def_counter: u32 = 1;
     let mut def_to_module: HashMap<LocalDefId, ModuleId> = HashMap::new();
     // Plan §4.1: collect `use` declarations during the structural pass instead
