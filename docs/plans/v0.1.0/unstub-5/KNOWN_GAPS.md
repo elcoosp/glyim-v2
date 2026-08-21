@@ -328,18 +328,26 @@ large front-end + codegen effort, tracked below.
     now accepts `PathExpr`/`UsePath` arm patterns, so a unit enum-variant arm
     like `Poll::Pending` is lowered into a HIR pattern instead of being skipped
     (which dropped the arm and tripped `non-exhaustive match: missing variants`).
-    The probe is now **7 diagnostics** (was 12), all rooted in one wall:
+  - **Associated-type projection synthesis + robust ADT arg resolution (commit
+    9eb750b)**: `resolve_path_type` now synthesizes a `ProjectionTy` for
+    `Self::Output` / `F::Output` (lowered as single- or two-segment paths) by
+    naming the bound trait, and `resolve_name_to_adt_ty` no longer bails to a
+    0-argument `Poll` when a generic argument fails to resolve — it pushes the
+    `Error` type and preserves arity, so `Poll<Self::Output>` stays 1-arg.
+    Combined with the enum generic-param `param_map` (commit 9eb750b +
+    earlier), `unresolved type T` and `mismatched type argument counts` are
+    gone. The probe is now **3 diagnostics** (was 12), all rooted in one wall:
     generic fn-body monomorphization + abstract associated-type projection.
-  The remaining 7 diagnostics are ALL the same root cause: `block_on<F>`'s body
+  The remaining 3 diagnostics are ALL the same root cause: `block_on<F>`'s body
   is checked exactly once with the rigid type param `F`, so —
-  - `F vs Adt6` (×4: `F`, `&F`, `&mut F`, and the call arg `AddOne`) — the body's
-    `f: F` never unifies with the concrete `AddOne`;
+  - `mismatched type argument counts` (span = trait `fn poll` line) — the trait
+    method return `Poll<Self::Output>` is resolved in a phase where the enum's
+    arity / trait registration isn't fully available, producing a 0-arg `Poll`
+    that is compared against the impl's 1-arg `Poll<i32>`;
   - `unresolved name v` — `v` from `Poll::Ready(v)` is looked up inside the
     rigid-`F` body where the arm binding isn't established;
   - `<F as Trait5>::Output vs i32` — `F::Output` projection can't normalize
     because `Self=F` is rigid (no concrete impl to key the lookup table);
-  - `unresolved type T` / `mismatched type argument counts` — `Poll<T>` /
-    `Poll<Self::Output>` generic-param arity in projection.
   Real fix = re-check generic fn bodies **per call site** with the type params
   bound to the argument types (monomorphization), and normalize `ProjectionTy`
   to concrete via the impl-keyed lookup table once `Self` is concrete. This is a
