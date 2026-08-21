@@ -35,9 +35,17 @@ impl<'a> FnCtxt<'a> {
             if let Expr::Match { arms, .. } = expr {
                 for arm in arms {
                     let arm: &MatchArm = arm;
+                    // Seed the skip-set with BOTH the guard and the arm body.
+                    // The arm body (e.g. `return v`) references names bound by
+                    // the arm pattern; it must be checked only inside the
+                    // `Expr::Match` handler (which enters the arm scope), never
+                    // by the top-level driving loop, or it would be checked
+                    // before the pattern binds its names and emit a spurious
+                    // "unresolved name" that the expr_cache then freezes.
                     if let Some(guard) = arm.guard {
                         stack.push(guard);
                     }
+                    stack.push(arm.body);
                 }
             }
         }
@@ -134,13 +142,14 @@ impl<'a> FnCtxt<'a> {
             });
         }
 
-        // Only the *guard* subtrees of match arms are skipped from the
+        // Only the match-arm *guard* and *body* subtrees are skipped from the
         // top-level driving loop: their names are bound inside the arm's
-        // pattern scope (which the arm sets up before checking the guard in
-        // `check_expr`), so checking them standalone in the function scope
-        // would report spurious "unresolved name" errors. Every other expr in
-        // the flat arena is checked as a top-level statement as designed; the
-        // `expr_cache` makes the resulting redundant traversal a no-op.
+        // pattern scope (which the `Expr::Match` handler sets up before
+        // checking the guard and body in `check_expr`), so checking them
+        // standalone in the function scope would report spurious "unresolved
+        // name" errors. Every other expr in the flat arena is checked as a
+        // top-level statement as designed; the `expr_cache` makes the resulting
+        // redundant traversal a no-op.
         let guard_skip = Self::guard_subtree_ids(self.body);
 
         let mut stmts = Vec::new();

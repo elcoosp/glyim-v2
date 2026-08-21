@@ -29,5 +29,10 @@ fn match_integer_with_wildcard() {
     };
 
     let thir_body = typeck_single_body(&hir, body_id);
-    assert_eq!(thir_body.stmts.len(), 3);
+    // The arm body is checked in-scope by the `Expr::Match` handler and is
+    // embedded in the resulting THIR `Match`, not emitted as a separate
+    // top-level statement. So the top-level driving loop produces: the
+    // scrutinee literal, the match expression (which carries the arm body
+    // inside it) = 2 statements.
+    assert_eq!(thir_body.stmts.len(), 2);
 }

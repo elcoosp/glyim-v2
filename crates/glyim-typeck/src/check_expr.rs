@@ -1022,7 +1022,7 @@ impl<'a> FnCtxt<'a> {
                 });
                 (
                     thir::Expr {
-                        kind: thir::ExprKind::Break {
+                        kind: thir::ExprKind::Return {
                             value: value_opt.map(Box::new),
                         },
                         ty: Ty::NEVER,

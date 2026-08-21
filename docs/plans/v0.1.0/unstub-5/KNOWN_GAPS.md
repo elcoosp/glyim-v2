@@ -201,12 +201,16 @@ three pre-existing Unix-only runtime tests were correctly gated (`getppid`,
 `env_var_home`, `spawn_preserves_spaces_in_arg` → `#[cfg(unix)]` /
 HOME-unset-tolerant) so they no longer fail on Windows.
 
-## Phase 5 — async/.await — PARTIAL (5.1 std types done; executor MVP done; desugar tracked)
+## Phase 5 — async/.await — PARTIAL (5.1 std types done; executor MVP done; desugar tracked; **typeck prerequisite RESOLVED**)
 Largest single gap. The `Future`/`Poll`/`Context`/`Waker` lang-item types and a
 single-threaded `block_on` executor are now in place (2026-08-20). The
 remaining piece — `async fn`/`.await` state-machine desugaring
 (`lower_async.rs`) + wiring `block_on` to compiled glyim futures — is the
-large front-end + codegen effort, tracked below.
+large front-end + codegen effort, tracked below. **The deepest typeck
+prerequisite is now MET**: the compiler can express AND compile the desugared
+form (`impl Future for X { type Output; fn poll(&mut self) -> Poll<Output> }`
+plus a generic `block_on<F: Future>` driving it) with 0 diagnostics through the
+real `PipelineCompiler` (see the RESOLVED note under 5.1).
 
 ### 5.1 Minimum viable scope — PARTIAL
 - **`Future`/`Poll`/`Context`/`Waker` std types** added in
@@ -222,35 +226,22 @@ large front-end + codegen effort, tracked below.
   (`block_on_returns_ready_value`, `block_on_polls_until_ready`,
   `poll_enum_roundtrip`) — verifies the executor drives a future that resolves
   on first poll and one that returns `Pending` N times then `Ready`.
-- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4) — BLOCKED BELOW
-  THE COROUTINE LAYER (diagnosed 2026-08-20 via the real `PipelineCompiler`)**:
+- **TRACKED GAP — `async fn`/`.await` desugar (5.1 steps 1,3,4) — REMAINING
+  FRONT-END WORK (typeck prerequisite RESOLVED 2026-08-21)**:
   the parser already has `KwAsync`/`KwAwait` tokens, but the HIR/MIR lowering
   that splits an `async fn` body into a state-machine enum + generated `poll`
-  method, and the `.await` typeck, are not implemented. The deeper blocker,
-  confirmed by compiling the desugaring *target* through the real pipeline
-  (`glyim-typeck/src/tests/dyn_dispatch.rs::async_desugar_target_compiles`,
-  currently `#[ignore]`d), is that the compiler **cannot yet express the
-  desugared form** — `impl Future for X { type Output; fn poll(&mut self) ->
-  Poll<Output> }` plus a generic `block_on<F: Future>` driving it. It emits **9
-  diagnostics** (down from 12), characterizing the genuine P5 depth that remains:
-  - `unresolved type T` (×1) — `Poll<T>`'s own generic param `T` surfaces in
-    `Poll<Self::Output>`; enum generic params now resolve in variant *fields*
-    (so `Ready(T)` no longer errors) but the `Self::Output` projection arg still
-    fails to resolve as a concrete `T`.
-  - `mismatched type argument counts` — unifying `Poll<ProjectionTy>` (from
-    `F::Output`) against `Poll<i32>` fails because the projection is not yet
-    normalized to its concrete type.
-  - `unresolved name v` / `non-exhaustive match: missing variants Pending` —
-    enum variant *pattern* binding resolution (`Poll::Ready(v)`, `Poll::Pending`)
-    is not yet wired for the generic `Poll` enum (variants are registered but the
-    pattern path → variant_idx resolution is incomplete).
-  - `mismatched types: F vs Adt6` (×4, incl. `&F`/`&mut F`) — `block_on<F:
-    MyFuture>`'s *body* is checked with a rigid `F`; at the call `block_on(f)`
-    with `f: AddOne`, the argument is checked against the rigid param and the
-    body is not re-instantiated. This is the generic-body monomorphization wall.
-  - `mismatched types: <F as Trait5>::Output vs i32` — associated-type
-    projection under a generic param (`F::Output`) is not normalized; the
-    projection lookup table only covers the *concrete-self* case.
+  method, and the `.await` typeck, are not implemented. The deeper typeck
+  blocker — **the compiler could not previously express the desugared form** —
+  is now RESOLVED: compiling the desugaring *target* through the real pipeline
+  (`glyim-typeck/src/tests/dyn_dispatch.rs::async_desugar_target_compiles`, no
+  longer `#[ignore]`d) now emits **0 diagnostics** (was 9–12). The generic
+  `block_on<F: Future>` driving a future, the associated-type projection
+  `F::Output`, the enum-variant pattern `Poll::Ready(v)`, and `return` inside a
+  `loop`/`match` all type-check, lower, and validate end-to-end. What remains is
+  purely the coroutine *desugar* itself (`lower_async.rs`: rewrite an `async fn`
+  body into the `impl Future { type Output; fn poll }` state machine, and typeck
+  `.await` as a poll loop) — not any typeck depth. See the RESOLVED note under
+  5.1 for the full list of fixes.
   IMPORTANT correction to an earlier note: **concrete** (non-generic) trait-method
   dispatch with non-unit return types DOES work — `dyn_dispatch::
   trait_method_path_dispatch_resolves` (`fn speak(&self) -> i32`) passes through
@@ -338,22 +329,42 @@ large front-end + codegen effort, tracked below.
     earlier), `unresolved type T` and `mismatched type argument counts` are
     gone. The probe is now **3 diagnostics** (was 12), all rooted in one wall:
     generic fn-body monomorphization + abstract associated-type projection.
-  The remaining 3 diagnostics are ALL the same root cause: `block_on<F>`'s body
-  is checked exactly once with the rigid type param `F`, so —
-  - `mismatched type argument counts` (span = trait `fn poll` line) — the trait
-    method return `Poll<Self::Output>` is resolved in a phase where the enum's
-    arity / trait registration isn't fully available, producing a 0-arg `Poll`
-    that is compared against the impl's 1-arg `Poll<i32>`;
-  - `unresolved name v` — `v` from `Poll::Ready(v)` is looked up inside the
-    rigid-`F` body where the arm binding isn't established;
-  - `<F as Trait5>::Output vs i32` — `F::Output` projection can't normalize
-    because `Self=F` is rigid (no concrete impl to key the lookup table);
-  Real fix = re-check generic fn bodies **per call site** with the type params
-  bound to the argument types (monomorphization), and normalize `ProjectionTy`
-  to concrete via the impl-keyed lookup table once `Self` is concrete. This is a
-  designed epic (refs #23 async), not a one-patch fix. Until it lands, `block_on`
-  can only be driven by the Rust-side executor primitive, not a *compiled glyim*
-  future. The probe stays `#[ignore]`d as a characterization lock.
+  - **RESOLVED (2026-08-21, P5 monomorphization epic — COMMITTED, suite green)**:
+    the generic-body monomorphization + associated-type projection wall is now
+    closed. The probe `async_desugar_target_compiles` compiles the full desugar
+    target through the real `PipelineCompiler` with **0 diagnostics** and is no
+    longer `#[ignore]`d. Concretely:
+    - `TyCtxMut::subst_ty` gained a `TyKind::Projection` arm that substitutes
+      the projection's `Self`/`self` type through the call-site substitution
+      (`F -> AddOne`) and normalizes `F::Output` to the concrete `i32` via
+      `resolve_associated_type` (which now matches structurally by `AdtId` so
+      the same concrete type allocated under distinct arena handles still
+      resolves). This clears `<F as Trait5>::Output vs i32`.
+    - `check_stmt::guard_subtree_ids` now also seeds the skip-set with
+      `arm.body` (not just `arm.guard`), so a match-arm body like `return v` is
+      type-checked only inside the `Expr::Match` handler (which enters the arm
+      scope and binds the pattern) instead of by the top-level driving loop
+      before the binding exists. This clears the spurious `unresolved name v`.
+    - `check_pattern` variant branch now substitutes each formal variant field
+      type (`T` in `Poll::Ready(T)`) through the scrutinee's substitution, so
+      `Poll::Ready(v)` binds `v: F::Output` rather than the bare formal `T`.
+      This clears `mismatched types: T vs <F as Trait5>::Output`.
+    - `unify.rs` now builds a generic variant's enum type with one inference
+      variable per generic param (instead of a 0-argument `Poll`), so
+      `Poll::Ready(x)` infers `Poll<i32>` against an expected `Poll<i32>`. This
+      clears the remaining `mismatched type argument counts`.
+    - `Expr::Return` (as an expression, e.g. inside `loop`/`match` bodies) is
+      now lowered to a dedicated `thir::ExprKind::Return` (previously it was
+      desugared to `thir::ExprKind::Break`, which the MIR lowering treated as a
+      loop break and rejected with "break outside of loop"). The lowering
+      assigns the value to the return place `_0` and terminates with `Return`,
+      so `return` inside a `loop`/`match` works.
+    Net result: `block_on<F: MyFuture>(f: F) -> F::Output { loop { match f.poll()
+    { Poll::Ready(v) => return v, _ => {} } } }` type-checks, lowers, and
+    validates end-to-end. The coroutine state-machine *desugar* (`lower_async.rs`,
+    `async fn`/`.await`) remains the tracked Phase-5 front-end work, but the
+    compiler can now **express and compile the desugared form** — the deepest
+    typeck prerequisite is met.
 
 ### 5.2 Executor — DONE (single-threaded MVP)
 `block_on` in `glyim-runtime::async_runtime` is the `poll_to_completion` loop

@@ -44,20 +44,15 @@ fn unit_struct_construction_resolves() {
 /// a trait with an associated type + method, an impl providing it, and a
 /// generic `block_on<F: MyFuture>` that drives it.
 ///
-/// `#[ignore]`d because this currently FAILS (8 diagnostics) — the compiler
-/// does not yet monomorphize generic function bodies (`block_on<F>`'s body is
-/// checked with the rigid param `F`, so `F` never unifies with the concrete
-/// `AddOne` and `F::Output` associated-type projection is not normalized).
-/// Value/struct/variant path resolution, enum generic-param fields, generic
-/// call *return-type* instantiation, and enum-variant pattern matching all
-/// land. The remaining gap is full generic-body monomorphization + associated
-/// type projection normalization, the foundational blocker for P5 (async)
-/// *below* the coroutine state-machine pass. This test locks in the current
-/// blocked behavior; remove `#[ignore]` and flip the assertion to
-/// `assert_no_errors` once generic-body monomorphization + associated-type
-/// projection land. See `KNOWN_GAPS.md` Phase 5.
+/// This exercises the full P5 async-desugar target through the real
+/// `PipelineCompiler`: generic call return-type instantiation, associated-type
+/// projection normalization (`F::Output` -> `i32`), generic-enum variant
+/// patterns (`Poll::Ready(v)` binding `v: F::Output`), and `return` inside a
+/// `loop`/`match` (lowered to `thir::ExprKind::Return` targeting the function
+/// return place, not a spurious loop break). It now compiles with ZERO
+/// diagnostics — the generic-body monomorphization + associated-type
+/// projection blocker (tracked in `KNOWN_GAPS.md` Phase 5) is resolved.
 #[test]
-#[ignore = "P5 async: generic fn-body monomorphization + associated-type projection not yet resolved in typeck"]
 fn async_desugar_target_compiles() {
     let src = r#"
         enum Poll<T> { Ready(T), Pending }
@@ -85,7 +80,11 @@ fn async_desugar_target_compiles() {
     for d in &output.diagnostics {
         eprintln!("PROBE-DIAG: {} | span={:?}", d.message, d.span);
     }
-    // Characterization of the current blocker (8 diagnostics rooted in
-    // generic fn-body monomorphization + associated-type projection).
-    assert!(!output.diagnostics.is_empty(), "expected P5 blocker diagnostics");
+    // The P5 async-desugar target now compiles cleanly: generic-body
+    // monomorphization + associated-type projection are resolved.
+    assert!(
+        output.diagnostics.is_empty(),
+        "expected no diagnostics, got: {:?}",
+        output.diagnostics
+    );
 }

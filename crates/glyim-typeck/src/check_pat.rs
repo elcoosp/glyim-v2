@@ -160,7 +160,30 @@ impl<'a> FnCtxt<'a> {
                             .get(i)
                             .copied()
                             .unwrap_or_else(|| self.ctx.resolver().intern(&format!("_{}", i)));
-                        let field_ty = field_tys.get(i).copied().unwrap_or(expected_ty);
+                        // Plan unstub-5 P5: the formal field type (e.g. `T` for
+                        // `Poll::Ready(T)`) must be substituted through the
+                        // scrutinee's substitution. When matching
+                        // `Poll<F::Output>` against `Poll::Ready(v)`, `v` must
+                        // get type `F::Output`, not the bare formal `T`.
+                        let field_ty = match field_tys.get(i).copied() {
+                            Some(formal) => {
+                                let subst = match self.ctx.ty_kind(expected_ty) {
+                                    TyKind::Adt(_, sub) => {
+                                        let args = self.ctx.substitution_args(*sub);
+                                        let mut m = std::collections::HashMap::new();
+                                        for (idx, arg) in args.iter().enumerate() {
+                                            if let glyim_type::GenericArg::Ty(t) = arg {
+                                                m.insert(idx as u32, *t);
+                                            }
+                                        }
+                                        m
+                                    }
+                                    _ => std::collections::HashMap::new(),
+                                };
+                                self.ctx.subst_ty(formal, &subst)
+                            }
+                            None => expected_ty,
+                        };
                         let field_pat = self.check_pattern(*field_pat_id, field_ty);
                         field_pats.push(thir::FieldPat {
                             field: field_name,

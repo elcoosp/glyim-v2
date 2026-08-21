@@ -99,7 +99,20 @@ impl<'a> FnCtxt<'a> {
             // variant_local -> (enum_local, VariantIdx).
             if let Some((enum_local, variant_idx)) = self.def_map.variant_map.get(&local) {
                 let adt_id = AdtId::from_raw(enum_local.to_raw());
-                let substs = self.ctx.intern_substitution(vec![]);
+                // Plan unstub-5 P5: for a *generic* enum `Poll<T>`, the variant
+                // value/pattern type must carry one inference variable per
+                // generic parameter (so `Poll::Ready(x)` infers `Poll<i32>`
+                // against an expected `Poll<i32>`), NOT a 0-argument `Poll`.
+                // Building `Poll<>` here produced a spurious "mismatched type
+                // argument counts" when the expected type was `Poll<i32>`.
+                let arity = self.ctx.adt_generic_arity(adt_id);
+                let substs: Vec<GenericArg> = (0..arity)
+                    .map(|_| {
+                        let var = self.infer.new_ty_var(self.ctx);
+                        GenericArg::Ty(self.ctx.mk_ty(TyKind::Infer(InferVar::Ty(var))))
+                    })
+                    .collect();
+                let substs = self.ctx.intern_substitution(substs);
                 let enum_ty = self.ctx.mk_ty(TyKind::Adt(adt_id, substs));
 
                 // Data-carrying variant (has fields) => a constructor value

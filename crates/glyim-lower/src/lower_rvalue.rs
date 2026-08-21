@@ -727,6 +727,22 @@ impl<'a> MirBuilder<'a> {
                     mir_operands,
                 )
             }
+            thir::ExprKind::Return { value } => {
+                if let Some(val_expr) = value {
+                    let rvalue = self.lower_expr_to_rvalue(val_expr);
+                    let ret_place = glyim_mir::Place::new(LocalIdx::from_raw(0));
+                    self.push_stmt(
+                        glyim_mir::StatementKind::Assign(ret_place, rvalue),
+                        expr.span,
+                    );
+                }
+                self.terminate(glyim_mir::TerminatorKind::Return, expr.span);
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Unit,
+                    ty: Ty::NEVER,
+                    span: expr.span,
+                }))
+            }
             thir::ExprKind::Break { value } => {
                 if let Some(val_expr) = value {
                     let _ = self.lower_expr_to_rvalue(val_expr);

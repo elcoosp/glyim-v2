@@ -165,6 +165,13 @@ pub enum ExprKind {
     Break {
         value: Option<Box<Expr>>,
     },
+    /// Early return (`return expr`). Distinguished from `Break` (loop break)
+    /// so the MIR lowering can target the function return place (`_0`)
+    /// instead of treating it as a loop break (plan unstub-5 P5: `return`
+    /// inside `loop`/`match` bodies).
+    Return {
+        value: Option<Box<Expr>>,
+    },
     Continue,
     Closure {
         body: Box<Body>,
