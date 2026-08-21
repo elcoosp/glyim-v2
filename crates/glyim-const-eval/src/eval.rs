@@ -583,6 +583,10 @@ impl<'a> ConstEvaluator<'a> {
                 "error expression in const evaluation",
                 span,
             )),
+            Expr::Await { .. } => Err(ConstEvalError::new(
+                "await is not supported in const evaluation",
+                span,
+            )),
             Expr::Return { value } => match value {
                 Some(v) => self.evaluate_at_depth(*v, depth),
                 None => Ok(ConstValue::Unit),
