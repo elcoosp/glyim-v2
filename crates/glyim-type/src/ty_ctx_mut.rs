@@ -249,7 +249,7 @@ impl TyCtxMut {
             return ty;
         }
         let kind = self.ty_kind(ty).clone();
-        match kind {
+        let r = match kind {
             TyKind::Param(pt) => {
                 if let Some(&repl) = subst.get(&pt.index) {
                     repl
@@ -344,7 +344,8 @@ impl TyCtxMut {
                 }
             }
             _ => ty,
-        }
+        };
+        r
     }
 
     pub fn mk_ref(&mut self, region: Region, ty: Ty, mutability: Mutability) -> Ty {
@@ -614,7 +615,7 @@ impl TyCtxMut {
             TyKind::Adt(adt_id, _) => Some(*adt_id),
             _ => None,
         };
-        self.impl_assoc_types
+        let result = self.impl_assoc_types
             .iter()
             .find(|((sty, _), entries)| {
                 let sty_matches = match self_adt {
@@ -628,7 +629,8 @@ impl TyCtxMut {
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
-            })
+            });
+        result
     }
 
     /// Structural ADT-type equality with the arena: two `Ty`s that both denote
@@ -652,7 +654,7 @@ impl TyCtxMut {
         trait_def_id: glyim_core::def_id::TraitDefId,
         assoc_name: Name,
     ) -> Option<Ty> {
-        self.impl_assoc_types
+        let r = self.impl_assoc_types
             .iter()
             .find(|((key_self, key_trait), _)| {
                 *key_trait == trait_def_id && self.same_adt(self_ty, *key_self)
@@ -662,7 +664,8 @@ impl TyCtxMut {
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
-            })
+            });
+        r
     }
 
     /// Query the traits a generic parameter (by name) is bound to. Populated

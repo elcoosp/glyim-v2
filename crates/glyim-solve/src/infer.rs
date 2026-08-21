@@ -807,14 +807,16 @@ impl InferenceTable {
                 }
                 Ok(constraints)
             }
-            (_a_k, _b_k) => Err(vec![GlyimDiagnostic::type_error(
-                span,
-                format!(
-                    "mismatched types: {} vs {}",
-                    PrintTy::new(a, ctx),
-                    PrintTy::new(b, ctx)
-                ),
-            )]),
+            (_a_k, _b_k) => {
+                Err(vec![GlyimDiagnostic::type_error(
+                    span,
+                    format!(
+                        "mismatched types: {} vs {}",
+                        PrintTy::new(a, ctx),
+                        PrintTy::new(b, ctx)
+                    ),
+                )])
+            }
         }
     }
 
