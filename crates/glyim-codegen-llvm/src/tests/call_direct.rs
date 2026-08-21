@@ -255,7 +255,11 @@ fn call_closure_value_lowers_to_defined_closure_fn() {
         i32_ty,
     )]);
     let closure_id = ClosureId::from_raw(closure_adt.to_raw());
-    let closure_ty = ctx_mut.mk_adt(closure_adt, glyim_type::Substitution::empty());
+    // The closure *value* type is `TyKind::Closure`; its `substs` carry the
+    // capture types so the value lays out as a struct of captures (matching the
+    // synthetic ADT's fields used for call-site extraction).
+    let closure_substs = ctx_mut.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+    let closure_ty = ctx_mut.mk_ty(TyKind::Closure(closure_id, closure_substs));
 
     // Register the closure's full signature so the codegen can recover the
     // `[captures..., params] -> ret` shape at call sites.

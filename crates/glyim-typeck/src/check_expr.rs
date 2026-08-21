@@ -2,13 +2,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glyim_core::def_id::{AdtId, FnDefId, TraitDefId};
+use glyim_core::def_id::{AdtId, ClosureId, FnDefId, TraitDefId};
 use glyim_core::interner::Name;
 use glyim_core::primitives::*;
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::*;
 use glyim_span::Span;
-use glyim_type::{Const, ConstKind, GenericArg, Region, Ty, TyKind, AdtKind};
+use glyim_type::{AdtKind, Const, ConstKind, FnSig, GenericArg, Region, Ty, TyKind};
 use glyim_type::display::PrintTy;
 
 use crate::check_body::FnCtxt;
@@ -516,6 +516,43 @@ impl<'a> FnCtxt<'a> {
                         );
                     }
                     TyKind::Error => (false, FnDefId::from_raw(0), true),
+                    TyKind::Closure(closure_id, _) => {
+                        // A closure-typed callee: the closure's registered
+                        // signature carries [captures.., params..]; the call
+                        // supplies only the explicit parameters.
+                        if let Some(sig) = self.ctx.closure_sig(*closure_id) {
+                            let inputs = self.ctx.substitution_args(sig.inputs);
+                            let capture_count = self
+                                .ctx
+                                .closure_adt(*closure_id)
+                                .and_then(|adt_id| self.ctx.adt_def(adt_id))
+                                .and_then(|adt| adt.variants.first())
+                                .map(|v| v.fields.len())
+                                .unwrap_or(0);
+                            let param_count = inputs.len() - capture_count;
+                            if args.len() != param_count {
+                                self.diagnostics.push(GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "closure expects {} arguments, got {}",
+                                        param_count, args.len()
+                                    ),
+                                ));
+                            }
+                            return (
+                                thir::Expr {
+                                    kind: thir::ExprKind::Call {
+                                        func: Box::new(func_expr),
+                                        args: arg_exprs,
+                                    },
+                                    ty: sig.output,
+                                    span,
+                                },
+                                sig.output,
+                            );
+                        }
+                        (false, FnDefId::from_raw(0), false)
+                    }
                     _ => (false, FnDefId::from_raw(0), false),
                 };
 
@@ -974,8 +1011,33 @@ impl<'a> FnCtxt<'a> {
                     .map(|(i, (_, _, ty))| (self.ctx.resolver().intern(&format!("capture_{i}")), *ty))
                     .collect();
                 let closure_adt = self.ctx.register_closure(capture_tys.clone());
-                let closure_substs = self.ctx.intern_substitution(vec![]);
-                let closure_ty = self.ctx.mk_adt(closure_adt, closure_substs);
+                // The closure *value* type is `TyKind::Closure(id, substs)`
+                // (not the synthetic ADT): the lower stage and `lower_call`
+                // recover the `ClosureId` from this type, while the ADT (kept in
+                // `closure_adt_map`) supplies the capture field types. The
+                // `substs` carry the capture types so the value lays out as a
+                // struct of captures (mirroring the synthetic ADT's fields).
+                let closure_id = ClosureId::from_raw(closure_adt.to_raw());
+                let closure_substs = self.ctx.intern_substitution(
+                    capture_tys.iter().map(|(_, t)| GenericArg::Ty(*t)).collect(),
+                );
+                let closure_ty = self.ctx.mk_ty(TyKind::Closure(closure_id, closure_substs));
+
+                // Register the closure's full signature (captures followed by
+                // its own parameters) so `Expr::Call` can resolve a call through
+                // a closure-typed value and `lower_call` can emit the target.
+                let closure_id = ClosureId::from_raw(closure_adt.to_raw());
+                let mut sig_inputs: Vec<GenericArg> =
+                    capture_tys.iter().map(|(_, t)| GenericArg::Ty(*t)).collect();
+                sig_inputs.extend(thir_params.iter().map(|p| GenericArg::Ty(p.ty)));
+                let closure_sig = FnSig {
+                    inputs: self.ctx.intern_substitution(sig_inputs),
+                    output: body_ty,
+                    c_variadic: false,
+                    unsafety: Safety::Safe,
+                    abi: Abi::Glyim,
+                };
+                self.ctx.register_closure_sig(closure_id, closure_sig);
 
                 // 5. Build THIR for the closure: capture list and body.
                 let capture_thir: Vec<thir::Capture> = captures

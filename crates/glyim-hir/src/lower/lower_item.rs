@@ -48,8 +48,8 @@ pub(crate) fn collect_generic_params(
     generic_params
 }
 use super::{
-    first_ident_text, is_type_node, lower_expr::lower_block_to_expr, lower_expr::lower_expr,
-    lower_type::lower_type_ref, next_local_def_id, node_span,
+    first_ident_text, first_ident_text_with_depth, is_type_node, lower_expr::lower_block_to_expr,
+    lower_expr::lower_expr, lower_type::lower_type_ref, next_local_def_id, node_span,
 };
 
 pub(crate) fn collect_struct_fields(
@@ -240,7 +240,7 @@ pub(crate) fn lower_param(
     interner: &mut Interner,
     pats: &mut IndexVec<PatId, Pat>,
 ) -> (Param, PatId) {
-    let name_text = first_ident_text(node).unwrap_or_else(|| "_".to_string());
+    let name_text = first_ident_text_with_depth(node).unwrap_or_else(|| "_".to_string());
     let name = interner.intern(&name_text);
     let ty = node
         .children()

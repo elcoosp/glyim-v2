@@ -150,8 +150,8 @@ fn closure_captures_enclosing_param() {
     // Tier 1.1b: the closure type must be a concrete ADT, not an unresolved
     // inference variable.
     assert!(
-        matches!(ctx.ty_kind(closure_ty), glyim_type::TyKind::Adt(_, _)),
-        "closure type should resolve to a concrete Adt, got {closure_ty:?}"
+        matches!(ctx.ty_kind(closure_ty), glyim_type::TyKind::Closure(_, _)),
+        "closure type should resolve to a concrete Closure, got {closure_ty:?}"
     );
 }
 
@@ -250,7 +250,7 @@ fn move_closure_captures_by_value() {
         "move closure captures enclosing binding by value"
     );
     assert!(
-        matches!(ctx.ty_kind(closure_ty), glyim_type::TyKind::Adt(_, _)),
-        "closure type should resolve to a concrete Adt, got {closure_ty:?}"
+        matches!(ctx.ty_kind(closure_ty), glyim_type::TyKind::Closure(_, _)),
+        "closure type should resolve to a concrete Closure, got {closure_ty:?}"
     );
 }

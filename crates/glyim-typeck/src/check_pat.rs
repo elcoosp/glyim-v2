@@ -25,8 +25,6 @@ impl<'a> FnCtxt<'a> {
                 thir::LocalVarId::from_raw(id.to_raw())
             }
             _ => {
-                // Non-binding patterns can't introduce a capture boundary
-                // name; bind a synthetic id so the boundary logic still works.
                 let id = self.env.add_binding(self.ctx.resolver().intern("_"), ty, mutability);
                 thir::LocalVarId::from_raw(id.to_raw())
             }

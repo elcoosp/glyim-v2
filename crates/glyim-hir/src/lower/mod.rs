@@ -28,6 +28,28 @@ pub(crate) fn first_ident_text(node: &SyntaxNode) -> Option<String> {
     None
 }
 
+/// Like `first_ident_text` but descends into nested nodes (e.g. a closure
+/// parameter `|n: i32|` is parsed as `Param -> PatIdent -> Ident`, so the
+/// identifier is not a direct child of the `Param` node).
+pub(crate) fn first_ident_text_with_depth(node: &SyntaxNode) -> Option<String> {
+    for el in node.children_with_tokens() {
+        match el {
+            glyim_syntax::SyntaxElement::Token(t)
+                if t.kind() == SyntaxKind::Ident =>
+            {
+                return Some(t.text().to_string());
+            }
+            glyim_syntax::SyntaxElement::Node(n) => {
+                if let Some(found) = first_ident_text_with_depth(&n) {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 pub(crate) fn is_type_node(node: &SyntaxNode) -> bool {
     matches!(
         node.kind(),

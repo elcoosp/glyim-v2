@@ -2546,16 +2546,15 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 };
                 (sig, None, None)
             }
-            ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::Adt(_, _)) => {
-                // A closure is carried as a synthetic ADT whose raw id is shared
-                // with its ClosureId (see `register_closure`). Recover the
-                // closure id and its precomputed full signature
+            ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::Closure(_, _)) => {
+                // A closure is carried as a `TyKind::Closure` value whose raw id
+                // is its ClosureId (see `register_closure`). Recover the closure
+                // id and its precomputed full signature
                 // `[captures..., explicit params] -> ret`.
-                let adt_id = match self.ty_ctx.ty_kind(ty) {
-                    TyKind::Adt(adt_id, _) => *adt_id,
+                let closure_id = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Closure(closure_id, _) => *closure_id,
                     _ => unreachable!(),
                 };
-                let closure_id = ClosureId::from_raw(adt_id.to_raw());
                 let fn_sig = match self.ty_ctx.closure_sig(closure_id) {
                     Some(sig) => sig.clone(),
                     None => {

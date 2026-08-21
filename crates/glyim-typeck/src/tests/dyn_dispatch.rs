@@ -88,3 +88,24 @@ fn async_desugar_target_compiles() {
         output.diagnostics
     );
 }
+
+#[test]
+fn closure_with_capture_compiles() {
+    let src = r#"
+        fn main() -> i32 {
+            let base = 10;
+            let add_base = |n: i32| n + base;
+            add_base(5)
+        }
+    "#;
+    let output = compile(src);
+    eprintln!("PROBE-COUNT={}", output.diagnostics.len());
+    for d in &output.diagnostics {
+        eprintln!("PROBE-DIAG: {} | span={:?}", d.message, d.span);
+    }
+    assert!(
+        output.diagnostics.is_empty(),
+        "closure-with-capture target should compile cleanly, got: {:?}",
+        output.diagnostics
+    );
+}
