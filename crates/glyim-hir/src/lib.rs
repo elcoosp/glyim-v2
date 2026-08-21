@@ -422,6 +422,9 @@ pub enum Expr {
         end: Option<ExprId>,
         inclusive: bool,
     },
+    /// `e.await` — suspends until the future `e` resolves. Lowered by the
+    /// async desugaring pass (`lower_async`) into a poll loop.
+    Await { expr: ExprId },
     Err,
 }
 
