@@ -683,6 +683,11 @@ fn check_fn_items_in_module(
                     .map(|(id, _, _)| *id);
                 if let Some(enum_local) = enum_local {
                     let adt_id = AdtId::from_raw(enum_local.to_raw());
+                    // The enum's own generic params (e.g. `T` in `Poll<T>`) must
+                    // be in scope when resolving variant field types, so
+                    // `Ready(T)` yields a `TyKind::Param` rather than an
+                    // `unresolved type`. (Mirrors `register_adt_item`.)
+                    let param_map = tyconv::build_param_tys(ctx, &enum_item.generic_params);
                     let mut variants = Vec::new();
                     for variant in &enum_item.variants {
                         let mut fields = IndexVec::new();
@@ -693,7 +698,7 @@ fn check_fn_items_in_module(
                                 def_map,
                                 diagnostics,
                                 &field.ty,
-                                &HashMap::new(),
+                                &param_map,
                                 field.span,
                             );
                             fields.push(FieldDef {

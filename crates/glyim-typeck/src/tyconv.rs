@@ -502,6 +502,65 @@ pub fn resolve_path_type(
         return ty;
     }
 
+    // Plan unstub-5 P5: associated-type projection paths (`Self::Output`,
+    // `F::Output`, …) are lowered as a *single* path segment whose name
+    // string contains `::`. Detect that here and synthesize a `ProjectionTy`
+    // naming the bound trait, exactly like the two-segment branch below.
+    // Without this, `Self::Output` falls through to the ADT/qualified-path
+    // resolvers and yields an `unresolved type` (or, inside `Poll<Self::Output>`,
+    // an empty substitution → `mismatched type argument counts`).
+    if let Some(name) = path.as_name() {
+        // `name_str` borrows `ctx` immutably; detach the split substrings into
+        // owned `String`s so the later mutable `resolve_path_type` borrow of
+        // `ctx` is legal.
+        let split: Option<(String, String)> = {
+            let s = ctx.name_str(name);
+            s.split_once("::").map(|(q, a)| (q.to_string(), a.to_string()))
+        };
+        if let Some((qual, assoc)) = split {
+            let qname = ctx.resolver().intern(&qual);
+            let aname = ctx.resolver().intern(&assoc);
+            // Resolve the qualifier to a type to learn whether it is a
+            // concrete type (use the impl projection table) or a generic
+            // param / `Self` (build an abstract `ProjectionTy`).
+            let qpath = glyim_hir::Path {
+                segments: vec![glyim_hir::PathSegment {
+                    name: qname,
+                    generic_args: None,
+                }],
+                kind: glyim_core::path::PathKind::Plain,
+            };
+            let mut q_diags = Vec::new();
+            let qual_ty =
+                resolve_path_type(ctx, infer, def_map, &mut q_diags, &qpath, param_map, span);
+            if !matches!(ctx.ty_kind(qual_ty), TyKind::Error) {
+                if let Some(ty) = ctx.resolve_associated_type_by_self_ty(qual_ty, aname) {
+                    return ty;
+                }
+            }
+            if matches!(ctx.ty_kind(qual_ty), TyKind::Param(_)) || qual == "Self" {
+                let trait_def_id = if matches!(ctx.ty_kind(qual_ty), TyKind::Param(_)) {
+                    ctx.param_bounds_for(qname)
+                        .and_then(|traits| traits.first().copied())
+                } else {
+                    ctx.find_trait_with_assoc_type(aname)
+                };
+                if let Some(tid) = trait_def_id {
+                    let substs = ctx.intern_substitution(vec![GenericArg::Ty(qual_ty)]);
+                    let trait_ref = TraitRef {
+                        def_id: tid,
+                        substs,
+                    };
+                    let proj = ProjectionTy {
+                        trait_ref,
+                        item_name: aname,
+                    };
+                    return ctx.mk_ty(TyKind::Projection(proj));
+                }
+            }
+        }
+    }
+
     // Check primitives
     if let Some(name) = path.as_name()
         && let Some(ty) = resolve_primitive(ctx, name)
@@ -790,8 +849,19 @@ fn resolve_name_to_adt_ty(
     // Generic arguments live on the final path segment (the ADT itself).
     let args = path.segments.last().and_then(|s| s.generic_args.as_deref());
 
-    let mut substs: Vec<GenericArg> = Vec::with_capacity(arity);
+    let mut substs: Vec<GenericArg> = Vec::with_capacity(args.map_or(0, |a| a.len()).max(arity));
     if let Some(args) = args {
+        // Plan unstub-5 P5: previously this branch bailed out to a 0-argument
+        // `Poll` whenever `args.len() != arity`. That was wrong for two real
+        // cases: (1) the ADT's generic arity is not yet known (the enum is
+        // registered in `TyCtxMut` only *after* the current resolution pass,
+        // e.g. an associated-type projection `Poll<Self::Output>` resolved
+        // during trait registration); (2) an argument is an associated-type
+        // projection that fails to resolve. In both cases we must still build
+        // the ADT with the *written* number of arguments (pushing `Error` for
+        // any unresolved one) so downstream `unify` reports a precise
+        // (not arity-mismatch) diagnostic instead of a misleading
+        // "mismatched type argument counts".
         if args.len() != arity {
             let path_str = path
                 .segments
@@ -808,16 +878,10 @@ fn resolve_name_to_adt_ty(
                     args.len()
                 ),
             ));
-            let subst = ctx.intern_substitution(vec![]);
-            return Some(ctx.mk_ty(TyKind::Adt(adt_id, subst)));
         }
         for arg in args {
             let resolved =
                 resolve_type_ref(ctx, infer, def_map, diagnostics, arg, &HashMap::new(), span);
-            if matches!(ctx.ty_kind(resolved), TyKind::Error) {
-                let subst = ctx.intern_substitution(vec![]);
-                return Some(ctx.mk_ty(TyKind::Adt(adt_id, subst)));
-            }
             substs.push(GenericArg::Ty(resolved));
         }
     } else {

@@ -1151,6 +1151,7 @@ impl<'a> FnCtxt<'a> {
             self.ctx.mk_ref(Region::Erased, recv_ty, Mutability::Mut),
         ];
 
+        let recv_is_param = matches!(self.ctx.ty_kind(recv_ty), TyKind::Param(_));
         let collect_for = |this: &mut Self, step_ty: Ty| -> Vec<(Ty, Ty)> {
             let mut found: Vec<(Ty, Ty)> = Vec::new();
             for (_id, item) in this.hir.items.iter_enumerated() {
@@ -1166,6 +1167,18 @@ impl<'a> FnCtxt<'a> {
                         &param_map,
                         span,
                     );
+                    // Plan unstub-5 P5 (generic-body monomorphization): when the
+                    // receiver is a *type parameter* (`f: F`, `&F`, `&mut F`), a
+                    // concrete `impl Trait for AddOne`'s `Self` can never unify
+                    // with the rigid param `F`. The hard `unify(Param, Adt)`
+                    // below would emit a spurious `F vs Adt` error. Skip
+                    // concrete-impl matching for generic receivers and let the
+                    // generic-receiver fallback (lower in this fn) resolve the
+                    // method from the bound trait's HIR, so `f.poll()` on a
+                    // generic `F: MyFuture` type-checks instead of erroring.
+                    if recv_is_param {
+                        continue;
+                    }
                     if this.unify(step_ty, impl_self_ty, span) {
                         for method in &impl_item.methods {
                             if method.name == method_name {
