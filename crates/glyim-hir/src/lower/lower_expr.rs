@@ -293,6 +293,26 @@ pub(crate) fn lower_expr(
             lower_closure_expr(node, interner, body, diags, struct_field_map)
         }
         SyntaxKind::StructExpr => lower_struct_expr(node, interner, body, diags, struct_field_map),
+        SyntaxKind::AwaitExpr => {
+            // `.await`: lower the single operand child into `Expr::Await`.
+            // The async desugaring pass (`lower_async`) later rewrites the
+            // surrounding `async fn` body (and these await sites) into a poll
+            // loop over the `Future` trait.
+            let operand = node
+                .children()
+                .find(|c| is_expr_node(c))
+                .and_then(|c| lower_expr(&c, interner, body, diags, struct_field_map));
+            let operand = match operand {
+                Some(e) => e,
+                None => {
+                    let eid = body.alloc_expr(Expr::Missing, node_span(node));
+                    eid
+                }
+            };
+            let expr = Expr::Await { expr: operand };
+            let eid = body.alloc_expr(expr, node_span(node));
+            Some(eid)
+        },
         // A bare `Path` node (e.g. an identifier inside a macro token tree that
         // the parser didn't wrap in `PathExpr`) is a variable/name reference.
         // Token-tree contents may be `UsePath` nodes (the inner node of a path),
