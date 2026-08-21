@@ -61,6 +61,37 @@ pub fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
             ctx.fn_sig(*fn_def_id)
                 .is_some_and(|sig| sig == target_sig)
         }
+        // §6.2: closure coercion to fn pointer. A *non-capturing* closure
+        // coerces to `fn(Args) -> Ret` when its (parameter, return) signature
+        // matches the pointer's. Capturing closures cannot be represented as a
+        // bare code pointer, so only capture-free closures are coercible.
+        (TyKind::Closure(closure_id, _), TyKind::FnPtr(target_sig)) => {
+            let Some(sig) = ctx.closure_sig(*closure_id) else {
+                return false;
+            };
+            let capture_count = ctx
+                .closure_adt(*closure_id)
+                .and_then(|adt_id| ctx.adt_def(adt_id))
+                .and_then(|adt| adt.variants.first())
+                .map(|v| v.fields.len())
+                .unwrap_or(0);
+            if capture_count != 0 {
+                return false;
+            }
+            let inputs = ctx.substitution_args(sig.inputs);
+            let target_inputs = ctx.substitution_args(target_sig.inputs);
+            if inputs.len() != target_inputs.len() {
+                return false;
+            }
+            let params_match = inputs
+                .iter()
+                .zip(target_inputs.iter())
+                .all(|(a, b)| match (a, b) {
+                    (GenericArg::Ty(ta), GenericArg::Ty(tb)) => ta == tb,
+                    _ => false,
+                });
+            params_match && sig.output == target_sig.output
+        }
         _ => false,
     }
 }
