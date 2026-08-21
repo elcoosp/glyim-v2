@@ -27,6 +27,8 @@ glyim-codegen    = { workspace = true }
 glyim-db         = { workspace = true }
 glyim-pipeline   = { workspace = true }
 glyim-cli        = { workspace = true }
+glyim-meta       = { workspace = true }
+glyim-proc-macro = { workspace = true }
 glyim-layout     = { workspace = true }
 glyim-opt        = { workspace = true }
 insta            = { workspace = true }

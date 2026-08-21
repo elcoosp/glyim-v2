@@ -57,11 +57,28 @@ impl TestCompiler for FrontendOnlyCompiler {
 
 pub struct PipelineCompiler {
     backend: Arc<dyn glyim_codegen::CodegenBackend + Send + Sync>,
+    /// Optional procedural-macro registry (Phase 9.2). When set, macro
+    /// expansion runs this registry's `MacroKind::Proc` invocations through the
+    /// loaded cdylib functions during the compile's expansion stage. `None`
+    /// disables proc-macro dispatch (declarative + builtin macros still run).
+    proc_registry: Option<Arc<glyim_proc_macro::Registry>>,
 }
 
 impl PipelineCompiler {
     pub fn new(backend: Arc<dyn glyim_codegen::CodegenBackend + Send + Sync>) -> Self {
-        Self { backend }
+        Self {
+            backend,
+            proc_registry: None,
+        }
+    }
+
+    /// Inject a procedural-macro [`Registry`](glyim_proc_macro::Registry) so
+    /// proc-macro calls are expanded during compilation (Phase 9.2
+    /// two-stage host compile: the registry is populated either in-process for
+    /// tests or by `load_cdylib` from a compiled proc-macro crate).
+    pub fn with_proc_registry(mut self, registry: Option<Arc<glyim_proc_macro::Registry>>) -> Self {
+        self.proc_registry = registry;
+        self
     }
 }
 
@@ -93,6 +110,36 @@ impl TestCompiler for PipelineCompiler {
         std::fs::write(&path, source).expect("failed to write temp source file for PipelineCompiler");
         db.vfs().add_file_content(&path, Arc::from(source));
 
+        // Phase 9.2: run macro expansion over the parsed source *before* the
+        // rest of the pipeline consumes it. Declarative + builtin macros always
+        // run; proc-macro calls dispatch through the injected registry (the
+        // two-stage load_cdylib populates it from a compiled cdylib). The
+        // expanded program is pushed back into the VFS (the pipeline reads
+        // source from the VFS, not disk) so `compile_file_with_artifacts`
+        // re-parses the macro-free source.
+        let initial_parse = glyim_frontend::parse_to_syntax(source, file_id);
+        let mut expansion_diags: Vec<GlyimDiagnostic> = initial_parse.diagnostics.clone();
+        if initial_parse.diagnostics.is_empty() {
+            let mut hygiene = glyim_span::HygieneCtx::new();
+            let mut expander = glyim_meta::Expander::new(&mut hygiene);
+            if let Some(reg) = self.proc_registry.as_ref() {
+                expander.with_proc_registry(Some(reg.as_ref()));
+            }
+            let (expanded, mut diags) = expander.expand_crate(&initial_parse.root);
+            expansion_diags.append(&mut diags);
+            // Push the expanded program back to BOTH the VFS and the on-disk
+            // file: `compile_file_with_artifacts` re-reads the source from disk
+            // (via `add_file_from_disk`), so the disk copy must also reflect the
+            // macro-free form for the pipeline to consume it. `expand_crate`
+            // emits a whitespace-free token stream; re-serialize it with
+            // separators (walking the green token stream so token boundaries
+            // are preserved) so rowan reparses it faithfully (Phase 9.2).
+            let expanded_src = glyim_meta::join_tokens_with_spaces(&expanded);
+            db.vfs().add_file_content(&path, Arc::from(expanded_src.clone()));
+            std::fs::write(&path, &expanded_src)
+                .expect("failed to write expanded source for PipelineCompiler");
+        }
+
         let output_path = std::env::temp_dir().join(format!("glyim_test_{}_{}.o", unique_tag, file_id.to_raw()));
         let ty_ctx = db.get_ty_ctx();
         let exe_path = output_path.with_extension("");
@@ -112,7 +159,7 @@ impl TestCompiler for PipelineCompiler {
                     .ok()
                     .map(|()| exe_path.clone());
                 CompileOutput {
-                    diagnostics: Vec::new(),
+                    diagnostics: expansion_diags,
                     syntax_tree: None,
                     def_map: Some(artifacts.def_map),
                     typeck_result: Some(artifacts.typeck_result),
@@ -121,15 +168,18 @@ impl TestCompiler for PipelineCompiler {
                     executable_path,
                 }
             }
-            Err(diags) => CompileOutput {
-                diagnostics: diags,
-                syntax_tree: None,
-                def_map: None,
-                typeck_result: None,
-                mir_bodies: Vec::new(),
-                ty_ctx,
-                executable_path: None,
-            },
+            Err(mut diags) => {
+                expansion_diags.append(&mut diags);
+                CompileOutput {
+                    diagnostics: expansion_diags,
+                    syntax_tree: None,
+                    def_map: None,
+                    typeck_result: None,
+                    mir_bodies: Vec::new(),
+                    ty_ctx,
+                    executable_path: None,
+                }
+            }
         }
     }
 }
