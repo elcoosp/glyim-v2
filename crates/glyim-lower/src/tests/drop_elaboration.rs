@@ -58,7 +58,10 @@ fn non_copy_local_gets_drop_terminator() {
             }
         }
     }
-    assert!(drops_s_local, "expected a Drop terminator for the `s` local");
+    assert!(
+        drops_s_local,
+        "expected a Drop terminator for the `s` local"
+    );
     assert!(drop_count >= 1, "expected at least one Drop terminator");
 }
 
@@ -85,8 +88,7 @@ fn copy_local_does_not_get_drop_terminator() {
 
     // No drops: single block ending directly in Return.
     assert_eq!(result.body.basic_blocks.len(), 1);
-    assert_mir(&ctx, &result.body)
-        .block_terminator(BasicBlockIdx::from_raw(0), "Return");
+    assert_mir(&ctx, &result.body).block_terminator(BasicBlockIdx::from_raw(0), "Return");
 }
 
 #[test]
@@ -105,6 +107,5 @@ fn return_place_is_never_dropped() {
 
     // No locals other than _0, so no drop chain: single Return block.
     assert_eq!(result.body.basic_blocks.len(), 1);
-    assert_mir(&ctx, &result.body)
-        .block_terminator(BasicBlockIdx::from_raw(0), "Return");
+    assert_mir(&ctx, &result.body).block_terminator(BasicBlockIdx::from_raw(0), "Return");
 }

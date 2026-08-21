@@ -13,7 +13,11 @@ pub struct LowerResult {
     /// Bodies of closures captured during this function's lowering. Each closure
     /// body owns the leading `captures...` arguments followed by the closure's
     /// own parameters, and is emitted as `__glyim_fn_{closure_id}` by codegen.
-    pub closure_bodies: Vec<(glyim_core::def_id::ClosureId, glyim_type::Substitution, glyim_mir::Body)>,
+    pub closure_bodies: Vec<(
+        glyim_core::def_id::ClosureId,
+        glyim_type::Substitution,
+        glyim_mir::Body,
+    )>,
 }
 
 /// Pre-computed information about the `Iterator::next` method for a specific

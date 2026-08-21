@@ -56,7 +56,11 @@ fn slice_expr(
     )
 }
 
-fn lower_slice(start: Option<i128>, end: Option<i128>, inclusive: bool) -> crate::lower::LowerResult {
+fn lower_slice(
+    start: Option<i128>,
+    end: Option<i128>,
+    inclusive: bool,
+) -> crate::lower::LowerResult {
     let mut ctx_mut = test_ty_ctx();
     let i32_ty = ctx_mut.mk_ty(TyKind::Int(IntTy::I32));
     let arr_ty = array_ty(&mut ctx_mut, i32_ty, 5);
@@ -81,9 +85,10 @@ fn has_ptr_len_tuple(result: &crate::lower::LowerResult) -> bool {
         for stmt in bb.statements.iter() {
             if let StatementKind::Assign(_, Rvalue::Aggregate(AggregateKind::Tuple, ops)) =
                 &stmt.kind
-                && ops.len() == 2 {
-                    return true;
-                }
+                && ops.len() == 2
+            {
+                return true;
+            }
         }
     }
     false

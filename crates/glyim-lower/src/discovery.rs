@@ -22,13 +22,12 @@ pub fn discover_mono_roots(
     // that `check_path` resolves value paths to. When no def-map is supplied
     // or it has no entry (e.g. synthetic test harnesses), fall back to the
     // HIR `item.id`, preserving the historical discovery behaviour.
-    let resolve_root_id =
-        |name: glyim_core::interner::Name| -> Option<LocalDefId> {
-            def_map
-                .and_then(|dm| dm.modules.get(dm.root))
-                .and_then(|m| m.scope.values.get(&name))
-                .map(|(id, _, _)| *id)
-        };
+    let resolve_root_id = |name: glyim_core::interner::Name| -> Option<LocalDefId> {
+        def_map
+            .and_then(|dm| dm.modules.get(dm.root))
+            .and_then(|m| m.scope.values.get(&name))
+            .map(|(id, _, _)| *id)
+    };
 
     for item in hir.items.iter() {
         match &item.kind {

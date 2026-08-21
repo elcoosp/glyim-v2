@@ -29,10 +29,7 @@ pub fn check_unsized_locals(items: &[MonoItemData], ctx: &TyCtx) -> Vec<GlyimDia
 }
 
 /// Warn if the number of mono items exceeds the given threshold.
-pub fn check_large_mono_set(
-    items: &[MonoItemData],
-    threshold: usize,
-) -> Vec<GlyimDiagnostic> {
+pub fn check_large_mono_set(items: &[MonoItemData], threshold: usize) -> Vec<GlyimDiagnostic> {
     if items.len() > threshold {
         let msg = format!(
             "large number of mono items: {} (threshold: {}); consider reducing generic instantiations",
@@ -57,10 +54,7 @@ pub fn check_large_mono_set(
 ///
 /// If a function has type parameters (substitution non-empty) but none of those
 /// parameters appear in the body's types, a warning is emitted.
-pub fn check_unused_generic_params(
-    items: &[MonoItemData],
-    ctx: &TyCtx,
-) -> Vec<GlyimDiagnostic> {
+pub fn check_unused_generic_params(items: &[MonoItemData], ctx: &TyCtx) -> Vec<GlyimDiagnostic> {
     let mut diags = Vec::new();
     for item in items {
         if let MonoItem::Fn { substs, .. } = &item.item {

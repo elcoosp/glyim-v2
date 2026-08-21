@@ -470,7 +470,9 @@ fn constant_in_generic_instantiated() {
     // (`__glyim_const_{id}`), so they are intentionally not collected for
     // lowering here (const value materialization is a follow-up).
     assert!(
-        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        !ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { .. })),
         "const refs must not be lowered as mono items"
     );
 }
@@ -800,12 +802,18 @@ fn multiple_constants_in_body() {
         &|_ty| dummy_body(),
     );
 
-    assert_eq!(ctx.item_count(), 1, "should collect only main (consts are not lowered)");
+    assert_eq!(
+        ctx.item_count(),
+        1,
+        "should collect only main (consts are not lowered)"
+    );
     // ConstRef constants are materialized by the backend as zero-init globals
     // and are intentionally not collected as mono items (follow-up: const
     // value materialization).
     assert!(
-        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        !ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { .. })),
         "const refs must not be lowered as mono items"
     );
 }
@@ -929,7 +937,9 @@ fn mixed_calls_and_constants() {
     );
     // The ConstRef to const 20 must NOT be collected as a mono item.
     assert!(
-        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        !ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { .. })),
         "const refs must not be lowered as mono items"
     );
 }
@@ -1034,7 +1044,9 @@ fn transitive_constant_collection() {
     // neither const_a nor const_b is collected for lowering.
     assert_eq!(ctx.item_count(), 1, "should collect only the fn");
     assert!(
-        !ctx.items().iter().any(|d| matches!(&d.item, MonoItem::Const { .. })),
+        !ctx.items()
+            .iter()
+            .any(|d| matches!(&d.item, MonoItem::Const { .. })),
         "const refs (a and b) must not be lowered as mono items"
     );
 }

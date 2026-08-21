@@ -1494,10 +1494,7 @@ fn param_used_in_opaque_type() {
 /// projection: [Index(idx_local)] })))` and a `Drop { place: arr_local }`
 /// terminator. This exercises the Copy-operand projection path, the Index
 /// operand local path, and the Drop-destination place path.
-fn build_body_with_indexed_copy_and_drop(
-    arr_ty: Ty,
-    idx_ty: Ty,
-) -> Body {
+fn build_body_with_indexed_copy_and_drop(arr_ty: Ty, idx_ty: Ty) -> Body {
     let owner = dummy_def_id();
 
     let mut locals: IndexVec<LocalIdx, LocalDecl> = IndexVec::new();
@@ -1530,10 +1527,7 @@ fn build_body_with_indexed_copy_and_drop(
 
     let entry = BasicBlockData {
         statements: vec![Statement {
-            kind: StatementKind::Assign(
-                Place::new(LocalIdx::from_raw(0)),
-                Rvalue::Use(copy_op),
-            ),
+            kind: StatementKind::Assign(Place::new(LocalIdx::from_raw(0)), Rvalue::Use(copy_op)),
             source_info: dummy_source_info(),
         }],
         terminator: Terminator {
@@ -1586,7 +1580,10 @@ fn param_used_via_indexed_copy_and_drop_projection() {
 
     let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
     let used = analyze_used_params(&body, &ctx, substs);
-    assert!(used[0], "T is used via the Index operand local of a Copy projection");
+    assert!(
+        used[0],
+        "T is used via the Index operand local of a Copy projection"
+    );
 }
 
 #[test]
@@ -1611,7 +1608,10 @@ fn param_used_via_drop_destination_projection() {
 
     let substs = ctx.intern_substitution(vec![GenericArg::Ty(param_t)]);
     let used = analyze_used_params(&body, &ctx, substs);
-    assert!(used[0], "T is used via the Drop destination place projection");
+    assert!(
+        used[0],
+        "T is used via the Drop destination place projection"
+    );
 }
 
 // ============================================================

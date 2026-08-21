@@ -1,8 +1,8 @@
 use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_const_eval::{ConstEvaluator, ConstValue};
-use glyim_core::def_id::ClosureId;
 use glyim_core::TargetInfo;
+use glyim_core::def_id::ClosureId;
 use glyim_core::primitives::{BinOp, Mutability};
 use glyim_diag::GlyimDiagnostic;
 use glyim_layout::LayoutComputer;
@@ -95,7 +95,8 @@ impl<'a> MirBuilder<'a> {
                 // aggregate (the builtin ADTs registered at ids 1000/1001)
                 // carrying its `start` and `end` operands, instead of a dummy
                 // empty tuple.
-                let adt_id = glyim_core::def_id::AdtId::from_raw(if *inclusive { 1001 } else { 1000 });
+                let adt_id =
+                    glyim_core::def_id::AdtId::from_raw(if *inclusive { 1001 } else { 1000 });
 
                 // The range type is resolved during type-checking to
                 // `Adt(1000|1001, [T])`; reuse its substitution so the element
@@ -142,7 +143,11 @@ impl<'a> MirBuilder<'a> {
                 };
 
                 glyim_mir::Rvalue::Aggregate(
-                    glyim_mir::AggregateKind::Adt(adt_id, glyim_mir::VariantIdx::from_raw(0), substs),
+                    glyim_mir::AggregateKind::Adt(
+                        adt_id,
+                        glyim_mir::VariantIdx::from_raw(0),
+                        substs,
+                    ),
                     vec![start_op, end_op],
                 )
             }
@@ -805,7 +810,13 @@ impl<'a> MirBuilder<'a> {
                 // Build the closure's own MIR body so codegen can emit it as
                 // `__glyim_fn_{closure_id}`. The captures come first, followed
                 // by the closure's own parameters (see `lower_closure`).
-                self.lower_closure(&_thir_body, &captures, *closure_id, *closure_substs, expr.span);
+                self.lower_closure(
+                    &_thir_body,
+                    &captures,
+                    *closure_id,
+                    *closure_substs,
+                    expr.span,
+                );
                 let mut capture_operands = Vec::with_capacity(captures.len());
                 for capture in captures {
                     let capture_local = LocalIdx::from_raw(capture.local.to_raw());

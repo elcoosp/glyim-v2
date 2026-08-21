@@ -52,7 +52,11 @@ fn lower_range(start: i128, end: i128, inclusive: bool) -> (AdtId, usize) {
 #[test]
 fn range_exclusive_lowers_to_range_adt() {
     let (adt_id, n_ops) = lower_range(1, 5, false);
-    assert_eq!(adt_id, AdtId::from_raw(1000), "exclusive range -> Range ADT");
+    assert_eq!(
+        adt_id,
+        AdtId::from_raw(1000),
+        "exclusive range -> Range ADT"
+    );
     assert_eq!(n_ops, 2, "range carries start + end operands");
 }
 

@@ -319,9 +319,10 @@ fn mark_used_params_in_place(
     // parameters when generic; ensure the index local's type is marked.
     for elem in place.projection.iter() {
         if let ProjectionElem::Index(local) = elem
-            && let Some(decl) = local_decls.get(*local) {
-                mark_used_params(decl.ty, ctx, used);
-            }
+            && let Some(decl) = local_decls.get(*local)
+        {
+            mark_used_params(decl.ty, ctx, used);
+        }
     }
 }
 
@@ -373,7 +374,12 @@ fn mark_used_params_in_terminator(
     used: &mut [bool],
 ) {
     match kind {
-        TerminatorKind::Call { func, args, destination, .. } => {
+        TerminatorKind::Call {
+            func,
+            args,
+            destination,
+            ..
+        } => {
             mark_used_params_in_operand(func, local_decls, ctx, used);
             for arg in args {
                 mark_used_params_in_operand(arg, local_decls, ctx, used);
@@ -382,7 +388,9 @@ fn mark_used_params_in_terminator(
             // a parameter (e.g. storing into a field of a generic ADT).
             mark_used_params_in_place(destination, local_decls, ctx, used);
         }
-        TerminatorKind::SwitchInt { discr, switch_ty, .. } => {
+        TerminatorKind::SwitchInt {
+            discr, switch_ty, ..
+        } => {
             mark_used_params_in_operand(discr, local_decls, ctx, used);
             mark_used_params(*switch_ty, ctx, used);
         }

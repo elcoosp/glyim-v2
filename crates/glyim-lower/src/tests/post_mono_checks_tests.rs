@@ -525,10 +525,14 @@ fn collect_then_check_unsized_local_fires() {
     let def_id = make_fn_def_id(90);
 
     let mir_bodies = |d: DefId, _s: &glyim_type::Substitution| -> Arc<glyim_mir::Body> {
-        assert_eq!(d, DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(90)));
+        assert_eq!(
+            d,
+            DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(90))
+        );
         Arc::new(body.clone())
     };
-    let drop_glue = |_t: Ty| -> Arc<glyim_mir::Body> { Arc::new(make_body(make_def_id(0), Ty::UNIT, vec![])) };
+    let drop_glue =
+        |_t: Ty| -> Arc<glyim_mir::Body> { Arc::new(make_body(make_def_id(0), Ty::UNIT, vec![])) };
 
     let root = crate::mono::MonoItem::Fn {
         def_id,
@@ -557,10 +561,14 @@ fn collect_then_check_sized_local_clean() {
     let body = make_body(make_def_id(91), Ty::UNIT, vec![i32_ty]);
     let def_id = make_fn_def_id(91);
     let mir_bodies = |d: DefId, _s: &glyim_type::Substitution| -> Arc<glyim_mir::Body> {
-        assert_eq!(d, DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(91)));
+        assert_eq!(
+            d,
+            DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(91))
+        );
         Arc::new(body.clone())
     };
-    let drop_glue = |_t: Ty| -> Arc<glyim_mir::Body> { Arc::new(make_body(make_def_id(0), Ty::UNIT, vec![])) };
+    let drop_glue =
+        |_t: Ty| -> Arc<glyim_mir::Body> { Arc::new(make_body(make_def_id(0), Ty::UNIT, vec![])) };
 
     let root = crate::mono::MonoItem::Fn {
         def_id,
