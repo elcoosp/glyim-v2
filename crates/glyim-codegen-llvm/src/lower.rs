@@ -6,6 +6,7 @@ use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_layout::{FieldsShape, LayoutComputer, PassMode, Size, TagEncoding, VariantsShape};
+use glyim_core::def_id::ClosureId;
 use glyim_mir::VariantIdx;
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
@@ -2532,16 +2533,61 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         target: &Option<BasicBlockIdx>,
         cleanup: &Option<BasicBlockIdx>,
     ) -> CompResult<()> {
-        let fn_sig = match self.operand_ty(func) {
+        // Determine the call target. A function pointer is one form; a closure
+        // is carried as an aggregate of its captures with the closure id encoded
+        // in the (synthetic ADT) type. For a closure we reconstruct the callee
+        // signature as `[captures..., explicit params] -> return_ty` and pull the
+        // capture values out of the aggregate.
+        let (fn_sig, direct_fn_val, closure_captures) = match self.operand_ty(func) {
             ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::FnPtr(_)) => {
-                match self.ty_ctx.ty_kind(ty) {
+                let sig = match self.ty_ctx.ty_kind(ty) {
                     TyKind::FnPtr(sig) => sig.clone(),
                     _ => unreachable!(),
+                };
+                (sig, None, None)
+            }
+            ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::Adt(_, _)) => {
+                // A closure is carried as a synthetic ADT whose raw id is shared
+                // with its ClosureId (see `register_closure`). Recover the
+                // closure id and its precomputed full signature
+                // `[captures..., explicit params] -> ret`.
+                let adt_id = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Adt(adt_id, _) => *adt_id,
+                    _ => unreachable!(),
+                };
+                let closure_id = ClosureId::from_raw(adt_id.to_raw());
+                let fn_sig = match self.ty_ctx.closure_sig(closure_id) {
+                    Some(sig) => sig.clone(),
+                    None => {
+                        return Err(vec![GlyimDiagnostic::internal_error(format!(
+                            "no signature registered for closure {}",
+                            closure_id.to_raw()
+                        ))]);
+                    }
+                };
+                let capture_count = (fn_sig.inputs.len() as usize) - args.len();
+                let fn_name = format!("__glyim_fn_{}", closure_id.to_raw());
+                let direct_fn_val = self.module.get_function(&fn_name);
+                let func_val = self.lower_operand(func)?;
+                let struct_val = func_val.into_struct_value();
+                let mut captures: Vec<BasicValueEnum<'ctx>> = Vec::new();
+                for i in 0..capture_count {
+                    let field_val = self
+                        .builder
+                        .build_extract_value(struct_val, i as u32, "capture")
+                        .map_err(|e| {
+                            vec![GlyimDiagnostic::internal_error(format!(
+                                "extract closure capture failed: {:?}",
+                                e
+                            ))]
+                        })?;
+                    captures.push(field_val);
                 }
+                (fn_sig, direct_fn_val, Some(captures))
             }
             _ => {
                 return Err(vec![GlyimDiagnostic::internal_error(
-                    "expected function pointer type for call operand",
+                    "expected function pointer or closure type for call operand",
                 )]);
             }
         };
@@ -2554,17 +2600,6 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         })?;
         let is_sret = matches!(fn_abi.ret.mode, PassMode::Indirect { .. });
         let fn_type = self.llvm_fn_type_from_sig(&fn_sig);
-        let direct_fn_val = match func {
-            Operand::Constant(c) => {
-                if let MirConstKind::Fn(fn_def_id, _) = &c.kind {
-                    let fn_name = format!("__glyim_fn_{}", fn_def_id.to_raw());
-                    self.module.get_function(&fn_name)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
         let mut llvm_args: Vec<inkwell::values::BasicValueEnum<'ctx>> = Vec::new();
         let mut sret_alloca = None;
         if is_sret {
@@ -2581,13 +2616,23 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             if matches!(arg_abi.mode, PassMode::Ignore) {
                 continue;
             }
-            if arg_idx >= args.len() {
+            if arg_idx >= args.len() + closure_captures.as_ref().map(|c| c.len()).unwrap_or(0) {
                 return Err(vec![GlyimDiagnostic::internal_error(
                     "argument count mismatch",
                 )]);
             }
-            let arg_op = &args[arg_idx];
-            let arg_val = self.lower_operand(arg_op)?;
+            // For a closure call the leading ABI args are the captured
+            // environment values (already extracted from the aggregate); the
+            // trailing args are the explicit call arguments.
+            let arg_val = if let Some(captures) = closure_captures.as_ref() {
+                if arg_idx < captures.len() {
+                    captures[arg_idx]
+                } else {
+                    self.lower_operand(&args[arg_idx - captures.len()])?
+                }
+            } else {
+                self.lower_operand(&args[arg_idx])?
+            };
             match arg_abi.mode {
                 PassMode::Direct => llvm_args.push(arg_val),
                 PassMode::Indirect { .. } => {
@@ -2697,6 +2742,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                     })?
             }
         } else {
+            if closure_captures.is_some() {
+                return Err(vec![GlyimDiagnostic::internal_error(
+                    "closure body function was not emitted before the call site",
+                )]);
+            }
             let func_val = self.lower_operand(func)?.into_pointer_value();
             if use_invoke {
                 let normal_bb = if let Some(target_bb) = target {
