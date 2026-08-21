@@ -1171,6 +1171,17 @@ impl<'a> FnCtxt<'a> {
             }
 
             Expr::Err => (thir::Expr::err(span), Ty::ERROR),
+            // Defensive: `await` must be desugared to a poll loop by the async
+            // desugaring pass (`lower_async`) before type-checking. If it
+            // survives, the desugar pass did not run — treat as an error rather
+            // than panicking on the uncovered pattern.
+            Expr::Await { .. } => {
+                self.diagnostics.push(GlyimDiagnostic::type_error(
+                    span,
+                    "`await` reached type-checking without desugaring".to_string(),
+                ));
+                (thir::Expr::err(span), Ty::ERROR)
+            }
         };
 
         self.expr_cache.insert(expr_id, result.clone());
