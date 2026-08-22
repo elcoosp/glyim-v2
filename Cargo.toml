@@ -105,3 +105,12 @@ toml = "1.1.4"
 sha2 = "0.11.0"
 tempfile = "3"
 lsp-types = "0.97.0"
+
+# Phase 10.3 (report #30): enforce `missing_docs` for the public API. The
+# previous per-crate `#![allow(missing_docs)]` crate-root allows are removed;
+# the lint is instead enabled workspace-wide so every public item must be
+# documented and CI catches future undocumented additions. Left at `warn`
+# (not `deny`) so the existing undocumented public surface is surfaced
+# incrementally rather than hard-failing the build while the doc pass lands.
+[workspace.lints.rust]
+missing_docs = "warn"
