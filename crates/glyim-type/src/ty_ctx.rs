@@ -197,6 +197,12 @@ impl TyCtx {
                 } else {
                     // Unknown/unregistered ADT: assume sized (matches the
                     // conservative default used elsewhere for unregistered types).
+                    // Surface this in debug builds so an unregistered ADT that
+                    // *should* be sized-checked is not silently accepted.
+                    debug_assert!(
+                        false,
+                        "is_sized: unknown/unregistered ADT {adt_id:?}; assuming sized"
+                    );
                     true
                 }
             }
