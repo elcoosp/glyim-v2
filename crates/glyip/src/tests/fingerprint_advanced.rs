@@ -72,7 +72,7 @@ fn fingerprint_store_update_overwrites() {
 #[test]
 fn fingerprint_store_has_any_changed_no_dir() {
     let store = FingerprintStore::new();
-    let result = store.has_any_changed(std::path::Path::new("/nonexistent"), "g");
+    let result = store.has_any_changed(std::path::Path::new("/nonexistent"), "g", "");
     assert!(result.is_ok());
     assert!(!result.unwrap());
 }

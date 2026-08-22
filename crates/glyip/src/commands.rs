@@ -137,6 +137,7 @@ pub fn cmd_build(project_dir: &Path, opts: &BuildOptions) -> GlyipResult<BuildRe
     info!("Dependencies resolved");
 
     // Incremental check.
+    cache.set_build_config(opts);
     let incremental = !cache.needs_rebuild()?;
     if incremental {
         info!("No source changes detected — skipping compilation");

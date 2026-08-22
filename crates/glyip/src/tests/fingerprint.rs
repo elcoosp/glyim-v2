@@ -133,10 +133,10 @@ fn has_any_changed_detects_changes() {
 
     let mut store = FingerprintStore::new();
     store.update_all(&src_dir, "g").unwrap();
-    assert!(!store.has_any_changed(&src_dir, "g").unwrap());
-
+    assert!(!store.has_any_changed(&src_dir, "g", "").unwrap());
+    // Edit the file.
     fs::write(&file_a, "fn a_modified() {}\n").unwrap();
-    assert!(store.has_any_changed(&src_dir, "g").unwrap());
+    assert!(store.has_any_changed(&src_dir, "g", "").unwrap());
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn has_any_changed_empty_dir() {
     let dir = TempDir::new().unwrap();
     let empty_src = dir.path().join("src");
     let store = FingerprintStore::new();
-    assert!(!store.has_any_changed(&empty_src, "g").unwrap());
+    assert!(!store.has_any_changed(&empty_src, "g", "").unwrap());
 }
 
 #[test]
@@ -173,14 +173,81 @@ fn has_any_changed_detects_manifest_change() {
     // Scan the project root so the manifest is fingerprinted alongside sources.
     store.update_all(dir.path(), "g").unwrap();
     assert!(
-        !store.has_any_changed(dir.path(), "g").unwrap(),
+        !store.has_any_changed(dir.path(), "g", "").unwrap(),
         "no change should be reported right after update"
     );
 
     // Editing only the manifest (no .g change) must still flag a change.
     fs::write(&manifest, "name = \"demo-v2\"\ndependencies = []\n").unwrap();
     assert!(
-        store.has_any_changed(dir.path(), "g").unwrap(),
+        store.has_any_changed(dir.path(), "g", "").unwrap(),
         "manifest edit must invalidate incremental state"
+    );
+}
+
+// Plan §4.2: a build-config flag change must invalidate the incremental cache
+// even when no source file changed.
+#[test]
+fn has_any_changed_detects_build_config_change() {
+    use crate::config::BuildOptions;
+
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("target");
+    fs::create_dir_all(&target).unwrap();
+    let src_dir = dir.path().join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+    let file_a = src_dir.join("a.g");
+    fs::write(&file_a, "fn a() {}\n").unwrap();
+
+    let debug_opts = BuildOptions {
+        opt_level: 0,
+        backend: "bytecode".to_string(),
+        ..Default::default()
+    };
+    let release_opts = BuildOptions {
+        opt_level: 2,
+        backend: "bytecode".to_string(),
+        ..Default::default()
+    };
+    let debug_hash = FingerprintStore::build_config_hash(&debug_opts);
+    let release_hash = FingerprintStore::build_config_hash(&release_opts);
+    assert_ne!(debug_hash, release_hash, "different opt-level must yield different hash");
+
+    // Record a successful debug build: set the active config, persist, then
+    // reload so the *recorded* (last build) config is populated.
+    let mut store = FingerprintStore::new();
+    store.update_all(&src_dir, "g").unwrap();
+    store.set_build_config(&debug_opts);
+    store.save_to_dir(&target).unwrap();
+    let store = FingerprintStore::load_from_dir(&target).unwrap();
+    assert_eq!(
+        store.recorded_config_hash(),
+        Some(debug_hash.as_str()),
+        "recorded config hash must survive a save/load round-trip"
+    );
+
+    // Same active config as the recorded one: no rebuild needed.
+    assert!(
+        !store.has_any_changed(&src_dir, "g", &debug_hash).unwrap(),
+        "same build config must not invalidate cache"
+    );
+
+    // Bump the opt level: recorded (debug) vs active (release) differ, so the
+    // whole cache is invalidated even though no source changed.
+    assert!(
+        store.has_any_changed(&src_dir, "g", &release_hash).unwrap(),
+        "opt-level change must invalidate incremental cache"
+    );
+
+    // A backend change must also invalidate.
+    let llvm_opts = BuildOptions {
+        opt_level: 0,
+        backend: "llvm".to_string(),
+        ..Default::default()
+    };
+    let llvm_hash = FingerprintStore::build_config_hash(&llvm_opts);
+    assert!(
+        store.has_any_changed(&src_dir, "g", &llvm_hash).unwrap(),
+        "backend change must invalidate incremental cache"
     );
 }

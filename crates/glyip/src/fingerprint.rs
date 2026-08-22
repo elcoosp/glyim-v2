@@ -59,12 +59,55 @@ impl Fingerprint {
 #[derive(Debug, Clone, Default)]
 pub struct FingerprintStore {
     fingerprints: HashMap<PathBuf, Fingerprint>,
+    /// Fingerprint of the build configuration recorded at the last successful
+    /// build (opt-level, target, backend, release, LTO). Loaded from / saved to
+    /// disk. When the *current* build config (set via [`FingerprintStore::
+    /// set_build_config`]) differs from this recorded value, the whole
+    /// incremental cache is invalidated (plan §4.2) — a flag change must force a
+    /// rebuild even if no source changed.
+    recorded_config_hash: Option<String>,
+    /// Fingerprint of the active build configuration for the build currently in
+    /// progress. Set by [`FingerprintStore::set_build_config`]; compared against
+    /// `recorded_config_hash` during change checks and persisted on save.
+    current_config_hash: Option<String>,
 }
 
 impl FingerprintStore {
     /// Create a new empty fingerprint store.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Record the active build configuration so subsequent change checks can
+    /// detect a flag change (plan §4.2). Computed as a SHA-256 of the canonical
+    /// config string.
+    pub fn set_build_config(&mut self, opts: &crate::config::BuildOptions) {
+        self.current_config_hash = Some(hash_build_config(opts));
+    }
+
+    /// PUBLIC: compute the build-config fingerprint for `opts` (plan §4.2).
+    pub fn build_config_hash(opts: &crate::config::BuildOptions) -> String {
+        hash_build_config(opts)
+    }
+
+    /// Recorded build-config fingerprint (from the last successful build).
+    pub fn recorded_config_hash(&self) -> Option<&str> {
+        self.recorded_config_hash.as_deref()
+    }
+
+    /// Active build-config fingerprint for the build in progress, if set.
+    pub fn current_config_hash(&self) -> Option<&str> {
+        self.current_config_hash.as_deref()
+    }
+
+    /// Whether the recorded build config matches `current`. Returns `true` when
+    /// no config has been recorded yet (nothing to invalidate against) or when
+    /// the hashes are equal; `false` when they differ (a flag change).
+    pub fn config_matches(&self, current: &str) -> bool {
+        match &self.recorded_config_hash {
+            Some(recorded) => recorded == current,
+            None => true,
+        }
     }
 
     /// Load fingerprints from a `.fingerprint` directory inside `dir`.
@@ -79,6 +122,13 @@ impl FingerprintStore {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "fp") {
                 let content = fs::read_to_string(&path)?;
+                if path.file_name().is_some_and(|n| n == "config.fp") {
+                    // Plan §4.2: restore the recorded build-config fingerprint.
+                    if let Some(hash) = content.strip_prefix("config_hash=") {
+                        store.recorded_config_hash = Some(hash.trim_end().to_string());
+                    }
+                    continue;
+                }
                 if let Some((rel_path, fp)) = parse_fingerprint_file(&content) {
                     store.fingerprints.insert(PathBuf::from(rel_path), fp);
                 }
@@ -91,6 +141,16 @@ impl FingerprintStore {
     pub fn save_to_dir(&self, dir: &Path) -> crate::error::GlyipResult<()> {
         let fp_dir = dir.join(".fingerprint");
         fs::create_dir_all(&fp_dir)?;
+        // Persist the active build-config fingerprint (plan §4.2) under a
+        // reserved key so a flag change can be detected on the next build.
+        if let Some(cfg_hash) = self
+            .current_config_hash
+            .clone()
+            .or_else(|| self.recorded_config_hash.clone())
+        {
+            let cfg_path = fp_dir.join("config.fp");
+            fs::write(cfg_path, format!("config_hash={cfg_hash}\n"))?;
+        }
         for (path, fp) in &self.fingerprints {
             let mut hasher = Sha256::new();
             hasher.update(path.to_string_lossy().as_bytes());
@@ -127,8 +187,20 @@ impl FingerprintStore {
     /// Return `true` if any `.g` file under `dir` has changed, *or* if the
     /// project manifest / build scripts have changed (plan §23.3 — a manifest
     /// or dependency edit must invalidate incremental state even though those
-    /// files do not themselves carry `extension`).
-    pub fn has_any_changed(&self, dir: &Path, extension: &str) -> crate::error::GlyipResult<bool> {
+    /// files do not themselves carry `extension`), *or* if the active build
+    /// configuration differs from the one recorded at the last successful build
+    /// (plan §4.2 — a flag change must force a rebuild even when no source
+    /// changed).
+    pub fn has_any_changed(
+        &self,
+        dir: &Path,
+        extension: &str,
+        current_config_hash: &str,
+    ) -> crate::error::GlyipResult<bool> {
+        // Plan §4.2: a build-config flag change invalidates the whole cache.
+        if !self.config_matches(current_config_hash) {
+            return Ok(true);
+        }
         let files = collect_files_with_extension(dir, extension);
         for path in &files {
             if self.has_changed(path)? {
@@ -246,4 +318,31 @@ fn parse_fingerprint_file(content: &str) -> Option<(String, Fingerprint)> {
             size: size?,
         },
     ))
+}
+
+/// Canonical string form of a build configuration, used as the basis for its
+/// fingerprint (plan §4.2). Any change to opt-level, target triple, backend,
+/// release flag, or LTO strategy changes this string and therefore the hash.
+fn canonical_build_config(opts: &crate::config::BuildOptions) -> String {
+    let lto = match opts.lto {
+        Some(glyim_codegen_llvm::passes::LtoKind::None) => "none",
+        Some(glyim_codegen_llvm::passes::LtoKind::Thin) => "thin",
+        Some(glyim_codegen_llvm::passes::LtoKind::Fat) => "fat",
+        None => "none",
+    };
+    format!(
+        "release={};target={};backend={};opt_level={};lto={}",
+        opts.release,
+        opts.target.as_deref().unwrap_or(""),
+        opts.backend,
+        opts.opt_level,
+        lto,
+    )
+}
+
+/// SHA-256 fingerprint of the active build configuration (plan §4.2).
+fn hash_build_config(opts: &crate::config::BuildOptions) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_build_config(opts).as_bytes());
+    hex::encode(hasher.finalize())
 }

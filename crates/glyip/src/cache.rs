@@ -93,7 +93,17 @@ impl Cache {
         if !src_dir.exists() {
             return Ok(true);
         }
-        self.fingerprints.has_any_changed(&src_dir, "g")
+        // Plan §4.2: pass the active build-config fingerprint so a flag change
+        // invalidates the incremental cache even when no source changed.
+        let current = self.fingerprints.current_config_hash().unwrap_or("");
+        self.fingerprints.has_any_changed(&src_dir, "g", current)
+    }
+
+    /// Record the active build configuration on this cache so subsequent
+    /// rebuild checks can detect a flag change (plan §4.2). The build command
+    /// must call this before [`Cache::needs_rebuild`].
+    pub fn set_build_config(&mut self, opts: &crate::config::BuildOptions) {
+        self.fingerprints.set_build_config(opts);
     }
 
     /// Update all fingerprints after a successful build and persist them.
