@@ -293,6 +293,71 @@ fn detect_unix_linker() -> String {
     "cc".to_string() // Fallback; callers surface the failure if `cc` is absent.
 }
 
+/// Locate an LLVM tool (`llvm-lto2`, `llvm-lto`, `opt`, …) from the same LLVM
+/// distribution `glyim-codegen-llvm` was built against.
+///
+/// Discovery order (plan §1.2): first check `$LLVM_SYS_220_PREFIX/bin/<name>`
+/// (the env var the toolchain is built against on this host), then fall back to
+/// a `PATH` probe (consistent with `detect_unix_linker`). Absence is a clear,
+/// actionable error rather than a silent wrong-answer.
+fn find_llvm_tool(name: &str) -> Result<std::path::PathBuf, String> {
+    if let Ok(prefix) = std::env::var("LLVM_SYS_220_PREFIX") {
+        let candidate = std::path::PathBuf::from(prefix).join("bin").join(name);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    // PATH probe: the tool runs and responds to `--version`.
+    if Command::new(name).arg("--version").output().is_ok() {
+        return Ok(std::path::PathBuf::from(name));
+    }
+    Err(format!(
+        "{name} not found on PATH and LLVM_SYS_220_PREFIX is unset or missing it; \
+         ThinLTO requires the llvm-lto2 tool from the same LLVM 22 distribution \
+         glyim-codegen-llvm was built against."
+    ))
+}
+
+/// Drive LLVM's ThinLTO thin-link over a set of per-CGU bitcode files with
+/// embedded summaries, producing one optimized object per module, then hand
+/// the resulting objects to the existing native linker invocation.
+///
+/// The preferred driver is `llvm-lto2 run` (ships with every LLVM distribution
+/// that has `llc`/`opt` and is the officially supported ThinLTO driver) — this
+/// sidesteps needing unstable FFI bindings for `LTOCodeGenerator`. `glyim-cli`
+/// emits each CGU's bitcode via `glyim_codegen_llvm::passes::emit_thinlto_bitcode`
+/// and passes the resulting `.bc` paths here.
+pub fn thin_lto_link(
+    bitcode_paths: &[std::path::PathBuf],
+    opt_level: u8,
+    out_dir: &Path,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    if bitcode_paths.is_empty() {
+        return Err("thin_lto_link requires at least one per-CGU bitcode input".to_string());
+    }
+    let llvm_lto2 = find_llvm_tool("llvm-lto2")?;
+
+    let mut cmd = Command::new(&llvm_lto2);
+    cmd.arg("run");
+    for bc in bitcode_paths {
+        cmd.arg(bc);
+    }
+    cmd.arg(format!("-o={}", out_dir.join("thinlto").display()));
+    cmd.arg(format!("-O{}", opt_level.min(3)));
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to spawn {}: {}", llvm_lto2.display(), e))?;
+    if !status.success() {
+        return Err(format!("llvm-lto2 thin-link failed with status {}", status));
+    }
+    // One-to-one: each input module gets a numbered `.thinlto.N` object output;
+    // llvm-lto2 assigns indices in input order.
+    let outs = (0..bitcode_paths.len())
+        .map(|i| out_dir.join(format!("thinlto.{}", i)))
+        .collect();
+    Ok(outs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,5 +416,27 @@ mod tests {
         // nothing to pass through.
         let args = LinkArgs::default();
         assert!(build_link_flags(&args).is_none());
+    }
+
+    #[test]
+    fn thin_lto_link_errors_without_llvm_lto2() {
+        // Plan §1.2: when the `llvm-lto2` tool is unavailable, the thin-link
+        // driver must surface a clear, actionable error (not panic). This is
+        // the degraded-path behaviour on a host without the LLVM thin-link
+        // tool installed.
+        let dir = std::env::temp_dir().join(format!("glyim_thinlto_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+        let bc = dir.join("cgu0.bc");
+        std::fs::write(&bc, b"BC").unwrap();
+        let result = thin_lto_link(&[bc], 2, &dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            result.is_err(),
+            "thin_lto_link must error when llvm-lto2 is absent"
+        );
+        assert!(
+            result.unwrap_err().contains("llvm-lto2"),
+            "error should name the missing llvm-lto2 tool"
+        );
     }
 }
