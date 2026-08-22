@@ -4,13 +4,18 @@ use glyim_syntax::SyntaxKind;
 use smol_str::SmolStr;
 
 #[derive(Clone, Debug)]
+/// Token.
 pub struct Token {
+/// Struct.
     pub kind: SyntaxKind,
+/// Struct.
     pub span: Span,
+/// Struct.
     pub text: SmolStr,
 }
 
 impl Token {
+/// new.
     pub fn new(kind: SyntaxKind, span: Span, text: impl AsRef<str>) -> Self {
         Self {
             kind,
@@ -21,11 +26,15 @@ impl Token {
 }
 
 #[derive(Clone, Debug)]
+/// LexResult.
 pub struct LexResult {
+/// Struct.
     pub tokens: Vec<Token>,
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
 
+/// Lexer.
 pub struct Lexer<'a> {
     source: &'a str,
     file_id: FileId,
@@ -34,6 +43,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+/// new.
     pub fn new(source: &'a str, file_id: FileId) -> Self {
         Self {
             source,
@@ -68,6 +78,7 @@ impl<'a> Lexer<'a> {
         ch
     }
 
+/// lex.
     pub fn lex(mut self) -> LexResult {
         let mut tokens = Vec::new();
 
@@ -832,6 +843,7 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
     }
 }
 
+/// lex.
 pub fn lex(source: &str, file_id: FileId) -> LexResult {
     Lexer::new(source, file_id).lex()
 }

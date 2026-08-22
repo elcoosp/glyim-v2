@@ -11,9 +11,13 @@ mod stmt;
 mod ty;
 
 #[derive(Clone, Debug)]
+/// ParseResult.
 pub struct ParseResult {
+/// Struct.
     pub green_node: GreenNode,
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
+/// Struct.
     pub root: SyntaxNode,
 }
 
@@ -183,6 +187,7 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// parse_to_syntax.
 pub fn parse_to_syntax(source: &str, file_id: FileId) -> ParseResult {
     let lex_result = crate::lexer::lex(source, file_id);
     let mut parser = Parser::new(&lex_result.tokens);

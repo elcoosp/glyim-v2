@@ -1,5 +1,4 @@
 //! Frontend: lexer + parser merged.
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -23,7 +22,9 @@
     clippy::needless_lifetimes,
     clippy::collapsible_if
 )]
+/// lexer.
 pub mod lexer;
+/// parser.
 pub mod parser;
 
 pub use lexer::{LexResult, Token, lex};
