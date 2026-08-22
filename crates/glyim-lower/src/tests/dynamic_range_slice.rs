@@ -130,3 +130,34 @@ fn open_ended_range_index_lowers() {
         "expected a ptr/len tuple Aggregate for open-ended slice"
     );
 }
+
+/// Out-of-bounds dynamic slices must hit a panic path rather than silently
+/// compute a dangling `{ ptr, len }`. `lower_dynamic_range_slice` routes the
+/// failing bounds-check edge to `TerminatorKind::Unreachable` (the panic
+/// landing), so an `Unreachable` terminator in the lowered body is the
+/// observable proof that `start <= end` / `end <= len` are asserted.
+fn has_unreachable_terminator(result: &crate::lower::LowerResult) -> bool {
+    result.body.basic_blocks.iter().any(|bb| {
+        matches!(bb.terminator.kind, glyim_mir::TerminatorKind::Unreachable)
+    })
+}
+
+#[test]
+fn out_of_bounds_range_lowers_with_panic_path() {
+    // `arr[2..5]` over a 3-element array: end (5) > len (3) -> the bounds
+    // check must fail and route to an `Unreachable` (panic) terminator.
+    let result = lower_slice(Some(2), Some(5), false);
+    assert!(
+        result.diagnostics.is_empty(),
+        "out-of-bounds slice lowering emitted an unexpected diagnostic before bounds check: {:?}",
+        result.diagnostics
+    );
+    assert!(
+        has_unreachable_terminator(&result),
+        "expected an Unreachable terminator proving the out-of-bounds panic path is emitted"
+    );
+    assert!(
+        has_ptr_len_tuple(&result),
+        "expected a ptr/len tuple Aggregate for the in-bounds computation path"
+    );
+}

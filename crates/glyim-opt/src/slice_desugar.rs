@@ -31,27 +31,30 @@
 //! `ConstantIndex`/`Subslice` only show up from slice-pattern matching --
 //! are left completely unchanged; this pass is a no-op for them.
 //!
-//! ## Known gap: dynamic range slicing (`arr[i..j]` with runtime bounds)
+//! ## Dynamic range slicing (`arr[i..j]` with runtime bounds) — implemented
 //!
-//! `ConstantIndex`/`Subslice` can only express *compile-time-constant*
+//! `ConstantIndex`/`Subslice` still only express *compile-time-constant*
 //! offsets (`offset: u64`, `from: u64`, `to: u64`) -- that's sufficient for
 //! slice-pattern prefixes/suffixes (`[a, b, ..rest]`), whose lengths are
-//! always known at the pattern's definition site. It is **not** sufficient
-//! for a genuinely dynamic range-index expression like `arr[i..j]` where
-//! `i`/`j` are runtime locals -- there is no `Place` projection that can
-//! carry a `Place`/`Operand` as its bound. Lowering `arr[i..j]` therefore
-//! cannot go through a `Place` projection at all; it needs to be built as
-//! an ordinary `Rvalue` (compute `data_ptr = base_ptr + i * elem_size` and
-//! `len = j - i` via casts/arithmetic, then construct the `{ ptr, len }`
-//! aggregate), the same shape this pass already produces for its
-//! intermediate temporaries below. If/when `glyim-hir`/`glyim-lower` gains
-//! a THIR-level dynamic-range-index expression, its MIR lowering should
-//! emit that statement sequence directly (see `desugar_place`'s
-//! `Rvalue::Use(Operand::Copy(prefix_place))` pattern for the shape to
-//! follow) rather than trying to invent a new `ProjectionElem` variant for
-//! it. That lowering is *not* implemented by this pass -- it belongs in
-//! `glyim-lower` at THIR->MIR build time, before this pass ever sees the
-//! body -- so it's called out here rather than silently left undone.
+//! always known at the pattern's definition site. A genuinely dynamic
+//! range-index expression like `arr[i..j]` where `i`/`j` are runtime locals
+//! cannot be expressed as a `Place` projection (there is no projection that
+//! can carry a `Place`/`Operand` as its bound), so it cannot go through
+//! `ConstantIndex`/`Subslice` at all. That is **no longer a gap**: it is
+//! lowered in `glyim-lower` at THIR->MIR build time, before this pass ever
+//! runs. `MirBuilder::lower_dynamic_range_slice`
+//! (`crates/glyim-lower/src/lower_rvalue.rs`) computes `data_ptr =
+//! base_ptr + i * elem_size` and `len = j - i` via `Len`/`Mul`/`Add`/`Sub`
+//! rvalues, inserts runtime bounds-check asserts (`start <= end`,
+//! `end <= len`), and constructs the `{ ptr, len }` tuple aggregate --
+//! exactly the shape this pass already produces for its intermediate
+//! temporaries below, so this pass simply leaves that tuple alone. Both
+//! constant-bound (`arr[1..3]`) and runtime-bound (`arr[i..j]`) ranges take
+//! this same lowering; the constant case is *not* special-cased to a
+//! `Subslice` projection because the codebase deliberately represents every
+//! range slice as the `{ ptr, len }` tuple (see
+//! `crates/glyim-lower/src/tests/dynamic_range_slice.rs` for the locked-in
+//! behavior).
 
 use glyim_core::primitives::Mutability;
 use glyim_mir::*;
