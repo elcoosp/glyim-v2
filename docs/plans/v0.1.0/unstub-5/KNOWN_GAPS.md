@@ -612,18 +612,20 @@ structural tests in `crates/glyim-hir/src/tests/async_desugar.rs`
 (`single_await_no_state_enum`, `two_await_state_enum_has_four_variants`,
 `state_enum_start_captures_params`) — all passing.
 
-### GAP A — source-level `async fn`/`.await` lowering drops `.await` and `let` (PRE-EXISTING, not in §1.1)
-The HIR lowering for `async fn` bodies (`lower_expr.rs` / the body lower) does NOT emit
-`Expr::Await` for `.await` postfixes, and it omits `let` bindings inside async bodies
-entirely: a parsed `async fn two(a,b) { let x = a.await; let y = b.await; x + y }`
-lowers to a body of `[Path(a), Path(b), Binary(x+y), Block]` with **zero** `Expr::Await`
-and **zero** `let` statements. So `Expr::Await` is never produced from source and the
-desugar cannot be exercised through the parser. This is a parser/lower gap independent
-of §1.1 (the `async_desugar_target_compiles` test only checks a hand-written target
-shape and never fed real `async fn`/`.await` through the pipeline). The §1.1 structural
-tests therefore build the `CrateHir` by hand with `Expr::Await` nodes already present,
-validating the desugar logic in isolation. Fixing the `.await` postfix/async-body lower
-to emit `Expr::Await` is a separate front-end task.
+### GAP A — source-level `async fn`/`.await` lowering drops `.await` and `let` — CLOSED (2026-08-23)
+**CLOSED.** Root cause: `lower/mod.rs::is_expr_node` omitted `SyntaxKind::AwaitExpr`,
+so in `lower_block_to_expr` (the `let` statement handler) the RHS `a.await` was not
+recognized as an expression node — the `let` was dropped AND the `await` was never
+lowered. A plain `let x = 5` (a `LitExpr`, which *was* in `is_expr_node`) worked, but
+`let x = a.await` / `let x = foo().await` produced zero `let`/`await` nodes. Fix: added
+`SyntaxKind::AwaitExpr` to `is_expr_node`. Verified by the regression test
+`async_body_let_await_lowers_to_let_and_await` in
+`crates/glyim-hir/src/tests/lower_index_and_pat.rs`, which asserts an async body with two
+`let x = a.await` bindings lowers to >=2 `Expr::Let` and >=2 `Expr::Await` HIR nodes
+through the real parser+lower pipeline. The full `glyim-hir` suite stays green (97/0).
+With GAP A closed, real `async fn`/`.await` source now produces the `Expr::Await` nodes
+the desugar consumes, so the async desugar is exercisable end-to-end through the parser
+(not just hand-built HIR).
 
 ### GAP B — multi-poll HIR uses placeholder `i32` future / live-local field types (INHERENT, documented)
 HIR is pre-type-check, so the *type* of a suspended future (and of a live local captured
