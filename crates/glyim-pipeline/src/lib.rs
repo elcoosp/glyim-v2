@@ -40,6 +40,35 @@ pub struct CompileArtifacts {
 }
 
 impl Pipeline {
+    /// Resolve the crate's entry `main` function and return its `LocalDefId`
+    /// raw index (or `None` if the program has no `fn main`). Used to tell the
+    /// codegen backend which body must also receive a C-ABI `main` entry symbol
+    /// so the produced object links into a runnable executable (`--emit=exec`).
+    ///
+    /// This is a lightweight pre-pass (parse + def-map only; no typeck/MIR) and
+    /// exists because the backend is constructed *before* the full pipeline
+    /// runs, so the entry `main` must be known up front.
+    pub fn entry_main_local_id(db: &mut Database, path: &Path) -> Option<u32> {
+        let file_id = db.vfs().add_file_from_disk(path).ok()?;
+        let source = db.vfs().file_content(file_id).unwrap_or_else(|| Arc::from(""));
+        let parse_result = glyim_frontend::parse_to_syntax(&source, file_id);
+        if parse_result
+            .diagnostics
+            .iter()
+            .any(|d| matches!(d.severity, glyim_diag::DiagSeverity::Error))
+        {
+            return None;
+        }
+        let (def_map, _def_diags) =
+            glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
+        let main_name = db.interner().intern("main");
+        def_map
+            .modules
+            .get(def_map.root)
+            .and_then(|m| m.resolve(main_name))
+            .map(|(local_id, _vis): (glyim_core::def_id::LocalDefId, _)| local_id.to_raw())
+    }
+
     /// Production entry point: compile a source file to an object file and
     /// discard the intermediate artifacts. Kept for `glyip` and other callers
     /// that only need the object file; test harnesses should use
