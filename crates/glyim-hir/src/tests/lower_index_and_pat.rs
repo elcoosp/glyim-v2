@@ -29,6 +29,40 @@ fn first_body(hir: &CrateHir) -> &crate::Body {
     &hir.bodies[BodyId::from_raw(0)]
 }
 
+/// GAP A closure: `let x = a.await` inside an `async fn` body must lower to
+/// real `Expr::Let` + `Expr::Await` HIR nodes. Previously `is_expr_node`
+/// omitted `AwaitExpr`, so `.await` RHSes were dropped along with their `let`
+/// bindings (the async body lowered to `[Path, Path, Binary, Block]` with zero
+/// `let`/`await`). Covered by the `is_expr_node` fix in `lower/mod.rs`.
+#[test]
+fn async_body_let_await_lowers_to_let_and_await() {
+    let (hir, diags) = parse_and_lower(
+        "async fn two(a: i32, b: i32) -> i32 { let x = a.await; let y = b.await; x + y }",
+    );
+    assert!(diags.is_empty(), "unexpected diagnostics: {:?}", diags);
+    let body = first_body(&hir);
+    let await_count = body
+        .exprs
+        .iter()
+        .filter(|e| matches!(e, Expr::Await { .. }))
+        .count();
+    let let_count = body
+        .exprs
+        .iter()
+        .filter(|e| matches!(e, Expr::Let { .. }))
+        .count();
+    assert!(
+        await_count >= 2,
+        "async body must contain >=2 Expr::Await nodes (got {})",
+        await_count
+    );
+    assert!(
+        let_count >= 2,
+        "async body must contain >=2 Expr::Let nodes (got {})",
+        let_count
+    );
+}
+
 /// W2-C03-T01: `arr[0]` lowers to `Expr::Index`
 #[test]
 fn index_expr() {
