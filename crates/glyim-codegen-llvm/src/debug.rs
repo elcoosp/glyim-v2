@@ -11,6 +11,7 @@ use inkwell::debug_info::{
     DWARFSourceLanguage, DebugInfoBuilder,
 };
 use inkwell::values::FunctionValue;
+use inkwell::values::AsValueRef;
 use std::collections::HashMap;
 
 /// Walk back through macro expansions to find the original source location.
@@ -602,8 +603,29 @@ impl<'ctx> DebugInfoCtx<'ctx> {
             .create_debug_location(context, line, col, scope, None);
         let expr = self.builder.create_expression(vec![]);
 
-        self.builder
-            .insert_declare_at_end(alloca, Some(divar), Some(expr), loc, block);
+        // NOTE: we deliberately bypass `inkwell`'s `insert_declare_at_end`
+        // wrapper here. Under the `llvm22-1` feature inkwell aliases
+        // `LLVMDIBuilderInsertDeclareRecordAtEnd` to that name and then wraps
+        // the result in `InstructionValue::new(value_ref as LLVMValueRef)`. In
+        // LLVM 22 the call returns an `LLVMDbgRecordRef` (the "new debug info
+        // format"), not a `Value`, so the cast makes `is_instruction()` return
+        // null and the `debug_assert!` inside `InstructionValue::new` panics
+        // non-deterministically (the flaky `test_debug_declare_local_emits_`
+        // `intrinsic` failure). We never use the return value, so we call the
+        // correct LLVM-22 API directly via `inkwell::llvm_sys` (the exact same
+        // crate instance inkwell links, so the raw pointer types match) and
+        // drop the result — emitting the `llvm.dbg.declare` record without the
+        // broken `InstructionValue` wrapping.
+        unsafe {
+            inkwell::llvm_sys::debuginfo::LLVMDIBuilderInsertDeclareRecordAtEnd(
+                self.builder.as_mut_ptr(),
+                alloca.as_value_ref(),
+                divar.as_mut_ptr(),
+                expr.as_mut_ptr(),
+                loc.as_mut_ptr(),
+                block.as_mut_ptr(),
+            );
+        }
     }
 
     pub(crate) fn finalize(self) {
