@@ -13,6 +13,7 @@ use glyim_core::interner::{Interner, Name};
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 
+/// TyCtx.
 pub struct TyCtx {
     pub(crate) types: Vec<TyKind>,
     pub(crate) type_flags: Vec<TypeFlags>,
@@ -27,6 +28,7 @@ pub struct TyCtx {
     /// instead of assuming zero auto traits.
     pub(crate) opaque_hidden: HashMap<OpaqueTyId, Ty>,
     pub(crate) interior_mutable_adt_ids: HashSet<AdtId>,
+/// Struct.
     pub adt_defs: HashMap<AdtId, AdtDef>,
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
     pub(crate) variant_types: HashMap<AdtId, Vec<Ty>>,
@@ -51,6 +53,7 @@ pub struct TyCtx {
 }
 
 impl TyCtx {
+/// ty_kind.
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
         &self.types[ty.index()]
     }
@@ -60,10 +63,12 @@ impl TyCtx {
         &self.lang_items
     }
 
+/// ty_flags.
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
         self.type_flags[ty.index()]
     }
 
+/// substitution_args.
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
         if sub.is_empty() {
             return &[];
@@ -71,14 +76,17 @@ impl TyCtx {
         &self.substitution_data[sub.index() as usize]
     }
 
+/// region.
     pub fn region(&self, vid: RegionVid) -> &Region {
         &self.regions[vid]
     }
 
+/// resolver.
     pub fn resolver(&self) -> &Interner {
         &self.resolver
     }
 
+/// name_str.
     pub fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)
     }
@@ -134,6 +142,7 @@ impl TyCtx {
             })
     }
 
+/// is_copy.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
             TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
@@ -195,38 +204,47 @@ impl TyCtx {
         }
     }
 
+/// error_ty.
     pub fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
 
+/// never_ty.
     pub fn never_ty(&self) -> Ty {
         Ty::NEVER
     }
 
+/// unit_ty.
     pub fn unit_ty(&self) -> Ty {
         Ty::UNIT
     }
 
+/// bool_ty.
     pub fn bool_ty(&self) -> Ty {
         Ty::BOOL
     }
 
+/// ty_is_error.
     pub fn ty_is_error(&self, ty: Ty) -> bool {
         self.ty_flags(ty).contains(TypeFlags::HAS_ERROR)
     }
 
+/// ty_has_depth_overflow.
     pub fn ty_has_depth_overflow(&self, ty: Ty) -> bool {
         self.ty_flags(ty).contains(TypeFlags::HAS_DEPTH_OVERFLOW)
     }
 
+/// auto_trait_flags.
     pub fn auto_trait_flags(&self, ty: Ty) -> AutoTraitFlags {
         compute_auto_traits(ty, self, &self.auto_trait_registry, &self.adt_reprs)
     }
 
+/// implements_auto_trait.
     pub fn implements_auto_trait(&self, ty: Ty, auto_trait: AutoTrait) -> bool {
         self.auto_trait_flags(ty).contains(auto_trait.flag())
     }
 
+/// has_negative_impl.
     pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.auto_trait_registry
             .has_negative_impl(adt_id, auto_trait)
@@ -246,14 +264,17 @@ impl TyCtx {
         }
     }
 
+/// has_manual_impl.
     pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.auto_trait_registry.has_manual_impl(adt_id, auto_trait)
     }
 
+/// adt_repr.
     pub fn adt_repr(&self, adt_id: AdtId) -> Option<&AdtRepr> {
         self.adt_reprs.get(&adt_id)
     }
 
+/// field_ty.
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
             return def
@@ -273,6 +294,7 @@ impl TyCtx {
         self.error_ty()
     }
 
+/// adt_def.
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
     }
@@ -373,6 +395,7 @@ impl TyCtx {
         result
     }
 
+/// field_index.
     pub fn field_index(&self, adt_id: AdtId, field_name: Name) -> Option<usize> {
         if let Some(def) = self.adt_defs.get(&adt_id) {
             for (i, field) in def.fields.iter_enumerated() {
@@ -384,6 +407,7 @@ impl TyCtx {
         None
     }
 
+/// fn_sig.
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
     }
@@ -394,6 +418,7 @@ impl TyCtx {
         self.const_tys.get(&def_id).copied()
     }
 
+/// closure_sig.
     pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {
         self.closure_sigs.get(&closure_id)
     }
@@ -403,10 +428,12 @@ impl TyCtx {
         self.closure_adt_map.get(&closure_id).copied()
     }
 
+/// body_ty.
     pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {
         self.body_tys.get(&def_id).copied()
     }
 
+/// variant_type.
     pub fn variant_type(&self, adt_id: AdtId, variant_idx: u32) -> Ty {
         self.variant_types
             .get(&adt_id)

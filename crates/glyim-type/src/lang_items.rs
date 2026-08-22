@@ -15,32 +15,59 @@ use std::collections::HashMap;
 /// language/stdlib depends on. Add variants here as new builtins are required.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangItem {
+/// Variant.
     Option,
+/// Variant.
     Result,
+/// Variant.
     Range,
+/// Variant.
     RangeInclusive,
+/// Variant.
     RangeFrom,
+/// Variant.
     RangeTo,
+/// Variant.
     RangeToInclusive,
+/// Variant.
     RangeFull,
+/// Variant.
     String,
+/// Variant.
     Str,
+/// Variant.
     Vec,
+/// Variant.
     Box,
+/// Variant.
     Drop,
+/// Variant.
     Deref,
+/// Variant.
     DerefMut,
+/// Variant.
     Send,
+/// Variant.
     Sync,
+/// Variant.
     Copy,
+/// Variant.
     Clone,
+/// Variant.
     Iterator,
+/// Variant.
     IntoIterator,
+/// Variant.
     FnOnce,
+/// Variant.
     FnMut,
+/// Variant.
     Fn,
+/// Variant.
     Future,
+/// Variant.
     GlobalAlloc,
+/// Variant.
     Allocator,
 }
 
@@ -49,8 +76,11 @@ pub enum LangItem {
 pub enum LangItemError {
     /// Two different `DefId`s were registered for the same `LangItem`.
     Duplicate {
+/// Struct.
         item: LangItem,
+/// Struct.
         existing: DefId,
+/// Struct.
         new: DefId,
     },
     /// No `DefId` was registered for the requested `LangItem` (e.g. the core

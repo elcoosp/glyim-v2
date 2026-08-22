@@ -20,18 +20,54 @@ pub enum ObjectSafetyViolation {
     /// The trait requires `Self: Sized` (either directly or via a bound).
     SelfSized,
     /// A method has a generic type parameter, which can't be monomorphized through a vtable.
-    GenericMethod { method: Name, span: Span },
+/// Struct.
+    GenericMethod {
+        /// method field.
+        method: Name,
+        /// span field.
+        span: Span,
+    },
     /// A method does not take `self` (no receiver) — static methods cannot be dispatched.
-    StaticMethod { method: Name, span: Span },
+/// Struct.
+    StaticMethod {
+        /// method field.
+        method: Name,
+        /// span field.
+        span: Span,
+    },
     /// A method takes `self` by value on a trait that does not have `Self: Sized`.
-    ByValueSelf { method: Name, span: Span },
+/// Struct.
+    ByValueSelf {
+        /// method field.
+        method: Name,
+        /// span field.
+        span: Span,
+    },
     /// An associated function is not callable through a trait object.
-    AssociatedFunction { name: Name, span: Span },
+/// Struct.
+    AssociatedFunction {
+        /// name field.
+        name: Name,
+        /// span field.
+        span: Span,
+    },
     /// The trait has an associated type that is not constrained (mentioned in any method
     /// signature), so it cannot be inferred from the trait object's vtable.
-    UnconstrainedAssociatedType { name: Name, span: Span },
+/// Struct.
+    UnconstrainedAssociatedType {
+        /// name field.
+        name: Name,
+        /// span field.
+        span: Span,
+    },
     /// A supertrait of this trait is itself not object-safe.
-    SupertraitNotObjectSafe { trait_id: TraitDefId, span: Span },
+/// Struct.
+    SupertraitNotObjectSafe {
+        /// trait_id field.
+        trait_id: TraitDefId,
+        /// span field.
+        span: Span,
+    },
 }
 
 /// HIR-level representation of a method signature for object safety checking.

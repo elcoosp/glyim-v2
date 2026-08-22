@@ -5,23 +5,33 @@ use glyim_core::def_id::AdtId;
 use glyim_core::primitives::Mutability;
 use std::collections::{HashMap, HashSet};
 
+#[allow(missing_docs)]
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[doc = "Auto-trait capability flags."]
     pub struct AutoTraitFlags: u8 {
+        #[doc = "Type implements `Send`."]
         const SEND  = 1 << 0;
+        #[doc = "Type implements `Sync`."]
         const SYNC  = 1 << 1;
+        #[doc = "Type implements `Unpin`."]
         const UNPIN = 1 << 2;
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// AutoTrait.
 pub enum AutoTrait {
+/// Variant.
     Send,
+/// Variant.
     Sync,
+/// Variant.
     Unpin,
 }
 
 impl AutoTrait {
+/// flag.
     pub fn flag(self) -> AutoTraitFlags {
         match self {
             AutoTrait::Send => AutoTraitFlags::SEND,
@@ -30,43 +40,53 @@ impl AutoTrait {
         }
     }
 
+/// ALL.
     pub const ALL: [AutoTrait; 3] = [AutoTrait::Send, AutoTrait::Sync, AutoTrait::Unpin];
 }
 
 #[derive(Clone, Debug, Default)]
+/// AdtRepr.
 pub struct AdtRepr {
+/// Struct.
     pub field_tys: Vec<Ty>,
 }
 
 impl AdtRepr {
+/// new.
     pub fn new(field_tys: Vec<Ty>) -> Self {
         Self { field_tys }
     }
 }
 
 #[derive(Clone, Debug, Default)]
+/// AutoTraitRegistry.
 pub struct AutoTraitRegistry {
     negative_impls: HashSet<(AdtId, AutoTrait)>,
     manual_impls: HashSet<(AdtId, AutoTrait)>,
 }
 
 impl AutoTraitRegistry {
+/// new.
     pub fn new() -> Self {
         Self::default()
     }
 
+/// register_negative_impl.
     pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.negative_impls.insert((adt_id, auto_trait));
     }
 
+/// register_manual_impl.
     pub fn register_manual_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.manual_impls.insert((adt_id, auto_trait));
     }
 
+/// has_negative_impl.
     pub fn has_negative_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.negative_impls.contains(&(adt_id, auto_trait))
     }
 
+/// has_manual_impl.
     pub fn has_manual_impl(&self, adt_id: AdtId, auto_trait: AutoTrait) -> bool {
         self.manual_impls.contains(&(adt_id, auto_trait))
     }

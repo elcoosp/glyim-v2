@@ -1,20 +1,32 @@
 //! Core type system & Type Context.
-#![allow(missing_docs)]
+/// adt_def.
 pub mod adt_def;
+/// auto_trait.
 pub mod auto_trait;
+/// binder.
 pub mod binder;
 pub mod cast;
 pub use cast::is_valid_cast;
+/// const_val.
 pub mod const_val;
+/// display.
 pub mod display;
+/// flags.
 pub mod flags;
+/// fn_sig.
 pub mod fn_sig;
 pub mod lang_items;
+/// predicate.
 pub mod predicate;
+/// region.
 pub mod region;
+/// substitution.
 pub mod substitution;
+/// ty.
 pub mod ty;
+/// ty_ctx.
 pub mod ty_ctx;
+/// ty_ctx_mut.
 pub mod ty_ctx_mut;
 
 pub use lang_items::{LangItem, LangItemError, LangItems};
@@ -41,7 +53,9 @@ mod tests;
 /// Definition of a trait for the type context.
 #[derive(Clone, Debug)]
 pub struct TraitDef {
+/// Struct.
     pub name: glyim_core::interner::Name,
+/// Struct.
     pub methods: Vec<MethodDef>,
     /// Associated-type names declared by the trait (e.g. `Output` in
     /// `trait Future { type Output; }`). Populated during HIR lowering
@@ -53,7 +67,9 @@ pub struct TraitDef {
 /// Definition of a method in a trait.
 #[derive(Clone, Debug)]
 pub struct MethodDef {
+/// Struct.
     pub name: glyim_core::interner::Name,
+/// Struct.
     pub sig: FnSig,
     /// The `FnDefId` of the (canonical, trait-level) method definition.
     /// When a vtable is generated for a concrete impl, this identifies the

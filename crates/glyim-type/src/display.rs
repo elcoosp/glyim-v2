@@ -10,11 +10,17 @@ use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use std::fmt;
 
+/// TypeLookup.
 pub trait TypeLookup {
+/// ty_kind.
     fn ty_kind(&self, ty: Ty) -> &TyKind;
+/// ty_flags.
     fn ty_flags(&self, ty: Ty) -> TypeFlags;
+/// substitution_args.
     fn substitution_args(&self, sub: Substitution) -> &[GenericArg];
+/// name_str.
     fn name_str(&self, name: Name) -> &str;
+/// error_ty.
     fn error_ty(&self) -> Ty;
     /// Returns `true` if the given ADT has interior mutability (contains `UnsafeCell`).
     fn is_interior_mutable_adt(&self, _adt_id: AdtId) -> bool {
@@ -48,6 +54,7 @@ pub trait TypeLookup {
 
 const MAX_DISPLAY_DEPTH: u32 = 10;
 
+/// PrintTy.
 pub struct PrintTy<'a, L: TypeLookup> {
     ty: Ty,
     lookup: &'a L,
@@ -55,6 +62,7 @@ pub struct PrintTy<'a, L: TypeLookup> {
 }
 
 impl<'a, L: TypeLookup> PrintTy<'a, L> {
+/// new.
     pub fn new(ty: Ty, lookup: &'a L) -> Self {
         Self {
             ty,
@@ -251,6 +259,7 @@ pub fn write_region<L: TypeLookup>(
     }
 }
 
+/// DebugTy.
 pub struct DebugTy<'a, L: TypeLookup>(pub PrintTy<'a, L>);
 
 impl<L: TypeLookup> fmt::Debug for DebugTy<'_, L> {

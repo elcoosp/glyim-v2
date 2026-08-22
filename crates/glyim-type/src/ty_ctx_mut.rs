@@ -16,6 +16,7 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+/// TyCtxMut.
 pub struct TyCtxMut {
     types: Vec<TyKind>,
     type_flags: Vec<TypeFlags>,
@@ -86,6 +87,7 @@ pub struct TyCtxMut {
 }
 
 impl TyCtxMut {
+/// new.
     pub fn new(resolver: Interner) -> Self {
         let mut ctx = Self {
             types: Vec::new(),
@@ -197,10 +199,12 @@ impl TyCtxMut {
         Ty::from_raw(idx)
     }
 
+/// alloc_ty.
     pub fn alloc_ty(&mut self, kind: TyKind) -> Ty {
         self.alloc_ty_internal(kind)
     }
 
+/// ty_kind.
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
         &self.types[ty.index()]
     }
@@ -211,14 +215,17 @@ impl TyCtxMut {
         self.freeze().deref_ty(ty)
     }
 
+/// ty_kind_mut.
     pub fn ty_kind_mut(&mut self, ty: Ty) -> &mut TyKind {
         &mut self.types[ty.index()]
     }
 
+/// ty_flags.
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
         self.type_flags[ty.index()]
     }
 
+/// intern_substitution.
     pub fn intern_substitution(&mut self, args: Vec<GenericArg>) -> Substitution {
         let small_args: SmallVec<[GenericArg; 4]> = args.into_iter().collect();
         let len = small_args.len() as u16;
@@ -226,6 +233,7 @@ impl TyCtxMut {
         Substitution::from_raw(index as u32, len)
     }
 
+/// substitution_args.
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
         if sub.is_empty() {
             return &[];
@@ -233,6 +241,7 @@ impl TyCtxMut {
         &self.substitution_data[sub.index() as usize]
     }
 
+/// mk_ty.
     pub fn mk_ty(&mut self, kind: TyKind) -> Ty {
         self.alloc_ty(kind)
     }
@@ -348,46 +357,57 @@ impl TyCtxMut {
         r
     }
 
+/// mk_ref.
     pub fn mk_ref(&mut self, region: Region, ty: Ty, mutability: Mutability) -> Ty {
         self.mk_ty(TyKind::Ref(region, ty, mutability))
     }
 
+/// mk_adt.
     pub fn mk_adt(&mut self, adt_id: AdtId, substs: Substitution) -> Ty {
         self.mk_ty(TyKind::Adt(adt_id, substs))
     }
 
+/// mk_tuple.
     pub fn mk_tuple(&mut self, substs: Substitution) -> Ty {
         self.mk_ty(TyKind::Tuple(substs))
     }
 
+/// mk_fn_ptr.
     pub fn mk_fn_ptr(&mut self, sig: FnSig) -> Ty {
         self.mk_ty(TyKind::FnPtr(sig))
     }
 
+/// error_ty.
     pub fn error_ty(&self) -> Ty {
         Ty::ERROR
     }
 
+/// never_ty.
     pub fn never_ty(&self) -> Ty {
         Ty::NEVER
     }
 
+/// unit_ty.
     pub fn unit_ty(&self) -> Ty {
         Ty::UNIT
     }
 
+/// bool_ty.
     pub fn bool_ty(&self) -> Ty {
         Ty::BOOL
     }
 
+/// resolver.
     pub fn resolver(&self) -> &Interner {
         &self.resolver
     }
 
+/// name_str.
     pub fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)
     }
 
+/// is_copy.
     pub fn is_copy(&self, ty: Ty) -> bool {
         match self.ty_kind(ty) {
             TyKind::Bool | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_) | TyKind::Char => {
@@ -412,32 +432,39 @@ impl TyCtxMut {
         }
     }
 
+/// new_region_var.
     pub fn new_region_var(&mut self, initial: Region) -> RegionVid {
         self.regions.push(initial)
     }
 
+/// region_var.
     pub fn region_var(&self, vid: RegionVid) -> &Region {
         &self.regions[vid]
     }
 
+/// region_var_count.
     pub fn region_var_count(&self) -> usize {
         self.regions.len()
     }
 
+/// register_adt_repr.
     pub fn register_adt_repr(&mut self, adt_id: AdtId, field_tys: Vec<Ty>) {
         self.adt_reprs.insert(adt_id, AdtRepr::new(field_tys));
     }
 
+/// register_negative_impl.
     pub fn register_negative_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.auto_trait_registry
             .register_negative_impl(adt_id, auto_trait);
     }
 
+/// register_manual_impl.
     pub fn register_manual_impl(&mut self, adt_id: AdtId, auto_trait: AutoTrait) {
         self.auto_trait_registry
             .register_manual_impl(adt_id, auto_trait);
     }
 
+/// register_adt.
     pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
         // Compute variant types from variants
         let variant_tys: Vec<Ty> = def
@@ -517,6 +544,7 @@ impl TyCtxMut {
             .insert(ClosureId::from_raw(id.to_raw()), id);
         id
     }
+/// adt_def.
     pub fn adt_def(&self, id: AdtId) -> Option<&AdtDef> {
         self.adt_defs.get(&id)
     }
@@ -538,6 +566,7 @@ impl TyCtxMut {
             .unwrap_or(0)
     }
 
+/// field_index.
     pub fn field_index(&self, adt_id: AdtId, field_name: Name) -> Option<usize> {
         if let Some(def) = self.adt_defs.get(&adt_id) {
             for (i, field) in def.fields.iter_enumerated() {
@@ -549,6 +578,7 @@ impl TyCtxMut {
         None
     }
 
+/// field_ty.
     pub fn field_ty(&self, adt_id: AdtId, field_idx: usize) -> Ty {
         if let Some(def) = self.adt_defs.get(&adt_id) {
             return def
@@ -568,6 +598,7 @@ impl TyCtxMut {
         self.error_ty()
     }
 
+/// register_fn_sig.
     pub fn register_fn_sig(&mut self, def_id: FnDefId, sig: FnSig) {
         self.fn_sigs.insert(def_id, sig);
     }
@@ -691,6 +722,7 @@ impl TyCtxMut {
         self.trait_defs.get(&id)
     }
 
+/// fn_sig.
     pub fn fn_sig(&self, def_id: FnDefId) -> Option<&FnSig> {
         self.fn_sigs.get(&def_id)
     }
@@ -700,10 +732,12 @@ impl TyCtxMut {
         self.const_tys.get(&def_id).copied()
     }
 
+/// register_closure_sig.
     pub fn register_closure_sig(&mut self, closure_id: ClosureId, sig: FnSig) {
         self.closure_sigs.insert(closure_id, sig);
     }
 
+/// closure_sig.
     pub fn closure_sig(&self, closure_id: ClosureId) -> Option<&FnSig> {
         self.closure_sigs.get(&closure_id)
     }
@@ -715,14 +749,17 @@ impl TyCtxMut {
         self.closure_adt_map.get(&closure_id).copied()
     }
 
+/// register_body_ty.
     pub fn register_body_ty(&mut self, def_id: LocalDefId, ty: Ty) {
         self.body_tys.insert(def_id, ty);
     }
 
+/// body_ty.
     pub fn body_ty(&self, def_id: LocalDefId) -> Option<Ty> {
         self.body_tys.get(&def_id).copied()
     }
 
+/// freeze.
     pub fn freeze(&self) -> super::ty_ctx::TyCtx {
         super::ty_ctx::TyCtx {
             types: self.types.clone(),
@@ -748,6 +785,7 @@ impl TyCtxMut {
         }
     }
 
+/// freeze_owned.
     pub fn freeze_owned(self) -> super::ty_ctx::TyCtx {
         super::ty_ctx::TyCtx {
             types: self.types,
@@ -778,6 +816,7 @@ impl TyCtxMut {
         &mut self.lang_items
     }
 
+/// mark_adt_interior_mutable.
     pub fn mark_adt_interior_mutable(&mut self, adt_id: AdtId) {
         self.interior_mutable_adt_ids.insert(adt_id);
         self.interior_mutability_cache.insert(adt_id, true);
