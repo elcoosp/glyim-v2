@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Crate root.
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -33,16 +33,23 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
 
+/// CodegenBackend.
 pub trait CodegenBackend {
+/// name.
     fn name(&self) -> &'static str;
+/// generate.
     fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()>;
+/// generate_function.
     fn generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>>;
 }
 
 /// Layout provider for computing field offsets and sizes.
 pub trait LayoutProvider {
+/// field_offset.
     fn field_offset(&self, ty: Ty, field_idx: FieldIdx) -> u64;
+/// size_of.
     fn size_of(&self, ty: Ty) -> u64;
+/// variant_type.
     fn variant_type(&self, enum_ty: Ty, variant_idx: VariantIdx) -> Ty;
     /// Byte offset of a downcasted enum variant's data payload from the start
     /// of the enum value. For enums using a *direct* discriminant tag, the tag
@@ -116,6 +123,7 @@ impl LayoutProvider for GlyimLayoutProvider {
     }
 }
 
+/// BytecodeBackend.
 pub struct BytecodeBackend {
     string_table: RefCell<Vec<String>>,
     fn_table: RefCell<Vec<(FnDefId, Substitution)>>,
@@ -124,6 +132,7 @@ pub struct BytecodeBackend {
 }
 
 impl BytecodeBackend {
+/// with_ty_ctx.
     pub fn with_ty_ctx(ctx: Arc<TyCtx>, target: TargetInfo) -> Self {
         Self {
             string_table: RefCell::new(Vec::new()),
@@ -136,6 +145,7 @@ impl BytecodeBackend {
         }
     }
 
+/// with_layout_provider.
     pub fn with_layout_provider(mut self, provider: Box<dyn LayoutProvider>) -> Self {
         self.layout_provider = provider;
         self
