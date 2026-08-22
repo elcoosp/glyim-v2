@@ -279,138 +279,101 @@ impl Registry {
 
 /// A loaded proc-macro cdylib handle (keeps the library resident).
 pub struct LoadedCrate {
-    /// Library handle. `None` on platforms without dlopen (kept for lifetime).
-    #[cfg(unix)]
-    _lib: *mut libc::c_void,
+    /// Library handle, kept alive for the lifetime of the registry it populated.
+    _lib: libloading::Library,
     /// Registry populated by the loaded crate's `glyim_proc_macro_main`.
     pub registry: Registry,
 }
 
-// The library handle is just an opaque pointer; we never deref it from Rust.
-#[cfg(unix)]
-unsafe impl Send for LoadedCrate {}
-
 impl Drop for LoadedCrate {
     fn drop(&mut self) {
-        #[cfg(unix)]
-        unsafe {
-            if !self._lib.is_null() {
-                dlclose(self._lib);
-            }
-        }
+        // `libloading::Library` closes itself on drop; nothing to do here.
     }
 }
-
-#[cfg(unix)]
-unsafe extern "C" {
-    fn dlopen(filename: *const c_char, flags: i32) -> *mut libc::c_void;
-    fn dlsym(handle: *mut libc::c_void, symbol: *const c_char) -> *mut libc::c_void;
-    fn dlclose(handle: *mut libc::c_void) -> i32;
-}
-
-#[cfg(unix)]
-const RTLD_NOW: i32 = 0x2;
 
 /// Load a compiled proc-macro cdylib and populate a [`Registry`] from it.
 ///
 /// This performs the **load + register** half of the two-stage proc-macro
 /// build. The compile half (building the proc-macro crate for the host target)
-/// is tracked separately in `KNOWN_GAPS.md` Phase 9.2.
+/// is tracked separately in `docs/plans/v0.1.0/unstub-5/KNOWN_GAPS.md` Phase 9.2.
 ///
-/// # Platforms
-/// - Unix: `dlopen`/`dlsym` via libc.
-/// - Windows: `LoadLibraryW`/`GetProcAddress` (tracked; returns
-///   `Err` until implemented).
-#[cfg(unix)]
+/// Uses `libloading`, which dispatches to `dlopen` (Unix) / `LoadLibraryW`
+/// (Windows) / `dlopen` (macOS) behind one API, so the same path works on
+/// every platform the compiler itself supports (Phase 1.5).
 pub fn load_cdylib(path: &str) -> Result<LoadedCrate, String> {
-    let c_path = CString::new(path).map_err(|e| format!("invalid path: {e}"))?;
-    unsafe {
-        let handle = dlopen(c_path.as_ptr(), RTLD_NOW);
-        if handle.is_null() {
-            return Err(format!("dlopen failed for {path}"));
-        }
-        let main_sym = dlsym(handle, PROC_MACRO_MAIN_SYMBOL.as_ptr() as *const c_char);
-        if main_sym.is_null() {
-            dlclose(handle);
-            return Err(format!(
-                "{} not found in {path}",
-                String::from_utf8_lossy(&PROC_MACRO_MAIN_SYMBOL[..PROC_MACRO_MAIN_SYMBOL.len() - 1])
-            ));
-        }
-        let main_fn: PmRegisterMain = std::mem::transmute(main_sym);
+    // SAFETY: proc-macro cdylibs are build-generated, trusted artifacts
+    // produced by this same toolchain's own build of the proc-macro crate —
+    // matches the existing Unix path's trust assumption.
+    let lib = unsafe {
+        libloading::Library::new(path)
+            .map_err(|e| format!("failed to load proc-macro cdylib {path}: {e}"))?
+    };
 
-        let mut registry = Registry::new();
-        // The C-ABI register callback that the dylib calls once per macro.
-        extern "C" fn register_cb(
-            reg: *mut RegistryHolder,
-            name: *const c_char,
-            entry: PmMacroFn,
-        ) {
-            unsafe {
-                let name = CStr::from_ptr(name).to_string_lossy().into_owned();
-                let expand = move |input: &[(SyntaxKind, String)]| -> Vec<(SyntaxKind, String)> {
-                    // Build input PmTokenStream on the host side.
-                    let mut in_ts = pm_ts_alloc();
-                    for (kind, text) in input {
-                        let ctext = CString::new(text.as_str()).unwrap_or_default();
-                        let pm_text = PmStr {
-                            ptr: ctext.as_ptr() as *const u8,
-                            len: text.len() as u32,
-                        };
-                        pm_ts_push(
-                            &mut in_ts,
-                            PmToken {
-                                kind: *kind as u16,
-                                text: pm_text,
-                            },
-                        );
-                        // ctext is leaked intentionally: the dylib reads it during
-                        // the call; kept alive for the duration of the call.
-                        std::mem::forget(ctext);
-                    }
-                    let mut out_ts = pm_ts_alloc();
-                    (entry)(&mut in_ts, &mut out_ts);
-                    let result = pm_to_tokens(&out_ts);
-                    pm_ts_free(&mut in_ts);
-                    pm_ts_free(&mut out_ts);
-                    result
-                };
-                (*reg).0.register(&name, expand);
-            }
+    // SAFETY: the symbol is the crate's single C-ABI entry point; we cast it
+    // to the exact `PmRegisterMain` fn-pointer type the ABI contract expects.
+    let main_fn: PmRegisterMain = unsafe {
+        *lib.get(PROC_MACRO_MAIN_SYMBOL)
+            .map_err(|e| format!("{} not found in {path}: {e}", String::from_utf8_lossy(&PROC_MACRO_MAIN_SYMBOL[..PROC_MACRO_MAIN_SYMBOL.len() - 1])))?
+    };
+
+    let mut registry = Registry::new();
+    // The C-ABI register callback that the dylib calls once per macro.
+    extern "C" fn register_cb(
+        reg: *mut RegistryHolder,
+        name: *const c_char,
+        entry: PmMacroFn,
+    ) {
+        unsafe {
+            let name = CStr::from_ptr(name).to_string_lossy().into_owned();
+            let expand = move |input: &[(SyntaxKind, String)]| -> Vec<(SyntaxKind, String)> {
+                // Build input PmTokenStream on the host side.
+                let mut in_ts = pm_ts_alloc();
+                for (kind, text) in input {
+                    let ctext = CString::new(text.as_str()).unwrap_or_default();
+                    let pm_text = PmStr {
+                        ptr: ctext.as_ptr() as *const u8,
+                        len: text.len() as u32,
+                    };
+                    pm_ts_push(
+                        &mut in_ts,
+                        PmToken {
+                            kind: *kind as u16,
+                            text: pm_text,
+                        },
+                    );
+                    // ctext is leaked intentionally: the dylib reads it during
+                    // the call; kept alive for the duration of the call.
+                    std::mem::forget(ctext);
+                }
+                let mut out_ts = pm_ts_alloc();
+                (entry)(&mut in_ts, &mut out_ts);
+                let result = pm_to_tokens(&out_ts);
+                pm_ts_free(&mut in_ts);
+                pm_ts_free(&mut out_ts);
+                result
+            };
+            (*reg).0.register(&name, expand);
         }
-
-        let mut holder = RegistryHolder(registry);
-        main_fn(&mut holder as *mut RegistryHolder, register_cb);
-        registry = holder.0;
-
-        Ok(LoadedCrate {
-            _lib: handle,
-            registry,
-        })
     }
+
+    let mut holder = RegistryHolder(registry);
+    main_fn(&mut holder as *mut RegistryHolder, register_cb);
+    registry = holder.0;
+
+    Ok(LoadedCrate {
+        _lib: lib,
+        registry,
+    })
 }
 
-#[cfg(unix)]
 type PmRegisterMain = extern "C" fn(*mut RegistryHolder, PmRegisterCallback);
-#[cfg(unix)]
 type PmRegisterCallback =
     extern "C" fn(*mut RegistryHolder, *const c_char, PmMacroFn);
 
 /// Opaque holder passed to the dylib's main; bundles the registry so the C-ABI
 /// callback can register into it.
-#[cfg(unix)]
 #[repr(C)]
 pub struct RegistryHolder(pub Registry);
-
-#[cfg(not(unix))]
-pub fn load_cdylib(_path: &str) -> Result<LoadedCrate, String> {
-    Err("proc-macro cdylib loading is only implemented on Unix targets (tracked)".to_string())
-}
-
-#[cfg(not(unix))]
-pub struct LoadedCrate {
-    pub registry: Registry,
-}
 
 #[cfg(test)]
 mod tests {

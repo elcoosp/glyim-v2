@@ -105,6 +105,7 @@ toml = "1.1.4"
 sha2 = "0.11.0"
 tempfile = "3"
 lsp-types = "0.97.0"
+libloading = "0.8"
 
 # Phase 10.3 (report #30): enforce `missing_docs` for the public API. The
 # previous per-crate `#![allow(missing_docs)]` crate-root allows are removed;

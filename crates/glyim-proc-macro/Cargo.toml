@@ -6,4 +6,4 @@ description = "Procedural macro bridge: C-compatible TokenStream ABI, in-process
 
 [dependencies]
 glyim-syntax = { workspace = true }
-libc = "0.2"
+libloading = { workspace = true }
