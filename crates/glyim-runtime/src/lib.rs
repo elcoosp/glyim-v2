@@ -21,7 +21,6 @@
 //! - Time: `glyim_time_now_secs`, `glyim_time_now_nanos`,
 //!   `glyim_time_system_secs`, `glyim_time_system_nanos`
 //! - Memory cleanup: `glyim_free_cstr`
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
