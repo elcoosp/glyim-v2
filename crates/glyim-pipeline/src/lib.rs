@@ -84,8 +84,9 @@ impl Pipeline {
         path: &Path,
         backend: &dyn CodegenBackend,
         output_path: &Path,
+        codegen_units: Option<usize>,
     ) -> CompResult<()> {
-        Self::compile_file_with_artifacts(db, path, backend, output_path).map(|_| ())
+        Self::compile_file_with_artifacts(db, path, backend, output_path, codegen_units).map(|_| ())
     }
 }
 
@@ -99,6 +100,7 @@ impl Pipeline {
         path: &Path,
         backend: &dyn CodegenBackend,
         output_path: &Path,
+        codegen_units: Option<usize>,
     ) -> CompResult<CompileArtifacts> {
         let sink = DiagSink::new();
         let sink_cell = RefCell::new(sink);
@@ -268,7 +270,7 @@ impl Pipeline {
         let cache = PipelineMonoCache::from_items(&mono_items);
         db.set_mono_cache(cache.symbols().to_vec());
 
-        let max_cgus = compute_max_cgus();
+        let max_cgus = codegen_units.unwrap_or_else(compute_max_cgus);
         let cgus = partition(&mono_items, max_cgus);
 
         let all_bodies: Vec<Arc<Body>> = if cgus.is_empty() {

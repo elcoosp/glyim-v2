@@ -416,7 +416,7 @@ fn compile_and_run_compiled(
     };
 
     // Stage 1: compile source -> object file via the full pipeline.
-    match glyim_pipeline::Pipeline::compile_file(&mut db, file, backend.as_ref(), &output_path) {
+    match glyim_pipeline::Pipeline::compile_file(&mut db, file, backend.as_ref(), &output_path, None) {
         Ok(_) => {}
         Err(diags) => {
             return Err(format!(
@@ -638,7 +638,7 @@ fn compile_source(
     fs::create_dir_all(&output_dir)?;
     let output_path = output_dir.join(&config.package.name);
 
-    match glyim_pipeline::Pipeline::compile_file(&mut db, entry, backend.as_ref(), &output_path) {
+    match glyim_pipeline::Pipeline::compile_file(&mut db, entry, backend.as_ref(), &output_path, None) {
         Ok(()) => {
             info!("Compilation succeeded: {}", output_path.display());
             Ok((output_path, 0))

@@ -44,6 +44,12 @@ pub struct CliArgs {
     /// no-op). Phase 10.2.
     #[arg(long = "lto", default_value = "off")]
     pub lto: String,
+    /// Number of codegen units (CGUs) to partition monomorphized items into
+    /// for parallel code generation. Defaults to the available parallelism
+    /// (capped at 16), mirroring rustc's `-C codegen-units` policy. (Phase
+    /// 10.2 / feature-gaps §4.1.)
+    #[arg(long = "codegen-units")]
+    pub codegen_units: Option<usize>,
 }
 
 /// run.
@@ -240,7 +246,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         Box::new(llvm)
     };
 
-    Pipeline::compile_file(&mut db, input, &*backend, &object_path)?;
+    Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units)?;
 
     if emit == EmitKind::Exec || emit == EmitKind::Cdylib {
         let final_path = final_output_path.expect("emit should have final output");

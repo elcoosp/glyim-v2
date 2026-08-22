@@ -19,6 +19,7 @@ fn test_compile_valid_file() {
         linker: None,
         link_flags: None,
         lto: "off".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(
@@ -44,6 +45,7 @@ fn test_compile_invalid_file() {
         linker: None,
         link_flags: None,
         lto: "off".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(result.is_err(), "Expected compilation to fail");
@@ -111,6 +113,7 @@ fn test_emit_asm_produces_assembly_file() {
         linker: None,
         link_flags: None,
         lto: "off".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(result.is_ok(), "asm emit should succeed, got: {:?}", result);
@@ -151,6 +154,7 @@ fn test_lto_fat_compiles_to_object() {
         linker: None,
         link_flags: None,
         lto: "fat".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(
@@ -179,6 +183,7 @@ fn test_lto_thin_surfaces_tracked_gap() {
         linker: None,
         link_flags: None,
         lto: "thin".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(
@@ -217,6 +222,7 @@ fn test_emit_cdylib_produces_shared_library() {
         linker: None,
         link_flags: None,
         lto: "off".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(
@@ -244,6 +250,7 @@ fn test_lto_invalid_value_rejected() {
         linker: None,
         link_flags: None,
         lto: "bogus".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(result.is_err(), "invalid --lto value must be rejected");
@@ -278,6 +285,7 @@ fn exec_emit_links_and_runs() {
         linker: None,
         link_flags: None,
         lto: "off".to_string(),
+        codegen_units: None,
     };
     let result = run_with_args(args);
     assert!(result.is_ok(), "glyim-cli --emit=exec failed: {:?}", result);
