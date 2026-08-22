@@ -14,11 +14,20 @@ const LOCKFILE_NAME: &str = "Glyip.lock";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockConflict {
     /// A manifest dependency is missing entirely from the lockfile.
-    Missing { name: String, version: String },
+/// Struct.
+    Missing {
+        /// name field.
+        name: String,
+        /// version field.
+        version: String,
+    },
     /// A manifest dependency's pinned version does not match the locked one.
     VersionMismatch {
+/// Struct.
         name: String,
+/// Struct.
         manifest_version: String,
+/// Struct.
         locked_version: String,
     },
 }
@@ -46,19 +55,33 @@ impl std::fmt::Display for LockConflict {
 #[serde(tag = "source")]
 pub enum CrateSource {
     /// A local filesystem path.
-    Path { path: String },
+/// Struct.
+    Path {
+        /// path field.
+        path: String,
+    },
     /// A git repository at a specific revision.
     Git {
+/// Struct.
         url: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+/// Struct.
         rev: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+/// Struct.
         branch: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+/// Struct.
         tag: Option<String>,
     },
     /// A registry (index) entry.
-    Registry { url: String, checksum: String },
+/// Struct.
+    Registry {
+        /// url field.
+        url: String,
+        /// checksum field.
+        checksum: String,
+    },
 }
 
 /// A single locked dependency entry.

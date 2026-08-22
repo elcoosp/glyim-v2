@@ -4,7 +4,6 @@
 //! test execution (`glyip test`), and binary execution (`glyip run`),
 //! with dependency resolution, incremental compilation via fingerprinting,
 //! and crate caching.
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
