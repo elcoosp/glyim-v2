@@ -29,18 +29,27 @@ use std::fmt;
 /// A single well-formedness violation found by the validator.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MirValidationError {
+/// Struct.
     pub kind: MirValidationErrorKind,
+/// Struct.
     pub span: Span,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// MirValidationErrorKind.
 pub enum MirValidationErrorKind {
     /// A terminator references a basic block that does not exist.
     UnknownTarget(BasicBlockIdx),
     /// A `Drop` terminator whose place type does not need drop glue, per the
     /// canonical `TyCtx::needs_drop` (plan §15.1). Holding the offending place
     /// and type makes the diagnostic actionable and lets tests assert on it.
-    UnnecessaryDrop { place: Place, ty: Ty },
+/// Struct.
+    UnnecessaryDrop {
+        /// place field.
+        place: Place,
+        /// ty field.
+        ty: Ty,
+    },
     /// A `ConstantIndex`/`Subslice` projection appears mid-chain (not terminal).
     NonTerminalSliceProjection,
     /// A `ProjectionElem::Subslice` survives past `slice_desugar` (plan §8.7).

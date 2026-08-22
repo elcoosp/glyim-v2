@@ -1,5 +1,4 @@
 //! MIR optimizations (constant propagation, dead code elimination, etc.)
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -36,10 +35,13 @@ mod unreachable_elim;
 mod validate;
 
 #[derive(Clone, Debug)]
+/// Optimized.
 pub struct Optimized {
+/// Struct.
     pub body: Body,
 }
 
+/// optimize.
 pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     let mut body = (**body).clone();
     // Validate well-formedness up front (de-stubbing plan §8.8). Gated to debug
