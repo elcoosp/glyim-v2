@@ -11,6 +11,7 @@ use glyim_type::*;
 
 use crate::coherence::ResolvedImplHeader;
 
+/// resolve_type_ref.
 pub fn resolve_type_ref(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -316,6 +317,7 @@ fn resolve_const_ref(
     }
 }
 
+/// build_param_tys.
 pub fn build_param_tys(
     ctx: &mut TyCtxMut,
     params: &[glyim_hir::GenericParam],
@@ -342,12 +344,16 @@ pub fn build_param_tys(
 }
 
 #[derive(Clone, Debug)]
+/// FnSig.
 pub struct FnSig {
+/// Struct.
     pub param_tys: Vec<Ty>,
+/// Struct.
     pub return_ty: Ty,
 }
 
 #[allow(clippy::too_many_arguments)]
+/// resolve_fn_sig.
 pub fn resolve_fn_sig(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -419,6 +425,7 @@ pub fn resolve_fn_sig(
     }
 }
 
+/// resolve_impl_header.
 pub fn resolve_impl_header(
     ctx: &mut TyCtxMut,
     _infer: &mut InferenceTable,
@@ -500,6 +507,7 @@ pub fn resolve_impl_header(
     }
 }
 
+/// resolve_path_type.
 pub fn resolve_path_type(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,

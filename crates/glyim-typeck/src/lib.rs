@@ -1,5 +1,4 @@
 //! Type checker: HIR → THIR with full inference and trait solving.
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -31,6 +30,7 @@ mod check_stmt;
 mod coherence;
 mod env;
 pub mod thir;
+/// tyconv.
 pub mod tyconv;
 mod unify;
 
@@ -51,8 +51,11 @@ use glyim_type::{
 };
 
 #[derive(Clone, Debug)]
+/// TypeckResult.
 pub struct TypeckResult {
+#[doc = "field"]
     pub thir_bodies: Vec<(LocalDefId, thir::Body)>,
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
     /// Evaluated values of constant definitions (Part C: const value
     /// materialization). Populated during `typeck_crate` by const-evaluating
@@ -69,15 +72,22 @@ pub struct TypeckResult {
 }
 
 #[derive(Clone, Debug)]
+/// Adjustment.
 pub struct Adjustment {
+/// Struct.
     pub kind: AdjustKind,
+/// Struct.
     pub target: Ty,
 }
 
 #[derive(Clone, Debug)]
+/// AdjustKind.
 pub enum AdjustKind {
+/// Variant.
     Deref,
+#[allow(missing_docs)]
     Borrow(Mutability),
+/// Variant.
     NeverToAny,
 }
 
@@ -184,6 +194,7 @@ fn register_adt_item(
 }
 
 #[tracing::instrument(level = "info", skip(ctx, solver))]
+/// typeck_crate.
 pub fn typeck_crate(
     mut ctx: TyCtxMut,
     def_map: &glyim_def_map::CrateDefMap,
@@ -1045,6 +1056,7 @@ impl TypeckResult {
     pub fn pat_ty(&self, _body_id: LocalDefId, _pat_id: usize) -> Option<Ty> {
         None
     }
+/// adjustments.
     pub fn adjustments(&self, _body_id: LocalDefId, _expr_id: usize) -> &[Adjustment] {
         &[]
     }
