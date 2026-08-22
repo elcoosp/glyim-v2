@@ -521,3 +521,44 @@ Removing `#![allow(missing_docs)]` per crate and writing real doc comments is
 mechanical but large (every public item across the workspace). Not started;
 deferred with the rest of the doc pass. No missing-docs warnings are currently
 masked in a way that hides unsound APIs — the allow is scoped to crate roots.
+
+## Phase 4.3 — Dependency resolution determinism & conflict diagnostics — PARTIAL (resolution determinism DONE; greedy-solver gap TRACKED, 2026-08-22)
+`glyip/src/dep.rs` already had a real `check_version_conflicts` SemVer conflict
+detector (it was correct and needed no change). The report's actual complaint
+was about *resolution* determinism, not detection. Fixed:
+
+- **Deterministic "latest compatible" (§4.3 Step 1)**: `select_best_version` now
+  always parses every candidate, sorts by SemVer precedence, and takes the
+  highest — for both the "has requirement" and the "no requirement → latest"
+  paths (the latter previously used `versions.first()`, which depended on the
+  index JSON's listing order, so an ascending listing would pick the *lowest*).
+  The registry-fallback no-req branch likewise routes through
+  `select_best_version(_, None)`. Resolution is now a pure function of (the full
+  requirement set + the available version list) with no `HashMap` iteration
+  affecting which version is picked. New tests
+  `resolution_is_deterministic_across_runs` (resolving the same graph twice →
+  identical lockfiles, and the highest version wins regardless of listing order)
+  and `conflict_error_names_both_requesters` lock it in (glyip suite green,
+  207 tests).
+- **Conflict diagnostic names both requesters (§4.3 Step 2)**:
+  `GlyipError::DependencyConflict` gained a `requesters: Vec<(String, String)>`
+  field (one `(requester_crate, requirement)` edge per introduction of a
+  requirement). `DependencyResolver::resolve` now threads the requester (the
+  parent crate, or `<root>` for direct deps) through `collected_reqs`, and the
+  `Display` renders "required by: `a` requires ^1.0.0; `b` requires ^2.0.0". The
+  old `requirements: Vec<String>` field is retained (existing tests still read
+  it).
+
+**TRACKED GAP — greedy highest-compatible resolver, no backtracking (§4.3 Step 3):** the
+solver picks the highest version satisfying each crate's requirements
+independently; it does **not** backtrack across sibling dependency choices. On a
+complex graph where a valid assignment exists only by choosing a *lower* version
+of one crate to satisfy a transitivity constraint elsewhere, the greedy strategy
+can report a false conflict (or fail to find the assignment) even though a
+satisfiable solution exists. A full SAT/PubGrub-style resolver (real
+backtracking search over the whole graph, matching Cargo's actual algorithm) is a
+substantial, separately-scoped project and is **not** implemented here. This is
+shipped as a correct, narrower capability with an explicit boundary rather than a
+silently-incomplete "it usually works" — mirroring the codebase's own pattern for
+ThinLTO (§10.2) and Windows SEH (§6.1). Detection of genuinely irreconcilable
+requirements is exact; only the search completeness is limited.

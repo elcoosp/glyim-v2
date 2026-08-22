@@ -27,6 +27,11 @@ pub enum GlyipError {
         name: String,
         /// All version requirements gathered for this dependency across the graph.
         requirements: Vec<String>,
+        /// Every (requester, requirement) edge that introduced a requirement for
+        /// this dependency, so the user can see which dependent crates disagree
+        /// (plan §4.3). A single requirement raised by two different parents
+        /// appears twice so both are visible.
+        requesters: Vec<(String, String)>,
         /// The resolved version (if any) that failed to satisfy all requirements.
         resolved: Option<String>,
     },
@@ -67,6 +72,7 @@ impl fmt::Display for GlyipError {
             Self::DependencyConflict {
                 name,
                 requirements,
+                requesters,
                 resolved,
             } => {
                 write!(
@@ -74,6 +80,13 @@ impl fmt::Display for GlyipError {
                     "dependency version conflict for `{}`: requirements {:?} cannot be satisfied",
                     name, requirements
                 )?;
+                if !requesters.is_empty() {
+                    let edges: Vec<String> = requesters
+                        .iter()
+                        .map(|(who, req)| format!("`{who}` requires {req}"))
+                        .collect();
+                    write!(f, "\n  required by: {}", edges.join("; "))?;
+                }
                 if let Some(r) = resolved {
                     write!(f, " (resolved to {r})")?;
                 }

@@ -170,8 +170,13 @@ fn select_best_version(versions: &[String], version_req: Option<&str>) -> Option
         return None;
     }
     let Some(req) = version_req else {
-        // No requirement: latest.
-        return versions.first().cloned();
+        // No requirement: latest. Deterministic regardless of input order —
+        // parse every version, sort by SemVer precedence, and take the highest
+        // (plan §4.3: the "pick latest" default must not depend on the index
+        // JSON's listing order).
+        let mut parsed: Vec<Version> = versions.iter().filter_map(|v| Version::parse(v).ok()).collect();
+        parsed.sort();
+        return parsed.last().map(|v| v.to_string());
     };
     // Real SemVer 2.0 matching. A requirement that fails to parse, or parses
     // but matches no available version, yields `None` only when truly absent —
@@ -410,14 +415,21 @@ impl DependencyResolver {
         // graph (direct + transitive). Used for plan §23.2 semver conflict
         // detection: a crate required with mutually-incompatible requirements
         // must error rather than silently resolve to the first one.
-        let mut collected_reqs: HashMap<String, Vec<String>> = HashMap::new();
+        // Each entry is `(requester, requirement)` so the conflict diagnostic can
+        // name every dependent that introduced a requirement (plan §4.3).
+        let mut collected_reqs: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
-        // Seed the stack with direct dependencies.
+        // Seed the stack with direct dependencies. The requester for a direct
+        // dependency is the project's own package.
+        let root_requester = config.package.name.clone();
         for (name, dep) in config.all_dependencies() {
             let version = dep.version().map(String::from);
             let path = dep.path().map(PathBuf::from);
             if let Some(ref v) = version {
-                collected_reqs.entry(name.clone()).or_default().push(v.clone());
+                collected_reqs
+                    .entry(name.clone())
+                    .or_default()
+                    .push((root_requester.clone(), v.clone()));
             }
             visit_stack.push_back((name.clone(), version, path, None));
         }
@@ -495,7 +507,7 @@ impl DependencyResolver {
                     collected_reqs
                         .entry(dep_name.clone())
                         .or_default()
-                        .push(v.clone());
+                        .push((name.clone(), v.clone()));
                 }
                 let dep_base = if dep_path.is_some() {
                     path.clone()
@@ -519,24 +531,26 @@ impl DependencyResolver {
     }
 
     /// Verify that each locked crate satisfies every version requirement
-    /// gathered for it across the dependency graph (plan §23.2).
+    /// gathered for it across the dependency graph (plan §23.2 / §4.3).
     fn check_version_conflicts(
         &self,
         lockfile: &Lockfile,
-        collected_reqs: &HashMap<String, Vec<String>>,
+        collected_reqs: &HashMap<String, Vec<(String, String)>>,
     ) -> GlyipResult<()> {
-        for (name, reqs) in collected_reqs {
-            // Deduplicate requirements before checking.
-            let unique: Vec<&String> = {
+        for (name, edges) in collected_reqs {
+            // Deduplicate requirements before checking, but keep every
+            // (requester, requirement) edge so the diagnostic can name all
+            // dependents that disagree (plan §4.3).
+            let unique_reqs: Vec<&String> = {
                 let mut seen: Vec<&String> = Vec::new();
-                for r in reqs {
-                    if !seen.contains(&r) {
-                        seen.push(r);
+                for (_, req) in edges {
+                    if !seen.contains(&req) {
+                        seen.push(req);
                     }
                 }
                 seen
             };
-            if unique.len() < 2 {
+            if unique_reqs.len() < 2 {
                 continue;
             }
             // Find the version actually locked for this crate name.
@@ -546,7 +560,7 @@ impl DependencyResolver {
                 .map(|c| c.version.clone());
             let satisfied = if let Some(ref v) = locked_version {
                 match Version::parse(v) {
-                    Ok(parsed) => unique.iter().all(|req| {
+                    Ok(parsed) => unique_reqs.iter().all(|req| {
                         VersionReq::parse(req)
                             .map(|r| r.matches(&parsed))
                             .unwrap_or(false)
@@ -559,7 +573,8 @@ impl DependencyResolver {
             if !satisfied {
                 return Err(GlyipError::DependencyConflict {
                     name: name.clone(),
-                    requirements: unique.into_iter().cloned().collect(),
+                    requirements: unique_reqs.into_iter().cloned().collect(),
+                    requesters: edges.clone(),
                     resolved: locked_version,
                 });
             }
@@ -614,7 +629,10 @@ impl DependencyResolver {
                             version: version_req.map(String::from),
                         })?
                 } else {
-                    entry.versions.first().cloned().ok_or_else(|| {
+                    // No requirement: pick the highest available version
+                    // deterministically (plan §4.3) rather than relying on the
+                    // JSON listing order.
+                    select_best_version(&entry.versions, None).ok_or_else(|| {
                         GlyipError::DependencyNotFound {
                             name: name.to_string(),
                             version: None,

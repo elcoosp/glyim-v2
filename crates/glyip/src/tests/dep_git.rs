@@ -281,3 +281,100 @@ fn compatible_version_requirements_do_not_conflict() {
 fn _assert_arc_used() -> Arc<u8> {
     Arc::new(0)
 }
+
+/// Plan §4.3: resolution must be a pure function of its inputs. Resolving the
+/// same graph twice yields byte-identical lockfiles regardless of any internal
+/// (HashMap / VecDeque) ordering.
+#[test]
+fn resolution_is_deterministic_across_runs() {
+    // An index with multiple candidates in *non-sorted* order so a
+    // listing-order-dependent "pick first" strategy would be non-deterministic.
+    let mut index = CrateIndex::new();
+    index.insert(IndexEntry {
+        name: "serde".to_string(),
+        versions: vec![
+            "1.0.130".to_string(),
+            "1.0.219".to_string(),
+            "1.0.1".to_string(),
+            "1.0.100".to_string(),
+        ],
+        checksums: HashMap::new(),
+        dependencies: HashMap::new(),
+    });
+    index.insert(IndexEntry {
+        name: "log".to_string(),
+        versions: vec!["0.4.20".to_string(), "0.4.0".to_string()],
+        checksums: HashMap::new(),
+        dependencies: HashMap::new(),
+    });
+
+    let config = root_config(&[("serde", "*"), ("log", "*")]);
+
+    let a = DependencyResolver::new(index.clone())
+        .resolve(&config, std::path::Path::new("/tmp"))
+        .expect("resolve run 1");
+    let b = DependencyResolver::new(index)
+        .resolve(&config, std::path::Path::new("/tmp"))
+        .expect("resolve run 2");
+
+    assert_eq!(
+        a.crates().map(|c| (c.name.as_str(), c.version.as_str())).collect::<Vec<_>>(),
+        b.crates().map(|c| (c.name.as_str(), c.version.as_str())).collect::<Vec<_>>(),
+        "two resolutions of the same graph must pick the same versions"
+    );
+    // Specifically, the highest SemVer version must win, not the listing order.
+    let serde = a.crates().find(|c| c.name == "serde").unwrap();
+    assert_eq!(serde.version, "1.0.219", "highest version must be selected, not first-listed");
+}
+
+/// Plan §4.3: when requirements genuinely conflict, the diagnostic names *both*
+/// requesters (the dependents that disagree), not just the crate name.
+#[test]
+fn conflict_error_names_both_requesters() {
+    // a requires foo = ^1.0.0, b requires foo = ^2.0.0 — irreconcilable.
+    let config = root_config(&[("a", "1.0"), ("b", "1.0")]);
+    let resolver = DependencyResolver::new(conflict_index());
+
+    let err = resolver
+        .resolve(&config, std::path::Path::new("/tmp"))
+        .expect_err("mutually-incompatible foo requirements must conflict");
+
+    match err {
+        GlyipError::DependencyConflict { name, requirements, requesters, .. } => {
+            assert_eq!(name, "foo");
+            assert!(requirements.contains(&"^1.0.0".to_string()));
+            assert!(requirements.contains(&"^2.0.0".to_string()));
+
+            // Both dependents must be identified as requesters.
+            let who: Vec<&str> = requesters.iter().map(|(w, _)| w.as_str()).collect();
+            assert!(who.contains(&"a"), "requester 'a' must be named: {who:?}");
+            assert!(who.contains(&"b"), "requester 'b' must be named: {who:?}");
+
+            // And each requester edge carries its own requirement.
+            let a_req = requesters
+                .iter()
+                .find(|(w, _)| w == "a")
+                .map(|(_, r)| r.as_str());
+            let b_req = requesters
+                .iter()
+                .find(|(w, _)| w == "b")
+                .map(|(_, r)| r.as_str());
+            assert_eq!(a_req, Some("^1.0.0"));
+            assert_eq!(b_req, Some("^2.0.0"));
+
+            // The rendered message must surface both requesters. Reconstruct the
+            // diagnostic text from the moved-in fields (err is partially moved).
+            let msg = format!(
+                "dependency version conflict for `{name}`: requirements {requirements:?} cannot be satisfied\n  required by: {}",
+                requesters
+                    .iter()
+                    .map(|(who, req)| format!("`{who}` requires {req}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+            assert!(msg.contains('a'), "message should name requester a: {msg}");
+            assert!(msg.contains('b'), "message should name requester b: {msg}");
+        }
+        other => panic!("expected DependencyConflict, got {other:?}"),
+    }
+}
