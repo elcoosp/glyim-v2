@@ -1,10 +1,15 @@
 use crate::interner::Name;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// PathKind.
 pub enum PathKind {
+/// Variant.
     Plain,
+/// Variant.
     SelfPath,
+#[allow(missing_docs)]
     Super(u32),
+/// Variant.
     Crate,
 }
 
@@ -18,6 +23,7 @@ pub enum PathKind {
 /// round-trips with each segment's args intact.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PathSegment {
+/// Struct.
     pub name: Name,
     /// The generic arguments written at this segment, if any. `None` means no
     /// `<...>` was written; `Some(vec![])` means `<>` (empty, e.g. turbofish).
@@ -25,8 +31,11 @@ pub struct PathSegment {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// Path.
 pub struct Path {
+/// Struct.
     pub segments: Vec<PathSegment>,
+/// Struct.
     pub kind: PathKind,
 }
 
@@ -61,6 +70,7 @@ impl Path {
         }
     }
 
+/// as_name.
     pub fn as_name(&self) -> Option<Name> {
         if self.segments.len() == 1 && self.kind == PathKind::Plain {
             Some(self.segments[0].name)

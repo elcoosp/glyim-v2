@@ -1,6 +1,9 @@
+/// ALIGN_MAX.
 pub const ALIGN_MAX: u64 = 64;
+/// ALIGN_MIN.
 pub const ALIGN_MIN: u64 = 1;
 
+/// validate_alignment.
 pub fn validate_alignment(align: u64) -> Result<(), String> {
     if align == 0 {
         return Err("alignment must be non-zero".into());
