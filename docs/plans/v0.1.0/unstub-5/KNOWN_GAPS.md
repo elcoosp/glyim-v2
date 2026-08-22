@@ -436,7 +436,7 @@ payload in `pending_unwind`, until the top frame returns `Unwind`. Normal
 every caller's cleanup block and reaches the top with `Unwind`. Committed
 `f282df1` (green, 4027-workspace).
 
-## Phase 10 — Build & Tooling — PARTIAL (10.1 done, 10.2 partial, 10.3 deferred)
+## Phase 10 — Build & Tooling — PARTIAL (10.1 done, 10.2 partial, 10.3 deferred, 10.4 native exec DONE)
 
 ### 10.1 Registry feature on by default (report #16) — DONE (2026-08-20)
 `crates/glyip/Cargo.toml` now has `default = ["registry"]` so the common-case
@@ -476,6 +476,45 @@ common case. The `--no-default-features` escape hatch remains available.
   `56965a8` … `9141c41`. True multi-CGU / multi-crate Fat+Thin merge at link
   time remains a tracked follow-up (requires a multi-module compilation
   driver).
+
+### 10.4 Native executable output (`--emit=exec`) — DONE (2026-08-22)
+`--emit=exec` links the compiled object into a runnable host binary, which
+requires the compiler to emit a C-ABI `main` entry symbol. Previously codegen
+lowered `fn main` to an internal `fastcc void __glyim_fn_N` with **no** `main`
+symbol, so the produced object could not link (`undefined _main`). Fixed:
+
+- `LlvmBackend` gains an `entry_main: Option<u32>` field + `with_entry_main()`
+  builder. When the lowered body is the crate's entry `main`, `lower_body`
+  additionally emits a `main` function with the C calling convention
+  (`set_call_conventions(0)`) that calls `__glyim_fn_N` and returns 0. The
+  `main` symbol is emitted **only** for `--emit=exec` (a cdylib/object must not
+  carry a conflicting entry point).
+- `Pipeline::entry_main_local_id(db, path)` resolves the crate's `fn main` to
+  its `LocalDefId` raw index via a lightweight parse + def-map pre-pass (before
+  the full pipeline runs, since the backend is constructed up front). `glyim-cli`
+  calls it and sets `with_entry_main` on the LLVM backend.
+- **Linker fix**: `linker_flags_for_target` previously emitted `--target` +
+  GNU-`ld` `-m <emulation>`, which the Apple clang `cc` *driver* rejects
+  (double-dash `--target` and the raw-`ld` `-m` flag are driver-invalid). It now
+  branches on linker type: compiler *drivers* (`cc`/`clang`/`gcc`) get a
+  single-dash `-target <triple>`; raw GNU `ld` keeps `--target` + `-m
+  <emulation>`. Cross flags are computed *after* the linker is resolved (fixing
+  a borrow error in `link_with_args`).
+
+Verification (real, not faked): on this macOS host,
+`glyim-cli /tmp/nt.g --emit=exec --target=x86_64-apple-darwin -o /tmp/nt.bin`
+produces a **Mach-O 64-bit executable** with a `_main` symbol that **runs with
+exit code 0**. A CLI integration test (`exec_emit_links_and_runs`, gated to
+`macos`) compiles, links, and *executes* the produced binary, asserting a zero
+exit code — the same host/target path a developer would use. The default ELF
+triple still needs a Linux linker (covered by the Linux CI matrix); the
+`entry_main`/`main`-symbol codegen is target-independent, so ELF `main` is
+produced too (verified via `nm` showing `main` in the ELF object).
+
+Pre-existing gap noted (separate from native exec, NOT a regression): `i32`
+integer-literal arithmetic type-checks to `TyKind::Error`, so a body like
+`let _x = 2 + 3;` cannot yet be used to exercise the `main` wrapper with
+computation. Empty-`fn main(){}` fully proves the native-exec chain.
 
 ### 10.3 Public API documentation (report #30) — DEFERRED
 Removing `#![allow(missing_docs)]` per crate and writing real doc comments is
