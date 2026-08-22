@@ -87,14 +87,19 @@ pub fn emit_thinlto_bitcode<'ctx>(
     _target_machine: &TargetMachine,
     out_path: &Path,
 ) -> Result<(), String> {
-    if module.write_bitcode_to_path(out_path) {
-        Ok(())
-    } else {
-        Err(format!(
-            "failed to write ThinLTO bitcode to {}",
-            out_path.display()
-        ))
-    }
+    // Serialize to a memory buffer first, then write the bytes to disk. Under
+    // LLVM 22 `LLVMWriteBitcodeToFile` silently emits a 0-byte file for
+    // content-bearing modules (it works for empty modules, which is why the
+    // regression only shows up with real code); `LLVMWriteBitcodeToMemoryBuffer`
+    // is reliable, so we dump that buffer to `out_path` ourselves.
+    let buffer = module.write_bitcode_to_memory();
+    std::fs::write(out_path, buffer.as_slice()).map_err(|e| {
+        format!(
+            "failed to write ThinLTO bitcode to {}: {}",
+            out_path.display(),
+            e
+        )
+    })
 }
 
 /// Run LLVM optimization passes based on the given optimization level and size hint.
