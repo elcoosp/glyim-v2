@@ -1,7 +1,6 @@
 //! Metaprogramming support: macro expansion, comptime evaluation coordination.
 //!
 //! Uses `HygieneCtx` from `glyim-span` (the merged hygiene crate).
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -65,40 +64,75 @@ pub fn join_tokens_with_spaces(token_stream: &SyntaxNode) -> String {
 mod expander;
 
 #[derive(Clone, Debug)]
+/// MacroKind.
 pub enum MacroKind {
-    Declarative { name: Name },
-    Proc { name: Name },
-    Builtin { name: Name, handler: BuiltinMacro },
+/// Variant.
+    Declarative {
+        /// name field.
+        name: Name,
+    },
+/// Variant.
+    Proc {
+        /// name field.
+        name: Name,
+    },
+/// Variant.
+    Builtin {
+        /// name field.
+        name: Name,
+        /// handler field.
+        handler: BuiltinMacro,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// BuiltinMacro.
 pub enum BuiltinMacro {
+/// Variant.
     File,
+/// Variant.
     Line,
+/// Variant.
     Column,
+/// Variant.
     Include,
+/// Variant.
     IncludeStr,
+/// Variant.
     IncludeBytes,
+/// Variant.
     Env,
+/// Variant.
     OptionEnv,
+/// Variant.
     Concat,
+/// Variant.
     ConcatIdents,
+/// Variant.
     Stringify,
 }
 
 #[derive(Clone, Debug)]
+/// MacroDef.
 pub struct MacroDef {
+/// Struct.
     pub name: Name,
+/// Struct.
     pub kind: MacroKind,
+/// Struct.
     pub span: Span,
 }
 
 #[derive(Clone, Debug)]
+/// ExpansionResult.
 pub struct ExpansionResult {
+/// Struct.
     pub expanded: Option<SyntaxNode>,
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
 
+/// Expander.
 pub struct Expander<'a> {
     hygiene: &'a mut HygieneCtx,
     macros: Vec<MacroDef>,
@@ -116,6 +150,7 @@ pub struct Expander<'a> {
 }
 
 impl<'a> Expander<'a> {
+/// new.
     pub fn new(hygiene: &'a mut HygieneCtx) -> Self {
         Self {
             hygiene,
@@ -147,6 +182,7 @@ impl<'a> Expander<'a> {
         self.vfs = Some(vfs);
     }
 
+/// register_macro.
     pub fn register_macro(&mut self, def: MacroDef) {
         self.macros.push(def);
     }
@@ -160,6 +196,7 @@ impl<'a> Expander<'a> {
     }
 
     #[tracing::instrument(level = "debug", skip(self, args, call_site))]
+/// expand.
     pub fn expand(&mut self, name: Name, args: &SyntaxNode, call_site: Span) -> ExpansionResult {
         let (green_opt, diags) = expander::expand_macro_invocation(
             name,
@@ -181,6 +218,7 @@ impl<'a> Expander<'a> {
     }
 
     #[tracing::instrument(level = "info", skip(self, root))]
+/// expand_crate.
     pub fn expand_crate(&mut self, root: &SyntaxNode) -> (SyntaxNode, Vec<GlyimDiagnostic>) {
         let (green, diags) = expander::expand_crate(
             root,
