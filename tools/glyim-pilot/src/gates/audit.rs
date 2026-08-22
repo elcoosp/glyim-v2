@@ -4,6 +4,7 @@ use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
 use async_trait::async_trait;
 
+/// AuditGate.
 pub struct AuditGate;
 
 #[async_trait]

@@ -1,27 +1,43 @@
+/// names.
 pub mod names {
+/// OPS_READY_RECEIVED.
     pub const OPS_READY_RECEIVED: &str = "ops_ready_received";
+/// OPS_APPLIED.
     pub const OPS_APPLIED: &str = "ops_applied";
+/// TURN_PROCESSED.
     pub const TURN_PROCESSED: &str = "turn_processed";
+/// TURN_PANIC.
     pub const TURN_PANIC: &str = "turn_panic";
+/// ORCHESTRATOR_ERROR.
     pub const ORCHESTRATOR_ERROR: &str = "orchestrator_error";
+/// STREAM_COMPLETE.
     pub const STREAM_COMPLETE: &str = "stream_complete";
+/// EXTENSION_ERROR.
     pub const EXTENSION_ERROR: &str = "extension_error";
+/// COMMIT_DECISION.
     pub const COMMIT_DECISION: &str = "commit_decision";
+/// DONE_PIPELINE.
     pub const DONE_PIPELINE: &str = "done_pipeline";
+/// PR_CREATED.
     pub const PR_CREATED: &str = "pr_created";
 }
 
+/// Metrics.
 pub trait Metrics: Send + Sync {
+/// increment_counter.
     fn increment_counter(&self, name: &str, labels: &[(&str, &str)]);
+/// record_histogram.
     fn record_histogram(&self, name: &str, value: f64, labels: &[(&str, &str)]);
 }
 
+/// NoOpMetrics.
 pub struct NoOpMetrics;
 impl Metrics for NoOpMetrics {
     fn increment_counter(&self, _name: &str, _labels: &[(&str, &str)]) {}
     fn record_histogram(&self, _name: &str, _value: f64, _labels: &[(&str, &str)]) {}
 }
 
+/// LoggingMetrics.
 pub struct LoggingMetrics;
 impl Metrics for LoggingMetrics {
     fn increment_counter(&self, name: &str, labels: &[(&str, &str)]) {
@@ -108,6 +124,7 @@ pub mod prometheus_impl {
     }
 }
 
+/// production_metrics.
 pub fn production_metrics() -> Box<dyn Metrics> {
     #[cfg(feature = "prometheus")]
     {

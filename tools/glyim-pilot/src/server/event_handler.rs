@@ -2,6 +2,7 @@ use crate::orchestrator::OrchestratorAction;
 use crate::protocol::types::PROTOCOL_VERSION;
 use crate::server::messages::CliMessage;
 
+/// map_action_to_cli_message.
 pub fn map_action_to_cli_message(action: OrchestratorAction, turn: u32) -> Option<CliMessage> {
     match action {
         OrchestratorAction::Feedback {

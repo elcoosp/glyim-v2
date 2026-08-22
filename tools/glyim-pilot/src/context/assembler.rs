@@ -3,26 +3,35 @@ use crate::config::types::PilotConfig;
 use crate::error::PilotError;
 use std::sync::Arc;
 
+/// AssembledContext.
 pub struct AssembledContext {
+/// Struct.
     pub prompt: String,
+/// Struct.
     pub total_tokens: usize,
+/// Struct.
     pub tier1_tokens: usize,
+/// Struct.
     pub tier2_tokens: usize,
+/// Struct.
     pub tier3_tokens: usize,
 }
 
+/// ContextAssembler.
 pub struct ContextAssembler {
     project_root: std::path::PathBuf,
     config: Arc<PilotConfig>,
 }
 
 impl ContextAssembler {
+/// new.
     pub async fn new(project_root: std::path::PathBuf, config: Arc<PilotConfig>) -> Self {
         Self {
             project_root,
             config,
         }
     }
+/// assemble.
     pub async fn assemble(
         &self,
         _stream_id: &str,

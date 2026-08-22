@@ -1,18 +1,34 @@
+//! Crate root.
+#[allow(missing_docs)]
 pub mod applier;
+/// cli.
 pub mod cli;
+/// commit.
 pub mod commit;
+/// config.
 pub mod config;
+/// context.
 pub mod context;
+/// dispatch.
 pub mod dispatch;
 pub mod domain_types;
+/// error.
 pub mod error;
+/// gates.
 pub mod gates;
+/// git_ops.
 pub mod git_ops;
+/// metrics.
 pub mod metrics;
+/// orchestrator.
 pub mod orchestrator;
+/// process.
 pub mod process;
+/// protocol.
 pub mod protocol;
+/// server.
 pub mod server;
+/// session.
 pub mod session;
 
 pub use applier::{

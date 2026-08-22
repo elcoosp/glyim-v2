@@ -2,6 +2,7 @@ use crate::error::PilotError;
 use crate::process::run_timed_command;
 use std::path::{Path, PathBuf};
 
+/// create_worktree.
 pub async fn create_worktree(
     repo_root: &Path,
     worktree_base: &Path,
@@ -41,6 +42,7 @@ pub async fn create_worktree(
     Ok(worktree_dir)
 }
 
+/// commit_all.
 pub async fn commit_all(
     worktree_dir: &Path,
     stream_id: &str,
@@ -75,6 +77,7 @@ pub async fn commit_all(
     Ok(())
 }
 
+/// emergency_wip_commit.
 pub async fn emergency_wip_commit(
     worktree_dir: &Path,
     stream_id: &str,
@@ -89,6 +92,7 @@ pub async fn emergency_wip_commit(
     .await
 }
 
+/// push_branch.
 pub async fn push_branch(
     worktree_dir: &Path,
     stream_id: &str,
@@ -113,6 +117,7 @@ pub async fn push_branch(
     Ok(())
 }
 
+/// create_pr.
 pub async fn create_pr(
     worktree_dir: &Path,
     stream_id: &str,
@@ -151,6 +156,7 @@ pub async fn create_pr(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// status_porcelain.
 pub async fn status_porcelain(
     worktree_dir: &Path,
     timeout_secs: u64,
@@ -172,6 +178,7 @@ pub async fn status_porcelain(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// diff_main.
 pub async fn diff_main(
     worktree_dir: &Path,
     default_branch: &str,
@@ -194,6 +201,7 @@ pub async fn diff_main(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// log_oneline.
 pub async fn log_oneline(
     worktree_dir: &Path,
     default_branch: &str,
@@ -216,6 +224,7 @@ pub async fn log_oneline(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// diff_name_only.
 pub async fn diff_name_only(
     worktree_dir: &Path,
     default_branch: &str,
@@ -238,6 +247,7 @@ pub async fn diff_name_only(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// remove_worktree.
 pub async fn remove_worktree(
     repo_root: &Path,
     worktree_dir: &Path,
@@ -265,6 +275,7 @@ pub async fn remove_worktree(
     Ok(())
 }
 
+/// detect_default_branch.
 pub async fn detect_default_branch(repo_root: &Path, fallback: &str, timeout_secs: u64) -> String {
     match run_timed_command(
         "git",

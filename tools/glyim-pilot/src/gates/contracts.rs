@@ -4,6 +4,7 @@ use crate::gates::{Gate, GateResult};
 use crate::git_ops::diff_main;
 use async_trait::async_trait;
 
+/// ContractGate.
 pub struct ContractGate;
 
 #[async_trait]

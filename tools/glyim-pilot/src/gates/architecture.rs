@@ -7,11 +7,13 @@ use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
 use async_trait::async_trait;
 
+/// ArchitectureGate.
 pub struct ArchitectureGate {
     rules: Vec<DependencyRule>,
 }
 
 impl ArchitectureGate {
+/// new.
     pub fn new(rules: Vec<DependencyRule>) -> Self {
         Self {
             rules: if rules.is_empty() {
@@ -21,6 +23,7 @@ impl ArchitectureGate {
             },
         }
     }
+/// with_default_rules.
     pub fn with_default_rules() -> Self {
         Self::new(default_architecture_rules())
     }

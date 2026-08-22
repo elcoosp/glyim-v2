@@ -8,22 +8,33 @@ use crate::git_ops::{commit_all, emergency_wip_commit};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
+/// CommitDecision.
 pub enum CommitDecision {
+/// Variant.
     Committed {
+/// Struct.
         message: String,
+/// Struct.
         new_fix_round: u32,
     },
+/// Variant.
     GateFailed {
+/// Struct.
         new_fix_round: u32,
+/// Struct.
         feedback: String,
     },
+/// Variant.
     Escalated {
+/// Struct.
         new_fix_round: u32,
+/// Struct.
         feedback: String,
     },
 }
 
 impl CommitDecision {
+/// new_fix_round.
     pub fn new_fix_round(&self) -> u32 {
         match self {
             Self::Committed { new_fix_round, .. } => *new_fix_round,
@@ -34,18 +45,29 @@ impl CommitDecision {
 }
 
 #[derive(Debug, Clone)]
+/// CommitContext.
 pub struct CommitContext {
+/// Struct.
     pub worktree_dir: PathBuf,
+/// Struct.
     pub project_root: PathBuf,
+/// Struct.
     pub stream_id: String,
+/// Struct.
     pub commit_message: String,
+/// Struct.
     pub current_fix_round: u32,
+/// Struct.
     pub timeout_secs: u64,
+/// Struct.
     pub default_branch: String,
+/// Struct.
     pub branch_version: String,
+/// Struct.
     pub changed_files: Vec<String>,
 }
 
+/// CommitEngine.
 pub struct CommitEngine {
     gate_config: ResolvedCommitGates,
     max_fix_rounds: u32,
@@ -54,6 +76,7 @@ pub struct CommitEngine {
 }
 
 impl CommitEngine {
+/// new.
     pub fn new(
         gate_config: ResolvedCommitGates,
         max_fix_rounds: u32,
@@ -68,6 +91,7 @@ impl CommitEngine {
         }
     }
 
+/// evaluate_commit.
     pub async fn evaluate_commit(&self, ctx: &CommitContext) -> Result<CommitDecision, PilotError> {
         let gate_ctx = GateContext::new(
             ctx.worktree_dir.clone(),
@@ -174,6 +198,7 @@ impl CommitEngine {
         }
     }
 
+/// emergency_commit.
     pub async fn emergency_commit(&self, ctx: &CommitContext) -> Result<(), PilotError> {
         emergency_wip_commit(&ctx.worktree_dir, &ctx.stream_id, ctx.timeout_secs).await
     }

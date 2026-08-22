@@ -4,9 +4,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// ApplyLimits.
 pub struct ApplyLimits {
+/// Struct.
     pub max_file_size: usize,
+/// Struct.
     pub max_total_content: usize,
+/// Struct.
     pub max_ops_per_block: usize,
 }
 
@@ -21,6 +25,7 @@ impl Default for ApplyLimits {
 }
 
 impl ApplyLimits {
+/// strict.
     pub fn strict() -> Self {
         Self {
             max_file_size: 1024 * 1024,
@@ -31,12 +36,16 @@ impl ApplyLimits {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// BannedPattern.
 pub struct BannedPattern {
+/// Struct.
     pub pattern: String,
+/// Struct.
     pub description: String,
 }
 
 impl BannedPattern {
+/// new.
     pub fn new(pattern: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             pattern: pattern.into(),
@@ -45,6 +54,7 @@ impl BannedPattern {
     }
 }
 
+/// default_banned_patterns.
 pub fn default_banned_patterns() -> Vec<BannedPattern> {
     vec![
         BannedPattern::new("todo!()", "`todo!()` in non-test code"),
@@ -54,12 +64,17 @@ pub fn default_banned_patterns() -> Vec<BannedPattern> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// DependencyRule.
 pub struct DependencyRule {
+/// Struct.
     pub from_crate: String,
+/// Struct.
     pub forbidden_dep: String,
+/// Struct.
     pub reason: String,
 }
 
+/// default_architecture_rules.
 pub fn default_architecture_rules() -> Vec<DependencyRule> {
     vec![
         DependencyRule {

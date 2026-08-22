@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 static COVERAGE_PCT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+\.?\d*)%\s*coverage").unwrap());
 
+/// CoverageGate.
 pub struct CoverageGate {
+/// Struct.
     pub min_coverage: f64,
 }
 

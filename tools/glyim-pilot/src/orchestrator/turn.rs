@@ -14,52 +14,88 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
+/// OrchestratorAction.
 pub enum OrchestratorAction {
+/// Variant.
     Feedback {
+/// Struct.
         session_id: String,
+/// Struct.
         message: String,
+/// Struct.
         trace_id: Option<String>,
     },
+/// Variant.
     Continue {
+/// Struct.
         session_id: String,
+/// Struct.
         trace_id: Option<String>,
     },
+/// Variant.
     SelfReview {
+/// Struct.
         session_id: String,
+/// Struct.
         prompt: String,
+/// Struct.
         trace_id: Option<String>,
     },
+/// Variant.
     StreamComplete {
+/// Struct.
         session_id: String,
+/// Struct.
         pr_url: String,
+/// Struct.
         trace_id: Option<String>,
     },
+/// Variant.
     Escalate {
+/// Struct.
         session_id: String,
+/// Struct.
         reason: String,
+/// Struct.
         trace_id: Option<String>,
     },
+/// Variant.
     WaitForResponse {
+/// Struct.
         session_id: String,
+/// Struct.
         trace_id: Option<String>,
     },
 }
 
 #[derive(Clone)]
+/// TurnContext.
 pub struct TurnContext {
+/// Struct.
     pub ops_block: String,
+/// Struct.
     pub session_id: String,
+/// Struct.
     pub stream_id: String,
+/// Struct.
     pub worktree_dir: PathBuf,
+/// Struct.
     pub project_root: PathBuf,
+/// Struct.
     pub config: Arc<PilotConfig>,
+/// Struct.
     pub persistence: Arc<StatePersistence>,
+/// Struct.
     pub processing: Arc<Mutex<HashSet<String>>>,
+/// Struct.
     pub turn: u32,
+/// Struct.
     pub trace_id: String,
+/// Struct.
     pub metrics: Arc<dyn Metrics>,
 }
 
+/// process_turn_dispatch.
 pub async fn process_turn_dispatch(ctx: TurnContext) -> Result<OrchestratorAction, PilotError> {
     let span = tracing::info_span!("process_turn", stream_id = %ctx.stream_id, turn = ctx.turn, trace_id = %ctx.trace_id);
     let _enter = span.enter();

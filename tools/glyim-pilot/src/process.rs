@@ -2,17 +2,28 @@ use std::path::Path;
 use std::time::Duration;
 
 #[derive(Debug)]
+/// ProcessError.
 pub struct ProcessError {
+/// Struct.
     pub program: String,
+/// Struct.
     pub cwd: std::path::PathBuf,
+/// Struct.
     pub args: Vec<String>,
+/// Struct.
     pub kind: ProcessErrorKind,
 }
 
 #[derive(Debug)]
+/// ProcessErrorKind.
 pub enum ProcessErrorKind {
+#[allow(missing_docs)]
     ExecutionFailed(std::io::Error),
-    TimedOut { timeout_secs: u64 },
+/// Variant.
+    TimedOut {
+        /// timeout_secs field.
+        timeout_secs: u64,
+    },
 }
 
 impl std::fmt::Display for ProcessError {
@@ -36,6 +47,7 @@ impl std::fmt::Display for ProcessError {
     }
 }
 
+/// run_timed_command.
 pub async fn run_timed_command(
     program: &str,
     args: &[&str],

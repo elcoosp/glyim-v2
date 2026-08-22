@@ -4,6 +4,7 @@ use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
 use async_trait::async_trait;
 
+/// ClippyGate.
 pub struct ClippyGate;
 #[async_trait]
 impl Gate for ClippyGate {

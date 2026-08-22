@@ -1,6 +1,7 @@
 use dunce::canonicalize;
 use std::path::{Path, PathBuf};
 
+/// validate_path.
 pub fn validate_path(worktree_root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     let relative = Path::new(relative_path);
     if relative.is_absolute() {

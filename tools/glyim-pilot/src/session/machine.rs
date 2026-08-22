@@ -31,9 +31,11 @@ const VALID_TRANSITIONS: &[(StreamStatus, StreamStatus)] = &[
     (StreamStatus::Paused, StreamStatus::Seeding),
 ];
 
+/// TransitionValidator.
 pub struct TransitionValidator;
 
 impl TransitionValidator {
+/// validate.
     pub fn validate(session: &SessionState, new_status: StreamStatus) -> Result<(), PilotError> {
         if session.status == new_status {
             return Ok(());
@@ -50,6 +52,7 @@ impl TransitionValidator {
             )))
         }
     }
+/// transition.
     pub fn transition(
         session: &mut SessionState,
         new_status: StreamStatus,

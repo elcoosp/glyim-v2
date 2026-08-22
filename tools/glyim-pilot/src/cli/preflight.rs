@@ -1,6 +1,7 @@
 use crate::config::PilotConfig;
 use std::sync::Arc;
 
+/// run_preflight.
 pub async fn run_preflight(config: &Arc<PilotConfig>) {
     println!("Running preflight checks...");
     match tokio::process::Command::new("git")

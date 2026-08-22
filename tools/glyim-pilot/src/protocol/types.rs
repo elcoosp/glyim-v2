@@ -1,23 +1,40 @@
 use serde::{Deserialize, Serialize};
 
+/// PROTOCOL_VERSION.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", content = "data")]
+/// FileOp.
 pub enum FileOp {
     #[serde(rename = "write")]
-    Write { path: String, content: String },
-    #[serde(rename = "replace")]
-    Replace {
+/// Variant.
+    Write {
+        /// path field.
         path: String,
+        /// content field.
+        content: String,
+    },
+    #[serde(rename = "replace")]
+/// Variant.
+    Replace {
+/// Struct.
+        path: String,
+/// Struct.
         find: String,
+/// Struct.
         replace: String,
     },
     #[serde(rename = "delete")]
-    Delete { path: String },
+/// Variant.
+    Delete {
+        /// path field.
+        path: String,
+    },
 }
 
 impl FileOp {
+/// path.
     pub fn path(&self) -> &str {
         match self {
             FileOp::Write { path, .. } => path,
@@ -28,15 +45,22 @@ impl FileOp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// ParsedOps.
 pub struct ParsedOps {
+/// Struct.
     pub ops: Vec<FileOp>,
+/// Struct.
     pub commit_message: Option<String>,
+/// Struct.
     pub incomplete: bool,
+/// Struct.
     pub done: bool,
+/// Struct.
     pub approved: bool,
 }
 
 impl ParsedOps {
+/// empty.
     pub fn empty() -> Self {
         Self {
             ops: Vec::new(),
@@ -46,6 +70,7 @@ impl ParsedOps {
             approved: false,
         }
     }
+/// is_empty.
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
             && self.commit_message.is_none()

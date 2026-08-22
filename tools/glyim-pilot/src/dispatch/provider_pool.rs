@@ -3,6 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// ProviderPool.
 pub struct ProviderPool {
     providers: HashMap<String, ProviderState>,
 }
@@ -15,6 +16,7 @@ struct ProviderState {
 }
 
 impl ProviderPool {
+/// new.
     pub fn new(providers: &HashMap<String, ProviderConfig>) -> Self {
         let mut states = HashMap::new();
         for (id, config) in providers {
@@ -31,6 +33,7 @@ impl ProviderPool {
         }
         Self { providers: states }
     }
+/// allocate.
     pub fn allocate(&mut self, provider_id: &str) -> Result<(), String> {
         let state = self
             .providers
@@ -42,11 +45,13 @@ impl ProviderPool {
         state.active_slots += 1;
         Ok(())
     }
+/// free.
     pub fn free(&mut self, provider_id: &str) {
         if let Some(state) = self.providers.get_mut(provider_id) {
             state.active_slots = state.active_slots.saturating_sub(1);
         }
     }
+/// most_slots_available.
     pub fn most_slots_available(&self) -> Option<(String, usize)> {
         self.providers
             .iter()
@@ -57,10 +62,12 @@ impl ProviderPool {
 }
 
 impl ProviderPool {
+/// get_config.
     pub fn get_config(&self, provider_id: &str) -> Option<Arc<ProviderConfig>> {
         self.providers.get(provider_id).map(|s| s.config.clone())
     }
 
+/// cooldown.
     pub fn cooldown(&mut self, provider_id: &str, duration_secs: u64) {
         if let Some(state) = self.providers.get_mut(provider_id) {
             state.cooldown_until = Some(Utc::now() + Duration::seconds(duration_secs as i64));
@@ -69,10 +76,12 @@ impl ProviderPool {
 }
 
 impl ProviderPool {
+/// provider_ids.
     pub fn provider_ids(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
 
+/// available_slots.
     pub fn available_slots(&self, provider_id: &str) -> usize {
         self.providers
             .get(provider_id)

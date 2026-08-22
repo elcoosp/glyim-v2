@@ -6,11 +6,13 @@ use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
 use async_trait::async_trait;
 
+/// BannedPatternGate.
 pub struct BannedPatternGate {
     patterns: Vec<BannedPattern>,
 }
 
 impl BannedPatternGate {
+/// new.
     pub fn new(patterns: Vec<BannedPattern>) -> Self {
         Self {
             patterns: if patterns.is_empty() {
@@ -20,6 +22,7 @@ impl BannedPatternGate {
             },
         }
     }
+/// with_defaults.
     pub fn with_defaults() -> Self {
         Self::new(default_banned_patterns())
     }

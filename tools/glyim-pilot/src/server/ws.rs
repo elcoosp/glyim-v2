@@ -10,20 +10,30 @@ use tokio_tungstenite::tungstenite::Message;
 const EVENT_CHANNEL_CAPACITY: usize = 1024;
 
 #[derive(Debug, Clone)]
+/// ServerEvent.
 pub enum ServerEvent {
+/// Variant.
     Connected {
+/// Struct.
         addr: SocketAddr,
     },
+/// Variant.
     Message {
+/// Struct.
         session_id: Option<String>,
+/// Struct.
         trace_id: Option<String>,
+/// Struct.
         msg: ExtensionMessage,
     },
+/// Variant.
     Disconnected {
+/// Struct.
         addr: SocketAddr,
     },
 }
 
+/// WsServer.
 pub struct WsServer {
     addr: SocketAddr,
     event_tx: mpsc::Sender<ServerEvent>,
@@ -32,6 +42,7 @@ pub struct WsServer {
 }
 
 impl WsServer {
+/// new.
     pub fn new(host: &str, port: u16) -> Self {
         let addr: SocketAddr = format!("{host}:{port}")
             .parse()
@@ -45,12 +56,15 @@ impl WsServer {
             cli_msg_tx,
         }
     }
+/// take_event_rx.
     pub fn take_event_rx(&mut self) -> Option<mpsc::Receiver<ServerEvent>> {
         self.event_rx.take()
     }
+/// cli_msg_sender.
     pub fn cli_msg_sender(&self) -> broadcast::Sender<String> {
         self.cli_msg_tx.clone()
     }
+/// run.
     pub async fn run(&self) -> Result<(), PilotError> {
         let listener = TcpListener::bind(&self.addr).await?;
         tracing::info!("WebSocket server listening on ws://{}", self.addr);

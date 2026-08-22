@@ -13,14 +13,18 @@ use tokio::time;
 use walkdir::WalkDir;
 
 #[derive(Subcommand)]
+/// AgentCommands.
 pub enum AgentCommands {
     /// Run a single stream (e.g., S01)
     Run {
         #[arg(short, long)]
+/// Struct.
         stream: String,
         #[arg(short, long)]
+/// Struct.
         provider: Option<String>,
         #[arg(short, long, default_value_t = false)]
+/// Struct.
         wait: bool,
     },
     /// Run a wave (all streams in current wave)
@@ -32,10 +36,12 @@ pub enum AgentCommands {
     /// Manually mark a session's PR as merged (fallback for auto-detection)
     MarkMerged {
         #[arg(short, long)]
+/// Struct.
         stream: String,
     },
 }
 
+/// handle_agent_command.
 pub async fn handle_agent_command(
     cmd: AgentCommands,
     config: &Arc<PilotConfig>,

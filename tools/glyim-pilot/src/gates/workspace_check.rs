@@ -4,6 +4,7 @@ use crate::gates::types::GateContext;
 use crate::gates::{Gate, GateResult};
 use async_trait::async_trait;
 
+/// WorkspaceCheckGate.
 pub struct WorkspaceCheckGate;
 #[async_trait]
 impl Gate for WorkspaceCheckGate {

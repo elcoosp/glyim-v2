@@ -2,29 +2,45 @@ use crate::dispatch::provider_pool::ProviderPool;
 use crate::error::PilotError;
 
 #[derive(Debug, Clone)]
+/// RateLimitContext.
 pub struct RateLimitContext {
+/// Struct.
     pub stream_id: String,
+/// Struct.
     pub turn: u32,
+/// Struct.
     pub commits: u32,
+/// Struct.
     pub brief_summary: String,
+/// Struct.
     pub max_reassign_attempts: u32,
 }
 
 #[derive(Debug, Clone)]
+/// RateLimitAction.
 pub enum RateLimitAction {
+/// Variant.
     Failover {
+/// Struct.
         new_provider_id: String,
+/// Struct.
         failover_prompt: String,
     },
+/// Variant.
     RetryAfter {
+/// Struct.
         provider_id: String,
+/// Struct.
         delay_secs: u64,
     },
+/// Variant.
     Escalate {
+/// Struct.
         reason: String,
     },
 }
 
+/// handle_rate_limit.
 pub fn handle_rate_limit(
     pool: &mut ProviderPool,
     provider_id: &str,

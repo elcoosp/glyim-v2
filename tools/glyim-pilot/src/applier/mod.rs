@@ -1,3 +1,4 @@
+/// security.
 pub mod security;
 
 use std::fs;
@@ -9,30 +10,46 @@ use crate::protocol::types::FileOp;
 use security::validate_path;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// ApplyResult.
 pub struct ApplyResult {
+/// Struct.
     pub path: String,
+/// Struct.
     pub action: ApplyAction,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// ApplyAction.
 pub enum ApplyAction {
+/// Variant.
     Created,
+/// Variant.
     Modified,
+/// Variant.
     Deleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// PlannedChange.
 pub struct PlannedChange {
+/// Struct.
     pub path: String,
+/// Struct.
     pub action: PlannedAction,
+/// Struct.
     pub current_content_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// PlannedAction.
 pub enum PlannedAction {
+/// Variant.
     Create,
+/// Variant.
     Overwrite,
+/// Variant.
     Modify,
+/// Variant.
     Delete,
 }
 
@@ -41,6 +58,7 @@ struct Backup {
     original_content: Option<String>,
 }
 
+/// apply_ops.
 pub fn apply_ops(
     worktree_root: &Path,
     ops: &[FileOp],
@@ -72,10 +90,12 @@ pub fn apply_ops(
     Ok(results)
 }
 
+/// preview_ops.
 pub fn preview_ops(worktree_root: &Path, ops: &[FileOp]) -> Result<Vec<PlannedChange>, PilotError> {
     ops.iter().map(|op| preview_op(worktree_root, op)).collect()
 }
 
+/// apply_ops_async.
 pub async fn apply_ops_async(
     worktree_root: std::path::PathBuf,
     ops: Vec<FileOp>,
@@ -95,6 +115,7 @@ pub async fn apply_ops_async(
         })?
 }
 
+/// preview_ops_async.
 pub async fn preview_ops_async(
     worktree_root: std::path::PathBuf,
     ops: Vec<FileOp>,

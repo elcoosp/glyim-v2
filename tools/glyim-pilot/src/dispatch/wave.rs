@@ -3,9 +3,13 @@ use crate::error::PilotError;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, PartialEq)]
+/// DispatchStrategy.
 pub enum DispatchStrategy {
+/// Variant.
     MostSlotsFirst,
+/// Variant.
     RoundRobin,
+/// Variant.
     LeastLoaded,
 }
 
@@ -22,11 +26,15 @@ impl std::str::FromStr for DispatchStrategy {
 }
 
 #[derive(Debug, Clone)]
+/// StreamAssignment.
 pub struct StreamAssignment {
+/// Struct.
     pub stream_id: String,
+/// Struct.
     pub provider_id: String,
 }
 
+/// dispatch_wave.
 pub fn dispatch_wave(
     stream_ids: &[String],
     pool: &mut ProviderPool,

@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 static MUTATION_PCT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"kill rate (\d+(?:\.\d+)?)%").unwrap());
 
+/// MutationGate.
 pub struct MutationGate {
+/// Struct.
     pub min_kill_rate: f64,
 }
 
