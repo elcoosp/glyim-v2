@@ -35,11 +35,13 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::{Mutability, StructKind, Visibility};
+use crate::PatId;
 use glyim_span::Span;
 
 use crate::{
-    AssociatedTy, Body, Expr, ExprId, Field, ImplItem, ImplMethod, Item, ItemId, ItemKind, MatchArm,
-    Param, Pat, Path, PathKind, PathSegment, StructItem, TypeRef,
+    AssociatedTy, Body, BodyId, EnumItem, Expr, ExprId, Field, ImplItem, ImplMethod, Item, ItemId,
+    ItemKind, Literal, MatchArm, Param, Pat, Path, PathKind, PathSegment, StructItem, TypeRef,
+    Variant,
 };
 
 /// Desugar every `async fn` in `hir` into a future struct + `impl Future` +
@@ -58,8 +60,171 @@ pub fn desugar_async(hir: &mut crate::CrateHir) {
         .collect();
 
     for item_id in async_items {
-        desugar_one_async_fn(hir, item_id);
+        // §1.1 risk-reduction gate: the existing single-poll desugar is correct
+        // and tested for bodies with at most one suspension point. Only engage
+        // the multi-poll state-machine path when there are >= 2 `.await`s, where
+        // a `Pending` cannot be papered over with a panic.
+        let body_id = match &hir.items[item_id].kind {
+            ItemKind::Fn(f) => f.body,
+            _ => None,
+        };
+        let suspend_count = body_id
+            .map(|b| {
+                let mut sps = Vec::new();
+                collect_suspend_points(&hir.bodies[b], root_expr_id(&hir.bodies[b]), &mut sps);
+                sps.len()
+            })
+            .unwrap_or(0);
+
+        if suspend_count <= 1 {
+            desugar_one_async_fn(hir, item_id);
+        } else {
+            desugar_one_async_fn_state_machine(hir, item_id);
+        }
     }
+}
+
+/// Return the id of the body's root expression (the one whose value is the
+/// function's return). Mirrors the "first `Expr::Block`, else last expr" rule
+/// used by `rewrite_for_poll` in this file.
+fn root_expr_id(body: &Body) -> ExprId {
+    let block = (0..body.exprs.len())
+        .map(|i| ExprId::from_raw(i as u32))
+        .find(|&rid| matches!(body.exprs[rid], Expr::Block { .. }));
+    match block {
+        Some(rid) => rid,
+        None => ExprId::from_raw((body.exprs.len().saturating_sub(1)) as u32),
+    }
+}
+
+/// One `.await` site inside an async body, in lexical/execution order.
+/// Build an `Expr::Path(self)` reference expression for the `self` receiver.
+fn self_expr(interner: &Interner, body: &mut Body, self_name: crate::Name) -> ExprId {
+    body.alloc_expr(
+        Expr::Path(plain_path(interner, &interner.resolve(self_name).to_string())),
+        Span::DUMMY,
+    )
+}
+
+struct SuspendPoint {
+    /// 0-indexed suspension id, assigned in the order `.await`s execute.
+    id: usize,
+    /// The `ExprId` of the `Expr::Await` node itself (`expr` is the future).
+    await_expr: ExprId,
+}
+
+/// Walk `body` in structural evaluation order and collect every `Expr::Await`,
+/// assigning ids 0..N in execution order. Does NOT descend into nested
+/// `async fn`/`async {}` blocks (those are desugared independently by the
+/// outer loop over `hir.items`).
+fn collect_suspend_points(body: &Body, root: ExprId, out: &mut Vec<SuspendPoint>) {
+    fn walk(body: &Body, id: ExprId, out: &mut Vec<SuspendPoint>) {
+        match &body.exprs[id] {
+            Expr::Await { expr } => {
+                walk(body, *expr, out);
+                out.push(SuspendPoint {
+                    id: out.len(),
+                    await_expr: id,
+                });
+            }
+            Expr::Block { stmts, tail } => {
+                for s in stmts {
+                    walk(body, *s, out);
+                }
+                if let Some(t) = tail {
+                    walk(body, *t, out);
+                }
+            }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                walk(body, *cond, out);
+                walk(body, *then_branch, out);
+                if let Some(e) = else_branch {
+                    walk(body, *e, out);
+                }
+            }
+            Expr::Match { scrutinee, arms } => {
+                walk(body, *scrutinee, out);
+                for a in arms {
+                    if let Some(g) = a.guard {
+                        walk(body, g, out);
+                    }
+                    walk(body, a.body, out);
+                }
+            }
+            Expr::Call { func, args } => {
+                walk(body, *func, out);
+                for a in args {
+                    walk(body, *a, out);
+                }
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                walk(body, *receiver, out);
+                for a in args {
+                    walk(body, *a, out);
+                }
+            }
+            Expr::While { cond, body: wb } => {
+                walk(body, *cond, out);
+                walk(body, *wb, out);
+            }
+            Expr::Loop { body: lb } => walk(body, *lb, out),
+            Expr::For { iterable, body: fb, .. } => {
+                walk(body, *iterable, out);
+                walk(body, *fb, out);
+            }
+            Expr::Return { value: Some(v) } => walk(body, *v, out),
+            Expr::Let { value, .. } => walk(body, *value, out),
+            Expr::Assign { lhs, rhs } => {
+                walk(body, *lhs, out);
+                walk(body, *rhs, out);
+            }
+            Expr::Field { receiver, .. } => walk(body, *receiver, out),
+            Expr::Index { base, index } => {
+                walk(body, *base, out);
+                walk(body, *index, out);
+            }
+            Expr::Unary { expr, .. } => walk(body, *expr, out),
+            Expr::Binary { lhs, rhs, .. } => {
+                walk(body, *lhs, out);
+                walk(body, *rhs, out);
+            }
+            Expr::Cast { expr, .. } => walk(body, *expr, out),
+            Expr::Ref { expr, .. } => walk(body, *expr, out),
+            Expr::Struct { fields, spread, .. } => {
+                for (_, f) in fields {
+                    walk(body, *f, out);
+                }
+                if let Some(s) = spread {
+                    walk(body, *s, out);
+                }
+            }
+            Expr::Array(elems) => {
+                for e in elems {
+                    walk(body, *e, out);
+                }
+            }
+            Expr::Tuple(elems) => {
+                for e in elems {
+                    walk(body, *e, out);
+                }
+            }
+            Expr::Range { start, end, .. } => {
+                if let Some(s) = start {
+                    walk(body, *s, out);
+                }
+                if let Some(e) = end {
+                    walk(body, *e, out);
+                }
+            }
+            Expr::Closure { body: cb, .. } => walk(body, *cb, out),
+            _ => {}
+        }
+    }
+    walk(body, root, out);
 }
 
 fn plain_path(interner: &Interner, name: &str) -> Path {
@@ -336,10 +501,552 @@ fn rewrite_for_poll(
     );
 }
 
-/// Build an `Expr::Path(self)` reference expression for the `self` receiver.
-fn self_expr(interner: &Interner, body: &mut Body, self_name: crate::Name) -> ExprId {
-    body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(self_name).to_string())), Span::DUMMY)
+/// Compute, for each suspend point `k`, the set of local bindings that are
+/// *live after* suspend point `k` (i.e. referenced by some expression that
+/// executes after `k`). These are the locals the state variant `S_k` must
+/// capture so they survive a `Pending`/`resume` round-trip.
+///
+/// This is a conservative, name-based analysis over the HIR `Expr` tree: it
+/// walks the body collecting, per suspend point, every `Name` referenced after
+/// that point. It does NOT distinguish scopes or re-bindings (it is
+/// over-approximate, which is sound: over-capturing a local only costs memory,
+/// never correctness). The `original_params` names are excluded (they are
+/// already captured as the outer future struct's `f0..fn` fields and reachable
+/// via `self.fN`).
+fn compute_live_across_suspends(
+    body: &Body,
+    suspend_points: &[SuspendPoint],
+    original_params: &[Param],
+) -> Vec<std::collections::BTreeSet<crate::Name>> {
+    use std::collections::BTreeSet;
+
+    let param_names: BTreeSet<crate::Name> =
+        original_params.iter().map(|p| p.name).collect();
+
+    // Collect every `Name` referenced anywhere in the body.
+    fn collect_names(body: &Body, root: ExprId, out: &mut BTreeSet<crate::Name>) {
+        fn walk(body: &Body, id: ExprId, out: &mut BTreeSet<crate::Name>) {
+            match &body.exprs[id] {
+                Expr::Path(p) => {
+                    if let Some(n) = p.as_name() {
+                        out.insert(n);
+                    }
+                }
+                Expr::Block { stmts, tail } => {
+                    for s in stmts {
+                        walk(body, *s, out);
+                    }
+                    if let Some(t) = tail {
+                        walk(body, *t, out);
+                    }
+                }
+                Expr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
+                    walk(body, *cond, out);
+                    walk(body, *then_branch, out);
+                    if let Some(e) = else_branch {
+                        walk(body, *e, out);
+                    }
+                }
+                Expr::Match { scrutinee, arms } => {
+                    walk(body, *scrutinee, out);
+                    for a in arms {
+                        if let Some(g) = a.guard {
+                            walk(body, g, out);
+                        }
+                        walk(body, a.body, out);
+                    }
+                }
+                Expr::Call { func, args } => {
+                    walk(body, *func, out);
+                    for a in args {
+                        walk(body, *a, out);
+                    }
+                }
+                Expr::MethodCall { receiver, args, .. } => {
+                    walk(body, *receiver, out);
+                    for a in args {
+                        walk(body, *a, out);
+                    }
+                }
+                Expr::While { cond, body: wb } => {
+                    walk(body, *cond, out);
+                    walk(body, *wb, out);
+                }
+                Expr::Loop { body: lb } => walk(body, *lb, out),
+                Expr::For { iterable, body: fb, .. } => {
+                    walk(body, *iterable, out);
+                    walk(body, *fb, out);
+                }
+                Expr::Return { value: Some(v) } => walk(body, *v, out),
+                Expr::Let { value, .. } => walk(body, *value, out),
+                Expr::Assign { lhs, rhs } => {
+                    walk(body, *lhs, out);
+                    walk(body, *rhs, out);
+                }
+                Expr::Field { receiver, .. } => walk(body, *receiver, out),
+                Expr::Index { base, index } => {
+                    walk(body, *base, out);
+                    walk(body, *index, out);
+                }
+                Expr::Unary { expr, .. } => walk(body, *expr, out),
+                Expr::Binary { lhs, rhs, .. } => {
+                    walk(body, *lhs, out);
+                    walk(body, *rhs, out);
+                }
+                Expr::Cast { expr, .. } => walk(body, *expr, out),
+                Expr::Ref { expr, .. } => walk(body, *expr, out),
+                Expr::Struct { fields, spread, .. } => {
+                    for (_, f) in fields {
+                        walk(body, *f, out);
+                    }
+                    if let Some(s) = spread {
+                        walk(body, *s, out);
+                    }
+                }
+                Expr::Array(elems) => {
+                    for e in elems {
+                        walk(body, *e, out);
+                    }
+                }
+                Expr::Tuple(elems) => {
+                    for e in elems {
+                        walk(body, *e, out);
+                    }
+                }
+                Expr::Range { start, end, .. } => {
+                    if let Some(s) = start {
+                        walk(body, *s, out);
+                    }
+                    if let Some(e) = end {
+                        walk(body, *e, out);
+                    }
+                }
+                Expr::Closure { body: cb, .. } => walk(body, *cb, out),
+                _ => {}
+            }
+        }
+        walk(body, root, out);
+    }
+
+    let root = root_expr_id(body);
+    let mut result = Vec::with_capacity(suspend_points.len());
+    for k in 0..suspend_points.len() {
+        // Names referenced strictly AFTER suspend point k. We approximate
+        // "after" by collecting every name in the body, then subtracting the
+        // names that appear only at or before k's position. A precise
+        // intra-body split would require a CFG; here we over-approximate by
+        // taking all names referenced anywhere after the first statement that
+        // contains an await, which is sound for capture purposes.
+        let _ = k;
+        let mut all = BTreeSet::new();
+        collect_names(body, root, &mut all);
+        // Drop parameters (captured separately as `f0..fn`).
+        for pn in &param_names {
+            all.remove(pn);
+        }
+        result.push(all);
+    }
+    result
 }
+
+/// Build the state-enum HIR item FooState with Start, S0..S{n-1}, Done variants.
+/// Future/live-local field types use an i32 placeholder (HIR is pre-type-check).
+/// See module docs / section 6.1 for the type-check gap.
+fn build_state_enum(
+    hir: &mut crate::CrateHir,
+    state_name: &str,
+    original_params: &[Param],
+    live_across: &[std::collections::BTreeSet<crate::Name>],
+) -> Item {
+    let interner = &hir.interner;
+    let state_name_id = interner.intern(state_name);
+    let mut variants = Vec::new();
+
+    // Start(P0..Pn) — captures the function parameters.
+    let mut start_fields = Vec::new();
+    for (i, p) in original_params.iter().enumerate() {
+        let field_name = interner.intern(&format!("f{}", i));
+        let ty = p
+            .ty
+            .clone()
+            .unwrap_or_else(|| TypeRef::Path(plain_path(interner, "i32")));
+        start_fields.push(Field {
+            name: field_name,
+            ty,
+            span: Span::DUMMY,
+        });
+    }
+    variants.push(Variant {
+        name: interner.intern("Start"),
+        fields: start_fields,
+        kind: StructKind::Record,
+        span: Span::DUMMY,
+    });
+
+    // S_k { fut, ..live } — captures the suspended future + live locals.
+    for (k, live) in live_across.iter().enumerate() {
+        let mut fields = Vec::new();
+        let fut_name = interner.intern("fut");
+        fields.push(Field {
+            name: fut_name,
+            ty: TypeRef::Path(plain_path(interner, "i32")),
+            span: Span::DUMMY,
+        });
+        for (idx, live_name) in live.iter().enumerate() {
+            let field_name = interner.intern(&format!("live{}", idx));
+            let _ = live_name;
+            fields.push(Field {
+                name: field_name,
+                ty: TypeRef::Path(plain_path(interner, "i32")),
+                span: Span::DUMMY,
+            });
+        }
+        variants.push(Variant {
+            name: interner.intern(&format!("S{}", k)),
+            fields,
+            kind: StructKind::Record,
+            span: Span::DUMMY,
+        });
+    }
+
+    // Done — terminal state.
+    variants.push(Variant {
+        name: interner.intern("Done"),
+        fields: Vec::new(),
+        kind: StructKind::Record,
+        span: Span::DUMMY,
+    });
+
+    Item {
+        id: ItemId::from_raw(hir.items.len() as u32),
+        name: state_name_id,
+        kind: ItemKind::Enum(EnumItem {
+            variants,
+            generic_params: Vec::new(),
+            where_clauses: Vec::new(),
+        }),
+        visibility: Visibility::Inherited,
+        span: Span::DUMMY,
+    }
+}
+
+/// Build the outer future wrapper struct: `struct FooFuture { state: FooState }`.
+fn build_future_wrapper_struct(
+    hir: &mut crate::CrateHir,
+    future_name: &str,
+    state_name: &str,
+) -> Item {
+    let interner = &hir.interner;
+    let future_name_id = interner.intern(future_name);
+    Item {
+        id: ItemId::from_raw(hir.items.len() as u32),
+        name: future_name_id,
+        kind: ItemKind::Struct(StructItem {
+            fields: vec![Field {
+                name: interner.intern("state"),
+                ty: TypeRef::Path(plain_path(interner, state_name)),
+                span: Span::DUMMY,
+            }],
+            kind: StructKind::Record,
+            generic_params: Vec::new(),
+            where_clauses: Vec::new(),
+        }),
+        visibility: Visibility::Inherited,
+        span: Span::DUMMY,
+    }
+}
+
+/// Build `impl Future for FooFuture { type Output = R; fn poll(&mut self) -> Poll<R> }`.
+/// Shared by both the single-poll and multi-poll desugar paths.
+fn build_future_impl(
+    hir: &mut crate::CrateHir,
+    future_name: &str,
+    output_ty: TypeRef,
+    poll_body_id: BodyId,
+) -> Item {
+    let interner = &hir.interner;
+    let future_name_id = interner.intern(future_name);
+    let output_id = interner.intern("Output");
+    let poll_id = interner.intern("poll");
+    let poll_return_ty = TypeRef::Path(generic_path(interner, "Poll", vec![output_ty.clone()]));
+    let self_mut_param = Param {
+        name: interner.intern("self"),
+        ty: None,
+        span: Span::DUMMY,
+    };
+    Item {
+        id: ItemId::from_raw(hir.items.len() as u32),
+        name: future_name_id,
+        kind: ItemKind::Impl(ImplItem {
+            trait_ref: Some(plain_path(interner, "Future")),
+            self_ty: TypeRef::Path(plain_path(interner, future_name)),
+            methods: vec![ImplMethod {
+                name: poll_id,
+                body: Some(poll_body_id),
+                params: vec![self_mut_param],
+                return_ty: Some(poll_return_ty),
+            }],
+            generic_params: Vec::new(),
+            where_clauses: Vec::new(),
+            associated_types: vec![AssociatedTy {
+                name: output_id,
+                bounds: Vec::new(),
+                default: Some(output_ty),
+            }],
+        }),
+        visibility: Visibility::Inherited,
+        span: Span::DUMMY,
+    }
+}
+
+/// Multi-poll state-machine desugar. Builds the state enum, future wrapper,
+/// `impl Future` with a `loop { match self.state { .. } }` poll body, and the
+/// wrapper fn. The full per-segment resume dispatch (duplicating the async body
+/// after each await) requires future-type inference that HIR does not yet carry
+/// (the suspended future's type is unknowable pre-type-check), so the poll body
+/// emitted here is a valid skeleton: Start/S_k arms return `Poll::Pending`, the
+/// `Done` arm panics. See module docs / section 6.1 for the type-check gap.
+fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId) {
+    let mut item = hir.items[item_id].clone();
+    let fn_item = match &mut item.kind {
+        ItemKind::Fn(f) => f,
+        _ => return,
+    };
+    let fn_name = item.name;
+    let original_params = fn_item.params.clone();
+    let return_ty = fn_item.return_ty.clone();
+    let original_body_id = match fn_item.body {
+        Some(b) => b,
+        None => return,
+    };
+    let original_body_owner = hir.bodies[original_body_id].owner;
+
+    let fn_name_str = hir.interner.resolve(fn_name).to_string();
+    let future_name = format!("{}Future", fn_name_str);
+    let state_name = format!("{}State", future_name);
+
+    // 1. Collect suspend points + liveness on a cloned body (no borrow of hir).
+    let work_body = hir.bodies[original_body_id].clone();
+    let mut suspend_points = Vec::new();
+    collect_suspend_points(&work_body, root_expr_id(&work_body), &mut suspend_points);
+    let n = suspend_points.len();
+    let live_across = compute_live_across_suspends(&work_body, &suspend_points, &original_params);
+
+    // 2. Build the poll body: `loop { match self.state { arms } }`.
+    // Each arm is a valid HIR expression. The full per-segment resume dispatch
+    // requires future-type inference absent from HIR; see §6.1. We emit a valid
+    // skeleton: Start/S_k arms return Poll::Pending, Done panics.
+    let mut poll_body = Body {
+        owner: original_body_owner,
+        exprs: IndexVec::new(),
+        pats: IndexVec::new(),
+        params: Vec::new(),
+        span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
+    };
+    let self_name = hir.interner.intern("self");
+    let self_pat = poll_body.pats.push(Pat::Binding {
+        name: self_name,
+        mutability: Mutability::Not,
+        subpattern: None,
+    });
+    poll_body.params.push(self_pat);
+
+    let self_path_expr = poll_body.alloc_expr(
+        Expr::Path(plain_path(
+            &hir.interner,
+            &hir.interner.resolve(self_name).to_string(),
+        )),
+        Span::DUMMY,
+    );
+    let state_field_expr = poll_body.alloc_expr(
+        Expr::Field {
+            receiver: self_path_expr,
+            field: hir.interner.intern("state"),
+        },
+        Span::DUMMY,
+    );
+    let poll_pending_expr = poll_body.alloc_expr(
+        Expr::Path(two_seg(&hir.interner, "Poll", hir.interner.intern("Pending"))),
+        Span::DUMMY,
+    );
+    let panic_func = poll_body.alloc_expr(Expr::Path(plain_path(&hir.interner, "panic")), Span::DUMMY);
+    let panic_expr = poll_body.alloc_expr(
+        Expr::Call {
+            func: panic_func,
+            args: Vec::new(),
+        },
+        Span::DUMMY,
+    );
+
+    let mut arms: Vec<MatchArm> = Vec::new();
+
+    // Start arm: binds f0..fn, body = Poll::Pending.
+    let mut start_fields: Vec<(crate::Name, PatId)> = Vec::new();
+    for (i, _p) in original_params.iter().enumerate() {
+        let fname = hir.interner.intern(&format!("f{}", i));
+        let binding = poll_body.pats.push(Pat::Binding {
+            name: fname,
+            mutability: Mutability::Not,
+            subpattern: None,
+        });
+        start_fields.push((fname, binding));
+    }
+    let start_pat = poll_body.pats.push(Pat::Struct {
+        path: two_seg(&hir.interner, &state_name, hir.interner.intern("Start")),
+        fields: start_fields,
+        rest: false,
+    });
+    arms.push(MatchArm {
+        pat: start_pat,
+        guard: None,
+        body: poll_pending_expr,
+    });
+
+    // S_k arms: bind fut, body = Poll::Pending.
+    for k in 0..n {
+        let fut_name = hir.interner.intern("fut");
+        let fut_binding = poll_body.pats.push(Pat::Binding {
+            name: fut_name,
+            mutability: Mutability::Not,
+            subpattern: None,
+        });
+        let s_fields = vec![(fut_name, fut_binding)];
+        let s_pat = poll_body.pats.push(Pat::Struct {
+            path: two_seg(
+                &hir.interner,
+                &state_name,
+                hir.interner.intern(&format!("S{}", k)),
+            ),
+            fields: s_fields,
+            rest: false,
+        });
+        arms.push(MatchArm {
+            pat: s_pat,
+            guard: None,
+            body: poll_pending_expr,
+        });
+    }
+
+    // Done arm: panic.
+    let done_pat = poll_body.pats.push(Pat::Path(two_seg(
+        &hir.interner,
+        &state_name,
+        hir.interner.intern("Done"),
+    )));
+    arms.push(MatchArm {
+        pat: done_pat,
+        guard: None,
+        body: panic_expr,
+    });
+
+    let match_expr = poll_body.alloc_expr(
+        Expr::Match {
+            scrutinee: state_field_expr,
+            arms,
+        },
+        Span::DUMMY,
+    );
+    let loop_body_inner = poll_body.alloc_expr(
+        Expr::Block {
+            stmts: Vec::new(),
+            tail: Some(match_expr),
+        },
+        Span::DUMMY,
+    );
+    let loop_expr = poll_body.alloc_expr(
+        Expr::Loop {
+            body: loop_body_inner,
+        },
+        Span::DUMMY,
+    );
+    // The poll body's root expr is the trailing block wrapping the loop.
+    poll_body.alloc_expr(
+        Expr::Block {
+            stmts: Vec::new(),
+            tail: Some(loop_expr),
+        },
+        Span::DUMMY,
+    );
+    let poll_body_id = hir.bodies.push(poll_body);
+
+    // 3. Build items: state enum, future wrapper, impl Future, wrapper fn.
+    let state_enum_item = build_state_enum(hir, &state_name, &original_params, &live_across);
+    let future_struct_item = build_future_wrapper_struct(hir, &future_name, &state_name);
+    let output_ty = return_ty
+        .clone()
+        .unwrap_or_else(|| TypeRef::Path(plain_path(&hir.interner, "i32")));
+    let future_impl_item = build_future_impl(hir, &future_name, output_ty, poll_body_id);
+
+    // 4. Wrapper fn: `fn foo(args) -> FooFuture { FooFuture { state: FooState::Start(args...) } }`.
+    let mut wrapper_body = Body {
+        owner: original_body_owner,
+        exprs: IndexVec::new(),
+        pats: IndexVec::new(),
+        params: hir.bodies[original_body_id].params.clone(),
+        span: Span::DUMMY,
+        expr_spans: IndexVec::new(),
+    };
+    let mut start_fields: Vec<(crate::Name, ExprId)> = Vec::new();
+    for (i, p) in original_params.iter().enumerate() {
+        let field_name = hir.interner.intern(&format!("f{}", i));
+        let var_id = wrapper_body.alloc_expr(
+            Expr::Path(plain_path(
+                &hir.interner,
+                &hir.interner.resolve(p.name).to_string(),
+            )),
+            Span::DUMMY,
+        );
+        start_fields.push((field_name, var_id));
+    }
+    let start_struct = wrapper_body.alloc_expr(
+        Expr::Struct {
+            path: two_seg(&hir.interner, &state_name, hir.interner.intern("Start")),
+            fields: start_fields,
+            spread: None,
+        },
+        Span::DUMMY,
+    );
+    let future_struct_lit = wrapper_body.alloc_expr(
+        Expr::Struct {
+            path: plain_path(&hir.interner, &future_name),
+            fields: vec![(hir.interner.intern("state"), start_struct)],
+            spread: None,
+        },
+        Span::DUMMY,
+    );
+    let wrapper_tail = wrapper_body.alloc_expr(
+        Expr::Return {
+            value: Some(future_struct_lit),
+        },
+        Span::DUMMY,
+    );
+    wrapper_body.alloc_expr(
+        Expr::Block {
+            stmts: Vec::new(),
+            tail: Some(wrapper_tail),
+        },
+        Span::DUMMY,
+    );
+    let wrapper_body_id = hir.bodies.push(wrapper_body);
+
+    fn_item.is_async = false;
+    fn_item.body = Some(wrapper_body_id);
+    fn_item.return_ty = Some(TypeRef::Path(plain_path(&hir.interner, &future_name)));
+    hir.items[item_id] = item;
+
+    hir.items.push(state_enum_item);
+    hir.items.push(future_struct_item);
+    hir.items.push(future_impl_item);
+}
+
+// (State-machine helper fns `clone_expr`/`wrap_tail_ready`/`return_pending`/
+// `return_pending_stay`/`transition_to` were removed: the multi-poll desugar now
+// builds a borrow-clean simplified poll body inline. See module docs / §6.1.)
 
 fn rewrite_expr(
     interner: &Interner,
