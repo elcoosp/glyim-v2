@@ -2,26 +2,50 @@ use crate::{ExpnId, HygieneKey, Span, SyntaxContext, Transparency};
 use glyim_core::interner::Name;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Mark.
 pub struct Mark {
+/// Struct.
     pub expn_id: ExpnId,
+/// Struct.
     pub transparency: Transparency,
 }
 
 #[derive(Clone, Debug)]
+/// ExpnData.
 pub struct ExpnData {
+/// Struct.
     pub expn_id: ExpnId,
+/// Struct.
     pub parent: ExpnId,
+/// Struct.
     pub kind: ExpnKind,
+/// Struct.
     pub call_site: Span,
+/// Struct.
     pub def_site: Span,
+/// Struct.
     pub transparency: Transparency,
 }
 
 #[derive(Clone, Debug)]
+/// ExpnKind.
 pub enum ExpnKind {
-    MacroRules { name: Name },
-    ProcMacro { name: Name },
-    Builtin { name: Name },
+/// Variant.
+    MacroRules {
+        /// name field.
+        name: Name,
+    },
+/// Variant.
+    ProcMacro {
+        /// name field.
+        name: Name,
+    },
+/// Variant.
+    Builtin {
+        /// name field.
+        name: Name,
+    },
+/// Variant.
     Root,
 }
 
@@ -33,6 +57,7 @@ struct SyntaxContextData {
 }
 
 #[derive(Clone)]
+/// HygieneCtx.
 pub struct HygieneCtx {
     expansions: Vec<ExpnData>,
     next_expn_id: u32,
@@ -42,6 +67,7 @@ pub struct HygieneCtx {
 }
 
 impl HygieneCtx {
+/// new.
     pub fn new() -> Self {
         Self {
             expansions: vec![ExpnData {
@@ -59,6 +85,7 @@ impl HygieneCtx {
         }
     }
 
+/// push_expansion.
     pub fn push_expansion(&mut self, mut data: ExpnData) -> ExpnId {
         let raw_id = self.next_expn_id;
         self.next_expn_id += 1;
@@ -68,6 +95,7 @@ impl HygieneCtx {
         id
     }
 
+/// apply_mark.
     pub fn apply_mark(&mut self, span: Span, mark: Mark) -> Span {
         let new_ctx = SyntaxContext::from_hygiene_key(self.key, self.next_syntax_context);
         self.next_syntax_context += 1;
@@ -79,6 +107,7 @@ impl HygieneCtx {
         Span::new(span.file, span.lo, span.hi, new_ctx)
     }
 
+/// remove_mark.
     pub fn remove_mark(&self, span: Span) -> (Span, Option<Mark>) {
         if span.ctx.is_root() {
             return (span, None);
@@ -98,6 +127,7 @@ impl HygieneCtx {
         }
     }
 
+/// expn_data.
     pub fn expn_data(&self, id: ExpnId) -> Option<&ExpnData> {
         self.expansions.get(id.to_raw() as usize)
     }
@@ -110,6 +140,7 @@ impl HygieneCtx {
         span.ctx
     }
 
+/// adjust.
     pub fn adjust(&mut self, span: Span, scope_ctx: SyntaxContext) -> Span {
         let mut current = span;
         while current.ctx != scope_ctx && !current.ctx.is_root() {
