@@ -67,6 +67,7 @@ fn lower_to_ir(body: &Body, ctx: &glyim_type::TyCtx) -> String {
         false,
         HashMap::new(),
         None,
+        None,
     );
     assert!(result.is_ok(), "lower_body failed: {:?}", result.err());
     module.print_to_string().to_string()
