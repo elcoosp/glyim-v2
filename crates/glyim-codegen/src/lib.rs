@@ -123,12 +123,41 @@ impl LayoutProvider for GlyimLayoutProvider {
     }
 }
 
+/// Optimization level for the bytecode backend.
+///
+/// The default is `O0`, which emits exactly what the lowering produces (no
+/// transforms) so existing byte-exact tests remain stable. Levels `O1` and
+/// above additionally run the peephole pass (see [`BytecodeBackend::peephole`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptLevel {
+    /// No optimization: emit lowering output verbatim.
+    O0,
+    /// Peephole optimizations: constant folding and trivial dead-code removal.
+    O1,
+    /// Same passes as `O1` (higher levels reserved for future pipeline stages).
+    O2,
+    /// Same passes as `O1` (highest reserved level).
+    O3,
+}
+
+impl Default for OptLevel {
+    fn default() -> Self {
+        OptLevel::O0
+    }
+}
+
 /// BytecodeBackend.
 pub struct BytecodeBackend {
     string_table: RefCell<Vec<String>>,
     fn_table: RefCell<Vec<(FnDefId, Substitution)>>,
     layout_provider: Box<dyn LayoutProvider>,
     ty_ctx: Option<Arc<TyCtx>>,
+    /// Optimization level (default `O0`). Higher levels run the peephole pass.
+    opt_level: OptLevel,
+    /// Per emitted `OP_LOAD_CONST`, whether the pushed value is an integer
+    /// (Int/Uint/Bool/Char). Recorded in emission order so the peephole pass
+    /// can fold integer binary ops without mis-folding float/string constants.
+    const_is_int: RefCell<Vec<bool>>,
 }
 
 impl BytecodeBackend {
@@ -142,7 +171,15 @@ impl BytecodeBackend {
                 target: target.clone(),
             }),
             ty_ctx: Some(ctx),
+            opt_level: OptLevel::O0,
+            const_is_int: RefCell::new(Vec::new()),
         }
+    }
+
+/// with_opt_level.
+    pub fn with_opt_level(mut self, level: OptLevel) -> Self {
+        self.opt_level = level;
+        self
     }
 
 /// with_layout_provider.
@@ -424,6 +461,39 @@ pub(crate) const OP_DROP: u8 = 0x2C;
 pub(crate) const OP_REPEAT: u8 = 0x2D;
 pub(crate) const OP_TRAP: u8 = 0xFF;
 
+/// Fold two integer constants through an integer binary opcode, returning the
+/// wrapped result if the opcode is a foldable integer arithmetic/logic op.
+///
+/// Wrapping arithmetic matches the bytecode runtime's `i64` semantics, so the
+/// folded constant is exactly what a runtime `OP_BINOP` would have produced.
+/// Division by zero is not foldable (returns `None`) because the runtime traps
+/// on it rather than returning a wrapped value.
+fn fold_int_binop(op: u8, a: i64, b: i64) -> Option<i64> {
+    use std::ops::{BitAnd, BitOr, BitXor, Rem};
+    let r = match op {
+        OP_ADD => a.wrapping_add(b),
+        OP_SUB => a.wrapping_sub(b),
+        OP_MUL => a.wrapping_mul(b),
+        OP_DIV => a.checked_div(b)?,
+        OP_REM => a.rem(b),
+        OP_EQ => (a == b) as i64,
+        OP_NE => (a != b) as i64,
+        OP_LT => (a < b) as i64,
+        OP_GT => (a > b) as i64,
+        OP_LE => (a <= b) as i64,
+        OP_GE => (a >= b) as i64,
+        OP_AND => (a != 0 && b != 0) as i64,
+        OP_OR => (a != 0 || b != 0) as i64,
+        OP_BITAND => a.bitand(b),
+        OP_BITOR => a.bitor(b),
+        OP_BITXOR => a.bitxor(b),
+        OP_SHL => a.wrapping_shl(b as u32),
+        OP_SHR => a.wrapping_shr(b as u32),
+        _ => return None,
+    };
+    Some(r)
+}
+
 impl CodegenBackend for BytecodeBackend {
     fn name(&self) -> &'static str {
         "bytecode"
@@ -447,14 +517,235 @@ impl CodegenBackend for BytecodeBackend {
 
     fn generate_function(&self, body: &Arc<Body>) -> CompResult<Vec<u8>> {
         let mut bc = Vec::new();
+        // Reset the per-constant int-tracking record; it is rebuilt during this
+        // function's emission and consumed by the peephole pass below.
+        self.const_is_int.borrow_mut().clear();
         for block in body.basic_blocks.iter() {
             for stmt in &block.statements {
                 self.emit_statement(&mut bc, &stmt.kind, &body.locals)?;
             }
             self.emit_terminator(&mut bc, &block.terminator.kind, &body.locals)?;
         }
+        if self.opt_level != OptLevel::O0 {
+            self.peephole(&mut bc);
+        }
         Ok(bc)
     }
+}
+
+impl BytecodeBackend {
+    /// Run the peephole optimization pass over the emitted bytecode stream.
+    ///
+    /// Currently implements two always-semantics-preserving rules:
+    /// 1. **Integer constant folding**: `OP_LOAD_CONST a; OP_LOAD_CONST b; OP_BINOP`
+    ///    where `a`/`b` are integer-typed constants and `OP_BINOP` is one of the
+    ///    arithmetic/logic ops, is collapsed to `OP_LOAD_CONST (a OP b)`.
+    /// Run the peephole optimization pass over the emitted bytecode stream.
+    ///
+    /// Implemented on a width-aware decoded form (see [`decode_bytecode`]) so it
+    /// never misreads operand bytes as opcodes.
+    ///
+    /// Two always-semantics-preserving rules:
+    /// 1. **Integer constant folding**: `LOAD_CONST a; LOAD_CONST b; BINOP` where
+    ///    `a`/`b` are integer-typed constants is collapsed to `LOAD_CONST (a OP b)`.
+    /// 2. **Double-negation cancellation**: `OP_NEG; OP_NEG` is removed (identity
+    ///    for all numeric types).
+    ///
+    /// The `const_is_int` record (populated during emission) ensures float and
+    /// string constants are never folded, so this pass is type-safe.
+    fn peephole(&self, bc: &mut Vec<u8>) {
+        let mut instrs = decode_bytecode(bc);
+        let ints = self.const_is_int.borrow();
+        let mut int_iter = ints.iter().copied();
+        let mut out: Vec<Instr> = Vec::with_capacity(instrs.len());
+        let mut k = 0usize;
+        while k < instrs.len() {
+            let op = instrs[k].op;
+            if op == OP_LOAD_CONST {
+                let v = i64::from_le_bytes(instrs[k].operand[..8].try_into().unwrap());
+                let is_int = int_iter.next().unwrap_or(false);
+                // LOAD_CONST(int a) ; LOAD_CONST(int b) ; foldable BINOP
+                if is_int
+                    && k + 2 < instrs.len()
+                    && instrs[k + 1].op == OP_LOAD_CONST
+                    && int_iter.clone().next() == Some(true)
+                    && is_foldable_binop(instrs[k + 2].op)
+                {
+                    let v2 = i64::from_le_bytes(instrs[k + 1].operand[..8].try_into().unwrap());
+                    if let Some(folded) = fold_int_binop(instrs[k + 2].op, v, v2) {
+                        int_iter.next(); // consume the second const's int flag
+                        out.push(Instr {
+                            op: OP_LOAD_CONST,
+                            operand: folded.to_le_bytes().to_vec(),
+                        });
+                        k += 3;
+                        continue;
+                    }
+                }
+                out.push(instrs[k].clone());
+                k += 1;
+            } else if op == OP_NEG && k + 1 < instrs.len() && instrs[k + 1].op == OP_NEG {
+                // Double negation cancels (identity for all numeric types).
+                k += 2;
+            } else {
+                out.push(instrs[k].clone());
+                k += 1;
+            }
+        }
+        *bc = encode_bytecode(&out);
+    }
+}
+
+/// A single decoded bytecode instruction: an opcode plus its raw operand bytes.
+#[derive(Debug, Clone)]
+struct Instr {
+    op: u8,
+    operand: Vec<u8>,
+}
+
+/// Decode a raw bytecode stream into a sequence of [`Instr`], using the
+/// per-opcode operand-width table (including variable-length `CALL`/`SWITCH_INT`
+/// /`AGGREGATE` whose inner instructions are decoded recursively). This is the
+/// inverse of [`encode_bytecode`].
+fn decode_bytecode(bc: &[u8]) -> Vec<Instr> {
+    let mut instrs = Vec::new();
+    let mut i = 0usize;
+    while i < bc.len() {
+        let op = bc[i];
+        i += 1;
+        let (operand, consumed) = decode_operand(bc, i, op);
+        i += consumed;
+        instrs.push(Instr { op, operand });
+    }
+    instrs
+}
+
+/// Decode the operand bytes for `op` starting at `i`, returning the operand and
+/// the number of bytes consumed.
+fn decode_operand(bc: &[u8], i: usize, op: u8) -> (Vec<u8>, usize) {
+    let take = |n: usize| {
+        let end = (i + n).min(bc.len());
+        (bc[i..end].to_vec(), end - i)
+    };
+    match op {
+        OP_LOAD_CONST => take(8),
+        OP_LOAD_LOCAL | OP_STORE_LOCAL | OP_JUMP | OP_JUMP_IF | OP_LEN | OP_DISCRIMINANT => take(4),
+        OP_CAST => take(1),
+        OP_ASSERT => {
+            // 1-byte expected + 4-byte target.
+            let (a, c1) = take(1);
+            let (b, c2) = take(4);
+            let mut v = a;
+            v.extend(b);
+            (v, c1 + c2)
+        }
+        OP_AGGREGATE => {
+            // 4-byte count followed by that many inner instructions.
+            let (cnt_bytes, _) = take(4);
+            let mut v = cnt_bytes.clone();
+            let mut consumed = 4;
+            if cnt_bytes.len() == 4 {
+                let count = u32::from_le_bytes(cnt_bytes.try_into().unwrap()) as usize;
+                for _ in 0..count {
+                    if i + consumed >= bc.len() {
+                        break;
+                    }
+                    let inner = decode_bytecode(&bc[i + consumed..]);
+                    if inner.is_empty() {
+                        break;
+                    }
+                    let used = inner_encoded_len(&inner[0]);
+                    v.extend_from_slice(&bc[i + consumed..i + consumed + used]);
+                    consumed += used;
+                }
+            }
+            (v, consumed)
+        }
+        OP_CALL | OP_CALL_INDIRECT => {
+            // 4-byte argc, then argc inner instructions, then 4-byte dest + 4 target.
+            let (cnt_bytes, _) = take(4);
+            let mut v = cnt_bytes.clone();
+            let mut consumed = 4;
+            if cnt_bytes.len() == 4 {
+                let count = u32::from_le_bytes(cnt_bytes.try_into().unwrap()) as usize;
+                for _ in 0..count {
+                    if i + consumed >= bc.len() {
+                        break;
+                    }
+                    let inner = decode_bytecode(&bc[i + consumed..]);
+                    if inner.is_empty() {
+                        break;
+                    }
+                    let used = inner_encoded_len(&inner[0]);
+                    v.extend_from_slice(&bc[i + consumed..i + consumed + used]);
+                    consumed += used;
+                }
+                let (rest, c) = take(8); // dest local + target
+                v.extend(rest);
+                consumed += c;
+            }
+            (v, consumed)
+        }
+        OP_SWITCH_INT => {
+            // 4-byte count, then count*(8-byte value + 4-byte target), then 4 otherwise.
+            let (cnt_bytes, _) = take(4);
+            let mut v = cnt_bytes.clone();
+            let mut consumed = 4;
+            if cnt_bytes.len() == 4 {
+                let count = u32::from_le_bytes(cnt_bytes.try_into().unwrap()) as usize;
+                for _ in 0..count {
+                    let (pair, c) = take(12);
+                    v.extend(pair);
+                    consumed += c;
+                }
+                let (otherwise, c) = take(4);
+                v.extend(otherwise);
+                consumed += c;
+            }
+            (v, consumed)
+        }
+        _ => (Vec::new(), 0),
+    }
+}
+
+/// Encoded length of a single instruction (opcode + operand) so the variable
+/// length decoders can advance by exactly one inner instruction.
+fn inner_encoded_len(instr: &Instr) -> usize {
+    1 + instr.operand.len()
+}
+
+/// Encode a sequence of [`Instr`] back into a raw bytecode stream.
+fn encode_bytecode(instrs: &[Instr]) -> Vec<u8> {
+    let mut bc = Vec::new();
+    for instr in instrs {
+        bc.push(instr.op);
+        bc.extend_from_slice(&instr.operand);
+    }
+    bc
+}
+
+/// Whether an opcode is an integer binary op that can be constant-folded.
+fn is_foldable_binop(op: u8) -> bool {
+    matches!(
+        op,
+        OP_ADD | OP_SUB
+            | OP_MUL
+            | OP_DIV
+            | OP_REM
+            | OP_EQ
+            | OP_NE
+            | OP_LT
+            | OP_GT
+            | OP_LE
+            | OP_GE
+            | OP_AND
+            | OP_OR
+            | OP_BITAND
+            | OP_BITOR
+            | OP_BITXOR
+            | OP_SHL
+            | OP_SHR
+    )
 }
 
 impl BytecodeBackend {
@@ -600,22 +891,27 @@ impl BytecodeBackend {
                     MirConstKind::Int(v) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(*v as i64).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(true);
                     }
                     MirConstKind::Uint(v) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(*v as i64).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(true);
                     }
                     MirConstKind::Bool(b) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(if *b { 1i64 } else { 0i64 }).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(true);
                     }
                     MirConstKind::Char(c) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(*c as i64).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(true);
                     }
                     MirConstKind::FloatBits(b) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&b.to_le_bytes());
+                        self.const_is_int.borrow_mut().push(false);
                     }
                     MirConstKind::String(_name) => {
                         let str_content = self
@@ -627,15 +923,18 @@ impl BytecodeBackend {
                         let idx = self.intern_string(&str_content);
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(idx as i64).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(false);
                     }
                     MirConstKind::Fn(def_id, substs) => {
                         bc.push(OP_LOAD_CONST);
                         let idx = self.intern_fn(*def_id, *substs);
                         bc.extend_from_slice(&(idx as i64).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(false);
                     }
                     MirConstKind::ConstRef(def_id, _) => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&(def_id.to_raw() as i64).to_le_bytes());
+                        self.const_is_int.borrow_mut().push(false);
                     }
                     MirConstKind::Aggregate(elems) => {
                         // Emit each element constant in order; the bytecode
@@ -648,6 +947,7 @@ impl BytecodeBackend {
                     MirConstKind::Unit | MirConstKind::Error => {
                         bc.push(OP_LOAD_CONST);
                         bc.extend_from_slice(&0i64.to_le_bytes());
+                        self.const_is_int.borrow_mut().push(true);
                     }
                 }
                 Ok(())
