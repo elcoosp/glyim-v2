@@ -1,5 +1,4 @@
 //! Module graph and lightweight definition map.
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -35,13 +34,20 @@ use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
+#[allow(missing_docs)]
+#[allow(missing_docs)]
 glyim_core::define_idx!(ModuleId);
 
 #[derive(Clone, Debug)]
+/// CrateDefMap.
 pub struct CrateDefMap {
+/// Struct.
     pub root: ModuleId,
+/// Struct.
     pub modules: IndexVec<ModuleId, ModuleData>,
+/// Struct.
     pub krate: CrateId,
+/// Struct.
     pub interner: Interner,
     /// Reverse map from a variant's value-namespace `LocalDefId` to the
     /// enclosing enum's `LocalDefId` and the variant's index. Populated while
@@ -51,11 +57,17 @@ pub struct CrateDefMap {
 }
 
 #[derive(Clone, Debug)]
+/// ModuleData.
 pub struct ModuleData {
+/// Struct.
     pub parent: Option<ModuleId>,
+#[doc = "field"]
     pub children: Vec<(Name, ModuleId)>,
+/// Struct.
     pub scope: ItemScope,
+/// Struct.
     pub origin: ModuleOrigin,
+/// Struct.
     pub span: Span,
     /// Every module has a unique `LocalDefId` so it can be referred to by `use` paths
     pub def_id: LocalDefId,
@@ -64,26 +76,42 @@ pub struct ModuleData {
 }
 
 impl ModuleData {
+/// resolve.
     pub fn resolve(&self, name: Name) -> Option<(LocalDefId, Visibility)> {
         self.scope.resolve(name)
     }
 }
 
 #[derive(Clone, Debug)]
+/// ModuleOrigin.
 pub enum ModuleOrigin {
-    File { file_id: FileId },
-    Inline { span: Span },
+/// Variant.
+    File {
+        /// file_id field.
+        file_id: FileId,
+    },
+/// Variant.
+    Inline {
+        /// span field.
+        span: Span,
+    },
+/// Variant.
     CrateRoot,
 }
 
 #[derive(Clone, Debug, Default)]
+/// ItemScope.
 pub struct ItemScope {
+#[doc = "field"]
     pub types: IndexMap<Name, (LocalDefId, Visibility, Span)>,
+#[doc = "field"]
     pub values: IndexMap<Name, (LocalDefId, Visibility, Span)>,
+#[doc = "field"]
     pub macros: IndexMap<Name, (LocalDefId, Visibility, Span)>,
 }
 
 impl ItemScope {
+/// resolve.
     pub fn resolve(&self, name: Name) -> Option<(LocalDefId, Visibility)> {
         if let Some((id, vis, _)) = self.types.get(&name) {
             return Some((*id, vis.clone()));
@@ -94,6 +122,7 @@ impl ItemScope {
         None
     }
 
+/// declare.
     pub fn declare(
         &mut self,
         name: Name,
@@ -118,23 +147,33 @@ impl ItemScope {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Namespace.
 pub enum Namespace {
+/// Variant.
     Types,
+/// Variant.
     Values,
+/// Variant.
     Macros,
 }
 
 #[derive(Clone, Debug, Default)]
+/// PerNs.
 pub struct PerNs {
+#[doc = "field"]
     pub types: Option<(LocalDefId, Visibility)>,
+#[doc = "field"]
     pub values: Option<(LocalDefId, Visibility)>,
+#[doc = "field"]
     pub macros: Option<(LocalDefId, Visibility)>,
 }
 
 impl PerNs {
+/// is_none.
     pub fn is_none(&self) -> bool {
         self.types.is_none() && self.values.is_none() && self.macros.is_none()
     }
+/// from_types.
     pub fn from_types(id: LocalDefId, vis: Visibility) -> Self {
         Self {
             types: Some((id, vis)),
@@ -144,6 +183,7 @@ impl PerNs {
     }
 }
 
+/// Resolver.
 pub struct Resolver<'a> {
     modules: &'a IndexVec<ModuleId, ModuleData>,
     root: ModuleId,
@@ -151,6 +191,7 @@ pub struct Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
+/// new.
     pub fn new(
         modules: &'a IndexVec<ModuleId, ModuleData>,
         root: ModuleId,
@@ -163,6 +204,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
+/// resolve_path.
     pub fn resolve_path(&self, path: &Path) -> PerNs {
         let mut current_module = self.module;
         let start_idx = match path.kind {
@@ -212,10 +254,12 @@ impl<'a> Resolver<'a> {
         PerNs::default()
     }
 
+/// def_map.
     pub fn def_map(&self) -> &IndexVec<ModuleId, ModuleData> {
         self.modules
     }
 
+/// Module.
     pub fn module(&self) -> ModuleId {
         self.module
     }
@@ -372,6 +416,7 @@ fn extract_path_from_syntax(node: &SyntaxNode, interner: &Interner) -> Option<Pa
 }
 
 #[tracing::instrument(skip(root))]
+/// build_def_map.
 pub fn build_def_map(
     root: &SyntaxNode,
     krate: CrateId,
