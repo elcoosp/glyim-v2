@@ -3,7 +3,6 @@
 //! All mutable state consolidated into a single `RwLock<VfsInner>`.
 //! `add_file_from_disk()` returns `Result`; `add_file_content()`
 //! is pure registration. `file_content()` returns `Arc<str>`.
-#![allow(missing_docs)]
 
 use glyim_span::FileId;
 use parking_lot::RwLock;
@@ -23,11 +22,13 @@ struct VfsFile {
     content: Arc<str>,
 }
 
+/// Vfs.
 pub struct Vfs {
     inner: RwLock<VfsInner>,
 }
 
 impl Vfs {
+/// new.
     pub fn new() -> Self {
         Self {
             inner: RwLock::new(VfsInner {
@@ -39,12 +40,14 @@ impl Vfs {
     }
 
     #[tracing::instrument(skip(self))]
+/// add_file_from_disk.
     pub fn add_file_from_disk(&self, path: &Path) -> std::io::Result<FileId> {
         let content = std::fs::read_to_string(path)?;
         Ok(self.add_file_content(path, Arc::from(content)))
     }
 
     #[tracing::instrument(skip(self, content))]
+/// add_file_content.
     pub fn add_file_content(&self, path: &Path, content: Arc<str>) -> FileId {
         let mut inner = self.inner.write();
         if let Some(&id) = inner.path_to_id.get(path) {
@@ -63,6 +66,7 @@ impl Vfs {
         id
     }
 
+/// set_file_content.
     pub fn set_file_content(&self, file_id: FileId, content: Arc<str>) {
         let mut inner = self.inner.write();
         if let Some(file) = inner.files.get_mut(file_id.index()) {
@@ -70,6 +74,7 @@ impl Vfs {
         }
     }
 
+/// file_content.
     pub fn file_content(&self, file_id: FileId) -> Option<Arc<str>> {
         let inner = self.inner.read();
         inner
@@ -78,6 +83,7 @@ impl Vfs {
             .map(|f| Arc::clone(&f.content))
     }
 
+/// file_content_ref.
     pub fn file_content_ref<R>(&self, file_id: FileId, f: impl FnOnce(&str) -> R) -> Option<R> {
         let inner = self.inner.read();
         inner
@@ -86,19 +92,23 @@ impl Vfs {
             .map(|file| f(&file.content))
     }
 
+/// file_path.
     pub fn file_path(&self, file_id: FileId) -> Option<PathBuf> {
         let inner = self.inner.read();
         inner.files.get(file_id.index()).map(|f| f.path.clone())
     }
 
+/// file_id.
     pub fn file_id(&self, path: &Path) -> Option<FileId> {
         let inner = self.inner.read();
         inner.path_to_id.get(path).copied()
     }
 
+/// len.
     pub fn len(&self) -> usize {
         self.inner.read().files.len()
     }
+/// is_empty.
     pub fn is_empty(&self) -> bool {
         self.inner.read().files.is_empty()
     }
