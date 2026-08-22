@@ -3029,6 +3029,7 @@ pub(crate) fn lower_body<'ctx>(
     debug_info: bool,
     source_map: HashMap<FileId, (String, String)>,
     hygiene: Option<HygieneCtx>,
+    entry_main: Option<u32>,
 ) -> CompResult<()> {
     let fn_name = format!(
         "__glyim_fn_{}",
@@ -3245,6 +3246,30 @@ pub(crate) fn lower_body<'ctx>(
     if let Some(di) = lowering_ctx.debug_ctx {
         di.finalize();
     }
+
+    // Phase: native executable (`--emit=exec`). When this body is the crate's
+    // entry `main`, also emit a C-ABI `main` symbol (the OS/libc entry point)
+    // that calls the glyim `main` body (`__glyim_fn_{id}`) and returns 0. The
+    // linker looks for `main`; without it the produced object cannot link into
+    // a runnable binary. The wrapper uses the platform C calling convention so
+    // libc can invoke it directly.
+    if entry_main == Some(body.owner.local_id.to_raw()) {
+        let i32_type = context.i32_type();
+        let main_fn_type = i32_type.fn_type(&[], false);
+        let main_fn = module.add_function("main", main_fn_type, None);
+        main_fn.set_call_conventions(0u32); // LLVMCCallConv::C
+        let main_entry = context.append_basic_block(main_fn, "entry");
+        let main_builder = context.create_builder();
+        main_builder.position_at_end(main_entry);
+        // Glyim `main` is `fastcc void __glyim_fn_{id}()`; call it, ignore the
+        // (unit) result, and return 0 to the host.
+        let callee = module
+            .get_function(&fn_name)
+            .unwrap_or_else(|| function);
+        main_builder.build_call(callee, &[], "call_glyim_main");
+        main_builder.build_return(Some(&i32_type.const_int(0, false)));
+    }
+
     Ok(())
 }
 
