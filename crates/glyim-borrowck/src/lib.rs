@@ -21,7 +21,6 @@
 //!    active (their dest local is live) and check for conflicts with
 //!    place accesses in the statement. Two-phase borrows in reservation
 //!    phase are treated as shared borrows for conflict purposes.
-#![allow(missing_docs)]
 
 mod liveness;
 mod move_analysis;
@@ -43,13 +42,19 @@ use crate::visitor::{
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
+/// BorrowckResult.
 pub struct BorrowckResult {
+/// Struct.
     pub errors: Vec<GlyimDiagnostic>,
 }
 
+/// BorrowckCtx.
 pub trait BorrowckCtx {
+/// ty_ctx.
     fn ty_ctx(&self) -> &glyim_type::TyCtx;
+/// local_decl.
     fn local_decl(&self, local: LocalIdx) -> &glyim_mir::LocalDecl;
+/// is_copy.
     fn is_copy(&self, ty: glyim_type::Ty) -> bool {
         self.ty_ctx().is_copy(ty)
     }
