@@ -133,6 +133,7 @@ fn build_link_flags(args: &LinkArgs) -> Option<String> {
     }
 }
 
+/// invoke_linker.
 pub fn invoke_linker(
     obj_path: &Path,
     output_path: &Path,

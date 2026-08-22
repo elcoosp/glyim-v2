@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Crate root.
 use clap::Parser;
 use glyim_codegen::BytecodeBackend;
 use glyim_codegen_llvm::LlvmBackend;
@@ -7,26 +7,36 @@ use glyim_db::{CrateConfig, Database};
 use glyim_pipeline::Pipeline;
 use std::path::PathBuf;
 
+/// linker.
 pub mod linker;
 
 #[derive(Parser, Debug)]
 #[command(name = "glyim", version, about = "The Glyim compiler")]
+/// CliArgs.
 pub struct CliArgs {
     #[arg(value_name = "INPUT")]
+/// Struct.
     pub input: PathBuf,
     #[arg(short, long)]
+/// Struct.
     pub output: Option<PathBuf>,
     #[arg(long, value_name = "EMIT", default_value = "obj")]
+/// Struct.
     pub emit: String,
     #[arg(short = 'O', long = "opt-level", default_value = "0")]
+/// Struct.
     pub opt_level: u8,
     #[arg(long = "target")]
+/// Struct.
     pub target: Option<String>,
     #[arg(long = "backend", default_value = "llvm")]
+/// Struct.
     pub backend: String,
     #[arg(long = "linker")]
+/// Struct.
     pub linker: Option<String>,
     #[arg(long = "link-flags")]
+/// Struct.
     pub link_flags: Option<String>,
     /// Link-time optimization strategy: `off` (default), `fat` (in-compiler
     /// module merge + optimize), or `thin` (tracked gap — requires linker
@@ -36,6 +46,7 @@ pub struct CliArgs {
     pub lto: String,
 }
 
+/// run.
 pub fn run() -> Result<(), Vec<glyim_diag::GlyimDiagnostic>> {
     let args = CliArgs::parse();
     run_with_args(args)
