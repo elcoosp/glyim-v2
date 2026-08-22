@@ -461,7 +461,7 @@ only while `registry` was off (dead-code). Fixed by importing
 registry default enabled, confirming no build-time/size regression for the
 common case. The `--no-default-features` escape hatch remains available.
 
-### 10.2 LTO / ThinLTO (report #29) — PARTIAL (Fat done & tested & wired; Thin tracked)
+### 10.2 LTO / ThinLTO (report #29) — DONE (Fat + Thin per-CGU wired & tested; 2026-08-23)
 - **`LtoKind` + `run_lto`** added in `crates/glyim-codegen-llvm/src/passes.rs`.
   `None` is a no-op; **`Fat`** merges secondary modules into the primary via
   `Module::link_in_module` (wraps `LLVMLinkModules2`) then runs the
@@ -492,9 +492,13 @@ common case. The `--no-default-features` escape hatch remains available.
 - **DONE (2026-08-22) — §1.2 ThinLTO bitcode emission + thin-link driver**: the
   real first half of ThinLTO now exists:
   - `passes::emit_thinlto_bitcode(module, target_machine, out_path)` writes each
-    CGU's bitcode via `Module::write_bitcode_to_path` — exactly the per-module
-    `.bc` input `llvm-lto2`'s thin-link consumes. Test
-    `emit_thinlto_bitcode_writes_file_with_summary` pins the real output.
+    CGU's bitcode. Under LLVM 22 `Module::write_bitcode_to_path` silently
+    emits a 0-byte file for content-bearing modules, so the implementation
+    serializes via `Module::write_bitcode_to_memory()` and writes the buffer
+    with `std::fs::write` — reliable and produces valid ThinLTO input.
+    Test `emit_thinlto_bitcode_writes_file_with_summary` pins the real output;
+    the on-disk bytes are valid LLVM bitcode (verified with `llvm-bcanalyzer`:
+    "Stream type: LLVM IR" + MODULE_BLOCK).
   - `run_lto`'s `Thin` arm now points to the correct call path
     (`emit_thinlto_bitcode` per-module + `thin_lto_link`) instead of a generic
     "not implemented" message, while still failing loudly (Thin must never
@@ -506,12 +510,24 @@ common case. The `--no-default-features` escape hatch remains available.
     `llvm-lto2` is absent (test `thin_lto_link_errors_without_llvm_lto2`).
   - `glyim-cli`'s `--lto thin` error now names `emit_thinlto_bitcode` +
     `thin_lto_link` and states the remaining tracked step.
-  - **Remaining tracked step**: the `LlvmBackend` per-CGU wiring that calls
-    `emit_thinlto_bitcode` + `thin_lto_link` (Step 4 of plan §1.2) is not yet
-    engaged — Thin still surfaces its gap error rather than silently merging.
-    The embedded `ThinLTO` module-summary flag (raw `llvm-sys::LLVMAddModuleFlag`)
-    is also a tracked refinement; inkwell 0.10 does not wrap the module-flag
-    API, and the emitted `.bc` is valid ThinLTO input regardless.
+  - **CLOSED (2026-08-23) — §1.2 ThinLTO per-CGU backend wiring engaged**:
+    `LlvmBackend::emit_thinlto_bitcode_files(bodies, out_dir)` (inherent method)
+    lowers each MIR body into its own module, sets the target data layout, and
+    writes one `.bc` per codegen unit via `emit_thinlto_bitcode`. `LlvmBackend::
+    generate` short-circuits for `LtoKind::Thin` (returns `Ok` without writing a
+    merged object) so `compile_file_with_artifacts` doesn't emit a redundant
+    object that the thin path overwrites. `glyim-cli` now drives the full Thin
+    path: `compile_file_with_artifacts` → `backend.emit_thinlto_bitcode_files`
+    → `linker::thin_lto_link` (shells out to `llvm-lto2`) → copies the
+    thin-linked object to `object_path`. `--backend=bytecode` + `--lto=thin` is
+    rejected with a clear error (Thin requires the LLVM backend). Missing
+    `llvm-lto2` still surfaces a graceful, non-panicking error via
+    `find_llvm_tool`. Test `s08_t27_emit_thinlto_bitcode_files_writes_one_bc_
+    per_cgu` pins the per-CGU emission (valid LLVM bitcode per CGU).
+  - **Remaining tracked refinement (non-blocking)**: the embedded `ThinLTO`
+    module-summary flag (raw `llvm-sys::LLVMAddModuleFlag`) is optional — inkwell
+    0.10 does not wrap the module-flag API, and the emitted `.bc` is valid
+    ThinLTO input regardless, so it does not block the Thin path.
 
 ### 10.4 Native executable output (`--emit=exec`) — DONE (2026-08-22)
 `--emit=exec` links the compiled object into a runnable host binary, which
