@@ -55,45 +55,85 @@ impl Value {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Opcode {
+/// Variant.
     LoadConst = 0x01,
+/// Variant.
     Add = 0x02,
+/// Variant.
     Sub = 0x03,
+/// Variant.
     Mul = 0x04,
+/// Variant.
     Div = 0x05,
+/// Variant.
     Rem = 0x06,
+/// Variant.
     Eq = 0x07,
+/// Variant.
     Ne = 0x08,
+/// Variant.
     Lt = 0x09,
+/// Variant.
     Gt = 0x0A,
+/// Variant.
     Le = 0x0B,
+/// Variant.
     Ge = 0x0C,
+/// Variant.
     And = 0x0D,
+/// Variant.
     Or = 0x0E,
+/// Variant.
     Not = 0x0F,
+/// Variant.
     Neg = 0x10,
+/// Variant.
     BitAnd = 0x11,
+/// Variant.
     BitOr = 0x12,
+/// Variant.
     BitXor = 0x13,
+/// Variant.
     Shl = 0x14,
+/// Variant.
     Shr = 0x15,
+/// Variant.
     LoadLocal = 0x16,
+/// Variant.
     StoreLocal = 0x17,
+/// Variant.
     Return = 0x18,
+/// Variant.
     JumpIf = 0x19,
+/// Variant.
     Jump = 0x1A,
+/// Variant.
     Call = 0x1B,
+/// Variant.
     Cast = 0x1C,
+/// Variant.
     Aggregate = 0x1D,
+/// Variant.
     Discriminant = 0x1E,
+/// Variant.
     Len = 0x1F,
+/// Variant.
     SwitchInt = 0x20,
+/// Variant.
     Assert = 0x21,
+/// Variant.
     CallIndirect = 0x22,
+/// Variant.
     LoadLocalAddr = 0x29,
+/// Variant.
     StoreField = 0x2A,
+/// Variant.
     Deref = 0x2B,
+/// Variant.
     Drop = 0x2C,
+/// Variant.
     Repeat = 0x2D,
+/// Variant.
     Trap = 0xFF,
 }
 
@@ -164,6 +204,7 @@ pub struct Function {
 }
 
 impl Function {
+/// new.
     pub fn new(code: Vec<u8>, n_locals: usize, arg_count: usize) -> Function {
         Function {
             code,
@@ -213,6 +254,7 @@ pub struct Module {
 }
 
 impl Module {
+/// new.
     pub fn new(functions: Vec<Function>, entry: usize) -> Module {
         Module { functions, entry }
     }
@@ -687,6 +729,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
+/// new.
     pub fn new(code: Vec<u8>) -> Chunk {
         Chunk {
             code,
