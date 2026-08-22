@@ -28,10 +28,11 @@ use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_mir::Body;
 use glyim_span::{FileId, HygieneCtx};
 use glyim_type::TyCtx;
+use crate::passes::LtoKind;
 use inkwell::context::Context;
 use inkwell::targets::{InitializationConfig, Target, TargetTriple};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 mod abi;
@@ -373,6 +374,76 @@ impl LlvmBackend {
         let module = self.lower_body_to_module(&context, body)?;
         Ok(module.print_to_string().to_string())
     }
+
+    /// Emit one ThinLTO bitcode file per body (per codegen unit) into
+    /// `out_dir`, returning the written `.bc` paths in body order.
+    ///
+    /// Each CGU's bitcode carries its own module summary so `glyim-cli`'s
+    /// thin-link driver (`linker::thin_lto_link`, which shells out to
+    /// `llvm-lto2`) can combine them incrementally across CGUs — this is the
+    /// backend half of `LtoKind::Thin`. The bitcode is intentionally emitted
+    /// *unoptimized*; cross-CGU optimization happens during the thin-link, not
+    /// here (this is what distinguishes ThinLTO from `Fat` LTO, which merges
+    /// everything into one module up front). See `passes::emit_thinlto_bitcode`
+    /// for the per-module writer and `KNOWN_GAPS.md` Phase 10.2 for the design.
+    pub fn emit_thinlto_bitcode_files(
+        &self,
+        bodies: &[Arc<Body>],
+        out_dir: &Path,
+    ) -> CompResult<Vec<PathBuf>> {
+        let context = &self.context;
+        let triple = TargetTriple::create(&self.target_triple);
+        let ty_ctx = self
+            .ty_ctx_handle
+            .as_ref()
+            .and_then(|h| h.read().unwrap().clone())
+            .ok_or_else(|| vec![GlyimDiagnostic::internal_error("no TyCtx available")])?;
+        let ty_ctx = ty_ctx.as_ref();
+
+        let mut paths = Vec::with_capacity(bodies.len());
+        // The bitcode writer needs a data layout on the module; LLVM 22 emits an
+        // empty (0-byte) bitcode file for a content-bearing module that has no
+        // layout string set. Derive it from the target so the per-module summary
+        // the thin-link consumes (via `glyim-cli`'s `llvm-lto2` driver) is
+        // well-formed.
+        let target_machine = Target::from_triple(&triple)
+            .map_err(|e| vec![GlyimDiagnostic::internal_error(format!("Target error: {}", e))])?
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                inkwell::OptimizationLevel::None,
+                inkwell::targets::RelocMode::Default,
+                inkwell::targets::CodeModel::Default,
+            )
+            .ok_or_else(|| {
+                vec![GlyimDiagnostic::internal_error("Failed to create target machine")]
+            })?;
+        let data_layout = target_machine.get_target_data().get_data_layout();
+        for (i, body) in bodies.iter().enumerate() {
+            let module = context.create_module(&format!("glyim_cgu_{}", i));
+            module.set_triple(&triple);
+            module.set_data_layout(&data_layout);
+            crate::lower::lower_body(
+                context,
+                &module,
+                body,
+                self.target_info.clone(),
+                ty_ctx,
+                self.debug_info,
+                self.source_map.clone(),
+                self.hygiene_ctx.clone(),
+                self.entry_main,
+            )?;
+            // No optimization here: ThinLTO optimizes per-CGU during the
+            // thin-link once all summaries are visible.
+            let out_path = out_dir.join(format!("cgu_{}.bc", i));
+            crate::passes::emit_thinlto_bitcode(&module, &target_machine, &out_path)
+                .map_err(|e| vec![GlyimDiagnostic::internal_error(e)])?;
+            paths.push(out_path);
+        }
+        Ok(paths)
+    }
 }
 
 impl CodegenBackend for LlvmBackend {
@@ -381,6 +452,14 @@ impl CodegenBackend for LlvmBackend {
     }
 
     fn generate(&self, bodies: &[Arc<Body>], output: &Path) -> CompResult<()> {
+        // ThinLTO does not produce a single merged object here: per-CGU bitcode
+        // emission + the thin-link are driven by `glyim-cli` via
+        // `emit_thinlto_bitcode_files` + the `thin_lto_link` driver. Bailing out
+        // early keeps `compile_file_with_artifacts` (which calls this) from
+        // writing a redundant merged object that the thin path would overwrite.
+        if self.lto == LtoKind::Thin {
+            return Ok(());
+        }
         let context = &self.context;
         let module = context.create_module("glyim_module");
         let triple = TargetTriple::create(&self.target_triple);
