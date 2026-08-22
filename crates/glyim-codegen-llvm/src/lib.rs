@@ -54,6 +54,12 @@ pub struct LlvmBackend {
     /// (Phase 10.2). `None` is the default; `Fat` merges modules inside the
     /// compiler; `Thin` is a tracked gap (linker-driver integration).
     lto: crate::passes::LtoKind,
+    /// Local `DefId` raw index of the crate's entry `main` function, if known.
+    /// When set, codegen also emits a C-ABI `main` symbol (the OS/libc entry
+    /// point) that calls the glyim `main` body (Phase: native executable
+    /// output via `--emit=exec`). `None` means no entry symbol is required
+    /// (library/cdylib/object-only emission).
+    entry_main: Option<u32>,
 }
 
 impl Default for LlvmBackend {
@@ -80,6 +86,7 @@ impl LlvmBackend {
             opt_for_size: false,
             hygiene_ctx: None,
             lto: crate::passes::LtoKind::None,
+            entry_main: None,
         }
     }
 
@@ -97,6 +104,7 @@ impl LlvmBackend {
             opt_for_size: false,
             hygiene_ctx: None,
             lto: crate::passes::LtoKind::None,
+            entry_main: None,
         }
     }
 
@@ -129,6 +137,7 @@ impl LlvmBackend {
                 self.debug_info,
                 self.source_map.clone(),
                 self.hygiene_ctx.clone(),
+            self.entry_main,
             )?;
         }
         Ok(module)
@@ -181,6 +190,15 @@ impl LlvmBackend {
         self
     }
 
+    /// Declare which function (by its `LocalDefId` raw index) is the crate's
+    /// entry `main`. When set, codegen emits a C-ABI `main` symbol that calls
+    /// the glyim `main` body and returns 0, making the produced object linkable
+    /// into a runnable executable via `--emit=exec` (Phase: native executable).
+    pub fn with_entry_main(mut self, local_def_id_raw: u32) -> Self {
+        self.entry_main = Some(local_def_id_raw);
+        self
+    }
+
     /// Generate LLVM IR for a single MIR body without needing to set the TyCtx in the backend.
     pub fn emit_ir_to_string(&self, ctx: &TyCtx, body: &Body) -> CompResult<String> {
         let context = Context::create();
@@ -224,6 +242,7 @@ impl LlvmBackend {
                 self.debug_info,
                 self.source_map.clone(),
                 self.hygiene_ctx.clone(),
+            self.entry_main,
             )?;
         }
         let target = Target::from_triple(&triple).map_err(|e| {
@@ -279,6 +298,7 @@ impl LlvmBackend {
             self.debug_info,
             self.source_map.clone(),
             self.hygiene_ctx.clone(),
+            self.entry_main,
         )?;
         Ok(module)
     }
@@ -328,6 +348,7 @@ impl LlvmBackend {
             self.debug_info,
             self.source_map.clone(),
             self.hygiene_ctx.clone(),
+            self.entry_main,
         )?;
         Ok(module)
     }
@@ -366,6 +387,7 @@ impl CodegenBackend for LlvmBackend {
                 self.debug_info,
                 self.source_map.clone(),
                 self.hygiene_ctx.clone(),
+            self.entry_main,
             )?;
         }
         let target = Target::from_triple(&triple).map_err(|e| {
@@ -427,6 +449,7 @@ impl CodegenBackend for LlvmBackend {
             self.debug_info,
             self.source_map.clone(),
             self.hygiene_ctx.clone(),
+            self.entry_main,
         )?;
         let target = Target::from_triple(&triple).map_err(|e| {
             vec![GlyimDiagnostic::internal_error(format!(
