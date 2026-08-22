@@ -94,6 +94,7 @@ pub(crate) fn is_expr_node(node: &SyntaxNode) -> bool {
             | SyntaxKind::TupleExpr
             | SyntaxKind::StructExpr
             | SyntaxKind::RangeExpr
+            | SyntaxKind::AwaitExpr
     )
 }
 
