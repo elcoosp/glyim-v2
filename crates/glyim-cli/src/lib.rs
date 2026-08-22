@@ -198,7 +198,10 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         return glyim_pipeline::emit_asm(&mut db, input, &object_path);
     }
 
-    // For obj and exec, compile to object
+    // For obj and exec, compile to object. Resolve the entry `main` if present
+    // so the LLVM backend can emit a C-ABI `main` entry symbol for `--emit=exec`
+    // (native executable). The bytecode backend does not link, so it is skipped.
+    let entry_main = glyim_pipeline::Pipeline::entry_main_local_id(&mut db, input);
     let target_info = glyim_core::TargetInfo::from_triple(&target_triple);
     let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
         if args.opt_level > 0 {
@@ -212,13 +215,18 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             target_info,
         ))
     } else {
-        Box::new(
-            LlvmBackend::with_db(&db)
-                .with_target(&target_triple)
-                .with_opt_level(args.opt_level)
-                .with_opt_for_size(false)
-                .with_lto(lto),
-        )
+        let mut llvm = LlvmBackend::with_db(&db)
+            .with_target(&target_triple)
+            .with_opt_level(args.opt_level)
+            .with_opt_for_size(false)
+            .with_lto(lto);
+        // Only emit a C-ABI `main` entry symbol for `--emit=exec`; a cdylib or
+        // plain object must not carry a `main` (it would be an unused/conflicting
+        // entry point). `obj`/`cdylib` consumers link `main` themselves if needed.
+        if let (Some(main_id), EmitKind::Exec) = (entry_main, emit) {
+            llvm = llvm.with_entry_main(main_id);
+        }
+        Box::new(llvm)
     };
 
     Pipeline::compile_file(&mut db, input, &*backend, &object_path)?;
