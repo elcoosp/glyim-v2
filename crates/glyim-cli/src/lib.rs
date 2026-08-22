@@ -183,13 +183,17 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             )]);
         }
     };
-    // `Thin` LTO cannot be performed inside the compiler; the gap is explicit.
+    // `Thin` LTO: the per-module bitcode emission (`emit_thinlto_bitcode`) and
+    // thin-link driver (`thin_lto_link` in this crate) now exist, but the
+    // backend per-CGU wiring that calls them is the remaining tracked step
+    // (KNOWN_GAPS.md Phase 10.2). Surface the gap explicitly rather than
+    // silently degrading to a no-op.
     if lto == LtoKind::Thin {
         return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-            "ThinLTO requires linker-driver integration (per-module summary emission + a \
-             thin-link step in glyim-cli's linker invocation). This is a tracked gap \
-             (KNOWN_GAPS.md Phase 10.2); use `fat` LTO for an in-compiler merge, or pass \
-             `-flto=thin` to the linker driver instead.",
+            "ThinLTO requires per-module bitcode emission (glyim_codegen_llvm::passes::\
+             emit_thinlto_bitcode) + the thin-link driver (glyim_cli::linker::thin_lto_link). \
+             The backend per-CGU wiring that calls them is the remaining tracked step \
+             (KNOWN_GAPS.md Phase 10.2); use `fat` LTO for an in-compiler merge.",
         )]);
     }
 
