@@ -2,6 +2,25 @@ use crate::ty::{FieldIdx, Ty};
 use glyim_core::arena::IndexVec;
 use glyim_core::interner::Name;
 
+/// Declared syntax style of an enum variant, used to synthesize
+/// arity-correct match-arm skeletons in the LSP (plan §5.1) and to carry
+/// variant shape in structured diagnostics (plan §5.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VariantStyle {
+    /// `Variant` — no associated data.
+    Unit,
+    /// `Variant(a, b)` — positional fields.
+    Tuple,
+    /// `Variant { x, y }` — named fields.
+    Struct,
+}
+
+impl Default for VariantStyle {
+    fn default() -> Self {
+        crate::adt_def::VariantStyle::Unit
+    }
+}
+
 #[derive(Clone, Debug)]
 /// AdtDef.
 pub struct AdtDef {
@@ -37,6 +56,10 @@ pub struct VariantDef {
     pub name: Name,
 /// Struct.
     pub fields: IndexVec<FieldIdx, FieldDef>,
+/// Declared syntax style of the variant (plan §5.1 / §5.2). Defaults to
+/// `Unit` for synthetic/non-enum variants; the enum-registration path sets
+/// the real style from the HIR.
+    pub style: VariantStyle,
 }
 
 #[derive(Clone, Debug)]

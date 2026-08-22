@@ -532,6 +532,7 @@ impl TyCtxMut {
             fields: field_defs.clone(),
             variants: vec![VariantDef {
                 name: self.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: field_defs,
             }],
             generic_params: vec![],
@@ -936,6 +937,7 @@ impl TyCtxMut {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: this.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -991,6 +993,7 @@ impl TyCtxMut {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: self.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1014,10 +1017,12 @@ impl TyCtxMut {
             variants: vec![
                 VariantDef {
                     name: self.resolver.intern("None"),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: none_fields,
                 },
                 VariantDef {
                     name: self.resolver.intern("Some"),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: some_fields.clone(),
                 },
             ],
@@ -1108,6 +1113,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1160,6 +1166,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1193,6 +1200,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1225,6 +1233,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1248,6 +1257,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1280,6 +1290,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut2.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],
@@ -1300,6 +1311,7 @@ mod interior_mutability_tests {
                 fields: field_defs,
                 variants: vec![VariantDef {
                     name: ctx_mut2.resolver.intern(""),
+    style: crate::adt_def::VariantStyle::Unit,
                     fields: field_defs_clone,
                 }],
                 generic_params: vec![],

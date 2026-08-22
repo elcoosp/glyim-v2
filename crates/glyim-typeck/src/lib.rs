@@ -150,7 +150,15 @@ fn register_adt_item(
                         );
                         fields.push(FieldDef { name: field.name, ty: field_ty });
                     }
-                    variants.push(VariantDef { name: variant.name, fields });
+                    // Plan §5.1 / §5.2: carry the variant's declared syntax
+                    // style so the LSP can synthesize an arity-correct match
+                    // arm and the diagnostic can carry structured shape.
+                    let style = match variant.kind {
+                        glyim_core::primitives::StructKind::Record => glyim_type::adt_def::VariantStyle::Struct,
+                        glyim_core::primitives::StructKind::Tuple => glyim_type::adt_def::VariantStyle::Tuple,
+                        glyim_core::primitives::StructKind::Unit => glyim_type::adt_def::VariantStyle::Unit,
+                    };
+                    variants.push(VariantDef { name: variant.name, fields, style });
                 }
                 ctx.register_adt_with_name(
                     item.name,
@@ -744,6 +752,7 @@ fn check_fn_items_in_module(
                         }
                         variants.push(VariantDef {
                             name: variant.name,
+    style: glyim_type::adt_def::VariantStyle::Unit,
                             fields,
                         });
                     }

@@ -1,5 +1,6 @@
 use crate::reference_graph::ReferenceGraph;
 use crate::symbol_index::SymbolIndex;
+use glyim_diag::GlyimDiagnostic;
 use glyim_hir::Expr;
 use glyim_span::FileId;
 use glyim_type::Ty;
@@ -142,6 +143,12 @@ pub struct AnalysisDatabase {
 /// Struct.
     pub diagnostics: RwLock<HashMap<FileId, Vec<lsp_types::Diagnostic>>>,
 /// Struct.
+    /// Raw `GlyimDiagnostic`s (preserving the `structured` payload) for each
+    /// file, in 1:1 correspondence with `diagnostics` (same order). The LSP
+    /// `Diagnostic` type cannot carry `structured`, so code actions that need it
+    /// (e.g. the §5.1 match-arm skeleton quick-fix) read from here by index.
+    pub raw_diagnostics: RwLock<HashMap<FileId, Vec<GlyimDiagnostic>>>,
+/// Struct.
     pub file_access_times: RwLock<HashMap<FileId, Instant>>,
 }
 
@@ -162,6 +169,7 @@ impl AnalysisDatabase {
             hirs: RwLock::new(HashMap::new()),
             typeck: RwLock::new(HashMap::new()),
             diagnostics: RwLock::new(HashMap::new()),
+            raw_diagnostics: RwLock::new(HashMap::new()),
             file_access_times: RwLock::new(HashMap::new()),
         }
     }

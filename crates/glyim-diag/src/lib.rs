@@ -6,6 +6,28 @@ pub use miette::{Diagnostic as MietteDiagnostic, Report, Severity, SourceSpan};
 use std::fmt;
 use std::sync::Arc;
 
+/// Declared shape of an enum variant, used to carry structured
+/// non-exhaustive-match data from `glyim-typeck` to the LSP code action
+/// (plan §5.2 / §5.1) so the quick-fix can synthesize an arity-correct arm.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VariantShape {
+    /// `Variant` — no associated data.
+    Unit,
+    /// `Variant(a, b)` — `n` positional fields.
+    Tuple(usize),
+    /// `Variant { x, y }` — named fields.
+    Struct(Vec<String>),
+}
+
+/// Typed, machine-readable side-data attached to a [`GlyimDiagnostic`],
+/// as an alternative to re-parsing the prose `message` (plan §5.2).
+#[derive(Clone, Debug)]
+pub enum StructuredDiagnosticData {
+    /// A `non-exhaustive match` diagnostic carrying each missing variant's
+    /// name and shape so the LSP can synthesize compiling match arms.
+    MissingMatchVariants(Vec<(String, VariantShape)>),
+}
+
 type EmitCallback = Box<dyn FnMut(&GlyimDiagnostic)>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// ErrorCode.
@@ -73,6 +95,10 @@ pub struct GlyimDiagnostic {
     pub suggestions: Vec<Suggestion>,
 /// Struct.
     pub source_code: Option<Arc<str>>,
+    /// Typed, machine-readable side-data (plan §5.2). Optional so diagnostics
+    /// constructed without it remain valid; consumers fall back to parsing the
+    /// prose `message` when this is `None`.
+    pub structured: Option<StructuredDiagnosticData>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +218,7 @@ impl GlyimDiagnostic {
             sub_diagnostics: Vec::new(),
             suggestions: Vec::new(),
             source_code: None,
+            structured: None,
         }
     }
 
@@ -241,13 +268,22 @@ impl GlyimDiagnostic {
     /// Emit when a `match` over an enum fails to cover every variant.
     /// `missing` lists the uncovered variant names; the LSP surfaces a
     /// "Add missing match arm(s)" code action (plan §22.1).
-    pub fn non_exhaustive_match(span: Span, missing: &[String]) -> Self {
+    /// Emit when a `match` is missing arms for some enum variants. The
+    /// `shapes` carry each missing variant's name + declared style so the LSP
+    /// code action can synthesize an arity-correct arm without re-parsing the
+    /// prose `message` (plan §5.2). `missing` is retained for the human-facing
+    /// message and for diagnostics consumers that don't read structured data.
+    pub fn non_exhaustive_match(
+        span: Span,
+        missing: &[String],
+        shapes: &[(String, VariantShape)],
+    ) -> Self {
         let list = missing
             .iter()
             .map(|v| format!("`{}`", v))
             .collect::<Vec<_>>()
             .join(", ");
-        Self::new(
+        let mut diag = Self::new(
             ErrorCode {
                 category: ErrorCategory::Type,
                 number: 50,
@@ -255,7 +291,9 @@ impl GlyimDiagnostic {
             DiagSeverity::Error,
             format!("non-exhaustive match: missing variants {}", list),
             MultiSpan::from_span(span),
-        )
+        );
+        diag.structured = Some(StructuredDiagnosticData::MissingMatchVariants(shapes.to_vec()));
+        diag
     }
 
     /// Emit when a method/operation requires a trait the receiver type does

@@ -1,5 +1,6 @@
 use crate::AnalysisDatabase;
 use crate::database::FileMap;
+use glyim_diag::{GlyimDiagnostic, StructuredDiagnosticData};
 use lsp_types::*;
 use std::collections::HashSet;
 
@@ -44,8 +45,37 @@ fn collect_unused_imports(source: &str, used_names: &HashSet<String>) -> Vec<(St
         .collect()
 }
 
+/// Extract the variant names + shapes from the structured payload of a
+/// `non-exhaustive match` diagnostic (plan §5.2). Returns `None` when the
+/// diagnostic carries no structured data, so callers fall back to prose
+/// parsing (`parse_missing_variants`).
+fn parse_missing_variant_shapes(
+    diag: &GlyimDiagnostic,
+) -> Option<Vec<(String, glyim_diag::VariantShape)>> {
+    match &diag.structured {
+        Some(StructuredDiagnosticData::MissingMatchVariants(shapes)) => Some(shapes.clone()),
+        None => None,
+    }
+}
+
+/// Build the match-arm pattern text for a missing variant given its shape
+/// (plan §5.1). Unit variants need no bindings; tuple variants bind each field
+/// with `_`; struct variants use a `{ .. }` rest pattern. All three forms
+/// compile regardless of which fields are actually present.
+fn variant_pattern(name: &str, shape: &glyim_diag::VariantShape) -> String {
+    match shape {
+        glyim_diag::VariantShape::Unit => name.to_string(),
+        glyim_diag::VariantShape::Tuple(n) => {
+            let wildcards = vec!["_"; *n].join(", ");
+            format!("{name}({wildcards})")
+        }
+        glyim_diag::VariantShape::Struct(_) => format!("{name} {{ .. }}"),
+    }
+}
+
 /// Extract the variant names listed in a `non-exhaustive match: missing
-/// variants \`A\`, \`B\`` diagnostic message.
+/// variants \`A\`, \`B\`` diagnostic message. Used as a fallback when the
+/// diagnostic carries no structured payload (plan §5.2).
 fn parse_missing_variants(message: &str) -> Option<Vec<String>> {
     let prefix = "missing variants ";
     let idx = message.find(prefix)?;
@@ -153,22 +183,48 @@ pub fn provide_code_actions(
     }
 
     // --- Plan §22.1: diagnostics-driven code actions ------------------------
+    // `db.diagnostics` holds the LSP-converted `Diagnostic`s (which cannot carry
+    // the typed `structured` payload); `raw_diagnostics` holds the original
+    // `GlyimDiagnostic`s in the same 1:1 order, so we correlate by index.
     let diag_guard = db.diagnostics.read();
+    let raw_guard = db.raw_diagnostics.read();
     if let Some(diags) = diag_guard.get(&file_id) {
-        for diag in diags {
+        let raw = raw_guard.get(&file_id);
+        for (i, diag) in diags.iter().enumerate() {
             // "Add missing match arm(s)": triggered by a non-exhaustive match
             // diagnostic. Synthesize one arm per missing variant immediately
             // before the match's closing brace.
             if diag.message.starts_with("non-exhaustive match: missing variants") {
-                if let Some(variants) = parse_missing_variants(&diag.message) {
-                    let start_offset =
-                        source_map.line_col_to_offset(diag.range.start.line as usize, diag.range.start.character as usize);
-                    if let Some(close) = start_offset.and_then(|o| find_match_closing_brace(source, o)) {
+                // Plan §5.2: prefer the typed structured payload (carries each
+                // variant's shape) so we synthesize an arity-correct arm; fall
+                // back to prose-parsed names (unit-style arms) for diagnostics
+                // that predate structured data.
+                let shapes: Vec<(String, glyim_diag::VariantShape)> = raw
+                    .and_then(|r: &Vec<GlyimDiagnostic>| r.get(i).and_then(parse_missing_variant_shapes))
+                    .unwrap_or_else(|| {
+                        parse_missing_variants(&diag.message)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|v| (v, glyim_diag::VariantShape::Unit))
+                            .collect()
+                    });
+                if !shapes.is_empty() {
+                    let start_offset = source_map.line_col_to_offset(
+                        diag.range.start.line as usize,
+                        diag.range.start.character as usize,
+                    );
+                    if let Some(close) =
+                        start_offset.and_then(|o| find_match_closing_brace(source, o))
+                    {
                         // Insert one arm per missing variant. `unimplemented!()`
                         // mirrors rustc's skeleton; the user fills in the body.
+                        // The pattern shape (Unit / Tuple(n) / Struct) is taken
+                        // from the diagnostic so the generated arm compiles
+                        // (plan §5.1).
                         let mut arms = String::new();
-                        for v in &variants {
-                            arms.push_str(&format!("    {} => unimplemented!(),\n", v));
+                        for (v, shape) in &shapes {
+                            let pattern = variant_pattern(v, shape);
+                            arms.push_str(&format!("    {} => unimplemented!(),\n", pattern));
                         }
                         let (ins_line, ins_col) =
                             crate::uri::offset_to_position(source, close).unwrap();
@@ -181,8 +237,13 @@ pub fn provide_code_actions(
                             end: insert_pos,
                         };
                         let edit = TextEdit { range, new_text: arms };
+                        let title = shapes
+                            .iter()
+                            .map(|(v, _): &(String, glyim_diag::VariantShape)| v.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         let action = CodeAction {
-                            title: format!("Add missing match arm(s): {}", variants.join(", ")),
+                            title: format!("Add missing match arm(s): {}", title),
                             kind: Some(CodeActionKind::QUICKFIX),
                             edit: Some(WorkspaceEdit {
                                 changes: Some({
@@ -324,5 +385,51 @@ mod tests {
         let src2 = "match x { A => { foo() }, B => 2 }";
         let close2 = super::find_match_closing_brace(src2, 0).unwrap();
         assert_eq!(close2, src2.len() - 1);
+    }
+
+    // Plan §5.1: the synthesized match-arm pattern must match the variant's
+    // declared shape so the inserted arms compile.
+    #[test]
+    fn test_variant_pattern_shapes() {
+        use glyim_diag::VariantShape;
+        assert_eq!(super::variant_pattern("A", &VariantShape::Unit), "A");
+        assert_eq!(
+            super::variant_pattern("B", &VariantShape::Tuple(0)),
+            "B()"
+        );
+        assert_eq!(
+            super::variant_pattern("C", &VariantShape::Tuple(2)),
+            "C(_, _)"
+        );
+        assert_eq!(
+            super::variant_pattern("D", &VariantShape::Struct(vec!["x".into(), "y".into()])),
+            "D { .. }"
+        );
+    }
+
+    // Plan §5.2: the structured payload round-trips through the diagnostic.
+    #[test]
+    fn test_structured_missing_variants_roundtrip() {
+        use glyim_diag::{GlyimDiagnostic, StructuredDiagnosticData, VariantShape};
+        let diag = GlyimDiagnostic::non_exhaustive_match(
+            glyim_span::Span::DUMMY,
+            &["B".to_string(), "C".to_string()],
+            &[
+                ("B".to_string(), VariantShape::Tuple(2)),
+                ("C".to_string(), VariantShape::Struct(vec!["x".into()])),
+            ],
+        );
+        let shapes = super::parse_missing_variant_shapes(&diag).unwrap();
+        assert_eq!(
+            shapes,
+            vec![
+                ("B".to_string(), VariantShape::Tuple(2)),
+                ("C".to_string(), VariantShape::Struct(vec!["x".to_string()])),
+            ]
+        );
+        assert!(matches!(
+            diag.structured,
+            Some(StructuredDiagnosticData::MissingMatchVariants(_))
+        ));
     }
 }

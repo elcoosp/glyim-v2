@@ -86,6 +86,7 @@ fn fuzz_random_adt_layouts() {
             fields: IndexVec::from_raw(fields),
             variants: vec![VariantDef {
                 name: ctx_mut.resolver().intern("v0"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
                 fields: variant_fields,
             }],
             generic_params: vec![],
@@ -169,6 +170,7 @@ fn fuzz_random_enum_layouts() {
             }
             variants.push(VariantDef {
                 name: ctx_mut.resolver().intern(&format!("v{}", vi)),
+    style: glyim_type::adt_def::VariantStyle::Unit,
                 fields: variant_fields,
             });
         }
@@ -264,11 +266,13 @@ fn test_niche_encoding_option_like() {
     }
     variant_defs.push(VariantDef {
         name: ctx_mut.resolver().intern("Some"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
         fields: some_variant_fields,
     });
     // Variant 1: None
     variant_defs.push(VariantDef {
         name: ctx_mut.resolver().intern("None"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
         fields: IndexVec::new(),
     });
 

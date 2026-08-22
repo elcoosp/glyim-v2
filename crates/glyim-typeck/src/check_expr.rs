@@ -389,8 +389,30 @@ impl<'a> FnCtxt<'a> {
                                     })
                                     .collect();
                                 if !missing.is_empty() {
+                                    // Plan §5.1 / §5.2: carry each missing variant's
+                                    // declared shape so the LSP can synthesize an
+                                    // arity-correct (compiling) match arm and reads a
+                                    // typed payload instead of re-parsing prose.
+                                    let shapes: Vec<(String, glyim_diag::VariantShape)> = missing
+                                        .iter()
+                                        .zip((0..adt.variants.len()).filter(|i| !covered.contains(&(*i as u32))))
+                                        .map(|(name, vi)| {
+                                            let shape = match adt.variants[vi as usize].style {
+                                                glyim_type::adt_def::VariantStyle::Unit => glyim_diag::VariantShape::Unit,
+                                                glyim_type::adt_def::VariantStyle::Tuple => glyim_diag::VariantShape::Tuple(adt.variants[vi as usize].fields.len()),
+                                                glyim_type::adt_def::VariantStyle::Struct => glyim_diag::VariantShape::Struct(
+                                                    adt.variants[vi as usize]
+                                                        .fields
+                                                        .iter()
+                                                        .map(|f| self.ctx.name_str(f.name).to_string())
+                                                        .collect(),
+                                                ),
+                                            };
+                                            (name.clone(), shape)
+                                        })
+                                        .collect();
                                     self.diagnostics.push(GlyimDiagnostic::non_exhaustive_match(
-                                        span, &missing,
+                                        span, &missing, &shapes,
                                     ));
                                 }
                             }

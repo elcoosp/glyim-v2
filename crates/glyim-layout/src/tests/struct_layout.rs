@@ -23,6 +23,7 @@ fn make_struct_ty(
         fields,
         variants: vec![glyim_type::VariantDef {
             name: ctx.resolver().intern("S"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
             fields: IndexVec::new(),
         }],
         generic_params: vec![],

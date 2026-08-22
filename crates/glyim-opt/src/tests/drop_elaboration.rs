@@ -64,6 +64,7 @@ fn array_drop_creates_loop() {
     }]);
     let variant = glyim_type::VariantDef {
         name: ctx_mut.resolver().intern("S"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
         fields: field_defs.clone(),
     };
     let adt_def = glyim_type::AdtDef {
@@ -177,6 +178,7 @@ fn loop_built_array_uses_per_element_flags() {
     }]);
     let variant = glyim_type::VariantDef {
         name: ctx_mut.resolver().intern("S"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
         fields: field_defs.clone(),
     };
     let adt_def = glyim_type::AdtDef {

@@ -24,6 +24,7 @@ fn make_enum_ty(
             }
             glyim_type::VariantDef {
                 name: ctx.resolver().intern(&format!("V{}", vi)),
+    style: glyim_type::adt_def::VariantStyle::Unit,
                 fields,
             }
         })

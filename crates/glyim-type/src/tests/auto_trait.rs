@@ -30,6 +30,7 @@ fn send_computed_for_struct_with_raw_ptr_field() {
             fields,
             variants: vec![VariantDef {
                 name: name_field,
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: IndexVec::new(),
             }],
             generic_params: vec![],
@@ -82,6 +83,7 @@ fn send_computed_for_struct_with_primitive_fields() {
             fields,
             variants: vec![VariantDef {
                 name: name_a,
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: IndexVec::new(),
             }],
             generic_params: vec![],
@@ -125,6 +127,7 @@ fn send_negative_impl_overrides_field_computation() {
             fields,
             variants: vec![VariantDef {
                 name: name_field,
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: IndexVec::new(),
             }],
             generic_params: vec![],

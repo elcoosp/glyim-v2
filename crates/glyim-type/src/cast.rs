@@ -105,6 +105,7 @@ mod tests {
         let enum_id = AdtId::from_raw(501);
         let variants = vec![VariantDef {
             name: tcx_mut.resolver().intern("A"),
+    style: crate::adt_def::VariantStyle::Unit,
             fields: IndexVec::new(),
         }];
         let enum_def = AdtDef {
@@ -138,6 +139,7 @@ mod tests {
         field_list.push(field);
         let variants = vec![VariantDef {
             name: tcx_mut.resolver().intern("A"),
+    style: crate::adt_def::VariantStyle::Unit,
             fields: field_list,
         }];
         let enum_def = AdtDef {

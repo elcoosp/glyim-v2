@@ -62,7 +62,7 @@ fn struct_of_primitives_does_not_need_drop() {
         let adt_def = AdtDef {
             kind: AdtKind::Struct,
             fields: fields.clone(),
-            variants: vec![VariantDef { name, fields }],
+            variants: vec![VariantDef { name, fields, style: crate::adt_def::VariantStyle::Unit }],
             generic_params: vec![],
 };
         c.register_adt(adt_id, adt_def);
@@ -84,6 +84,7 @@ fn struct_containing_droppable_field_needs_drop() {
             fields: IndexVec::new(),
             variants: vec![VariantDef {
                 name: f,
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: IndexVec::new(),
             }],
             generic_params: vec![],
@@ -100,7 +101,7 @@ fn struct_containing_droppable_field_needs_drop() {
         let outer_def = AdtDef {
             kind: AdtKind::Struct,
             fields: of.clone(),
-            variants: vec![VariantDef { name: f, fields: of }],
+            variants: vec![VariantDef { name: f, fields: of, style: crate::adt_def::VariantStyle::Unit }],
             generic_params: vec![],
 };
         c.register_adt(outer_id, outer_def);
@@ -125,6 +126,7 @@ fn array_and_slice_of_droppable_need_drop() {
             fields: IndexVec::new(),
             variants: vec![VariantDef {
                 name: f,
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: IndexVec::new(),
             }],
             generic_params: vec![],
@@ -181,6 +183,7 @@ fn union_always_needs_drop() {
             fields: IndexVec::new(),
             variants: vec![VariantDef {
                 name: f,
+    style: crate::adt_def::VariantStyle::Unit,
                 fields: IndexVec::new(),
             }],
             generic_params: vec![],

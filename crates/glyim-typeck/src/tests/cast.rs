@@ -53,6 +53,7 @@ fn is_valid_cast_rules() {
         fields: IndexVec::new(),
         variants: vec![VariantDef {
             name: name("E0"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
             fields: IndexVec::new(),
         }],
         generic_params: vec![],
@@ -71,6 +72,7 @@ fn is_valid_cast_rules() {
         fields: IndexVec::new(),
         variants: vec![VariantDef {
             name: name("S0"),
+    style: glyim_type::adt_def::VariantStyle::Unit,
             fields: IndexVec::new(),
         }],
         generic_params: vec![],

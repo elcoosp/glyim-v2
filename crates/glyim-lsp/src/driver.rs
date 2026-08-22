@@ -129,8 +129,13 @@ impl AnalysisDriver {
             crate::diagnostics::convert_diagnostics(file_id, &sm, &all_diagnostics);
         if lsp_diagnostics.is_empty() {
             self.db.diagnostics.write().remove(&file_id);
+            self.db.raw_diagnostics.write().remove(&file_id);
         } else {
             self.db.diagnostics.write().insert(file_id, lsp_diagnostics);
+            self.db
+                .raw_diagnostics
+                .write()
+                .insert(file_id, all_diagnostics.clone());
         }
 
         debug!(
