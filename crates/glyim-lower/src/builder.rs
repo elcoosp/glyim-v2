@@ -39,6 +39,26 @@ pub struct MirBuilder<'a> {
     pub(crate) current_block: Option<BasicBlockIdx>,
     /// Stack of enclosing loops for break/continue resolution.
     pub(crate) loop_stack: Vec<LoopInfo>,
+    /// Maps a droppable local to its shadow boolean drop-flag local.
+    ///
+    /// **Tier 1.8 (partial-move drop elaboration) infrastructure.** When a
+    /// local is partially moved (e.g. `let y = x.field;` where `field` is not
+    /// `Copy`), its whole-struct scope-exit `Drop` must be guarded so it only
+    /// fires for the still-initialized fields. This map backs that guard:
+    /// `elaborate_scope_drops` wraps each `Drop` in a `SwitchInt` on the flag,
+    /// dropping only when the flag is still `true`.
+    ///
+    /// Population of this map (allocating a `bool` flag per droppable local
+    /// and **clearing** it at each move) is gated on landing an explicit
+    /// Copy/Move distinction in lowering. Today THIR has no `Move` node and
+    /// field access lowers as `Operand::Copy`, so moves are not yet modeled
+    /// at this layer — the double-drop scenario the plan targets is
+    /// therefore not currently reachable, and the independent
+    /// `glyim-borrowck` move analysis already tracks per-field move paths
+    /// separately. Until move-semantics land, the map stays empty and the
+    /// guard degrades to the pre-existing unconditional-drop behavior (always
+    /// sound). See `docs/plans/v0.1.0/feature-gaps/part2.md` §1.8.
+    pub(crate) drop_flags: std::collections::HashMap<LocalIdx, LocalIdx>,
 }
 
 impl<'a> MirBuilder<'a> {
@@ -67,6 +87,7 @@ impl<'a> MirBuilder<'a> {
             param_map: std::collections::HashMap::new(),
             current_block: None,
             loop_stack: Vec::new(),
+            drop_flags: std::collections::HashMap::new(),
         }
     }
 
@@ -135,7 +156,10 @@ impl<'a> MirBuilder<'a> {
             // Elaborate drop terminators for every non-Copy local at scope
             // exit, in reverse declaration order, immediately before the
             // `Return`. (Tier 1.6 — top-level / whole-value drop elaboration;
-            // per-projection move-path elaboration is future work.)
+            // the per-projection partial-move guard from Tier 1.8 is wired in
+            // `elaborate_scope_drops` via `drop_flags` but stays inert until
+            // move-semantics land — see the field's doc comment and
+            // `docs/plans/v0.1.0/feature-gaps/part2.md` §1.8.)
             //
             // This mirrors the previous `terminate(Return)` behavior: it only
             // runs when control fell straight through to the *current* block
@@ -202,7 +226,30 @@ impl<'a> MirBuilder<'a> {
                 },
                 source_info: glyim_mir::SourceInfo::new(span),
             };
-            target = drop_bb;
+            // Tier 1.8: if a drop-flag was allocated for this local, guard the
+            // `Drop` behind a `SwitchInt` on the flag so a partially-moved
+            // local only drops its still-initialized fields. When no flag is
+            // registered (the current state — move-semantics not yet landed),
+            // this degrades to the pre-existing unconditional `Drop`, which is
+            // always sound.
+            let next_target = if let Some(&flag) = self.drop_flags.get(&local) {
+                let check_bb = self.new_block();
+                self.basic_blocks[check_bb].terminator = glyim_mir::Terminator {
+                    kind: glyim_mir::TerminatorKind::SwitchInt {
+                        discr: glyim_mir::Operand::Copy(glyim_mir::Place::new(flag)),
+                        targets: glyim_mir::SwitchTargets::new(
+                            Box::new([(1u128, drop_bb)]),
+                            target,
+                        ),
+                        switch_ty: self.ctx.ty_ctx().bool_ty(),
+                    },
+                    source_info: glyim_mir::SourceInfo::new(span),
+                };
+                check_bb
+            } else {
+                drop_bb
+            };
+            target = next_target;
         }
 
         self.basic_blocks[fall_through].terminator = glyim_mir::Terminator {

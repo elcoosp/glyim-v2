@@ -109,3 +109,42 @@ fn return_place_is_never_dropped() {
     assert_eq!(result.body.basic_blocks.len(), 1);
     assert_mir(&ctx, &result.body).block_terminator(BasicBlockIdx::from_raw(0), "Return");
 }
+
+/// §1.8 regression: a function with no moves must keep producing an
+/// unconditional `Drop` for its non-`Copy` locals. The `drop_flags` map is
+/// empty until move-semantics land, so the §1.8 guard degrades to the
+/// pre-existing behavior — this locks that the existing drop-elaboration
+/// structure is unchanged by the guard wiring.
+#[test]
+fn no_move_case_unaffected() {
+    let mut ctx_mut = test_ty_ctx();
+    let s_ty = string_ty(&mut ctx_mut);
+    let interner = ctx_mut.resolver().clone();
+    let ctx = ctx_mut.freeze();
+    let mock = TestLowerCtx::new(&ctx);
+
+    let mut b = ThirBuilder::new(s_ty, interner);
+    let mut stmts = Vec::new();
+    b.add_let_binding(
+        "s",
+        s_ty,
+        Some(b.expr(ExprKind::Literal(Literal::String(b.make_name("hi"))), s_ty)),
+        &mut stmts,
+    );
+    let body = b.into_body(stmts, vec![]);
+    let result = lower_body(&mock, &body);
+
+    // The non-Copy `s` local must still receive a `Drop` terminator.
+    let mut drop_count = 0;
+    for bb in result.body.basic_blocks.iter() {
+        if let TerminatorKind::Drop { place, cleanup, .. } = &bb.terminator.kind {
+            assert!(cleanup.is_none(), "drop elaboration should not set cleanup");
+            drop_count += 1;
+            assert_ne!(place.local.to_raw(), 0, "return place must not be dropped");
+        }
+    }
+    assert!(
+        drop_count >= 1,
+        "expected at least one Drop terminator for the `s` local"
+    );
+}
