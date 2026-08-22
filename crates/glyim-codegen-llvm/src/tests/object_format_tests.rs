@@ -127,3 +127,41 @@ fn s08_t26_name_is_static() {
         "name() should return a static string slice"
     );
 }
+
+#[test]
+fn s08_t27_emit_thinlto_bitcode_files_writes_one_bc_per_cgu() {
+    // Per-CGU ThinLTO wiring: each body must be lowered into its own bitcode
+    // file (the input to the `thin_lto_link` driver). Verifies the backend
+    // half of `LtoKind::Thin` produces N non-empty `.bc` files for N bodies.
+    // The on-disk bytes are valid LLVM bitcode (verified out-of-band with
+    // `llvm-bcanalyzer`: "Stream type: LLVM IR" + MODULE_BLOCK); the non-empty
+    // assertion catches the original `LLVMWriteBitcodeToFile` 0-byte regression.
+    let backend = LlvmBackend::new();
+    let out_dir = std::env::temp_dir().join(format!("glyim_thin_test_{}", std::process::id()));
+    std::fs::create_dir_all(&out_dir).ok();
+    let bodies: Vec<_> = (0..3)
+        .map(|i| {
+            std::sync::Arc::new(glyim_mir::Body::dummy(glyim_core::DefId::new(
+                glyim_core::CrateId::from_raw(0),
+                glyim_core::LocalDefId::from_raw(2000 + i as u32),
+            )))
+        })
+        .collect();
+    let result = backend.emit_thinlto_bitcode_files(&bodies, &out_dir);
+    assert!(
+        result.is_ok(),
+        "emit_thinlto_bitcode_files should succeed: {:?}",
+        result.err()
+    );
+    let paths = result.unwrap();
+    assert_eq!(paths.len(), 3, "one bitcode file per CGU");
+    for (i, p) in paths.iter().enumerate() {
+        assert!(p.exists(), "cgu_{}.bc should exist", i);
+        let meta = std::fs::metadata(p).expect("stat cgu bitcode");
+        assert!(meta.len() > 0, "cgu_{}.bc should not be empty", i);
+    }
+    for p in paths {
+        std::fs::remove_file(p).ok();
+    }
+    std::fs::remove_dir(&out_dir).ok();
+}
