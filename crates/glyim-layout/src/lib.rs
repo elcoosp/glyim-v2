@@ -1,5 +1,4 @@
 //! Type layout computation — sizes, alignments, ABI details.
-#![allow(missing_docs)]
 
 use glyim_core::abi::ALIGN_MAX;
 use glyim_core::arena::IndexVec;
@@ -9,21 +8,27 @@ use glyim_type::adt_def::{AdtDef, AdtKind};
 use glyim_type::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// Size.
 pub struct Size(pub u64);
 
 impl Size {
+/// ZERO.
     pub const ZERO: Size = Size(0);
+/// bytes.
     pub fn bytes(b: u64) -> Self {
         Size(b)
     }
+/// bits.
     pub fn bits(&self) -> u64 {
         self.0.saturating_mul(8)
     }
+/// align_to.
     pub fn align_to(&self, align: Align) -> Self {
         debug_assert!(align.0 > 0, "alignment must be non-zero");
         let mask = align.0 - 1;
         Size((self.0 + mask) & !mask)
     }
+/// checked_mul.
     pub fn checked_mul(self, rhs: u64) -> Option<Size> {
         self.0.checked_mul(rhs).map(Size)
     }
@@ -37,11 +42,15 @@ impl std::ops::Add for Size {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// Align.
 pub struct Align(pub u64);
 
 impl Align {
+/// ONE.
     pub const ONE: Align = Align(1);
+/// EIGHT.
     pub const EIGHT: Align = Align(8);
+/// from_bytes.
     pub fn from_bytes(bytes: u64) -> Self {
         debug_assert!(
             bytes.is_power_of_two(),
@@ -49,21 +58,29 @@ impl Align {
         );
         Align(bytes)
     }
+/// max.
     pub fn max(self, other: Self) -> Self {
         Align(self.0.max(other.0))
     }
 }
 
 #[derive(Clone, Debug)]
+/// Layout.
 pub struct Layout {
+/// Struct.
     pub size: Size,
+/// Struct.
     pub align: Align,
+/// Struct.
     pub fields: FieldsShape,
+/// Struct.
     pub variants: VariantsShape,
+/// Struct.
     pub is_unsized: bool,
 }
 
 impl Layout {
+/// scalar.
     pub fn scalar(size: Size, align: Align) -> Self {
         Self {
             size,
@@ -73,6 +90,7 @@ impl Layout {
             is_unsized: false,
         }
     }
+/// unit.
     pub fn unit() -> Self {
         Self {
             size: Size::ZERO,
@@ -87,66 +105,130 @@ impl Layout {
 }
 
 #[derive(Clone, Debug)]
+/// FieldsShape.
 pub enum FieldsShape {
+/// Variant.
     Primitive,
-    Array { stride: Size, count: u64 },
-    Arbitrary { offsets: IndexVec<FieldIdx, Size> },
+/// Variant.
+    Array {
+        /// stride field.
+        stride: Size,
+        /// count field.
+        count: u64,
+    },
+/// Struct.
+    Arbitrary {
+        /// offsets field.
+        offsets: IndexVec<FieldIdx, Size>,
+    },
 }
 
 #[derive(Clone, Debug)]
+/// VariantsShape.
 pub enum VariantsShape {
+/// Variant.
     Single {
+/// Struct.
         index: u32,
     },
+/// Variant.
     Multiple {
+/// Struct.
         tag: Ty,
+/// Struct.
         tag_field: u32,
+/// Struct.
         tag_encoding: TagEncoding,
+/// Struct.
         variants: Vec<Layout>,
+/// Struct.
         tag_size: Size,   // ← ADDED
+/// Struct.
         tag_align: Align, // ← ADDED
     },
 }
 
 #[derive(Clone, Debug)]
+/// TagEncoding.
 pub enum TagEncoding {
+/// Variant.
     Direct,
+/// Variant.
     Niche {
+/// Struct.
         untagged_variant: u32,
+/// Struct.
         niche_variants: std::ops::RangeInclusive<u32>,
+/// Struct.
         niche_start: u128,
     },
 }
 
 #[derive(Clone, Debug)]
+/// FnAbi.
 pub struct FnAbi {
+/// Struct.
     pub args: Vec<ArgAbi>,
+/// Struct.
     pub ret: ArgAbi,
+/// Struct.
     pub conv: CallConvention,
+/// Struct.
     pub c_variadic: bool,
 }
 
 #[derive(Clone, Debug)]
+/// ArgAbi.
 pub struct ArgAbi {
+/// Struct.
     pub ty: Ty,
+/// Struct.
     pub layout: Layout,
+/// Struct.
     pub mode: PassMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// PassMode.
 pub enum PassMode {
+/// Variant.
     Direct,
-    Indirect { meta_attrs: bool },
+/// Variant.
+    Indirect {
+        /// meta_attrs field.
+        meta_attrs: bool,
+    },
+/// Variant.
     Ignore,
-    Cast { to: Ty, cast_int: bool },
-    HomogeneousAggregate { element_ty: Ty, count: u32 },
-    Split { pieces: Vec<PassMode> },
+/// Struct.
+    Cast {
+        /// to field.
+        to: Ty,
+        /// cast_int field.
+        cast_int: bool,
+    },
+/// Struct.
+    HomogeneousAggregate {
+        /// element_ty field.
+        element_ty: Ty,
+        /// count field.
+        count: u32,
+    },
+/// Variant.
+    Split {
+        /// pieces field.
+        pieces: Vec<PassMode>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// CallConvention.
 pub enum CallConvention {
+/// Variant.
     Glyim,
+/// Variant.
     C,
+/// Variant.
     System,
 }
 
@@ -160,21 +242,40 @@ impl From<Abi> for CallConvention {
     }
 }
 
+/// LayoutComputer.
 pub trait LayoutComputer {
+/// layout_of.
     fn layout_of(&self, ty: Ty) -> Result<Layout, LayoutError>;
+/// fn_abi_of.
     fn fn_abi_of(&self, sig: &FnSig) -> Result<FnAbi, LayoutError>;
+/// ptr_size.
     fn ptr_size(&self) -> Size;
+/// ptr_align.
     fn ptr_align(&self) -> Align;
+/// target_info.
     fn target_info(&self) -> &TargetInfo;
 }
 
 #[derive(Clone, Debug)]
+/// LayoutError.
 pub enum LayoutError {
+#[allow(missing_docs)]
     UnknownType(Ty),
+#[allow(missing_docs)]
     SizeOverflow(Ty),
+#[allow(missing_docs)]
     Unsized(Ty),
+#[allow(missing_docs)]
     Cycle(Ty),
-    AlignmentExceedsRuntime { ty: Ty, align: u64, max: u64 },
+/// Struct.
+    AlignmentExceedsRuntime {
+        /// ty field.
+        ty: Ty,
+        /// align field.
+        align: u64,
+        /// max field.
+        max: u64,
+    },
     /// A trait object's trait definition could not be resolved during vtable
     /// construction. This indicates a pipeline-ordering bug: an unresolvable
     /// trait should have been caught by typeck's object-safety check long
@@ -183,12 +284,14 @@ pub enum LayoutError {
     UnknownTrait(TraitDefId),
 }
 
+/// SimpleLayoutComputer.
 pub struct SimpleLayoutComputer<'a> {
     ctx: &'a TyCtx,
     target: TargetInfo,
 }
 
 impl<'a> SimpleLayoutComputer<'a> {
+/// new.
     pub fn new(ctx: &'a TyCtx, target: TargetInfo) -> Self {
         const _: () = assert!(ALIGN_MAX >= 8, "ALIGN_MAX must be at least 8");
         Self { ctx, target }
