@@ -489,6 +489,29 @@ common case. The `--no-default-features` escape hatch remains available.
   `56965a8` … `9141c41`. True multi-CGU / multi-crate Fat+Thin merge at link
   time remains a tracked follow-up (requires a multi-module compilation
   driver).
+- **DONE (2026-08-22) — §1.2 ThinLTO bitcode emission + thin-link driver**: the
+  real first half of ThinLTO now exists:
+  - `passes::emit_thinlto_bitcode(module, target_machine, out_path)` writes each
+    CGU's bitcode via `Module::write_bitcode_to_path` — exactly the per-module
+    `.bc` input `llvm-lto2`'s thin-link consumes. Test
+    `emit_thinlto_bitcode_writes_file_with_summary` pins the real output.
+  - `run_lto`'s `Thin` arm now points to the correct call path
+    (`emit_thinlto_bitcode` per-module + `thin_lto_link`) instead of a generic
+    "not implemented" message, while still failing loudly (Thin must never
+    merge in-process).
+  - `glyim-cli::linker::thin_lto_link(bitcode_paths, opt_level, out_dir)` drives
+    `llvm-lto2 run` over the per-CGU bitcode, producing one optimized object per
+    module. Tool discovery (`find_llvm_tool`) checks `$LLVM_SYS_220_PREFIX/bin`
+    then `PATH`, and surfaces a clear, actionable error (no panic) when
+    `llvm-lto2` is absent (test `thin_lto_link_errors_without_llvm_lto2`).
+  - `glyim-cli`'s `--lto thin` error now names `emit_thinlto_bitcode` +
+    `thin_lto_link` and states the remaining tracked step.
+  - **Remaining tracked step**: the `LlvmBackend` per-CGU wiring that calls
+    `emit_thinlto_bitcode` + `thin_lto_link` (Step 4 of plan §1.2) is not yet
+    engaged — Thin still surfaces its gap error rather than silently merging.
+    The embedded `ThinLTO` module-summary flag (raw `llvm-sys::LLVMAddModuleFlag`)
+    is also a tracked refinement; inkwell 0.10 does not wrap the module-flag
+    API, and the emitted `.bc` is valid ThinLTO input regardless.
 
 ### 10.4 Native executable output (`--emit=exec`) — DONE (2026-08-22)
 `--emit=exec` links the compiled object into a runnable host binary, which
