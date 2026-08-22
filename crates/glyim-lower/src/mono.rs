@@ -5,34 +5,53 @@ use glyim_mir::{self, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKi
 use glyim_type::*;
 use std::sync::Arc;
 
+#[allow(missing_docs)]
+#[allow(missing_docs)]
 glyim_core::define_idx!(MonoItemId);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// MonoItem.
 pub enum MonoItem {
+/// Variant.
     Fn {
+/// Struct.
         def_id: FnDefId,
+/// Struct.
         substs: Substitution,
     },
+/// Variant.
     Const {
+/// Struct.
         def_id: ConstDefId,
+/// Struct.
         substs: Substitution,
     },
+/// Variant.
     Static {
+/// Struct.
         def_id: StaticDefId,
     },
+/// Variant.
     DropGlue {
+/// Struct.
         ty: Ty,
     },
 }
 
 #[derive(Clone, Debug)]
+/// MonoItemData.
 pub struct MonoItemData {
+/// Struct.
     pub item: MonoItem,
+/// Struct.
     pub body: Arc<glyim_mir::Body>,
+/// Struct.
     pub symbol: String,
+/// Struct.
     pub source_module: u32,
 }
 
+/// MonoCtx.
 pub struct MonoCtx {
     items: IndexVec<MonoItemId, MonoItemData>,
     queue: std::collections::VecDeque<MonoItem>,
@@ -42,6 +61,7 @@ pub struct MonoCtx {
 }
 
 impl MonoCtx {
+/// new.
     pub fn new() -> Self {
         Self {
             items: IndexVec::new(),
@@ -58,6 +78,7 @@ impl MonoCtx {
         }
     }
 
+/// collect.
     pub fn collect(
         &mut self,
         start: &[MonoItem],
@@ -191,18 +212,22 @@ impl MonoCtx {
         }
     }
 
+/// items.
     pub fn items(&self) -> &[MonoItemData] {
         self.items.as_slice()
     }
 
+/// item_count.
     pub fn item_count(&self) -> usize {
         self.items.len()
     }
 
+/// cache_len.
     pub fn cache_len(&self) -> usize {
         self.cache.len()
     }
 
+/// lookup.
     pub fn lookup(&self, item: &MonoItem) -> Option<MonoItemId> {
         self.cache.get(item).copied()
     }

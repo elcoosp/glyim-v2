@@ -16,6 +16,7 @@ use std::collections::HashSet;
 
 use crate::mono::{MonoItem, MonoItemData};
 
+/// analyze_used_params.
 pub fn analyze_used_params(
     body: &glyim_mir::Body,
     ctx: &dyn TypeLookup,
@@ -40,6 +41,7 @@ pub fn analyze_used_params(
     used
 }
 
+/// polymorphize_substs.
 pub fn polymorphize_substs(
     ctx: &mut TyCtxMut,
     substs: Substitution,
@@ -67,6 +69,7 @@ pub fn polymorphize_substs(
     ctx.intern_substitution(args)
 }
 
+/// compute_poly_item.
 pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &glyim_mir::Body) -> MonoItem {
     match item {
         MonoItem::Fn { def_id, substs } => {
@@ -156,6 +159,7 @@ pub fn compute_poly_item(ctx: &mut TyCtxMut, item: &MonoItem, body: &glyim_mir::
     }
 }
 
+/// deduplicate.
 pub fn deduplicate(ctx: &mut TyCtxMut, items: &[MonoItemData]) -> Vec<MonoItemData> {
     let mut seen: HashSet<MonoItem> = HashSet::new();
     let mut result = Vec::new();

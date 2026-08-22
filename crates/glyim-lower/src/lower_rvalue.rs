@@ -15,6 +15,7 @@ use glyim_typeck::thir;
 
 impl<'a> MirBuilder<'a> {
     // ---- Statement lowering ----
+/// lower_stmt.
     pub fn lower_stmt(&mut self, stmt: &thir::Stmt) {
         match stmt {
             thir::Stmt::Let {
@@ -80,6 +81,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Expression → Rvalue lowering ----
+/// lower_expr_to_rvalue.
     pub fn lower_expr_to_rvalue(&mut self, expr: &thir::Expr) -> glyim_mir::Rvalue {
         match &expr.kind {
             thir::ExprKind::Literal(lit) => {
@@ -974,6 +976,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Expression → Operand lowering ----
+/// lower_expr_to_operand.
     pub fn lower_expr_to_operand(&mut self, expr: &thir::Expr) -> glyim_mir::Operand {
         match &expr.kind {
             thir::ExprKind::Literal(_) | thir::ExprKind::FnRef(_) => {
@@ -1002,6 +1005,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Expression → Place lowering ----
+/// lower_expr_to_place.
     pub fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
@@ -1060,6 +1064,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     // ---- Pattern binding ----
+/// bind_pattern.
     pub fn bind_pattern(
         &mut self,
         pat: &thir::Pattern,

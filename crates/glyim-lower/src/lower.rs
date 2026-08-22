@@ -7,8 +7,11 @@ use glyim_type::*;
 use glyim_typeck::thir;
 
 #[derive(Clone, Debug)]
+/// LowerResult.
 pub struct LowerResult {
+/// Struct.
     pub body: glyim_mir::Body,
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
     /// Bodies of closures captured during this function's lowering. Each closure
     /// body owns the leading `captures...` arguments followed by the closure's
@@ -118,21 +121,27 @@ pub trait LowerCtx {
 /// ADT definition used during lowering.
 #[derive(Clone, Debug)]
 pub struct AdtDef {
+/// Struct.
     pub variants: Vec<AdtVariant>,
+/// Struct.
     pub kind: AdtKind,
 }
 
 /// A single variant of an ADT (struct field list, enum variant, or union field).
 #[derive(Clone, Debug)]
 pub struct AdtVariant {
+/// Struct.
     pub fields: Vec<Ty>,
 }
 
 /// The kind of ADT.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdtKind {
+/// Variant.
     Struct,
+/// Variant.
     Enum,
+/// Variant.
     Union,
 }
 
