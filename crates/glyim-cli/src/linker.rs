@@ -160,18 +160,6 @@ pub fn link_with_args(
     linker: Option<&str>,
     target_triple: Option<&str>,
 ) -> Result<(), String> {
-    // Plan §18.1: cross-compilation support. When a target triple is supplied
-    // and differs from the host, compute the target-appropriate linker flags
-    // (e.g. `--target=<triple>` for clang, or `-m <emulation>` for GNU ld) and
-    // prepend them to any user-supplied flags. An unmapped target is a hard
-    // error rather than silently passing host flags to a cross target.
-    let mut cross_flags: Vec<String> = Vec::new();
-    if let Some(triple) = target_triple
-        && !triple.is_empty()
-    {
-        cross_flags = linker_flags_for_target(triple)?;
-    }
-
     // Detect platform to choose default linker
     let default_linker = if cfg!(target_os = "windows") {
         "link.exe"
@@ -187,6 +175,21 @@ pub fn link_with_args(
     } else {
         linker_name
     };
+
+    // Plan §18.1: cross-compilation support. When a target triple is supplied
+    // and differs from the host, compute the target-appropriate linker flags
+    // (e.g. `-target <triple>` for the cc/clang/gcc driver, or
+    // `-m <emulation>` for raw GNU ld) and prepend them to any user-supplied
+    // flags. The flags depend on which linker was actually selected, so this is
+    // computed *before* the linker is moved into the linker invoker. An
+    // unmapped target is a hard error rather than silently passing host flags
+    // to a cross target.
+    let mut cross_flags: Vec<String> = Vec::new();
+    if let Some(triple) = target_triple
+        && !triple.is_empty()
+    {
+        cross_flags = linker_flags_for_target(triple, final_linker_name.as_str())?;
+    }
 
     let linker_invoker: Box<dyn LinkerInvoker> = if cfg!(target_os = "windows") {
         Box::new(MsvcLinker {
@@ -221,8 +224,32 @@ pub fn link_with_args(
 /// - `clang`/`gcc` drivers accept `--target=<triple>` directly.
 /// - GNU `ld` needs an explicit emulation via `-m <emulation>` (e.g.
 ///   `-m aarch64linux` for an aarch64 Linux target from an x86_64 host).
-pub(crate) fn linker_flags_for_target(triple: &str) -> Result<Vec<String>, String> {
-    // Normalize: the emulation table keys on the architecture component.
+pub(crate) fn linker_flags_for_target(
+    triple: &str,
+    linker: &str,
+) -> Result<Vec<String>, String> {
+    // The flags differ between a compiler *driver* (cc/clang/gcc) and a raw
+    // GNU `ld`:
+    //   - drivers accept a single-dash `-target <triple>` (Apple clang rejects
+    //     the double-dash `--target` and the `-m <emulation>` GNU-ld flag);
+    //   - raw GNU ld has no `--target` and instead needs `-m <emulation>`.
+    let linker = linker.trim();
+    let is_driver = linker == "cc"
+        || linker == "gcc"
+        || linker == "clang"
+        || linker.ends_with("/cc")
+        || linker.ends_with("/gcc")
+        || linker.ends_with("/clang");
+
+    if is_driver {
+        // `-target <triple>` (single dash) is what cc/clang/gcc understand.
+        // This is what lets a darwin host link a darwin executable via its
+        // clang `cc` (the previous `--target` + `-m` pair was rejected by the
+        // driver, so `--emit=exec --target=x86_64-apple-darwin` failed on macOS).
+        return Ok(vec!["-target".to_string(), triple.to_string()]);
+    }
+
+    // Raw GNU ld: emulation table keys on the architecture component.
     let arch = triple.split('-').next().unwrap_or(triple);
     // emulation -> linker -m flag for GNU ld (matches common cross targets).
     let emulation = match arch {
@@ -245,12 +272,7 @@ pub(crate) fn linker_flags_for_target(triple: &str) -> Result<Vec<String>, Strin
             ))
         }
     };
-    Ok(vec![
-        "--target".to_string(),
-        triple.to_string(),
-        "-m".to_string(),
-        emulation.to_string(),
-    ])
+    Ok(vec!["-m".to_string(), emulation.to_string()])
 }
 
 /// Tries to find a suitable C linker on Unix-like systems.
