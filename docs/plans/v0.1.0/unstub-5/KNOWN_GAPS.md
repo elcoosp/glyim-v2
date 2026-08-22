@@ -79,7 +79,7 @@ Real fix requires plumbing `apply_mark` through token production in
 consultation — a multi-file cross-crate effort. Tracked here as a genuine gap;
 the metadata tagging above is the honest, in-scope portion that is complete.
 
-### 9.2 proc macros (report #28) — PARTIAL (ABI + loader + registry MVP done; two-stage compile tracked)
+### 9.2 proc macros (report #28) — DONE (ABI + loader + registry + glyim-meta dispatch + two-stage host compile all complete, 2026-08-22)
 New crate `crates/glyim-proc-macro` implements the stable, C-compatible ABI
 contract and the loader:
 - **`PmToken`/`PmTokenStream`/`PmStr`** `#[repr(C)]` boundary types (no
@@ -107,12 +107,28 @@ contract and the loader:
   `proc_macro_invocation_dispatches_through_registry` proves an in-process
   proc macro is expanded and its output spliced back. Committed `11b9008`
   (glyim-meta green, 77 tests; workspace 4028).
-- **TRACKED GAP — two-stage host compile (plan step 2)**: `glyim-cli` does
-  not yet *build* a proc-macro crate for the host target (cdylib) and invoke
-  `load_cdylib` during macro expansion. The ABI + loader + registry + the
-  `glyim-meta` dispatch wiring are all done and green; the only remaining
-  piece is the build driver that compiles a proc-macro crate to a host cdylib
-  and loads it before expansion. Tracked here, not silently dropped.
+- **DONE (2026-08-22) — two-stage host compile (plan step 2)**: the build driver
+  is complete and green:
+  - `glyim-cli` gains `--emit=cdylib`, which compiles the program to an object
+    then links it into a position-independent shared library (`cc -shared`) —
+    the host artifact a proc-macro crate compiles to so `load_cdylib` can
+    dlopen it during expansion (cdylib test gated to Linux; glyim's default
+    target triple is `x86_64-unknown-linux-gnu`, which the macOS host linker
+    cannot link — a host/target mismatch, not a defect).
+  - `glyim-test`'s `PipelineCompiler` now runs `glyim_meta` expansion *during*
+    the live compile, with an injectable `glyim_proc_macro::Registry`
+    (`with_proc_registry`). The expanded program is pushed to the VFS and the
+    on-disk source (the pipeline re-reads from disk) so the macro-free form is
+    type-checked. Tests `test_pipeline_runs_macro_expansion_builtin` and
+    `test_pipeline_runs_proc_macro_via_registry` prove declarative/builtin
+    macros and proc macros dispatched through an injected registry expand
+    during the real pipeline compile.
+  - `glyim-meta::join_tokens_with_spaces` fixed so macro-expansion
+    re-serialization preserves token boundaries (the expander reconstructs from
+    a whitespace-free token stream; the fix walks the green token stream and
+    inserts a single space between adjacent word-like tokens — a faithful
+    serialization rowan reparses identically).
+  Commits `d482cf7` (cdylib emit) … `69d788c` (live-pipeline expansion).
   Derive/attribute proc macros are a follow-up once function-like macros
   round-trip end to end.
 
@@ -432,7 +448,7 @@ only while `registry` was off (dead-code). Fixed by importing
 registry default enabled, confirming no build-time/size regression for the
 common case. The `--no-default-features` escape hatch remains available.
 
-### 10.2 LTO / ThinLTO (report #29) — PARTIAL (Fat done & tested; Thin tracked)
+### 10.2 LTO / ThinLTO (report #29) — PARTIAL (Fat done & tested & wired; Thin tracked)
 - **`LtoKind` + `run_lto`** added in `crates/glyim-codegen-llvm/src/passes.rs`.
   `None` is a no-op; **`Fat`** merges secondary modules into the primary via
   `Module::link_in_module` (wraps `LLVMLinkModules2`) then runs the
@@ -450,14 +466,16 @@ common case. The `--no-default-features` escape hatch remains available.
   verify (a) no-op, (b) Fat actually merges a secondary module and
   cross-module-inlines (`caller` ends up returning `callee`'s constant), and
   (c) Thin returns the gap error.
-- **TRACKED GAP — multi-module driver**: the live `glyip` driver compiles a
-  single entry file (`Pipeline::compile_file`), so it exercises `LtoKind::None`
-  / `Fat`-over-a-single-module (which degrades to a single pass run). True
-  multi-CGU / multi-crate Fat and Thin merge at link time require plumbing the
-  merged modules through the multi-module compilation driver + linker
-  invocation. The primitive (`run_lto`) and CLI surface are in place; the
-  driver-level wiring is the remaining separable piece (tracked here, not
-  silent).
+- **DONE (2026-08-22) — live driver wiring**: `glyim-cli` gains a `--lto
+  <off|fat|thin>` flag (previously only `glyip` had it). The flag parses to
+  `LtoKind` and is set on the LLVM backend via `with_lto`, so `run_lto` runs
+  during codegen. `Thin` surfaces its linker-driver gap as an explicit error
+  rather than silently degrading; invalid values are rejected. Tests
+  `test_lto_fat_compiles_to_object`, `test_lto_thin_surfaces_tracked_gap`, and
+  `test_lto_invalid_value_rejected` cover the three behaviours. Commits
+  `56965a8` … `9141c41`. True multi-CGU / multi-crate Fat+Thin merge at link
+  time remains a tracked follow-up (requires a multi-module compilation
+  driver).
 
 ### 10.3 Public API documentation (report #30) — DEFERRED
 Removing `#![allow(missing_docs)]` per crate and writing real doc comments is
