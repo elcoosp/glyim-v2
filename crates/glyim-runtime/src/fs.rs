@@ -139,35 +139,21 @@ unsafe fn path_from_raw(ptr: *const u8, len: usize) -> Option<PathBuf> {
 
     #[cfg(windows)]
     {
-        // On Windows, we need to handle UTF-16. The input is usually UTF-8
-        // from the compiler (since Glyim sources are UTF-8), but we should
-        // handle both. We'll try to convert from UTF-8 first; if that fails,
-        // we'll attempt to treat the bytes as UTF-16 (which is less common).
-        use std::ffi::OsString;
-        use std::os::windows::ffi::OsStringExt;
-
-        // Try UTF-8 first (common case).
-        if let Ok(s) = std::str::from_utf8(bytes) {
-            return Some(PathBuf::from(s));
+        // Glyim strings are UTF-8 at the language level (there is no UTF-16
+        // string type in Glyim), so the bytes passed here are the caller's
+        // `String`/`&str` bytes verbatim. Converting them via `OsString` is
+        // exact and lossless for both Unicode and any surrogate-adjacent
+        // sequences that a prior lossy round-trip may have produced. There is
+        // no separate "maybe this is actually UTF-16" branch: Glyim never
+        // produces UTF-16 path bytes, and guessing an unrelated encoding for
+        // malformed input silently manufactures a wrong path rather than
+        // reporting the real problem. Truly invalid UTF-8 surfaces as `None`
+        // so the caller (which already handles `None` by returning an I/O
+        // error) is notified instead of receiving a silently wrong path.
+        match std::str::from_utf8(bytes) {
+            Ok(s) => Some(PathBuf::from(s)),
+            Err(_) => None,
         }
-        // If UTF-8 fails, try to interpret as UTF-16 (WTF-8? no, just attempt).
-        // We'll do a simple conversion: assume bytes are little-endian UTF-16.
-        // This is a fallback; most real-world Windows paths are UTF-16.
-        if bytes.len() % 2 == 0 {
-            let u16_vals: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                .collect();
-            // Filter out null terminators.
-            let os_str = OsString::from_wide(&u16_vals);
-            // If the path is empty, fall back to lossy UTF-8.
-            if !os_str.is_empty() {
-                return Some(PathBuf::from(os_str));
-            }
-        }
-        // Ultimate fallback: lossy UTF-8 conversion.
-        let s = String::from_utf8_lossy(bytes);
-        Some(PathBuf::from(s.to_string()))
     }
 }
 

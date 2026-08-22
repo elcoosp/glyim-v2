@@ -938,15 +938,51 @@ pub extern "C" fn glyim_process_getpid() -> u32 {
 /// Returns 0 if the parent PID cannot be determined.
 #[unsafe(no_mangle)]
 pub extern "C" fn glyim_process_getppid() -> u32 {
-    // SAFETY: getppid is a POSIX function that always succeeds and returns
-    // the parent PID. On platforms where it is not available, the `libc`
-    // dependency provides a stub that returns 0.
     #[cfg(unix)]
     {
+        // SAFETY: getppid is a POSIX function that always succeeds and returns
+        // the caller's parent PID with no side effects.
         unsafe { libc::getppid() as u32 }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+
+        // SAFETY: standard Toolhelp32 snapshot usage; the handle is checked
+        // against INVALID_HANDLE_VALUE and always closed before returning.
+        unsafe {
+            let current_pid = GetCurrentProcessId();
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot == INVALID_HANDLE_VALUE {
+                return 0;
+            }
+            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut found = 0u32;
+            if Process32FirstW(snapshot, &mut entry) != 0 {
+                loop {
+                    if entry.th32ProcessID == current_pid {
+                        found = entry.th32ParentProcessID;
+                        break;
+                    }
+                    if Process32NextW(snapshot, &mut entry) == 0 {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snapshot);
+            found
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        // Genuinely no known primitive on this target family (e.g. wasm); an
+        // honest 0 rather than a fabricated value.
         0
     }
 }
