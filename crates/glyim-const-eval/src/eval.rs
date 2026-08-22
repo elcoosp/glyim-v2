@@ -249,6 +249,7 @@ fn fallback_interner() -> &'static glyim_core::interner::Interner {
 }
 
 impl<'a> ConstEvaluator<'a> {
+/// new.
     pub fn new(body: &'a Body) -> Self {
         Self {
             body,
@@ -300,11 +301,13 @@ impl<'a> ConstEvaluator<'a> {
         self
     }
 
+/// with_pointer_width.
     pub fn with_pointer_width(mut self, width: u32) -> Self {
         self.pointer_width = width;
         self
     }
 
+/// evaluate.
     pub fn evaluate(&mut self, expr_id: ExprId) -> ConstEvalResult<ConstValue> {
         let span = self.expr_span(expr_id);
         let expr = &self.body.exprs[expr_id];

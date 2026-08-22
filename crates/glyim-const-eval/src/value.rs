@@ -121,10 +121,12 @@ impl ConstValue {
         }
     }
 
+/// is_bool.
     pub fn is_bool(&self) -> bool {
         matches!(self, ConstValue::Bool(_))
     }
 
+/// as_bool.
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             ConstValue::Bool(b) => Some(*b),
@@ -132,6 +134,7 @@ impl ConstValue {
         }
     }
 
+/// as_i128.
     pub fn as_i128(&self) -> Option<i128> {
         match self {
             ConstValue::Int(v, _) => Some(*v),
@@ -140,6 +143,7 @@ impl ConstValue {
         }
     }
 
+/// as_u128.
     pub fn as_u128(&self) -> Option<u128> {
         match self {
             ConstValue::Int(v, _) => Some(*v as u128),
@@ -148,6 +152,7 @@ impl ConstValue {
         }
     }
 
+/// as_f64.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             ConstValue::FloatBits(bits, _) => Some(f64::from_bits(*bits)),
@@ -155,6 +160,7 @@ impl ConstValue {
         }
     }
 
+/// checked_add.
     pub fn checked_add(&self, other: &ConstValue) -> Option<ConstValue> {
         match (self, other) {
             (ConstValue::Int(a, ty_a), ConstValue::Int(b, ty_b)) if ty_a == ty_b => {
@@ -173,6 +179,7 @@ impl ConstValue {
         }
     }
 
+/// checked_sub.
     pub fn checked_sub(&self, other: &ConstValue) -> Option<ConstValue> {
         match (self, other) {
             (ConstValue::Int(a, ty_a), ConstValue::Int(b, ty_b)) if ty_a == ty_b => {
@@ -191,6 +198,7 @@ impl ConstValue {
         }
     }
 
+/// checked_mul.
     pub fn checked_mul(&self, other: &ConstValue) -> Option<ConstValue> {
         match (self, other) {
             (ConstValue::Int(a, ty_a), ConstValue::Int(b, ty_b)) if ty_a == ty_b => {
@@ -209,6 +217,7 @@ impl ConstValue {
         }
     }
 
+/// checked_div.
     pub fn checked_div(&self, other: &ConstValue) -> Option<ConstValue> {
         match (self, other) {
             (ConstValue::Int(a, ty_a), ConstValue::Int(b, ty_b)) if ty_a == ty_b => {
@@ -232,6 +241,7 @@ impl ConstValue {
         }
     }
 
+/// checked_rem.
     pub fn checked_rem(&self, other: &ConstValue) -> Option<ConstValue> {
         match (self, other) {
             (ConstValue::Int(a, ty_a), ConstValue::Int(b, ty_b)) if ty_a == ty_b => {
@@ -255,6 +265,7 @@ impl ConstValue {
         }
     }
 
+/// checked_neg.
     pub fn checked_neg(&self) -> Option<ConstValue> {
         match self {
             ConstValue::Int(v, ty) => v.checked_neg().map(|r| ConstValue::Int(r, *ty)),
@@ -266,6 +277,7 @@ impl ConstValue {
         }
     }
 
+/// not.
     pub fn not(&self) -> Option<ConstValue> {
         match self {
             ConstValue::Bool(b) => Some(ConstValue::Bool(!b)),

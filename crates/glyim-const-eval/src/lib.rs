@@ -4,7 +4,6 @@
 //! literals, arithmetic, `if` expressions, and `match` expressions.
 //! It is called during HIR→THIR lowering to replace `ConstBlock`
 //! patterns with evaluated literals.
-#![allow(missing_docs)]
 
 pub mod eval;
 pub mod value;
