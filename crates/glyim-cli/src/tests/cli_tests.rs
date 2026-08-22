@@ -248,3 +248,44 @@ fn test_lto_invalid_value_rejected() {
     let result = run_with_args(args);
     assert!(result.is_err(), "invalid --lto value must be rejected");
 }
+
+/// Phase: native executable (`--emit=exec`). On a darwin host the produced
+/// binary must link and *run* (exit 0), which proves the codegen emitted a
+/// C-ABI `main` entry symbol that forwards into the glyim `main` body. We
+/// target `x86_64-apple-darwin` so the test is reproducible on the macOS host
+/// (the default ELF triple needs a Linux linker, covered by the Linux CI
+/// matrix).
+///
+/// Note: a richer body such as `let _x = 2 + 3;` cannot be used here because
+/// `i32` integer-literal arithmetic type-checking is a *separate, pre-existing*
+/// gap (it lowers to `TyKind::Error` and fails codegen) — that is unrelated to
+/// native-exec output and is tracked outside this phase.
+#[cfg(target_os = "macos")]
+#[test]
+fn exec_emit_links_and_runs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("run.g");
+    std::fs::write(&src, "fn main() {}\n").unwrap();
+    let out = tmp.path().join("run_bin");
+
+    let args = CliArgs {
+        input: src.clone(),
+        output: Some(out.clone()),
+        opt_level: 0,
+        target: Some("x86_64-apple-darwin".to_string()),
+        backend: "llvm".to_string(),
+        emit: "exec".to_string(),
+        linker: None,
+        link_flags: None,
+        lto: "off".to_string(),
+    };
+    let result = run_with_args(args);
+    assert!(result.is_ok(), "glyim-cli --emit=exec failed: {:?}", result);
+    assert!(out.exists(), "executable not produced");
+
+    // The binary must actually run to completion with a zero exit code.
+    let status = std::process::Command::new(&out)
+        .status()
+        .expect("execute produced binary");
+    assert!(status.success(), "produced binary exited non-zero");
+}
