@@ -1,3 +1,4 @@
+mod async_desugar;
 mod expr_lowering;
 mod field_access;
 mod lower_comprehensive;
