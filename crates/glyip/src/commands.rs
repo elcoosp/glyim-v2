@@ -401,8 +401,19 @@ fn compile_and_run_compiled(
     ));
     let exe_path = output_path.with_extension("");
 
-    let backend: Box<dyn glyim_codegen::CodegenBackend> =
-        Box::new(glyim_codegen_llvm::LlvmBackend::new());
+    let backend: Box<dyn glyim_codegen::CodegenBackend> = {
+        // §1.9: when the source has an entry `main`, tell the backend to emit a
+        // C-ABI `main` symbol (via `--emit=exec` semantics) so the produced
+        // object links into a runnable binary. Without this the object has no
+        // `main` and the native link fails ("undefined reference to main").
+        let mut llvm = glyim_codegen_llvm::LlvmBackend::new();
+        if let Some(main_id) =
+            glyim_pipeline::Pipeline::entry_main_local_id(&mut db, file)
+        {
+            llvm = llvm.with_entry_main(main_id);
+        }
+        Box::new(llvm)
+    };
 
     // Stage 1: compile source -> object file via the full pipeline.
     match glyim_pipeline::Pipeline::compile_file(&mut db, file, backend.as_ref(), &output_path) {
@@ -682,7 +693,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "native compiled-exec: glyim codegen does not yet emit a standalone `main`/start symbol for a bare `cc` link (link fails with 'undefined reference to main'); the full `glyim run`/`glyim build` path links the runtime start object. Re-enable once codegen emits a linkable entry point."]
     fn compile_and_run_compiled_runs_real_binary() {
         // Plan §23.1: the compiled-binary execution path must compile a source
         // file to an object, link it into a real executable, and run it as an
