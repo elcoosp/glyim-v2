@@ -4,26 +4,38 @@ use glyim_span::Span;
 use glyim_type::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// VariableKind.
 pub enum VariableKind {
+/// Variant.
     General,
+/// Variant.
     Integer,
+/// Variant.
     Float,
 }
 
 #[derive(Clone, Debug)]
+/// TypeVariable.
 pub struct TypeVariable {
+/// Struct.
     pub universe: UniverseIndex,
+/// Struct.
     pub value: Option<Ty>,
+/// Struct.
     pub kind: VariableKind,
 }
 
 #[derive(Clone, Debug)]
+/// RegionVariable.
 pub struct RegionVariable {
+/// Struct.
     pub universe: UniverseIndex,
+/// Struct.
     pub value: Option<Region>,
 }
 
 #[derive(Clone, Debug)]
+/// InferenceSnapshot.
 pub struct InferenceSnapshot {
     ty_vars: IndexVec<TyVar, TypeVariable>,
     int_vars: IndexVec<IntVar, TypeVariable>,
@@ -32,6 +44,7 @@ pub struct InferenceSnapshot {
     universe: UniverseIndex,
 }
 
+/// InferenceTable.
 pub struct InferenceTable {
     ty_vars: IndexVec<TyVar, TypeVariable>,
     int_vars: IndexVec<IntVar, TypeVariable>,
@@ -44,6 +57,7 @@ pub struct InferenceTable {
 const MAX_RESOLVE_DEPTH: u32 = 256;
 
 impl InferenceTable {
+/// new.
     pub fn new() -> Self {
         Self {
             ty_vars: IndexVec::new(),
@@ -55,10 +69,12 @@ impl InferenceTable {
         }
     }
 
+/// take_diagnostics.
     pub fn take_diagnostics(&mut self) -> Vec<GlyimDiagnostic> {
         std::mem::take(&mut *self.diagnostics.borrow_mut())
     }
 
+/// snapshot.
     pub fn snapshot(&self) -> InferenceSnapshot {
         InferenceSnapshot {
             ty_vars: self.ty_vars.clone(),
@@ -69,6 +85,7 @@ impl InferenceTable {
         }
     }
 
+/// rollback_to.
     pub fn rollback_to(&mut self, snapshot: InferenceSnapshot) {
         self.ty_vars = snapshot.ty_vars;
         self.int_vars = snapshot.int_vars;
@@ -77,8 +94,10 @@ impl InferenceTable {
         self.universe = snapshot.universe;
     }
 
+/// commit.
     pub fn commit(&mut self, _snapshot: InferenceSnapshot) {}
 
+/// new_ty_var.
     pub fn new_ty_var(&mut self, _ctx: &mut TyCtxMut) -> TyVar {
         self.ty_vars.push(TypeVariable {
             universe: self.universe,
@@ -87,6 +106,7 @@ impl InferenceTable {
         })
     }
 
+/// new_int_var.
     pub fn new_int_var(&mut self, _ctx: &mut TyCtxMut) -> IntVar {
         self.int_vars.push(TypeVariable {
             universe: self.universe,
@@ -95,6 +115,7 @@ impl InferenceTable {
         })
     }
 
+/// new_float_var.
     pub fn new_float_var(&mut self, _ctx: &mut TyCtxMut) -> FloatVar {
         self.float_vars.push(TypeVariable {
             universe: self.universe,
@@ -103,6 +124,7 @@ impl InferenceTable {
         })
     }
 
+/// new_region_var.
     pub fn new_region_var(&mut self, _ctx: &mut TyCtxMut) -> RegionVid {
         self.region_vars.push(RegionVariable {
             universe: self.universe,
@@ -146,26 +168,32 @@ impl InferenceTable {
         }
     }
 
+/// universe.
     pub fn universe(&self) -> UniverseIndex {
         self.universe
     }
+/// create_universe.
     pub fn create_universe(&mut self) -> UniverseIndex {
         self.universe = UniverseIndex(self.universe.0 + 1);
         self.universe
     }
 
+/// probe_ty_var.
     pub fn probe_ty_var(&self, var: TyVar) -> Option<Ty> {
         self.ty_vars.get(var).and_then(|v| v.value)
     }
 
+/// probe_int_var.
     pub fn probe_int_var(&self, var: IntVar) -> Option<Ty> {
         self.int_vars.get(var).and_then(|v| v.value)
     }
 
+/// probe_float_var.
     pub fn probe_float_var(&self, var: FloatVar) -> Option<Ty> {
         self.float_vars.get(var).and_then(|v| v.value)
     }
 
+/// unify.
     pub fn unify(
         &mut self,
         ctx: &mut TyCtxMut,
@@ -820,6 +848,7 @@ impl InferenceTable {
         }
     }
 
+/// resolve_ty_shallow.
     pub fn resolve_ty_shallow(&self, ctx: &dyn TypeLookup, ty: Ty) -> Ty {
         self.resolve_ty_shallow_depth(ctx, ty, 0, &mut std::collections::HashSet::new())
     }
@@ -874,6 +903,7 @@ impl InferenceTable {
         }
     }
 
+/// fully_resolve.
     pub fn fully_resolve(&self, ctx: &dyn TypeLookup, ty: Ty) -> Result<Ty, Vec<TyVar>> {
         let resolved = self.resolve_ty_shallow(ctx, ty);
         if self.has_unresolved_non_ty_infer(ctx, resolved) {
@@ -1010,11 +1040,36 @@ impl Default for InferenceTable {
 }
 
 #[derive(Clone, Debug)]
+/// Constraint.
 pub enum Constraint {
-    TypeEq { a: Ty, b: Ty },
-    RegionEq { a: Region, b: Region },
-    RegionOutlives { a: Region, b: Region },
-    TypeOutlives { ty: Ty, region: Region },
+/// Variant.
+    TypeEq {
+        /// a field.
+        a: Ty,
+        /// b field.
+        b: Ty,
+    },
+/// Variant.
+    RegionEq {
+        /// a field.
+        a: Region,
+        /// b field.
+        b: Region,
+    },
+/// Variant.
+    RegionOutlives {
+        /// a field.
+        a: Region,
+        /// b field.
+        b: Region,
+    },
+/// Variant.
+    TypeOutlives {
+        /// ty field.
+        ty: Ty,
+        /// region field.
+        region: Region,
+    },
 }
 
 #[test]

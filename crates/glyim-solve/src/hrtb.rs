@@ -527,6 +527,7 @@ pub fn check_hrtb(
     (result, ctx)
 }
 
+/// instantiate_hrtb_predicate.
 pub fn instantiate_hrtb_predicate(
     binder: &Binder<Predicate>,
     infer: &mut crate::InferenceTable,

@@ -6,7 +6,6 @@
 //! [F18] Separate `IndexVec`s for `TyVar`, `IntVar`, and
 //! `FloatVar`. The type system prevents constructing
 //! `InferVar::Int(TyVar(0))` because `Int` takes an `IntVar`.
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -31,9 +30,12 @@
     clippy::collapsible_if
 )]
 
+/// fulfill.
 pub mod fulfill;
 pub mod hrtb;
+/// infer.
 pub mod infer;
+/// solver.
 pub mod solver;
 
 pub use fulfill::{

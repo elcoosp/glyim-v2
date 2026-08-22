@@ -3,27 +3,41 @@ use glyim_type::*;
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
+/// Obligation.
 pub struct Obligation {
+/// Struct.
     pub predicate: Predicate,
+/// Struct.
     pub cause: ObligationCause,
 }
 
 #[derive(Clone, Debug)]
+/// ObligationCause.
 pub struct ObligationCause {
+/// Struct.
     pub span: glyim_span::Span,
+/// Struct.
     pub code: ObligationCauseCode,
 }
 
 #[derive(Clone, Debug)]
+/// ObligationCauseCode.
 pub enum ObligationCauseCode {
+/// Variant.
     WellFormed,
+/// Variant.
     TypeConstruction,
+/// Variant.
     MatchArm,
+/// Variant.
     IfThenElse,
 }
 
+/// FulfillmentCtx.
 pub struct FulfillmentCtx<'a> {
+/// Struct.
     pub solver: &'a mut dyn crate::solver::TraitSolver,
+/// Struct.
     pub ctx: &'a TyCtx,
     obligations: VecDeque<Obligation>,
     processed_count: usize,
@@ -31,11 +45,15 @@ pub struct FulfillmentCtx<'a> {
 }
 
 #[derive(Clone, Debug)]
+/// OverflowError.
 pub struct OverflowError {
+/// Struct.
     pub predicate: Predicate,
+/// Struct.
     pub depth: usize,
 }
 
+/// can_coerce.
 pub fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
     if a == b {
         return true;
@@ -97,6 +115,7 @@ pub fn can_coerce(ctx: &TyCtx, a: Ty, b: Ty) -> bool {
 }
 
 impl<'a> FulfillmentCtx<'a> {
+/// new.
     pub fn new(ctx: &'a TyCtx, solver: &'a mut dyn crate::solver::TraitSolver) -> Self {
         Self {
             solver,
@@ -107,10 +126,12 @@ impl<'a> FulfillmentCtx<'a> {
         }
     }
 
+/// register_obligation.
     pub fn register_obligation(&mut self, obligation: Obligation) {
         self.obligations.push_back(obligation);
     }
 
+/// process_obligations.
     pub fn process_obligations(&mut self, limit: usize) -> Result<(), OverflowError> {
         while let Some(obligation) = self.obligations.pop_front() {
             self.processed_count += 1;
@@ -145,6 +166,7 @@ impl<'a> FulfillmentCtx<'a> {
         Ok(())
     }
 
+/// into_diagnostics.
     pub fn into_diagnostics(self) -> Vec<GlyimDiagnostic> {
         self.diagnostics
     }

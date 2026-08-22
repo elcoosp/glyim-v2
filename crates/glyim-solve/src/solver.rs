@@ -10,26 +10,40 @@ use glyim_type::*;
 /// generics with `T: Copy` / `T: Sized` / `T: Send` / `T: Sync` barely work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinTrait {
+/// Variant.
     Copy,
+/// Variant.
     Sized,
+/// Variant.
     Send,
+/// Variant.
     Sync,
+/// Variant.
     Unpin,
 }
 
 /// Information returned by the trait solver for `Iterator::next`.
 #[derive(Clone, Debug)]
 pub struct SolverIteratorNextInfo {
+/// Struct.
     pub fn_def_id: glyim_core::def_id::FnDefId,
+/// Struct.
     pub fn_substs: glyim_type::Substitution,
+/// Struct.
     pub fn_ty: glyim_type::Ty,
+/// Struct.
     pub option_ty: glyim_type::Ty,
+/// Struct.
     pub discr_ty: glyim_type::Ty,
+/// Struct.
     pub ref_iter_ty: glyim_type::Ty,
 }
 
+/// TraitSolver.
 pub trait TraitSolver {
+/// can_prove.
     fn can_prove(&mut self, ctx: &TyCtx, predicate: &TraitPredicate) -> SolverResult;
+/// evaluate_predicate.
     fn evaluate_predicate(&mut self, ctx: &TyCtx, predicate: &Predicate) -> SolverResult;
     /// Get the `Iterator::next` method info for a given iterator type.
     fn iterator_next_info(
@@ -41,12 +55,17 @@ pub trait TraitSolver {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// SolverResult.
 pub enum SolverResult {
+/// Variant.
     Proven,
+/// Variant.
     Ambiguous,
+/// Variant.
     DefiniteNo,
 }
 
+/// TraitContext.
 pub struct TraitContext {
     trait_defs: Vec<TraitDef>,
     impl_defs: Vec<ImplDef>,
@@ -55,22 +74,32 @@ pub struct TraitContext {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// TraitDef.
 pub struct TraitDef {
+/// Struct.
     pub def_id: TraitDefId,
+/// Struct.
     pub name: Name,
+/// Struct.
     pub associated_types: Vec<Name>,
+/// Struct.
     pub predicates: Vec<Predicate>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// ImplDef.
 pub struct ImplDef {
+/// Struct.
     pub def_id: ImplDefId,
+/// Struct.
     pub trait_ref: TraitRef,
+/// Struct.
     pub predicates: Vec<Predicate>,
 }
 
 #[allow(dead_code)]
 impl TraitContext {
+/// new.
     pub fn new() -> Self {
         Self {
             trait_defs: Vec::new(),
@@ -79,9 +108,11 @@ impl TraitContext {
             builtin_next_fn_id: None,
         }
     }
+/// register_trait.
     pub fn register_trait(&mut self, def: TraitDef) {
         self.trait_defs.push(def);
     }
+/// register_impl.
     pub fn register_impl(&mut self, def: ImplDef) {
         self.impl_defs.push(def);
     }
@@ -97,6 +128,7 @@ impl TraitContext {
     pub fn builtin_trait_kind(&self, def_id: TraitDefId) -> Option<BuiltinTrait> {
         self.lang_traits.get(&def_id).copied()
     }
+/// impls_of_trait.
     pub fn impls_of_trait(&self, trait_id: TraitDefId) -> impl Iterator<Item = &ImplDef> {
         self.impl_defs
             .iter()
@@ -174,11 +206,13 @@ impl Default for TraitContext {
     }
 }
 
+/// SimpleTraitSolver.
 pub struct SimpleTraitSolver<'a> {
     trait_ctx: &'a TraitContext,
 }
 
 impl<'a> SimpleTraitSolver<'a> {
+/// new.
     pub fn new(trait_ctx: &'a TraitContext) -> Self {
         Self { trait_ctx }
     }
