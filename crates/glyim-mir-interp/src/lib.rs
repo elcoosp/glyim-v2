@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Crate root.
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -35,6 +35,7 @@ mod interp_value;
 pub use interp_error::InterpError;
 pub use interp_value::InterpValue;
 
+/// Interpreter.
 pub struct Interpreter<'tcx> {
     tcx: &'tcx TyCtx,
     layout: SimpleLayoutComputer<'tcx>,
@@ -47,7 +48,9 @@ pub struct Interpreter<'tcx> {
     /// cleanup blocks in caller frames) is still out of scope for this
     /// tree-walking interpreter.
     pub panics_unwind: bool,
+/// Struct.
     pub step_limit: usize,
+/// Struct.
     pub recursion_limit: usize,
     step_count: usize,
     recursion_depth: usize,
@@ -78,6 +81,7 @@ struct CallFrame {
 }
 
 impl<'tcx> Interpreter<'tcx> {
+/// new.
     pub fn new(tcx: &'tcx TyCtx) -> Self {
         Interpreter {
             tcx,
@@ -97,6 +101,7 @@ impl<'tcx> Interpreter<'tcx> {
         }
     }
 
+/// with_step_limit.
     pub fn with_step_limit(mut self, limit: usize) -> Self {
         self.step_limit = limit;
         self
@@ -111,6 +116,7 @@ impl<'tcx> Interpreter<'tcx> {
         self.get_element_size(ty)
     }
 
+/// with_recursion_limit.
     pub fn with_recursion_limit(mut self, limit: usize) -> Self {
         self.recursion_limit = limit;
         self
@@ -125,22 +131,27 @@ impl<'tcx> Interpreter<'tcx> {
         self
     }
 
+/// add_function.
     pub fn add_function(&mut self, def_id: DefId, body: Body) {
         self.function_table.insert(def_id, body);
     }
 
+/// step_limit.
     pub fn step_limit(&self) -> usize {
         self.step_limit
     }
 
+/// recursion_limit.
     pub fn recursion_limit(&self) -> usize {
         self.recursion_limit
     }
 
+/// get_local_value.
     pub fn get_local_value(&self, local: LocalIdx) -> Option<&InterpValue> {
         self.locals.get(local.index())?.as_ref()
     }
 
+/// get_return_value.
     pub fn get_return_value(&self) -> Option<InterpValue> {
         self.locals.first().and_then(|opt| opt.clone())
     }
@@ -159,6 +170,7 @@ impl<'tcx> Interpreter<'tcx> {
             .ok_or_else(|| InterpError::Panic("const-eval produced no return value".into()))
     }
 
+/// run_body.
     pub fn run_body(&mut self, body: &Body) -> InterpResult<()> {
         self.current_body = Some(body.clone());
         self.current_bb = BasicBlockIdx::from_raw(0);
@@ -1414,6 +1426,7 @@ impl<'tcx> Interpreter<'tcx> {
     }
 }
 
+/// InterpResult.
 pub type InterpResult<T> = Result<T, InterpError>;
 
 #[cfg(test)]

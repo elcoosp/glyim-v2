@@ -1,9 +1,13 @@
 #[derive(Debug, PartialEq)]
+/// InterpError.
 pub enum InterpError {
+/// Variant.
     TimedOut,
+/// Variant.
     StackOverflow,
     /// Integer (or float) division / remainder by zero (de-stubbing plan §11.2).
     DivisionByZero,
+#[allow(missing_docs)]
     Panic(String),
     /// Cross-frame unwind reached the top of the call stack
     /// (de-stubbing plan §7.2). Carries the original panic payload so callers
