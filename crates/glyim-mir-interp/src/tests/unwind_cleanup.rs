@@ -363,3 +363,402 @@ fn nested_panic_unwinds_through_all_caller_frames() {
     );
 }
 
+/// Build a call chain `f0 → f1 → … → f(depth-1)` where every `Call` carries
+/// `cleanup: None`. The bottom function (`f(depth-1)`) panics via a failing
+/// `Assert` (also `cleanup: None`). No frame has a cleanup edge, so a panic at
+/// the bottom must unwind straight to the top of the stack as `Unwind`, never
+/// resuming any caller's normal continuation.
+fn build_no_cleanup_chain(depth: usize, tcx_mut: &mut TyCtxMut) -> Vec<(DefId, Body)> {
+    let mut funcs = Vec::new();
+    for i in 0..depth {
+        let is_bottom = i == depth - 1;
+        let mut b = Body::dummy(def_id(i as u32));
+        b.locals = IndexVec::from_raw(vec![LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(Span::DUMMY),
+        }]);
+        let terminator = if is_bottom {
+            TerminatorKind::Assert {
+                cond: Operand::Constant(MirConst {
+                    kind: MirConstKind::Bool(false),
+                    ty: tcx_mut.bool_ty(),
+                    span: Span::DUMMY,
+                }),
+                expected: true,
+                target: BasicBlockIdx::from_raw(1),
+                cleanup: None,
+                msg: AssertMessage::BoundsCheck,
+            }
+        } else {
+            TerminatorKind::Call {
+                func: Operand::Constant(MirConst {
+                    kind: MirConstKind::Fn(
+                        FnDefId::from_raw((i as u32) + 1),
+                        glyim_type::Substitution::empty(),
+                    ),
+                    ty: Ty::UNIT,
+                    span: Span::DUMMY,
+                }),
+                args: vec![],
+                destination: Place::new(LocalIdx::from_raw(0)),
+                target: Some(BasicBlockIdx::from_raw(1)),
+                cleanup: None,
+            }
+        };
+        b.basic_blocks = IndexVec::from_raw(vec![
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: terminator,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+        ]);
+        funcs.push((def_id(i as u32), b));
+    }
+    funcs
+}
+
+// Plan §1.4 (regression for the fixed `.unwrap_or(target_bb)` bug): a panic in a
+// chain of callers that ALL lack a cleanup edge must surface as `Unwind` at the
+// top of the stack, NOT as a normal return from the outermost frame. The old
+// code resumed the outermost caller's normal continuation, silently treating a
+// propagating panic as a successful return.
+#[test]
+fn unwind_skips_callers_with_no_cleanup() {
+    let mut tcx_mut = test_ty_ctx();
+    let funcs = build_no_cleanup_chain(3, &mut tcx_mut);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx).with_panics_unwind(true);
+    for (id, body) in &funcs {
+        interp.add_function(*id, body.clone());
+    }
+    let (entry_id, _) = &funcs[0];
+    let result = interp.run_body(&funcs[0].1);
+    let err = result.expect_err("panic with no recovery must unwind to the top");
+    assert!(
+        matches!(err, InterpError::Unwind(_)),
+        "panic with no cleanup edges must Unwind, got {err:?}"
+    );
+}
+
+// Plan §1.4: a panic in a chain where only the OUTERMOST caller has a cleanup
+// edge must resume in that outermost cleanup block, skipping the intermediate
+// caller (which had no cleanup edge for its own call).
+#[test]
+fn unwind_resumes_at_nearest_caller_with_cleanup() {
+    let mut tcx_mut = test_ty_ctx();
+    let i32_ty = tcx_mut.mk_ty(TyKind::Int(IntTy::I32));
+
+    // `h` (def 2, bottom): panics, no cleanup.
+    let h = {
+        let mut b = Body::dummy(def_id(2));
+        b.locals = IndexVec::from_raw(vec![LocalDecl {
+            ty: Ty::UNIT,
+            mutability: Mutability::Mut,
+            source_info: SourceInfo::new(Span::DUMMY),
+        }]);
+        b.basic_blocks = IndexVec::from_raw(vec![
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Assert {
+                        cond: Operand::Constant(MirConst {
+                            kind: MirConstKind::Bool(false),
+                            ty: tcx_mut.bool_ty(),
+                            span: Span::DUMMY,
+                        }),
+                        expected: true,
+                        target: BasicBlockIdx::from_raw(1),
+                        cleanup: None,
+                        msg: AssertMessage::BoundsCheck,
+                    },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+        ]);
+        b
+    };
+
+    // `g` (def 1, middle): calls `h` with NO cleanup edge; its only cleanup
+    // block (BB1) records sentinel 7 then re-panics, but it must be SKIPPED
+    // because `g`'s call to `h` had no cleanup — the unwind walks past it.
+    let g = {
+        let mut b = Body::dummy(def_id(1));
+        b.locals = IndexVec::from_raw(vec![
+            LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) },
+            LocalDecl { ty: i32_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) },
+        ]);
+        b.basic_blocks = IndexVec::from_raw(vec![
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Call {
+                        func: Operand::Constant(MirConst {
+                            kind: MirConstKind::Fn(FnDefId::from_raw(2), glyim_type::Substitution::empty()),
+                            ty: Ty::UNIT,
+                            span: Span::DUMMY,
+                        }),
+                        args: vec![],
+                        destination: Place::new(LocalIdx::from_raw(0)),
+                        target: Some(BasicBlockIdx::from_raw(2)),
+                        cleanup: None,
+                    },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![Statement {
+                    kind: StatementKind::Assign(
+                        Place::new(LocalIdx::from_raw(1)),
+                        Rvalue::Use(Operand::Constant(MirConst {
+                            kind: MirConstKind::Int(7),
+                            ty: i32_ty,
+                            span: Span::DUMMY,
+                        })),
+                    ),
+                    source_info: SourceInfo::new(Span::DUMMY),
+                }],
+                terminator: Terminator {
+                    kind: TerminatorKind::Goto { target: BasicBlockIdx::from_raw(3) },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: true,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Assert {
+                        cond: Operand::Constant(MirConst {
+                            kind: MirConstKind::Bool(false),
+                            ty: tcx_mut.bool_ty(),
+                            span: Span::DUMMY,
+                        }),
+                        expected: true,
+                        target: BasicBlockIdx::from_raw(4),
+                        cleanup: None,
+                        msg: AssertMessage::BoundsCheck,
+                    },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+        ]);
+        b
+    };
+
+    // `f` (def 0, outer): calls `g` WITH a cleanup edge (BB1, sentinel 99).
+    let f = {
+        let mut b = Body::dummy(def_id(0));
+        b.locals = IndexVec::from_raw(vec![
+            LocalDecl { ty: Ty::UNIT, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) },
+            LocalDecl { ty: i32_ty, mutability: Mutability::Mut, source_info: SourceInfo::new(Span::DUMMY) },
+        ]);
+        b.basic_blocks = IndexVec::from_raw(vec![
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Call {
+                        func: Operand::Constant(MirConst {
+                            kind: MirConstKind::Fn(FnDefId::from_raw(1), glyim_type::Substitution::empty()),
+                            ty: Ty::UNIT,
+                            span: Span::DUMMY,
+                        }),
+                        args: vec![],
+                        destination: Place::new(LocalIdx::from_raw(0)),
+                        target: Some(BasicBlockIdx::from_raw(2)),
+                        cleanup: Some(BasicBlockIdx::from_raw(1)),
+                    },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![Statement {
+                    kind: StatementKind::Assign(
+                        Place::new(LocalIdx::from_raw(1)),
+                        Rvalue::Use(Operand::Constant(MirConst {
+                            kind: MirConstKind::Int(99),
+                            ty: i32_ty,
+                            span: Span::DUMMY,
+                        })),
+                    ),
+                    source_info: SourceInfo::new(Span::DUMMY),
+                }],
+                terminator: Terminator {
+                    kind: TerminatorKind::Goto { target: BasicBlockIdx::from_raw(3) },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: true,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Assert {
+                        cond: Operand::Constant(MirConst {
+                            kind: MirConstKind::Bool(false),
+                            ty: tcx_mut.bool_ty(),
+                            span: Span::DUMMY,
+                        }),
+                        expected: true,
+                        target: BasicBlockIdx::from_raw(4),
+                        cleanup: None,
+                        msg: AssertMessage::BoundsCheck,
+                    },
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+            BasicBlockData {
+                statements: vec![],
+                terminator: Terminator {
+                    kind: TerminatorKind::Return,
+                    source_info: SourceInfo::new(Span::DUMMY),
+                },
+                is_cleanup: false,
+            },
+        ]);
+        b
+    };
+
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx).with_panics_unwind(true);
+    interp.add_function(def_id(1), g);
+    interp.add_function(def_id(2), h);
+    // Run `f`: the panic in `h` must skip `g` (no cleanup) and resume in `f`'s
+    // cleanup block (sentinel 99), then re-panic at the top as `Unwind`.
+    let result = interp.run_body(&f);
+    let err = result.expect_err("panic must unwind to the top");
+    assert!(
+        matches!(err, InterpError::Unwind(_)),
+        "panic must reach the top as Unwind, got {err:?}"
+    );
+    // g's sentinel (7) must NOT be set — its cleanup was correctly skipped.
+    let g_sentinel = interp
+        .get_local_value(LocalIdx::from_raw(1))
+        .expect("f tracking local must be set");
+    assert_eq!(
+        g_sentinel,
+        &InterpValue::Int(99),
+        "unwind must resume in the nearest caller WITH a cleanup (f), skipping g"
+    );
+}
+
+// Plan §1.4: the original panic payload (not a secondary one raised inside an
+// intermediate cleanup) is what surfaces at the top after a multi-frame unwind.
+#[test]
+fn original_panic_payload_survives_multi_frame_unwind() {
+    let mut tcx_mut = test_ty_ctx();
+    let funcs = build_no_cleanup_chain(4, &mut tcx_mut);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx).with_panics_unwind(true);
+    for (id, body) in &funcs {
+        interp.add_function(*id, body.clone());
+    }
+    let err = interp
+        .run_body(&funcs[0].1)
+        .expect_err("multi-frame panic must unwind to top");
+    match err {
+        InterpError::Unwind(inner) => {
+            // The payload must be the bottom panic, not some synthesized value.
+            assert!(
+                format!("{inner}").contains("BoundsCheck") || format!("{inner}").contains("assert"),
+                "Unwind payload must carry the original panic, got {inner:?}"
+            );
+        }
+        other => panic!("expected Unwind, got {other:?}"),
+    }
+}
+
+// Plan §1.4: after a full multi-frame unwind, `recursion_depth` is correctly
+// decremented for every popped frame (not left at the depth reached), so a
+// fresh call chain can recurse back up to `recursion_limit` again without a
+// spurious StackOverflow.
+#[test]
+fn recursion_limit_reflects_unwound_frames() {
+    let limit = 5usize;
+    let mut tcx_mut = test_ty_ctx();
+    let funcs = build_no_cleanup_chain(limit, &mut tcx_mut);
+    let tcx = tcx_mut.freeze();
+    let mut interp = Interpreter::new(&tcx)
+        .with_panics_unwind(true)
+        .with_recursion_limit(limit);
+    for (id, body) in &funcs {
+        interp.add_function(*id, body.clone());
+    }
+    let err = interp
+        .run_body(&funcs[0].1)
+        .expect_err("deep no-cleanup panic must unwind to top");
+    assert!(
+        matches!(err, InterpError::Unwind(_)),
+        "deep chain must unwind, got {err:?}"
+    );
+    // After a full unwind the bookkeeping must be back to the entry level.
+    assert_eq!(
+        interp.recursion_depth(),
+        1,
+        "recursion_depth must be decremented for every popped frame"
+    );
+    // A fresh call chain of the same depth must NOT trip the recursion limit.
+    let mut tcx_mut2 = test_ty_ctx();
+    let fs = build_no_cleanup_chain(limit, &mut tcx_mut2);
+    let tcx2 = tcx_mut2.freeze();
+    let mut interp2 = Interpreter::new(&tcx2)
+        .with_panics_unwind(true)
+        .with_recursion_limit(limit);
+    for (id, body) in &fs {
+        interp2.add_function(*id, body.clone());
+    }
+    let err2 = interp2
+        .run_body(&fs[0].1)
+        .expect_err("second chain must also unwind, not StackOverflow");
+    assert!(
+        matches!(err2, InterpError::Unwind(_)),
+        "fresh chain must reach the same depth again (no stale recursion accounting), got {err2:?}"
+    );
+}
+

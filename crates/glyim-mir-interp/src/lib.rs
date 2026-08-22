@@ -45,8 +45,11 @@ pub struct Interpreter<'tcx> {
     /// cleanup (plan §14.2): the cleanup block — which drop elaboration has
     /// populated with drop-glue calls — runs to completion before the
     /// function terminates. Cross-frame unwinding (walking the call stack to
-    /// cleanup blocks in caller frames) is still out of scope for this
-    /// tree-walking interpreter.
+    /// cleanup blocks in caller frames) IS implemented and hardened (plan
+    /// §1.4): `unwind_step` keeps popping caller frames until one has a real
+    /// `unwind_target` (its `Call`'s cleanup edge) or the stack empties,
+    /// surfacing `InterpError::Unwind` at the top — it never resumes a caller's
+    /// normal continuation for a propagating panic.
     pub panics_unwind: bool,
 /// Struct.
     pub step_limit: usize,
@@ -142,9 +145,14 @@ impl<'tcx> Interpreter<'tcx> {
     }
 
 /// recursion_limit.
-    pub fn recursion_limit(&self) -> usize {
-        self.recursion_limit
-    }
+pub fn recursion_limit(&self) -> usize {
+    self.recursion_limit
+}
+
+/// recursion_depth.
+pub fn recursion_depth(&self) -> usize {
+    self.recursion_depth
+}
 
 /// get_local_value.
     pub fn get_local_value(&self, local: LocalIdx) -> Option<&InterpValue> {
@@ -420,23 +428,38 @@ impl<'tcx> Interpreter<'tcx> {
             *bb_idx = cb;
             return Ok(());
         }
-        // (2) cross-frame: pop to the caller and resume at its unwind target.
-        if let Some(mut frame) = self.call_stack.pop() {
-            if self.pending_unwind.is_none() {
-                self.pending_unwind = Some(payload);
-            }
-            let resume = frame.unwind_target.unwrap_or(frame.target_bb);
-            let caller_body = frame.body;
-            self.locals = frame.locals;
-            self.local_decls = caller_body.locals.iter().cloned().collect();
-            self.recursion_depth = self.recursion_depth.saturating_sub(1);
-            *body = caller_body;
-            *bb_idx = resume;
-            return Ok(());
+        // (2) cross-frame: keep popping caller frames until one has a real
+        // `unwind_target` (its `Call`'s cleanup edge), or the stack empties.
+        // A caller with *no* cleanup edge for the call that led here must be
+        // skipped — resuming at its normal continuation (`target_bb`) would
+        // silently treat the propagating panic as a successful return, which
+        // is a correctness bug, not a valid fallback.
+        if self.pending_unwind.is_none() {
+            self.pending_unwind = Some(payload);
         }
-        // (3) top of the stack: propagate the original payload.
-        let top = self.pending_unwind.take().unwrap_or(payload);
-        Err(InterpError::Unwind(Box::new(top)))
+        loop {
+            match self.call_stack.pop() {
+                Some(frame) => {
+                    self.recursion_depth = self.recursion_depth.saturating_sub(1);
+                    match frame.unwind_target {
+                        Some(resume) => {
+                            self.locals = frame.locals;
+                            self.local_decls = frame.body.locals.iter().cloned().collect();
+                            *body = frame.body;
+                            *bb_idx = resume;
+                            return Ok(());
+                        }
+                        // No cleanup for this frame's call: keep walking up
+                        // rather than resuming normal execution.
+                        None => continue,
+                    }
+                }
+                None => {
+                    let top = self.pending_unwind.take().expect("set above");
+                    return Err(InterpError::Unwind(Box::new(top)));
+                }
+            }
+        }
     }
 
     fn execute_statement(&mut self, stmt: &Statement) -> InterpResult<()> {
