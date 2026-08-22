@@ -256,51 +256,62 @@ fn substitute_substitution(
     ctx.intern_substitution(new_args)
 }
 
+/// Maximum recursion depth for [`ty_struct_eq`] and friends. Beyond this we
+/// conservatively return "not proven equal" rather than risk a stack overflow
+/// on pathological deeply-nested recursive types (de-stubbing §2.6).
+const MAX_STRUCT_EQ_DEPTH: usize = 256;
+
 /// Structural (interning-independent) equality of two types.
 ///
 /// `Ty`/`Substitution`/`Region` equality is by interned handle, but HRTB
 /// instantiation re-interns substituted types, so two structurally identical
 /// types can carry different handles. This recurses through the type
 /// structure (including substitution arguments) so identity coercion can be
-/// proven for substituted types.
-fn ty_struct_eq(a: Ty, b: Ty, ctx: &TyCtx) -> bool {
+/// proven for substituted types. A `depth` budget bounds the recursion.
+fn ty_struct_eq(a: Ty, b: Ty, ctx: &TyCtx, depth: usize) -> bool {
+    if depth >= MAX_STRUCT_EQ_DEPTH {
+        // Pathological nesting: give up rather than overflow the stack. The
+        // caller treats a `false` here as "not proven equal", which is the
+        // safe conservative outcome for HRTB identity coercion.
+        return false;
+    }
     match (ctx.ty_kind(a), ctx.ty_kind(b)) {
         (TyKind::Ref(ra, ia, ma), TyKind::Ref(rb, ib, mb)) => {
-            ra == rb && ma == mb && ty_struct_eq(*ia, *ib, ctx)
+            ra == rb && ma == mb && ty_struct_eq(*ia, *ib, ctx, depth + 1)
         }
         (TyKind::RawPtr(ia, ma), TyKind::RawPtr(ib, mb)) => {
-            ma == mb && ty_struct_eq(*ia, *ib, ctx)
+            ma == mb && ty_struct_eq(*ia, *ib, ctx, depth + 1)
         }
-        (TyKind::Slice(ia), TyKind::Slice(ib)) => ty_struct_eq(*ia, *ib, ctx),
+        (TyKind::Slice(ia), TyKind::Slice(ib)) => ty_struct_eq(*ia, *ib, ctx, depth + 1),
         (TyKind::Array(ia, ca), TyKind::Array(ib, cb)) => {
-            ca == cb && ty_struct_eq(*ia, *ib, ctx)
+            ca == cb && ty_struct_eq(*ia, *ib, ctx, depth + 1)
         }
-        (TyKind::Tuple(sa), TyKind::Tuple(sb)) => substs_struct_eq(*sa, *sb, ctx),
+        (TyKind::Tuple(sa), TyKind::Tuple(sb)) => substs_struct_eq(*sa, *sb, ctx, depth + 1),
         (TyKind::Adt(ida, sa), TyKind::Adt(idb, sb)) => {
-            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+            ida == idb && substs_struct_eq(*sa, *sb, ctx, depth + 1)
         }
         (TyKind::FnDef(ida, sa), TyKind::FnDef(idb, sb)) => {
-            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+            ida == idb && substs_struct_eq(*sa, *sb, ctx, depth + 1)
         }
         (TyKind::Closure(ida, sa), TyKind::Closure(idb, sb)) => {
-            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+            ida == idb && substs_struct_eq(*sa, *sb, ctx, depth + 1)
         }
         (TyKind::Opaque(ida, sa), TyKind::Opaque(idb, sb)) => {
-            ida == idb && substs_struct_eq(*sa, *sb, ctx)
+            ida == idb && substs_struct_eq(*sa, *sb, ctx, depth + 1)
         }
         (TyKind::FnPtr(sa), TyKind::FnPtr(sb)) => {
             sa.c_variadic == sb.c_variadic
                 && sa.unsafety == sb.unsafety
                 && sa.abi == sb.abi
-                && substs_struct_eq(sa.inputs, sb.inputs, ctx)
-                && ty_struct_eq(sa.output, sb.output, ctx)
+                && substs_struct_eq(sa.inputs, sb.inputs, ctx, depth + 1)
+                && ty_struct_eq(sa.output, sb.output, ctx, depth + 1)
         }
         (TyKind::Dynamic(pa, ra), TyKind::Dynamic(pb, rb)) => {
-            ra == rb && preds_struct_eq(pa, pb, ctx)
+            ra == rb && preds_struct_eq(pa, pb, ctx, depth + 1)
         }
         (TyKind::Projection(pa), TyKind::Projection(pb)) => {
             pa.trait_ref.def_id == pb.trait_ref.def_id
-                && substs_struct_eq(pa.trait_ref.substs, pb.trait_ref.substs, ctx)
+                && substs_struct_eq(pa.trait_ref.substs, pb.trait_ref.substs, ctx, depth + 1)
                 && pa.item_name == pb.item_name
         }
         (TyKind::Int(a), TyKind::Int(b)) => a == b,
@@ -319,12 +330,12 @@ fn ty_struct_eq(a: Ty, b: Ty, ctx: &TyCtx) -> bool {
     }
 }
 
-fn substs_struct_eq(sa: Substitution, sb: Substitution, ctx: &TyCtx) -> bool {
+fn substs_struct_eq(sa: Substitution, sb: Substitution, ctx: &TyCtx, depth: usize) -> bool {
     let a = ctx.substitution_args(sa);
     let b = ctx.substitution_args(sb);
     a.len() == b.len()
         && a.iter().zip(b.iter()).all(|(ga, gb)| match (ga, gb) {
-            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => ty_struct_eq(*ta, *tb, ctx),
+            (GenericArg::Ty(ta), GenericArg::Ty(tb)) => ty_struct_eq(*ta, *tb, ctx, depth + 1),
             (GenericArg::Lifetime(ra), GenericArg::Lifetime(rb)) => ra == rb,
             (GenericArg::Const(ca), GenericArg::Const(cb)) => ca == cb,
             _ => false,
@@ -335,33 +346,35 @@ fn preds_struct_eq(
     pa: &glyim_type::Binder<Box<[glyim_type::Predicate]>>,
     pb: &glyim_type::Binder<Box<[glyim_type::Predicate]>>,
     ctx: &TyCtx,
+    depth: usize,
 ) -> bool {
     let a = &pa.value;
     let b = &pb.value;
     a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|(p, q)| pred_struct_eq(p, q, ctx))
+        && a.iter().zip(b.iter()).all(|(p, q)| pred_struct_eq(p, q, ctx, depth + 1))
 }
 
 fn pred_struct_eq(
     p: &glyim_type::Predicate,
     q: &glyim_type::Predicate,
     ctx: &TyCtx,
+    depth: usize,
 ) -> bool {
     match (p, q) {
         (Predicate::Trait(tp), Predicate::Trait(tq)) => {
             tp.trait_ref.def_id == tq.trait_ref.def_id
-                && substs_struct_eq(tp.trait_ref.substs, tq.trait_ref.substs, ctx)
+                && substs_struct_eq(tp.trait_ref.substs, tq.trait_ref.substs, ctx, depth + 1)
                 && tp.polarity == tq.polarity
         }
         (Predicate::RegionOutlives(rp), Predicate::RegionOutlives(rq)) => {
             rp.a == rq.a && rp.b == rq.b
         }
         (Predicate::TypeOutlives(tp), Predicate::TypeOutlives(tq)) => {
-            ty_struct_eq(tp.ty, tq.ty, ctx) && tp.region == tq.region
+            ty_struct_eq(tp.ty, tq.ty, ctx, depth + 1) && tp.region == tq.region
         }
-        (Predicate::WellFormed(ta), Predicate::WellFormed(tb)) => ty_struct_eq(*ta, *tb, ctx),
+        (Predicate::WellFormed(ta), Predicate::WellFormed(tb)) => ty_struct_eq(*ta, *tb, ctx, depth + 1),
         (Predicate::Coerce(a, b), Predicate::Coerce(c, d)) => {
-            ty_struct_eq(*a, *c, ctx) && ty_struct_eq(*b, *d, ctx)
+            ty_struct_eq(*a, *c, ctx, depth + 1) && ty_struct_eq(*b, *d, ctx, depth + 1)
         }
         _ => false,
     }
@@ -516,7 +529,7 @@ pub fn check_hrtb(
             // `can_coerce`'s index-based `a == b` identity check. Genuinely
             // open higher-ranked coercions (and non-identity coercions the
             // existing rules reject) stay Ambiguous.
-            if ty_struct_eq(*a, *b, &ctx) || crate::solver::can_coerce(&ctx, *a, *b) {
+            if ty_struct_eq(*a, *b, &ctx, 0) || crate::solver::can_coerce(&ctx, *a, *b) {
                 crate::solver::SolverResult::Proven
             } else {
                 crate::solver::SolverResult::Ambiguous
