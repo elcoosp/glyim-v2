@@ -183,19 +183,6 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             )]);
         }
     };
-    // `Thin` LTO: the per-module bitcode emission (`emit_thinlto_bitcode`) and
-    // thin-link driver (`thin_lto_link` in this crate) now exist, but the
-    // backend per-CGU wiring that calls them is the remaining tracked step
-    // (KNOWN_GAPS.md Phase 10.2). Surface the gap explicitly rather than
-    // silently degrading to a no-op.
-    if lto == LtoKind::Thin {
-        return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
-            "ThinLTO requires per-module bitcode emission (glyim_codegen_llvm::passes::\
-             emit_thinlto_bitcode) + the thin-link driver (glyim_cli::linker::thin_lto_link). \
-             The backend per-CGU wiring that calls them is the remaining tracked step \
-             (KNOWN_GAPS.md Phase 10.2); use `fat` LTO for an in-compiler merge.",
-        )]);
-    }
 
     let config = CrateConfig {
         name: args
@@ -219,38 +206,92 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         return glyim_pipeline::emit_asm(&mut db, input, &object_path);
     }
 
-    // For obj and exec, compile to object. Resolve the entry `main` if present
-    // so the LLVM backend can emit a C-ABI `main` entry symbol for `--emit=exec`
-    // (native executable). The bytecode backend does not link, so it is skipped.
+    // Build the LLVM backend concretely so the Thin path can drive per-CGU
+    // bitcode emission (`emit_thinlto_bitcode_files`) directly. For the
+    // non-Thin paths it is boxed into the `CodegenBackend` trait object.
     let entry_main = glyim_pipeline::Pipeline::entry_main_local_id(&mut db, input);
     let target_info = glyim_core::TargetInfo::from_triple(&target_triple);
-    let backend: Box<dyn glyim_codegen::CodegenBackend> = if args.backend == "bytecode" {
+    let mut llvm = LlvmBackend::with_db(&db)
+        .with_target(&target_triple)
+        .with_opt_level(args.opt_level)
+        .with_opt_for_size(false)
+        .with_lto(lto);
+    // Only emit a C-ABI `main` entry symbol for `--emit=exec`; a cdylib or
+    // plain object must not carry a `main` (it would be an unused/conflicting
+    // entry point). `obj`/`cdylib` consumers link `main` themselves if needed.
+    if let (Some(main_id), EmitKind::Exec) = (entry_main, emit) {
+        llvm = llvm.with_entry_main(main_id);
+    }
+
+    // ThinLTO: emit one bitcode file per codegen unit, then run the thin-link
+    // driver (`thin_lto_link`, which shells out to `llvm-lto2`) to combine them
+    // incrementally. The thin-linked object is written to `object_path` for the
+    // final linker step below. `compile_file_with_artifacts` runs the full
+    // pipeline; its internal `generate` call short-circuits for Thin (see
+    // `LlvmBackend::generate`) so it does not write a redundant merged object.
+    if lto == LtoKind::Thin {
+        if args.backend == "bytecode" {
+            return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "ThinLTO requires the LLVM backend; `--backend=bytecode` cannot emit \
+                 per-CGU bitcode. Use the default (LLVM) backend for `--lto=thin`.",
+            )]);
+        }
+        let artifacts = glyim_pipeline::Pipeline::compile_file_with_artifacts(
+            &mut db,
+            input,
+            &llvm,
+            &object_path,
+            args.codegen_units,
+        )?;
+        let bitcode_dir = object_path.with_extension("thin-bc");
+        std::fs::create_dir_all(&bitcode_dir).map_err(|e| {
+            vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                "ThinLTO: failed to create bitcode dir {}: {}",
+                bitcode_dir.display(),
+                e
+            ))]
+        })?;
+        let bitcode_paths = llvm
+            .emit_thinlto_bitcode_files(&artifacts.mir_bodies, &bitcode_dir)
+            .map_err(|e| {
+                vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                    "ThinLTO per-CGU bitcode emission failed: {:?}",
+                    e
+                ))]
+            })?;
+        let thin_objects =
+            linker::thin_lto_link(&bitcode_paths, args.opt_level, &bitcode_dir).map_err(|e| {
+                vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                    "ThinLTO thin-link failed: {}",
+                    e
+                ))]
+            })?;
+        let thin_obj = thin_objects.into_iter().next().ok_or_else(|| {
+            vec![glyim_diag::GlyimDiagnostic::internal_error(
+                "ThinLTO thin-link produced no object files",
+            )]
+        })?;
+        std::fs::copy(&thin_obj, &object_path).map_err(|e| {
+            vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                "ThinLTO: failed to copy thin-linked object to {}: {}",
+                object_path.display(),
+                e
+            ))]
+        })?;
+    } else if args.backend == "bytecode" {
         if args.opt_level > 0 {
             tracing::warn!(
                 "bytecode backend opt-level currently has no effect; reserved for future peephole passes"
             );
         }
         let ctx = glyim_type::TyCtxMut::new(db.interner().clone()).freeze();
-        Box::new(BytecodeBackend::with_ty_ctx(
-            std::sync::Arc::new(ctx),
-            target_info,
-        ))
+        let backend: Box<dyn glyim_codegen::CodegenBackend> =
+            Box::new(BytecodeBackend::with_ty_ctx(std::sync::Arc::new(ctx), target_info));
+        Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units)?;
     } else {
-        let mut llvm = LlvmBackend::with_db(&db)
-            .with_target(&target_triple)
-            .with_opt_level(args.opt_level)
-            .with_opt_for_size(false)
-            .with_lto(lto);
-        // Only emit a C-ABI `main` entry symbol for `--emit=exec`; a cdylib or
-        // plain object must not carry a `main` (it would be an unused/conflicting
-        // entry point). `obj`/`cdylib` consumers link `main` themselves if needed.
-        if let (Some(main_id), EmitKind::Exec) = (entry_main, emit) {
-            llvm = llvm.with_entry_main(main_id);
-        }
-        Box::new(llvm)
-    };
-
-    Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units)?;
+        let backend: Box<dyn glyim_codegen::CodegenBackend> = Box::new(llvm);
+        Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units)?;
+    }
 
     if emit == EmitKind::Exec || emit == EmitKind::Cdylib {
         let final_path = final_output_path.expect("emit should have final output");
