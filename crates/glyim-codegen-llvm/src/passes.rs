@@ -14,8 +14,11 @@ use inkwell::targets::TargetMachine;
 /// hand control to the linker driver.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LtoKind {
+/// Variant.
     None,
+/// Variant.
     Thin,
+/// Variant.
     Fat,
 }
 

@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Crate root.
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -37,9 +37,11 @@ use std::sync::Arc;
 mod abi;
 mod debug;
 mod lower;
+/// passes.
 pub mod passes;
 mod types;
 
+/// LlvmBackend.
 pub struct LlvmBackend {
     context: Context,
     target_triple: String,
@@ -69,6 +71,7 @@ impl Default for LlvmBackend {
 }
 
 impl LlvmBackend {
+/// new.
     pub fn new() -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let target_info = TargetInfo::default();
@@ -90,6 +93,7 @@ impl LlvmBackend {
         }
     }
 
+/// with_db.
     pub fn with_db(db: &glyim_db::Database) -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let target_info = TargetInfo::default();
@@ -108,11 +112,13 @@ impl LlvmBackend {
         }
     }
 
+/// with_hygiene_ctx.
     pub fn with_hygiene_ctx(mut self, hygiene: HygieneCtx) -> Self {
         self.hygiene_ctx = Some(hygiene);
         self
     }
 
+/// lower_bodies_to_module.
     pub fn lower_bodies_to_module<'ctx>(
         &self,
         context: &'ctx Context,
@@ -143,6 +149,7 @@ impl LlvmBackend {
         Ok(module)
     }
 
+/// with_target.
     pub fn with_target(mut self, target_triple: impl Into<String>) -> Self {
         let triple = target_triple.into();
         self.target_info = TargetInfo::from_triple(&triple);
@@ -150,32 +157,38 @@ impl LlvmBackend {
         self
     }
 
+/// with_ty_ctx_handle.
     pub fn with_ty_ctx_handle(mut self, handle: glyim_db::TyCtxHandle) -> Self {
         self.ty_ctx_handle = Some(handle);
         self
     }
 
+/// with_ty_ctx.
     pub fn with_ty_ctx(mut self, ctx: TyCtx) -> Self {
         let handle = Arc::new(std::sync::RwLock::new(Some(Arc::new(ctx))));
         self.ty_ctx_handle = Some(handle);
         self
     }
 
+/// with_debug_info.
     pub fn with_debug_info(mut self, enable: bool) -> Self {
         self.debug_info = enable;
         self
     }
 
+/// with_source_map.
     pub fn with_source_map(mut self, map: HashMap<FileId, (String, String)>) -> Self {
         self.source_map = map;
         self
     }
 
+/// with_opt_level.
     pub fn with_opt_level(mut self, level: u8) -> Self {
         self.opt_level = level;
         self
     }
 
+/// with_opt_for_size.
     pub fn with_opt_for_size(mut self, size: bool) -> Self {
         self.opt_for_size = size;
         self
@@ -206,6 +219,7 @@ impl LlvmBackend {
         Ok(module.print_to_string().to_string())
     }
 
+/// emit_ir_to_string_with_handle.
     pub fn emit_ir_to_string_with_handle(&self, body: &Body) -> CompResult<String> {
         let context = Context::create();
         let ty_ctx = self
