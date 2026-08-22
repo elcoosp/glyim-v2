@@ -872,9 +872,11 @@ fn check_fn_items_in_module(
                 // `MirConstKind`. Evaluation failures are surfaced as
                 // diagnostics rather than silently producing a wrong value.
                 if let (Some(body_id), Some(root_expr)) = (c.body, c.root_expr) {
+                    let primitive_tys = glyim_const_eval::ConstEvaluator::build_primitive_tys(ctx);
                     let body = &hir.bodies[body_id];
                     let mut evaluator = glyim_const_eval::ConstEvaluator::new(body)
-                        .with_interner(ctx.resolver());
+                        .with_interner(ctx.resolver())
+                        .with_ty_ctx(ctx, primitive_tys);
                     match evaluator.evaluate(root_expr) {
                         Ok(value) => {
                             all_const_values.insert(const_def_id, value);

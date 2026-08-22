@@ -1494,6 +1494,12 @@ impl<'a> MirBuilder<'a> {
 
         let root =
             glyim_hir::ExprId::from_raw(u32::try_from(hir_body.exprs.len().checked_sub(1)?).ok()?);
+        // Lowering runs on a *frozen* `TyCtx` (`LowerCtx::ty_ctx` returns `&TyCtx`,
+        // never `&mut TyCtxMut`), so we cannot build the primitive `Ty` map that
+        // `with_ty_ctx` requires. User-facing const-cast legality is enforced by
+        // the typeck evaluator (which holds a `TyCtxMut`); this lowering-time
+        // const evaluation intentionally relies on the primitive-conversion
+        // allowlist only — a documented exception, not a silent gap.
         let mut evaluator = ConstEvaluator::new(hir_body);
         let value = evaluator.evaluate(root).ok()?;
 

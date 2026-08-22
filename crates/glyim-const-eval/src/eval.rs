@@ -265,26 +265,41 @@ impl<'a> ConstEvaluator<'a> {
 
     /// Attach a type context so `eval_cast` can consult the shared
     /// `glyim_type::is_valid_cast` legality check (plan §13.2) before
-    /// performing a value transform. The primitive `Ty`s are built once here
-    /// (while the context is mutable) into a name→`Ty` map looked up at eval
-    /// time. Without it, casts are unchecked at the type level (pre-§13.2
-    /// behavior).
-    pub fn with_ty_ctx(mut self, ty_ctx: &'a mut TyCtxMut) -> Self {
-        let mut primitive_tys = std::collections::HashMap::new();
-        primitive_tys.insert("i8", ty_ctx.mk_ty(TyKind::Int(IntTy::I8)));
-        primitive_tys.insert("i16", ty_ctx.mk_ty(TyKind::Int(IntTy::I16)));
-        primitive_tys.insert("i32", ty_ctx.mk_ty(TyKind::Int(IntTy::I32)));
-        primitive_tys.insert("i64", ty_ctx.mk_ty(TyKind::Int(IntTy::I64)));
-        primitive_tys.insert("u8", ty_ctx.mk_ty(TyKind::Uint(UintTy::U8)));
-        primitive_tys.insert("u16", ty_ctx.mk_ty(TyKind::Uint(UintTy::U16)));
-        primitive_tys.insert("u32", ty_ctx.mk_ty(TyKind::Uint(UintTy::U32)));
-        primitive_tys.insert("u64", ty_ctx.mk_ty(TyKind::Uint(UintTy::U64)));
-        primitive_tys.insert("f32", ty_ctx.mk_ty(TyKind::Float(FloatTy::F32)));
-        primitive_tys.insert("f64", ty_ctx.mk_ty(TyKind::Float(FloatTy::F64)));
-        primitive_tys.insert("bool", ty_ctx.bool_ty());
+    /// performing a value transform. The primitive `Ty` map must be built by
+    /// the caller (see `build_primitive_tys`);
+    /// it only holds a *shared* `&TyCtxMut` here so it can coexist with
+    /// `with_interner(ctx.resolver())` (both are shared borrows of the same
+    /// `TyCtxMut`, which is required because `is_valid_cast` needs the
+    /// type context while `evaluate` also needs the interner).
+    /// Without it, casts are unchecked at the type level (pre-§13.2 behavior).
+    pub fn with_ty_ctx(
+        mut self,
+        ty_ctx: &'a TyCtxMut,
+        primitive_tys: std::collections::HashMap<&'static str, Ty>,
+    ) -> Self {
         self.ty_ctx = Some(ty_ctx);
         self.primitive_tys = Some(primitive_tys);
         self
+    }
+
+    /// Build the primitive-name → `Ty` map required by `with_ty_ctx`. The caller
+    /// must supply a `&mut TyCtxMut` (the only phase that can intern new
+    /// types); lowering, which only sees a frozen `TyCtx`, must not call this
+    /// and instead relies on the primitive-conversion allowlist.
+    pub fn build_primitive_tys(ctx: &mut TyCtxMut) -> std::collections::HashMap<&'static str, Ty> {
+        let mut primitive_tys = std::collections::HashMap::new();
+        primitive_tys.insert("i8", ctx.mk_ty(TyKind::Int(IntTy::I8)));
+        primitive_tys.insert("i16", ctx.mk_ty(TyKind::Int(IntTy::I16)));
+        primitive_tys.insert("i32", ctx.mk_ty(TyKind::Int(IntTy::I32)));
+        primitive_tys.insert("i64", ctx.mk_ty(TyKind::Int(IntTy::I64)));
+        primitive_tys.insert("u8", ctx.mk_ty(TyKind::Uint(UintTy::U8)));
+        primitive_tys.insert("u16", ctx.mk_ty(TyKind::Uint(UintTy::U16)));
+        primitive_tys.insert("u32", ctx.mk_ty(TyKind::Uint(UintTy::U32)));
+        primitive_tys.insert("u64", ctx.mk_ty(TyKind::Uint(UintTy::U64)));
+        primitive_tys.insert("f32", ctx.mk_ty(TyKind::Float(FloatTy::F32)));
+        primitive_tys.insert("f64", ctx.mk_ty(TyKind::Float(FloatTy::F64)));
+        primitive_tys.insert("bool", ctx.bool_ty());
+        primitive_tys
     }
 
     /// Attach the interner used to resolve path-named `const fn` callees
@@ -471,7 +486,7 @@ impl<'a> ConstEvaluator<'a> {
             }
             Expr::Cast { expr, ty } => {
                 let val = self.evaluate_at_depth(*expr, depth)?;
-                self.eval_cast(val, ty, span)
+                self.eval_cast(val, None, ty, span)
             }
             Expr::Ref { expr, .. } => {
                 // In const eval, references are just the value itself (no memory model)
@@ -1310,17 +1325,21 @@ impl<'a> ConstEvaluator<'a> {
         Ok(ConstValue::Unit)
     }
 
-    // Plan §13.2: this should reuse typeck's `is_valid_cast` (the single
+    // Plan §13.2: const-eval reuses typeck's `is_valid_cast` (the single
     // source of truth for cast legality in `glyim-typeck/src/check_expr.rs`)
-    // instead of maintaining a separate primitive allowlist. That requires
-    // the *source* type at this point, which const-eval does not currently
-    // track (the `ConstEvaluator` is value-only and carries no `TyCtx`/types).
-    // Wiring it needs `from_ty` plumbed through THIR `Expr::Cast` and into the
-    // evaluator — a separate change. Until then we keep the primitive allowlist
-    // (which already rejects non-primitive targets).
+    // instead of maintaining a separate primitive allowlist. When a `TyCtx` is
+    // attached via `with_ty_ctx`, `eval_cast` gates the cast on
+    // `is_valid_cast`. The source type is taken from the optional `from_ty`
+    // argument when the caller can supply the precise inferred type, and
+    // otherwise derived from the runtime `ConstValue` via `ty_of_value` (the
+    // legacy fallback — the HIR `Cast` node carries only the target type, so
+    // the THIR-inferred `from_ty` is not yet plumbed through). The target type
+    // comes from the `TypeRef`. If either side can't be typed we skip the gate
+    // and fall back to the primitive-conversion allowlist (pre-§13.2 behavior).
     fn eval_cast(
         &self,
         val: ConstValue,
+        from_ty: Option<Ty>,
         ty: &glyim_hir::TypeRef,
         span: Span,
     ) -> ConstEvalResult<ConstValue> {
@@ -1328,13 +1347,12 @@ impl<'a> ConstEvaluator<'a> {
         use glyim_hir::TypeRef;
         // Plan §13.2: when a type context is attached, gate the cast on the
         // shared `is_valid_cast` (single source of truth, also used by
-        // typeck). We derive `from`/`to` `Ty`s from the value and the target
-        // `TypeRef`; if either can't be typed we skip the gate and fall back to
-        // the primitive-conversion allowlist (pre-§13.2 behavior).
+        // typeck). Prefer the caller-supplied `from_ty` (the precise inferred
+        // source type) and fall back to deriving it from the value.
         if let (Some(ctx), Some(map)) = (self.ty_ctx, &self.primitive_tys)
             && let Some(interner) = &self.interner
             && let (Some(from_ty), Some(to_ty)) =
-                (ty_of_value(map, &val), ty_of_typeref(map, ty, interner))
+                (from_ty.or_else(|| ty_of_value(map, &val)), ty_of_typeref(map, ty, interner))
             && !glyim_type::is_valid_cast(ctx, from_ty, to_ty)
         {
             return Err(ConstEvalError::new(
