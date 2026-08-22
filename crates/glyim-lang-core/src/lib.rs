@@ -3,7 +3,6 @@
 //! This crate contains the standard library source files for the Glyim language.
 //! The actual library code is in `.g` files under `lib/`, written in Glyim syntax.
 //! This Rust crate provides access to those source files and testing infrastructure.
-#![allow(missing_docs)]
 
 /// Returns the source code of a core library module by name.
 pub fn core_source(name: &str) -> Option<&'static str> {
