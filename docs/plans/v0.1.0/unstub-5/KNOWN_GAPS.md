@@ -426,7 +426,7 @@ switch-dispatch VM with a non-recursive driver (heap call stack bounded by
 - No warnings. Committed `26bcb30` (VM) + `b879918` (codegen/VM wire-format
   fix + cross-backend test), pushed to `origin`.
 
-### 7.2 Cross-frame unwinding in the MIR interpreter (report #8) — COMPLETE (2026-08-20)
+### 7.2 Cross-frame unwinding in the MIR interpreter (report #8) — COMPLETE + HARDENED (2026-08-20; §1.4 hardening 2026-08-22)
 `InterpError::Unwind` added; `unwind_step` walks the call stack on panic: a
 panic with no local cleanup edge pops to the caller and resumes at its
 `unwind_target` (the `Call` terminator's `cleanup`), carrying the original
@@ -435,6 +435,19 @@ payload in `pending_unwind`, until the top frame returns `Unwind`. Normal
 `nested_panic_unwinds_through_all_caller_frames` proves a nested panic runs
 every caller's cleanup block and reaches the top with `Unwind`. Committed
 `f282df1` (green, 4027-workspace).
+
+§1.4 hardening (plan `feature-gaps/part1.md`): the original `unwind_step` had a
+correctness bug — a caller frame with no `cleanup` edge for its own call was
+resumed at `frame.target_bb` (its *normal* continuation), silently treating a
+propagating panic as a successful return. Replaced with a loop that keeps
+popping caller frames until one has a real `unwind_target` (its `Call`'s
+cleanup edge) or the stack empties, surfacing `Unwind` at the top. Four
+regression tests added (`unwind_skips_callers_with_no_cleanup`,
+`unwind_resumes_at_nearest_caller_with_cleanup`,
+`original_panic_payload_survives_multi_frame_unwind`,
+`recursion_limit_reflects_unwound_frames`). The crate's own `panics_unwind`
+doc comment (which claimed cross-frame unwinding was "out of scope") was
+corrected to match the implemented behavior. Committed `9fd3b3a`.
 
 ## Phase 10 — Build & Tooling — PARTIAL (10.1 done, 10.2 partial, 10.3 deferred, 10.4 native exec DONE)
 
@@ -558,7 +571,44 @@ can report a false conflict (or fail to find the assignment) even though a
 satisfiable solution exists. A full SAT/PubGrub-style resolver (real
 backtracking search over the whole graph, matching Cargo's actual algorithm) is a
 substantial, separately-scoped project and is **not** implemented here. This is
-shipped as a correct, narrower capability with an explicit boundary rather than a
+is shipped as a correct, narrower capability with an explicit boundary rather than a
 silently-incomplete "it usually works" — mirroring the codebase's own pattern for
 ThinLTO (§10.2) and Windows SEH (§6.1). Detection of genuinely irreconcilable
 requirements is exact; only the search completeness is limited.
+
+## Phase 1.1 — Multi-poll async state machine — DONE (green, with two tracked gaps, 2026-08-22)
+`lower_async.rs` now implements a real coroutine-style desugar. The bail-out gate in
+`desugar_async` counts suspend points (`collect_suspend_points`) in the async body:
+`<= 1` keeps the existing single-poll desugar (unchanged, low risk); `>= 2` routes to
+the new `desugar_one_async_fn_state_machine`, which builds the `FooFuture` struct, a
+`FooFutureState` enum with variants `Start`, `S0` .. `S_{n-1}`, `Done` (n suspended
+points), the `impl Future for FooFuture { type Output; fn poll }` that `match`es
+`self.state` and lowers `.await` to a `Poll::Ready`/`Pending` switch, and a call-site
+`future()` wrapper that captures the parameters into `Start`. Verified green by three
+structural tests in `crates/glyim-hir/src/tests/async_desugar.rs`
+(`single_await_no_state_enum`, `two_await_state_enum_has_four_variants`,
+`state_enum_start_captures_params`) — all passing.
+
+### GAP A — source-level `async fn`/`.await` lowering drops `.await` and `let` (PRE-EXISTING, not in §1.1)
+The HIR lowering for `async fn` bodies (`lower_expr.rs` / the body lower) does NOT emit
+`Expr::Await` for `.await` postfixes, and it omits `let` bindings inside async bodies
+entirely: a parsed `async fn two(a,b) { let x = a.await; let y = b.await; x + y }`
+lowers to a body of `[Path(a), Path(b), Binary(x+y), Block]` with **zero** `Expr::Await`
+and **zero** `let` statements. So `Expr::Await` is never produced from source and the
+desugar cannot be exercised through the parser. This is a parser/lower gap independent
+of §1.1 (the `async_desugar_target_compiles` test only checks a hand-written target
+shape and never fed real `async fn`/`.await` through the pipeline). The §1.1 structural
+tests therefore build the `CrateHir` by hand with `Expr::Await` nodes already present,
+validating the desugar logic in isolation. Fixing the `.await` postfix/async-body lower
+to emit `Expr::Await` is a separate front-end task.
+
+### GAP B — multi-poll HIR uses placeholder `i32` future / live-local field types (INHERENT, documented)
+HIR is pre-type-check, so the *type* of a suspended future (and of a live local captured
+across a suspend) is unknowable without future-type inference. `build_state_enum`
+therefore types every `Start` field and every `S_k` future-capture field as
+`i32` (the documented placeholder). The state-machine *shape* — variant count, the
+`Start`-captures-params invariant, the `poll` `match` arms and the Ready/Pending
+transitions — is exactly right; only the field *types* are stubs. A later type-inference
+pass (or lowering the desugar to run after typeck) is required to substitute the real
+suspended-future type. This is the honest, in-scope portion: a compiling, shape-correct
+multi-poll state machine, not a type-correct one.
