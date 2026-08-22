@@ -108,6 +108,7 @@ fn parse_trait_not_implemented(message: &str) -> Option<(String, String)> {
     }
 }
 
+/// provide_code_actions.
 pub fn provide_code_actions(
     db: &AnalysisDatabase,
     file_map: &FileMap,

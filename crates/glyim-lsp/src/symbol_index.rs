@@ -4,36 +4,58 @@ use glyim_span::{FileId, Span};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
+/// SymbolInfo.
 pub struct SymbolInfo {
+/// Struct.
     pub name: String,
+/// Struct.
     pub kind: SymbolKind,
+/// Struct.
     pub definition: DefinitionLocation,
+/// Struct.
     pub type_signature: Option<TypeSignature>,
+/// Struct.
     pub is_pub: bool,
+/// Struct.
     pub documentation: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// SymbolKind.
 pub enum SymbolKind {
+/// Variant.
     Function,
+/// Variant.
     Struct,
+/// Variant.
     Enum,
+/// Variant.
     EnumVariant,
+/// Variant.
     Field,
+/// Variant.
     TypeParameter,
+/// Variant.
     Local,
+/// Variant.
     Module,
 }
 
 #[derive(Debug, Clone)]
+/// DefinitionLocation.
 pub struct DefinitionLocation {
+/// Struct.
     pub file_id: FileId,
+/// Struct.
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
+/// TypeSignature.
 pub struct TypeSignature {
+#[doc = "field"]
     pub params: Vec<(String, String)>,
+/// Struct.
     pub return_type: Option<String>,
     /// For method symbols, the resolved receiver (`self`) type, e.g. `"Foo"`.
     /// `None` for free functions / item symbols. Used by Tier 6.4 completion
@@ -60,6 +82,7 @@ fn type_param_names(params: &[glyim_hir::GenericParam], interner: &Interner) -> 
         .collect()
 }
 
+/// SymbolIndex.
 pub struct SymbolIndex {
     by_name: HashMap<String, Vec<SymbolInfo>>,
     by_file: HashMap<FileId, Vec<SymbolInfo>>,
@@ -77,6 +100,7 @@ impl Default for SymbolIndex {
 }
 
 impl SymbolIndex {
+/// new.
     pub fn new() -> Self {
         Self {
             by_name: HashMap::new(),
@@ -86,6 +110,7 @@ impl SymbolIndex {
         }
     }
 
+/// build_from_hir.
     pub fn build_from_hir(&mut self, file_id: FileId, hir: &CrateHir, interner: &Interner) {
         self.clear_file(file_id);
 
@@ -313,6 +338,7 @@ impl SymbolIndex {
             .insert((file_id.to_raw(), info.definition.span.lo.to_usize()), info);
     }
 
+/// lookup_by_name.
     pub fn lookup_by_name(&self, name: &str) -> Vec<&SymbolInfo> {
         self.by_name
             .get(name)
@@ -320,6 +346,7 @@ impl SymbolIndex {
             .unwrap_or_default()
     }
 
+/// lookup_by_location.
     pub fn lookup_by_location(&self, file_id: FileId, offset: usize) -> Option<&SymbolInfo> {
         // A hover/click position falls *somewhere inside* a symbol's definition
         // span, not necessarily on its start byte. Match by span containment
@@ -335,6 +362,7 @@ impl SymbolIndex {
             })
     }
 
+/// symbols_in_file.
     pub fn symbols_in_file(&self, file_id: FileId) -> Vec<&SymbolInfo> {
         self.by_file
             .get(&file_id)
@@ -342,6 +370,7 @@ impl SymbolIndex {
             .unwrap_or_default()
     }
 
+/// query.
     pub fn query(&self, prefix: &str, limit: usize) -> Vec<&SymbolInfo> {
         // Tiered matching (plan §22.3): exact > prefix > contains > fuzzy
         // subsequence. Exact/prefix/contains stay the fast paths; fuzzy is a
@@ -471,6 +500,7 @@ fn fuzzy_score(query: &str, candidate: &str) -> Option<usize> {
     }
 }
 
+/// clear_file.
     pub fn clear_file(&mut self, file_id: FileId) {
         if let Some(symbols) = self.by_file.remove(&file_id) {
             for sym in symbols {

@@ -60,6 +60,7 @@ fn format_code(source: &str) -> String {
     trimmed + "\n"
 }
 
+/// format_document.
 pub fn format_document(
     db: &AnalysisDatabase,
     params: &DocumentFormattingParams,

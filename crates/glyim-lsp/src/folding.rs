@@ -28,6 +28,7 @@ fn find_braced_ranges(source: &str) -> Vec<FoldingRange> {
     ranges
 }
 
+/// provide_folding_ranges.
 pub fn provide_folding_ranges(
     db: &AnalysisDatabase,
     params: &FoldingRangeParams,

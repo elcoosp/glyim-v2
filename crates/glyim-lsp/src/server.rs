@@ -5,6 +5,7 @@ use async_lsp::MainLoop;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// run_server.
 pub async fn run_server(_log_file: Option<std::path::PathBuf>) {
     let db = Arc::new(AnalysisDatabase::new());
     let (tx, rx) = mpsc::channel(16);

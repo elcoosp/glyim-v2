@@ -116,6 +116,7 @@ fn receiver_type_at_cursor(
     Some(format!("{}", PrintTy::new(ty, ty_ctx.as_ref())))
 }
 
+/// provide_completions.
 pub fn provide_completions(
     db: &AnalysisDatabase,
     file_map: &crate::database::FileMap,

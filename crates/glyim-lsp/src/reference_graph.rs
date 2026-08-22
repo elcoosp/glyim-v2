@@ -5,35 +5,53 @@ use glyim_span::{FileId, Span};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
+/// Reference.
 pub struct Reference {
+/// Struct.
     pub file_id: FileId,
+/// Struct.
     pub span: Span,
+/// Struct.
     pub is_definition: bool,
+/// Struct.
     pub kind: ReferenceKind,
     /// Read/write access. A reference is `Write` when it is the direct LHS of an
     /// `Expr::Assign` or the operand of a `&mut` borrow; everything else is a
     /// `Read`. Mirrors Tier 1.1's `is_mut_use` classification.
     pub access: AccessKind,
+/// Struct.
     pub def_id: Option<glyim_core::def_id::DefId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// AccessKind.
 pub enum AccessKind {
+/// Variant.
     Read,
+/// Variant.
     Write,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// ReferenceKind.
 pub enum ReferenceKind {
+/// Variant.
     Call,
+/// Variant.
     TypeReference,
+/// Variant.
     FieldAccess,
+/// Variant.
     Constructor,
+/// Variant.
     Pattern,
+/// Variant.
     Definition,
+/// Variant.
     Variable,
 }
 
+/// ReferenceGraph.
 pub struct ReferenceGraph {
     references: HashMap<String, Vec<Reference>>,
     function_names: HashSet<String>,
@@ -46,6 +64,7 @@ impl Default for ReferenceGraph {
 }
 
 impl ReferenceGraph {
+/// new.
     pub fn new() -> Self {
         Self {
             references: HashMap::new(),
@@ -53,6 +72,7 @@ impl ReferenceGraph {
         }
     }
 
+/// build_from_hir.
     pub fn build_from_hir(&mut self, file_id: FileId, hir: &CrateHir, interner: &Interner) {
         self.references
             .retain(|_, refs| refs.iter().all(|r| r.file_id != file_id));
@@ -737,6 +757,7 @@ impl ReferenceGraph {
         }
     }
 
+/// find_references.
     pub fn find_references(&self, symbol_name: &str) -> &[Reference] {
         self.references
             .get(symbol_name)

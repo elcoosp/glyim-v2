@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone)]
+/// SourceMap.
 pub struct SourceMap {
     #[allow(unused)]
     path: PathBuf,
@@ -20,6 +21,7 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
+/// new.
     pub fn new(path: PathBuf, file_id: FileId, content: String) -> Self {
         let line_starts = std::iter::once(0)
             .chain(content.match_indices('\n').map(|(i, _)| i + 1))
@@ -31,12 +33,15 @@ impl SourceMap {
             line_starts,
         }
     }
+/// file_id.
     pub fn file_id(&self) -> FileId {
         self.file_id
     }
+/// source.
     pub fn source(&self) -> &str {
         &self.content
     }
+/// span_to_position.
     pub fn span_to_position(
         &self,
         lo: usize,
@@ -54,6 +59,7 @@ impl SourceMap {
         let end_col = hi - self.line_starts[end_line];
         Some(((start_line, start_col), (end_line, end_col)))
     }
+/// line_col_to_offset.
     pub fn line_col_to_offset(&self, line: usize, col: usize) -> Option<usize> {
         if line >= self.line_starts.len() {
             return None;
@@ -67,6 +73,7 @@ impl SourceMap {
     }
 }
 
+/// FileMap.
 pub struct FileMap {
     path_to_id: HashMap<PathBuf, FileId>,
     id_to_path: HashMap<FileId, PathBuf>,
@@ -80,6 +87,7 @@ impl Default for FileMap {
 }
 
 impl FileMap {
+/// new.
     pub fn new() -> Self {
         Self {
             path_to_id: HashMap::new(),
@@ -87,6 +95,7 @@ impl FileMap {
             next_id: 0,
         }
     }
+/// get_or_create.
     pub fn get_or_create(&mut self, path: &PathBuf) -> FileId {
         if let Some(id) = self.path_to_id.get(path) {
             return *id;
@@ -97,12 +106,15 @@ impl FileMap {
         self.id_to_path.insert(id, path.clone());
         id
     }
+/// get_by_path.
     pub fn get_by_path(&self, path: &Path) -> Option<FileId> {
         self.path_to_id.get(path).copied()
     }
+/// path.
     pub fn path(&self, id: FileId) -> Option<&PathBuf> {
         self.id_to_path.get(&id)
     }
+/// remove.
     pub fn remove(&mut self, path: &PathBuf) {
         if let Some(id) = self.path_to_id.remove(path) {
             self.id_to_path.remove(&id);
@@ -110,18 +122,26 @@ impl FileMap {
     }
 }
 
+/// AnalysisDatabase.
 pub struct AnalysisDatabase {
+/// Struct.
     pub file_map: RwLock<FileMap>,
+/// Struct.
     pub source_maps: RwLock<HashMap<FileId, SourceMap>>,
+/// Struct.
     pub symbol_index: RwLock<SymbolIndex>,
+/// Struct.
     pub reference_graph: RwLock<ReferenceGraph>,
+/// Struct.
     pub hirs: RwLock<HashMap<FileId, glyim_hir::CrateHir>>,
     /// Per-file type-checking result + the `TyCtx` it was produced with.
     /// Populated by the analysis driver (Tier 6.4) so completions/hover can
     /// resolve the type of any expression via `expr_ty_at` /
     /// `type_at_offset`. Keyed by `FileId`.
     pub typeck: RwLock<HashMap<FileId, (Arc<glyim_type::TyCtx>, TypeckResult)>>,
+/// Struct.
     pub diagnostics: RwLock<HashMap<FileId, Vec<lsp_types::Diagnostic>>>,
+/// Struct.
     pub file_access_times: RwLock<HashMap<FileId, Instant>>,
 }
 
@@ -132,6 +152,7 @@ impl Default for AnalysisDatabase {
 }
 
 impl AnalysisDatabase {
+/// new.
     pub fn new() -> Self {
         Self {
             file_map: RwLock::new(FileMap::new()),
@@ -145,7 +166,9 @@ impl AnalysisDatabase {
         }
     }
 
+/// touch.
     pub fn touch(&self, _file_id: FileId) {}
+/// evict_stale.
     pub fn evict_stale(&self, _max_age: std::time::Duration) {}
 
     /// Resolve the type of the HIR expression that contains `offset` in

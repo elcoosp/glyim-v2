@@ -3,6 +3,7 @@ use crate::DefinitionLocation;
 use lsp_types::*;
 
 use url::Url;
+/// provide_hover.
 pub fn provide_hover(
     db: &AnalysisDatabase,
     file_map: &crate::database::FileMap,

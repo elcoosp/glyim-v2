@@ -50,6 +50,7 @@ pub(crate) fn rename_text_fallback(
     if edits.is_empty() { None } else { Some(edits) }
 }
 
+/// rename_symbol.
 pub fn rename_symbol(
     db: &AnalysisDatabase,
     file_map: &FileMap,

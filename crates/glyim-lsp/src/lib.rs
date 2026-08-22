@@ -1,5 +1,4 @@
 //! Language Server Protocol implementation for Glyim compiler.
-#![allow(missing_docs)]
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -24,23 +23,41 @@
     clippy::collapsible_if
 )]
 
+/// code_action.
 pub mod code_action;
+/// completion.
 pub mod completion;
+/// database.
 pub mod database;
+/// dep_graph.
 pub mod dep_graph;
+/// diagnostics.
 pub mod diagnostics;
+/// driver.
 pub mod driver;
+/// folding.
 pub mod folding;
+/// formatting.
 pub mod formatting;
+/// goto_definition.
 pub mod goto_definition;
+/// handler.
 pub mod handler;
+/// hover.
 pub mod hover;
+/// navigation.
 pub mod navigation;
+/// reference_graph.
 pub mod reference_graph;
+/// rename.
 pub mod rename;
+/// server.
 pub mod server;
+/// state.
 pub mod state;
+/// symbol_index.
 pub mod symbol_index;
+/// uri.
 pub mod uri; // Make database public
 
 #[cfg(test)]

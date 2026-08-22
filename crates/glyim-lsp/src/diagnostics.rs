@@ -10,19 +10,26 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 /// [`convert_diagnostics`] (plan §22.4).
 #[derive(Debug, Clone)]
 pub struct ExternalDiagnostic {
+/// Struct.
     pub file_id: FileId,
     /// 0-based line of the primary span.
     pub line: u32,
     /// 0-based column of the primary span.
     pub column: u32,
+/// Struct.
     pub message: String,
+/// Struct.
     pub severity: ExternalSeverity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ExternalSeverity.
 pub enum ExternalSeverity {
+/// Variant.
     Error,
+/// Variant.
     Warning,
+/// Variant.
     Note,
 }
 
@@ -117,6 +124,7 @@ pub fn parse_cargo_check_json(json: &str) -> Vec<ExternalDiagnostic> {
     out
 }
 
+/// convert_diagnostics.
 pub fn convert_diagnostics(
     _file_id: FileId,
     source_map: &crate::database::SourceMap,

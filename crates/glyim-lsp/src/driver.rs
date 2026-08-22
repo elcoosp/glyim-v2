@@ -11,18 +11,27 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tracing::debug;
 
+/// AnalysisMessage.
 pub enum AnalysisMessage {
+/// Variant.
     FileChanged {
+/// Struct.
         path: PathBuf,
+/// Struct.
         content: String,
+/// Struct.
         version: i32,
     },
+/// Variant.
     FileClosed {
+/// Struct.
         path: PathBuf,
     },
+/// Variant.
     Shutdown,
 }
 
+/// AnalysisDriver.
 pub struct AnalysisDriver {
     db: Arc<AnalysisDatabase>,
     rx: Receiver<AnalysisMessage>,
@@ -33,6 +42,7 @@ pub struct AnalysisDriver {
 }
 
 impl AnalysisDriver {
+/// new.
     pub fn new(
         db: Arc<AnalysisDatabase>,
         rx: Receiver<AnalysisMessage>,
@@ -50,6 +60,7 @@ impl AnalysisDriver {
         }
     }
 
+/// run.
     pub async fn run(mut self) {
         while let Some(msg) = self.rx.recv().await {
             match msg {

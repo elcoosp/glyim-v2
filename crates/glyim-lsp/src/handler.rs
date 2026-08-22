@@ -19,6 +19,7 @@ use lsp_types::*;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// build_router.
 pub fn build_router(
     db: Arc<AnalysisDatabase>,
     _analysis_tx: mpsc::Sender<AnalysisMessage>,

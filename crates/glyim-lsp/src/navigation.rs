@@ -35,6 +35,7 @@ fn get_symbol_name_at_position(
     }
 }
 
+/// goto_definition.
 pub fn goto_definition(
     db: &AnalysisDatabase,
     file_map: &FileMap,
@@ -72,6 +73,7 @@ pub fn goto_definition(
     }))
 }
 
+/// find_references.
 pub fn find_references(
     db: &AnalysisDatabase,
     file_map: &FileMap,
@@ -112,6 +114,7 @@ pub fn find_references(
     Some(locations)
 }
 
+/// document_symbols.
 pub fn document_symbols(
     db: &AnalysisDatabase,
     file_map: &FileMap,
@@ -180,6 +183,7 @@ pub fn document_symbols(
     Some(DocumentSymbolResponse::Nested(results))
 }
 
+/// workspace_symbols.
 pub fn workspace_symbols(
     db: &AnalysisDatabase,
     params: &WorkspaceSymbolParams,
