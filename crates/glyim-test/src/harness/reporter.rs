@@ -3,15 +3,18 @@ use super::plan::TestSummary;
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
+/// TestReporter.
 pub struct TestReporter {
     verbose: bool,
 }
 
 impl TestReporter {
+/// new.
     pub fn new(verbose: bool) -> Self {
         Self { verbose }
     }
 
+/// report.
     pub fn report(&self, results: &[TestResult]) -> TestSummary {
         let mut stderr = StandardStream::stderr(ColorChoice::Always);
         let mut summary = TestSummary::default();

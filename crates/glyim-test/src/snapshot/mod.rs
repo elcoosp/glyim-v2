@@ -1,3 +1,4 @@
+/// format.
 pub mod format;
 
 static SNAPSHOT_FILE_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1000);
@@ -8,6 +9,7 @@ fn next_snapshot_file_id() -> glyim_span::FileId {
     )
 }
 
+/// snapshot_cst.
 pub fn snapshot_cst(name: &str, source: &str) {
     let file_id = next_snapshot_file_id();
     let result = glyim_frontend::parse_to_syntax(source, file_id);
@@ -17,6 +19,7 @@ pub fn snapshot_cst(name: &str, source: &str) {
     });
 }
 
+/// snapshot_mir.
 pub fn snapshot_mir(name: &str, ctx: &glyim_type::TyCtx, body: &glyim_mir::Body) {
     let formatted = format::format_mir_body(ctx, body);
     insta::with_settings!({ snapshot_suffix => name }, {
@@ -34,6 +37,7 @@ pub fn snapshot_mir_verbose(name: &str, ctx: &glyim_type::TyCtx, body: &glyim_mi
     });
 }
 
+/// snapshot_def_map.
 pub fn snapshot_def_map(name: &str, def_map: &glyim_def_map::CrateDefMap) {
     let formatted = format::format_def_map(def_map);
     insta::with_settings!({ snapshot_suffix => name }, {

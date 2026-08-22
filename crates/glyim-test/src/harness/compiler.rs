@@ -4,12 +4,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Clone, Default)]
+/// CompileOutput.
 pub struct CompileOutput {
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
+/// Struct.
     pub syntax_tree: Option<glyim_syntax::SyntaxNode>,
+/// Struct.
     pub def_map: Option<glyim_def_map::CrateDefMap>,
+/// Struct.
     pub typeck_result: Option<glyim_typeck::TypeckResult>,
+/// Struct.
     pub mir_bodies: Vec<Arc<glyim_mir::Body>>,
+/// Struct.
     pub ty_ctx: Option<Arc<glyim_type::TyCtx>>,
     /// Path to a linked executable, populated only when compilation succeeded
     /// AND the produced object file was successfully linked (Tier 7.2). `None`
@@ -33,10 +40,13 @@ impl std::fmt::Debug for CompileOutput {
     }
 }
 
+/// TestCompiler.
 pub trait TestCompiler: Send + Sync {
+/// compile.
     fn compile(&self, source: &str, file_id: FileId, flags: &[String]) -> CompileOutput;
 }
 
+/// FrontendOnlyCompiler.
 pub struct FrontendOnlyCompiler;
 
 impl TestCompiler for FrontendOnlyCompiler {
@@ -55,6 +65,7 @@ impl TestCompiler for FrontendOnlyCompiler {
     }
 }
 
+/// PipelineCompiler.
 pub struct PipelineCompiler {
     backend: Arc<dyn glyim_codegen::CodegenBackend + Send + Sync>,
     /// Optional procedural-macro registry (Phase 9.2). When set, macro
@@ -65,6 +76,7 @@ pub struct PipelineCompiler {
 }
 
 impl PipelineCompiler {
+/// new.
     pub fn new(backend: Arc<dyn glyim_codegen::CodegenBackend + Send + Sync>) -> Self {
         Self {
             backend,

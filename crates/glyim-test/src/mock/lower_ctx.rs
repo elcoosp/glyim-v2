@@ -14,6 +14,7 @@ type FieldKey = (u32, u32, Name);
 /// Key for variant index lookups: (AdtId raw, Name)
 type VariantKey = (u32, Name);
 
+/// MockLowerCtx.
 pub struct MockLowerCtx<'a> {
     ty_ctx: &'a TyCtx,
     span_stack: RefCell<Vec<Span>>,
@@ -30,11 +31,14 @@ pub struct MockLowerCtx<'a> {
 
 /// Operations for span testing.
 pub enum SpanOp {
+#[allow(missing_docs)]
     Push(Span),
+/// Variant.
     Pop,
 }
 
 impl<'a> MockLowerCtx<'a> {
+/// new.
     pub fn new(ty_ctx: &'a TyCtx) -> Self {
         Self {
             ty_ctx,

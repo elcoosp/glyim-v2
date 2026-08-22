@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Crate root.
 // Stylistic clippy lints suppressed crate-wide (test-noise lints).
 #![allow(
     clippy::cloned_ref_to_slice_refs,
@@ -22,15 +22,25 @@
     clippy::needless_lifetimes,
     clippy::collapsible_if
 )]
+/// annotations.
 pub mod annotations;
+/// assertions.
 pub mod assertions;
+/// comparison.
 pub mod comparison;
+/// error.
 pub mod error;
+/// fixtures.
 pub mod fixtures;
+/// harness.
 pub mod harness;
+/// mock.
 pub mod mock;
+/// phase.
 pub mod phase;
+/// property.
 pub mod property;
+/// snapshot.
 pub mod snapshot;
 
 pub use error::{AssertionFailure, FailureReason, TestDiscoveryError, TimeoutError};
@@ -55,14 +65,17 @@ use glyim_type::{TyCtx, TyCtxMut};
 #[cfg(test)]
 mod tests;
 
+/// test_ty_ctx.
 pub fn test_ty_ctx() -> TyCtxMut {
     TyCtxBuilder::new().build_mut()
 }
 
+/// test_frozen_ty_ctx.
 pub fn test_frozen_ty_ctx() -> TyCtx {
     test_ty_ctx().freeze()
 }
 
+/// with_fresh_ty_ctx.
 pub fn with_fresh_ty_ctx<F, R>(f: F) -> (TyCtx, R)
 where
     F: FnOnce(&mut TyCtxMut) -> R,

@@ -1,24 +1,33 @@
 use std::fmt;
 
 #[derive(Clone, Debug)]
+/// MatchPattern.
 pub enum MatchPattern {
+/// Variant.
     Any,
+#[allow(missing_docs)]
     Substring(String),
+#[allow(missing_docs)]
     Regex(regex::Regex),
+#[allow(missing_docs)]
     Exact(String),
 }
 
 impl MatchPattern {
+/// substring.
     pub fn substring(s: &str) -> Self {
         Self::Substring(s.to_string())
     }
+/// exact.
     pub fn exact(s: &str) -> Self {
         Self::Exact(s.to_string())
     }
+/// regex.
     pub fn regex(pattern: &str) -> Result<Self, regex::Error> {
         Ok(Self::Regex(regex::Regex::new(pattern)?))
     }
 
+/// matches.
     pub fn matches(&self, message: &str) -> bool {
         match self {
             Self::Any => true,
@@ -28,6 +37,7 @@ impl MatchPattern {
         }
     }
 
+/// description.
     pub fn description(&self) -> String {
         match self {
             Self::Any => "<any>".into(),

@@ -2,12 +2,16 @@ use glyim_borrowck::BorrowckCtx;
 use glyim_mir::{Body, LocalDecl, LocalIdx};
 use glyim_type::{Ty, TyCtx};
 
+/// MockBorrowckCtx.
 pub struct MockBorrowckCtx<'a> {
+/// Struct.
     pub ty_ctx: &'a TyCtx,
+/// Struct.
     pub body: &'a Body,
 }
 
 impl<'a> MockBorrowckCtx<'a> {
+/// new.
     pub fn new(ty_ctx: &'a TyCtx, body: &'a Body) -> Self {
         Self { ty_ctx, body }
     }

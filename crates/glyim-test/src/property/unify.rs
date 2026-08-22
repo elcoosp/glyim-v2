@@ -2,6 +2,7 @@ use glyim_solve::InferenceTable;
 use glyim_span::Span;
 use glyim_type::{Ty, TyCtxMut};
 
+/// test_unify_var_with_concrete.
 pub fn test_unify_var_with_concrete(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -17,6 +18,7 @@ pub fn test_unify_var_with_concrete(
     );
 }
 
+/// test_unify_different_types_fails.
 pub fn test_unify_different_types_fails(
     ctx: &mut TyCtxMut,
     infer: &mut InferenceTable,
@@ -32,6 +34,7 @@ pub fn test_unify_different_types_fails(
     );
 }
 
+/// test_unify_same_type_succeeds.
 pub fn test_unify_same_type_succeeds(ctx: &mut TyCtxMut, infer: &mut InferenceTable, ty: Ty) {
     let result = infer.unify(ctx, ty, ty, Span::DUMMY);
     assert!(

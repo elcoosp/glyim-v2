@@ -6,9 +6,11 @@ use crate::error::FailureReason;
 use glyim_diag::GlyimDiagnostic;
 use std::path::Path;
 
+/// CompilePassStrategy.
 pub struct CompilePassStrategy;
 
 impl CompilePassStrategy {
+/// evaluate.
     pub fn evaluate(
         &self,
         diagnostics: &[GlyimDiagnostic],
@@ -29,9 +31,11 @@ impl CompilePassStrategy {
     }
 }
 
+/// CompileFailStrategy.
 pub struct CompileFailStrategy;
 
 impl CompileFailStrategy {
+/// evaluate.
     pub fn evaluate(
         &self,
         diagnostics: &[GlyimDiagnostic],
@@ -81,9 +85,11 @@ impl CompileFailStrategy {
     }
 }
 
+/// UiTestStrategy.
 pub struct UiTestStrategy;
 
 impl UiTestStrategy {
+/// evaluate.
     pub fn evaluate(
         &self,
         output: &CompileOutput,
@@ -161,9 +167,11 @@ impl UiTestStrategy {
     }
 }
 
+/// RunPassStrategy.
 pub struct RunPassStrategy;
 
 impl RunPassStrategy {
+/// evaluate.
     pub fn evaluate(
         &self,
         output: &CompileOutput,
@@ -229,9 +237,11 @@ impl RunPassStrategy {
     }
 }
 
+/// RunFailStrategy.
 pub struct RunFailStrategy;
 
 impl RunFailStrategy {
+/// evaluate.
     pub fn evaluate(
         &self,
         output: &CompileOutput,

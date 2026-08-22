@@ -19,6 +19,7 @@ pub(crate) fn intern_name(s: &str) -> glyim_core::Name {
     SNAPSHOT_INTERNER.get_or_init(Interner::new).intern(s)
 }
 
+/// format_mir_body.
 pub fn format_mir_body(ctx: &TyCtx, body: &glyim_mir::Body) -> String {
     format_mir_body_impl(ctx, body, false)
 }
@@ -436,6 +437,7 @@ fn format_const(c: &glyim_mir::MirConst) -> String {
     }
 }
 
+/// format_def_map.
 pub fn format_def_map(def_map: &glyim_def_map::CrateDefMap) -> String {
     let mut out = String::new();
     out.push_str(&format!(

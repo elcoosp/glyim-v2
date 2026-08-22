@@ -4,23 +4,32 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug)]
+/// DiscoveredTest.
 pub struct DiscoveredTest {
+/// Struct.
     pub path: PathBuf,
+/// Struct.
     pub name: String,
+/// Struct.
     pub config: TestConfig,
+/// Struct.
     pub source: Arc<str>,
+/// Struct.
     pub revisions: Vec<String>,
 }
 
+/// TestCollector.
 pub struct TestCollector<'a> {
     root: &'a Path,
 }
 
 impl<'a> TestCollector<'a> {
+/// new.
     pub fn new(root: &'a Path) -> Self {
         Self { root }
     }
 
+/// collect.
     pub fn collect(
         &self,
         filter: Option<&str>,

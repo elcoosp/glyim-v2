@@ -1,3 +1,4 @@
+/// pattern.
 pub mod pattern;
 
 pub use pattern::MatchPattern;
@@ -5,20 +6,29 @@ pub use pattern::MatchPattern;
 use glyim_diag::DiagSeverity;
 
 #[derive(Clone, Debug)]
+/// Annotation.
 pub struct Annotation {
+/// Struct.
     pub line: usize,
+/// Struct.
     pub line_offset: usize,
+/// Struct.
     pub severity: DiagSeverity,
+/// Struct.
     pub pattern: MatchPattern,
+/// Struct.
     pub optional: bool,
+/// Struct.
     pub fuzzy: bool,
 }
 
 impl Annotation {
+/// target_line.
     pub fn target_line(&self) -> usize {
         self.line.saturating_sub(self.line_offset)
     }
 
+/// parse_all.
     pub fn parse_all(source: &str) -> Result<Vec<Self>, String> {
         let mut annotations = Vec::new();
         let mut last_target_line: Option<usize> = None;

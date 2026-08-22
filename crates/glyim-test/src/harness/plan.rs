@@ -6,6 +6,7 @@ use crate::error::TestDiscoveryError;
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// TestRunner.
 pub struct TestRunner {
     root: PathBuf,
     mode_override: Option<TestMode>,
@@ -17,6 +18,7 @@ pub struct TestRunner {
 }
 
 impl TestRunner {
+/// new.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
@@ -28,31 +30,38 @@ impl TestRunner {
             use_pipeline: true,
         }
     }
+/// mode.
     pub fn mode(mut self, mode: TestMode) -> Self {
         self.mode_override = Some(mode);
         self
     }
+/// parallel.
     pub fn parallel(mut self, yes: bool) -> Self {
         self.parallel = yes;
         self
     }
+/// filter.
     pub fn filter(mut self, f: impl Into<String>) -> Self {
         self.filter = Some(f.into());
         self
     }
+/// timeout.
     pub fn timeout(mut self, d: Duration) -> Self {
         self.timeout = d;
         self
     }
+/// max_concurrent.
     pub fn max_concurrent(mut self, n: usize) -> Self {
         self.max_concurrent = n;
         self
     }
+/// frontend_only.
     pub fn frontend_only(mut self) -> Self {
         self.use_pipeline = false;
         self
     }
 
+/// build.
     pub fn build(self) -> Result<TestPlan, TestDiscoveryError> {
         let collector = TestCollector::new(&self.root);
         let tests = collector.collect(self.filter.as_deref(), self.mode_override)?;
@@ -68,22 +77,34 @@ impl TestRunner {
     }
 }
 
+/// TestPlan.
 pub struct TestPlan {
+/// Struct.
     pub tests: Vec<std::sync::Arc<super::collector::DiscoveredTest>>,
+/// Struct.
     pub parallel: bool,
+/// Struct.
     pub default_timeout: Duration,
+/// Struct.
     pub max_concurrent: usize,
+#[allow(missing_docs)]
     pub use_pipeline: bool,
+/// Struct.
     pub bless: bool,
+/// Struct.
     pub verbose: bool,
 }
 
+/// ExecutionResult.
 pub struct ExecutionResult {
+/// Struct.
     pub results: Vec<super::executor::TestResult>,
+/// Struct.
     pub summary: TestSummary,
 }
 
 impl TestPlan {
+/// execute.
     pub fn execute(self) -> ExecutionResult {
         let _ = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::INFO)
@@ -118,6 +139,7 @@ impl TestPlan {
         ExecutionResult { results, summary }
     }
 
+/// run.
     pub fn run(self) {
         let result = self.execute();
         if result.summary.failed > 0 {
@@ -138,9 +160,14 @@ impl TestPlan {
 }
 
 #[derive(Clone, Debug, Default)]
+/// TestSummary.
 pub struct TestSummary {
+/// Struct.
     pub total: usize,
+/// Struct.
     pub passed: usize,
+/// Struct.
     pub failed: usize,
+/// Struct.
     pub ignored: usize,
 }

@@ -1,7 +1,12 @@
+/// diag.
 pub mod diag;
+/// layout.
 pub mod layout;
+/// mir.
 pub mod mir;
+/// span.
 pub mod span;
+/// ty.
 pub mod ty;
 
 pub use diag::{

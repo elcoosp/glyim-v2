@@ -1,6 +1,7 @@
 use glyim_solve::{SolverIteratorNextInfo, SolverResult, TraitSolver};
 use glyim_type::{Predicate, TraitPredicate, Ty, TyCtx};
 
+/// MockSolver.
 pub struct MockSolver {
     responses: Vec<(PredicateMatcher, SolverResult)>,
     calls: Vec<TraitPredicate>,
@@ -16,6 +17,7 @@ enum PredicateMatcher {
 }
 
 impl MockSolver {
+/// new.
     pub fn new() -> Self {
         Self {
             responses: Vec::new(),
@@ -24,10 +26,12 @@ impl MockSolver {
             iterator_next_override: None,
         }
     }
+/// default_result.
     pub fn default_result(mut self, result: SolverResult) -> Self {
         self.default = result;
         self
     }
+/// respond_for_trait.
     pub fn respond_for_trait(
         mut self,
         id: glyim_core::def_id::TraitDefId,
@@ -36,6 +40,7 @@ impl MockSolver {
         self.responses.push((PredicateMatcher::TraitId(id), result));
         self
     }
+/// respond_for_any.
     pub fn respond_for_any(mut self, result: SolverResult) -> Self {
         self.responses.push((PredicateMatcher::Any, result));
         self
@@ -51,9 +56,11 @@ impl MockSolver {
         self.iterator_next_override = Some(Box::new(f));
         self
     }
+/// call_count.
     pub fn call_count(&self) -> usize {
         self.calls.len()
     }
+/// calls.
     pub fn calls(&self) -> &[TraitPredicate] {
         &self.calls
     }

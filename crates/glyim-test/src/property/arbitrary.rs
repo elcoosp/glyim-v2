@@ -4,23 +4,27 @@ use glyim_type::*;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
+/// Generator.
 pub struct Generator {
     rng: StdRng,
     max_depth: u32,
 }
 
 impl Generator {
+/// new.
     pub fn new(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
             max_depth: 4,
         }
     }
+/// with_max_depth.
     pub fn with_max_depth(mut self, depth: u32) -> Self {
         self.max_depth = depth;
         self
     }
 
+/// generate_ty.
     pub fn generate_ty(&mut self, ctx: &mut TyCtxMut, depth: u32) -> Ty {
         if depth >= self.max_depth {
             return self.leaf_ty(ctx);
@@ -44,6 +48,7 @@ impl Generator {
         }
     }
 
+/// generate_ty_with_infer.
     pub fn generate_ty_with_infer(
         &mut self,
         ctx: &mut TyCtxMut,
@@ -135,6 +140,7 @@ impl Generator {
     }
 }
 
+/// sentinel_invariant.
 pub fn sentinel_invariant(ctx: &TyCtx) {
     assert!(matches!(ctx.ty_kind(Ty::ERROR), TyKind::Error));
     assert!(matches!(ctx.ty_kind(Ty::NEVER), TyKind::Never));

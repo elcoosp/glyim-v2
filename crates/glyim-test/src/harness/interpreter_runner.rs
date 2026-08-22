@@ -4,16 +4,19 @@ use glyim_mir_interp::Interpreter;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// InterpRunner.
 pub struct InterpRunner {
     bodies: Vec<Arc<glyim_mir::Body>>,
     ty_ctx: Arc<glyim_type::TyCtx>,
 }
 
 impl InterpRunner {
+/// new.
     pub fn new(bodies: Vec<Arc<glyim_mir::Body>>, ty_ctx: Arc<glyim_type::TyCtx>) -> Self {
         Self { bodies, ty_ctx }
     }
 
+/// run.
     pub fn run(self, timeout: Duration) -> super::runner::RunResult {
         let start = std::time::Instant::now();
         let (tx, rx) = std::sync::mpsc::channel();

@@ -1,6 +1,8 @@
+/// MirGenTester.
 pub struct MirGenTester;
 
 impl MirGenTester {
+/// lower_body.
     pub fn lower_body(
         ctx: &mut dyn glyim_lower::LowerCtx,
         thir: &glyim_typeck::thir::Body,
@@ -12,12 +14,14 @@ impl MirGenTester {
             Err(result.diagnostics)
         }
     }
+/// check_borrows.
     pub fn check_borrows(
         ctx: &dyn glyim_borrowck::BorrowckCtx,
         body: &glyim_mir::Body,
     ) -> glyim_borrowck::BorrowckResult {
         glyim_borrowck::check_borrows(ctx, body)
     }
+/// optimize.
     pub fn optimize(
         ctx: &glyim_type::TyCtx,
         body: &std::sync::Arc<glyim_mir::Body>,

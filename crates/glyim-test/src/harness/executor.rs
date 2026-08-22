@@ -16,22 +16,36 @@ fn next_file_id() -> FileId {
 }
 
 #[derive(Clone, Debug)]
+/// TestOutcome.
 pub enum TestOutcome {
+/// Variant.
     Passed,
-    Failed { reason: FailureReason },
+/// Variant.
+    Failed {
+        /// reason field.
+        reason: FailureReason,
+    },
+/// Variant.
     Ignored,
 }
 
 #[derive(Clone, Debug)]
+/// TestResult.
 pub struct TestResult {
+/// Struct.
     pub test: Arc<DiscoveredTest>,
+/// Struct.
     pub revision: String,
+/// Struct.
     pub outcome: TestOutcome,
+/// Struct.
     pub duration: Duration,
+/// Struct.
     pub diagnostics: Vec<GlyimDiagnostic>,
 }
 
 #[allow(dead_code)]
+/// TestExecutor.
 pub struct TestExecutor {
     default_timeout: Duration,
     bless: bool,
@@ -42,6 +56,7 @@ pub struct TestExecutor {
 }
 
 impl TestExecutor {
+/// new.
     pub fn new(
         default_timeout: Duration,
         bless: bool,
@@ -67,16 +82,19 @@ impl TestExecutor {
         }
     }
 
+/// with_target_triple.
     pub fn with_target_triple(mut self, triple: impl Into<String>) -> Self {
         self.target_triple = triple.into();
         self
     }
 
+/// with_compiler.
     pub fn with_compiler(mut self, compiler: Arc<dyn TestCompiler>) -> Self {
         self.compiler = compiler;
         self
     }
 
+/// run_sequential.
     pub fn run_sequential(&self, tests: &[Arc<DiscoveredTest>]) -> Vec<TestResult> {
         tests
             .iter()
@@ -95,6 +113,7 @@ impl TestExecutor {
             .collect()
     }
 
+/// run_parallel.
     pub fn run_parallel(&self, tests: &[Arc<DiscoveredTest>]) -> Vec<TestResult> {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.max_concurrent)
