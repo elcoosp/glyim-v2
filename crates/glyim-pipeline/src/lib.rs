@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Crate root.
 use glyim_codegen::CodegenBackend;
 use glyim_codegen_llvm::LlvmBackend;
 use glyim_db::Database;
@@ -26,6 +26,7 @@ use mono_cache::{
 };
 use pipeline_context::{PipelineBorrowckCtx, PipelineLowerCtx};
 
+/// Pipeline.
 pub struct Pipeline;
 
 /// Artifacts produced by compiling a source file through the full pipeline.
@@ -33,9 +34,13 @@ pub struct Pipeline;
 /// can inspect the mid-pipeline results (def-map, type-check, MIR bodies) that
 /// the standard `compile_file` discards.
 pub struct CompileArtifacts {
+/// Struct.
     pub def_map: glyim_def_map::CrateDefMap,
+/// Struct.
     pub typeck_result: glyim_typeck::TypeckResult,
+/// Struct.
     pub mir_bodies: Vec<Arc<glyim_mir::Body>>,
+/// Struct.
     pub ty_ctx: Arc<glyim_type::TyCtx>,
 }
 
@@ -395,6 +400,7 @@ pub fn compile_file_to_mir(
     })
 }
 
+/// emit_mir.
 pub fn emit_mir(
     db: &mut Database,
     input: &Path,
@@ -468,6 +474,7 @@ pub fn emit_mir(
     Ok(())
 }
 
+/// emit_llvm_ir.
 pub fn emit_llvm_ir(
     db: &mut Database,
     input: &Path,
