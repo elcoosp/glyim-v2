@@ -1,203 +1,390 @@
-#![allow(missing_docs)]
+//! Crate root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, num_enum::TryFromPrimitive, PartialOrd)]
 #[repr(u16)]
+/// SyntaxKind.
 pub enum SyntaxKind {
     // Keywords
+/// Variant.
     KwFn,
+/// Variant.
     KwLet,
+/// Variant.
     KwStruct,
+/// Variant.
     KwEnum,
+/// Variant.
     KwIf,
+/// Variant.
     KwElse,
+/// Variant.
     KwReturn,
+/// Variant.
     KwMatch,
+/// Variant.
     KwMod,
+/// Variant.
     KwComptime,
+/// Variant.
     KwSelf,
+/// Variant.
     KwSuper,
+/// Variant.
     KwCrate,
+/// Variant.
     KwTrue,
+/// Variant.
     KwFalse,
+/// Variant.
     KwMut,
+/// Variant.
     KwRef,
+/// Variant.
     KwAs,
+/// Variant.
     KwWhile,
+/// Variant.
     KwFor,
+/// Variant.
     KwLoop,
+/// Variant.
     KwIn,
+/// Variant.
     KwBreak,
+/// Variant.
     KwContinue,
+/// Variant.
     KwTrait,
+/// Variant.
     KwImpl,
+/// Variant.
     KwWhere,
+/// Variant.
     KwDyn,
+/// Variant.
     KwType,
+/// Variant.
     KwPub,
+/// Variant.
     KwPriv,
+/// Variant.
     KwExtern,
+/// Variant.
     KwUnsafe,
+/// Variant.
     KwUse,
+/// Variant.
     KwConst,
+/// Variant.
     KwStatic,
+/// Variant.
     KwMove,
+/// Variant.
     KwMacroRules,
+/// Variant.
     KwAsync,
+/// Variant.
     KwAwait,
+/// Variant.
     Lifetime,
     // Literals
+/// Variant.
     IntLit,
+/// Variant.
     FloatLit,
+/// Variant.
     StringLit,
+/// Variant.
     CharLit,
+/// Variant.
     BoolLit,
+/// Variant.
     Ident,
     // Operators
+/// Variant.
     Plus,
+/// Variant.
     Minus,
+/// Variant.
     Star,
+/// Variant.
     Slash,
+/// Variant.
     Percent,
+/// Variant.
     Eq,
+/// Variant.
     EqEq,
+/// Variant.
     Bang,
+/// Variant.
     BangEq,
+/// Variant.
     Lt,
+/// Variant.
     Gt,
+/// Variant.
     LtEq,
+/// Variant.
     GtEq,
+/// Variant.
     And,
+/// Variant.
     Or,
+/// Variant.
     AndAnd,
+/// Variant.
     OrOr,
+/// Variant.
     Caret,
+/// Variant.
     Shl,
+/// Variant.
     Shr,
+/// Variant.
     PlusEq,
+/// Variant.
     MinusEq,
+/// Variant.
     StarEq,
+/// Variant.
     SlashEq,
     // Punctuation
+/// Variant.
     Arrow,
+/// Variant.
     FatArrow,
+/// Variant.
     Dot,
+/// Variant.
     DotDot,
+/// Variant.
     DotDotEq,
+/// Variant.
     Comma,
+/// Variant.
     Semicolon,
+/// Variant.
     Colon,
+/// Variant.
     ColonColon,
+/// Variant.
     At,
+/// Variant.
     Hash,
+/// Variant.
     Dollar,
+/// Variant.
     Tilde,
+/// Variant.
     Underscore,
+/// Variant.
     Question,
     // Delimiters
+/// Variant.
     LParen,
+/// Variant.
     RParen,
+/// Variant.
     LBrace,
+/// Variant.
     RBrace,
+/// Variant.
     LBracket,
+/// Variant.
     RBracket,
     // Trivia
+/// Variant.
     Whitespace,
+/// Variant.
     LineComment,
+/// Variant.
     BlockComment,
+/// Variant.
     DocComment,
     // Nodes
+/// Variant.
     SourceFile,
+/// Variant.
     Module,
+/// Variant.
     FnDef,
+/// Variant.
     StructDef,
+/// Variant.
     EnumDef,
+/// Variant.
     TraitDef,
+/// Variant.
     ImplDef,
+/// Variant.
     TypeAlias,
+/// Variant.
     ConstDef,
+/// Variant.
     StaticDef,
+/// Variant.
     UseDecl,
+/// Variant.
     ExternBlock,
+/// Variant.
     ParamList,
+/// Variant.
     Param,
+/// Variant.
     TypeParamList,
+/// Variant.
     TypeParam,
+/// Variant.
     WhereClause,
+/// Variant.
     Block,
+/// Variant.
     LetStmt,
+/// Variant.
     ExprStmt,
+/// Variant.
     IfExpr,
+/// Variant.
     WhileExpr,
+/// Variant.
     LoopExpr,
+/// Variant.
     ForExpr,
+/// Variant.
     MatchExpr,
+/// Variant.
     MatchArmList,
+/// Variant.
     MatchArm,
+/// Variant.
     CallExpr,
+/// Variant.
     MethodCallExpr,
+/// Variant.
     FieldExpr,
+/// Variant.
     IndexExpr,
+/// Variant.
     UnaryExpr,
+/// Variant.
     BinaryExpr,
+/// Variant.
     CastExpr,
+/// Variant.
     RefExpr,
+/// Variant.
     ClosureExpr,
+/// Variant.
     PathExpr,
+/// Variant.
     TryExpr,
+/// Variant.
     AwaitExpr,
+/// Variant.
     ImplTraitType,
+/// Variant.
     LitExpr,
+/// Variant.
     ArrayExpr,
+/// Variant.
     TupleExpr,
+/// Variant.
     StructExpr,
+/// Variant.
     RangeExpr,
+/// Variant.
     BreakExpr,
+/// Variant.
     ContinueExpr,
+/// Variant.
     ReturnExpr,
+/// Variant.
     AssignExpr,
+/// Variant.
     RawPtrType,
+/// Variant.
     PathType,
+/// Variant.
     FnType,
+/// Variant.
     DynType,
+/// Variant.
     RefType,
+/// Variant.
     SliceType,
+/// Variant.
     ArrayType,
+/// Variant.
     TupleType,
+/// Variant.
     NeverType,
+/// Variant.
     InferType,
+/// Variant.
     GenericArgList,
+/// Variant.
     PatIdent,
+/// Variant.
     PatStruct,
+/// Variant.
     PatTuple,
+/// Variant.
     PatRef,
+/// Variant.
     PatOr,
+/// Variant.
     PatLit,
+/// Variant.
     PatRange,
+/// Variant.
     PatWild,
+/// Variant.
     PatSlice,
+/// Variant.
     UsePath,
+/// Variant.
     UseTree,
+/// Variant.
     MacroCall,
+/// Variant.
     TokenTree,
+/// Variant.
     MacroDef,
+/// Variant.
     MacroArm,
+/// Variant.
     MacroPattern,
+/// Variant.
     StructField,
+/// Variant.
     EnumVariant,
+/// Variant.
     FieldList,
+/// Variant.
     VariantList,
     // Error
+/// Variant.
     Error,
     // Visibility qualifiers
+/// Variant.
     Visibility,
+/// Variant.
     VisCrate,
+/// Variant.
     VisSuper,
+/// Variant.
     VisSelf,
+/// Variant.
     VisPath,
     // Where clause components
+/// Variant.
     WherePredicate,
+/// Variant.
     Bound,
     // Macro metavariables
+/// Variant.
     MetaVar,
+/// Variant.
     MetaVarCrate,
 }
 impl SyntaxKind {
@@ -265,20 +452,26 @@ pub type SyntaxElement = rowan::SyntaxElement<GlyimLang>;
 
 pub use rowan::GreenNode;
 
+/// AstNode.
 pub trait AstNode {
+/// can_cast.
     fn can_cast(kind: SyntaxKind) -> bool;
+/// cast.
     fn cast(node: SyntaxNode) -> Option<Self>
     where
         Self: Sized;
+/// syntax.
     fn syntax(&self) -> &SyntaxNode;
 }
 
+/// child_of_kind.
 pub fn child_of_kind(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
     node.children().find(|c| c.kind() == kind)
 }
 
 macro_rules! ast_node {
     ($name:ident, $kind:expr) => {
+/// Struct.
         pub struct $name(SyntaxNode);
         impl AstNode for $name {
             fn can_cast(kind: SyntaxKind) -> bool {
