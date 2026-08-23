@@ -17,6 +17,8 @@ glyim-span = { workspace = true }
 glyim-diag = { workspace = true }
 glyim-const-eval = { workspace = true }
 glyim-def-map = { workspace = true }
+glyim-borrowck = { workspace = true }
+fixedbitset = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

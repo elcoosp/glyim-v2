@@ -20,7 +20,7 @@ use crate::visitor::{
 // ---------------------------------------------------------------------------
 
 /// Result of the backward dataflow liveness analysis.
-pub(crate) struct LivenessResult {
+pub struct LivenessResult {
     /// For each basic block, the set of locals live on exit.
     pub live_out: Vec<BitSet>,
 }
@@ -96,7 +96,13 @@ fn compute_block_summaries(body: &Body) -> BlockSummary {
 /// **Complexity:** O(|blocks| × |locals| / word_size) per reprocessing, but
 /// the worklist ensures each block is only reprocessed when its successors'
 /// `live_in` sets actually change.
-pub(crate) fn compute_liveness(body: &Body) -> LivenessResult {
+/// Compute the set of locals live on exit from each basic block.
+///
+/// Backward dataflow liveness analysis over the MIR CFG. Used by the borrow
+/// checker and reused by the async state-machine transform
+/// (`glyim-lower/src/async_state_transform.rs`) to find the locals that must
+/// be preserved across each `.await` suspend point.
+pub fn compute_liveness(body: &Body) -> LivenessResult {
     let num_blocks = body.basic_blocks.len();
     let num_locals = body.locals.len();
 

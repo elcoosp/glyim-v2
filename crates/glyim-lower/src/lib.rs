@@ -36,6 +36,8 @@ pub mod builder;
 pub mod lower_rvalue;
 /// lower_terminator.
 pub mod lower_terminator;
+/// async_state_transform.
+pub mod async_state_transform;
 
 pub use lower::*;
 // IteratorNextInfo is re-exported via pub use lower::*;

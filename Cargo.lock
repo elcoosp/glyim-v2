@@ -1114,6 +1114,8 @@ dependencies = [
 name = "glyim-lower"
 version = "0.1.0"
 dependencies = [
+ "fixedbitset",
+ "glyim-borrowck",
  "glyim-codegen-llvm",
  "glyim-const-eval",
  "glyim-core",

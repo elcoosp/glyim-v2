@@ -23,6 +23,9 @@
 //!    phase are treated as shared borrows for conflict purposes.
 
 mod liveness;
+pub use liveness::LivenessResult;
+pub use liveness::compute_liveness;
+pub use fixedbitset::FixedBitSet;
 mod move_analysis;
 mod twophase;
 mod visitor;
