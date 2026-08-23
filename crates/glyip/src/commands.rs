@@ -390,7 +390,7 @@ fn compile_and_run_compiled(
 ) -> Result<(), String> {
     let crate_config = CrateConfig {
         name: config.package.name.clone(),
-        target_triple: "x86_64-unknown-linux-gnu".to_string(),
+        target_triple: host_target_triple(),
         opt_level: 0,
     };
     let mut db = Database::new(crate_config);
@@ -406,7 +406,10 @@ fn compile_and_run_compiled(
         // C-ABI `main` symbol (via `--emit=exec` semantics) so the produced
         // object links into a runnable binary. Without this the object has no
         // `main` and the native link fails ("undefined reference to main").
-        let mut llvm = glyim_codegen_llvm::LlvmBackend::new();
+        // Target the host triple so the produced object links and runs on the
+        // dev machine (see `host_target_triple`).
+        let mut llvm = glyim_codegen_llvm::LlvmBackend::new()
+            .with_target(host_target_triple());
         if let Some(main_id) =
             glyim_pipeline::Pipeline::entry_main_local_id(&mut db, file)
         {
@@ -672,6 +675,102 @@ fn run_binary(binary: &Path, args: &[String], env: &HashMap<String, String>) -> 
     Ok(status.code().unwrap_or(-1))
 }
 
+/// Host triple used by the compiled-binary execution harness. Targeting the
+/// host (instead of a hardcoded `x86_64-unknown-linux-gnu`) lets the produced
+/// object actually link and *run* on the dev machine — so destub regression
+/// fixtures verify real program behavior (stdout/exit code), not just that
+/// the compiler accepted the source.
+fn host_target_triple() -> String {
+    let arch = std::env::consts::ARCH;
+    match std::env::consts::OS {
+        "macos" => format!("{arch}-apple-darwin"),
+        "linux" => format!("{arch}-unknown-linux-gnu"),
+        "windows" => format!("{arch}-pc-windows-msvc"),
+        other => format!("{arch}-unknown-{other}"),
+    }
+}
+
+/// Compile `file` for the host triple, link it into a real executable, run it,
+/// and capture `(success, stdout, stderr)`. This is the Phase-0 destub
+/// regression harness: fixtures assert on captured program output to verify
+/// real runtime behavior, not just that the compiler accepted the source.
+/// Returns `Err` if compilation or linking fails (the program never ran).
+fn compile_run_capture(
+    file: &Path,
+    config: &GlyipToml,
+    timeout: std::time::Duration,
+) -> Result<(bool, String, String), String> {
+    let crate_config = CrateConfig {
+        name: config.package.name.clone(),
+        target_triple: host_target_triple(),
+        opt_level: 0,
+    };
+    let mut db = Database::new(crate_config);
+
+    let output_path = std::env::temp_dir().join(format!(
+        "glyim_test_compiled_{}.o",
+        file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()
+    ));
+    let exe_path = output_path.with_extension("");
+
+    let backend: Box<dyn glyim_codegen::CodegenBackend> = {
+        let mut llvm = glyim_codegen_llvm::LlvmBackend::new()
+            .with_target(host_target_triple());
+        if let Some(main_id) = glyim_pipeline::Pipeline::entry_main_local_id(&mut db, file) {
+            llvm = llvm.with_entry_main(main_id);
+        }
+        Box::new(llvm)
+    };
+
+    if let Err(diags) =
+        glyim_pipeline::Pipeline::compile_file(&mut db, file, backend.as_ref(), &output_path, None)
+    {
+        return Err(format!(
+            "compilation failed: {}",
+            diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
+        ));
+    }
+
+    if let Err(link_err) =
+        glyim_cli::linker::invoke_linker(&output_path, &exe_path, None, None, None)
+    {
+        return Err(format!("linking failed: {link_err}"));
+    }
+
+    let mut child = Command::new(&exe_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn compiled test binary: {e}"))?;
+
+    let child_pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel::<Option<ExitStatus>>();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait().ok());
+    });
+
+    let status = match rx.recv_timeout(timeout) {
+        Ok(Some(status)) => status,
+        Ok(None) => {
+            let _ = std::process::Command::new("kill").arg(child_pid.to_string()).status();
+            return Err("test subprocess wait failed".to_string());
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            let _ = std::process::Command::new("kill").arg(child_pid.to_string()).status();
+            return Err(format!("test timed out after {}s", timeout.as_secs()));
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            return Err("test subprocess channel disconnected".to_string());
+        }
+    };
+
+    // The child has exited; collect its captured stdout/stderr.
+    let output = child.wait_with_output().map_err(|e| format!("wait_with_output: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    Ok((status.success(), stdout, stderr))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,12 +797,12 @@ mod tests {
         // file to an object, link it into a real executable, and run it as an
         // isolated subprocess — verifying execution by the child's exit code.
         //
-        // The compiler currently only emits `x86_64-unknown-linux-gnu` ELF
-        // objects, so on a Linux host this runs the binary for real and asserts
-        // exit-0. On a non-Linux host the link step cannot produce a native
-        // executable and `compile_and_run_compiled` returns Err — which is the
-        // correct, honest outcome (no silent pass). We assert both regimes
-        // explicitly rather than masking the result.
+        // The harness targets the host triple (see `host_target_triple`), so the
+        // produced object links and *runs* on the dev machine regardless of OS
+        // (Linux or macOS). We assert it exits 0 on every host — the honest,
+        // runnable outcome. (Historically this was hardcoded to a Linux ELF and
+        // only ran on Linux; on other hosts it returned Err for a host-mismatch
+        // link, which we no longer need.)
         let (_dir, config, main) = project_with_main("fn main() {}\n");
 
         let result = compile_and_run_compiled(
@@ -712,18 +811,11 @@ mod tests {
             std::time::Duration::from_secs(30),
         );
 
-        if cfg!(target_os = "linux") {
-            assert!(
-                result.is_ok(),
-                "compiled binary should exit 0 and be reported as passing: {:?}",
-                result.err()
-            );
-        } else {
-            assert!(
-                result.is_err(),
-                "compiled-binary path should report the host-mismatch link failure on non-Linux hosts, not silently pass"
-            );
-        }
+        assert!(
+            result.is_ok(),
+            "compiled binary should exit 0 and be reported as passing: {:?}",
+            result.err()
+        );
     }
 
     #[test]
