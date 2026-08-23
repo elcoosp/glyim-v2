@@ -22,6 +22,8 @@ glyim-const-eval = { workspace = true }
 glyim-solve = { workspace = true }
 glyim-db = { workspace = true }
 glyim-mir = { workspace = true }
+glyim-meta = { workspace = true }
+glyim-proc-macro = { workspace = true }
 tracing = { workspace = true }
 rayon = { workspace = true }
 [dev-dependencies]

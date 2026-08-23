@@ -220,11 +220,12 @@ pub type MacroFn = dyn Fn(&[(SyntaxKind, String)]) -> Vec<(SyntaxKind, String)> 
 
 /// A registered procedural macro: a name plus an expansion function that maps
 /// an input token list to an output token list.
+#[derive(Clone)]
 pub struct ProcMacro {
     /// Macro name as written at the call site.
     pub name: String,
     /// Expansion: `(input tokens) -> output tokens`.
-    pub expand: Box<MacroFn>,
+    pub expand: std::sync::Arc<MacroFn>,
 }
 
 /// Registry of procedural macros available during expansion.
@@ -248,7 +249,7 @@ impl Registry {
             name.to_string(),
             ProcMacro {
                 name: name.to_string(),
-                expand: Box::new(expand),
+                expand: std::sync::Arc::new(expand),
             },
         );
     }
@@ -274,6 +275,17 @@ impl Registry {
     /// Whether the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.macros.is_empty()
+    }
+
+    /// Merge another registry's macros into this one. Macros already present
+    /// in `self` keep their existing definition (the incoming copy is ignored).
+    /// Used by the two-stage proc-macro build to combine the `Registry`es
+    /// loaded from each proc-macro dependency crate into a single shared
+    /// registry (Phase 8 / plan §9.2).
+    pub fn merge(&mut self, other: &Registry) {
+        for (name, pm) in &other.macros {
+            self.macros.entry(name.clone()).or_insert_with(|| pm.clone());
+        }
     }
 }
 
@@ -424,5 +436,28 @@ mod tests {
             pm_ts_free(&mut ts);
         }
         assert_eq!(ts.len, 0);
+    }
+
+    #[test]
+    fn registry_merge_combines_macros() {
+        let mut a = Registry::new();
+        a.register("derive_a", |input| input.to_vec());
+        assert!(a.contains("derive_a"));
+
+        let mut b = Registry::new();
+        b.register("derive_b", |input| input.to_vec());
+        assert!(b.contains("derive_b"));
+
+        // Merging `b` into `a` brings `derive_b` in while keeping `derive_a`.
+        a.merge(&b);
+        assert!(a.contains("derive_a"));
+        assert!(a.contains("derive_b"));
+        assert_eq!(a.len(), 2);
+
+        // Re-registering an existing name keeps the original (no duplicate).
+        let mut c = Registry::new();
+        c.register("derive_a", |input| input.to_vec());
+        a.merge(&c);
+        assert_eq!(a.len(), 2, "duplicate name must not create a second entry");
     }
 }

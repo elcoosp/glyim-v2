@@ -50,6 +50,13 @@ pub struct CliArgs {
     /// 10.2 / feature-gaps §4.1.)
     #[arg(long = "codegen-units")]
     pub codegen_units: Option<usize>,
+    /// Comma-separated list of proc-macro dependency crate source files. Each
+    /// is compiled for the HOST triple to a cdylib (the two-stage proc-macro
+    /// build, Phase 8 / plan §9.2) and `dlopen`ed via `glyim_proc_macro`,
+    /// then merged into a single [`glyim_proc_macro::Registry`] that drives
+    /// procedural-macro expansion of the primary crate.
+    #[arg(long = "proc-macro-deps")]
+    pub proc_macro_deps: Option<String>,
 }
 
 /// run.
@@ -197,6 +204,31 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
 
     let mut db = Database::new(config);
 
+    // Phase 8 / plan §9.2: if the user listed proc-macro dependency crates,
+    // run the two-stage proc-macro build (compile each for the HOST triple to
+    // a cdylib, then dlopen and merge into one Registry) so the primary crate's
+    // procedural-macro invocations can be expanded during compilation. The
+    // registry is `None` when no deps are supplied, leaving the pipeline's
+    // behavior unchanged (no expansion pass runs).
+    let proc_registry: Option<glyim_proc_macro::Registry> = match &args.proc_macro_deps {
+        Some(list) if !list.trim().is_empty() => {
+            let deps: Vec<std::path::PathBuf> = list
+                .split(',')
+                .map(|s| std::path::PathBuf::from(s.trim()))
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect();
+            match build_proc_macro_dependencies(&deps) {
+                Ok(reg) => Some(reg),
+                Err(e) => {
+                    return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                        "proc-macro dependency build failed: {e}"
+                    ))]);
+                }
+            }
+        }
+        _ => None,
+    };
+
     // Early return for MIR, LLVM IR, and assembly emit
     if emit == EmitKind::Mir {
         return glyim_pipeline::emit_mir(&mut db, input, &object_path);
@@ -242,6 +274,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             &llvm,
             &object_path,
             args.codegen_units,
+            proc_registry.as_ref(),
         )?;
         let bitcode_dir = object_path.with_extension("thin-bc");
         std::fs::create_dir_all(&bitcode_dir).map_err(|e| {
@@ -287,10 +320,10 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         let ctx = glyim_type::TyCtxMut::new(db.interner().clone()).freeze();
         let backend: Box<dyn glyim_codegen::CodegenBackend> =
             Box::new(BytecodeBackend::with_ty_ctx(std::sync::Arc::new(ctx), target_info));
-        Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units)?;
+        Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units, proc_registry.as_ref())?;
     } else {
         let backend: Box<dyn glyim_codegen::CodegenBackend> = Box::new(llvm);
-        Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units)?;
+        Pipeline::compile_file(&mut db, input, &*backend, &object_path, args.codegen_units, proc_registry.as_ref())?;
     }
 
     if emit == EmitKind::Exec || emit == EmitKind::Cdylib {
@@ -314,6 +347,102 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
     }
 
     Ok(())
+}
+
+/// Construct the Rust target triple for the build host, used to compile
+/// proc-macro dependencies (which run on the host at compile time). Derived
+/// from `std::env::consts` so it matches the machine executing the compiler.
+fn host_target_triple() -> String {
+    let arch = std::env::consts::ARCH;
+    let os = std::env::consts::OS;
+    let env = std::env::consts::FAMILY;
+    // Map to the conventional Rust triple components.
+    let parts = match (arch, os, env) {
+        ("x86_64", "macos", _) => ("x86_64", "apple-darwin", ""),
+        ("aarch64", "macos", _) => ("aarch64", "apple-darwin", ""),
+        ("x86_64", "linux", _) => ("x86_64", "unknown-linux-gnu", ""),
+        ("aarch64", "linux", _) => ("aarch64", "unknown-linux-gnu", ""),
+        ("x86_64", "windows", _) => ("x86_64", "pc-windows-msvc", ""),
+        ("aarch64", "windows", _) => ("aarch64", "pc-windows-msvc", ""),
+        _ => {
+            // Best-effort fallback: lowercase arch + os.
+            let a = arch.to_lowercase();
+            let o = os.to_lowercase();
+            return format!("{}-{}", a, o);
+        }
+    };
+    let (arch_triple, os_triple, env_triple) = parts;
+    if env_triple.is_empty() {
+        format!("{arch_triple}-{os_triple}")
+    } else {
+        format!("{arch_triple}-{os_triple}-{env_triple}")
+    }
+}
+
+/// Phase 8 / plan §9.2: two-stage proc-macro build orchestration.
+///
+/// For each proc-macro dependency source `dep`, compile it for the **HOST**
+/// triple to a position-independent shared library (`--emit=cdylib`), then
+/// `dlopen` it via [`glyim_proc_macro::load_cdylib`] and merge its macros into
+/// a single combined [`glyim_proc_macro::Registry`]. The combined registry is
+/// what drives procedural-macro expansion of the primary crate (threaded into
+/// `Pipeline::compile_file` via `with_proc_registry`).
+///
+/// Compiling for the host (not the target) is essential: proc macros execute at
+/// compile time on the build machine, so the cdylib must match the host's
+/// architecture/ABI even when the final program targets a different triple.
+fn build_proc_macro_dependencies(
+    deps: &[std::path::PathBuf],
+) -> Result<glyim_proc_macro::Registry, String> {
+    let host_triple = host_target_triple();
+    let mut combined = glyim_proc_macro::Registry::new();
+    for dep in deps {
+        // Compile the proc-macro crate for the host to a cdylib.
+        let cdylib_path = compile_proc_macro_dep(dep, &host_triple)?;
+        // dlopen it and merge its registered macros into the combined registry.
+        let loaded = glyim_proc_macro::load_cdylib(cdylib_path.to_str().unwrap_or_default())
+            .map_err(|e| format!("failed to load proc-macro cdylib for {}: {e}", dep.display()))?;
+        combined.merge(&loaded.registry);
+    }
+    Ok(combined)
+}
+
+/// Compile a single proc-macro dependency crate for `host_triple` into a
+/// position-independent shared library, returning the produced cdylib path.
+fn compile_proc_macro_dep(
+    dep: &std::path::Path,
+    host_triple: &str,
+) -> Result<std::path::PathBuf, String> {
+    use crate::linker;
+    let out_dir = tempfile::tempdir().map_err(|e| format!("failed to make temp dir: {e}"))?;
+    let cdylib_path = out_dir.path().join("proc_macro_dep");
+    let cdylib_path = if cfg!(target_os = "macos") {
+        cdylib_path.with_extension("dylib")
+    } else {
+        cdylib_path.with_extension("so")
+    };
+    let args = CliArgs {
+        input: dep.to_path_buf(),
+        output: Some(cdylib_path.clone()),
+        opt_level: 0,
+        target: Some(host_triple.to_string()),
+        backend: "llvm".to_string(),
+        emit: "cdylib".to_string(),
+        linker: None,
+        link_flags: None,
+        lto: "off".to_string(),
+        codegen_units: None,
+        proc_macro_deps: None,
+    };
+    run_with_args(args).map_err(|diags| {
+        let msg = diags
+            .iter()
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("proc-macro dep {} failed to compile: {}", dep.display(), msg)
+    })?;
+    Ok(cdylib_path)
 }
 
 #[cfg(test)]

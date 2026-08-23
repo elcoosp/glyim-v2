@@ -17,6 +17,7 @@ mod tests {
             link_flags: None,
             lto: "off".to_string(),
             codegen_units: None,
+            proc_macro_deps: None,
         };
         let result = run_with_args(args);
         assert!(result.is_err());
@@ -50,6 +51,7 @@ mod tests {
             link_flags: None,
             lto: "off".to_string(),
             codegen_units: None,
+            proc_macro_deps: None,
         };
         let result = run_with_args(args);
         assert!(result.is_ok(), "emit_mir failed: {:?}", result.err());
@@ -77,6 +79,7 @@ mod tests {
             link_flags: None,
             lto: "off".to_string(),
             codegen_units: None,
+            proc_macro_deps: None,
         };
         let result = run_with_args(args);
         assert!(result.is_ok(), "emit_llvm_ir failed: {:?}", result.err());

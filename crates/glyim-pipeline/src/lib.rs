@@ -85,8 +85,10 @@ impl Pipeline {
         backend: &dyn CodegenBackend,
         output_path: &Path,
         codegen_units: Option<usize>,
+        proc_registry: Option<&glyim_proc_macro::Registry>,
     ) -> CompResult<()> {
-        Self::compile_file_with_artifacts(db, path, backend, output_path, codegen_units).map(|_| ())
+        Self::compile_file_with_artifacts(db, path, backend, output_path, codegen_units, proc_registry)
+            .map(|_| ())
     }
 }
 
@@ -95,12 +97,19 @@ impl Pipeline {
     /// artifacts (def-map, type-check result, MIR bodies, type context) in addition
     /// to emitting the object file. Used by test harnesses that need to assert on
     /// the MIR/typeck output.
+    ///
+    /// `proc_registry`, when `Some` and non-empty, drives procedural-macro
+    /// expansion (Phase 8 / plan §9.2): macro invocations in the source are
+    /// expanded by the loaded proc-macro functions before HIR lowering. When
+    /// `None` (or empty) the pipeline behaves exactly as before — no expansion
+    /// pass runs, so existing non-proc-macro compiles are unaffected.
     pub fn compile_file_with_artifacts(
         db: &mut Database,
         path: &Path,
         backend: &dyn CodegenBackend,
         output_path: &Path,
         codegen_units: Option<usize>,
+        proc_registry: Option<&glyim_proc_macro::Registry>,
     ) -> CompResult<CompileArtifacts> {
         let sink = DiagSink::new();
         let sink_cell = RefCell::new(sink);
@@ -122,15 +131,37 @@ impl Pipeline {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
 
+        // Phase 8 / plan §9.2: expand proc-macro invocations (if a non-empty
+        // registry was supplied) before def-map / HIR lowering. The expander
+        // rewrites the syntax tree; if it returns diagnostics we surface them.
+        // The `None`/`empty` case leaves `parse_result.root` untouched,
+        // preserving prior behavior byte-for-byte.
+        let expanded_root = if let Some(reg) = proc_registry {
+            if !reg.is_empty() {
+                let mut hygiene = glyim_span::HygieneCtx::new();
+                let mut expander = glyim_meta::Expander::new(&mut hygiene);
+                expander.with_proc_registry(Some(reg));
+                let (expanded, expand_diags) = expander.expand_crate(&parse_result.root);
+                sink_cell.borrow_mut().extend(expand_diags);
+                if sink_cell.borrow().has_errors() {
+                    return Err(sink_cell.into_inner().into_diagnostics());
+                }
+                expanded
+            } else {
+                parse_result.root.clone()
+            }
+        } else {
+            parse_result.root.clone()
+        };
         let (def_map, def_diagnostics) =
-            glyim_def_map::build_def_map(&parse_result.root, db.krate(), db.interner().clone());
+            glyim_def_map::build_def_map(&expanded_root, db.krate(), db.interner().clone());
         sink_cell.borrow_mut().extend(def_diagnostics);
         if sink_cell.borrow().has_errors() {
             return Err(sink_cell.into_inner().into_diagnostics());
         }
 
         let (hir, hir_diags) =
-            glyim_hir::pipeline_api::lower_crate_for_pipeline(&parse_result.root, db.intern_mut());
+            glyim_hir::pipeline_api::lower_crate_for_pipeline(&expanded_root, db.intern_mut());
         sink_cell.borrow_mut().extend(hir_diags);
 
         // Plan unstub-5 P5: populate `glyim_solve::TraitContext` with the user's

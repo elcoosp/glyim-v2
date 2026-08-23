@@ -11,9 +11,10 @@ glyim-codegen = { workspace = true }
 glyim-core = { workspace = true }
 glyim-type = { workspace = true }
 glyim-diag = { workspace = true }
+glyim-proc-macro = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tempfile = "3"
 [dev-dependencies]
 glyim-test = { workspace = true }
-tempfile = "3"
