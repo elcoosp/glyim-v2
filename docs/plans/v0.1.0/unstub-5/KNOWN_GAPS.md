@@ -661,19 +661,3 @@ criteria: `<=1` suspend still routes through the unmodified single-poll desugar;
 routing and the `Start`-captures-params invariant. The runtime Pending/Resume
 semantics are structural (the desugar emits the correct `Poll::Ready`/`Pending`
 switch); GAP A/B above remain tracked and explicitly scoped out of §1.1.
-
-**Closed (2026-08-22):** the single-poll path (Phase 5, already DONE) and the
-multi-poll state machine (this phase) together satisfy the §1.1 acceptance
-criteria: `<=1` suspend still routes through the unmodified single-poll desugar;
-`>=2` produces a state-enum-backed future; the structural tests prove the
-routing and the `Start`-captures-params invariant. The runtime Pending/Resume
-semantics are structural (the desugar emits the correct `Poll::Ready`/`Pending`
-switch); GAP A/B above remain tracked and explicitly scoped out of §1.1.
-
-**Closed (2026-08-22):** the single-poll path (Phase 5, already DONE) and the
-multi-poll state machine (this phase) together satisfy the §1.1 acceptance
-criteria: `<=1` suspend still routes through the unmodified single-poll desugar;
-`>=2` produces a state-enum-backed future; the structural tests prove the
-routing and the `Start`-captures-params invariant. The runtime Pending/Resume
-semantics are structural (the desugar emits the correct `Poll::Ready`/`Pending`
-switch); GAP A/B above remain tracked and explicitly scoped out of §1.1.
