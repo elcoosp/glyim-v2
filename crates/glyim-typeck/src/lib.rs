@@ -429,6 +429,60 @@ pub fn typeck_crate(
         }
     }
 
+    // Pre-register the signatures of every top-level function under the
+    // def-map's `LocalDefId` *before* the body-checking main loop below. The
+    // main loop type-checks `impl` method bodies (e.g. the desugared `poll`
+    // methods), and those bodies can reference top-level functions — in
+    // particular a desugared `async fn` wrapper such as `ready` when another
+    // async fn (`one_step`) awaits it. `check_fn_items_in_module` already
+    // registers these signatures, but it runs *after* the main loop, so a
+    // poll body that calls such a wrapper resolves it to an unregistered
+    // value and cascades into spurious "enum-variant value paths are not yet
+    // supported" / `<error>` errors. Registering first keeps value-namespace
+    // resolution order-independent (a single-`async fn` payload happens to
+    // work only because its poll body references no top-level function). The
+    // registration here is idempotent with the later `check_fn_items_in_module`
+    // pass.
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        if child_set.contains(&_item_id) {
+            continue;
+        }
+        if let ItemKind::Fn(f) = &item.kind {
+            let local_def_id = match def_map.modules[def_map.root]
+                .scope
+                .values
+                .get(&item.name)
+            {
+                Some((id, _, _)) => *id,
+                None => LocalDefId::from_raw(item.id.to_raw()),
+            };
+            let sig = tyconv::resolve_fn_sig(
+                &mut ctx,
+                &mut infer,
+                def_map,
+                &mut diagnostics,
+                &f.params,
+                &f.return_ty,
+                &f.generic_params,
+                item.span,
+                None,
+            );
+            let inputs = ctx.intern_substitution(
+                sig.param_tys.iter().map(|t| GenericArg::Ty(*t)).collect(),
+            );
+            ctx.register_fn_sig(
+                FnDefId::from_raw(local_def_id.to_raw()),
+                FnSig {
+                    inputs,
+                    output: sig.return_ty,
+                    c_variadic: false,
+                    unsafety: Safety::Safe,
+                    abi: abi_from_name(f.abi, &ctx),
+                },
+            );
+        }
+    }
+
     for (item_id, item) in hir.items.iter_enumerated() {
         if child_set.contains(&item_id) {
             continue;
