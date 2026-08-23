@@ -230,9 +230,45 @@ impl<'a> PipelineLowerCtx<'a> {
                     .collect::<Option<Vec<_>>>()?;
                 MirConstKind::Aggregate(elems)
             }
-            // Range has no `MirConst` representation yet — fall back to a
-            // `ConstRef` (zero-initialized global) at the call site.
-            ConstValue::Range(..) => return None,
+            // Phase 6 (GLYIM_DESTUB_PLAN §16.x): `Range<T>` is a 2-field struct
+            // `{ start: T, end: T }` at the ABI level. Fold both bounds (when
+            // present) into an aggregate constant, reusing the existing
+            // `MirConstKind::Aggregate` backend lowering — no new const kind
+            // or backend arm needed. `inclusive` is a compile-time property of
+            // the range literal, not stored in the value, so it is dropped here.
+            ConstValue::Range(start, end, _inclusive) => {
+                let elem_ty: glyim_type::Ty = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::Adt(_, substs) => self
+                        .ty_ctx
+                        .substitution_args(*substs)
+                        .iter()
+                        .filter_map(|a| match a {
+                            glyim_type::GenericArg::Ty(t) => Some(*t),
+                            _ => None,
+                        })
+                        .next()
+                        .unwrap_or_else(|| self.ty_ctx.error_ty()),
+                    _ => return None,
+                };
+                let bound = |b: &Option<Box<ConstValue>>| -> Option<glyim_mir::MirConstKind> {
+                    let v = b.as_ref()?;
+                    self.cv_const(v.as_ref(), elem_ty)
+                };
+                let start_v = bound(start)?;
+                let end_v = bound(end)?;
+                MirConstKind::Aggregate(vec![
+                    glyim_mir::MirConst {
+                        kind: start_v,
+                        ty: elem_ty,
+                        span: Span::DUMMY,
+                    },
+                    glyim_mir::MirConst {
+                        kind: end_v,
+                        ty: elem_ty,
+                        span: Span::DUMMY,
+                    },
+                ])
+            }
         };
         Some(kind)
     }
@@ -260,5 +296,64 @@ impl<'a> BorrowckCtx for PipelineBorrowckCtx<'a> {
 
     fn local_name(&self, idx: LocalIdx) -> String {
         format!("local_{}", idx.to_raw())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_const_eval::ConstValue;
+    use glyim_core::arena::IndexVec;
+    use glyim_core::interner::Interner;
+    use glyim_core::primitives::IntTy;
+    use glyim_type::{GenericArg, Substitution, TyCtxMut};
+
+    /// Phase 6 (GLYIM_DESTUB_PLAN): `cv_const` must fold a `Range` const into a
+    /// real `MirConstKind::Aggregate([start, end])` instead of falling back to
+    /// `None` (which forced a zero-init `ConstRef`). This unit test drives
+    /// `cv_const` directly (the public `let r: Range<i32> = 0..10;` path is
+    /// currently blocked by unrelated pre-existing gaps: `const` items are not
+    /// lowered in HIR, and `Range<Idx>` field access / `println!` are not wired
+    /// in a bare project).
+    #[test]
+    fn cv_const_range_folds_to_aggregate() {
+        let mut tcx = TyCtxMut::new(Interner::default());
+        let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+        let substs = tcx.intern_substitution(vec![GenericArg::Ty(i32_ty)]);
+        // `Range<T>` is registered as ADT 1000 by the `TyCtxBuilder`-style
+        // default setup; `cv_const` only reads the substitution's element type,
+        // so we build the `Range<i32>` type directly without re-registering it.
+        let range_ty = tcx.mk_ty(TyKind::Adt(AdtId::from_raw(1000), substs));
+        let frozen = tcx.freeze();
+
+        let hir = CrateHir {
+            items: IndexVec::new(),
+            bodies: IndexVec::new(),
+            body_owners: IndexVec::new(),
+            interner: Interner::default(),
+        };
+
+        let ctx = PipelineLowerCtx::new(&frozen, &hir, Default::default());
+
+        let value = ConstValue::Range(
+            Some(Box::new(ConstValue::Int(0, IntTy::I32))),
+            Some(Box::new(ConstValue::Int(10, IntTy::I32))),
+            false,
+        );
+
+        let result = ctx.cv_const(&value, range_ty);
+        match result {
+            Some(MirConstKind::Aggregate(elems)) => {
+                assert_eq!(elems.len(), 2, "range aggregate must have 2 fields");
+                match (&elems[0].kind, &elems[1].kind) {
+                    (MirConstKind::Int(start), MirConstKind::Int(end)) => {
+                        assert_eq!(*start, 0, "range start must fold to 0");
+                        assert_eq!(*end, 10, "range end must fold to 10");
+                    }
+                    other => panic!("range fields must be Int, got {other:?}"),
+                }
+            }
+            other => panic!("expected Aggregate([Int(0), Int(10)]), got {other:?}"),
+        }
     }
 }
