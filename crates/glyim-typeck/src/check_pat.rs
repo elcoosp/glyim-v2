@@ -61,7 +61,17 @@ impl<'a> FnCtxt<'a> {
                 // identifier. See `CrateHir::interner` for why the two can
                 // diverge.
                 let ctx_name = self.remap_name(*name);
-                self.env.add_binding(ctx_name, expected_ty, *mutability);
+                // Bind under the ORIGINAL HIR `Name` as the primary key. Later
+                // references resolve through `check_path` via `path.as_name()`
+                // (the HIR `Name`), so the binding must be reachable under that
+                // key too — otherwise `let x = ...; x` fails with "unresolved
+                // name `x`" inside impl-method bodies, where the HIR and
+                // type-checker interners differ (plain `fn` bodies share one
+                // interner, so the bug was hidden there).
+                let id = self.env.add_binding(*name, expected_ty, *mutability);
+                if ctx_name != *name {
+                    self.env.add_alias(ctx_name, id);
+                }
                 let sub =
                     subpattern.map(|sub_id| Box::new(self.check_pattern(sub_id, expected_ty)));
                 thir::Pattern {

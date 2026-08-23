@@ -93,6 +93,15 @@ impl LocalEnv {
         id
     }
 
+    /// Register an *additional* name for an already-bound `LocalVarId`
+    /// (without allocating a new id). Used when a binding's name is visible
+    /// under two interner namespaces (e.g. the HIR `Name` and the
+    /// type-checker's remapped `Name`) so that lexical lookups via either key
+    /// resolve to the same variable.
+    pub fn add_alias(&mut self, name: Name, id: LocalVarId) {
+        self.name_map.entry(name).or_default().push(id);
+    }
+
     #[inline]
     pub fn lookup_by_name(&self, name: Name) -> Option<&LocalVarInfo> {
         self.name_map
