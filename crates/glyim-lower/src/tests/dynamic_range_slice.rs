@@ -11,8 +11,8 @@
 use crate::lower::lower_body;
 use crate::tests::mock_lower_ctx::TestLowerCtx;
 use crate::tests::thir_builder::ThirBuilder;
-use glyim_core::primitives::IntTy;
-use glyim_mir::{AggregateKind, Rvalue, StatementKind};
+use glyim_core::primitives::{BinOp, IntTy};
+use glyim_mir::{AggregateKind, MirConstKind, Operand, Rvalue, StatementKind};
 use glyim_test::test_ty_ctx;
 use glyim_type::*;
 use glyim_typeck::thir::{self, ExprKind, Literal};
@@ -109,11 +109,73 @@ fn range_index_lowers_to_ptr_len_tuple_without_error() {
 }
 
 #[test]
-fn inclusive_range_index_is_rejected() {
+fn inclusive_range_index_lowers_without_error() {
+    // Phase 9 (GLYIM_DESTUB_PLAN): `..=` inclusive slicing is now supported.
+    // `arr[1..=4]` over a 5-element array must lower without any diagnostic
+    // and produce the ptr/len tuple (effective end = 4+1 = 5, which is
+    // in-bounds: 5 <= len 5).
     let result = lower_slice(Some(1), Some(4), true);
     assert!(
-        !result.diagnostics.is_empty(),
-        "inclusive range slicing should emit a diagnostic"
+        result.diagnostics.is_empty(),
+        "inclusive range slicing should NOT emit a diagnostic: {:?}",
+        result.diagnostics
+    );
+    assert!(
+        has_ptr_len_tuple(&result),
+        "expected a ptr/len tuple Aggregate among the lowering statements"
+    );
+}
+
+/// Phase 9: inclusive slicing must compute `effective_end = end + 1`. This
+/// helper proves the `end + 1` arithmetic is actually emitted (an `Add`
+/// rvalue with a constant operand of `1`), not just that the slice lowers.
+fn has_add_one(result: &crate::lower::LowerResult) -> bool {
+    result.body.basic_blocks.iter().any(|bb| {
+        bb.statements.iter().any(|stmt| {
+            if let StatementKind::Assign(_, Rvalue::BinaryOp(BinOp::Add, boxed)) = &stmt.kind {
+                let (a, b) = &**boxed;
+                let is_one = |op: &Operand| match op {
+                    Operand::Constant(c) => matches!(c.kind, MirConstKind::Uint(1)),
+                    _ => false,
+                };
+                is_one(a) || is_one(b)
+            } else {
+                false
+            }
+        })
+    })
+}
+
+#[test]
+fn inclusive_range_index_emits_end_plus_one() {
+    // `arr[1..=4]` must lower an `end + 1` computation for the inclusive bound.
+    let result = lower_slice(Some(1), Some(4), true);
+    assert!(
+        result.diagnostics.is_empty(),
+        "inclusive range slicing emitted an unexpected diagnostic: {:?}",
+        result.diagnostics
+    );
+    assert!(
+        has_add_one(&result),
+        "expected an `Add(_, 1)` rvalue implementing the inclusive `end + 1`"
+    );
+}
+
+#[test]
+fn exclusive_range_index_has_no_end_plus_one() {
+    // Contrast test for Phase 9: an *exclusive* slice `arr[1..4]` must NOT
+    // emit an `end + 1` computation — only inclusive (`..=`) ranges add 1.
+    // This proves the `Add(_, 1)` rvalue from `inclusive_range_index_emits_end_plus_one`
+    // is genuinely the inclusive `end + 1` and not some unrelated arithmetic.
+    let result = lower_slice(Some(1), Some(4), false);
+    assert!(
+        result.diagnostics.is_empty(),
+        "exclusive range slicing emitted an unexpected diagnostic: {:?}",
+        result.diagnostics
+    );
+    assert!(
+        !has_add_one(&result),
+        "exclusive range slicing must NOT emit an `Add(_, 1)` rvalue"
     );
 }
 

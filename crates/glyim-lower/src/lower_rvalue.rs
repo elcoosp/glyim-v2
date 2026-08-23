@@ -629,24 +629,12 @@ impl<'a> MirBuilder<'a> {
                     inclusive,
                 } = &index.kind
                 {
-                    if *inclusive {
-                        self.diagnostics.push(GlyimDiagnostic::type_error(
-                            expr.span,
-                            "inclusive ranges (..=) are not supported for slicing yet".to_string(),
-                        ));
-                        return glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(
-                            glyim_mir::MirConst {
-                                kind: glyim_mir::MirConstKind::Error,
-                                ty: self.ctx.ty_ctx().error_ty(),
-                                span: expr.span,
-                            },
-                        ));
-                    }
                     let base_place = self.lower_expr_to_place(base);
                     self.lower_dynamic_range_slice(
                         base_place,
                         start.as_ref().map(|e| e.as_ref()),
                         end.as_ref().map(|e| e.as_ref()),
+                        *inclusive,
                         expr.ty,
                         expr.span,
                     )
@@ -1551,6 +1539,7 @@ impl<'a> MirBuilder<'a> {
         base_place: glyim_mir::Place,
         start_opt: Option<&thir::Expr>,
         end_opt: Option<&thir::Expr>,
+        inclusive: bool,
         result_ty: Ty,
         span: glyim_span::Span,
     ) -> glyim_mir::Rvalue {
@@ -1621,7 +1610,67 @@ impl<'a> MirBuilder<'a> {
                 StatementKind::Assign(Place::new(end_local), end_rvalue),
                 end_expr.span,
             );
-            Operand::Copy(Place::new(end_local))
+            // For inclusive ranges (`..=`), the upper bound is `end + 1` because
+            // the slice includes index `end`. Add 1 with an overflow check: if
+            // `end == usize::MAX`, `end + 1` would wrap to 0, which must panic
+            // like Rust's own bounds-check panics rather than silently wrapping.
+            if inclusive {
+                let eff_end_local = self.alloc_local(Ty::USIZE, Mutability::Mut, span);
+                self.push_stmt(StatementKind::StorageLive(eff_end_local), span);
+                let one = MirConst {
+                    kind: MirConstKind::Uint(1),
+                    ty: Ty::USIZE,
+                    span,
+                };
+                let add_rval = Rvalue::BinaryOp(
+                    BinOp::Add,
+                    Box::new((
+                        Operand::Copy(Place::new(end_local)),
+                        Operand::Constant(one),
+                    )),
+                );
+                self.push_stmt(
+                    StatementKind::Assign(Place::new(eff_end_local), add_rval),
+                    span,
+                );
+                // Overflow check: end <= usize::MAX - 1.
+                let max_minus_one = MirConst {
+                    kind: MirConstKind::Uint(usize::MAX as u128 - 1),
+                    ty: Ty::USIZE,
+                    span,
+                };
+                let end_le_max = Rvalue::BinaryOp(
+                    BinOp::LtEq,
+                    Box::new((
+                        Operand::Copy(Place::new(end_local)),
+                        Operand::Constant(max_minus_one),
+                    )),
+                );
+                let end_le_max_local =
+                    self.alloc_local(self.ctx.ty_ctx().bool_ty(), Mutability::Not, span);
+                self.push_stmt(StatementKind::StorageLive(end_le_max_local), span);
+                self.push_stmt(
+                    StatementKind::Assign(Place::new(end_le_max_local), end_le_max),
+                    span,
+                );
+                let cond_op = Operand::Copy(Place::new(end_le_max_local));
+                let overflow_bb = self.new_block();
+                let cont_bb = self.new_block();
+                self.terminate(
+                    TerminatorKind::SwitchInt {
+                        discr: cond_op,
+                        switch_ty: self.ctx.ty_ctx().bool_ty(),
+                        targets: SwitchTargets::if_switch(cont_bb, overflow_bb),
+                    },
+                    span,
+                );
+                self.current_block = Some(overflow_bb);
+                self.terminate(TerminatorKind::Unreachable, span);
+                self.current_block = Some(cont_bb);
+                Operand::Copy(Place::new(eff_end_local))
+            } else {
+                Operand::Copy(Place::new(end_local))
+            }
         } else {
             // end = len
             let op = Operand::Copy(Place::new(len_local));
