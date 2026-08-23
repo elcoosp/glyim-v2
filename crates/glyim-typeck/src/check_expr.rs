@@ -309,6 +309,58 @@ impl<'a> FnCtxt<'a> {
                 body,
             } => {
                 let (iter_expr, _iter_ty) = self.check_expr(*iterable);
+                let iter_ty = iter_expr.ty;
+                // Phase 1 (GLYIM_DESTUB_PLAN): resolve the `Iterator::next`
+                // method for the iterable's concrete type here (where we hold a
+                // `&mut TyCtxMut` and the resolved `FnDefId` + signatures), and
+                // thread it through the THIR `For` node. The lowering pass then
+                // takes the real multi-iteration path without re-solving the
+                // trait. Mirrors `resolve_trait_method_fn`'s impl scan, scoped
+                // to the `Iterator` trait's `next` method.
+                let next_info = {
+                    let iterator_name = self.ctx.resolver().intern("Iterator");
+                    let iterator_path = glyim_hir::Path {
+                        segments: vec![glyim_hir::PathSegment {
+                            name: iterator_name,
+                            generic_args: None,
+                        }],
+                        kind: glyim_core::path::PathKind::Plain,
+                    };
+                    let next_name = self.ctx.resolver().intern("next");
+                    match crate::tyconv::resolve_path_to_trait_def_id(
+                        self.def_map,
+                        self.ctx,
+                        &iterator_path,
+                        span,
+                    ) {
+                        Some(trait_def_id) => self
+                            .resolve_trait_method_fn(iter_ty, trait_def_id, next_name, span)
+                            .map(|fn_def_id| {
+                                let option_ty = self
+                                    .ctx
+                                    .fn_sig(fn_def_id)
+                                    .map(|s| s.output)
+                                    .unwrap_or_else(|| self.ctx.error_ty());
+                                let ref_iter_ty =
+                                    self.ctx.mk_ref(Region::Erased, iter_ty, Mutability::Mut);
+                                let fn_substs = self.ctx.intern_substitution(vec![]);
+                                let fn_ty = self
+                                    .ctx
+                                    .mk_ty(TyKind::FnDef(fn_def_id, fn_substs));
+                                let discr_ty =
+                                    self.ctx.mk_ty(TyKind::Uint(UintTy::U8));
+                                thir::ForIteratorNext {
+                                    fn_def_id,
+                                    fn_substs,
+                                    option_ty,
+                                    discr_ty,
+                                    ref_iter_ty,
+                                    fn_ty,
+                                }
+                            }),
+                        None => None,
+                    }
+                };
                 // Resolve Iterator::Item for the iterable type.
                 // For now, we use a fresh inference variable to represent the item type;
                 // the actual resolution will be done by the trait solver when lowering.
@@ -327,6 +379,7 @@ impl<'a> FnCtxt<'a> {
                             pat: Box::new(pat_thir),
                             iterable: Box::new(iter_expr),
                             body: Box::new(body_expr),
+                            next: next_info,
                         },
                         ty: Ty::UNIT,
                         span,

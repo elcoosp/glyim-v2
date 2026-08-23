@@ -433,6 +433,7 @@ impl<'a> MirBuilder<'a> {
                 pat,
                 iterable,
                 body,
+                next,
             } => {
                 let iter_ty = iterable.ty;
                 let elem_ty = pat.ty;
@@ -463,8 +464,22 @@ impl<'a> MirBuilder<'a> {
                     continue_bb: header_bb,
                     break_bb: exit_bb,
                 });
-                // Get the iterator_next info; if not available, use a simplified fallback.
-                match self.ctx.iterator_next_fn(iter_ty, elem_ty) {
+                // Get the iterator_next info. Prefer the resolved `next` method
+                // threaded from typeck through the THIR `For` node (production
+                // path, Phase 1 GLYIM_DESTUB_PLAN); fall back to the lowering
+                // context's own lookup (tests / genuinely-unresolvable iterators).
+                let iter_info = next
+                    .as_ref()
+                    .map(|n| crate::lower::IteratorNextInfo {
+                        fn_def_id: n.fn_def_id,
+                        fn_substs: n.fn_substs,
+                        fn_ty: n.fn_ty,
+                        option_ty: n.option_ty,
+                        discr_ty: n.discr_ty,
+                        ref_iter_ty: n.ref_iter_ty,
+                    })
+                    .or_else(|| self.ctx.iterator_next_fn(iter_ty, elem_ty));
+                match iter_info {
                     Some(iter_info) => {
                         self.current_block = Some(header_bb);
                         let ref_iter_local = self.alloc_local(

@@ -95,6 +95,7 @@ fn for_loop_lowers_to_loop_with_next_call() {
             pat: Box::new(elem_pat),
             iterable: Box::new(b.var_ref_expr("arr", arr_ty)),
             body: Box::new(for_body),
+            next: None,
         },
         Ty::UNIT,
     );
@@ -185,6 +186,7 @@ fn for_loop_simplified_without_iterator_info() {
             pat: Box::new(elem_pat),
             iterable: Box::new(b.var_ref_expr("arr", arr_ty)),
             body: Box::new(for_body),
+            next: None,
         },
         Ty::UNIT,
     );
@@ -247,6 +249,7 @@ fn for_loop_break_targets_exit() {
             pat: Box::new(elem_pat),
             iterable: Box::new(b.var_ref_expr("arr", arr_ty)),
             body: Box::new(for_body),
+            next: None,
         },
         Ty::UNIT,
     );

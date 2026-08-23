@@ -104,6 +104,23 @@ impl Expr {
 }
 
 #[derive(Clone, Debug)]
+/// ForIteratorNext.
+pub struct ForIteratorNext {
+/// Struct.
+    pub fn_def_id: FnDefId,
+/// Struct.
+    pub fn_substs: Substitution,
+/// Struct.
+    pub option_ty: Ty,
+/// Struct.
+    pub discr_ty: Ty,
+/// Struct.
+    pub ref_iter_ty: Ty,
+/// Struct.
+    pub fn_ty: Ty,
+}
+
+#[derive(Clone, Debug)]
 /// ExprKind.
 pub enum ExprKind {
 #[allow(missing_docs)]
@@ -247,6 +264,12 @@ pub enum ExprKind {
         iterable: Box<Expr>,
 /// Struct.
         body: Box<Expr>,
+/// Phase 1 (GLYIM_DESTUB_PLAN): the `Iterator::next` method resolved for this
+/// loop's iterable type, threaded from typeck so the lowering pass can take
+/// the real multi-iteration path without re-solving the trait. `None` means
+/// typeck could not resolve an `Iterator` impl (or the test harness left it
+/// unset); lowering then falls back to `LowerCtx::iterator_next_fn`.
+        next: Option<ForIteratorNext>,
     },
 #[allow(missing_docs)]
     Array(Vec<Expr>),
