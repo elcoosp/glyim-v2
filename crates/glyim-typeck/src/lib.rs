@@ -28,6 +28,7 @@ mod check_expr;
 mod check_pat;
 mod check_stmt;
 mod coherence;
+mod deref_impl;
 mod env;
 pub mod thir;
 /// tyconv.
@@ -348,6 +349,13 @@ pub fn typeck_crate(
             }
         }
     }
+
+    // Phase 5 (GLYIM_DESTUB_PLAN): populate the `Deref` impl registry from real
+    // `impl Deref for …` items so autoderef (`TyCtx::deref_ty`, consulted by
+    // `resolve_method_call`) can step through user `Deref` impls for ADT
+    // receivers (Box/Rc/Vec/etc.). Must run before method resolution consumes
+    // the registry in the body-checking pass below.
+    deref_impl::populate_deref_registry(&mut ctx, hir, def_map, &mut infer, &mut diagnostics);
 
     // 1b. Plan unstub-5 P5: populate `ctx.param_bounds` (param name → bound
     // trait def ids) from every function's / impl's generic params and

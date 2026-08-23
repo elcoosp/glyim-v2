@@ -3,6 +3,8 @@
 pub mod adt_def;
 /// auto_trait.
 pub mod auto_trait;
+/// deref.
+pub mod deref;
 /// binder.
 pub mod binder;
 pub mod cast;
@@ -35,6 +37,7 @@ pub use adt_def::*;
 pub use auto_trait::*;
 pub use binder::*;
 pub use const_val::*;
+pub use deref::DerefRegistry;
 pub use display::*;
 pub use flags::*;
 pub use fn_sig::*;

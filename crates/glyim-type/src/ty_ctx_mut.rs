@@ -24,6 +24,7 @@ pub struct TyCtxMut {
     regions: IndexVec<RegionVid, Region>,
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
+    deref_registry: crate::deref::DerefRegistry,
     adt_reprs: HashMap<AdtId, AdtRepr>,
     opaque_hidden: HashMap<OpaqueTyId, Ty>,
     interior_mutable_adt_ids: HashSet<AdtId>,
@@ -96,6 +97,7 @@ impl TyCtxMut {
             regions: IndexVec::new(),
             resolver,
             auto_trait_registry: AutoTraitRegistry::new(),
+            deref_registry: crate::deref::DerefRegistry::new(),
             adt_reprs: HashMap::new(),
             opaque_hidden: HashMap::new(),
             interior_mutable_adt_ids: HashSet::new(),
@@ -476,6 +478,19 @@ impl TyCtxMut {
             .register_manual_impl(adt_id, auto_trait);
     }
 
+/// register_deref_impl (Phase 5 GLYIM_DESTUB_PLAN).
+    pub fn register_deref_impl(&mut self, self_ty: Ty, target_ty: Ty) {
+        self.deref_registry.register_deref_impl(self_ty, target_ty);
+        // Also register a generic template keyed by the self ADT id so that
+        // concrete queries (e.g. `Box<Vec<i32>>`) match
+        // `impl<T> Deref for Box<T> { type Target = T; }`.
+        if let TyKind::Adt(adt_id, sub) = self.ty_kind(self_ty) {
+            let self_params: Vec<GenericArg> = self.substitution_args(*sub).to_vec();
+            self.deref_registry
+                .register_deref_template(*adt_id, self_params, target_ty);
+        }
+    }
+
 /// register_adt.
     pub fn register_adt(&mut self, id: AdtId, def: AdtDef) {
         // Compute variant types from variants
@@ -781,6 +796,7 @@ impl TyCtxMut {
             regions: self.regions.clone(),
             resolver: self.resolver.clone(),
             auto_trait_registry: self.auto_trait_registry.clone(),
+            deref_registry: self.deref_registry.clone(),
             adt_reprs: self.adt_reprs.clone(),
             opaque_hidden: self.opaque_hidden.clone(),
             interior_mutable_adt_ids: self.interior_mutable_adt_ids.clone(),
@@ -807,6 +823,7 @@ impl TyCtxMut {
             regions: self.regions,
             resolver: self.resolver,
             auto_trait_registry: self.auto_trait_registry,
+            deref_registry: self.deref_registry,
             adt_reprs: self.adt_reprs,
             opaque_hidden: self.opaque_hidden,
             interior_mutable_adt_ids: self.interior_mutable_adt_ids,

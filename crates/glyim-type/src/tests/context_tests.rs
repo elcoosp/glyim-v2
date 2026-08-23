@@ -1,5 +1,6 @@
 use crate::*;
 use crate::const_val::Const;
+use glyim_core::def_id::AdtId;
 use glyim_core::interner::Interner;
 use glyim_core::primitives::*;
 
@@ -61,4 +62,49 @@ fn test_deref_ty_for_refs_and_pointers() {
     assert_eq!(ctx.deref_ty(ref_mut_ty), Some(i32_ty), "&mut T derefs to T");
     assert_eq!(ctx.deref_ty(raw_ty), Some(i32_ty), "*const T derefs to T");
     assert_eq!(ctx.deref_ty(i32_ty), None, "i32 does not deref");
+}
+
+#[test]
+fn test_deref_ty_consults_deref_impl_registry() {
+    // Phase 5 (GLYIM_DESTUB_PLAN): a user `impl Deref for Box<T> { type Target =
+    // T; }` must make `deref_ty(Box<T>)` return `T` (not None), so autoderef
+    // can step through ADT Deref impls, not just structural &T / *T.
+    let mut ctx = TyCtxMut::new(Interner::new());
+    let i32_ty = ctx.mk_ty(TyKind::Int(IntTy::I32));
+
+    // Self type = a Box-like ADT parameterized by [T]; Target = T.
+    let box_adt = AdtId::from_raw(1);
+    let empty_substs = ctx.intern_substitution(vec![]);
+    let box_i32_ty = ctx.mk_adt(box_adt, empty_substs);
+
+    // Register `impl Deref for Box<_> { type Target = i32; }`.
+    ctx.register_deref_impl(box_i32_ty, i32_ty);
+
+    // An unregistered ADT (a fresh ADT id with no Deref impl) must deref to None.
+    let other_adt = AdtId::from_raw(2);
+    let other_ty = ctx.mk_adt(other_adt, empty_substs);
+
+    assert_eq!(
+        ctx.deref_ty(box_i32_ty),
+        Some(i32_ty),
+        "registered Deref impl must be reachable via deref_ty"
+    );
+    assert_eq!(
+        ctx.deref_ty(other_ty),
+        None,
+        "unregistered ADT must deref to None"
+    );
+
+    // The registry survives a freeze (deref_ty on the frozen &TyCtx).
+    let frozen = ctx.freeze();
+    assert_eq!(
+        frozen.deref_ty(box_i32_ty),
+        Some(i32_ty),
+        "deref registry must survive freeze"
+    );
+    assert_eq!(
+        frozen.deref_ty(other_ty),
+        None,
+        "unregistered ADT must still deref to None after freeze"
+    );
 }

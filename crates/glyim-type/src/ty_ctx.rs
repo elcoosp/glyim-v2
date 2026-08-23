@@ -21,6 +21,7 @@ pub struct TyCtx {
     pub(crate) regions: IndexVec<RegionVid, Region>,
     pub(crate) resolver: Interner,
     pub(crate) auto_trait_registry: AutoTraitRegistry,
+    pub(crate) deref_registry: crate::deref::DerefRegistry,
     pub(crate) adt_reprs: HashMap<AdtId, AdtRepr>,
     /// Concrete hidden types for opaque types (`impl Trait` / `type X = impl
     /// Trait`). Populated at the opaque type's defining use (by typeck) so that
@@ -266,8 +267,42 @@ impl TyCtx {
         match self.ty_kind(ty) {
             TyKind::Ref(_, inner, _) => Some(*inner),
             TyKind::RawPtr(inner, _) => Some(*inner),
+            // Phase 5 (GLYIM_DESTUB_PLAN): also consult the Deref impl registry
+            // so autoderef can step through user `impl Deref` for ADTs
+            // (Box/Rc/Vec/etc.), not just the structural &T / *T cases.
+            TyKind::Adt(adt_id, sub) => {
+                if let Some(target) = self.deref_registry.exact_target(ty) {
+                    return Some(target);
+                }
+                // Generic `impl<T> Deref for Adt<T> { type Target = T; }`: the
+                // most common case has `Target` equal to one of the self
+                // parameters, so substitute it positionally. More elaborate
+                // target types would require building a fresh `Ty`, which the
+                // frozen `TyCtx` cannot do; that is acceptable because real
+                // `Deref` impls use `type Target = T`.
+                if let Some((_self_params, target)) = self.deref_registry.template(*adt_id) {
+                    if let TyKind::Param(p) = self.ty_kind(*target) {
+                        if let Some(arg) = self.substitution_args(*sub).get(p.index as usize) {
+                            if let GenericArg::Ty(t) = arg {
+                                return Some(*t);
+                            }
+                        }
+                    }
+                }
+                None
+            }
             _ => None,
         }
+    }
+
+    /// Phase 5 (GLYIM_DESTUB_PLAN): test/introspection helper returning the
+    /// registered `Deref::Target` type for a `Deref`-implementing ADT, as
+    /// recorded by `populate_deref_registry` during typeck. Returns `None` if
+    /// no `impl Deref` for `adt_id` was registered.
+    pub fn deref_registry_target_for(&self, adt_id: AdtId) -> Option<Ty> {
+        self.deref_registry
+            .template(adt_id)
+            .map(|(_self_params, target)| *target)
     }
 
 /// has_manual_impl.
