@@ -617,9 +617,26 @@ impl<'a> MirBuilder<'a> {
                         ));
                     }
                 };
+                // Capture the parent local before `base_place` is moved into
+                // `place_with_projection` — it's needed by register_partial_move.
+                let parent_local = base_place.local;
                 let place =
                     self.place_with_projection(base_place, ProjectionElem::Field(field_idx));
-                glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(place))
+
+                // Phase 4 (GLYIM_DESTUB_PLAN): a non-Copy field read here is a
+                // *partial move* out of its parent (this arm produces an rvalue
+                // operand, not a borrow — `&x.field` goes through ExprKind::Ref).
+                // Register a drop-flag for the whole parent local so
+                // `elaborate_scope_drops` guards its scope-exit Drop, and clear
+                // the flag at the move site. Copy fields are read by Copy.
+                let field_is_copy = self.ctx.ty_ctx().is_copy(*_field_ty);
+                let operand = if field_is_copy {
+                    glyim_mir::Operand::Copy(place)
+                } else {
+                    self.register_partial_move(parent_local, expr.span);
+                    glyim_mir::Operand::Move(place)
+                };
+                glyim_mir::Rvalue::Use(operand)
             }
             thir::ExprKind::Index { base, index } => {
                 // Check if the index is a Range expression.
@@ -1069,6 +1086,13 @@ impl<'a> MirBuilder<'a> {
                 let local = self.alloc_local(pat.ty, *mutability, span);
                 self.var_map.insert(*name, local);
                 self.push_stmt(glyim_mir::StatementKind::StorageLive(local), span);
+                // Phase 4 (GLYIM_DESTUB_PLAN): pre-allocate + initialize the
+                // drop-flag for a droppable `let`-bound local at its
+                // declaration site (dominates all later paths), so a later
+                // partial move (`register_partial_move`) can clear it.
+                if self.ctx.ty_ctx().needs_drop(pat.ty) {
+                    self.register_drop_flag_init(local, span);
+                }
                 if let Some(init) = init_local {
                     let place = glyim_mir::Place::new(local);
                     let rvalue = glyim_mir::Rvalue::Use(glyim_mir::Operand::Move(

@@ -269,6 +269,68 @@ impl<'a> MirBuilder<'a> {
         self.ctx.ty_ctx().needs_drop(ty)
     }
 
+    /// Phase 4 (GLYIM_DESTUB_PLAN): when a droppable `let`-bound local is
+    /// declared, pre-allocate its drop-flag, `StorageLive` it, and initialize
+    /// it to `true` (fully initialized) at the declaration site — which
+    /// dominates every later path, so the flag is always defined before
+    /// `elaborate_scope_drops` reads it at scope exit. A later partial move
+    /// (`register_partial_move`) clears it to `false`.
+    ///
+    /// Idempotent: a local declared once gets exactly one flag, regardless of
+    /// how many times this is called.
+    pub(crate) fn register_drop_flag_init(&mut self, local: LocalIdx, span: Span) {
+        if self.drop_flags.contains_key(&local) {
+            return;
+        }
+        let flag = self.alloc_local(self.ctx.ty_ctx().bool_ty(), Mutability::Mut, span);
+        self.drop_flags.insert(local, flag);
+        self.push_stmt(glyim_mir::StatementKind::StorageLive(flag), span);
+        self.push_stmt(
+            glyim_mir::StatementKind::Assign(
+                glyim_mir::Place::new(flag),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Bool(true),
+                    ty: self.ctx.ty_ctx().bool_ty(),
+                    span,
+                })),
+            ),
+            span,
+        );
+    }
+
+    /// Phase 4 (GLYIM_DESTUB_PLAN): a field of a non-`Copy` parent was just
+    /// moved out of (read as an rvalue operand in the `Field` arm of
+    /// `lower_expr_to_rvalue`). Ensure the parent local has a drop-flag, and
+    /// emit the statement that clears it — marking the whole value as "no
+    /// longer fully initialized" so its scope-exit `Drop`, guarded by
+    /// `elaborate_scope_drops`, is skipped.
+    ///
+    /// The flag models "should the parent's `Drop` run at all," not per-field
+    /// state (fine-grained per-field drop guards are a natural v2). Disabling
+    /// the parent's `Drop` entirely on any partial move is always sound — it
+    /// only over-retains (leaks) the still-initialized sibling fields, never
+    /// double-frees.
+    pub(crate) fn register_partial_move(&mut self, local: LocalIdx, span: Span) {
+        let flag = if let Some(&flag) = self.drop_flags.get(&local) {
+            flag
+        } else {
+            let f = self.alloc_local(self.ctx.ty_ctx().bool_ty(), Mutability::Mut, span);
+            self.drop_flags.insert(local, f);
+            f
+        };
+        self.push_stmt(
+            glyim_mir::StatementKind::Assign(
+                glyim_mir::Place::new(flag),
+                glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::Bool(false),
+                    ty: self.ctx.ty_ctx().bool_ty(),
+                    span,
+                })),
+            ),
+            span,
+        );
+    }
+
     /// Lower a closure expression: generate its MIR body and return an aggregate.
     #[allow(dead_code)]
     pub(crate) fn lower_closure(
