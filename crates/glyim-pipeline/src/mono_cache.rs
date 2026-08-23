@@ -501,10 +501,19 @@ fn generate_array_drop_glue(
         glyim_type::ConstKind::Uint(n) => n,
         glyim_type::ConstKind::Int(n) => n as u128,
         _ => {
-            // Length isn't a plain integer constant; fall back to a single
-            // `Return` so we never generate malformed glue.
-            set_return_terminator(body, BasicBlockIdx::from_raw(0));
-            return;
+            // Phase 2c (GLYIM_DESTUB_PLAN): reaching here with a non-monomorphic
+            // array length is a genuine compiler bug — monomorphization should
+            // have resolved `ConstKind::Param` into a concrete length. The old
+            // silent `Return` fallback skipped every element's destructor and
+            // leaked memory without any observable failure. Panic instead so
+            // the regression test catches it immediately.
+            panic!(
+                "internal error: array drop glue requested for `[T; {:?}]` with a \
+                 non-monomorphic length after monomorphization — this means \
+                 TyCtx::subst_ty or polymorphize's param-usage tracking has a bug. \
+                 len = {:?}",
+                len, len
+            );
         }
     };
 

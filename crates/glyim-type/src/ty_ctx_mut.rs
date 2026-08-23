@@ -352,6 +352,18 @@ impl TyCtxMut {
                     self.mk_ty(TyKind::Projection(new_proj))
                 }
             }
+            TyKind::Array(inner, len) => {
+                // Phase 2 (GLYIM_DESTUB_PLAN): substitute the array element
+                // type. Previously the `_ => ty` fallback returned the array
+                // unchanged, leaving a `TyKind::Param` element unsubstituted in
+                // monomorphized `[T; N]` (and similar) types.
+                let new_inner = self.subst_ty(inner, subst);
+                self.mk_ty(TyKind::Array(new_inner, len))
+            }
+            TyKind::Slice(inner) => {
+                let new_inner = self.subst_ty(inner, subst);
+                self.mk_ty(TyKind::Slice(new_inner))
+            }
             _ => ty,
         };
         r
@@ -1321,5 +1333,44 @@ mod interior_mutability_tests {
         let ctx2 = ctx_mut2.freeze();
         assert!(ctx2.is_interior_mutable_adt(a_adt), "after B gains an UnsafeCell, A must recompute true");
         assert!(ctx2.is_interior_mutable_adt(AdtId::from_raw(2000)));
+    }
+}
+
+#[cfg(test)]
+mod subst_ty_tests {
+    use super::*;
+    use glyim_core::interner::Interner;
+    use glyim_core::primitives::{IntTy, UintTy};
+    use crate::const_val::{Const, ConstKind, ParamConst};
+    use std::collections::HashMap;
+
+    /// Phase 2 (GLYIM_DESTUB_PLAN): `subst_ty` must substitute the array
+    /// element type. A `[T; 3]` with `T = Param(0)` substituted by `{0: i32}`
+    /// must yield `[i32; 3]` (previously the `_ => ty` fallback returned the
+    /// array unchanged, leaving `Param(0)` as the element).
+    #[test]
+    fn subst_ty_substitutes_array_element() {
+        let mut tcx = TyCtxMut::new(Interner::new());
+        let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+        let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
+        let param0 = tcx.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: tcx.resolver.intern("T"),
+        }));
+        let len = Const {
+            kind: ConstKind::Int(3),
+            ty: usize_ty,
+        };
+        let arr = tcx.mk_ty(TyKind::Array(param0, len));
+
+        let subst = HashMap::from([(0u32, i32_ty)]);
+        let result = tcx.subst_ty(arr, &subst);
+
+        match tcx.ty_kind(result) {
+            TyKind::Array(inner, _) => {
+                assert_eq!(*inner, i32_ty, "array element must be substituted to i32");
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
     }
 }

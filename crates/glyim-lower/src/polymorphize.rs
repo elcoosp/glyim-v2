@@ -197,8 +197,12 @@ fn mark_used_params(ty: Ty, ctx: &dyn TypeLookup, used: &mut [bool]) {
         TyKind::Slice(inner) => {
             mark_used_params(*inner, ctx, used);
         }
-        TyKind::Array(inner, _) => {
+        TyKind::Array(inner, len) => {
             mark_used_params(*inner, ctx, used);
+            // Phase 2 (GLYIM_DESTUB_PLAN): also mark the length const's params
+            // used, so polymorphize does not merge monomorphizations that differ
+            // only in the array length (which would corrupt array layouts).
+            mark_used_params_in_const(len, ctx, used);
         }
         TyKind::Tuple(substs)
         | TyKind::Adt(_, substs)
@@ -407,5 +411,43 @@ fn mark_used_params_in_terminator(
             mark_used_params_in_place(place, local_decls, ctx, used);
         }
         TerminatorKind::Goto { .. } | TerminatorKind::Return | TerminatorKind::Unreachable => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyim_core::interner::Interner;
+    use glyim_core::primitives::{IntTy, UintTy};
+    use glyim_type::const_val::{Const, ConstKind, ParamConst};
+    use glyim_type::ty_ctx_mut::TyCtxMut;
+
+    /// Phase 2 (GLYIM_DESTUB_PLAN), Step 2b: `mark_used_params` must mark the
+    /// array length const's params as used. A `[i32; N]` with `N = ParamConst(0)`
+    /// must set `used[0] = true`, so polymorphize does not merge
+    /// `[i32; 3]` and `[i32; 7]` into one mono item (which would corrupt the
+    /// array layout).
+    #[test]
+    fn mark_used_params_marks_array_length_const() {
+        let mut tcx = TyCtxMut::new(Interner::new());
+        let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+        let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
+        let len = Const {
+            kind: ConstKind::Param(ParamConst {
+                index: 0,
+                name: Interner::new().intern("N"),
+            }),
+            ty: usize_ty,
+        };
+        let arr = tcx.mk_ty(TyKind::Array(i32_ty, len));
+        let frozen = tcx.freeze();
+
+        let mut used = vec![false];
+        mark_used_params(arr, &frozen, &mut used);
+
+        assert!(
+            used[0],
+            "array length const ParamConst(0) must be marked used"
+        );
     }
 }
