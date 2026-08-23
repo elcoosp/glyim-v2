@@ -66,11 +66,17 @@ so at MIR every `.await` shows up as a `Call` terminator to `Future::poll`
       glyim binary/executor chain); tracked here as the final verification, not
       faked.
 
-## Status (2026-08-23)
-M0–M3 shipped and green. M4/M5 are the unverifiable heavy half: the codegen
-requires reshaping `FooFuture` at HIR (not MIR alone) and the runtime proof
-cannot execute on this host. The `async-v2` diagnostic stays as the honest
-safety net for multi-await until M4 lands verified.
+## Status (2026-08-24)
+M0–M3 shipped and green. The single-await **end-to-end path is now UNBLOCKED
+and verified**: nested single-await (`one_step` awaiting `ready`) compiles
+through the real `PipelineCompiler` with zero diagnostics (regression test
+`nested_async_single_await_compiles`). Two typechecker bugs were fixed —
+top-level fn signatures must be registered before impl-body checking, and
+method-dispatch candidate probing must not emit diagnostics on non-matching
+impls. M4/M5 remain the heavy half: the multi-await codegen requires reshaping
+`FooFuture` at HIR (not MIR alone), and the runtime proof cannot execute on this
+host. The `async-v2` diagnostic (errors 60/61) stays as the honest safety net for
+multi-await until M4 lands verified.
 
 ## Known constraints
 - The full end-to-end `two_step` runtime test (M5) cannot be verified on this

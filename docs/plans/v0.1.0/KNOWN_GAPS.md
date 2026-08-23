@@ -40,30 +40,32 @@ missing, why, and the remediation tracking.
     `poll` body failed before, passes after. **FIXED**: `check_pattern` now also
     binds the original HIR `Name` (sharing one `LocalVarId`), so lookups via
     either interner succeed. Full workspace stays green.
-  - **`self` typed as `<error>` in the nested-async case** — the REMAINING
-    blocker. A single async fn with NO `.await` (`add_one`) desugars and
-    type-checks fine. But an async fn that calls ANOTHER async fn
-    (`one_step` → `let x = ready(a).await` → `ready(self.f0).poll()`) still
-    yields `&mut <error> vs Adt...` and "no method `poll` found", i.e. `self`
-    inside the desugared `poll` body is `<error>`. Root cause is an
-    HIR-desugar ↔ def-map/typechecker integration gap: the desugar appends
-    `OneStepFuture`/`ReadyFuture` items to `hir.items`, but the typechecker's
-    def map / ADT registry / interner bridge does not resolve those generated
-    future types (and the `self` of the generated impl method) when an async fn
-    is *nested inside* another. This is deeper than a two-line fix and cannot be
-  runtime-verified on this host.
-- **Why**: A correct multi-await state machine must store the suspended future's
-  concrete type and resume at the correct CFG point. That requires (a) fixing the
-  single-await path end-to-end first, then (b) a post-type-check pass reusing
-  `glyim-borrowck::compute_liveness`. The plan (`GLYIM_DESTUB_PLAN.md` §Phase 3)
-  scopes this as "the single largest item... its own project, not a quick patch".
-- **Remediation**: tracked sub-project `ASYNC_V1_MIR_PLAN.md`. M0–M3 shipped
-  (expose `compute_liveness`; `async_state_transform` analysis module with 6
-  unit tests on synthetic MIR; wired into `lower_body`; plus a real `compute_liveness`
-  OOB-panic fix). M4 (apply the state-machine codegen) and M5 (host-run `two_step`
-  proof) remain. Single-await is now PARTIALLY unblocked (panic + let-in-impl
-  fixed) but still blocked on the nested-async `self`/generated-type resolution
-  gap above.
-- **Status**: M0–M3 done + green; single-await partially unblocked (2 of 3
-  blockers fixed, 1 deeper blocker remains); M4/M5 blocked on the remaining
-  single-await blocker + host-infeasible runtime validation (M5).
+  - **`self` typed as `<error>` in the nested-async case** — RESOLVED
+    (2026-08-24). The `&mut <error> vs Adt...` / "no method `poll` found"
+    cascade was NOT a HIR-desugar structural defect (the desugared poll
+    bodies are well-formed). It was two **typechecker ordering/side-effect**
+    bugs exposed only when a desugared `poll` body references a top-level fn:
+    1. The main body-checking loop type-checks `impl Future::poll` bodies
+       *before* `check_fn_items_in_module` registers top-level fn signatures
+       under the def-map's `LocalDefId`. A poll body that calls a desugared
+       `async fn` wrapper (`ready(self.f0)`) therefore resolved that callee to
+       an unregistered value → spurious "enum-variant value paths are not yet
+       supported" → `<error>` receiver → cascade. **FIXED**: pre-register every
+       top-level fn signature (under the def-map `LocalDefId`) before the main
+       loop.
+    2. `resolve_method_call` unified the receiver against *every* impl's `Self`
+       to find candidates, but `unify` is side-effecting: a non-matching
+       candidate (e.g. a `readyFuture` receiver against `impl Future for
+       one_stepFuture`) emitted a spurious "mismatched types: Adt… vs Adt…"
+       diagnostic. **FIXED**: snapshot the inference table + diagnostics buffer
+       around the per-candidate `unify` and roll back on failure, so only the
+       selected method may emit diagnostics.
+    With both fixed, `async fn one_step(a) { let x = ready(a).await; x + 1 }`
+    compiles end-to-end with **zero** diagnostics through `PipelineCompiler`
+    (regression test `nested_async_single_await_compiles`). The single-await
+    shape is now fully unblocked.
+- **Status**: M0–M3 done + green; single-await fully unblocked (panic +
+  let-in-impl + nested-cross-future resolution all fixed; regression test
+  `nested_async_single_await_compiles` green). M4 (multi-await state-machine
+  codegen) and M5 (host-run `two_step` proof) remain; M5 is host-infeasible for
+  runtime validation on this macOS host (Linux-gated executor).
