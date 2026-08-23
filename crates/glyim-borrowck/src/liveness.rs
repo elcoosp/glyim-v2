@@ -43,15 +43,34 @@ struct BlockSummary {
 /// collect rvalue uses **first**, then record the lvalue def. Recording the
 /// def first (the previous buggy order) caused the def to mask the use in
 /// statements where the same local appears on both sides.
+/// Compute the bitset capacity needed to index every local referenced by
+/// `body`. MIR bodies produced by lowering may reference `Call` destinations
+/// or `Assign` places whose local index is >= `body.locals.len()`; liveness
+/// must track those too without panicking on `insert`.
+fn local_capacity(body: &Body) -> usize {
+    let mut max_idx: usize = body.locals.len();
+    for block in body.basic_blocks.iter() {
+        for stmt in &block.statements {
+            if let StatementKind::Assign(place, _) = &stmt.kind {
+                max_idx = max_idx.max(place.local.to_raw() as usize + 1);
+            }
+        }
+        if let TerminatorKind::Call { destination, .. } = &block.terminator.kind {
+            max_idx = max_idx.max(destination.local.to_raw() as usize + 1);
+        }
+    }
+    max_idx
+}
+
 fn compute_block_summaries(body: &Body) -> BlockSummary {
     let num_blocks = body.basic_blocks.len();
-    let num_locals = body.locals.len();
+    let capacity = local_capacity(body);
 
     let mut uses: Vec<BitSet> = (0..num_blocks)
-        .map(|_| BitSet::with_capacity(num_locals))
+        .map(|_| BitSet::with_capacity(capacity))
         .collect();
     let mut defs: Vec<BitSet> = (0..num_blocks)
-        .map(|_| BitSet::with_capacity(num_locals))
+        .map(|_| BitSet::with_capacity(capacity))
         .collect();
 
     for (block_idx, block_data) in body.basic_blocks.iter_enumerated() {
@@ -104,7 +123,7 @@ fn compute_block_summaries(body: &Body) -> BlockSummary {
 /// be preserved across each `.await` suspend point.
 pub fn compute_liveness(body: &Body) -> LivenessResult {
     let num_blocks = body.basic_blocks.len();
-    let num_locals = body.locals.len();
+    let capacity = local_capacity(body);
 
     let summary = compute_block_summaries(body);
 
@@ -120,10 +139,10 @@ pub fn compute_liveness(body: &Body) -> LivenessResult {
     }
 
     let mut live_in: Vec<BitSet> = (0..num_blocks)
-        .map(|_| BitSet::with_capacity(num_locals))
+        .map(|_| BitSet::with_capacity(capacity))
         .collect();
     let mut live_out: Vec<BitSet> = (0..num_blocks)
-        .map(|_| BitSet::with_capacity(num_locals))
+        .map(|_| BitSet::with_capacity(capacity))
         .collect();
     let _ = &mut live_in; // suppress unused mut warning
 
@@ -138,7 +157,7 @@ pub fn compute_liveness(body: &Body) -> LivenessResult {
         in_worklist.remove(bi);
 
         // live_out(B) = ∪ live_in(S) for all successors S
-        let mut new_live_out = BitSet::with_capacity(num_locals);
+        let mut new_live_out = BitSet::with_capacity(capacity);
         for &succ in &successors[bi] {
             new_live_out.union_with(&live_in[succ.to_raw() as usize]);
         }
@@ -187,9 +206,9 @@ pub(crate) fn compute_stmt_liveness(
 ) -> Vec<BitSet> {
     let block_data = &body.basic_blocks[block];
     let num_stmts = block_data.statements.len();
-    let num_locals = body.locals.len();
+    let capacity = local_capacity(body);
 
-    let mut liveness = vec![BitSet::with_capacity(num_locals); num_stmts + 1];
+    let mut liveness = vec![BitSet::with_capacity(capacity); num_stmts + 1];
     liveness[num_stmts] = live_out.clone();
 
     for i in (0..num_stmts).rev() {

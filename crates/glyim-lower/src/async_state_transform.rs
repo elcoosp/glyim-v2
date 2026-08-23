@@ -117,7 +117,15 @@ pub fn compute_live_across_suspends(body: &Body, sites: &[SuspendSite]) -> Vec<F
 /// Build the complete transform plan for an async `poll` body.
 pub fn plan_async_transform(body: &Body) -> AsyncTransformPlan {
     let sites = split_at_suspend_points(body);
-    let live_after = compute_live_across_suspends(body, &sites);
+    // Liveness-across-suspends is only needed to build the state-machine
+    // variants for multi-await bodies (`sites.len() > 1`). For 0/1 suspend
+    // sites there is no state machine, so skip the (potentially expensive and
+    // on malformed-local bodies panicking) liveness pass entirely.
+    let live_after = if sites.len() > 1 {
+        compute_live_across_suspends(body, &sites)
+    } else {
+        Vec::new()
+    };
     AsyncTransformPlan {
         variant_count: AsyncTransformPlan::variant_count(sites.len()),
         sites,

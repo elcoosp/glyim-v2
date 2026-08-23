@@ -21,6 +21,15 @@ pub struct LowerResult {
         glyim_type::Substitution,
         glyim_mir::Body,
     )>,
+    /// Async v1 resume-dispatch plan (plan §Phase 3 / `ASYNC_V1_MIR_PLAN.md`).
+    ///
+    /// Computed by `async_state_transform::transform_async_body` after MIR
+    /// generation. For non-async bodies and single-await bodies this is a
+    /// trivial plan (`sites.len() <= 1`); for multi-await async `poll` methods
+    /// it is the `Start`/`S0`..`S_{n-1}`/`Done` state-machine plan that the
+    /// (currently tracked, host-unverifiable) M4 codegen would apply. It is
+    /// stored here so the pipeline has the plan available without recomputing.
+    pub async_transform: Option<crate::async_state_transform::AsyncTransformPlan>,
 }
 
 /// Pre-computed information about the `Iterator::next` method for a specific
@@ -157,9 +166,16 @@ pub fn lower_body(ctx: &dyn LowerCtx, thir: &thir::Body) -> LowerResult {
     body.return_ty = builder.return_ty;
     body.span = builder.span;
 
+    // Async v1: compute the resume-dispatch plan for the lowered body. This is
+    // a cheap analysis that is a no-op for non-async bodies (no `poll` Call
+    // terminators => empty plan). The actual state-machine codegen (M4) applies
+    // it after the future type is known at MIR. See `ASYNC_V1_MIR_PLAN.md`.
+    let async_transform = crate::async_state_transform::transform_async_body(&body);
+
     LowerResult {
         body,
         diagnostics: builder.diagnostics,
         closure_bodies: builder.closure_bodies,
+        async_transform: Some(async_transform),
     }
 }
