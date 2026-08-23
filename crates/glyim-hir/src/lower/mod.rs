@@ -123,7 +123,7 @@ pub(crate) fn lower_crate(
     diags: &mut Vec<GlyimDiagnostic>,
 ) -> CrateHir {
     let mut hir = lower_crate_raw(root, interner, diags);
-    lower_async::desugar_async(&mut hir);
+    lower_async::desugar_async(&mut hir, diags);
     hir
 }
 

@@ -18,11 +18,12 @@
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::LocalDefId;
 use glyim_core::interner::Interner;
+use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;
 
 use crate::{
-    Body, BodyId, CrateHir, EnumItem, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Name, Param,
-    Path, PathKind, PathSegment, StructKind, TypeRef, Variant, Visibility,
+    Body, BodyId, CrateHir, EnumItem, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Literal, Name,
+    Param, Path, PathKind, PathSegment, StructKind, TypeRef, Variant, Visibility,
 };
 
 use crate::lower::lower_async::desugar_async;
@@ -188,7 +189,7 @@ fn state_start_field_names(hir: &CrateHir) -> Option<Vec<String>> {
 #[test]
 fn single_await_no_state_enum() {
     let mut hir = build_async_hir(1);
-    desugar_async(&mut hir);
+    desugar_async(&mut hir, &mut Vec::new());
     let enums = enum_item_names(&hir);
     assert!(
         !enums.iter().any(|n| n.contains("State")),
@@ -202,7 +203,7 @@ fn single_await_no_state_enum() {
 #[test]
 fn two_await_state_enum_has_four_variants() {
     let mut hir = build_async_hir(2);
-    desugar_async(&mut hir);
+    desugar_async(&mut hir, &mut Vec::new());
     let variants = enum_variant_names(&hir, "State")
         .expect("two-await fn must produce a *State enum");
     assert_eq!(
@@ -223,12 +224,168 @@ fn two_await_state_enum_has_four_variants() {
 #[test]
 fn state_enum_start_captures_params() {
     let mut hir = build_async_hir(2);
-    desugar_async(&mut hir);
+    desugar_async(&mut hir, &mut Vec::new());
     let field_names = state_start_field_names(&hir).expect("State enum Start variant present");
     assert_eq!(
         field_names,
         vec!["f0".to_string(), "f1".to_string()],
         "Start must capture params as f0,f1; got {:?}",
         field_names
+    );
+}
+
+/// Build a `CrateHir` with an `async fn bad(a, b)` whose body is
+/// `for i in 0..3 { let _ = a.await; }` — i.e. an `.await` *inside* a `for`
+/// loop body. Phase 3 (GLYIM_DESTUB_PLAN) must reject this shape with a clear
+/// compile-time diagnostic rather than silently miscompiling it into an
+/// infinite-`Pending` hang.
+fn build_async_hir_with_loop_await() -> CrateHir {
+    let mut interner = Interner::new();
+    let bad_name: Name = interner.intern("bad");
+    let a_name: Name = interner.intern("a");
+    let b_name: Name = interner.intern("b");
+    let i_name: Name = interner.intern("i");
+
+    let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
+    let mut pats: IndexVec<crate::PatId, crate::Pat> = IndexVec::new();
+
+    let path_expr = |interner: &Interner, n: Name, exprs: &mut IndexVec<ExprId, Expr>| -> ExprId {
+        let p = Path {
+            segments: vec![PathSegment {
+                name: n,
+                generic_args: None,
+            }],
+            kind: PathKind::Plain,
+        };
+        exprs.push(Expr::Path(p))
+    };
+
+    let a_path = path_expr(&interner, a_name, &mut exprs);
+
+    // `a.await`
+    let await_expr = exprs.push(Expr::Await { expr: a_path });
+    // `let _x = a.await;` (use a name binding as the pattern)
+    let wild_pat_id = pats.push(crate::Pat::Binding {
+        name: i_name,
+        mutability: glyim_core::primitives::Mutability::Not,
+        subpattern: None,
+    });
+    let let_expr = exprs.push(Expr::Let {
+        pat: wild_pat_id,
+        value: await_expr,
+    });
+    // loop body: `let _x = a.await;` (no enclosing Block needed; pointing the
+    // For body directly at the Let keeps the root block the only Block, so
+    // `root_expr_id` resolves to it and the in_loop walk context is preserved)
+    let loop_body = let_expr;
+    // for iterator `0..3`
+    let zero = exprs.push(Expr::Literal(Literal::Int(0, None)));
+    let three = exprs.push(Expr::Literal(Literal::Int(3, None)));
+    let range = exprs.push(Expr::Range {
+        start: Some(zero),
+        end: Some(three),
+        inclusive: false,
+    });
+    let i_pat = pats.push(crate::Pat::Binding {
+        name: i_name,
+        mutability: glyim_core::primitives::Mutability::Not,
+        subpattern: None,
+    });
+    // `for i in 0..3 { let _x = a.await; }`
+    let for_expr = exprs.push(Expr::For {
+        pat: i_pat,
+        iterable: range,
+        body: loop_body,
+    });
+    // root block: the for loop, tail `b`
+    let b_path = path_expr(&interner, b_name, &mut exprs);
+    let block = exprs.push(Expr::Block {
+        stmts: vec![for_expr],
+        tail: Some(b_path),
+    });
+    let _ = block;
+
+    let body = Body {
+        owner: LocalDefId::from_raw(0),
+        exprs: exprs.clone(),
+        pats,
+        params: Vec::new(),
+        span: Span::DUMMY,
+        expr_spans: {
+            let mut s = IndexVec::new();
+            for _ in 0..exprs.len() {
+                s.push(Span::DUMMY);
+            }
+            s
+        },
+    };
+    let body_id = BodyId::from_raw(0);
+
+    let params = vec![
+        Param {
+            name: a_name,
+            ty: None,
+            span: Span::DUMMY,
+        },
+        Param {
+            name: b_name,
+            ty: None,
+            span: Span::DUMMY,
+        },
+    ];
+    let fn_item = FnItem {
+        params,
+        return_ty: None,
+        body: Some(body_id),
+        is_unsafe: false,
+        is_async: true,
+        is_const: false,
+        generic_params: Vec::new(),
+        where_clauses: Vec::new(),
+        abi: None,
+    };
+    let item = Item {
+        id: ItemId::from_raw(0),
+        name: bad_name,
+        kind: ItemKind::Fn(fn_item),
+        visibility: Visibility::Inherited,
+        span: Span::DUMMY,
+    };
+
+    let mut items: IndexVec<ItemId, Item> = IndexVec::new();
+    items.push(item);
+    let mut bodies: IndexVec<BodyId, Body> = IndexVec::new();
+    bodies.push(body);
+    let mut body_owners: IndexVec<BodyId, LocalDefId> = IndexVec::new();
+    body_owners.push(LocalDefId::from_raw(0));
+
+    CrateHir {
+        items,
+        bodies,
+        body_owners,
+        interner,
+    }
+}
+
+/// Phase 3 (GLYIM_DESTUB_PLAN): an `.await` inside a `for` loop body must be
+/// rejected with a clear compile-time diagnostic — NOT silently lowered into
+/// the broken state-machine skeleton that hardcodes `Poll::Pending` (which
+/// would hang forever). This is the plan's "single most important line".
+#[test]
+fn await_in_loop_is_rejected_with_diagnostic() {
+    let mut hir = build_async_hir_with_loop_await();
+    let mut diags: Vec<GlyimDiagnostic> = Vec::new();
+    desugar_async(&mut hir, &mut diags);
+    assert!(
+        !diags.is_empty(),
+        "await-inside-loop must emit a diagnostic, but none was produced"
+    );
+    let has_loop_error = diags
+        .iter()
+        .any(|d| d.is_error() && d.message.contains("await") && d.message.contains("loop"));
+    assert!(
+        has_loop_error,
+        "expected an error diagnostic mentioning await-inside-loop; got: {:?}",
+        diags
     );
 }
