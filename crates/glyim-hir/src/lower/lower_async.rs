@@ -43,13 +43,14 @@ use crate::{
     ItemKind, Literal, MatchArm, Param, Pat, Path, PathKind, PathSegment, StructItem, TypeRef,
     Variant,
 };
+use glyim_diag::{DiagSeverity, ErrorCategory, ErrorCode, GlyimDiagnostic};
 
 /// Desugar every `async fn` in `hir` into a future struct + `impl Future` +
 /// wrapper fn. `async fn` items are mutated in place (their `is_async` flag is
 /// cleared and their body becomes the wrapper), and the new struct/impl items
 /// are appended to `hir.items`. `Expr::Await` nodes in the poll bodies are
 /// rewritten into poll matches.
-pub fn desugar_async(hir: &mut crate::CrateHir) {
+pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>) {
     let async_items: Vec<ItemId> = hir
         .items
         .iter_enumerated()
@@ -76,7 +77,38 @@ pub fn desugar_async(hir: &mut crate::CrateHir) {
             })
             .unwrap_or(0);
 
-        if suspend_count <= 1 {
+        // Phase 3 (GLYIM_DESTUB_PLAN): the v1 state-machine transform does NOT
+        // yet support `.await` inside a `while`/`loop`/`for` body. Resuming into
+        // a loop's mid-iteration state requires splitting the loop body itself,
+        // which is the v2 follow-up. Until then, the single most important
+        // correctness guard is to NEVER silently fall through to the old
+        // skeleton (whose `S_k` arms hardcode `Poll::Pending` and produce an
+        // infinite-`Pending` miscompile that hangs forever). Instead we emit a
+        // clear compile-time diagnostic and route to the single-poll desugar,
+        // which at least turns each `Pending` into a loud `panic!` rather than a
+        // silent infinite loop.
+        let loop_await = body_id
+            .map(|b| await_inside_loop(&hir.bodies[b], root_expr_id(&hir.bodies[b]), false))
+            .unwrap_or(false);
+        if loop_await {
+            let await_expr = first_loop_await_expr(&hir.bodies[body_id.unwrap()], root_expr_id(&hir.bodies[body_id.unwrap()]));
+            let span = await_expr
+                .map(|eid| hir.bodies[body_id.unwrap()].expr_spans.get(eid).copied())
+                .flatten()
+                .unwrap_or(Span::DUMMY);
+            diags.push(GlyimDiagnostic::new(
+                ErrorCode {
+                    category: ErrorCategory::Type,
+                    number: 60,
+                },
+                DiagSeverity::Error,
+                "`.await` inside a loop body is not yet supported by the async state-machine \
+                 lowering (tracked: KNOWN_GAPS.md async-v2). Hoist the await out of the loop, \
+                 or collect futures into a Vec and await them sequentially outside the loop.",
+                glyim_diag::MultiSpan::from_span(span),
+            ));
+            desugar_one_async_fn(hir, item_id);
+        } else if suspend_count <= 1 {
             desugar_one_async_fn(hir, item_id);
         } else {
             desugar_one_async_fn_state_machine(hir, item_id);
@@ -225,6 +257,113 @@ fn collect_suspend_points(body: &Body, root: ExprId, out: &mut Vec<SuspendPoint>
         }
     }
     walk(body, root, out);
+}
+
+/// Phase 3 (GLYIM_DESTUB_PLAN): detect whether any `Expr::Await` lies textually
+/// inside a `while`/`loop`/`for` body. The v1 state-machine transform cannot
+/// resume into a loop's mid-iteration state, so such shapes must be reported
+/// (see `desugar_async`) rather than silently miscompiled into an
+/// infinite-`Pending` hang. `in_loop` tracks loop nesting as we descend.
+fn await_inside_loop(body: &Body, root: ExprId, in_loop: bool) -> bool {
+    fn walk(body: &Body, id: ExprId, in_loop: bool) -> bool {
+        match &body.exprs[id] {
+            Expr::Await { .. } if in_loop => true,
+            Expr::Await { expr } => walk(body, *expr, in_loop),
+            Expr::Block { stmts, tail } => {
+                stmts.iter().any(|s| walk(body, *s, in_loop))
+                    || tail.map(|t| walk(body, t, in_loop)).unwrap_or(false)
+            }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                walk(body, *cond, in_loop)
+                    || walk(body, *then_branch, in_loop)
+                    || else_branch.map(|e| walk(body, e, in_loop)).unwrap_or(false)
+            }
+            Expr::Match { scrutinee, arms } => {
+                walk(body, *scrutinee, in_loop)
+                    || arms.iter().any(|a| {
+                        a.guard.map(|g| walk(body, g, in_loop)).unwrap_or(false)
+                            || walk(body, a.body, in_loop)
+                    })
+            }
+            Expr::Call { func, args } => {
+                walk(body, *func, in_loop) || args.iter().any(|a| walk(body, *a, in_loop))
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                walk(body, *receiver, in_loop)
+                    || args.iter().any(|a| walk(body, *a, in_loop))
+            }
+            Expr::While { cond, body: wb } => walk(body, *cond, in_loop) || walk(body, *wb, true),
+            Expr::Loop { body: lb } => walk(body, *lb, true),
+            Expr::For {
+                iterable, body: fb, ..
+            } => walk(body, *iterable, in_loop) || walk(body, *fb, true),
+            Expr::Return { value: Some(v) } => walk(body, *v, in_loop),
+            Expr::Let { value, .. } => walk(body, *value, in_loop),
+            Expr::Assign { lhs, rhs } => walk(body, *lhs, in_loop) || walk(body, *rhs, in_loop),
+            Expr::Field { receiver, .. } => walk(body, *receiver, in_loop),
+            Expr::Index { base, index } => walk(body, *base, in_loop) || walk(body, *index, in_loop),
+            Expr::Unary { expr, .. } => walk(body, *expr, in_loop),
+            Expr::Binary { lhs, rhs, .. } => walk(body, *lhs, in_loop) || walk(body, *rhs, in_loop),
+            Expr::Cast { expr, .. } => walk(body, *expr, in_loop),
+            Expr::Ref { expr, .. } => walk(body, *expr, in_loop),
+            Expr::Struct { fields, spread, .. } => {
+                fields.iter().any(|(_, f)| walk(body, *f, in_loop))
+                    || spread.map(|s| walk(body, s, in_loop)).unwrap_or(false)
+            }
+            Expr::Array(elems) => elems.iter().any(|e| walk(body, *e, in_loop)),
+            Expr::Tuple(elems) => elems.iter().any(|e| walk(body, *e, in_loop)),
+            Expr::Range { start, end, .. } => {
+                start.map(|s| walk(body, s, in_loop)).unwrap_or(false)
+                    || end.map(|e| walk(body, e, in_loop)).unwrap_or(false)
+            }
+            Expr::Closure { body: cb, .. } => walk(body, *cb, in_loop),
+            _ => false,
+        }
+    }
+    walk(body, root, in_loop)
+}
+
+/// Phase 3 (GLYIM_DESTUB_PLAN): return the `ExprId` of the first `Expr::Await`
+/// found inside a loop body (used to attach a diagnostic span). Mirrors the
+/// walk shape of `await_inside_loop`.
+fn first_loop_await_expr(body: &Body, root: ExprId) -> Option<ExprId> {
+    fn walk(body: &Body, id: ExprId, in_loop: bool) -> Option<ExprId> {
+        match &body.exprs[id] {
+            Expr::Await { .. } if in_loop => Some(id),
+            Expr::Await { expr } => walk(body, *expr, in_loop),
+            Expr::While { cond, body: wb } => {
+                walk(body, *cond, in_loop).or_else(|| walk(body, *wb, true))
+            }
+            Expr::Loop { body: lb } => walk(body, *lb, true),
+            Expr::For {
+                iterable, body: fb, ..
+            } => walk(body, *iterable, in_loop).or_else(|| walk(body, *fb, true)),
+            Expr::Block { stmts, tail } => stmts
+                .iter()
+                .find_map(|s| walk(body, *s, in_loop))
+                .or_else(|| tail.and_then(|t| walk(body, t, in_loop))),
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => walk(body, *cond, in_loop)
+                .or_else(|| walk(body, *then_branch, in_loop))
+                .or_else(|| else_branch.and_then(|e| walk(body, e, in_loop))),
+            Expr::Match { scrutinee, arms } => walk(body, *scrutinee, in_loop).or_else(|| {
+                arms.iter().find_map(|a| {
+                    a.guard
+                        .and_then(|g| walk(body, g, in_loop))
+                        .or_else(|| walk(body, a.body, in_loop))
+                })
+            }),
+            _ => None,
+        }
+    }
+    walk(body, root, false)
 }
 
 fn plain_path(interner: &Interner, name: &str) -> Path {
