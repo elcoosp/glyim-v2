@@ -40,6 +40,7 @@ mod debug;
 mod lower;
 /// passes.
 pub mod passes;
+pub mod seh_ffi;
 mod types;
 
 /// LlvmBackend.

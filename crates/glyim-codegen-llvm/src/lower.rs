@@ -27,6 +27,8 @@ use inkwell::values::{
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
+use llvm_sys::prelude::LLVMValueRef;
+
 /// Plan §19.1 / §19.2: personality-function selection is a proper three-way
 /// choice driven by target ABI, instead of the previous implicit
 /// "Windows or Unix, nothing else" binary. `None` means the target/profile has
@@ -75,12 +77,22 @@ struct LoweringCtx<'ctx, 'a> {
     locals: IndexVec<LocalIdx, Option<PointerValue<'ctx>>>,
     bb_map: HashMap<BasicBlockIdx, inkwell::basic_block::BasicBlock<'ctx>>,
     _personality_fn: Option<inkwell::values::FunctionValue<'ctx>>,
+    /// Unwinding personality selected for this target body. Drives whether the
+    /// cleanup block lowers to an Itanium `landingpad`/`resume` pair or an SEH
+    /// funclet `cleanuppad`/`cleanupret` pair.
+    personality: Personality,
     debug_ctx: Option<DebugInfoCtx<'ctx>>,
     /// The landingpad result value for the cleanup block currently being
     /// lowered, if any. Set at the top of `lower_body`'s block loop (via
     /// `emit_landingpad`) and consulted by `TerminatorKind::Unreachable` to
     /// decide whether to emit `resume` instead of `unreachable`.
     current_landingpad: Option<BasicValueEnum<'ctx>>,
+    /// The SEH `cleanuppad` token for the cleanup block currently being
+    /// lowered, if the personality is `Seh`. Consumed by
+    /// `TerminatorKind::Unreachable`, which emits `cleanupret` to the
+    /// function's unwind continuation (the caller's pad) instead of a
+    /// `resume`.
+    current_seh_pad: Option<LLVMValueRef>,
 }
 impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn llvm_int_type(&self, bits: u32) -> inkwell::types::IntType<'ctx> {
@@ -2206,9 +2218,9 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                 // If we're at the end of a cleanup block that has an active
                 // landingpad, "falling off the end" means "nothing local
                 // wanted to catch/handle this unwind" -- the correct action
-                // is to resume unwinding (`resume`), not to assert
-                // unreachable (which would be undefined behavior the very
-                // first time a destructor actually runs during a panic).
+                // is to resume unwinding, not to assert unreachable (which
+                // would be undefined behavior the very first time a
+                // destructor actually runs during a panic).
                 if let Some(lp) = self.current_landingpad {
                     self.builder.build_resume(lp).map_err(|e| {
                         vec![GlyimDiagnostic::internal_error(format!(
@@ -2216,6 +2228,20 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
                             e
                         ))]
                     })?;
+                } else if let Some(pad) = self.current_seh_pad {
+                    // SEH funclet path: terminate the cleanup block with a
+                    // `cleanupret` to the function's unwind continuation. A
+                    // null unwind continuation means "unwind to the caller's
+                    // pad" (the standard behavior for a top-level cleanuppad
+                    // that doesn't catch -- it forwards the exception outward).
+                    use crate::seh_ffi::LLVMBuildCleanupRet;
+                    unsafe {
+                        LLVMBuildCleanupRet(
+                            self.builder.as_mut_ptr(),
+                            pad,
+                            std::ptr::null_mut(),
+                        );
+                    }
                 } else {
                     self.builder
                         .build_unreachable()
@@ -2908,35 +2934,69 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
     fn emit_landingpad(&mut self) -> CompResult<()> {
         let Some(personality_fn) = self._personality_fn else {
             self.current_landingpad = None;
+            self.current_seh_pad = None;
             return Ok(());
         };
-        // Plan §19.1 / Phase 6.1: the pinned LLVM 22 toolchain (brew
-        // `llvm@22` / `llvm-sys` 221.0.1) does not *export* the funclet C-API
-        // symbols (`LLVMBuildCleanupPad`, `LLVMBuildCleanupRet`,
-        // `LLVMBuildInvokeWithOperandBundles`, `LLVMCreateOperandBundle`,
-        // `LLVMAddOperandBundle`) — verified absent from `libLLVM.dylib`. So
-        // true MSVC-style funclet landingpads (`cleanuppad`/`cleanupret`) cannot
-        // be emitted with this toolchain, and `inkwell` 0.10 does not wrap them
-        // either.
-        //
-        // Deliberate redesign (authorized): because the toolchain can only ever
-        // produce the Itanium-style `landingpad`/`resume` form, BOTH personality
-        // kinds share this same lowering path. The `Seh` personality only differs
-        // in the *name* of the personality symbol it declares
-        // (`__CxxFrameHandler3` on `-msvc` Windows vs `__gcc_personality_v0`
-        // elsewhere) — the IR shape (cleanup landingpad + invoke + resume) is
-        // identical. This yields functional unwinding IR on every target the
-        // pinned toolchain supports. On `-msvc` Windows this is a documented
-        // approximation: real MSVC SEH uses funclet landingpads, so linking the
-        // resulting object against the MSVC CRT unwinder is not guaranteed to
-        // behave byte-for-byte like native SEH. That caveat lives in
-        // `docs/plans/v0.1.0/unstub-5/KNOWN_GAPS.md`; the codegen path itself is
-        // green and correct for the toolchain's actual capabilities.
-        //
-        // NOTE: the personality symbol itself is already declared by
-        // `lower_body` (which picks `__CxxFrameHandler3` for `-msvc` Windows and
-        // `__gcc_personality_v0` otherwise) — only the landingpad *lowering* lived
-        // here, and it is now shared.
+        match self.personality {
+            Personality::Seh => self.emit_seh_cleanuppad(personality_fn),
+            Personality::Itanium | Personality::None => {
+                self.emit_itanium_landingpad(personality_fn)
+            }
+        }
+    }
+
+    /// Emit an SEH-style `cleanuppad` token for the current cleanup block.
+    ///
+    /// Glyim has no user-visible `catch`; panics are always fatal
+    /// (`glyim_panic` in glyim-runtime), so the pad carries no filter args and
+    /// just gives the unwinder a legal place to resume so that any `Drop`
+    /// terminators already present in this cleanup block (emitted by
+    /// `glyim-opt::drop_elaboration`) run before we `cleanupret` back to the
+    /// caller's pad. A top-level cleanuppad has no parent pad (null token);
+    /// nested cleanups within a cleanup (e.g. a destructor that itself panics)
+    /// would pass the enclosing pad instead.
+    fn emit_seh_cleanuppad(
+        &mut self,
+        _personality_fn: inkwell::values::FunctionValue<'ctx>,
+    ) -> CompResult<()> {
+        use crate::seh_ffi::LLVMBuildCleanupPad;
+        let name = std::ffi::CString::new("cleanuppad").unwrap();
+        let cleanuppad = unsafe {
+            LLVMBuildCleanupPad(
+                self.builder.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+                name.as_ptr(),
+            )
+        };
+        if cleanuppad.is_null() {
+            return Err(vec![GlyimDiagnostic::internal_error(
+                "LLVMBuildCleanupPad returned null -- SEH funclet emission failed",
+            )]);
+        }
+        self.current_seh_pad = Some(cleanuppad);
+        // No `current_landingpad`: SEH resumes via `cleanupret`, not `resume`.
+        self.current_landingpad = None;
+        Ok(())
+    }
+
+    /// Emit an Itanium-style `landingpad` instruction for the cleanup block
+    /// currently being positioned at, recording its value in
+    /// `self.current_landingpad`.
+    ///
+    /// Glyim has no user-visible `catch` construct (panics are always fatal
+    /// -- see `glyim_panic` in glyim-runtime), so every landingpad we emit
+    /// is a pure *cleanup* landingpad: it doesn't filter by exception type
+    /// at all (`clauses = &[]`, `is_cleanup = true`), it just gives us a
+    /// legal place for the unwinder to hand control back to us so that any
+    /// `Drop` terminators already present in this cleanup block (emitted by
+    /// `glyim-opt::drop_elaboration`) get to run before we `resume` the
+    /// unwind (see `TerminatorKind::Unreachable` above).
+    fn emit_itanium_landingpad(
+        &mut self,
+        personality_fn: inkwell::values::FunctionValue<'ctx>,
+    ) -> CompResult<()> {
         let i8_ptr_ty = self.context.ptr_type(AddressSpace::default());
         let i32_ty = self.context.i32_type();
         let landingpad_ty = self
@@ -3222,8 +3282,10 @@ pub(crate) fn lower_body<'ctx>(
         locals,
         bb_map,
         _personality_fn: personality_fn,
+        personality,
         debug_ctx,
         current_landingpad: None,
+        current_seh_pad: None,
     };
     for (local_idx, _local_decl) in body.locals.iter_enumerated() {
         lowering_ctx.alloc_local(local_idx);
@@ -3231,10 +3293,11 @@ pub(crate) fn lower_body<'ctx>(
     for (bb_idx, bb_data) in body.basic_blocks.iter_enumerated() {
         let llvm_bb = lowering_ctx.bb_map.get(&bb_idx).unwrap();
         lowering_ctx.builder.position_at_end(*llvm_bb);
-        // Reset per-block: a landingpad value from a previous cleanup block
-        // must never leak into a block that isn't itself a fresh cleanup
-        // landing pad.
+        // Reset per-block: a landingpad value (or SEH pad) from a previous
+        // cleanup block must never leak into a block that isn't itself a fresh
+        // cleanup landing pad.
         lowering_ctx.current_landingpad = None;
+        lowering_ctx.current_seh_pad = None;
         if bb_data.is_cleanup {
             lowering_ctx.emit_landingpad()?;
         }
@@ -3315,13 +3378,12 @@ mod tests {
     #[test]
     fn seh_target_lowers_cleanup_landingpad_green() {
         use crate::LlvmBackend;
-        // Plan §19.1 / Phase 6.1: a `-msvc` Windows target must lower a MIR body
-        // with a cleanup block into working unwinding IR (cleanup landingpad +
-        // invoke + resume) rather than rejecting with a toolchain diagnostic.
-        // The pinned LLVM-22 toolchain cannot emit funclet `cleanuppad`s, so the
-        // deliberate redesign routes `Seh` through the same Itanium-style
-        // landingpad path as Unix targets (only the personality symbol name
-        // differs). This test locks that in.
+        // Plan §19.1 / Phase 7: a `-msvc` Windows target must lower a MIR body
+        // with a cleanup block into real SEH funclet IR (`cleanuppad` +
+        // `cleanupret`), not the Itanium `landingpad`/`resume` form. The
+        // toolchain DOES export the funclet C-API (`LLVMBuildCleanupPad` /
+        // `LLVMBuildCleanupRet` are present in `libLLVM.dylib`), so raw FFI via
+        // `seh_ffi` produces genuine funclet IR. This test locks that in.
         use glyim_core::arena::IndexVec;
         use glyim_core::{Abi, CrateId, DefId, Interner, LocalDefId, Mutability, Safety};
         use glyim_mir::*;
@@ -3404,13 +3466,13 @@ mod tests {
         let module = result.unwrap();
         let ir = module.print_to_string().to_string();
         assert!(
-            ir.contains("landingpad") && ir.contains("resume"),
-            "SEH target must emit cleanup landingpad + resume IR:\n{}",
+            ir.contains("cleanuppad") && ir.contains("cleanupret"),
+            "SEH target must emit cleanuppad + cleanupret funclet IR: {}",
             ir
         );
         assert!(
             ir.contains("__CxxFrameHandler3"),
-            "SEH target must declare the __CxxFrameHandler3 personality:\n{}",
+            "SEH target must declare the __CxxFrameHandler3 personality: {}",
             ir
         );
     }
