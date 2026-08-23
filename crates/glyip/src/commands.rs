@@ -744,16 +744,19 @@ fn compile_run_capture(
         .map_err(|e| format!("failed to spawn compiled test binary: {e}"))?;
 
     let child_pid = child.id();
-    let (tx, rx) = std::sync::mpsc::channel::<Option<ExitStatus>>();
+    // Capture the child's full output (status + stdout + stderr) inside the
+    // timeout thread so `child` is consumed exactly once.
+    let (tx, rx) = std::sync::mpsc::channel::<
+        Result<std::process::Output, std::io::Error>,
+    >();
     std::thread::spawn(move || {
-        let _ = tx.send(child.wait().ok());
+        let _ = tx.send(child.wait_with_output());
     });
 
-    let status = match rx.recv_timeout(timeout) {
-        Ok(Some(status)) => status,
-        Ok(None) => {
-            let _ = std::process::Command::new("kill").arg(child_pid.to_string()).status();
-            return Err("test subprocess wait failed".to_string());
+    let output = match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            return Err(format!("failed to wait on compiled test binary: {e}"));
         }
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
             let _ = std::process::Command::new("kill").arg(child_pid.to_string()).status();
@@ -764,11 +767,9 @@ fn compile_run_capture(
         }
     };
 
-    // The child has exited; collect its captured stdout/stderr.
-    let output = child.wait_with_output().map_err(|e| format!("wait_with_output: {e}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    Ok((status.success(), stdout, stderr))
+    Ok((output.status.success(), stdout, stderr))
 }
 
 #[cfg(test)]
