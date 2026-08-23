@@ -1278,14 +1278,15 @@ fn rewrite_expr(
             );
             // Poll::Pending — unit variant pattern.
             let pending_pat = Pat::Path(two_seg(interner, "Poll", pending_id));
-            let panic_func = body.alloc_expr(Expr::Path(plain_path(interner, "panic")), Span::DUMMY);
-            let pending_body = body.alloc_expr(
-                Expr::Call {
-                    func: panic_func,
-                    args: Vec::new(),
-                },
-                Span::DUMMY,
-            );
+            // The `Pending` arm must diverge so the arm's type unifies with the
+            // `Poll<Output>` match result. glyim has no `!`/never termination we
+            // can name here, and `panic` is a macro (not a resolvable `FnDef`),
+            // so we emit `loop {}` — a diverging expression. This is a
+            // single-await stopgap: a genuine Pending should suspend and resume
+            // (the v1 state-machine, plan M4), not spin forever. It lets the
+            // body type-check end-to-end for the supported single-await shape.
+            let empty_block = body.alloc_expr(Expr::Block { stmts: Vec::new(), tail: None }, Span::DUMMY);
+            let pending_body = body.alloc_expr(Expr::Loop { body: empty_block }, Span::DUMMY);
             Expr::Match {
                 scrutinee: poll_call,
                 arms: vec![
