@@ -34,12 +34,26 @@ fn first_body(hir: &CrateHir) -> &crate::Body {
 /// omitted `AwaitExpr`, so `.await` RHSes were dropped along with their `let`
 /// bindings (the async body lowered to `[Path, Path, Binary, Block]` with zero
 /// `let`/`await`). Covered by the `is_expr_node` fix in `lower/mod.rs`.
+///
+/// Note: `lower_crate_for_pipeline` also runs `desugar_async`, which emits the
+/// async-v1 "multi-await not yet implemented" diagnostic (GLYIM_DESTUB_PLAN
+/// §Phase 3 safety guard) for a 2-await body. That diagnostic is expected and
+/// correct; this test therefore asserts the *lowering* produced the Await/Let
+/// nodes and that no OTHER (lowering) diagnostic was emitted.
 #[test]
 fn async_body_let_await_lowers_to_let_and_await() {
     let (hir, diags) = parse_and_lower(
         "async fn two(a: i32, b: i32) -> i32 { let x = a.await; let y = b.await; x + y }",
     );
-    assert!(diags.is_empty(), "unexpected diagnostics: {:?}", diags);
+    // Only the expected async-v1 (multi-await) diagnostic may be present; any
+    // other diagnostic would indicate a real lowering failure.
+    assert!(
+        diags
+            .iter()
+            .all(|d| d.code.number == 61 && d.code.category == glyim_diag::ErrorCategory::Type),
+        "only the expected async-v1 multi-await diagnostic is allowed, got: {:?}",
+        diags
+    );
     let body = first_body(&hir);
     let await_count = body
         .exprs

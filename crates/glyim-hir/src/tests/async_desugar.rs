@@ -198,39 +198,35 @@ fn single_await_no_state_enum() {
     );
 }
 
-/// §1.1 routing: a function with TWO `.await`s must produce a `*State` enum with
-/// exactly the variants `Start`, `S0`, `S1`, `Done` (2 suspends => 4 variants).
+/// §Phase 3 safety guard (GLYIM_DESTUB_PLAN): a function with TWO `.await`s
+/// must NOT be silently desugared into the broken `Poll::Pending`-hardcoded
+/// skeleton (which would hang forever). The v1 resume-dispatch that splits the
+/// body at each await requires post-type-check future types (the planned MIR
+/// pass) and is tracked as a known gap. Until it lands, the desugarer MUST emit
+/// a clear diagnostic error instead of falling through to the old skeleton.
 #[test]
-fn two_await_state_enum_has_four_variants() {
+fn multi_await_is_rejected_with_diagnostic() {
     let mut hir = build_async_hir(2);
-    desugar_async(&mut hir, &mut Vec::new());
-    let variants = enum_variant_names(&hir, "State")
-        .expect("two-await fn must produce a *State enum");
-    assert_eq!(
-        variants,
-        vec![
-            "Start".to_string(),
-            "S0".to_string(),
-            "S1".to_string(),
-            "Done".to_string()
-        ],
-        "state enum variant shape mismatch: {:?}",
-        variants
+    let mut diags: Vec<GlyimDiagnostic> = Vec::new();
+    desugar_async(&mut hir, &mut diags);
+    assert!(
+        !diags.is_empty(),
+        "multi-await fn must be rejected with a diagnostic, not silently desugared"
     );
-}
-
-/// §1.1 invariant: `Start` must capture the function's parameters (here `a`, `b`
-/// are rebound as `f0`, `f1` inside `Start`).
-#[test]
-fn state_enum_start_captures_params() {
-    let mut hir = build_async_hir(2);
-    desugar_async(&mut hir, &mut Vec::new());
-    let field_names = state_start_field_names(&hir).expect("State enum Start variant present");
-    assert_eq!(
-        field_names,
-        vec!["f0".to_string(), "f1".to_string()],
-        "Start must capture params as f0,f1; got {:?}",
-        field_names
+    assert!(
+        diags.iter().any(|d| {
+            let m = d.message.to_lowercase();
+            m.contains("state-machine") || m.contains("v1") || m.contains("await")
+        }),
+        "diagnostic must mention the unsupported multi-await state-machine shape: {:?}",
+        diags
+    );
+    // No `*State` enum may be produced: the function was not desugared.
+    let enums = enum_item_names(&hir);
+    assert!(
+        !enums.iter().any(|n| n.contains("State")),
+        "multi-await fn must NOT produce a *State enum (would be the broken skeleton): {:?}",
+        enums
     );
 }
 

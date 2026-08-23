@@ -107,11 +107,45 @@ pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>
                  or collect futures into a Vec and await them sequentially outside the loop.",
                 glyim_diag::MultiSpan::from_span(span),
             ));
-            desugar_one_async_fn(hir, item_id);
         } else if suspend_count <= 1 {
+            // Single-suspension bodies are handled by the correct, tested
+            // single-poll desugar (the future resolves on the first poll, or
+            // `Pending` becomes a loud `panic!` rather than a silent hang).
             desugar_one_async_fn(hir, item_id);
         } else {
-            desugar_one_async_fn_state_machine(hir, item_id);
+            // Multi-await sequential body. The v1 resume-dispatch that splits
+            // the body at each `.await` into a real `Start`/`S_k`/`Done` state
+            // machine requires the suspended future's concrete type, which is
+            // only available *after* type-checking (the plan's recommended
+            // post-MIR pass in `glyim-lower/src/async_state_transform.rs`).
+            // Until that lands, the single most important correctness guard
+            // (plan §Phase 3, "never let unsupported-shape detection silently
+            // fall through to the old skeleton") applies: we MUST NOT route to
+            // `desugar_one_async_fn_state_machine`, whose `S_k` arms hardcode
+            // `Poll::Pending` and would hang forever. Emit a clear diagnostic
+            // instead so the failure is a compile error, not a runtime hang.
+            let await_expr = {
+                let mut sps = Vec::new();
+                collect_suspend_points(&hir.bodies[body_id.unwrap()], root_expr_id(&hir.bodies[body_id.unwrap()]), &mut sps);
+                sps.first().map(|sp| sp.await_expr)
+            };
+            let span = await_expr
+                .map(|eid| hir.bodies[body_id.unwrap()].expr_spans.get(eid).copied())
+                .flatten()
+                .unwrap_or(Span::DUMMY);
+            diags.push(GlyimDiagnostic::new(
+                ErrorCode {
+                    category: ErrorCategory::Type,
+                    number: 61,
+                },
+                DiagSeverity::Error,
+                "multi-`.await` async functions require the v1 state-machine resume-dispatch \
+                 (tracked: KNOWN_GAPS.md async-v2), which is not yet implemented. It needs the \
+                 suspended future's concrete type (available only post-type-check, via the \
+                 planned post-MIR pass). For now, use at most one `.await` per async function, \
+                 or restructure to a single poll.",
+                glyim_diag::MultiSpan::from_span(span),
+            ));
         }
     }
 }
@@ -652,6 +686,10 @@ fn rewrite_for_poll(
 /// never correctness). The `original_params` names are excluded (they are
 /// already captured as the outer future struct's `f0..fn` fields and reachable
 /// via `self.fN`).
+/// Compute, for each suspend point `k`, the set of local bindings that are
+/// *live after* suspend point `k`. Scaffold for the deferred multi-await v1
+/// transform; not yet wired into dispatch.
+#[allow(dead_code)]
 fn compute_live_across_suspends(
     body: &Body,
     suspend_points: &[SuspendPoint],
@@ -795,6 +833,11 @@ fn compute_live_across_suspends(
 /// Build the state-enum HIR item FooState with Start, S0..S{n-1}, Done variants.
 /// Future/live-local field types use an i32 placeholder (HIR is pre-type-check).
 /// See module docs / section 6.1 for the type-check gap.
+/// Build the `FooState` enum for the (deferred) multi-await v1 transform.
+/// Retained as scaffold; the real v1 is the post-MIR pass in
+/// `glyim-lower/src/async_state_transform.rs` (see plan §Phase 3). Marked
+/// allow(dead_code) because it is not yet wired into the dispatch.
+#[allow(dead_code)]
 fn build_state_enum(
     hir: &mut crate::CrateHir,
     state_name: &str,
@@ -874,6 +917,9 @@ fn build_state_enum(
 }
 
 /// Build the outer future wrapper struct: `struct FooFuture { state: FooState }`.
+/// Build the outer future wrapper struct. Scaffold for the deferred multi-await
+/// v1 transform (the real v1 is a post-MIR pass); not yet wired into dispatch.
+#[allow(dead_code)]
 fn build_future_wrapper_struct(
     hir: &mut crate::CrateHir,
     future_name: &str,
@@ -901,6 +947,9 @@ fn build_future_wrapper_struct(
 
 /// Build `impl Future for FooFuture { type Output = R; fn poll(&mut self) -> Poll<R> }`.
 /// Shared by both the single-poll and multi-poll desugar paths.
+/// Build `impl Future for FooFuture`. Scaffold for the deferred multi-await v1
+/// transform (the real v1 is a post-MIR pass); not yet wired into dispatch.
+#[allow(dead_code)]
 fn build_future_impl(
     hir: &mut crate::CrateHir,
     future_name: &str,
@@ -944,11 +993,13 @@ fn build_future_impl(
 
 /// Multi-poll state-machine desugar. Builds the state enum, future wrapper,
 /// `impl Future` with a `loop { match self.state { .. } }` poll body, and the
-/// wrapper fn. The full per-segment resume dispatch (duplicating the async body
-/// after each await) requires future-type inference that HIR does not yet carry
-/// (the suspended future's type is unknowable pre-type-check), so the poll body
-/// emitted here is a valid skeleton: Start/S_k arms return `Poll::Pending`, the
-/// `Done` arm panics. See module docs / section 6.1 for the type-check gap.
+/// wrapper fn. Retained as scaffold for the deferred v1 resume-dispatch; the
+/// real v1 is the post-MIR pass (plan §Phase 3). Currently NOT invoked from
+/// `desugar_async` because its emitted poll body is a broken skeleton
+/// (`S_k` arms hardcode `Poll::Pending`, `Done` panics) that would hang
+/// forever — the dispatch instead emits a clear diagnostic for multi-await
+/// bodies. See module docs for the type-check gap.
+#[allow(dead_code)]
 fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId) {
     let mut item = hir.items[item_id].clone();
     let fn_item = match &mut item.kind {
