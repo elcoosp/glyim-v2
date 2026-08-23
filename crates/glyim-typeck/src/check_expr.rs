@@ -1342,25 +1342,37 @@ impl<'a> FnCtxt<'a> {
                     if recv_is_param {
                         continue;
                     }
-                    if this.unify(step_ty, impl_self_ty, span) {
-                        for method in &impl_item.methods {
-                            if method.name == method_name {
-                                let return_ty =
-                                    if let Some(return_ty_ref) = &method.return_ty {
-                                        crate::tyconv::resolve_type_ref(
-                                            this.ctx,
-                                            this.infer,
-                                            this.def_map,
-                                            this.diagnostics,
-                                            return_ty_ref,
-                                            &param_map,
-                                            span,
-                                        )
-                                    } else {
-                                        Ty::UNIT
-                                    };
-                                found.push((impl_self_ty, return_ty));
-                            }
+                    // Probe whether this impl's `Self` type unifies with the
+                    // receiver *without* committing side effects (a non-matching
+                    // candidate must not emit a spurious "mismatched types"
+                    // diagnostic — only the ultimately-selected method may).
+                    // Snapshot the inference table and the diagnostics buffer;
+                    // roll both back if the probe fails.
+                    let inf_snap = this.infer.snapshot();
+                    let diag_len = this.diagnostics.len();
+                    let matches = this.unify(step_ty, impl_self_ty, span);
+                    if !matches {
+                        this.infer.rollback_to(inf_snap);
+                        this.diagnostics.truncate(diag_len);
+                        continue;
+                    }
+                    for method in &impl_item.methods {
+                        if method.name == method_name {
+                            let return_ty =
+                                if let Some(return_ty_ref) = &method.return_ty {
+                                    crate::tyconv::resolve_type_ref(
+                                        this.ctx,
+                                        this.infer,
+                                        this.def_map,
+                                        this.diagnostics,
+                                        return_ty_ref,
+                                        &param_map,
+                                        span,
+                                    )
+                                } else {
+                                    Ty::UNIT
+                                };
+                            found.push((impl_self_ty, return_ty));
                         }
                     }
                 }
