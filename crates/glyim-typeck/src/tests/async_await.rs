@@ -94,3 +94,37 @@ fn desugar_async_fn_compiles() {
     let output = compile(src);
     assert_no_errors(&output.diagnostics);
 }
+
+/// Two `async fn`s where one awaits the other (`nested` awaits `dep`). This is
+/// the single-await shape with a *cross-future* call inside the `.await`
+/// desugar: `nested`'s `poll` body references `dep`'s desugared wrapper fn.
+/// Regression guard for the def-map/`LocalDefId` ordering bug where the inner
+/// wrapper's `fn_sig` was only registered *after* the outer poll body was
+/// type-checked, and for the method-dispatch probe emitting spurious
+/// "mismatched types" diagnostics on non-matching `impl Future` candidates.
+#[test]
+fn nested_async_single_await_compiles() {
+    let src = r#"
+        enum Poll<T> { Ready(T), Pending }
+        trait Future {
+            type Output;
+            fn poll(&mut self) -> Poll<Self::Output>;
+        }
+        fn block_on<F: Future>(mut f: F) -> F::Output {
+            loop {
+                match f.poll() {
+                    Poll::Ready(v) => return v,
+                    Poll::Pending => { }
+                }
+            }
+        }
+        async fn dep(x: i32) -> i32 { x }
+        async fn nested(a: i32) -> i32 { let x = dep(a).await; x + 1 }
+        fn main() -> i32 {
+            let f = nested(5);
+            block_on(f)
+        }
+    "#;
+    let output = compile(src);
+    assert_no_errors(&output.diagnostics);
+}
