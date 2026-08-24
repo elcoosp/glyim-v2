@@ -161,9 +161,38 @@ impl<'a> FnCtxt<'a> {
         let guard_skip = Self::guard_subtree_ids(self.body);
 
         let mut stmts = Vec::new();
-        let len = self.body.exprs.len();
 
-        for (pos, (expr_id, expr)) in self.body.exprs.iter_enumerated().enumerate() {
+        // Drive the type-checking loop over the function body's *top-level*
+        // statements only — i.e. the root `Block`'s `stmts` followed by its
+        // `tail` — rather than every expression in the flat `body.exprs`
+        // arena. The flat arena also contains the root `Block` node itself and
+        // each expression's nested children (the `let` value, the tail
+        // `VarRef`, etc.). Checking those as standalone top-level statements
+        // double-traverses the tree and, worse, re-checks the root `Block`:
+        // `check_expr(Block)` recursively visits its child `Expr::Let`, which
+        // `check_expr` does not handle (a `let` is a *statement*, not an
+        // expression) and therefore lowers to an `Err`/`TyKind::Error` node.
+        // That spurious `Error` constant then reaches codegen and ICEs. (This
+        // is the root cause of the single-await `TyKind::Error` gap: every
+        // `let`-binding or `block_on`-style body was hitting it.)
+        let root = (0..self.body.exprs.len())
+            .map(|i| glyim_hir::ExprId::from_raw(i as u32))
+            .find(|&rid| matches!(self.body.exprs[rid], glyim_hir::Expr::Block { .. }))
+            .unwrap_or_else(|| {
+                glyim_hir::ExprId::from_raw((self.body.exprs.len().saturating_sub(1)) as u32)
+            });
+        let (root_stmts, root_tail) = match &self.body.exprs[root] {
+            glyim_hir::Expr::Block { stmts, tail } => (stmts.clone(), *tail),
+            _ => (Vec::new(), Some(root)),
+        };
+        let mut top_level: Vec<glyim_hir::ExprId> = root_stmts.clone();
+        if let Some(t) = root_tail {
+            top_level.push(t);
+        }
+        let len = top_level.len();
+
+        for (pos, &expr_id) in top_level.iter().enumerate() {
+            let expr = &self.body.exprs[expr_id];
             if guard_skip.contains(&expr_id) {
                 continue;
             }
