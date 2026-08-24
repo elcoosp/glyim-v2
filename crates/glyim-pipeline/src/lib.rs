@@ -278,6 +278,7 @@ impl Pipeline {
             let ty_ctx_ref = ty_ctx_guard.as_ref();
             let body_provider = make_mir_body_provider(&mir_bodies_map, &sink_cell, ty_ctx_ref);
             let drop_provider = make_drop_glue_provider(ty_ctx_ref);
+            mono_ctx.with_ty_ctx(ty_ctx_ref);
             mono_ctx.collect(&mono_roots, &body_provider, &drop_provider);
             // §8.12: post-monomorphization semantic checks. These were dead
             // `#[allow(dead_code)]` functions; they now run here, immediately
