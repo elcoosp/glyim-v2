@@ -101,7 +101,12 @@ impl TyCtx {
         trait_def_id: TraitDefId,
         assoc_name: Name,
     ) -> Option<Ty> {
-        self.impl_assoc_types
+        // Fast path: exact (self_ty handle, trait) match. `Ty` equality is by
+        // interned raw index, so two handles for the same logical type (e.g.
+        // the same `Adt` reached via different code paths) may have different
+        // raw indices and miss here.
+        if let Some(ty) = self
+            .impl_assoc_types
             .get(&(self_ty, trait_def_id))
             .and_then(|entries| {
                 entries
@@ -109,6 +114,33 @@ impl TyCtx {
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
             })
+        {
+            return Some(ty);
+        }
+        // Fallback: match by the underlying `AdtId` (the by_self_ty semantics).
+        // An impl's associated type is keyed by the self type's ADT, not a
+        // specific `Ty` handle, so this resolves projections whose `self`
+        // carries a different raw index than the one used at impl registration
+        // (e.g. generic `F::Output` after the call's `substs` substitution at
+        // codegen — the M5 single-await `block_on` resolution gap).
+        if let TyKind::Adt(adt_id, _) = self.ty_kind(self_ty) {
+            let self_adt = *adt_id;
+            self.impl_assoc_types
+                .iter()
+                .find(|((sty, trait_id), entries)| {
+                    *trait_id == trait_def_id
+                        && matches!(self.ty_kind(*sty), TyKind::Adt(b, _) if b == &self_adt)
+                        && entries.iter().any(|(n, _)| *n == assoc_name)
+                })
+                .and_then(|((_, _), entries)| {
+                    entries
+                        .iter()
+                        .find(|(name, _)| *name == assoc_name)
+                        .map(|(_, ty)| *ty)
+                })
+        } else {
+            None
+        }
     }
 
     /// Resolve an associated-type projection `Self::Item` / `Type::Item` to its
