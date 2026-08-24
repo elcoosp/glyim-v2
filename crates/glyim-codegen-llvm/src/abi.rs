@@ -243,6 +243,28 @@ impl LayoutComputer for FullLayoutComputer<'_> {
                 }
                 self.simple.layout_of(ty)
             }
+            TyKind::Projection(proj) => {
+                let self_ty = self
+                    .ctx
+                    .substitution_args(proj.trait_ref.substs)
+                    .first()
+                    .and_then(|a| match a {
+                        glyim_type::GenericArg::Ty(t) => Some(*t),
+                        _ => None,
+                    });
+                if let Some(self_ty) = self_ty {
+                    if let Some(resolved) =
+                        self.ctx.resolve_associated_type(
+                            self_ty,
+                            proj.trait_ref.def_id,
+                            proj.item_name,
+                        )
+                    {
+                        return self.layout_of(resolved);
+                    }
+                }
+                self.simple.layout_of(ty)
+            }
             _ => self.simple.layout_of(ty),
         }
     }
