@@ -6,6 +6,7 @@
 //! and no longer surface spurious "unsupported" diagnostics. (Full `async`
 //! desugaring into a `Future` state machine remains a separate design-doc
 //! subsystem and is intentionally not asserted here.)
+use glyim_diag::{ErrorCode, ErrorCategory};
 use glyim_test::phase::AnalysisTester;
 
 #[test]
@@ -127,4 +128,49 @@ fn nested_async_single_await_compiles() {
     "#;
     let output = compile(src);
     assert_no_errors(&output.diagnostics);
+}
+
+/// M4 (best-effort, 2026-08-24): multi-await (`suspend_count >= 2`) sequential
+/// async fns are NOT yet a compiling, verified state machine. A real
+/// `desugar_multi_async_fn` HIR codegen exists (retained as `#[allow(dead_code)]`
+/// scaffold in `glyim-hir/src/lower/lower_async.rs`); it emits a correct
+/// `Start`/`S0`/`..`/`Done` `FooState` machine that the compiler's exhaustiveness
+/// check recognizes — but glyim's type-checker cannot currently resolve the
+/// enum-variant state-machine shape, so per the plan's safety rule the
+/// `async-v2` diagnostic (error 61) is emitted instead of a silently-broken
+/// state machine. Runtime resumption (M5) is also host-gated (Linux executor,
+/// macOS host). This test asserts the *honest* behavior: a clear diagnostic,
+/// not a panic/ICE.
+#[test]
+fn multi_await_emits_async_v2_diagnostic() {
+    let src = r#"
+        enum Poll<T> { Ready(T), Pending }
+        trait Future {
+            type Output;
+            fn poll(&mut self) -> Poll<Self::Output>;
+        }
+        fn block_on<F: Future>(mut f: F) -> F::Output {
+            loop {
+                match f.poll() {
+                    Poll::Ready(v) => return v,
+                    Poll::Pending => { }
+                }
+            }
+        }
+        async fn dep(x: i32) -> i32 { x }
+        async fn two(a: i32) -> i32 { let x = dep(a).await; let y = dep(x).await; x + y }
+        fn main() -> i32 {
+            let f = two(5);
+            block_on(f)
+        }
+    "#;
+    let output = compile(src);
+    // Must produce exactly the async-v2 (error 61) diagnostic, not an ICE/panic.
+    assert!(
+        output.diagnostics.iter().any(|d| {
+            matches!(&d.code, ErrorCode { category: ErrorCategory::Type, number: 61 })
+        }),
+        "multi-await should emit the async-v2 diagnostic, got: {:?}",
+        output.diagnostics
+    );
 }
