@@ -1,7 +1,9 @@
 //! Monomorphization: instantiate generic MIR bodies with concrete types.
+use std::collections::HashMap;
+
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{ConstDefId, CrateId, DefId, FnDefId, LocalDefId, StaticDefId};
-use glyim_mir::{self, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKind};
+use glyim_mir::{self, MirConstKind, Operand, Place, Rvalue, StatementKind, TerminatorKind};
 use glyim_type::*;
 use std::sync::Arc;
 
@@ -52,15 +54,19 @@ pub struct MonoItemData {
 }
 
 /// MonoCtx.
-pub struct MonoCtx {
+pub struct MonoCtx<'a> {
     items: IndexVec<MonoItemId, MonoItemData>,
     queue: std::collections::VecDeque<MonoItem>,
     seen: std::collections::HashSet<MonoItem>,
     cache: std::collections::HashMap<MonoItem, MonoItemId>,
     drop_locals: Vec<glyim_mir::LocalIdx>,
+    /// Optional type context, used to derive generic substitutions from call
+    /// argument types during monomorphization (closes the single-await
+    /// `TyKind::Error` codegen gap for generic `Future::Output`/`block_on`).
+    ty_ctx: Option<&'a TyCtx>,
 }
 
-impl MonoCtx {
+impl<'a> MonoCtx<'a> {
 /// new.
     pub fn new() -> Self {
         Self {
@@ -69,7 +75,15 @@ impl MonoCtx {
             seen: std::collections::HashSet::new(),
             cache: std::collections::HashMap::new(),
             drop_locals: Vec::new(),
+            ty_ctx: None,
         }
+    }
+
+    /// Attach a type context so generic call sites can be instantiated from
+    /// their concrete argument types (rather than the often-empty substitution
+    /// carried by the callee constant).
+    pub fn with_ty_ctx(&mut self, ty_ctx: &'a TyCtx) {
+        self.ty_ctx = Some(ty_ctx);
     }
 
     fn enqueue(&mut self, item: MonoItem) {
@@ -135,7 +149,7 @@ impl MonoCtx {
                     self.scan_rvalue(rvalue);
                 }
             }
-            self.scan_terminator(&block.terminator.kind);
+            self.scan_terminator(&block.terminator.kind, body);
         }
 
         let pending_drops: Vec<_> = self.drop_locals.drain(..).collect();
@@ -180,10 +194,19 @@ impl MonoCtx {
     fn scan_const(&mut self, mir_const: &glyim_mir::MirConst) {
         match &mir_const.kind {
             MirConstKind::Fn(def_id, substs) => {
-                self.enqueue(MonoItem::Fn {
-                    def_id: *def_id,
-                    substs: *substs,
-                });
+                // When a type context is present, generic calls are
+                // instantiated from their argument types at the `Call`
+                // terminator (see `scan_terminator`); the callee constant
+                // frequently carries an empty substitution, so we skip it here
+                // to avoid enqueuing an un-instantiated (-polymorphic) body
+                // that codegen cannot lower. When no context is attached
+                // (e.g. unit tests), fall back to the constant's own substs.
+                if self.ty_ctx.is_none() {
+                    self.enqueue(MonoItem::Fn {
+                        def_id: *def_id,
+                        substs: *substs,
+                    });
+                }
             }
             // ConstRef constants are materialized by the backend as zero-
             // initialized globals (`__glyim_const_{id}`); full const
@@ -195,9 +218,62 @@ impl MonoCtx {
         }
     }
 
-    fn scan_terminator(&mut self, kind: &TerminatorKind) {
+    fn scan_terminator(&mut self, kind: &TerminatorKind, body: &glyim_mir::Body) {
         match kind {
             TerminatorKind::Call { func, args, .. } => {
+                // Instantiate the callee from the substitution carried by the
+                // callee constant's `FnDef` type. That substitution is produced
+                // by the type-checker's generic-call instantiation, which sets
+                // the `FnRef` node's type to e.g. `FnDef(id, [i32])`; it is
+                // therefore already a correctly-interned `Substitution` shared
+                // with the type context. Reading it here (rather than from the
+                // callee constant's own, usually-empty `substs` field, or from
+                // a freshly-interned substitution) is what lets generic
+                // functions such as `id<T>` / `block_on<F: Future>` be
+                // monomorphized, closing the single-await `TyKind::Error`
+                // codegen gap.
+                if let Operand::Constant(mir_const) = func {
+                    if let MirConstKind::Fn(def_id, _) = &mir_const.kind {
+                        let substs = match self.ty_ctx {
+                            Some(ty_ctx) => match ty_ctx.ty_kind(mir_const.ty) {
+                                TyKind::FnDef(_, s) => {
+                                    // Guard against un-instantiated generic
+                                    // calls: if the callee's `FnDef` substitution
+                                    // still contains a `Param` (the type-checker
+                                    // did not instantiate the call, e.g. an
+                                    // `async fn` whose future type was left
+                                    // generic), feeding it into monomorphization
+                                    // corrupts the body with a leftover `Param`
+                                    // that ICEs at codegen ("TyKind::Param
+                                    // reached LLVM codegen"). Treat such calls
+                                    // as monomorphic (empty substs) instead.
+                                    let has_param = ty_ctx
+                                        .substitution_args(*s)
+                                        .iter()
+                                        .any(|arg| {
+                                            matches!(
+                                                arg,
+                                                &glyim_type::GenericArg::Ty(t)
+                                                    if matches!(ty_ctx.ty_kind(t), TyKind::Param(_))
+                                            )
+                                        });
+                                    if has_param {
+                                        Substitution::empty()
+                                    } else {
+                                        *s
+                                    }
+                                }
+                                _ => Substitution::empty(),
+                            },
+                            // No type context (unit tests): `scan_const` below
+                            // already enqueues `Fn` items with the constant's
+                            // own (empty for monomorphic fns) substitution, so
+                            // fall back to empty here.
+                            None => Substitution::empty(),
+                        };
+                        self.enqueue(MonoItem::Fn { def_id: *def_id, substs });
+                    }
+                }
                 self.scan_operand(func);
                 for arg in args {
                     self.scan_operand(arg);
@@ -253,7 +329,7 @@ impl MonoCtx {
     }
 }
 
-impl Default for MonoCtx {
+impl<'a> Default for MonoCtx<'a> {
     fn default() -> Self {
         Self::new()
     }
