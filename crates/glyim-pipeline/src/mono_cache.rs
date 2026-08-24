@@ -131,8 +131,95 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                 let new_sub = ctx.intern_substitution(new_args);
                 ctx.mk_adt(id, new_sub)
             }
+            TyKind::FnPtr(sig) => {
+                // Recurse into the signature: its input/output types may contain
+                // `Param`s (e.g. a trait-method reference `fn(&mut F) -> Poll<F::Output>`).
+                let inputs: Vec<GenericArg> = frozen
+                    .substitution_args(sig.inputs)
+                    .iter()
+                    .map(|arg| match arg {
+                        GenericArg::Ty(t) => {
+                            GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                        }
+                        other => other.clone(),
+                    })
+                    .collect();
+                let new_inputs = ctx.intern_substitution(inputs);
+                let new_output = substitute_ty(sig.output, substs, ctx, frozen);
+                let new_sig = glyim_type::FnSig {
+                    inputs: new_inputs,
+                    output: new_output,
+                    c_variadic: sig.c_variadic,
+                    unsafety: sig.unsafety,
+                    abi: sig.abi,
+                };
+                ctx.mk_ty(TyKind::FnPtr(new_sig))
+            }
+            TyKind::FnDef(def_id, sub) => {
+                let new_args: Vec<GenericArg> = frozen
+                    .substitution_args(sub)
+                    .iter()
+                    .map(|arg| match arg {
+                        GenericArg::Ty(t) => {
+                            GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                        }
+                        other => other.clone(),
+                    })
+                    .collect();
+                let new_sub = ctx.intern_substitution(new_args);
+                ctx.mk_ty(TyKind::FnDef(def_id, new_sub))
+            }
             _ => ty,
         }
+    }
+
+    /// Substitute `Param` types inside an `Operand` (its `MirConst` `ty` and any
+    /// generic `substs` carried by `MirConstKind::Fn`/`ConstRef`). `Copy`/`Move`
+    /// operands reference locals whose types are substituted separately.
+    fn substitute_operand(
+        operand: Operand,
+        substs: &Substitution,
+        ctx: &mut TyCtxMut,
+        frozen: &TyCtx,
+    ) -> Operand {
+        match operand {
+            Operand::Constant(mut mir_const) => {
+                mir_const.ty = substitute_ty(mir_const.ty, substs, ctx, frozen);
+                match &mut mir_const.kind {
+                    glyim_mir::MirConstKind::Fn(_, fn_substs) => {
+                        *fn_substs = substitute_substitution(*fn_substs, substs, ctx, frozen);
+                    }
+                    glyim_mir::MirConstKind::ConstRef(_, const_substs) => {
+                        *const_substs =
+                            substitute_substitution(*const_substs, substs, ctx, frozen);
+                    }
+                    _ => {}
+                }
+                Operand::Constant(mir_const)
+            }
+            other => other,
+        }
+    }
+
+    /// Substitute `Param` types inside a `Substitution` (used for the generic
+    /// `substs` carried by `MirConstKind::Fn`/`ConstRef`).
+    fn substitute_substitution(
+        s: Substitution,
+        substs: &Substitution,
+        ctx: &mut TyCtxMut,
+        frozen: &TyCtx,
+    ) -> Substitution {
+        let args: Vec<glyim_type::GenericArg> = frozen
+            .substitution_args(s)
+            .iter()
+            .map(|arg| match arg {
+                glyim_type::GenericArg::Ty(t) => {
+                    glyim_type::GenericArg::Ty(substitute_ty(*t, substs, ctx, frozen))
+                }
+                other => other.clone(),
+            })
+            .collect();
+        ctx.intern_substitution(args)
     }
 
     let mut new_locals = body.locals.clone();
@@ -154,6 +241,26 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                     _ => {}
                 }
             }
+        }
+        // Substitute types embedded in terminator operands (e.g. the `ty` of a
+        // `MirConst` function/method reference, and the generic `substs` carried
+        // by `MirConstKind::Fn`/`ConstRef`). Without this, a generic function's
+        // body that calls a trait method (e.g. `block_on`'s `f.poll()`) keeps
+        // the unsubstituted `Param` in the call operand and ICEs at codegen
+        // with "TyKind::Param reached LLVM codegen".
+        let terminator = &mut block_data.terminator;
+        match &mut terminator.kind {
+            TerminatorKind::Call { func, args, .. } => {
+                *func = substitute_operand(func.clone(), substs, &mut sub_ctx, ty_ctx);
+                for arg in args.iter_mut() {
+                    *arg = substitute_operand(arg.clone(), substs, &mut sub_ctx, ty_ctx);
+                }
+            }
+            TerminatorKind::SwitchInt { discr, switch_ty, .. } => {
+                *discr = substitute_operand(discr.clone(), substs, &mut sub_ctx, ty_ctx);
+                *switch_ty = substitute_ty(*switch_ty, substs, &mut sub_ctx, ty_ctx);
+            }
+            _ => {}
         }
     }
 
@@ -178,7 +285,8 @@ pub(crate) fn make_mir_body_provider<'a>(
             if substs.is_empty() {
                 body.clone()
             } else {
-                Arc::new(substitute_body(body, substs, ty_ctx))
+                let substituted = substitute_body(body, substs, ty_ctx);
+                Arc::new(substituted)
             }
         } else {
             let diag = GlyimDiagnostic::internal_error(format!(
