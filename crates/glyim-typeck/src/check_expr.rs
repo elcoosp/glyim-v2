@@ -632,7 +632,7 @@ impl<'a> FnCtxt<'a> {
                     _ => (false, FnDefId::from_raw(0), false),
                 };
 
-                let ret_ty = if is_fn_def {
+                let (ret_ty, callee_ty) = if is_fn_def {
                     // Plan unstub-5 P5: generic call instantiation. For a generic
                     // function `fn id<T>(x: T) -> T`, build a substitution from
                     // the formal parameter types (which carry the type params)
@@ -643,7 +643,11 @@ impl<'a> FnCtxt<'a> {
                     if let Some(sig) = self.ctx.fn_sig(def_id) {
                         let mut subst: std::collections::HashMap<u32, Ty> =
                             std::collections::HashMap::new();
-                        let inputs = self.ctx.substitution_args(sig.inputs);
+                        // Collect the formal input types into an owned vec so the
+                        // immutable borrow of `self.ctx` ends before the mutable
+                        // `intern_substitution`/`mk_ty` calls below.
+                        let inputs: Vec<GenericArg> =
+                            self.ctx.substitution_args(sig.inputs).to_vec();
                         for (i, arg_expr) in arg_exprs.iter().enumerate() {
                             if let Some(GenericArg::Ty(param_ty)) = inputs.get(i) {
                                 if let TyKind::Param(pt) = self.ctx.ty_kind(*param_ty) {
@@ -651,19 +655,53 @@ impl<'a> FnCtxt<'a> {
                                 }
                             }
                         }
-                        self.ctx.subst_ty(sig.output, &subst)
+                        let ret = self.ctx.subst_ty(sig.output, &subst);
+                        // Rebuild the callee's `FnDef` type carrying the inferred
+                        // substitution. Without this, the `FnRef` node keeps the
+                        // unbound generic type (`FnDef(id, [])`), so MIR lowering
+                        // emits `MirConstKind::Fn(id, [])` with empty substs and
+                        // monomorphization never instantiates the generic body
+                        // (e.g. `id<i32>`), leaving a local typed `TyKind::Param`
+                        // that codegen cannot lower. This is the single-await
+                        // `TyKind::Error` gap (generic `Future::Output`/`block_on`).
+                        let new_substs = self.ctx.intern_substitution(
+                            inputs
+                                .iter()
+                                .map(|a| match a {
+                                    GenericArg::Ty(pt) => {
+                                        if let TyKind::Param(p) = self.ctx.ty_kind(*pt) {
+                                            GenericArg::Ty(
+                                                subst.get(&p.index).copied().unwrap_or(*pt),
+                                            )
+                                        } else {
+                                            a.clone()
+                                        }
+                                    }
+                                    other => other.clone(),
+                                })
+                                .collect(),
+                        );
+                        let callee_ty = self.ctx.mk_ty(TyKind::FnDef(def_id, new_substs));
+                        (ret, callee_ty)
                     } else {
-                        self.instantiate_fn_sig(def_id, span)
+                        (self.instantiate_fn_sig(def_id, span), func_ty)
                     }
                 } else if is_error {
-                    Ty::ERROR
+                    (Ty::ERROR, func_ty)
                 } else {
                     self.diagnostics.push(GlyimDiagnostic::type_error(
                         span,
                         "call to non-function type",
                     ));
-                    Ty::ERROR
+                    (Ty::ERROR, func_ty)
                 };
+
+                // Propagate the instantiated callee type onto the `FnRef` node so
+                // MIR lowering emits `MirConstKind::Fn(def_id, substs)` with the
+                // concrete substitution, enabling monomorphization.
+                let mut func_expr = func_expr;
+                func_expr.ty = callee_ty;
+                self.expr_cache.insert(*func, (func_expr.clone(), callee_ty));
 
                 (
                     thir::Expr {
