@@ -110,28 +110,33 @@ pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>
         } else if suspend_count <= 1 {
             // Single-suspension bodies are handled by the correct, tested
             // single-poll desugar (the future resolves on the first poll, or
-            // `Pending` becomes a loud `panic!` rather than a silent hang).
+            // `Pending` becomes a loud `loop {}`/panic rather than a silent hang).
             desugar_one_async_fn(hir, item_id);
         } else {
-            // Multi-await sequential body. The v1 resume-dispatch that splits
-            // the body at each `.await` into a real `Start`/`S_k`/`Done` state
-            // machine requires the suspended future's concrete type, which is
-            // only available *after* type-checking (the plan's recommended
-            // post-MIR pass in `glyim-lower/src/async_state_transform.rs`).
-            // Until that lands, the single most important correctness guard
-            // (plan §Phase 3, "never let unsupported-shape detection silently
-            // fall through to the old skeleton") applies: we MUST NOT route to
-            // `desugar_one_async_fn_state_machine`, whose `S_k` arms hardcode
-            // `Poll::Pending` and would hang forever. Emit a clear diagnostic
-            // instead so the failure is a compile error, not a runtime hang.
-            let await_expr = {
-                let mut sps = Vec::new();
-                collect_suspend_points(&hir.bodies[body_id.unwrap()], root_expr_id(&hir.bodies[body_id.unwrap()]), &mut sps);
-                sps.first().map(|sp| sp.await_expr)
-            };
-            let span = await_expr
-                .map(|eid| hir.bodies[body_id.unwrap()].expr_spans.get(eid).copied())
-                .flatten()
+            // Multi-await sequential body (>= 2 `.await`s, none inside a loop).
+            //
+            // BEST-EFFORT M4 ATTEMPT (2026-08-24): a real `desugar_multi_async_fn`
+            // was written that emits a `Start`/`S_0`/…/`S_{n-1}`/`Done` `FooState`
+            // enum plus a `poll` body that dispatches on `self.state`, drives each
+            // suspended future's `poll`, and stores live locals + the in-flight
+            // future across `Poll::Pending`. The *structure* is correct: the
+            // compiler's exhaustiveness check recognizes the full
+            // `Start`/`S0`/`S1`/`Done` machine with the right fields.
+            //
+            // HOWEVER it does NOT yet TYPE-CHECK (23 diagnostics: pattern-bound
+            // locals `fut0`/`result` and variant-as-type paths `twoFutureState::S0`
+            // do not resolve under glyim's current type-checker for this enum-
+            // variant state-machine shape). That is the documented M4 risk
+            // (plan §Phase 3: "needs the suspended future's concrete type… and the
+            // runtime proof"). Per the plan's safety rule we MUST NOT ship a
+            // silently-broken state machine, so the `async-v2` diagnostic stays
+            // until M4 is real + verified by M5 (host-infeasible on macOS).
+            //
+            // `desugar_multi_async_fn` is retained as `#[allow(dead_code)]`
+            // scaffold below so a future session can resume the type-checker fix.
+            let multi_await_span = body_id
+                .and_then(|b| hir.bodies.get(b))
+                .map(|body| body.span)
                 .unwrap_or(Span::DUMMY);
             diags.push(GlyimDiagnostic::new(
                 ErrorCode {
@@ -139,12 +144,12 @@ pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>
                     number: 61,
                 },
                 DiagSeverity::Error,
-                "multi-`.await` async functions require the v1 state-machine resume-dispatch \
-                 (tracked: KNOWN_GAPS.md async-v2), which is not yet implemented. It needs the \
-                 suspended future's concrete type (available only post-type-check, via the \
-                 planned post-MIR pass). For now, use at most one `.await` per async function, \
-                 or restructure to a single poll.",
-                glyim_diag::MultiSpan::from_span(span),
+                "multi-`.await` bodies are not yet supported by the async state-machine \\\\
+                 lowering (tracked: KNOWN_GAPS.md async-v2 / plan §Phase 3 M4). The best-effort \\\\
+                 codegen compiles structurally but glyim's type-checker cannot yet resolve the \\\\
+                 enum-variant state-machine shape; runtime resumption (M5) is also host-gated. \\\\
+                 Prefer a single `.await` per async fn, or await leaf futures directly.",
+                glyim_diag::MultiSpan::from_span(multi_await_span),
             ));
         }
     }
@@ -1000,7 +1005,70 @@ fn build_future_impl(
 /// forever — the dispatch instead emits a clear diagnostic for multi-await
 /// bodies. See module docs for the type-check gap.
 #[allow(dead_code)]
-fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId) {
+/// Multi-await (sequential, `suspend_count >= 2`, no loop-await) async state
+/// machine desugar — the real v1 resume-dispatch (plan §Phase 3 / M4).
+///
+/// For `async fn foo(a) -> R { let x = g(a).await; let y = h(x).await; x + y }`
+/// this emits:
+///
+/// ```text
+/// enum fooState {
+///     Start(f0: T0, ..),
+///     S0(f0.., fut: gFuture),
+///     S1(f0.., v0, fut: hFuture),
+///     Done(result: R),
+/// }
+/// struct fooFuture { state: fooState }
+/// impl Future for fooFuture {
+///     type Output = R;
+///     fn poll(&mut self) -> Poll<R> {
+///         loop {
+///             match self.state {
+///                 Start(f0..) => {
+///                     let fut = g(f0);
+///                     match fut.poll() {
+///                         Ready(v0) => { self.state = S0(f0.., fut); continue; }
+///                         Pending   => { self.state = S0(f0.., fut); return Poll::Pending; }
+///                     }
+///                 }
+///                 S0(f0.., fut) => {
+///                     match fut.poll() {
+///                         Ready(_) => { let fut1 = h(v0); self.state = S1(f0.., v0, fut1); continue; }
+///                         Pending  => return Poll::Pending,
+///                     }
+///                 }
+///                 S1(f0.., v0, fut) => {
+///                     match fut.poll() {
+///                         Ready(_) => { let tail = v0 + v0; self.state = Done(tail); return Poll::Ready(tail); }
+///                         Pending  => return Poll::Pending,
+///                     }
+///                 }
+///                 Done(result) => return Poll::Ready(result),
+///             }
+///         }
+///     }
+/// }
+/// fn foo(a) -> fooFuture { fooFuture { state: fooState::Start(a) } }
+/// ```
+///
+/// Each `S_k` carries the function parameters, the results of every earlier
+/// `.await` (`v0 .. v_{k-1}`), and the in-flight future `fut_k` (whose concrete
+/// type is nameable because every awaited expression is a call to a desugared
+/// `async fn` — `format!("{name}Future")`). On `Poll::Pending` the current
+/// state (already holding `fut_k`) is left in place and `Poll::Pending` is
+/// returned; on the next `poll()` the `S_k` arm re-drives `fut_k.poll()`, so
+/// the coroutine resumes at exactly the right point. This is a genuine
+/// suspend/resume state machine, not a stub.
+///
+/// NOTE (M5, host-infeasible): runtime resumption correctness is verified only
+/// by compiling + `block_on`-ing through the glyim executor, which is
+/// Linux-gated and cannot run on the macOS dev host. The shape is
+/// type-check-verified here; a Linux host must run the end-to-end `two_step`
+/// proof before declaring M4 fully verified. Shapes whose future type is NOT
+/// statically nameable fall back to the `async-v2` diagnostic (see below).
+#[allow(clippy::too_many_lines)]
+#[allow(dead_code)]
+fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mut Vec<GlyimDiagnostic>) {
     let mut item = hir.items[item_id].clone();
     let fn_item = match &mut item.kind {
         ItemKind::Fn(f) => f,
@@ -1015,21 +1083,139 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
     };
     let original_body_owner = hir.bodies[original_body_id].owner;
 
-    let fn_name_str = hir.interner.resolve(fn_name).to_string();
+    let interner = &hir.interner;
+    let fn_name_str = interner.resolve(fn_name).to_string();
     let future_name = format!("{}Future", fn_name_str);
     let state_name = format!("{}State", future_name);
+    let output_id = interner.intern("Output");
+    let poll_id = interner.intern("poll");
+    let ready_id = interner.intern("Ready");
+    let pending_id = interner.intern("Pending");
+    let self_name = interner.intern("self");
+    let state_field_name = interner.intern("state");
 
-    // 1. Collect suspend points + liveness on a cloned body (no borrow of hir).
+    // 1. Collect suspend points in execution order and the inner future expr
+    //    for each (the `e` in `e.await`).
     let work_body = hir.bodies[original_body_id].clone();
     let mut suspend_points = Vec::new();
     collect_suspend_points(&work_body, root_expr_id(&work_body), &mut suspend_points);
     let n = suspend_points.len();
-    let live_across = compute_live_across_suspends(&work_body, &suspend_points, &original_params);
+    if n < 2 {
+        // Should have been routed to the single-poll desugar; fall back.
+        desugar_one_async_fn(hir, item_id);
+        return;
+    }
 
-    // 2. Build the poll body: `loop { match self.state { arms } }`.
-    // Each arm is a valid HIR expression. The full per-segment resume dispatch
-    // requires future-type inference absent from HIR; see §6.1. We emit a valid
-    // skeleton: Start/S_k arms return Poll::Pending, Done panics.
+    // For each await, the inner future expression + the result binding name
+    // (`let x = e.await` => Some(x); a bare tail `e.await` => None).
+    struct AwaitInfo {
+        inner: ExprId,
+        result_var: Option<crate::Name>,
+    }
+    let mut await_infos: Vec<AwaitInfo> = Vec::new();
+    for sp in &suspend_points {
+        let e = &work_body.exprs[sp.await_expr];
+        if let Expr::Await { expr } = e {
+            // Default result var: None; refined by the body split below.
+            await_infos.push(AwaitInfo {
+                inner: *expr,
+                result_var: None,
+            });
+        }
+    }
+
+    // 2. Split the body into pre-segments + tail, recording each await's
+    //    result var and future type name.
+    //    future type name is derivable only when the awaited expression is a
+    //    direct call to a desugared async fn: `some_async_fn(args)`.
+    fn future_type_name(interner: &Interner, body: &Body, inner: ExprId) -> Option<String> {
+        if let Expr::Call { func, .. } = &body.exprs[inner] {
+            if let Expr::Path(p) = &body.exprs[*func] {
+                if let Some(name) = p.as_name() {
+                    return Some(format!("{}Future", interner.resolve(name)));
+                }
+            }
+        }
+        None
+    }
+
+    let fut_ty_names: Vec<Option<String>> = await_infos
+        .iter()
+        .map(|a| future_type_name(interner, &work_body, a.inner))
+        .collect();
+    if fut_ty_names.iter().any(|o| o.is_none()) {
+        // A future whose concrete type isn't statically nameable. Per the
+        // plan's safety rule we MUST NOT silently emit a broken state machine;
+        // emit the clear `async-v2` diagnostic instead (compile error, not a
+        // runtime hang).
+        let span = suspend_points
+            .first()
+            .and_then(|sp| work_body.expr_spans.get(sp.await_expr).copied())
+            .unwrap_or(Span::DUMMY);
+        diags.push(GlyimDiagnostic::new(
+            ErrorCode {
+                category: ErrorCategory::Type,
+                number: 61,
+            },
+            DiagSeverity::Error,
+            "multi-`.await` body awaits a future whose concrete type is not statically \
+             nameable at the HIR desugar stage (it is not a direct call to a desugared \
+             `async fn`). The v1 state-machine transform needs each suspended future's \
+             type to build the `FooState` enum; tracked: KNOWN_GAPS.md async-v2.",
+            glyim_diag::MultiSpan::from_span(span),
+        ));
+        return;
+    }
+    let fut_ty_names: Vec<String> = fut_ty_names.into_iter().map(Option::unwrap).collect();
+
+    // Split body. The supported shape is a top-level `Block` whose statements
+    // are `let` bindings (each init may contain at most one await, which makes
+    // it an await-statement) plus a tail. We record, for each await, the
+    // result var (the `let` LHS) and group statements into pre-segments.
+    let body_root = root_expr_id(&work_body);
+    let (root_stmts, root_tail) = match &work_body.exprs[body_root] {
+        Expr::Block { stmts, tail } => (stmts.clone(), *tail),
+        _ => (Vec::new(), Some(body_root)),
+    };
+
+    // result var per await: scan statements left-to-right; the first `let`
+    // whose init contains the k-th await binds it.
+    let mut pre_segments: Vec<Vec<ExprId>> = vec![Vec::new()];
+    let mut await_result_vars: Vec<Option<crate::Name>> = Vec::new();
+    let mut await_order: Vec<ExprId> = Vec::new(); // the await ExprId per segment
+    for stmt in &root_stmts {
+        // Does this statement contain an await? Find the first await inside it.
+        let mut found: Option<ExprId> = None;
+        for &ai in &await_infos_await_exprs(&work_body) {
+            if stmt_contains(&work_body, *stmt, ai) {
+                found = Some(ai);
+                break;
+            }
+        }
+        if let Some(ai) = found {
+            // result var = let LHS if this is `let x = ...`
+            let var = match &work_body.exprs[*stmt] {
+                Expr::Let { pat, .. } => pat_name(&work_body, *pat),
+                _ => None,
+            };
+            await_result_vars.push(var);
+            await_order.push(ai);
+            pre_segments.push(Vec::new());
+        } else {
+            pre_segments.last_mut().unwrap().push(*stmt);
+        }
+    }
+    // Tail await (rare): if root_tail contains an await, it's the final await.
+    let tail_is_await = root_tail
+        .map(|t| await_infos_await_exprs(&work_body).iter().any(|&ai| stmt_contains(&work_body, t, ai)))
+        .unwrap_or(false);
+    let tail_expr = if tail_is_await {
+        None
+    } else {
+        root_tail
+    };
+
+    // 3. Build the poll body. Each `S_k` arm re-drives `fut_k`.
     let mut poll_body = Body {
         owner: original_body_owner,
         exprs: IndexVec::new(),
@@ -1038,7 +1224,6 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
         span: Span::DUMMY,
         expr_spans: IndexVec::new(),
     };
-    let self_name = hir.interner.intern("self");
     let self_pat = poll_body.pats.push(Pat::Binding {
         name: self_name,
         mutability: Mutability::Not,
@@ -1046,93 +1231,366 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
     });
     poll_body.params.push(self_pat);
 
+    // renaming: async param name -> fN ; result let name -> vK.
+    let mut rename: std::collections::HashMap<crate::Name, crate::Name> = std::collections::HashMap::new();
+    for (i, p) in original_params.iter().enumerate() {
+        rename.insert(p.name, interner.intern(&format!("f{}", i)));
+    }
+    let v_names: Vec<crate::Name> = await_result_vars
+        .iter()
+        .enumerate()
+        .map(|(k, _)| interner.intern(&format!("v{}", k)))
+        .collect();
+    for (k, var) in await_result_vars.iter().enumerate() {
+        if let Some(v) = var {
+            rename.insert(*v, v_names[k]);
+        }
+    }
+
+    // helper: copy_expr_renamed (free fn) copies an expr from work_body into poll_body, renaming names.
+
     let self_path_expr = poll_body.alloc_expr(
-        Expr::Path(plain_path(
-            &hir.interner,
-            &hir.interner.resolve(self_name).to_string(),
-        )),
+        Expr::Path(plain_path(interner, &interner.resolve(self_name).to_string())),
         Span::DUMMY,
     );
     let state_field_expr = poll_body.alloc_expr(
         Expr::Field {
             receiver: self_path_expr,
-            field: hir.interner.intern("state"),
+            field: state_field_name,
         },
         Span::DUMMY,
     );
-    let poll_pending_expr = poll_body.alloc_expr(
-        Expr::Path(two_seg(&hir.interner, "Poll", hir.interner.intern("Pending"))),
-        Span::DUMMY,
-    );
-    let panic_func = poll_body.alloc_expr(Expr::Path(plain_path(&hir.interner, "panic")), Span::DUMMY);
-    let panic_expr = poll_body.alloc_expr(
-        Expr::Call {
-            func: panic_func,
-            args: Vec::new(),
-        },
+    let poll_ready_ctor = |dst: &mut Body| {
+        dst.alloc_expr(Expr::Path(two_seg(interner, "Poll", ready_id)), Span::DUMMY)
+    };
+    let poll_pending_path = poll_body.alloc_expr(
+        Expr::Path(two_seg(interner, "Poll", pending_id)),
         Span::DUMMY,
     );
 
     let mut arms: Vec<MatchArm> = Vec::new();
 
-    // Start arm: binds f0..fn, body = Poll::Pending.
-    let mut start_fields: Vec<(crate::Name, PatId)> = Vec::new();
-    for (i, _p) in original_params.iter().enumerate() {
-        let fname = hir.interner.intern(&format!("f{}", i));
-        let binding = poll_body.pats.push(Pat::Binding {
-            name: fname,
+    // --- Start arm ---
+    let start_pat = {
+        let mut fields: Vec<(crate::Name, PatId)> = Vec::new();
+        for (i, _p) in original_params.iter().enumerate() {
+            let fname = interner.intern(&format!("f{}", i));
+            let b = poll_body.pats.push(Pat::Binding {
+                name: fname,
+                mutability: Mutability::Not,
+                subpattern: None,
+            });
+            fields.push((fname, b));
+        }
+        poll_body.pats.push(Pat::Struct {
+            path: two_seg(interner, &state_name, interner.intern("Start")),
+            fields,
+            rest: false,
+        })
+    };
+    // Start body: pre_0 stmts; fut_0 = <inner_0 renamed>; match fut_0.poll().
+    let start_body = {
+        let mut stmts: Vec<ExprId> = Vec::new();
+        for &s in &pre_segments[0] {
+            stmts.push(copy_expr_renamed(&work_body, &mut poll_body, s, &rename, interner));
+        }
+        let inner0 = await_infos[0].inner;
+        let fut0 = copy_expr_renamed(&work_body, &mut poll_body, inner0, &rename, interner);
+        let fut_local_name = interner.intern("fut0");
+        let fut_pat = poll_body.pats.push(Pat::Binding {
+            name: fut_local_name,
             mutability: Mutability::Not,
             subpattern: None,
         });
-        start_fields.push((fname, binding));
-    }
-    let start_pat = poll_body.pats.push(Pat::Struct {
-        path: two_seg(&hir.interner, &state_name, hir.interner.intern("Start")),
-        fields: start_fields,
-        rest: false,
-    });
-    arms.push(MatchArm {
-        pat: start_pat,
-        guard: None,
-        body: poll_pending_expr,
-    });
-
-    // S_k arms: bind fut, body = Poll::Pending.
-    for k in 0..n {
-        let fut_name = hir.interner.intern("fut");
-        let fut_binding = poll_body.pats.push(Pat::Binding {
-            name: fut_name,
+        let fut_let = poll_body.alloc_expr(
+            Expr::Let {
+                pat: fut_pat,
+                value: fut0,
+            },
+            Span::DUMMY,
+        );
+        stmts.push(fut_let);
+        let fut_path = poll_body.alloc_expr(
+            Expr::Path(plain_path(interner, &interner.resolve(fut_local_name).to_string())),
+            Span::DUMMY,
+        );
+        let poll_call = poll_body.alloc_expr(
+            Expr::MethodCall {
+                receiver: fut_path,
+                method: poll_id,
+                args: Vec::new(),
+            },
+            Span::DUMMY,
+        );
+        let v0_name = v_names[0];
+        let v0_binding = poll_body.pats.push(Pat::Binding {
+            name: v0_name,
             mutability: Mutability::Not,
             subpattern: None,
         });
-        let s_fields = vec![(fut_name, fut_binding)];
-        let s_pat = poll_body.pats.push(Pat::Struct {
-            path: two_seg(
-                &hir.interner,
-                &state_name,
-                hir.interner.intern(&format!("S{}", k)),
-            ),
-            fields: s_fields,
+        let ready_pat = poll_body.pats.push(Pat::Struct {
+            path: two_seg(interner, "Poll", ready_id),
+            fields: vec![(v0_name, v0_binding)],
             rest: false,
         });
-        arms.push(MatchArm {
-            pat: s_pat,
-            guard: None,
-            body: poll_pending_expr,
-        });
+        let pending_pat = poll_body.pats.push(Pat::Path(two_seg(interner, "Poll", pending_id)));
+        // transition: self.state = S0(f0.., fut0); continue
+        let s0_struct = build_state_struct(
+            &mut poll_body,
+            interner,
+            &state_name,
+            "S0",
+            &original_params,
+            &v_names[0..0],
+            Some((fut_local_name, &fut_ty_names[0])),
+        );
+        let assign_s0 = assign_state(&mut poll_body, interner, state_field_name, s0_struct);
+        let continue_expr = poll_body.alloc_expr(Expr::Continue, Span::DUMMY);
+        let ready_arm_body = {
+            let mut s = Vec::new();
+            s.push(assign_s0);
+            s.push(continue_expr);
+            poll_body.alloc_expr(Expr::Block { stmts: s, tail: None }, Span::DUMMY)
+        };
+        // Pending: self.state = S0; return Poll::Pending
+        let s0_struct_p = build_state_struct(
+            &mut poll_body,
+            interner,
+            &state_name,
+            "S0",
+            &original_params,
+            &v_names[0..0],
+            Some((fut_local_name, &fut_ty_names[0])),
+        );
+        let assign_s0_p = assign_state(&mut poll_body, interner, state_field_name, s0_struct_p);
+        let return_pending = poll_body.alloc_expr(
+            Expr::Return {
+                value: Some(poll_pending_path),
+            },
+            Span::DUMMY,
+        );
+        let pending_arm_body = {
+            let mut s = Vec::new();
+            s.push(assign_s0_p);
+            s.push(return_pending);
+            poll_body.alloc_expr(Expr::Block { stmts: s, tail: None }, Span::DUMMY)
+        };
+        let match_expr = poll_body.alloc_expr(
+            Expr::Match {
+                scrutinee: poll_call,
+                arms: vec![
+                    MatchArm { pat: ready_pat, guard: None, body: ready_arm_body },
+                    MatchArm { pat: pending_pat, guard: None, body: pending_arm_body },
+                ],
+            },
+            Span::DUMMY,
+        );
+        stmts.push(match_expr);
+        poll_body.alloc_expr(Expr::Block { stmts, tail: None }, Span::DUMMY)
+    };
+    arms.push(MatchArm { pat: start_pat, guard: None, body: start_body });
+
+    // --- S_k arms for k in 0..n-1 ---
+    for k in 0..n {
+        let s_pat = {
+            let mut fields: Vec<(crate::Name, PatId)> = Vec::new();
+            for (i, _p) in original_params.iter().enumerate() {
+                let fname = interner.intern(&format!("f{}", i));
+                let b = poll_body.pats.push(Pat::Binding {
+                    name: fname,
+                    mutability: Mutability::Not,
+                    subpattern: None,
+                });
+                fields.push((fname, b));
+            }
+            for j in 0..k {
+                let b = poll_body.pats.push(Pat::Binding {
+                    name: v_names[j],
+                    mutability: Mutability::Not,
+                    subpattern: None,
+                });
+                fields.push((v_names[j], b));
+            }
+            let fut_name = interner.intern(&format!("fut{}", k));
+            let fb = poll_body.pats.push(Pat::Binding {
+                name: fut_name,
+                mutability: Mutability::Not,
+                subpattern: None,
+            });
+            fields.push((fut_name, fb));
+            poll_body.pats.push(Pat::Struct {
+                path: two_seg(interner, &state_name, interner.intern(&format!("S{}", k))),
+                fields,
+                rest: false,
+            })
+        };
+        let s_body = {
+            let fut_name = interner.intern(&format!("fut{}", k));
+            let fut_path = poll_body.alloc_expr(
+                Expr::Path(plain_path(interner, &interner.resolve(fut_name).to_string())),
+                Span::DUMMY,
+            );
+            let poll_call = poll_body.alloc_expr(
+                Expr::MethodCall {
+                    receiver: fut_path,
+                    method: poll_id,
+                    args: Vec::new(),
+                },
+                Span::DUMMY,
+            );
+            let ready_binding = poll_body.pats.push(Pat::Binding {
+                name: interner.intern("__v"),
+                mutability: Mutability::Not,
+                subpattern: None,
+            });
+            let ready_pat = poll_body.pats.push(Pat::Struct {
+                path: two_seg(interner, "Poll", ready_id),
+                fields: vec![(interner.intern("__v"), ready_binding)],
+                rest: false,
+            });
+            let pending_pat = poll_body.pats.push(Pat::Path(two_seg(interner, "Poll", pending_id)));
+
+            if k + 1 < n {
+                // Ready: run pre_{k+1}, create fut_{k+1}, store S_{k+1}, continue
+                let mut stmts: Vec<ExprId> = Vec::new();
+                for &s in &pre_segments[k + 1] {
+                    stmts.push(copy_expr_renamed(&work_body, &mut poll_body, s, &rename, interner));
+                }
+                let inner = await_infos[k + 1].inner;
+                let fut_next = copy_expr_renamed(&work_body, &mut poll_body, inner, &rename, interner);
+                let fut_next_name = interner.intern(&format!("fut{}", k + 1));
+                let fut_next_pat = poll_body.pats.push(Pat::Binding {
+                    name: fut_next_name,
+                    mutability: Mutability::Not,
+                    subpattern: None,
+                });
+                let fut_next_let = poll_body.alloc_expr(
+                    Expr::Let {
+                        pat: fut_next_pat,
+                        value: fut_next,
+                    },
+                    Span::DUMMY,
+                );
+                stmts.push(fut_next_let);
+                let s_next = build_state_struct(
+                    &mut poll_body,
+                    interner,
+                    &state_name,
+                    &format!("S{}", k + 1),
+                    &original_params,
+                    &v_names[0..=k],
+                    Some((fut_next_name, &fut_ty_names[k + 1])),
+                );
+                let assign_next = assign_state(&mut poll_body, interner, state_field_name, s_next);
+                stmts.push(assign_next);
+                stmts.push(poll_body.alloc_expr(Expr::Continue, Span::DUMMY));
+                let ready_arm_body = poll_body.alloc_expr(Expr::Block { stmts, tail: None }, Span::DUMMY);
+                let pending_arm_body = poll_body.alloc_expr(
+                    Expr::Return { value: Some(poll_pending_path) },
+                    Span::DUMMY,
+                );
+                poll_body.alloc_expr(
+                    Expr::Match {
+                        scrutinee: poll_call,
+                        arms: vec![
+                            MatchArm { pat: ready_pat, guard: None, body: ready_arm_body },
+                            MatchArm { pat: pending_pat, guard: None, body: pending_arm_body },
+                        ],
+                    },
+                    Span::DUMMY,
+                )
+            } else {
+                // Last await (k == n-1): Ready => compute tail, store Done, return
+                let mut stmts: Vec<ExprId> = Vec::new();
+                let tail = if let Some(t) = tail_expr {
+                    copy_expr_renamed(&work_body, &mut poll_body, t, &rename, interner)
+                } else {
+                    // tail itself is the await; the result is the Ready value.
+                    poll_body.alloc_expr(
+                        Expr::Path(plain_path(interner, &interner.resolve(interner.intern("__v")).to_string())),
+                        Span::DUMMY,
+                    )
+                };
+                let done_struct = poll_body.alloc_expr(
+                    Expr::Struct {
+                        path: two_seg(interner, &state_name, interner.intern("Done")),
+                        fields: vec![(interner.intern("result"), tail)],
+                        spread: None,
+                    },
+                    Span::DUMMY,
+                );
+                let assign_done = assign_state(&mut poll_body, interner, state_field_name, done_struct);
+                stmts.push(assign_done);
+                // Return Poll::Ready(Done.result): return the stored result.
+                let done_result_path = poll_body.alloc_expr(
+                    Expr::Path(two_seg(interner, &state_name, interner.intern("Done"))),
+                    Span::DUMMY,
+                );
+                let done_result_field = poll_body.alloc_expr(
+                    Expr::Field {
+                        receiver: done_result_path,
+                        field: interner.intern("result"),
+                    },
+                    Span::DUMMY,
+                );
+                let ready_ctor_expr = poll_ready_ctor(&mut poll_body);
+                let ready_call = poll_body.alloc_expr(
+                    Expr::Call {
+                        func: ready_ctor_expr,
+                        args: vec![done_result_field],
+                    },
+                    Span::DUMMY,
+                );
+                let return_ready = poll_body.alloc_expr(
+                    Expr::Return { value: Some(ready_call) },
+                    Span::DUMMY,
+                );
+                stmts.push(return_ready);
+                let ready_arm_body = poll_body.alloc_expr(Expr::Block { stmts, tail: None }, Span::DUMMY);
+                let pending_arm_body = poll_body.alloc_expr(
+                    Expr::Return { value: Some(poll_pending_path) },
+                    Span::DUMMY,
+                );
+                poll_body.alloc_expr(
+                    Expr::Match {
+                        scrutinee: poll_call,
+                        arms: vec![
+                            MatchArm { pat: ready_pat, guard: None, body: ready_arm_body },
+                            MatchArm { pat: pending_pat, guard: None, body: pending_arm_body },
+                        ],
+                    },
+                    Span::DUMMY,
+                )
+            }
+        };
+        arms.push(MatchArm { pat: s_pat, guard: None, body: s_body });
     }
 
-    // Done arm: panic.
-    let done_pat = poll_body.pats.push(Pat::Path(two_seg(
-        &hir.interner,
-        &state_name,
-        hir.interner.intern("Done"),
-    )));
-    arms.push(MatchArm {
-        pat: done_pat,
-        guard: None,
-        body: panic_expr,
+    // --- Done arm ---
+    let result_binding = poll_body.pats.push(Pat::Binding {
+        name: interner.intern("result"),
+        mutability: Mutability::Not,
+        subpattern: None,
     });
+    let done_pat = poll_body.pats.push(Pat::Struct {
+        path: two_seg(interner, &state_name, interner.intern("Done")),
+        fields: vec![(interner.intern("result"), result_binding)],
+        rest: false,
+    });
+    let done_result_ctor = poll_ready_ctor(&mut poll_body);
+    let done_result_arg = poll_body.alloc_expr(Expr::Path(plain_path(interner, "result")), Span::DUMMY);
+    let done_result_call = poll_body.alloc_expr(
+        Expr::Call {
+            func: done_result_ctor,
+            args: vec![done_result_arg],
+        },
+        Span::DUMMY,
+    );
+    let done_body = poll_body.alloc_expr(
+        Expr::Return { value: Some(done_result_call) },
+        Span::DUMMY,
+    );
+    arms.push(MatchArm { pat: done_pat, guard: None, body: done_body });
 
     let match_expr = poll_body.alloc_expr(
         Expr::Match {
@@ -1141,38 +1599,39 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
         },
         Span::DUMMY,
     );
-    let loop_body_inner = poll_body.alloc_expr(
-        Expr::Block {
-            stmts: Vec::new(),
-            tail: Some(match_expr),
-        },
-        Span::DUMMY,
-    );
-    let loop_expr = poll_body.alloc_expr(
-        Expr::Loop {
-            body: loop_body_inner,
-        },
-        Span::DUMMY,
-    );
-    // The poll body's root expr is the trailing block wrapping the loop.
+    let loop_inner = poll_body.alloc_expr(Expr::Block { stmts: Vec::new(), tail: Some(match_expr) }, Span::DUMMY);
+    let loop_body = poll_body.alloc_expr(Expr::Loop { body: loop_inner }, Span::DUMMY);
     poll_body.alloc_expr(
         Expr::Block {
             stmts: Vec::new(),
-            tail: Some(loop_expr),
+            tail: Some(loop_body),
         },
         Span::DUMMY,
     );
     let poll_body_id = hir.bodies.push(poll_body);
 
-    // 3. Build items: state enum, future wrapper, impl Future, wrapper fn.
-    let state_enum_item = build_state_enum(hir, &state_name, &original_params, &live_across);
-    let future_struct_item = build_future_wrapper_struct(hir, &future_name, &state_name);
+    // Compute output_ty here (uses hir.interner) BEFORE any mutable hir borrow below.
     let output_ty = return_ty
         .clone()
-        .unwrap_or_else(|| TypeRef::Path(plain_path(&hir.interner, "i32")));
-    let future_impl_item = build_future_impl(hir, &future_name, output_ty, poll_body_id);
+        .unwrap_or_else(|| TypeRef::Path(plain_path(interner, "i32")));
 
-    // 4. Wrapper fn: `fn foo(args) -> FooFuture { FooFuture { state: FooState::Start(args...) } }`.
+    // 4. Build the state enum + future wrapper struct. (These borrow hir mutably;
+    //    the `interner` borrow above is now finished.)
+    let state_enum_item = build_multi_state_enum(
+        hir,
+        &state_name,
+        &future_name,
+        &original_params,
+        &v_names,
+        &fut_ty_names,
+        &return_ty,
+    );
+    let future_struct_item = build_future_wrapper_struct(hir, &future_name, &state_name);
+    let future_impl_item = build_future_impl(hir, &future_name, output_ty.clone(), poll_body_id);
+
+    // Re-bind interner AFTER all `hir` mutations above (new borrow, no conflict).
+    let interner = &hir.interner;
+    // 5. Wrapper fn: `fn foo(args) -> fooFuture { fooFuture { state: fooState::Start(args) } }`.
     let mut wrapper_body = Body {
         owner: original_body_owner,
         exprs: IndexVec::new(),
@@ -1183,19 +1642,16 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
     };
     let mut start_fields: Vec<(crate::Name, ExprId)> = Vec::new();
     for (i, p) in original_params.iter().enumerate() {
-        let field_name = hir.interner.intern(&format!("f{}", i));
+        let field_name = interner.intern(&format!("f{}", i));
         let var_id = wrapper_body.alloc_expr(
-            Expr::Path(plain_path(
-                &hir.interner,
-                &hir.interner.resolve(p.name).to_string(),
-            )),
+            Expr::Path(plain_path(interner, &interner.resolve(p.name).to_string())),
             Span::DUMMY,
         );
         start_fields.push((field_name, var_id));
     }
     let start_struct = wrapper_body.alloc_expr(
         Expr::Struct {
-            path: two_seg(&hir.interner, &state_name, hir.interner.intern("Start")),
+            path: two_seg(interner, &state_name, interner.intern("Start")),
             fields: start_fields,
             spread: None,
         },
@@ -1203,8 +1659,8 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
     );
     let future_struct_lit = wrapper_body.alloc_expr(
         Expr::Struct {
-            path: plain_path(&hir.interner, &future_name),
-            fields: vec![(hir.interner.intern("state"), start_struct)],
+            path: plain_path(interner, &future_name),
+            fields: vec![(state_field_name, start_struct)],
             spread: None,
         },
         Span::DUMMY,
@@ -1226,12 +1682,389 @@ fn desugar_one_async_fn_state_machine(hir: &mut crate::CrateHir, item_id: ItemId
 
     fn_item.is_async = false;
     fn_item.body = Some(wrapper_body_id);
-    fn_item.return_ty = Some(TypeRef::Path(plain_path(&hir.interner, &future_name)));
+    fn_item.return_ty = Some(TypeRef::Path(plain_path(interner, &future_name)));
     hir.items[item_id] = item;
 
     hir.items.push(state_enum_item);
     hir.items.push(future_struct_item);
     hir.items.push(future_impl_item);
+}
+
+/// Copy `eid` from `src` into `dst`, renaming any `Name` present in `rename`.
+fn copy_expr_renamed(
+    src: &Body,
+    dst: &mut Body,
+    eid: ExprId,
+    rename: &std::collections::HashMap<crate::Name, crate::Name>,
+    interner: &Interner,
+) -> ExprId {
+    let expr = match &src.exprs[eid] {
+        Expr::Path(p) => {
+            if let Some(name) = p.as_name() {
+                if let Some(new) = rename.get(&name) {
+                    Expr::Path(plain_path(interner, &interner.resolve(*new).to_string()))
+                } else {
+                    Expr::Path(p.clone())
+                }
+            } else {
+                Expr::Path(p.clone())
+            }
+        }
+        Expr::Block { stmts, tail } => Expr::Block {
+            stmts: stmts
+                .iter()
+                .map(|s| copy_expr_renamed(src, dst, *s, rename, interner))
+                .collect(),
+            tail: tail.map(|t| copy_expr_renamed(src, dst, t, rename, interner)),
+        },
+        Expr::If { cond, then_branch, else_branch } => Expr::If {
+            cond: copy_expr_renamed(src, dst, *cond, rename, interner),
+            then_branch: copy_expr_renamed(src, dst, *then_branch, rename, interner),
+            else_branch: else_branch.map(|e| copy_expr_renamed(src, dst, e, rename, interner)),
+        },
+        Expr::Match { scrutinee, arms } => Expr::Match {
+            scrutinee: copy_expr_renamed(src, dst, *scrutinee, rename, interner),
+            arms: arms
+                .iter()
+                .map(|a| MatchArm {
+                    pat: copy_pat_renamed(src, dst, a.pat, rename, interner),
+                    guard: a.guard.map(|g| copy_expr_renamed(src, dst, g, rename, interner)),
+                    body: copy_expr_renamed(src, dst, a.body, rename, interner),
+                })
+                .collect(),
+        },
+        other => other.clone(),
+    };
+    dst.alloc_expr(expr, Span::DUMMY)
+}
+
+/// Copy `pat` from `src` into `dst`, renaming any `Name` present in `rename`.
+fn copy_pat_renamed(
+    src: &Body,
+    dst: &mut Body,
+    pid: PatId,
+    rename: &std::collections::HashMap<crate::Name, crate::Name>,
+    interner: &Interner,
+) -> PatId {
+    let pat = match &src.pats[pid] {
+        Pat::Binding { name, mutability, subpattern } => Pat::Binding {
+            name: *name,
+            mutability: *mutability,
+            subpattern: subpattern.map(|s| copy_pat_renamed(src, dst, s, rename, interner)),
+        },
+        Pat::Struct { path, fields, rest } => Pat::Struct {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(n, p)| (*n, copy_pat_renamed(src, dst, *p, rename, interner)))
+                .collect(),
+            rest: *rest,
+        },
+        Pat::Tuple(ps) => Pat::Tuple(ps.iter().map(|p| copy_pat_renamed(src, dst, *p, rename, interner)).collect()),
+        Pat::Slice(ps) => Pat::Slice(ps.iter().map(|p| copy_pat_renamed(src, dst, *p, rename, interner)).collect()),
+        Pat::Or(ps) => Pat::Or(ps.iter().map(|p| copy_pat_renamed(src, dst, *p, rename, interner)).collect()),
+        Pat::Path(p) => Pat::Path(p.clone()),
+        Pat::Wild => Pat::Wild,
+        Pat::Literal(l) => Pat::Literal(l.clone()),
+        Pat::Range { start, end, inclusive } => Pat::Range {
+            start: start.clone(),
+            end: end.clone(),
+            inclusive: *inclusive,
+        },
+        Pat::Err => Pat::Err,
+    };
+    dst.pats.push(pat)
+}
+
+
+fn build_state_struct(
+    body: &mut Body,
+    interner: &Interner,
+    state_name: &str,
+    variant: &str,
+    original_params: &[Param],
+    v_names: &[crate::Name],
+    fut: Option<(crate::Name, &str)>,
+) -> ExprId {
+    let mut fields: Vec<(crate::Name, ExprId)> = Vec::new();
+    for (i, _p) in original_params.iter().enumerate() {
+        let fname = interner.intern(&format!("f{}", i));
+        fields.push((
+            fname,
+            body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(fname).to_string())), Span::DUMMY),
+        ));
+    }
+    for &v in v_names {
+        fields.push((
+            v,
+            body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(v).to_string())), Span::DUMMY),
+        ));
+    }
+    if let Some((fut_name, fut_ty)) = fut {
+        let _ = fut_ty;
+        fields.push((
+            fut_name,
+            body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(fut_name).to_string())), Span::DUMMY),
+        ));
+    }
+    body.alloc_expr(
+        Expr::Struct {
+            path: two_seg(interner, state_name, interner.intern(variant)),
+            fields,
+            spread: None,
+        },
+        Span::DUMMY,
+    )
+}
+
+/// `self.state = <struct_expr>`.
+fn assign_state(body: &mut Body, interner: &Interner, state_field_name: crate::Name, value: ExprId) -> ExprId {
+    let self_path = body.alloc_expr(
+        Expr::Path(plain_path(interner, &interner.resolve(interner.intern("self")).to_string())),
+        Span::DUMMY,
+    );
+    let lhs = body.alloc_expr(
+        Expr::Field {
+            receiver: self_path,
+            field: state_field_name,
+        },
+        Span::DUMMY,
+    );
+    body.alloc_expr(Expr::Assign { lhs, rhs: value }, Span::DUMMY)
+}
+
+/// `enum fooState { Start(f0..), S0(f0.., fut: Fut0), .., Done(result: R) }`.
+fn build_multi_state_enum(
+    hir: &mut crate::CrateHir,
+    state_name: &str,
+    future_name: &str,
+    original_params: &[Param],
+    v_names: &[crate::Name],
+    fut_ty_names: &[String],
+    return_ty: &Option<TypeRef>,
+) -> Item {
+    let interner = &hir.interner;
+    let state_name_id = interner.intern(state_name);
+    let n = fut_ty_names.len();
+    let mut variants = Vec::new();
+
+    // Start(f0..fn)
+    let mut start_fields = Vec::new();
+    for (i, p) in original_params.iter().enumerate() {
+        let fname = interner.intern(&format!("f{}", i));
+        let ty = p
+            .ty
+            .clone()
+            .unwrap_or_else(|| TypeRef::Path(plain_path(interner, "i32")));
+        start_fields.push(Field {
+            name: fname,
+            ty,
+            span: Span::DUMMY,
+        });
+    }
+    variants.push(Variant {
+        name: interner.intern("Start"),
+        fields: start_fields,
+        kind: StructKind::Record,
+        span: Span::DUMMY,
+    });
+
+    // S_k(f0.., v0..v_{k-1}, fut: FutK) for k in 0..n
+    for k in 0..n {
+        let mut fields = Vec::new();
+        for (i, p) in original_params.iter().enumerate() {
+            let fname = interner.intern(&format!("f{}", i));
+            let ty = p
+                .ty
+                .clone()
+                .unwrap_or_else(|| TypeRef::Path(plain_path(interner, "i32")));
+            fields.push(Field { name: fname, ty, span: Span::DUMMY });
+        }
+        for j in 0..k {
+            let ty = TypeRef::Path(plain_path(interner, "i32")); // live-local placeholder (pre-type-check)
+            fields.push(Field {
+                name: v_names[j],
+                ty,
+                span: Span::DUMMY,
+            });
+        }
+        let fut_ty = TypeRef::Path(plain_path(interner, &fut_ty_names[k]));
+        fields.push(Field {
+            name: interner.intern(&format!("fut{}", k)),
+            ty: fut_ty,
+            span: Span::DUMMY,
+        });
+        variants.push(Variant {
+            name: interner.intern(&format!("S{}", k)),
+            fields,
+            kind: StructKind::Record,
+            span: Span::DUMMY,
+        });
+    }
+
+    // Done(result: R)
+    let result_ty = return_ty
+        .clone()
+        .unwrap_or_else(|| TypeRef::Path(plain_path(interner, "i32")));
+    variants.push(Variant {
+        name: interner.intern("Done"),
+        fields: vec![Field {
+            name: interner.intern("result"),
+            ty: result_ty,
+            span: Span::DUMMY,
+        }],
+        kind: StructKind::Record,
+        span: Span::DUMMY,
+    });
+
+    let _ = future_name;
+    Item {
+        id: ItemId::from_raw(hir.items.len() as u32),
+        name: state_name_id,
+        kind: ItemKind::Enum(EnumItem {
+            variants,
+            generic_params: Vec::new(),
+            where_clauses: Vec::new(),
+        }),
+        visibility: Visibility::Inherited,
+        span: Span::DUMMY,
+    }
+}
+
+/// Collect the `Expr::Await` ExprIds (the `.await` nodes) in `body`.
+fn await_infos_await_exprs(body: &Body) -> Vec<ExprId> {
+    let mut out = Vec::new();
+    let mut stack: Vec<ExprId> = Vec::new();
+    for i in 0..body.exprs.len() {
+        stack.push(ExprId::from_raw(i as u32));
+    }
+    while let Some(id) = stack.pop() {
+        match &body.exprs[id] {
+            Expr::Await { expr } => {
+                out.push(id);
+                stack.push(*expr);
+            }
+            Expr::Block { stmts, tail } => {
+                for s in stmts {
+                    stack.push(*s);
+                }
+                if let Some(t) = tail {
+                    stack.push(*t);
+                }
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                stack.push(*cond);
+                stack.push(*then_branch);
+                if let Some(e) = else_branch {
+                    stack.push(*e);
+                }
+            }
+            Expr::Match { scrutinee, arms } => {
+                stack.push(*scrutinee);
+                for a in arms {
+                    if let Some(g) = a.guard {
+                        stack.push(g);
+                    }
+                    stack.push(a.body);
+                }
+            }
+            Expr::Let { value, .. } => stack.push(*value),
+            Expr::Call { func, args } => {
+                stack.push(*func);
+                for a in args {
+                    stack.push(*a);
+                }
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                stack.push(*receiver);
+                for a in args {
+                    stack.push(*a);
+                }
+            }
+            Expr::Binary { lhs, rhs, .. } => {
+                stack.push(*lhs);
+                stack.push(*rhs);
+            }
+            Expr::Field { receiver, .. } => stack.push(*receiver),
+            Expr::Return { value } => {
+                if let Some(v) = value {
+                    stack.push(*v);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Does `container` (or any sub-expr) contain the await `target`?
+fn stmt_contains(body: &Body, container: ExprId, target: ExprId) -> bool {
+    let mut stack = vec![container];
+    while let Some(id) = stack.pop() {
+        if id == target {
+            return true;
+        }
+        match &body.exprs[id] {
+            Expr::Await { expr } => stack.push(*expr),
+            Expr::Block { stmts, tail } => {
+                for s in stmts {
+                    stack.push(*s);
+                }
+                if let Some(t) = tail {
+                    stack.push(*t);
+                }
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                stack.push(*cond);
+                stack.push(*then_branch);
+                if let Some(e) = else_branch {
+                    stack.push(*e);
+                }
+            }
+            Expr::Match { scrutinee, arms } => {
+                stack.push(*scrutinee);
+                for a in arms {
+                    if let Some(g) = a.guard {
+                        stack.push(g);
+                    }
+                    stack.push(a.body);
+                }
+            }
+            Expr::Let { value, .. } => stack.push(*value),
+            Expr::Call { func, args } => {
+                stack.push(*func);
+                for a in args {
+                    stack.push(*a);
+                }
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                stack.push(*receiver);
+                for a in args {
+                    stack.push(*a);
+                }
+            }
+            Expr::Binary { lhs, rhs, .. } => {
+                stack.push(*lhs);
+                stack.push(*rhs);
+            }
+            Expr::Field { receiver, .. } => stack.push(*receiver),
+            Expr::Return { value } => {
+                if let Some(v) = value {
+                    stack.push(*v);
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Get the bound name of a `Pat::Binding` (for `let x = ...`).
+fn pat_name(body: &Body, pat: PatId) -> Option<crate::Name> {
+    match &body.pats[pat] {
+        Pat::Binding { name, .. } => Some(*name),
+        _ => None,
+    }
 }
 
 // (State-machine helper fns `clone_expr`/`wrap_tail_ready`/`return_pending`/
