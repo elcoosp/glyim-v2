@@ -2565,6 +2565,130 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
         // signature as `[captures..., explicit params] -> return_ty` and pull the
         // capture values out of the aggregate.
         let (fn_sig, direct_fn_val, closure_captures) = match self.operand_ty(func) {
+            ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::FnDef(_, _)) => {
+                // A direct call to a named (top-level) function, e.g. `inc(5)`
+                // or `block_on(f)`. The callee is a `MirConstKind::Fn(def_id,
+                // substs)` constant; resolve it to the canonical
+                // `__glyim_fn_{def_id}` symbol that `lower_body` emits for each
+                // monomorphized function. (Named-function calls were previously
+                // unhandled here, surfacing as "expected function pointer or
+                // closure type for call operand" — the root of the M5
+                // single-await runtime gap once the `TyKind::Error` ICE was
+                // closed.)
+                let (def_id, substs) = match self.ty_ctx.ty_kind(ty) {
+                    TyKind::FnDef(d, s) => (*d, *s),
+                    _ => unreachable!(),
+                };
+                let generic_sig = match self.ty_ctx.fn_sig(def_id) {
+                    Some(s) => s.clone(),
+                    None => {
+                        return Err(vec![GlyimDiagnostic::internal_error(format!(
+                            "no signature registered for function {:?}",
+                            def_id
+                        ))]);
+                    }
+                };
+                // For generic callees the registered `FnSig` still carries the
+                // `Param` types; the call's concrete argument types live in the
+                // operand's `substs`. We must substitute them before computing
+                // the call ABI, otherwise `fn_abi_of` calls `layout_of` on a
+                // `Param` and ICEs with `UnknownType` (this is the
+                // generic-`Future`/`block_on` resolution half of the M5 gap).
+                // `intern_substitution` is `&mut`-only, but the call operand's
+                // `substs` is already an interned `Substitution` of concrete
+                // `Ty`s, so for the supported identity-`Param` shape we reuse it
+                // directly without interning.
+                let sig = if substs.is_empty() {
+                    generic_sig
+                } else {
+                    let subst_args = self.ty_ctx.substitution_args(substs);
+                    // Inputs: identity `Param(i)` -> `substs[i]` (the common
+                    // shape for `block_on<F>` / `id<T>`).
+                    let inputs_are_identity = self
+                        .ty_ctx
+                        .substitution_args(generic_sig.inputs)
+                        .iter()
+                        .enumerate()
+                        .all(|(i, a)| match a {
+                            glyim_type::GenericArg::Ty(t) => {
+                                match self.ty_ctx.ty_kind(*t) {
+                                    TyKind::Param(p) => p.index as usize == i,
+                                    _ => false,
+                                }
+                            }
+                            _ => false,
+                        });
+                    let concrete_inputs = if inputs_are_identity {
+                        substs
+                    } else {
+                        generic_sig.inputs
+                    };
+                    // Output: a `Param(p)` -> `substs[p]`; a `Projection`
+                    // (`F::Output`) is resolved by substituting its `self` type
+                    // with the call substs and normalizing the associated type.
+                    // Both paths reuse already-interned `Ty`s, so no `&mut`
+                    // interning is needed.
+                    let concrete_output = match self.ty_ctx.ty_kind(generic_sig.output) {
+                        TyKind::Param(p) => match subst_args.get(p.index as usize) {
+                            Some(glyim_type::GenericArg::Ty(t)) => *t,
+                            _ => generic_sig.output,
+                        },
+                        TyKind::Projection(proj) => {
+                            let proj_self = self
+                                .ty_ctx
+                                .substitution_args(proj.trait_ref.substs)
+                                .first()
+                                .and_then(|a| match a {
+                                    glyim_type::GenericArg::Ty(t) => Some(*t),
+                                    _ => None,
+                                });
+                            match proj_self {
+                                Some(st) => {
+                                    let concrete_self = match self.ty_ctx.ty_kind(st) {
+                                        TyKind::Param(pp) => subst_args
+                                            .get(pp.index as usize)
+                                            .and_then(|a| match a {
+                                                glyim_type::GenericArg::Ty(t) => Some(*t),
+                                                _ => None,
+                                            })
+                                            .unwrap_or(st),
+                                        _ => st,
+                                    };
+                                    let resolved = self.ty_ctx.resolve_associated_type(
+                                        concrete_self,
+                                        proj.trait_ref.def_id,
+                                        proj.item_name,
+                                    );
+                                    resolved.unwrap_or(generic_sig.output)
+                                }
+                                None => generic_sig.output,
+                            }
+                        }
+                        _ => generic_sig.output,
+                    };
+                    glyim_type::FnSig {
+                        inputs: concrete_inputs,
+                        output: concrete_output,
+                        c_variadic: generic_sig.c_variadic,
+                        unsafety: generic_sig.unsafety,
+                        abi: generic_sig.abi,
+                    }
+                };
+                let fn_name = format!("__glyim_fn_{}", def_id.to_raw());
+                let fn_val = match self.module.get_function(&fn_name) {
+                    Some(v) => v,
+                    None => {
+                        // Forward-declare the callee so the call can target it;
+                        // `lower_body` will later `add_function` the same symbol
+                        // (inkwell reuses the existing declaration) and define
+                        // its body. This mirrors the `FnPtr` arm's tolerance
+                        // for call-site-before-definition ordering.
+                        let fn_type = self.llvm_fn_type_from_sig(&sig);
+                        self.module.add_function(&fn_name, fn_type, None)
+                    }
+                };
+                (sig, Some(fn_val), None)
+            }
             ty if matches!(self.ty_ctx.ty_kind(ty), TyKind::FnPtr(_)) => {
                 let sig = match self.ty_ctx.ty_kind(ty) {
                     TyKind::FnPtr(sig) => sig.clone(),
@@ -3113,7 +3237,9 @@ pub(crate) fn lower_body<'ctx>(
     } else {
         ret_llvm_ty.fn_type(&param_types, false)
     };
-    let function = module.add_function(&fn_name, fn_type, None);
+    let function = module
+        .get_function(&fn_name)
+        .unwrap_or_else(|| module.add_function(&fn_name, fn_type, None));
 
     // Apply ABI attributes to function definition parameters.
     // A missing FnSig for a function that has reached codegen is an internal
