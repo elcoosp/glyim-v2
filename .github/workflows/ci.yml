@@ -29,6 +29,33 @@ jobs:
       - name: Run tests
         run: cargo nextest run --workspace
 
+  test-linux-runtime:
+    name: M5 runtime proof (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LLVM 22
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
+          sudo apt-get install -y llvm-22-dev libpolly-22-dev
+          echo "LLVM_SYS_220_PREFIX=/usr/lib/llvm-22" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Run M5 runtime fixtures (run-pass + multi-await compile-fail)
+        # The async v1 (`two_step`) runtime proof: compile an `async fn` through the
+        # real pipeline, link a native binary, and (run-pass) execute it. Fixtures
+        # live in crates/glyim-test/tests/runtime/m5/ and are gated to
+        # x86_64-unknown-linux-gnu. On this native-Linux runner the produced ELF
+        # actually runs (the macOS/Windows runners cannot, so they Ignore it).
+        # The driver (crates/glyim-test/tests/runtime.rs) asserts the safety-net
+        # contract: multi-await must emit the async-v2 diagnostic (no silent
+        # miscompile); single-await must not miscompile (the known LLVM-codegen gap
+        # is tolerated until it is closed).
+        run: cargo nextest run -p glyim-test --test runtime
+
   test-macos:
     name: Test (macos-latest)
     runs-on: macos-latest
