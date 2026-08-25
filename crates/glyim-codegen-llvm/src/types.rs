@@ -114,10 +114,44 @@ pub(crate) fn llvm_type_for_ty<'ctx>(
                 context.struct_type(&[], false).into()
             }
         }
-        TyKind::Projection(_) => {
-            return Err(vec![GlyimDiagnostic::internal_error(
-                "internal compiler error: TyKind::Projection reached LLVM codegen – type normalization incomplete",
-            )]);
+        TyKind::Projection(proj) => {
+            // <F as Future>::Output (and similar associated-type projections)
+            // must be normalized to the concrete defining type before an LLVM
+            // type can be computed. This is the codegen half of the single-await
+            // `block_on` resolution: the future's `Output` projection resolves
+            // to the awaited type (e.g. `i32`). Mirror `lower.rs`'s
+            // `resolve_associated_type` path, substituting a `Param` `self` type
+            // with the projection's trait substs first.
+            let subst_args = ctx.substitution_args(proj.trait_ref.substs);
+            let proj_self = subst_args
+                .first()
+                .and_then(|a| match a {
+                    glyim_type::GenericArg::Ty(t) => Some(*t),
+                    _ => None,
+                });
+            let concrete_self = match proj_self {
+                Some(st) => match ctx.ty_kind(st) {
+                    TyKind::Param(p) => subst_args
+                        .get(p.index as usize)
+                        .and_then(|a| match a {
+                            glyim_type::GenericArg::Ty(t) => Some(*t),
+                            _ => None,
+                        })
+                        .unwrap_or(st),
+                    _ => st,
+                },
+                None => return Err(vec![GlyimDiagnostic::internal_error(
+                    "internal compiler error: TyKind::Projection with no self type reached LLVM codegen",
+                )]),
+            };
+            match ctx.resolve_associated_type(concrete_self, proj.trait_ref.def_id, proj.item_name) {
+                Some(resolved) => return llvm_type_for_ty(ctx, target_info, context, resolved),
+                None => {
+                    return Err(vec![GlyimDiagnostic::internal_error(
+                        "internal compiler error: TyKind::Projection reached LLVM codegen – type normalization incomplete",
+                    )]);
+                }
+            }
         }
         TyKind::Param(param) => {
             return Err(vec![GlyimDiagnostic::internal_error(format!(
