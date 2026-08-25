@@ -1,5 +1,6 @@
 use crate::adt_def::*;
 use crate::auto_trait::*;
+use crate::const_val::*;
 use crate::display::TypeLookup;
 use crate::flags::*;
 use crate::fn_sig::FnSig;
@@ -255,15 +256,22 @@ impl TyCtxMut {
     /// parameter type (which may carry `T`) is matched against the argument
     /// type to build `subst`, and the return type is instantiated through it
     /// (plan unstub-5 P5: generic call instantiation).
-    pub fn subst_ty(&mut self, ty: Ty, subst: &std::collections::HashMap<u32, Ty>) -> Ty {
+    pub fn subst_ty(&mut self, ty: Ty, subst: &std::collections::HashMap<u32, GenericArg>) -> Ty {
         if subst.is_empty() {
             return ty;
         }
         let kind = self.ty_kind(ty).clone();
         let r = match kind {
             TyKind::Param(pt) => {
-                if let Some(&repl) = subst.get(&pt.index) {
-                    repl
+                if let Some(repl) = subst.get(&pt.index) {
+                    match repl {
+                        GenericArg::Ty(t) => *t,
+                        // Const replacements only apply to array lengths (handled
+                        // in the `Array` arm); a type parameter is always
+                        // substituted by a type, not a const.
+                        GenericArg::Const(_) => ty,
+                        GenericArg::Lifetime(_) => ty,
+                    }
                 } else {
                     ty
                 }
@@ -355,12 +363,22 @@ impl TyCtxMut {
                 }
             }
             TyKind::Array(inner, len) => {
-                // Phase 2 (GLYIM_DESTUB_PLAN): substitute the array element
-                // type. Previously the `_ => ty` fallback returned the array
-                // unchanged, leaving a `TyKind::Param` element unsubstituted in
-                // monomorphized `[T; N]` (and similar) types.
+                // Phase 2 (GLYIM_DESTUB_PLAN): substitute both the element type
+                // AND a const-parameter length. Previously the length was left
+                // unchanged, so `[T; N]` with `N` a `ConstKind::Param` could not
+                // be monomorphized to a concrete length.
                 let new_inner = self.subst_ty(inner, subst);
-                self.mk_ty(TyKind::Array(new_inner, len))
+                let new_len = match &len.kind {
+                    ConstKind::Param(pc) => {
+                        if let Some(GenericArg::Const(c)) = subst.get(&pc.index) {
+                            c.clone()
+                        } else {
+                            len.clone()
+                        }
+                    }
+                    _ => len.clone(),
+                };
+                self.mk_ty(TyKind::Array(new_inner, new_len))
             }
             TyKind::Slice(inner) => {
                 let new_inner = self.subst_ty(inner, subst);
@@ -1380,12 +1398,57 @@ mod subst_ty_tests {
         };
         let arr = tcx.mk_ty(TyKind::Array(param0, len));
 
-        let subst = HashMap::from([(0u32, i32_ty)]);
+        let subst = HashMap::from([(0u32, GenericArg::Ty(i32_ty))]);
         let result = tcx.subst_ty(arr, &subst);
 
         match tcx.ty_kind(result) {
             TyKind::Array(inner, _) => {
                 assert_eq!(*inner, i32_ty, "array element must be substituted to i32");
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subst_ty_substitutes_const_param_array_length() {
+        let mut tcx = TyCtxMut::new(Interner::new());
+        let i32_ty = tcx.mk_ty(TyKind::Int(IntTy::I32));
+        let usize_ty = tcx.mk_ty(TyKind::Uint(UintTy::Usize));
+        let elem_param = tcx.mk_ty(TyKind::Param(ParamTy {
+            index: 0,
+            name: tcx.resolver.intern("T"),
+        }));
+        // `[T; N]` where `N` is a const parameter (index 1).
+        let len_param = Const {
+            kind: ConstKind::Param(ParamConst {
+                index: 1,
+                name: tcx.resolver.intern("N"),
+            }),
+            ty: usize_ty,
+        };
+        let arr = tcx.mk_ty(TyKind::Array(elem_param, len_param));
+
+        let concrete_len = Const {
+            kind: ConstKind::Int(5),
+            ty: usize_ty,
+        };
+        let subst = HashMap::from([
+            (0u32, GenericArg::Ty(i32_ty)),
+            (
+                1u32,
+                GenericArg::Const(concrete_len.clone()),
+            ),
+        ]);
+        let result = tcx.subst_ty(arr, &subst);
+
+        match tcx.ty_kind(result) {
+            TyKind::Array(inner, len) => {
+                assert_eq!(*inner, i32_ty, "array element must be substituted to i32");
+                assert_eq!(
+                    len.kind,
+                    ConstKind::Int(5),
+                    "const-parameter length must be substituted to 5"
+                );
             }
             other => panic!("expected Array, got {other:?}"),
         }
