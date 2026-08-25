@@ -175,20 +175,34 @@ impl<'a> FnCtxt<'a> {
         // That spurious `Error` constant then reaches codegen and ICEs. (This
         // is the root cause of the single-await `TyKind::Error` gap: every
         // `let`-binding or `block_on`-style body was hitting it.)
-        let root = (0..self.body.exprs.len())
+        // Drive the type-checking loop over the function body's *top-level*
+        // statements. Real HIR always wraps the body in a root `Block` (the
+        // last `Expr` in the arena), so when one is present we iterate its
+        // `stmts` followed by its `tail` — and only those, to avoid re-checking
+        // the block itself (which re-emits a spurious `TyKind::Error`).
+        //
+        // Some callers (hand-built test bodies) push a *flat* expression list
+        // with no root `Block`. For those we fall back to driving every
+        // expression in the body as a top-level statement.
+        let top_level: Vec<glyim_hir::ExprId> = match (0..self.body.exprs.len())
             .map(|i| glyim_hir::ExprId::from_raw(i as u32))
-            .find(|&rid| matches!(self.body.exprs[rid], glyim_hir::Expr::Block { .. }))
-            .unwrap_or_else(|| {
-                glyim_hir::ExprId::from_raw((self.body.exprs.len().saturating_sub(1)) as u32)
-            });
-        let (root_stmts, root_tail) = match &self.body.exprs[root] {
-            glyim_hir::Expr::Block { stmts, tail } => (stmts.clone(), *tail),
-            _ => (Vec::new(), Some(root)),
+            .rfind(|&rid| matches!(self.body.exprs[rid], glyim_hir::Expr::Block { .. }))
+        {
+            Some(root) => {
+                if let glyim_hir::Expr::Block { stmts, tail } = &self.body.exprs[root] {
+                    let mut v = stmts.clone();
+                    if let Some(t) = tail {
+                        v.push(*t);
+                    }
+                    v
+                } else {
+                    Vec::new()
+                }
+            }
+            None => (0..self.body.exprs.len())
+                .map(|i| glyim_hir::ExprId::from_raw(i as u32))
+                .collect(),
         };
-        let mut top_level: Vec<glyim_hir::ExprId> = root_stmts.clone();
-        if let Some(t) = root_tail {
-            top_level.push(t);
-        }
         let len = top_level.len();
 
         for (pos, &expr_id) in top_level.iter().enumerate() {
