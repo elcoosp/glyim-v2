@@ -641,7 +641,7 @@ impl<'a> FnCtxt<'a> {
                     // `id(40)` return `i32` (not the rigid `T`) and is what
                     // unblocks `block_on<F: MyFuture>`-style dispatch.
                     if let Some(sig) = self.ctx.fn_sig(def_id) {
-                        let mut subst: std::collections::HashMap<u32, Ty> =
+                        let mut subst: std::collections::HashMap<u32, GenericArg> =
                             std::collections::HashMap::new();
                         // Collect the formal input types into an owned vec so the
                         // immutable borrow of `self.ctx` ends before the mutable
@@ -651,7 +651,7 @@ impl<'a> FnCtxt<'a> {
                         for (i, arg_expr) in arg_exprs.iter().enumerate() {
                             if let Some(GenericArg::Ty(param_ty)) = inputs.get(i) {
                                 if let TyKind::Param(pt) = self.ctx.ty_kind(*param_ty) {
-                                    subst.insert(pt.index, arg_expr.ty);
+                                    subst.insert(pt.index, GenericArg::Ty(arg_expr.ty));
                                 }
                             }
                         }
@@ -670,9 +670,10 @@ impl<'a> FnCtxt<'a> {
                                 .map(|a| match a {
                                     GenericArg::Ty(pt) => {
                                         if let TyKind::Param(p) = self.ctx.ty_kind(*pt) {
-                                            GenericArg::Ty(
-                                                subst.get(&p.index).copied().unwrap_or(*pt),
-                                            )
+                                            subst
+                                                .get(&p.index)
+                                                .cloned()
+                                                .unwrap_or(GenericArg::Ty(*pt))
                                         } else {
                                             a.clone()
                                         }
