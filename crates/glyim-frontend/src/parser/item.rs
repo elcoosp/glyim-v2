@@ -420,6 +420,9 @@ impl<'a> Parser<'a> {
             self.bump();
             self.parse_type();
         }
+        if self.current_kind() == SyntaxKind::KwWhere {
+            self.parse_where_clause();
+        }
         if self.current_kind() == SyntaxKind::LBrace {
             self.parse_block();
         } else {
@@ -472,6 +475,9 @@ impl<'a> Parser<'a> {
         if self.current_kind() == SyntaxKind::Lt {
             self.parse_type_param_list();
         }
+        if self.current_kind() == SyntaxKind::KwWhere {
+            self.parse_where_clause();
+        }
         match self.current_kind() {
             SyntaxKind::LParen => {
                 self.bump(); // (
@@ -517,6 +523,9 @@ impl<'a> Parser<'a> {
         self.bump_expected(SyntaxKind::Ident);
         if self.current_kind() == SyntaxKind::Lt {
             self.parse_type_param_list();
+        }
+        if self.current_kind() == SyntaxKind::KwWhere {
+            self.parse_where_clause();
         }
         self.expect(SyntaxKind::LBrace);
         self.start_node(SyntaxKind::VariantList);

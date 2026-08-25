@@ -427,6 +427,26 @@ pub fn compile_file_to_mir(
         bodies.insert(owner, mir_arc);
     }
 
+    // Drop-glue elaboration: lower `Drop` terminators into conditional drop
+    // flag handling and array-drop loops (de-stubbing plan §15.2). Runs on a
+    // `TyCtxMut` derived from the frozen `TyCtx` via `to_mut()`, which SHARES
+    // the canonical type arena — so any `[bool; N]` flag-array types it
+    // synthesizes are valid in the consuming `TyCtx` (the P0 interner fix that
+    // previously made this path OOB-panic). After elaboration we re-freeze and
+    // publish the updated context.
+    {
+        let frozen: &glyim_type::TyCtx = &*ty_ctx_guard;
+        let mut elaborator = frozen.to_mut();
+        for (_owner, body_arc) in bodies.iter_mut() {
+            let mut body = (**body_arc).clone();
+            glyim_opt::elaborate_drops(&mut elaborator, &mut body);
+            *body_arc = Arc::new(body);
+        }
+        let new_ty_ctx = elaborator.freeze();
+        db.set_ty_ctx(new_ty_ctx);
+    }
+    let ty_ctx_guard = db.get_ty_ctx().expect("TyCtx not initialized after elaboration");
+
     Ok(MirCompilation {
         bodies,
         def_map,
