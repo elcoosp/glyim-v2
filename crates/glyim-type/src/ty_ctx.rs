@@ -105,7 +105,7 @@ impl TyCtx {
         // interned raw index, so two handles for the same logical type (e.g.
         // the same `Adt` reached via different code paths) may have different
         // raw indices and miss here.
-        if let Some(ty) = self
+        let exact = self
             .impl_assoc_types
             .get(&(self_ty, trait_def_id))
             .and_then(|entries| {
@@ -113,9 +113,9 @@ impl TyCtx {
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
-            })
-        {
-            return Some(ty);
+            });
+        if exact.is_some() {
+            return exact;
         }
         // Fallback: match by the underlying `AdtId` (the by_self_ty semantics).
         // An impl's associated type is keyed by the self type's ADT, not a
@@ -123,23 +123,61 @@ impl TyCtx {
         // carries a different raw index than the one used at impl registration
         // (e.g. generic `F::Output` after the call's `substs` substitution at
         // codegen — the M5 single-await `block_on` resolution gap).
-        if let TyKind::Adt(adt_id, _) = self.ty_kind(self_ty) {
-            let self_adt = *adt_id;
-            self.impl_assoc_types
-                .iter()
-                .find(|((sty, trait_id), entries)| {
-                    *trait_id == trait_def_id
-                        && matches!(self.ty_kind(*sty), TyKind::Adt(b, _) if b == &self_adt)
-                        && entries.iter().any(|(n, _)| *n == assoc_name)
-                })
-                .and_then(|((_, _), entries)| {
-                    entries
-                        .iter()
-                        .find(|(name, _)| *name == assoc_name)
-                        .map(|(_, ty)| *ty)
-                })
-        } else {
+        let by_adt = match self.ty_kind(self_ty) {
+            TyKind::Adt(adt_id, _) => {
+                let self_adt = *adt_id;
+                self.impl_assoc_types
+                    .iter()
+                    .find(|((sty, trait_id), entries)| {
+                        *trait_id == trait_def_id
+                            && matches!(self.ty_kind(*sty), TyKind::Adt(b, _) if b == &self_adt)
+                            && entries.iter().any(|(n, _)| *n == assoc_name)
+                    })
+                    .and_then(|((_, _), entries)| {
+                        entries
+                            .iter()
+                            .find(|(name, _)| *name == assoc_name)
+                            .map(|(_, ty)| *ty)
+                    })
+            }
+            _ => None,
+        };
+        if by_adt.is_some() {
+            return by_adt;
+        }
+        // Final fallback: the projection's `self_ty` may still be an unresolved
+        // `Param` at codegen (the call-site substitution did not inline the
+        // concrete `Self` into the projection's inner `trait_ref.substs`). When
+        // no self-directed entry matches, resolve by `(trait_def_id, assoc_name)`
+        // alone — correct for the common single-impl case (e.g. `Future::Output`)
+        // and only reached when both self-directed lookups missed. If multiple
+        // distinct impls could satisfy the trait+name, we conservatively refuse
+        // (return `None`) rather than guess.
+        let mut found: Option<Ty> = None;
+        let mut ambiguous = false;
+        for ((_, tid), entries) in self.impl_assoc_types.iter() {
+            if *tid != trait_def_id {
+                continue;
+            }
+            for (n, ty) in entries.iter() {
+                if *n == assoc_name {
+                    if found != Some(*ty) {
+                        if found.is_some() {
+                            ambiguous = true;
+                            break;
+                        }
+                        found = Some(*ty);
+                    }
+                }
+            }
+            if ambiguous {
+                break;
+            }
+        }
+        if ambiguous {
             None
+        } else {
+            found
         }
     }
 
