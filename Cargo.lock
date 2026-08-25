@@ -1275,6 +1275,7 @@ dependencies = [
  "glyim-lower",
  "glyim-meta",
  "glyim-mir",
+ "glyim-mir-interp",
  "glyim-opt",
  "glyim-proc-macro",
  "glyim-solve",
