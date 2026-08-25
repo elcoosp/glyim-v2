@@ -1,12 +1,12 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 16
+assertion_line: 18
 expression: tree
 ---
 SourceFile@0..163
   Visibility@0..3
     KwPub@0..3 "pub"
-  TraitDef@3..101
+  TraitDef@3..163
     KwTrait@3..8 "trait"
     Ident@8..16 "Iterator"
     LBrace@16..17 "{"
@@ -36,7 +36,7 @@ SourceFile@0..163
             Ident@57..61 "Item"
         Gt@61..62 ">"
       Semicolon@62..63 ";"
-    FnDef@63..83
+    FnDef@63..101
       KwFn@63..65 "fn"
       Ident@65..70 "count"
       LParen@70..71 "("
@@ -48,59 +48,76 @@ SourceFile@0..163
       PathType@78..83
         UsePath@78..83
           Ident@78..83 "usize"
-    KwWhere@83..88 "where"
-    Ident@88..92 "Self"
-    Colon@92..93 ":"
-    Ident@93..98 "Sized"
-    LBrace@98..99 "{"
-    IntLit@99..100 "0"
-    RBrace@100..101 "}"
-  FnDef@101..134
-    KwFn@101..103 "fn"
-    Ident@103..106 "map"
-    TypeParamList@106..111
-      Lt@106..107 "<"
-      TypeParam@107..108
-        Ident@107..108 "B"
-      Comma@108..109 ","
-      TypeParam@109..110
-        Ident@109..110 "F"
-      Gt@110..111 ">"
-    LParen@111..112 "("
-    ParamList@112..120
-      Param@112..116
-        KwSelf@112..116 "self"
-      Comma@116..117 ","
-      Param@117..120
-        Ident@117..118 "f"
-        Colon@118..119 ":"
-        PathType@119..120
-          UsePath@119..120
-            Ident@119..120 "F"
-    RParen@120..121 ")"
-    Arrow@121..123 "->"
-    PathType@123..134
-      UsePath@123..126
-        Ident@123..126 "Map"
-      Lt@126..127 "<"
-      PathType@127..131
-        UsePath@127..131
-          Ident@127..131 "Self"
-      Comma@131..132 ","
-      PathType@132..133
-        UsePath@132..133
-          Ident@132..133 "F"
-      Gt@133..134 ">"
-  KwWhere@134..139 "where"
-  Ident@139..140 "F"
-  Colon@140..141 ":"
-  Ident@141..146 "FnMut"
-  LParen@146..147 "("
-  Ident@147..151 "Self"
-  ColonColon@151..153 "::"
-  Ident@153..157 "Item"
-  RParen@157..158 ")"
-  Arrow@158..160 "->"
-  Ident@160..161 "B"
-  Semicolon@161..162 ";"
-  RBrace@162..163 "}"
+      WhereClause@83..98
+        KwWhere@83..88 "where"
+        WherePredicate@88..98
+          PathType@88..92
+            UsePath@88..92
+              Ident@88..92 "Self"
+          Colon@92..93 ":"
+          Bound@93..98
+            PathType@93..98
+              UsePath@93..98
+                Ident@93..98 "Sized"
+      Block@98..101
+        LBrace@98..99 "{"
+        ExprStmt@99..100
+          LitExpr@99..100
+            IntLit@99..100 "0"
+        RBrace@100..101 "}"
+    FnDef@101..146
+      KwFn@101..103 "fn"
+      Ident@103..106 "map"
+      TypeParamList@106..111
+        Lt@106..107 "<"
+        TypeParam@107..108
+          Ident@107..108 "B"
+        Comma@108..109 ","
+        TypeParam@109..110
+          Ident@109..110 "F"
+        Gt@110..111 ">"
+      LParen@111..112 "("
+      ParamList@112..120
+        Param@112..116
+          KwSelf@112..116 "self"
+        Comma@116..117 ","
+        Param@117..120
+          Ident@117..118 "f"
+          Colon@118..119 ":"
+          PathType@119..120
+            UsePath@119..120
+              Ident@119..120 "F"
+      RParen@120..121 ")"
+      Arrow@121..123 "->"
+      PathType@123..134
+        UsePath@123..126
+          Ident@123..126 "Map"
+        Lt@126..127 "<"
+        PathType@127..131
+          UsePath@127..131
+            Ident@127..131 "Self"
+        Comma@131..132 ","
+        PathType@132..133
+          UsePath@132..133
+            Ident@132..133 "F"
+        Gt@133..134 ">"
+      WhereClause@134..146
+        KwWhere@134..139 "where"
+        WherePredicate@139..146
+          PathType@139..140
+            UsePath@139..140
+              Ident@139..140 "F"
+          Colon@140..141 ":"
+          Bound@141..146
+            PathType@141..146
+              UsePath@141..146
+                Ident@141..146 "FnMut"
+    LParen@146..147 "("
+    Ident@147..151 "Self"
+    ColonColon@151..153 "::"
+    Ident@153..157 "Item"
+    RParen@157..158 ")"
+    Arrow@158..160 "->"
+    Ident@160..161 "B"
+    Semicolon@161..162 ";"
+    RBrace@162..163 "}"
