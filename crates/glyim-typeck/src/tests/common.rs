@@ -86,7 +86,18 @@ pub fn make_single_body_hir(
     for expr in exprs {
         expr_vec.push(expr);
     }
-    let expr_spans = IndexVec::from_raw(vec![Span::DUMMY; expr_vec.len()]);
+    let expr_spans = IndexVec::from_raw(vec![Span::DUMMY; expr_vec.len() + 1]);
+    // Wrap the expression list in a root `Block` so the type checker's
+    // root-Block driver (check_stmt.rs) iterates every expression as a
+    // top-level statement — matching both real HIR lowering (which always
+    // produces a root block) and the pre-flat-iteration test expectations.
+    let block_expr = glyim_hir::Expr::Block {
+        stmts: (0..expr_vec.len() as u32)
+            .map(glyim_hir::ExprId::from_raw)
+            .collect(),
+        tail: None,
+    };
+    expr_vec.push(block_expr);
     let body = Body {
         owner: LocalDefId::from_raw(0),
         exprs: expr_vec,
