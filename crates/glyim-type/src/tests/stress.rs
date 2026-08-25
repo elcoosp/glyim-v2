@@ -8,17 +8,19 @@ use crate::*;
 
 #[test]
 fn allocate_1000_types() {
-    let (frozen, count) = with_fresh_ty_ctx(|c| {
+    let (frozen, (count, last)) = with_fresh_ty_ctx(|c| {
         let mut count = 0usize;
-        for i in 0..1000u32 {
+        let mut last = c.bool_ty();
+        for _ in 0..1000u32 {
             let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-            assert_eq!(ty.to_raw(), 18 + i);
+            last = ty;
             count += 1;
         }
-        count
+        (count, last)
     });
     assert_eq!(count, 1000);
-    let last = Ty::from_raw(14 + 999);
+    // All `i32` handles intern to the same shared handle; it must still
+    // resolve correctly through the frozen context.
     assert!(matches!(frozen.ty_kind(last), TyKind::Int(IntTy::I32)));
 }
 

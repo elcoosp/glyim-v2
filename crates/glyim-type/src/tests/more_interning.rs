@@ -166,18 +166,6 @@ fn mk_fn_ptr_variadic() {
     }
 }
 
-// --- ty_kind_mut ---
-
-#[test]
-fn ty_kind_mut_allows_modification() {
-    let (frozen, ty) = with_fresh_ty_ctx(|c| {
-        let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-        *c.ty_kind_mut(ty) = TyKind::Bool;
-        ty
-    });
-    assert!(matches!(frozen.ty_kind(ty), TyKind::Bool));
-}
-
 // --- mk_raw_ptr mut ---
 
 #[test]

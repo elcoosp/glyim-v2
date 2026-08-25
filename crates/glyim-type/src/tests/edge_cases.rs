@@ -10,15 +10,17 @@ use crate::*;
 fn many_types_allocated() {
     let (frozen, tys) = with_fresh_ty_ctx(|c| {
         let mut tys = Vec::new();
-        for i in 0..100u32 {
+        for _ in 0..100u32 {
             let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-            assert_eq!(ty.to_raw(), 18 + i);
             tys.push(ty);
         }
         tys
     });
     assert_eq!(tys.len(), 100);
+    // Canonical interner: every `i32` resolves to the same shared handle.
+    let first = tys[0];
     for ty in &tys {
+        assert_eq!(*ty, first);
         assert!(matches!(frozen.ty_kind(*ty), TyKind::Int(IntTy::I32)));
     }
 }

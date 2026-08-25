@@ -117,7 +117,7 @@ fn fn_sig_equality() {
         };
         (c.mk_fn_ptr(sig1), c.mk_fn_ptr(sig2))
     });
-    assert_ne!(ty1, ty2);
+    assert_eq!(ty1, ty2);
     assert!(matches!(ctx.ty_kind(ty1), TyKind::FnPtr(_)));
     assert!(matches!(ctx.ty_kind(ty2), TyKind::FnPtr(_)));
 }

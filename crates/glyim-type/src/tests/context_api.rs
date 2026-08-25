@@ -15,33 +15,35 @@ fn new_creates_context_with_four_sentinels() {
 }
 
 #[test]
-fn first_custom_type_gets_index_4() {
+fn first_custom_type_is_resolvable() {
     let (frozen, custom) = with_fresh_ty_ctx(|c| {
         let ty = c.mk_ty(TyKind::Int(IntTy::I32));
-        assert_eq!(
-            ty.to_raw(),
-            18,
-            "first custom type should be at index 18 (after sentinels and primitives)"
-        );
         ty
     });
-    assert_eq!(custom.to_raw(), 18);
+    // Under the canonical interner, an `i32` maps to the shared `Ty::I32`
+    // sentinel handle rather than a fresh index — what matters is that the
+    // handle resolves back to the same structural type.
     assert!(matches!(frozen.ty_kind(custom), TyKind::Int(IntTy::I32)));
 }
 
 #[test]
-fn multiple_types_get_increasing_indices() {
+fn multiple_distinct_adts_get_increasing_indices() {
+    // Use distinct, non-primitive ADT types so each allocates a fresh,
+    // increasing handle in the arena (primitives are interns/sentinels and
+    // would share handles).
     let (frozen, tys) = with_fresh_ty_ctx(|c| {
-        let t1 = c.mk_ty(TyKind::Int(IntTy::I8));
-        let t2 = c.mk_ty(TyKind::Int(IntTy::I16));
-        let t3 = c.mk_ty(TyKind::Int(IntTy::I32));
-        vec![t1, t2, t3]
+        let mut mk = |id: u32| {
+            let substs = c.intern_substitution(vec![]);
+            c.mk_adt(glyim_core::def_id::AdtId::from_raw(1_000_000 + id), substs)
+        };
+        vec![mk(0), mk(1), mk(2)]
     });
-    assert_eq!(tys[0].to_raw(), 18);
-    assert_eq!(tys[1].to_raw(), 19);
-    assert_eq!(tys[2].to_raw(), 20);
+    assert_ne!(tys[0], tys[1]);
+    assert_ne!(tys[1], tys[2]);
+    assert!(tys[0].to_raw() < tys[1].to_raw());
+    assert!(tys[1].to_raw() < tys[2].to_raw());
     for ty in &tys {
-        assert!(matches!(frozen.ty_kind(*ty), TyKind::Int(_)));
+        assert!(matches!(frozen.ty_kind(*ty), TyKind::Adt(_, _)));
     }
 }
 
@@ -105,13 +107,14 @@ fn type_lookup_trait_on_ty_ctx() {
 }
 
 #[test]
-fn alloc_ty_is_same_as_mk_ty() {
+fn alloc_ty_and_mk_ty_intern_to_same_handle() {
     let (frozen, (t1, t2)) = with_fresh_ty_ctx(|c| {
         let a = c.alloc_ty(TyKind::Int(IntTy::I32));
         let b = c.mk_ty(TyKind::Int(IntTy::I32));
         (a, b)
     });
-    assert_ne!(t1, t2);
+    // Canonical interner: identical structural types share one handle.
+    assert_eq!(t1, t2);
     assert!(matches!(frozen.ty_kind(t1), TyKind::Int(IntTy::I32)));
     assert!(matches!(frozen.ty_kind(t2), TyKind::Int(IntTy::I32)));
 }
