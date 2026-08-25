@@ -255,7 +255,12 @@ fn test_multiple_bodies_pass_together() {
     let (ctx, int_ty) = make_ty_ctx();
     let backend = LlvmBackend::new().with_ty_ctx(ctx).with_opt_level(2);
     let body1 = Arc::new(simple_body_with_local(int_ty));
-    let body2 = Arc::new(simple_body_with_local(int_ty));
+    // Give body2 a *distinct* owner so it lowers to a second, separate
+    // function (the test verifies that lowering multiple bodies into one module
+    // produces at least two functions).
+    let mut body2_raw = simple_body_with_local(int_ty);
+    body2_raw.owner = DefId::new(CrateId::from_raw(1), LocalDefId::from_raw(2));
+    let body2 = Arc::new(body2_raw);
     let context = Context::create();
     let module = backend
         .lower_bodies_to_module(&context, &[body1, body2])
