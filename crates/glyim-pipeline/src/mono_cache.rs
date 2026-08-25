@@ -2,7 +2,7 @@
 //! Mono item caching for the pipeline.
 
 use glyim_core::Mutability;
-use glyim_core::def_id::{CrateId, DefId, LocalDefId};
+use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
 use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
 use glyim_mir::{
@@ -76,14 +76,23 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
             }
             TyKind::Ref(r, inner, m) => {
                 let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                if new_inner == inner {
+                    return ty;
+                }
                 ctx.mk_ref(r, new_inner, m)
             }
             TyKind::RawPtr(inner, m) => {
                 let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                if new_inner == inner {
+                    return ty;
+                }
                 ctx.mk_ty(TyKind::RawPtr(new_inner, m))
             }
             TyKind::Slice(inner) => {
                 let new_inner = substitute_ty(inner, substs, ctx, frozen);
+                if new_inner == inner {
+                    return ty;
+                }
                 ctx.mk_ty(TyKind::Slice(new_inner))
             }
             TyKind::Array(inner, len) => {
@@ -99,11 +108,14 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                     }
                     new_len
                 };
+                if new_inner == inner && new_len == len {
+                    return ty;
+                }
                 ctx.mk_ty(TyKind::Array(new_inner, new_len))
             }
             TyKind::Tuple(sub) => {
-                let new_args: Vec<GenericArg> = frozen
-                    .substitution_args(sub)
+                let args = frozen.substitution_args(sub);
+                let new_args: Vec<GenericArg> = args
                     .iter()
                     .map(|arg| {
                         if let GenericArg::Ty(t) = arg {
@@ -113,12 +125,15 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                         }
                     })
                     .collect();
+                if new_args == args.to_vec() {
+                    return ty;
+                }
                 let new_sub = ctx.intern_substitution(new_args);
                 ctx.mk_tuple(new_sub)
             }
             TyKind::Adt(id, sub) => {
-                let new_args: Vec<GenericArg> = frozen
-                    .substitution_args(sub)
+                let args = frozen.substitution_args(sub);
+                let new_args: Vec<GenericArg> = args
                     .iter()
                     .map(|arg| {
                         if let GenericArg::Ty(t) = arg {
@@ -128,6 +143,9 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                         }
                     })
                     .collect();
+                if new_args == args.to_vec() {
+                    return ty;
+                }
                 let new_sub = ctx.intern_substitution(new_args);
                 ctx.mk_adt(id, new_sub)
             }
@@ -144,8 +162,13 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                         other => other.clone(),
                     })
                     .collect();
-                let new_inputs = ctx.intern_substitution(inputs);
                 let new_output = substitute_ty(sig.output, substs, ctx, frozen);
+                if inputs == frozen.substitution_args(sig.inputs).to_vec()
+                    && new_output == sig.output
+                {
+                    return ty;
+                }
+                let new_inputs = ctx.intern_substitution(inputs);
                 let new_sig = glyim_type::FnSig {
                     inputs: new_inputs,
                     output: new_output,
@@ -156,8 +179,8 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                 ctx.mk_ty(TyKind::FnPtr(new_sig))
             }
             TyKind::FnDef(def_id, sub) => {
-                let new_args: Vec<GenericArg> = frozen
-                    .substitution_args(sub)
+                let args = frozen.substitution_args(sub);
+                let new_args: Vec<GenericArg> = args
                     .iter()
                     .map(|arg| match arg {
                         GenericArg::Ty(t) => {
@@ -166,6 +189,9 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
                         other => other.clone(),
                     })
                     .collect();
+                if new_args == args.to_vec() {
+                    return ty;
+                }
                 let new_sub = ctx.intern_substitution(new_args);
                 ctx.mk_ty(TyKind::FnDef(def_id, new_sub))
             }
@@ -264,12 +290,13 @@ pub(crate) fn substitute_body(body: &Body, substs: &Substitution, ty_ctx: &TyCtx
         }
     }
 
+    let return_ty = substitute_ty(body.return_ty, substs, &mut sub_ctx, ty_ctx);
     Body {
         owner: body.owner,
         basic_blocks: new_blocks,
         locals: new_locals,
         arg_count: body.arg_count,
-        return_ty: substitute_ty(body.return_ty, substs, &mut sub_ctx, ty_ctx),
+        return_ty,
         span: body.span,
         var_debug_info: body.var_debug_info.clone(),
     }
