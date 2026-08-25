@@ -1,6 +1,8 @@
 use crate::adt_def::*;
 use crate::auto_trait::*;
 use crate::display::TypeLookup;
+use crate::type_arena::TypeArena;
+use crate::ty_ctx_mut::TyCtxMut;
 use crate::flags::*;
 use crate::fn_sig::FnSig;
 use crate::lang_items::LangItems;
@@ -15,9 +17,10 @@ use std::collections::{HashMap, HashSet};
 
 /// TyCtx.
 pub struct TyCtx {
-    pub(crate) types: Vec<TyKind>,
-    pub(crate) type_flags: Vec<TypeFlags>,
-    pub(crate) substitution_data: Vec<SmallVec<[GenericArg; 4]>>,
+    /// Shared, canonical type table for this compilation (see `type_arena`).
+    /// A `&'static` so handles allocated by any derived `TyCtxMut` are valid
+    /// here — the fix for the cross-context handle-validity ("aliasing") class.
+    pub(crate) arena: &'static TypeArena,
     pub(crate) regions: IndexVec<RegionVid, Region>,
     pub(crate) resolver: Interner,
     pub(crate) auto_trait_registry: AutoTraitRegistry,
@@ -54,9 +57,22 @@ pub struct TyCtx {
 }
 
 impl TyCtx {
+/// to_mut.
+    /// Produce a fresh `TyCtxMut` that **shares the same canonical type arena**
+    /// as this frozen context. Any type/substitution allocated through the
+    /// returned mutator is valid when read back through this (or any other)
+    /// view of the compilation — this is what makes drop-glue elaboration able
+    /// to synthesize flag-array types without breaking the consumer's handles
+    /// (the P0 canonical-interner fix). Unlike the old deep-`Vec`-clone
+    /// `to_mut`, this copies only the `&'static` arena pointer, so it is cheap
+    /// and cannot desynchronize the tables.
+    pub fn to_mut(&self) -> TyCtxMut {
+        TyCtxMut::from_ty_ctx(self)
+    }
+
 /// ty_kind.
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
-        &self.types[ty.index()]
+        self.arena.ty_kind(ty)
     }
 
     /// Access the language-item registry (builtin `Option`/`Range`/`Drop`/…).
@@ -66,15 +82,12 @@ impl TyCtx {
 
 /// ty_flags.
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
-        self.type_flags[ty.index()]
+        self.arena.ty_flags(ty)
     }
 
 /// substitution_args.
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
-        if sub.is_empty() {
-            return &[];
-        }
-        &self.substitution_data[sub.index() as usize]
+        self.arena.substitution_args(sub)
     }
 
 /// region.
@@ -555,13 +568,13 @@ impl TyCtx {
 
 impl TypeLookup for TyCtx {
     fn ty_kind(&self, ty: Ty) -> &TyKind {
-        &self.types[ty.index()]
+        self.ty_kind(ty)
     }
     fn ty_flags(&self, ty: Ty) -> TypeFlags {
-        self.type_flags[ty.index()]
+        self.ty_flags(ty)
     }
     fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
-        &self.substitution_data[sub.index() as usize]
+        self.substitution_args(sub)
     }
     fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)

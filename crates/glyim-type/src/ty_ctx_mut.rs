@@ -7,6 +7,7 @@ use crate::fn_sig::FnSig;
 use crate::region::*;
 use crate::substitution::*;
 use crate::ty::*;
+use crate::type_arena::TypeArena;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, CrateId, DefId, FnDefId, LocalDefId, OpaqueTyId};
 use glyim_core::interner::{Interner, Name};
@@ -19,9 +20,11 @@ use std::collections::HashSet;
 
 /// TyCtxMut.
 pub struct TyCtxMut {
-    types: Vec<TyKind>,
-    type_flags: Vec<TypeFlags>,
-    substitution_data: IndexSet<SmallVec<[GenericArg; 4]>>,
+    /// Shared, canonical type table for this compilation (see `type_arena`).
+    /// Held as a leaked `&'static` so `Ty`/`Substitution` handles stay valid
+    /// across every `TyCtx`/`TyCtxMut` view of the compilation — the fix for
+    /// the cross-context handle-validity ("aliasing") class of bugs.
+    arena: &'static TypeArena,
     regions: IndexVec<RegionVid, Region>,
     resolver: Interner,
     auto_trait_registry: AutoTraitRegistry,
@@ -91,10 +94,11 @@ pub struct TyCtxMut {
 impl TyCtxMut {
 /// new.
     pub fn new(resolver: Interner) -> Self {
+        // One canonical type arena per compilation, leaked so its handles stay
+        // valid across every TyCtx/TyCtxMut derived from this one.
+        let arena: &'static TypeArena = Box::leak(Box::new(TypeArena::new()));
         let mut ctx = Self {
-            types: Vec::new(),
-            type_flags: Vec::new(),
-            substitution_data: IndexSet::new(),
+            arena,
             regions: IndexVec::new(),
             resolver,
             auto_trait_registry: AutoTraitRegistry::new(),
@@ -194,12 +198,44 @@ impl TyCtxMut {
         ctx
     }
 
+    /// Build a `TyCtxMut` that shares `ctx`'s canonical type arena (so any type
+    /// it allocates is valid in `ctx` and every other view). Carries over the
+    /// maps that drop-glue elaboration consults (`drop_impls`, `adt_defs`,
+    /// `adt_reprs`, interior-mutability). The synthetic-ADT bookkeeping and
+    /// name/param caches are reset to defaults: elaboration does not register
+    /// new ADTs by name, so losing that transient state is safe.
+    pub(crate) fn from_ty_ctx(ctx: &super::ty_ctx::TyCtx) -> Self {
+        Self {
+            arena: ctx.arena,
+            regions: ctx.regions.clone(),
+            resolver: ctx.resolver.clone(),
+            auto_trait_registry: ctx.auto_trait_registry.clone(),
+            deref_registry: ctx.deref_registry.clone(),
+            adt_reprs: ctx.adt_reprs.clone(),
+            opaque_hidden: ctx.opaque_hidden.clone(),
+            interior_mutable_adt_ids: ctx.interior_mutable_adt_ids.clone(),
+            interior_mutability_cache: HashMap::new(),
+            adt_generation: 0,
+            adt_defs: ctx.adt_defs.clone(),
+            adt_by_name: HashMap::new(),
+            trait_defs: ctx.trait_defs.clone(),
+            variant_types: ctx.variant_types.clone(),
+            fn_sigs: ctx.fn_sigs.clone(),
+            const_tys: ctx.const_tys.clone(),
+            closure_sigs: ctx.closure_sigs.clone(),
+            closure_adt_map: ctx.closure_adt_map.clone(),
+            impl_assoc_types: ctx.impl_assoc_types.clone(),
+            param_bounds: HashMap::new(),
+            body_tys: ctx.body_tys.clone(),
+            lang_items: ctx.lang_items.clone(),
+            synthetic_adt_counter: 2_000_000,
+            drop_impls: ctx.drop_impls.clone(),
+        }
+    }
+
     fn alloc_ty_internal(&mut self, kind: TyKind) -> Ty {
         let flags = compute_flags(&kind, self, 0);
-        let idx = self.types.len() as u32;
-        self.types.push(kind);
-        self.type_flags.push(flags);
-        Ty::from_raw(idx)
+        self.arena.alloc_ty(kind, flags)
     }
 
 /// alloc_ty.
@@ -209,7 +245,7 @@ impl TyCtxMut {
 
 /// ty_kind.
     pub fn ty_kind(&self, ty: Ty) -> &TyKind {
-        &self.types[ty.index()]
+        self.arena.ty_kind(ty)
     }
 
     /// Mechanically dereference a type for auto-deref in method resolution.
@@ -218,30 +254,19 @@ impl TyCtxMut {
         self.freeze().deref_ty(ty)
     }
 
-/// ty_kind_mut.
-    pub fn ty_kind_mut(&mut self, ty: Ty) -> &mut TyKind {
-        &mut self.types[ty.index()]
-    }
-
 /// ty_flags.
     pub fn ty_flags(&self, ty: Ty) -> TypeFlags {
-        self.type_flags[ty.index()]
+        self.arena.ty_flags(ty)
     }
 
 /// intern_substitution.
     pub fn intern_substitution(&mut self, args: Vec<GenericArg>) -> Substitution {
-        let small_args: SmallVec<[GenericArg; 4]> = args.into_iter().collect();
-        let len = small_args.len() as u16;
-        let (index, _) = self.substitution_data.insert_full(small_args);
-        Substitution::from_raw(index as u32, len)
+        self.arena.intern_substitution(args)
     }
 
 /// substitution_args.
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
-        if sub.is_empty() {
-            return &[];
-        }
-        &self.substitution_data[sub.index() as usize]
+        self.arena.substitution_args(sub)
     }
 
 /// mk_ty.
@@ -808,9 +833,7 @@ impl TyCtxMut {
 /// freeze.
     pub fn freeze(&self) -> super::ty_ctx::TyCtx {
         super::ty_ctx::TyCtx {
-            types: self.types.clone(),
-            type_flags: self.type_flags.clone(),
-            substitution_data: self.substitution_data.iter().cloned().collect(),
+            arena: self.arena,
             regions: self.regions.clone(),
             resolver: self.resolver.clone(),
             auto_trait_registry: self.auto_trait_registry.clone(),
@@ -835,9 +858,7 @@ impl TyCtxMut {
 /// freeze_owned.
     pub fn freeze_owned(self) -> super::ty_ctx::TyCtx {
         super::ty_ctx::TyCtx {
-            types: self.types,
-            type_flags: self.type_flags,
-            substitution_data: self.substitution_data.into_iter().collect(),
+            arena: self.arena,
             regions: self.regions,
             resolver: self.resolver,
             auto_trait_registry: self.auto_trait_registry,
@@ -1083,13 +1104,13 @@ impl TyCtxMut {
 
 impl TypeLookup for TyCtxMut {
     fn ty_kind(&self, ty: Ty) -> &TyKind {
-        &self.types[ty.index()]
+        self.ty_kind(ty)
     }
     fn ty_flags(&self, ty: Ty) -> TypeFlags {
-        self.type_flags[ty.index()]
+        self.ty_flags(ty)
     }
     fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
-        &self.substitution_data[sub.index() as usize]
+        self.substitution_args(sub)
     }
     fn name_str(&self, name: Name) -> &str {
         self.resolver.resolve(name)

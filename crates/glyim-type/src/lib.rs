@@ -30,6 +30,8 @@ pub mod ty;
 pub mod ty_ctx;
 /// ty_ctx_mut.
 pub mod ty_ctx_mut;
+/// type_arena: per-compilation canonical type interner (P0).
+pub mod type_arena;
 
 pub use lang_items::{LangItem, LangItemError, LangItems};
 
