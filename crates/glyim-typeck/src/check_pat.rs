@@ -200,7 +200,7 @@ impl<'a> FnCtxt<'a> {
                                         let mut m = std::collections::HashMap::new();
                                         for (idx, arg) in args.iter().enumerate() {
                                             if let glyim_type::GenericArg::Ty(t) = arg {
-                                                m.insert(idx as u32, *t);
+                                                m.insert(idx as u32, glyim_type::GenericArg::Ty(*t));
                                             }
                                         }
                                         m
