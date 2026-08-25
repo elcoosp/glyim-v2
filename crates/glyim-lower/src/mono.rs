@@ -254,7 +254,7 @@ impl<'a> MonoCtx<'a> {
                                             matches!(
                                                 arg,
                                                 &glyim_type::GenericArg::Ty(t)
-                                                    if matches!(ty_ctx.ty_kind(t), TyKind::Param(_))
+                                                    if matches!(*ty_ctx.ty_kind(t), TyKind::Param(_))
                                             )
                                         });
                                     if has_param {
