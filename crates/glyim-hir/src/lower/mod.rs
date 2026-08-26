@@ -36,7 +36,10 @@ pub(crate) fn first_ident_text_with_depth(node: &SyntaxNode) -> Option<String> {
     for el in node.children_with_tokens() {
         match el {
             glyim_syntax::SyntaxElement::Token(t)
-                if t.kind() == SyntaxKind::Ident =>
+                if t.kind() == SyntaxKind::Ident
+                    || t.kind() == SyntaxKind::KwSelf
+                    || t.kind() == SyntaxKind::KwSuper
+                    || t.kind() == SyntaxKind::KwCrate =>
             {
                 return Some(t.text().to_string());
             }
