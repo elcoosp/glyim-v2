@@ -154,13 +154,26 @@ impl<'a> FnCtxt<'a> {
                         }
                     }
                     None => {
-                        let label = if let Some(name) = path.as_name() {
-                            format!("unresolved struct `{}`", self.ctx.name_str(name))
+                        // Fallback for HIR-generated enums (e.g. the async
+                        // state-machine `FooState` enum synthesized by
+                        // `desugar_multi_async_fn`) that have no syntax nodes
+                        // and therefore never populate the def-map
+                        // `variant_map` / synthetic variant module. Resolve the
+                        // `Enum::Variant` path directly against the enum ADT's
+                        // variant list by name.
+                        if let Some((adt_id, vidx)) =
+                            crate::tyconv::resolve_enum_variant_path(self.ctx, self.def_map, path)
+                        {
+                            (adt_id, vidx, true)
                         } else {
-                            "unresolved struct path".to_string()
-                        };
-                        self.diagnostics.push(GlyimDiagnostic::type_error(span, label));
-                        return thir::Pattern::err(span);
+                            let label = if let Some(name) = path.as_name() {
+                                format!("unresolved struct `{}`", self.ctx.name_str(name))
+                            } else {
+                                "unresolved struct path".to_string()
+                            };
+                            self.diagnostics.push(GlyimDiagnostic::type_error(span, label));
+                            return thir::Pattern::err(span);
+                        }
                     }
                 };
                 let adt_def = self.ctx.adt_def(adt_id);
