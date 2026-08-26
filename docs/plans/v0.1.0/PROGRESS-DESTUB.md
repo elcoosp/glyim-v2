@@ -16,9 +16,11 @@
   - Step 2b: `mark_used_params` (`polymorphize.rs`) now also tracks the array length const's param index via `mark_used_params_in_const`, so polymorphize won't merge monomorphizations that differ only in array length.
   - Step 2c: `generate_array_drop_glue` (`mono_cache.rs`) now **panics** on a non-monomorphic length instead of silently emitting a bare `Return` (which previously skipped every element destructor). It emits one `Drop` terminator per element in forward order.
   - Tests: `subst_ty_substitutes_array_element`, `subst_ty_substitutes_const_param_array_length` (type unit tests); `drop_glue_for_array_of_droppable_drops_each_element`, `const_generic_array_drop_glue_resolves_length_through_substitution`, `const_generic_array_drop_glue_panics_on_unresolved_length` (pipeline unit tests). All pass. Full 4116 suite green.
+- **Phase 4 (P1) Partial moves / drop-flag population — DONE & GREEN.**
+  - All of Steps 4a–4c were already implemented (prior session): field `Field` arm in `lower_rvalue.rs` uses `is_copy` to choose `Move` vs `Copy` and calls `register_partial_move` for non-Copy fields; `register_drop_flag_init` pre-allocates + initializes a per-local drop-flag to `true` at declaration; `register_partial_move` clears it to `false` at the move site; `elaborate_scope_drops` (`builder.rs`) guards each `Drop` behind a `SwitchInt` on the flag so a partially-moved parent's destructor is skipped (sound: never double-frees; may over-retain sibling fields — noted as v2).
+  - Honest MIR-level regression test added: `droppable_local_gets_guarded_drop_via_drop_flag` asserts a `SwitchInt` drop-flag guard (reading a flag local distinct from the dropped local) is emitted for a `String` binding. The plan's String-counting end-to-end test is infeasible here: the interpreter does not invoke user `Drop` impls (same gap as Phase 2), so runtime drop-counting cannot observe behavior. MIR-level guard verification is the achievable proof.
 
 ## Next phases (from plan, in priority order)
-- Phase 4 (P1) — Partial moves: `lower_rvalue.rs` hardcodes `Operand::Copy` for every field projection; populate `drop_flags`/guarded `SwitchInt` drop.
 - Phase 5 (P1) — Deref autoderef for ADTs: `TyCtx::deref_ty` only handles `Ref`/`RawPtr`.
 - Phase 3 (P1) — Async multi-poll returns `Pending` forever: `glyim-hir/src/lower/lower_async.rs` ~L814-1051.
 - Phase 6 (fix) — `ConstValue::Range` falls back to zero-init in `cv_const`.
