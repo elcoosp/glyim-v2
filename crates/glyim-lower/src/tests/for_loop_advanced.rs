@@ -76,6 +76,7 @@ fn for_loop_lowers_to_loop_with_next_call() {
     // for elem in arr { }
     let elem_pat = Pattern {
         kind: PatternKind::Binding {
+            var_id: thir::LocalVarId::from_raw(0),
             name: b.make_name("elem"),
             mutability: Mutability::Not,
             subpattern: None,
@@ -167,6 +168,7 @@ fn for_loop_simplified_without_iterator_info() {
 
     let elem_pat = Pattern {
         kind: PatternKind::Binding {
+            var_id: thir::LocalVarId::from_raw(0),
             name: b.make_name("elem"),
             mutability: Mutability::Not,
             subpattern: None,
@@ -228,6 +230,7 @@ fn for_loop_break_targets_exit() {
 
     let elem_pat = Pattern {
         kind: PatternKind::Binding {
+            var_id: thir::LocalVarId::from_raw(0),
             name: b.make_name("elem"),
             mutability: Mutability::Not,
             subpattern: None,
