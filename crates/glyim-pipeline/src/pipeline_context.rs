@@ -123,12 +123,31 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
     fn field_index_by_name(
         &self,
         adt_id: AdtId,
-        _variant_idx: u32,
+        variant_idx: u32,
         name: Name,
     ) -> Option<FieldIdx> {
-        self.ty_ctx
-            .field_index(adt_id, name)
-            .map(|idx| FieldIdx::from_raw(idx as u32))
+        let adt = self.ty_ctx.adt_def(adt_id)?;
+        // Structs store their fields at the ADT level; enums store them per
+        // variant. Search both: the struct-level `fields` first (covers
+        // structs and guards against a zero-variant edge case), then the
+        // requested variant's own field list. This is what makes enum variant
+        // pattern destructuring (`match e { V { x, y } => .. }`) resolve field
+        // indices at MIR lowering — previously `TyCtx::field_index` only
+        // consulted the struct-level `fields`, which is empty for enums, so
+        // every variant field binding fell back to `None` and never got a MIR
+        // local (breaking the async state-machine desugar's
+        // `match self.state { Start { f0 } => .. }`, M4/M5).
+        if let Some(idx) = adt.fields.iter_enumerated().find(|(_, f)| f.name == name) {
+            return Some(FieldIdx::from_raw(idx.0.index() as u32));
+        }
+        if let Some(variant) = adt.variants.get(variant_idx as usize) {
+            if let Some(idx) =
+                variant.fields.iter_enumerated().find(|(_, f)| f.name == name)
+            {
+                return Some(FieldIdx::from_raw(idx.0.index() as u32));
+            }
+        }
+        None
     }
 
     fn push_span(&self, span: Span) {
