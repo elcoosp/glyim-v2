@@ -357,10 +357,17 @@ impl Pattern {
     }
 
     #[inline]
-/// binding.
-    pub fn binding(name: Name, mutability: Mutability, ty: Ty, span: Span) -> Self {
+    /// binding.
+    pub fn binding(
+        var_id: LocalVarId,
+        name: Name,
+        mutability: Mutability,
+        ty: Ty,
+        span: Span,
+    ) -> Self {
         Self {
             kind: PatternKind::Binding {
+                var_id,
                 name,
                 mutability,
                 subpattern: None,
@@ -437,14 +444,20 @@ pub enum PatternKind {
 /// Variant.
     Wild,
 /// Variant.
-    Binding {
-/// Struct.
-        name: Name,
-/// Struct.
-        mutability: Mutability,
-/// Struct.
-        subpattern: Option<Box<Pattern>>,
-    },
+Binding {
+    /// The `LocalVarId` assigned by the type-checker. Threaded through so
+    /// the MIR lowering can map `VarRef(local_var_id)` back to the
+    /// `LocalIdx` it allocated for this binding (the lowering allocates
+    /// locals in a different order than the type-checker's `LocalVarId`
+    /// space, so a direct `LocalIdx::from_raw(var_id.to_raw())` is wrong).
+    var_id: LocalVarId,
+    /// Struct.
+    name: Name,
+    /// Struct.
+    mutability: Mutability,
+    /// Struct.
+    subpattern: Option<Box<Pattern>>,
+},
 /// Variant.
     Struct {
 /// Struct.
@@ -492,11 +505,13 @@ impl std::fmt::Debug for PatternKind {
         match self {
             PatternKind::Wild => write!(f, "Wild"),
             PatternKind::Binding {
+                var_id,
                 name,
                 mutability,
                 subpattern,
             } => f
                 .debug_struct("Binding")
+                .field("var_id", var_id)
                 .field("name", name)
                 .field("mutability", mutability)
                 .field("subpattern", subpattern)
@@ -548,10 +563,12 @@ impl Clone for PatternKind {
         match self {
             PatternKind::Wild => PatternKind::Wild,
             PatternKind::Binding {
+                var_id,
                 name,
                 mutability,
                 subpattern,
             } => PatternKind::Binding {
+                var_id: *var_id,
                 name: *name,
                 mutability: *mutability,
                 subpattern: subpattern.clone(),
