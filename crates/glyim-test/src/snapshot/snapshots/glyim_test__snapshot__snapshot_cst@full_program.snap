@@ -1,5 +1,6 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
+assertion_line: 18
 expression: tree
 ---
 SourceFile@0..550
@@ -34,7 +35,10 @@ SourceFile@0..550
       ParamList@51..56
         Param@51..56
           And@51..52 "&"
-          KwSelf@52..56 "self"
+          RefType@52..56
+            PathType@52..56
+              UsePath@52..56
+                KwSelf@52..56 "self"
       RParen@56..57 ")"
       Arrow@57..59 "->"
       RefType@59..63
@@ -50,7 +54,10 @@ SourceFile@0..550
       ParamList@72..77
         Param@72..77
           And@72..73 "&"
-          KwSelf@73..77 "self"
+          RefType@73..77
+            PathType@73..77
+              UsePath@73..77
+                KwSelf@73..77 "self"
       RParen@77..78 ")"
       Arrow@78..80 "->"
       PathType@80..86
@@ -146,7 +153,10 @@ SourceFile@0..550
       ParamList@212..217
         Param@212..217
           And@212..213 "&"
-          KwSelf@213..217 "self"
+          RefType@213..217
+            PathType@213..217
+              UsePath@213..217
+                KwSelf@213..217 "self"
       RParen@217..218 ")"
       Arrow@218..220 "->"
       RefType@220..224
@@ -173,7 +183,10 @@ SourceFile@0..550
       ParamList@244..249
         Param@244..249
           And@244..245 "&"
-          KwSelf@245..249 "self"
+          RefType@245..249
+            PathType@245..249
+              UsePath@245..249
+                KwSelf@245..249 "self"
       RParen@249..250 ")"
       Arrow@250..252 "->"
       PathType@252..258
