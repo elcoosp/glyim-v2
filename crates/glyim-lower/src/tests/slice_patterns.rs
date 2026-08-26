@@ -21,6 +21,7 @@ fn make_slice_pattern_body(ctx_mut: &mut TyCtxMut) -> Body {
     let prefix = vec![
         Pattern {
             kind: PatternKind::Binding {
+                var_id: thir::LocalVarId::from_raw(0),
                 name: ctx_mut.resolver().intern("a"),
                 mutability: Mutability::Not,
                 subpattern: None,
@@ -30,6 +31,7 @@ fn make_slice_pattern_body(ctx_mut: &mut TyCtxMut) -> Body {
         },
         Pattern {
             kind: PatternKind::Binding {
+                var_id: thir::LocalVarId::from_raw(0),
                 name: ctx_mut.resolver().intern("b"),
                 mutability: Mutability::Not,
                 subpattern: None,
@@ -39,6 +41,7 @@ fn make_slice_pattern_body(ctx_mut: &mut TyCtxMut) -> Body {
         },
         Pattern {
             kind: PatternKind::Binding {
+                var_id: thir::LocalVarId::from_raw(0),
                 name: ctx_mut.resolver().intern("c"),
                 mutability: Mutability::Not,
                 subpattern: None,
