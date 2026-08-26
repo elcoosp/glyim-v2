@@ -174,6 +174,46 @@ impl Pipeline {
         let resolver = db.interner().clone();
         let mut ty_ctx_mut = glyim_type::TyCtxMut::new(resolver);
         let mut trait_ctx = glyim_solve::TraitContext::new();
+        // Register every ADT's name -> id up front so the impl-header
+        // resolution below (which needs each impl's `Self` type to resolve,
+        // e.g. `impl Future for twoFuture` / `impl Future for depFuture`) can
+        // find forward-referenced ADTs. The async state-machine desugar emits
+        // a `FooState` enum whose variant field types reference *other*
+        // generated ADTs, and those may be registered later in item order;
+        // without this, their `impl Future` is invisible to the solver and
+        // downstream `.poll()` calls report "Future not implemented".
+        for (_id, item) in hir.items.iter_enumerated() {
+            if matches!(
+                &item.kind,
+                glyim_hir::ItemKind::Enum(_) | glyim_hir::ItemKind::Struct(_)
+            ) {
+                // Allocate a stable id for this ADT: prefer a def-map-derived
+                // id when the item came from source, otherwise mint a fresh
+                // synthetic id (mirroring `tyconv::adt_id_for_item`). The
+                // forward-reference correctness comes from registering the
+                // name->id mapping NOW, before impl-header resolution below.
+                let adt_id = def_map
+                    .modules
+                    .get(def_map.root)
+                    .and_then(|m| m.scope.types.get(&item.name))
+                    .map(|(id, _, _)| glyim_core::def_id::AdtId::from_raw(id.to_raw()))
+                    .or_else(|| ty_ctx_mut.adt_id_by_name(item.name))
+                    .unwrap_or_else(|| ty_ctx_mut.next_synthetic_adt_id());
+                ty_ctx_mut.register_adt_with_name(
+                    item.name,
+                    adt_id,
+                    glyim_type::AdtDef {
+                        kind: match &item.kind {
+                            glyim_hir::ItemKind::Enum(_) => glyim_type::AdtKind::Enum,
+                            _ => glyim_type::AdtKind::Struct,
+                        },
+                        fields: glyim_core::arena::IndexVec::new(),
+                        variants: Vec::new(),
+                        generic_params: Vec::new(),
+                    },
+                );
+            }
+        }
         {
             let mut infer = InferenceTable::new();
             let mut impl_diags = Vec::new();
