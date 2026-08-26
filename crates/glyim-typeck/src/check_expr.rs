@@ -75,8 +75,12 @@ impl<'a> FnCtxt<'a> {
             Expr::Block { stmts, tail } => {
                 let mut thir_stmts = Vec::new();
                 for &stmt_id in stmts {
-                    let (stmt_expr, _) = self.check_expr(stmt_id);
-                    thir_stmts.push(thir::Stmt::Expr { expr: stmt_expr });
+                    // Statements are *not* expressions: routing them through
+                    // `check_expr` hits the `Expr::Let`/`Expr::Assign` arms
+                    // that return `thir::Expr::err`, corrupting any statement
+                    // nested inside a block (e.g. an `if` body). Use the shared
+                    // statement checker that produces proper `thir::Stmt`s.
+                    thir_stmts.push(self.check_stmt_to_thir(stmt_id, false));
                 }
                 if let Some(tail_id) = tail {
                     let (tail_expr, tail_ty) = self.check_expr(*tail_id);
@@ -365,11 +369,16 @@ impl<'a> FnCtxt<'a> {
                 // For now, we use a fresh inference variable to represent the item type;
                 // the actual resolution will be done by the trait solver when lowering.
                 let item_ty = self.fresh_infer_ty();
+                // Phase 1 (GLYIM_DESTUB_PLAN): the loop-pattern bindings (`x` in
+                // `for x in ..`) must remain in scope while the body is checked.
+                // The previous code opened+closed a scope around `check_pattern`
+                // and then opened a *separate* scope for the body, so `x` was
+                // already out of scope by the time the body resolved it — every
+                // for-loop body raised `unresolved name x` and fell back to the
+                // single-iteration path. Bind the pattern and check the body in
+                // the *same* scope.
                 self.env.enter_scope();
                 let pat_thir = self.check_pattern(*pat, item_ty);
-                self.env.leave_scope();
-
-                self.env.enter_scope();
                 let (body_expr, _) = self.check_expr(*body);
                 self.env.leave_scope();
 
@@ -743,7 +752,17 @@ impl<'a> FnCtxt<'a> {
             Expr::Field { receiver, field } => {
                 let (recv_expr, recv_ty) = self.check_expr(*receiver);
 
-                let field_ty = match self.ctx.ty_kind(recv_ty) {
+                // Field access auto-derefs its receiver, mirroring Rust:
+                // `(&mut Counter).field` and `(&Counter).field` both resolve to
+                // the underlying ADT/tuple's field. Peel reference layers until
+                // we reach the pointee type before looking up the field.
+                let mut adj_recv_ty = recv_ty;
+                while let TyKind::Ref(_, inner, _) = self.ctx.ty_kind(adj_recv_ty) {
+                    adj_recv_ty = *inner;
+                }
+
+                let field_ty = {
+                    match self.ctx.ty_kind(adj_recv_ty) {
                     TyKind::Adt(adt_id, substs) => {
                         self.lookup_field_ty_with_substs(*adt_id, *field, span, *substs)
                     }
@@ -783,6 +802,7 @@ impl<'a> FnCtxt<'a> {
                         ));
                         Ty::ERROR
                     }
+                }
                 };
 
                 (
@@ -1072,7 +1092,7 @@ impl<'a> FnCtxt<'a> {
                         name,
                         ty,
                         span,
-                        pat: thir::Pattern::binding(name, Mutability::Not, ty, span),
+                        pat: thir::Pattern::binding(local, name, Mutability::Not, ty, span),
                         local,
                     });
                 }
