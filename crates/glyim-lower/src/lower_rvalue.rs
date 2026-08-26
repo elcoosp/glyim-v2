@@ -154,7 +154,7 @@ impl<'a> MirBuilder<'a> {
                 )
             }
             thir::ExprKind::VarRef(var_id) => {
-                let local = LocalIdx::from_raw(var_id.to_raw());
+                let local = self.local_for_var(*var_id);
                 glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(glyim_mir::Place::new(local)))
             }
             thir::ExprKind::FnRef(_def_id) => {
@@ -619,6 +619,25 @@ impl<'a> MirBuilder<'a> {
                 ty: _field_ty,
             } => {
                 let base_place = self.lower_expr_to_place(receiver);
+                // Auto-deref the receiver for field access (mirrors Rust):
+                // `(&mut Counter).field` needs a `Deref` projection before the
+                // `Field` projection can be applied to the pointee.
+                //
+                // Decision is based on the *MIR base-local's declared type*
+                // (`locals[base.local].ty`), NOT the THIR `receiver.ty`. THIR
+                // typeck has already stripped the `&mut` from a method `self`,
+                // so `receiver.ty` would report `Counter` and skip the Deref —
+                // but the MIR local still holds `&mut Counter`, and the
+                // interpreter requires a `Deref` step to reach the pointee.
+                let base_ty = self.locals[base_place.local].ty;
+                let base_place = if matches!(
+                    self.ctx.ty_ctx().ty_kind(base_ty),
+                    TyKind::Ref(..)
+                ) {
+                    self.place_with_projection(base_place, ProjectionElem::Deref)
+                } else {
+                    base_place
+                };
                 let field_idx = self.resolve_field_index(receiver.ty, *field, expr.span);
                 let field_idx = match field_idx {
                     Some(idx) => idx,
@@ -997,6 +1016,20 @@ impl<'a> MirBuilder<'a> {
 
     // ---- Expression → Operand lowering ----
 /// lower_expr_to_operand.
+    /// Resolve a THIR `VarRef(LocalVarId)` to the MIR `LocalIdx` allocated
+    /// for that binding. The type-checker's `LocalVarId` space is NOT aligned
+    /// with the MIR local-index space (temporaries interleave user-variable
+    /// allocations), so we consult `local_var_map` (populated as bindings are
+    /// lowered). The direct `LocalIdx::from_raw(var_id.to_raw())` fallback
+    /// preserves compatibility with hand-built THIR unit tests that allocate
+    /// locals 1:1 with `LocalVarId`.
+    fn local_for_var(&self, var_id: thir::LocalVarId) -> LocalIdx {
+        if let Some(&local) = self.local_var_map.get(&var_id) {
+            local
+        } else {
+            LocalIdx::from_raw(var_id.to_raw())
+        }
+    }
     pub fn lower_expr_to_operand(&mut self, expr: &thir::Expr) -> glyim_mir::Operand {
         match &expr.kind {
             thir::ExprKind::Literal(_) | thir::ExprKind::FnRef(_) => {
@@ -1007,7 +1040,7 @@ impl<'a> MirBuilder<'a> {
                 }
             }
             thir::ExprKind::VarRef(var_id) => {
-                let local = LocalIdx::from_raw(var_id.to_raw());
+                let local = self.local_for_var(*var_id);
                 glyim_mir::Operand::Copy(glyim_mir::Place::new(local))
             }
             _ => {
@@ -1029,7 +1062,7 @@ impl<'a> MirBuilder<'a> {
     pub fn lower_expr_to_place(&mut self, expr: &thir::Expr) -> glyim_mir::Place {
         match &expr.kind {
             thir::ExprKind::VarRef(var_id) => {
-                let local = LocalIdx::from_raw(var_id.to_raw());
+                let local = self.local_for_var(*var_id);
                 glyim_mir::Place::new(local)
             }
             thir::ExprKind::Field {
@@ -1038,6 +1071,25 @@ impl<'a> MirBuilder<'a> {
                 ty: _field_ty,
             } => {
                 let base_place = self.lower_expr_to_place(receiver);
+                // Auto-deref the receiver for field access (mirrors Rust):
+                // `(&mut Counter).field` needs a `Deref` projection before the
+                // `Field` projection can be applied to the pointee.
+                //
+                // Decision is based on the *MIR base-local's declared type*
+                // (`locals[base.local].ty`), NOT the THIR `receiver.ty`. THIR
+                // typeck has already stripped the `&mut` from a method `self`,
+                // so `receiver.ty` would report `Counter` and skip the Deref —
+                // but the MIR local still holds `&mut Counter`, and the
+                // interpreter requires a `Deref` step to reach the pointee.
+                let base_ty = self.locals[base_place.local].ty;
+                let base_place = if matches!(
+                    self.ctx.ty_ctx().ty_kind(base_ty),
+                    TyKind::Ref(..)
+                ) {
+                    self.place_with_projection(base_place, ProjectionElem::Deref)
+                } else {
+                    base_place
+                };
                 let field_idx = self.resolve_field_index(receiver.ty, *field, expr.span);
                 let field_idx = match field_idx {
                     Some(idx) => idx,
@@ -1095,11 +1147,13 @@ impl<'a> MirBuilder<'a> {
             thir::PatternKind::Range { .. } => {}
             thir::PatternKind::Binding {
                 name,
+                var_id,
                 mutability,
                 subpattern,
             } => {
                 let local = self.alloc_local(pat.ty, *mutability, span);
                 self.var_map.insert(*name, local);
+                self.local_var_map.insert(*var_id, local);
                 self.push_stmt(glyim_mir::StatementKind::StorageLive(local), span);
                 // Phase 4 (GLYIM_DESTUB_PLAN): pre-allocate + initialize the
                 // drop-flag for a droppable `let`-bound local at its
@@ -1548,7 +1602,14 @@ impl<'a> MirBuilder<'a> {
         field_name: glyim_core::interner::Name,
         _span: glyim_span::Span,
     ) -> Option<FieldIdx> {
-        match self.ctx.ty_ctx().ty_kind(receiver_ty) {
+        // Field access auto-derefs its receiver (mirrors Rust). Peel reference
+        // layers so `(&mut Counter).field` / `(&Counter).field` resolve to the
+        // underlying ADT/tuple's field index.
+        let mut adj_ty = receiver_ty;
+        while let TyKind::Ref(_, inner, _) = self.ctx.ty_ctx().ty_kind(adj_ty) {
+            adj_ty = *inner;
+        }
+        match self.ctx.ty_ctx().ty_kind(adj_ty) {
             TyKind::Adt(adt_id, _substs) => self.ctx.field_index_by_name(*adt_id, 0, field_name),
             TyKind::Tuple(_substs) => {
                 let name_str = self.ctx.ty_ctx().name_str(field_name);
