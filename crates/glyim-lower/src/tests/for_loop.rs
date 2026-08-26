@@ -23,6 +23,7 @@ fn create_for_loop_body(
     let pat = Pattern {
         ty: elem_ty,
         kind: PatternKind::Binding {
+            var_id: thir::LocalVarId::from_raw(0),
             name: name("x"),
             mutability: Mutability::Not,
             subpattern: None,
@@ -57,6 +58,7 @@ fn create_for_loop_body(
             pat: Pattern {
                 ty: iter_ty,
                 kind: PatternKind::Binding {
+                    var_id: thir::LocalVarId::from_raw(0),
                     name: name("iter_var"),
                     mutability: Mutability::Not,
                     subpattern: None,
