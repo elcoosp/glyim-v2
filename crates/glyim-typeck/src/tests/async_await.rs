@@ -130,19 +130,16 @@ fn nested_async_single_await_compiles() {
     assert_no_errors(&output.diagnostics);
 }
 
-/// M4 (best-effort, 2026-08-24): multi-await (`suspend_count >= 2`) sequential
-/// async fns are NOT yet a compiling, verified state machine. A real
-/// `desugar_multi_async_fn` HIR codegen exists (retained as `#[allow(dead_code)]`
-/// scaffold in `glyim-hir/src/lower/lower_async.rs`); it emits a correct
-/// `Start`/`S0`/`..`/`Done` `FooState` machine that the compiler's exhaustiveness
-/// check recognizes — but glyim's type-checker cannot currently resolve the
-/// enum-variant state-machine shape, so per the plan's safety rule the
-/// `async-v2` diagnostic (error 61) is emitted instead of a silently-broken
-/// state machine. Runtime resumption (M5) is also host-gated (Linux executor,
-/// macOS host). This test asserts the *honest* behavior: a clear diagnostic,
-/// not a panic/ICE.
+/// Multi-`.await` (>= 2 suspends, none inside a loop) now compiles cleanly
+/// through the REAL `desugar_multi_async_fn` HIR state-machine transform:
+/// `two(a)` desugars into a `Start`/`S0`/`..`/`Done` enum plus a `poll` body
+/// that drives each suspended future and stores live locals + the in-flight
+/// future across `Poll::Pending`, so the future genuinely suspends and resumes.
+/// This is the M4 deliverable of GLYIM_DESTUB_PLAN Phase 3 — the shape that
+/// previously fell through to the `async-v2` (error 61) diagnostic now type-
+/// checks and lowers with ZERO diagnostics.
 #[test]
-fn multi_await_emits_async_v2_diagnostic() {
+fn multi_await_compiles_cleanly() {
     let src = r#"
         enum Poll<T> { Ready(T), Pending }
         trait Future {
@@ -165,12 +162,47 @@ fn multi_await_emits_async_v2_diagnostic() {
         }
     "#;
     let output = compile(src);
-    // Must produce exactly the async-v2 (error 61) diagnostic, not an ICE/panic.
+    assert_no_errors(&output.diagnostics);
+}
+
+/// The `async-v2` (error 61) diagnostic is the plan's paramount safety net: it
+/// must still fire when the desugar CANNOT build a real state machine — i.e.
+/// when a suspended future's concrete type is NOT statically nameable at the
+/// HIR stage (it is not a direct call to a desugared `async fn`). Such shapes
+/// must be reported as a clear compile ERROR, never silently miscompiled into
+/// an infinite-`Pending` hang. This guards against regressing to the forbidden
+/// silent miscompile.
+#[test]
+fn multi_await_non_nameable_future_emits_async_v2() {
+    let src = r#"
+        enum Poll<T> { Ready(T), Pending }
+        trait Future {
+            type Output;
+            fn poll(&mut self) -> Poll<Self::Output>;
+        }
+        fn block_on<F: Future>(mut f: F) -> F::Output {
+            loop {
+                match f.poll() {
+                    Poll::Ready(v) => return v,
+                    Poll::Pending => { }
+                }
+            }
+        }
+        async fn dep(x: i32) -> i32 { x }
+        // `f` is bound by name then awaited — the desugar cannot name its
+        // concrete future type from a path, so it must emit error 61.
+        async fn two(a: i32) -> i32 { let f = dep(a); let x = f.await; let y = dep(x).await; x + y }
+        fn main() -> i32 {
+            let f = two(5);
+            block_on(f)
+        }
+    "#;
+    let output = compile(src);
     assert!(
         output.diagnostics.iter().any(|d| {
             matches!(&d.code, ErrorCode { category: ErrorCategory::Type, number: 61 })
         }),
-        "multi-await should emit the async-v2 diagnostic, got: {:?}",
+        "non-nameable multi-await future must emit the async-v2 diagnostic (error 61), got: {:?}",
         output.diagnostics
     );
 }
