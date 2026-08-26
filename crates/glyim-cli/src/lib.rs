@@ -413,7 +413,6 @@ fn compile_proc_macro_dep(
     dep: &std::path::Path,
     host_triple: &str,
 ) -> Result<std::path::PathBuf, String> {
-    use crate::linker;
     let out_dir = tempfile::tempdir().map_err(|e| format!("failed to make temp dir: {e}"))?;
     let cdylib_path = out_dir.path().join("proc_macro_dep");
     let cdylib_path = if cfg!(target_os = "macos") {
