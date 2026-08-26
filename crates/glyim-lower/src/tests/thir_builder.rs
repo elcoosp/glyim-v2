@@ -60,6 +60,7 @@ impl ThirBuilder {
         self.var_names.insert(n, var_id);
         let pat = self.pat(
             thir::PatternKind::Binding {
+                var_id: thir::LocalVarId::from_raw(0),
                 name: n,
                 mutability: Mutability::Not,
                 subpattern: None,
