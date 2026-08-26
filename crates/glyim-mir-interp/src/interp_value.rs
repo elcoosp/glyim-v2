@@ -12,7 +12,7 @@ pub enum InterpValue {
 #[allow(missing_docs)]
     Aggregate(Vec<InterpValue>),
 #[allow(missing_docs)]
-    Ref(usize),
+    Ref { frame: usize, local: usize },
 #[allow(missing_docs)]
     Float(f64),
 #[allow(missing_docs)]
@@ -31,7 +31,9 @@ impl PartialEq for InterpValue {
             (InterpValue::Bool(a), InterpValue::Bool(b)) => a == b,
             (InterpValue::Unit, InterpValue::Unit) => true,
             (InterpValue::Aggregate(a), InterpValue::Aggregate(b)) => a == b,
-            (InterpValue::Ref(a), InterpValue::Ref(b)) => a == b,
+            (InterpValue::Ref { frame: a, local: b }, InterpValue::Ref { frame: c, local: d }) => {
+                a == c && b == d
+            }
             (InterpValue::Float(a), InterpValue::Float(b)) => a.to_bits() == b.to_bits(),
             (InterpValue::String(a), InterpValue::String(b)) => a == b,
             (InterpValue::Fn(a), InterpValue::Fn(b)) => a == b,
