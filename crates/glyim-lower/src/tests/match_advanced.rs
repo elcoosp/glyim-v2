@@ -213,6 +213,7 @@ fn match_enum_uses_discriminant_and_switch() {
                     field: b.make_name("0"),
                     pattern: thir::Pattern {
                         kind: PatternKind::Binding {
+                            var_id: thir::LocalVarId::from_raw(0),
                             name: x_name,
                             mutability: glyim_core::primitives::Mutability::Not,
                             subpattern: None,
