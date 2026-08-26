@@ -110,6 +110,66 @@ fn return_place_is_never_dropped() {
     assert_mir(&ctx, &result.body).block_terminator(BasicBlockIdx::from_raw(0), "Return");
 }
 
+/// §1.8 / Phase 4 (GLYIM_DESTUB_PLAN): a non-`Copy` local's scope-exit `Drop`
+/// must be *guarded* by a `SwitchInt` on its drop-flag (allocated for every
+/// droppable `let` via `register_drop_flag_init`), so a later partial move can
+/// suppress the parent's destructor. This locks that the guard wiring in
+/// `elaborate_scope_drops` is live (pre-Phase-4 it emitted an unconditional
+/// `Drop`, which would double-free a partially-moved parent).
+#[test]
+fn droppable_local_gets_guarded_drop_via_drop_flag() {
+    let mut ctx_mut = test_ty_ctx();
+    let s_ty = string_ty(&mut ctx_mut);
+    let interner = ctx_mut.resolver().clone();
+    let ctx = ctx_mut.freeze();
+    let mock = TestLowerCtx::new(&ctx);
+
+    let mut b = ThirBuilder::new(s_ty, interner);
+    let mut stmts = Vec::new();
+    b.add_let_binding(
+        "s",
+        s_ty,
+        Some(b.expr(ExprKind::Literal(Literal::String(b.make_name("hi"))), s_ty)),
+        &mut stmts,
+    );
+    let body = b.into_body(stmts, vec![]);
+    let result = lower_body(&mock, &body);
+
+    // Exactly one Drop must be *guarded* by a SwitchInt on a dedicated drop-flag
+    // local (distinct from the dropped local), proving the Phase 4 guard wiring
+    // in `elaborate_scope_drops` is live. (The harness may also allocate
+    // need-drop temporaries — e.g. the string literal — so we assert the guard
+    // exists rather than an exact drop count.)
+    let mut switch_count = 0;
+    let mut guarded_drop = false;
+    for bb in result.body.basic_blocks.iter() {
+        if let TerminatorKind::SwitchInt { discr, .. } = &bb.terminator.kind {
+            switch_count += 1;
+            // The discriminant must be a Copy of a *flag* local, distinct from
+            // any local that is actually dropped (a real drop-flag guards a Drop
+            // of a *different* local, not the flag itself).
+            if let glyim_mir::Operand::Copy(glyim_mir::Place { local, projection }) = discr {
+                assert!(projection.is_empty(), "flag read must be direct");
+                let flag = *local;
+                let guards_a_drop = result.body.basic_blocks.iter().any(|other| {
+                    if let TerminatorKind::Drop { place, .. } = &other.terminator.kind {
+                        place.local != flag
+                    } else {
+                        false
+                    }
+                });
+                if guards_a_drop {
+                    guarded_drop = true;
+                }
+            } else {
+                panic!("drop-flag guard discriminant must be a Copy of a place");
+            }
+        }
+    }
+    assert_eq!(switch_count, 1, "expected exactly one drop-flag guard SwitchInt");
+    assert!(guarded_drop, "expected the SwitchInt to guard a Drop of a different local (real drop-flag)");
+}
+
 /// §1.8 regression: a function with no moves must keep producing an
 /// unconditional `Drop` for its non-`Copy` locals. The `drop_flags` map is
 /// empty until move-semantics land, so the §1.8 guard degrades to the
