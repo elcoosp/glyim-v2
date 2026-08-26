@@ -34,6 +34,7 @@ fn struct_pattern_binds_fields() {
     // let Struct { x, y } = s;
     let x_pat = thir::Pattern {
         kind: PatternKind::Binding {
+            var_id: thir::LocalVarId::from_raw(0),
             name: field_x,
             mutability: glyim_core::primitives::Mutability::Not,
             subpattern: None,
@@ -43,6 +44,7 @@ fn struct_pattern_binds_fields() {
     };
     let y_pat = thir::Pattern {
         kind: PatternKind::Binding {
+            var_id: thir::LocalVarId::from_raw(0),
             name: field_y,
             mutability: glyim_core::primitives::Mutability::Not,
             subpattern: None,
