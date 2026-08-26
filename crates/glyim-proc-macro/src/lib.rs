@@ -460,4 +460,82 @@ mod tests {
         a.merge(&c);
         assert_eq!(a.len(), 2, "duplicate name must not create a second entry");
     }
+
+    /// End-to-end two-stage proc-macro round trip (Phase 8 / plan §9.2).
+    ///
+    /// This is the one path the prior sessions never exercised: actually
+    /// compiling a real proc-macro crate to a host cdylib and loading it via
+    /// `load_cdylib`, then expanding a macro through the loaded `Registry`.
+    /// The fixture (`tests/fixtures/pm_doubler/src/lib.rs`) exports
+    /// `glyim_proc_macro_main` and registers a `reverse` macro that reverses
+    /// the input token stream. We compile it with the host `rustc`, load the
+    /// produced `.dylib`/`.so`, and assert the macro both registers and
+    /// expands correctly through the C-ABI boundary.
+    #[test]
+    fn load_cdylib_round_trip_compiles_and_expands() {
+        // Locate the fixture source relative to this crate root.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let fixture = std::path::Path::new(manifest_dir)
+            .join("tests/fixtures/pm_doubler/src/lib.rs");
+        assert!(fixture.exists(), "fixture missing: {}", fixture.display());
+
+        let out_dir = std::env::temp_dir().join(format!(
+            "glyim_pm_rt_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&out_dir).expect("create temp dir");
+        // The temp cdylib lives under std::env::temp_dir() and is left for the
+        // OS to reap; it is uniquely named per-PID so repeated runs don't clash.
+        let ext = if cfg!(target_os = "macos") {
+            "dylib"
+        } else {
+            "so"
+        };
+        let cdylib = out_dir.join(format!("libpm_doubler.{ext}"));
+
+        // Compile the fixture for the HOST triple to a cdylib.
+        let status = std::process::Command::new("rustc")
+            .args([
+                "--edition",
+                "2021",
+                "--crate-type",
+                "cdylib",
+                "-O",
+            ])
+            .arg(&fixture)
+            .arg("-o")
+            .arg(&cdylib)
+            .status()
+            .expect("failed to spawn rustc");
+        assert!(status.success(), "rustc failed to compile the proc-macro fixture");
+        assert!(cdylib.exists(), "compiled cdylib missing: {}", cdylib.display());
+
+        // Load it through the real two-stage loader.
+        let loaded = load_cdylib(cdylib.to_str().unwrap())
+            .expect("load_cdylib must succeed on the compiled fixture");
+        assert!(
+            loaded.registry.contains("reverse"),
+            "loaded registry must contain the `reverse` macro"
+        );
+        assert_eq!(loaded.registry.len(), 1, "exactly one macro expected");
+
+        // Expand: `reverse` of `[KwFn "fn", Ident "main"]` must yield
+        // `[Ident "main", KwFn "fn"]`.
+        let input: Vec<(SyntaxKind, String)> = vec![
+            (SyntaxKind::KwFn, "fn".into()),
+            (SyntaxKind::Ident, "main".into()),
+        ];
+        let out = loaded
+            .registry
+            .expand("reverse", &input)
+            .expect("reverse must be registered");
+        assert_eq!(
+            out,
+            vec![
+                (SyntaxKind::Ident, "main".into()),
+                (SyntaxKind::KwFn, "fn".into()),
+            ],
+            "reverse must reverse the token stream across the C-ABI boundary"
+        );
+    }
 }
