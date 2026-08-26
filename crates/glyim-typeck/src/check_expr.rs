@@ -525,7 +525,6 @@ impl<'a> FnCtxt<'a> {
                 };
 
                 let (func_expr, func_ty) = self.check_expr(*func);
-
                 let mut arg_exprs = Vec::with_capacity(args.len());
                 for &arg_id in args {
                     arg_exprs.push(self.check_expr(arg_id).0);
@@ -713,6 +712,29 @@ impl<'a> FnCtxt<'a> {
                 func_expr.ty = callee_ty;
                 self.expr_cache.insert(*func, (func_expr.clone(), callee_ty));
 
+                // DEBUG: print callee + ret_ty for EVERY call
+                {
+                    let cn = if let Expr::Path(p) = &self.body.exprs[*func] {
+                        p.as_name().map(|n| self.ctx.name_str(n).to_string()).or_else(|| Some(format!("{:?}", p)))
+                    } else { None };
+                    let raw_name = if let Expr::Path(p) = &self.body.exprs[*func] {
+                        Some(p.segments.iter().map(|s| format!("{:?}=`{}`", s.name, self.ctx.name_str(s.name))).collect::<Vec<_>>().join("::"))
+                    } else { None };
+                    let dbg_def = if is_fn_def { Some(def_id) } else { None };
+                    let dbg_sigout = if is_fn_def { self.ctx.fn_sig(def_id).map(|s| PrintTy::new(s.output, &*self.ctx)) } else { None };
+                    let sigout_str = match dbg_sigout {
+                        Some(p) => format!("{}", p),
+                        None => "<none>".to_string(),
+                    };
+                }
+
+                if matches!(self.ctx.ty_kind(ret_ty), TyKind::Error) {
+                    let callee_name = if let Expr::Path(p) = &self.body.exprs[*func] {
+                        p.as_name().map(|n| self.ctx.name_str(n))
+                    } else {
+                        None
+                    };
+                }
                 (
                     thir::Expr {
                         kind: thir::ExprKind::Call {
@@ -972,7 +994,93 @@ impl<'a> FnCtxt<'a> {
                 fields,
                 spread,
             } => {
-                // Resolve the struct type from the path
+                // A two-segment `Enum::Variant` path is a *variant constructor*
+                // (e.g. `twoFutureState::S0 { f0, fut0 }`), not a struct type.
+                // Resolve it directly against the enum ADT's variant list by
+                // name. This also covers HIR-generated enums (the async
+                // state-machine `FooState` enum) that have no syntax nodes and
+                // therefore never populate the def-map synthetic variant
+                // module.
+                if let Some((adt_id, variant_idx)) =
+                    crate::tyconv::resolve_enum_variant_path(self.ctx, self.def_map, path)
+                {
+                    // Collect the variant's field infos into owned values FIRST
+                    // so the immutable `self.ctx.adt_def` borrow is released
+                    // before we mutably borrow `self.ctx` below.
+                    let field_infos: Vec<(Name, Ty)> = match self.ctx.adt_def(adt_id) {
+                        Some(def) => match def.variants.get(variant_idx as usize) {
+                            Some(v) => v.fields.iter().map(|f| (f.name, f.ty)).collect(),
+                            None => {
+                                self.diagnostics.push(GlyimDiagnostic::type_error(
+                                    span,
+                                    "unknown variant in variant constructor",
+                                ));
+                                return (thir::Expr::err(span), Ty::ERROR);
+                            }
+                        },
+                        None => {
+                            self.diagnostics.push(GlyimDiagnostic::type_error(
+                                span,
+                                "unknown ADT in variant constructor",
+                            ));
+                            return (thir::Expr::err(span), Ty::ERROR);
+                        }
+                    };
+
+                    let substs = self.ctx.intern_substitution(vec![]);
+                    let struct_ty = self.ctx.mk_ty(TyKind::Adt(adt_id, substs));
+
+                    let mut provided_fields = std::collections::HashSet::new();
+                    let mut thir_fields = Vec::with_capacity(fields.len());
+
+                    for &(field_name, field_expr_id) in fields {
+                        provided_fields.insert(field_name);
+                        let expected_field_ty =
+                            if let Some((_, ty)) = field_infos.iter().find(|(n, _)| *n == field_name) {
+                                self.substitute_type(*ty, substs, span)
+                            } else {
+                                self.diagnostics.push(GlyimDiagnostic::type_error(
+                                    span,
+                                    format!("no field `{}` on variant", self.ctx.name_str(field_name)),
+                                ));
+                                Ty::ERROR
+                            };
+                        let (field_expr, field_ty) = self.check_expr(field_expr_id);
+                        if expected_field_ty != Ty::ERROR && field_ty != Ty::ERROR {
+                            self.unify(field_ty, expected_field_ty, span);
+                        }
+                        thir_fields.push((field_name, field_expr));
+                    }
+
+                    if spread.is_none() {
+                        for (name, _ty) in &field_infos {
+                            if !provided_fields.contains(name) {
+                                self.diagnostics.push(GlyimDiagnostic::type_error(
+                                    span,
+                                    format!(
+                                        "missing field `{}` in variant constructor",
+                                        self.ctx.name_str(*name)
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+
+                    let thir_expr = thir::Expr {
+                        kind: thir::ExprKind::Struct {
+                            adt_id,
+                            fields: thir_fields,
+                            spread: None,
+                            variant_idx,
+                        },
+                        ty: struct_ty,
+                        span,
+                    };
+                    return (thir_expr, struct_ty);
+                }
+
+                // Otherwise resolve the struct type from the path (single
+                // segment, or `Enum` without a variant).
                 let struct_ty = crate::tyconv::resolve_path_type(
                     self.ctx,
                     self.infer,
@@ -1508,6 +1616,7 @@ impl<'a> FnCtxt<'a> {
             }
 
             if candidates.is_empty() {
+                eprintln!("[DBG resolve_method_call] no method `{}` for recv_ty={:?} (PrintTy={})", self.ctx.name_str(method_name), recv_ty, PrintTy::new(recv_ty, &*self.ctx));
                 self.diagnostics.push(GlyimDiagnostic::type_error(
                     span,
                     format!(

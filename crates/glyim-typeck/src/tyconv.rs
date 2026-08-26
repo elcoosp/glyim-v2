@@ -802,6 +802,45 @@ pub(crate) fn resolve_path_to_adt_id(
     resolve_path_to_local_def_id(ctx, def_map, path).map(|l| AdtId::from_raw(l.to_raw()))
 }
 
+/// Resolve a two-segment `Enum::Variant` path to `(AdtId, VariantIdx)` by
+/// looking the variant up in the enum ADT's variant list by name. This is the
+/// variant-constructor / variant-pattern resolution path that works for BOTH
+/// syntax-built enums (whose variants live in the def-map `variant_map` /
+/// synthetic module) AND HIR-generated enums (e.g. the async state-machine
+/// `FooState` enum synthesized by `desugar_multi_async_fn`), which have no
+/// syntax nodes and therefore never populate the def-map `variant_map`.
+///
+/// Returns `None` if the path is not a two-segment enum-variant path (so the
+/// caller can fall through to its existing resolution logic).
+pub(crate) fn resolve_enum_variant_path(
+    ctx: &mut TyCtxMut,
+    def_map: &glyim_def_map::CrateDefMap,
+    path: &glyim_hir::Path,
+) -> Option<(AdtId, u32)> {
+    if path.segments.len() != 2 {
+        return None;
+    }
+    let enum_path = glyim_hir::Path {
+        segments: vec![path.segments[0].clone()],
+        kind: glyim_core::path::PathKind::Plain,
+    };
+    let mut infer = InferenceTable::new();
+    let enum_ty =
+        resolve_path_type(ctx, &mut infer, def_map, &mut Vec::new(), &enum_path, &HashMap::new(), Span::DUMMY);
+    let adt_id = match ctx.ty_kind(enum_ty) {
+        TyKind::Adt(adt_id, _) => *adt_id,
+        _ => return None,
+    };
+    let adt_def = ctx.adt_def(adt_id)?;
+    let variant_name = path.segments[1].name;
+    adt_def
+        .variants
+        .iter()
+        .enumerate()
+        .find(|(_, v)| v.name == variant_name)
+        .map(|(idx, _)| (adt_id, idx as u32))
+}
+
 /// Resolve path to trait DefId
 pub(crate) fn resolve_path_to_trait_def_id(
     def_map: &glyim_def_map::CrateDefMap,
@@ -879,11 +918,10 @@ fn resolve_name_to_adt_ty(
     path: &glyim_hir::Path,
     span: Span,
 ) -> Option<Ty> {
-    // Plan unstub-5 P5: ADTs are registered in `TyCtxMut` under their
-    // *HIR-interned* name (`adt_by_name`), which is independent of the
-    // def-map's interner. Look the path name up there first; fall back to the
-    // def-map scope (def-map-interned) for builtins/legacy lookups.
-    let adt_id = match path.as_name().and_then(|name| ctx.adt_id_by_name(name)) {
+    let adt_id = match path.as_name().and_then(|name| {
+        let res = ctx.adt_id_by_name(name);
+        res
+    }) {
         Some(id) => id,
         None => {
             let def_id = resolve_name_to_def_id(def_map, path.as_name()?)?;
@@ -942,5 +980,6 @@ fn resolve_name_to_adt_ty(
     }
 
     let subst = ctx.intern_substitution(substs);
-    Some(ctx.mk_ty(TyKind::Adt(adt_id, subst)))
+    let final_ty = ctx.mk_ty(TyKind::Adt(adt_id, subst));
+    Some(final_ty)
 }

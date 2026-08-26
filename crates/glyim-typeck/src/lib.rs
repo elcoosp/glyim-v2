@@ -43,13 +43,14 @@ use glyim_core::interner::Name;
 use glyim_core::primitives::{Abi, Mutability, Safety};
 use glyim_diag::GlyimDiagnostic;
 use glyim_hir::{ItemId, ItemKind, ExprId};
-use glyim_def_map::{CrateDefMap, ModuleId};
+use glyim_def_map::{CrateDefMap, ModuleId, Resolver};
 use glyim_solve::{FulfillmentCtx, InferenceTable, Obligation, ObligationCause, TraitContext};
 use glyim_span::Span;
 use glyim_type::{
     AdtDef, AdtKind, FieldDef, GenericArg, ImplPolarity, MethodDef, Predicate,
     TraitDef, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut, VariantDef, FnSig,
 };
+use glyim_type::display::PrintTy;
 
 #[derive(Clone, Debug)]
 /// TypeckResult.
@@ -247,6 +248,39 @@ pub fn typeck_crate(
     // so the ADTs must already be in `TyCtxMut`; otherwise `Poll`/`AddOne`-
     // style types are reported unresolved. Registration is idempotent, so the
     // later `register_adt` calls in `check_fn_items_in_module` are harmless.
+    // Pass 1: register every ADT's name -> id BEFORE resolving any field
+    // types. The async state-machine desugar emits a `FooState` enum whose
+    // variant field types reference *other* generated ADTs (e.g.
+    // `S0 { fut0: depFuture }`), and those referenced ADTs may be registered
+    // LATER in `hir.items` iteration order. Resolving field types eagerly
+    // (the old single-pass behaviour) turns such forward references into
+    // `<error>` types and cascades into "no method `poll`" diagnostics.
+    // Allocating every ADT id up front (with a placeholder def) lets the
+    // field-type resolution in pass 2 see all ADTs regardless of order.
+    for (_item_id, item) in hir.items.iter_enumerated() {
+        if matches!(
+            &item.kind,
+            glyim_hir::ItemKind::Enum(_) | glyim_hir::ItemKind::Struct(_)
+        ) {
+            let adt_id = adt_id_for_item(&mut ctx, def_map, def_map.root, item.name);
+            ctx.register_adt_with_name(
+                item.name,
+                adt_id,
+                glyim_type::adt_def::AdtDef {
+                    kind: match &item.kind {
+                        glyim_hir::ItemKind::Enum(_) => glyim_type::adt_def::AdtKind::Enum,
+                        _ => glyim_type::adt_def::AdtKind::Struct,
+                    },
+                    fields: IndexVec::new(),
+                    variants: Vec::new(),
+                    generic_params: Vec::new(),
+                },
+            );
+        }
+    }
+    // Pass 2: now that every ADT name -> id is known, register the full
+    // definitions (resolving variant/field types, which may reference other
+    // ADTs forward or backward).
     for (_item_id, item) in hir.items.iter_enumerated() {
         register_adt_item(
             &mut ctx,
@@ -448,13 +482,36 @@ pub fn typeck_crate(
             continue;
         }
         if let ItemKind::Fn(f) = &item.kind {
-            let local_def_id = match def_map.modules[def_map.root]
-                .scope
-                .values
-                .get(&item.name)
-            {
-                Some((id, _, _)) => *id,
-                None => LocalDefId::from_raw(item.id.to_raw()),
+            // CRITICAL: the `FnDefId` we register the signature under MUST
+            // match the id `check_path` produces when a later call site
+            // resolves this function by name. `check_path` walks the def-map
+            // resolver (`resolve_path_to_local_def_id`); a direct
+            // `scope.values.get(&item.name)` lookup can miss generated/async
+            // items because `item.name` lives in the HIR interner while the
+            // scope keys live in the def-map interner, and the `item.id`
+            // fallback then mints a *different* `LocalDefId`. That mismatch
+            // leaves the real fn-sig registered under the wrong id while the
+            // call site reads an unrelated fn-sig (a classic "returns
+            // `Poll<?ty>` instead of the future struct" miscompile). Use the
+            // same resolver path so the two ids agree.
+            let local_def_id = {
+                let resolver = Resolver::new(
+                    &def_map.modules,
+                    def_map.root,
+                    def_map.root,
+                );
+                let core_path = glyim_core::Path {
+                    segments: vec![glyim_core::PathSegment {
+                        name: item.name,
+                        generic_args: None,
+                    }],
+                    kind: glyim_core::path::PathKind::Plain,
+                };
+                resolver
+                    .resolve_path(&core_path)
+                    .values
+                    .map(|(id, _)| id)
+                    .unwrap_or_else(|| LocalDefId::from_raw(item.id.to_raw()))
             };
             let sig = tyconv::resolve_fn_sig(
                 &mut ctx,
