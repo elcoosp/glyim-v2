@@ -76,6 +76,7 @@ impl<'a> FnCtxt<'a> {
                     subpattern.map(|sub_id| Box::new(self.check_pattern(sub_id, expected_ty)));
                 thir::Pattern {
                     kind: thir::PatternKind::Binding {
+                        var_id: thir::LocalVarId::from_raw(id.to_raw()),
                         name: ctx_name,
                         mutability: *mutability,
                         subpattern: sub,
