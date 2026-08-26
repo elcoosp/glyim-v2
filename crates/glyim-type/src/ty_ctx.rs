@@ -12,6 +12,7 @@ use crate::ty::*;
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, FnDefId, LocalDefId, OpaqueTyId, TraitDefId};
 use glyim_core::interner::{Interner, Name};
+use glyim_core::primitives::Mutability;
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 
@@ -34,6 +35,11 @@ pub struct TyCtx {
     pub(crate) interior_mutable_adt_ids: HashSet<AdtId>,
 /// Struct.
     pub adt_defs: HashMap<AdtId, AdtDef>,
+    /// Maps an ADT's (HIR-interned) name to its `AdtId`. Populated by
+    /// `register_adt_with_name` during typeck so ADT type resolution by name
+    /// works on the frozen context too (needed by `PipelineLowerCtx::
+    /// iterator_next_fn`, Phase 1 GLYIM_DESTUB_PLAN).
+    pub(crate) adt_by_name: HashMap<Name, AdtId>,
     pub(crate) trait_defs: HashMap<glyim_core::def_id::TraitDefId, crate::TraitDef>,
     pub(crate) variant_types: HashMap<AdtId, Vec<Ty>>,
     pub(crate) fn_sigs: HashMap<FnDefId, FnSig>,
@@ -88,6 +94,35 @@ impl TyCtx {
 /// substitution_args.
     pub fn substitution_args(&self, sub: Substitution) -> &[GenericArg] {
         self.arena.substitution_args(sub)
+    }
+
+    /// Intern a type into the shared (per-compilation) arena. Safe on a frozen
+    /// `&TyCtx` because the arena is `&'static` and interning is the only
+    /// mutation — under the single-threaded-per-compilation invariant this is
+    /// sound (same design as the P0 canonical interner). Needed by lowering
+    /// passes that synthesize types while only holding a `&TyCtx`
+    /// (e.g. `PipelineLowerCtx::iterator_next_fn`, Phase 1 GLYIM_DESTUB_PLAN).
+    pub fn mk_ty(&self, kind: TyKind) -> Ty {
+        let flags = crate::flags::compute_flags(&kind, self, 0);
+        self.arena.alloc_ty(kind, flags)
+    }
+
+    /// Build a reference type, interning into the shared arena (see `mk_ty`).
+    pub fn mk_ref(&self, region: Region, ty: Ty, mutability: Mutability) -> Ty {
+        self.mk_ty(TyKind::Ref(region, ty, mutability))
+    }
+
+    /// Intern a substitution into the shared arena (see `mk_ty`).
+    pub fn intern_substitution(&self, args: Vec<GenericArg>) -> Substitution {
+        self.arena.intern_substitution(args)
+    }
+
+    /// Resolve a registered ADT by its (HIR-interned) name. Populated by
+    /// `register_adt_with_name` during typeck and carried into the frozen
+    /// context, so lowering passes holding only a `&TyCtx` can map a type name
+    /// to its `AdtId` (Phase 1 GLYIM_DESTUB_PLAN).
+    pub fn adt_id_by_name(&self, name: Name) -> Option<AdtId> {
+        self.adt_by_name.get(&name).copied()
     }
 
 /// region.
