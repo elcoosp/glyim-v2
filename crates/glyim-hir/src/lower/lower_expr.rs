@@ -142,7 +142,8 @@ pub(crate) fn lower_block_to_expr(
 
     let expr = Expr::Block { stmts, tail };
 
-    body.alloc_expr(expr, node_span(node))
+    let eid = body.alloc_expr(expr, node_span(node));
+    eid
 }
 
 /// Convert a pattern into an expression (for LHS of assignment). Kept for the
@@ -693,9 +694,7 @@ fn lower_binary_expr(
         .filter_map(|el| el.into_token())
         .find(|t| {
             !t.kind().is_trivia()
-                && t.kind() != SyntaxKind::Ident
-                && t.kind() != SyntaxKind::LParen
-                && t.kind() != SyntaxKind::RParen
+                && is_bin_op_kind(t.kind())
         });
     if let Some(op_token) = op_token {
         let lhs_node = node
@@ -726,6 +725,7 @@ fn lower_binary_expr(
                 rhs: rhs_id,
             };
             let eid = body.alloc_expr(expr, node_span(node));
+            eprintln!("[LOWER_BIN] returning Some({:?}) op={:?}", eid, op);
             return Some(eid);
         }
     }
@@ -748,6 +748,36 @@ fn lower_binary_expr(
     };
     let eid = body.alloc_expr(expr, node_span(node));
     Some(eid)
+}
+
+/// Whether a syntax token kind is a binary-operator token. Restricting the
+/// operator search to these kinds (rather than "first non-Ident token") is
+/// essential: operand paths like `self.current` begin with `KwSelf`, which is
+/// NOT `Ident`, so the naive filter would mis-detect `self` as the operator
+/// and drop the whole expression.
+fn is_bin_op_kind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::Plus
+            | SyntaxKind::Minus
+            | SyntaxKind::Star
+            | SyntaxKind::Slash
+            | SyntaxKind::Percent
+            | SyntaxKind::Eq
+            | SyntaxKind::EqEq
+            | SyntaxKind::BangEq
+            | SyntaxKind::Lt
+            | SyntaxKind::Gt
+            | SyntaxKind::LtEq
+            | SyntaxKind::GtEq
+            | SyntaxKind::And
+            | SyntaxKind::Or
+            | SyntaxKind::AndAnd
+            | SyntaxKind::OrOr
+            | SyntaxKind::Caret
+            | SyntaxKind::Shl
+            | SyntaxKind::Shr
+    )
 }
 
 fn lower_bin_op_token(token: &SyntaxToken) -> BinOp {
@@ -829,17 +859,25 @@ fn lower_path_expr(node: &SyntaxNode, interner: &mut Interner, body: &mut Body) 
 
     for el in node.children_with_tokens() {
         match el {
-            glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Ident => {
-                flush_pending(&mut segments, &mut pending_args);
-                segments.push(PathSegment {
-                    name: interner.intern(t.text()),
-                    generic_args: None,
-                });
-            }
+        glyim_syntax::SyntaxElement::Token(t)
+            if t.kind() == SyntaxKind::Ident
+                || t.kind() == SyntaxKind::KwSelf
+                || t.kind() == SyntaxKind::KwSuper
+                || t.kind() == SyntaxKind::KwCrate =>
+        {
+            flush_pending(&mut segments, &mut pending_args);
+            segments.push(PathSegment {
+                name: interner.intern(t.text()),
+                generic_args: None,
+            });
+        }
             glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::UsePath => {
                 for t in n.children_with_tokens() {
                     if let glyim_syntax::SyntaxElement::Token(tt) = t
-                        && tt.kind() == SyntaxKind::Ident
+                        && (tt.kind() == SyntaxKind::Ident
+                            || tt.kind() == SyntaxKind::KwSelf
+                            || tt.kind() == SyntaxKind::KwSuper
+                            || tt.kind() == SyntaxKind::KwCrate)
                     {
                         flush_pending(&mut segments, &mut pending_args);
                         segments.push(PathSegment {
