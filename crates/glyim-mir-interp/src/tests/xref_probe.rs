@@ -118,9 +118,11 @@ fn xref_probe_cross_frame_mut_self_deref() {
 
     let tcx = ctx.freeze();
     let mut interp = Interpreter::new(&tcx);
-    interp.add_function(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)), main);
+    let main_id = DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0));
+    interp.add_function(main_id, main);
     interp.add_function(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(1)), next);
-    let res = interp.run_body(&interp.function_table.values().next().unwrap().clone());
+    let main_body = interp.function_table.get(&main_id).unwrap().clone();
+    let res = interp.run_body(&main_body);
     println!("XREF_PROBE_RESULT={:?}", res);
     assert!(
         res.is_ok(),
