@@ -22,7 +22,10 @@ SourceFile@0..163
         Param@33..41
           And@33..34 "&"
           KwMut@34..37 "mut"
-          KwSelf@37..41 "self"
+          RefType@37..41
+            PathType@37..41
+              UsePath@37..41
+                KwSelf@37..41 "self"
       RParen@41..42 ")"
       Arrow@42..44 "->"
       PathType@44..62
