@@ -444,7 +444,6 @@ pub fn check_borrows(ctx: &dyn BorrowckCtx, body: &Body) -> BorrowckResult {
         );
     }
 
-    // Move analysis: check for use-after-move errors
     let move_errors = move_analysis::check_moves(ctx, body);
     errors.extend(move_errors);
 

@@ -362,6 +362,23 @@ fn compute_move_dataflow(
                 &body.locals,
             );
         }
+        // A `Call` terminator writes its `destination` local, which behaves
+        // like an assignment (it (re)initializes that move path). The
+        // dataflow below must treat it as an init so that a value produced by
+        // a `Call` and then moved in a successor block is not falsely reported
+        // as "use of moved value" when the producing block is reached through a
+        // loop back-edge (its `moved_in` carries the value as moved from the
+        // previous iteration, because the dataflow only saw statements, never
+        // the terminator write). This previously broke the async state-machine
+        // desugar's poll loop, where every `.await`'s future is a `Call`
+        // destination that is immediately moved into the suspended state.
+        if let glyim_mir::TerminatorKind::Call { destination, .. } = &block_data.terminator.kind
+        {
+            if let Some(mp_idx) = move_paths.find(destination) {
+                record_init(&mut move_paths, mp_idx, &mut block_inits[bi]);
+                record_init(&mut move_paths, mp_idx, &mut block_dead_inits[bi]);
+            }
+        }
     }
 
     let mut predecessors: Vec<Vec<BasicBlockIdx>> = vec![Vec::new(); num_blocks];
@@ -648,6 +665,7 @@ pub(crate) fn check_moves(ctx: &dyn BorrowckCtx, body: &Body) -> Vec<GlyimDiagno
             let current_dead = &stmt_dead[stmt_idx];
             check_stmt_use_after_move(
                 stmt,
+                block_idx,
                 current_moved,
                 current_dead,
                 &mut move_result.move_paths,
@@ -668,6 +686,7 @@ enum UsedPlace<'a> {
 
 fn check_stmt_use_after_move(
     stmt: &glyim_mir::Statement,
+    block_idx: glyim_mir::BasicBlockIdx,
     moved: &BitSet,
     dead: &BitSet,
     move_paths: &mut MovePathArena,
@@ -680,6 +699,7 @@ fn check_stmt_use_after_move(
         check_place_use_after_move(
             &used_place,
             stmt,
+            block_idx,
             moved,
             dead,
             move_paths,
@@ -749,6 +769,7 @@ fn collect_rvalue_used_places<'a>(rvalue: &'a Rvalue, places: &mut SmallVec<[Use
 fn check_place_use_after_move(
     used_place: &UsedPlace<'_>,
     stmt: &glyim_mir::Statement,
+    block_idx: glyim_mir::BasicBlockIdx,
     moved: &BitSet,
     dead: &BitSet,
     move_paths: &mut MovePathArena,
