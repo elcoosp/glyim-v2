@@ -153,3 +153,135 @@ fn main() {
     compile_and_run_struct_with_drop(src)
         .expect("struct-with-multiple-drop-impls must compile + run without the cross-context OOB panic");
 }
+
+/// Compile + run a `for`-loop program and return `main`'s integer result.
+/// Reuses the unique-temp-file + real-pipeline + interpreter harness from
+/// `compile_and_run_struct_with_drop`.
+fn compile_and_run_for_loop(src: &str) -> Result<i128, String> {
+    static CALL_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call_id = CALL_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let unique_tag = format!("{}_{}", std::process::id(), call_id);
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("glyim_for_loop_{}.g", unique_tag));
+
+    {
+        let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+        f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
+    }
+
+    let config = glyim_db::CrateConfig {
+        name: "test_crate".to_string(),
+        target_triple: "x86_64-unknown-linux-gnu".to_string(),
+        opt_level: 0,
+    };
+    let mut db = Database::new(config);
+
+    let mir = compile_file_to_mir(&mut db, &path).map_err(|diags| {
+        diags
+            .iter()
+            .map(|d| format!("{:?}", d))
+            .collect::<Vec<_>>()
+            .join("\n")
+    })?;
+
+    let ty_ctx = mir.ty_ctx;
+    let bodies: Vec<Arc<glyim_mir::Body>> = mir.bodies.values().cloned().collect();
+
+    let main_local = glyim_pipeline::Pipeline::entry_main_local_id(&mut db, &path)
+        .ok_or_else(|| "could not resolve main entry".to_string())?;
+    let main_id = glyim_core::def_id::DefId::new(
+        glyim_core::def_id::CrateId::from_raw(0),
+        glyim_core::def_id::LocalDefId::from_raw(main_local),
+    );
+    let main_body = mir
+        .bodies
+        .get(&main_id)
+        .ok_or_else(|| "main body not found in MIR compilation".to_string())?;
+
+    let interpreter = Interpreter::new(ty_ctx.as_ref());
+    let mut interp = interpreter;
+    for b in &bodies {
+        interp.add_function(b.owner, (**b).clone());
+    }
+    interp
+        .run_body(main_body)
+        .map_err(|e| {
+            let mut s = String::new();
+            s.push_str(&format!("interpreter error: {}\n", e));
+            for b in &bodies {
+                s.push_str(&format!(
+                    "BODY owner={:?} arg_count={} n_locals={}:\n{:#?}\n",
+                    b.owner,
+                    b.arg_count,
+                    b.locals.len(),
+                    b
+                ));
+            }
+            s.push_str(&format!("MAIN BODY:\n{:#?}\n", main_body));
+            eprintln!("{}", s);
+            s
+        })?;
+
+    let ret = interp
+        .get_return_value()
+        .ok_or_else(|| "no return value from main".to_string())?;
+    match ret {
+        glyim_mir_interp::InterpValue::Int(v) => Ok(v),
+        other => Err(format!("main returned non-int value: {:?}", other)),
+    }
+}
+
+#[test]
+fn for_loop_iterates_multiple_times_via_pipeline() {
+    // Phase 1 (GLYIM_DESTUB_PLAN): `for x in c` must take the real
+    // multi-iteration path (via `PipelineLowerCtx::iterator_next_fn`, which
+    // resolves `next` from the program's `impl Iterator for Counter`), NOT the
+    // one-iteration fallback. Proof: the loop sums 0..5 via a custom iterator;
+    // the fallback would bind the *whole iterable* to the pattern and run the
+    // body once (sum == 0), whereas a correct iterator yields 0+1+2+3+4 == 10.
+    let src = r#"
+enum Option<T> {
+    None,
+    Some(T),
+}
+
+trait Iterator {
+    type Item;
+    fn next(&mut self) -> Option<Self::Item>;
+}
+
+struct Counter {
+    current: i32,
+    limit: i32,
+}
+
+impl Iterator for Counter {
+    type Item = i32;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self.limit {
+            let v = self.current;
+            self.current = self.current + 1;
+            Option::Some(v)
+        } else {
+            Option::None
+        }
+    }
+}
+
+fn main() -> i32 {
+    let c = Counter { current: 0, limit: 5 };
+    let mut sum = 0;
+    for x in c {
+        sum = sum + x;
+    }
+    return sum;
+}
+"#;
+    let result = compile_and_run_for_loop(src)
+        .expect("for-loop program must compile + run through the real pipeline");
+    assert_eq!(
+        result, 10,
+        "for-loop must iterate 0..5 via the iterator (sum 10), not the one-shot fallback (sum 0)"
+    );
+}
+
