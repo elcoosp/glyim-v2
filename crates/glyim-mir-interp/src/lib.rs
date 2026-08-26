@@ -23,10 +23,11 @@
     clippy::collapsible_if
 )]
 use glyim_core::{primitives::TargetInfo, BinOp, CrateId, DefId, LocalDefId, UnOp};
+use glyim_core::def_id::AdtId;
 use glyim_layout::{LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
 use glyim_type::Ty;
-use glyim_type::{FieldIdx, TyCtx};
+use glyim_type::{AdtKind, FieldIdx, TyCtx};
 use std::collections::HashMap;
 
 mod interp_error;
@@ -58,11 +59,20 @@ pub struct Interpreter<'tcx> {
     step_count: usize,
     recursion_depth: usize,
     function_table: HashMap<DefId, Body>,
+    current_body_owner: Option<DefId>,
+    current_arg_count: usize,
     current_body: Option<Body>,
     current_bb: BasicBlockIdx,
     locals: Vec<Option<InterpValue>>,
     local_decls: Vec<LocalDecl>,
     call_stack: Vec<CallFrame>,
+    /// Absolute depth of the frame currently executing (0 == the entry
+    /// `run_body` frame, 1 == a function called directly from it, ...). Used
+    /// to resolve frame-aware `Ref { frame, local }` values so that a borrow
+    /// (`&mut self`) created in one frame and dereferenced in another reads the
+    /// correct frame's locals instead of the callee's own (plan §1: for-loop
+    /// `next(&mut self)`).
+    frame_depth: usize,
     /// Cross-frame unwind payload (plan §7.2). When a callee panics and this
     /// frame resumes at the caller's cleanup edge, `pending_unwind` holds the
     /// original panic so that once the caller's own cleanups finish and it
@@ -95,11 +105,14 @@ impl<'tcx> Interpreter<'tcx> {
             step_count: 0,
             recursion_depth: 0,
             function_table: HashMap::new(),
+            current_body_owner: None,
+            current_arg_count: 0,
             current_body: None,
             current_bb: BasicBlockIdx::from_raw(0),
             locals: Vec::new(),
             local_decls: Vec::new(),
             call_stack: Vec::new(),
+            frame_depth: 0,
             pending_unwind: None,
         }
     }
@@ -164,6 +177,40 @@ pub fn recursion_depth(&self) -> usize {
         self.locals.first().and_then(|opt| opt.clone())
     }
 
+    /// Resolve the locals vector owning a frame-aware `Ref { frame, local }`.
+    ///
+    /// `frame` is the absolute depth of the frame that created the reference
+    /// (0 == the `run_body` entry frame, 1 == a direct callee, ...). The
+    /// currently-executing frame is `self.frame_depth`; its locals live in
+    /// `self.locals`. Every ancestor frame is parked in `self.call_stack`,
+    /// which is ordered outermost-first, so ancestor depth `f` is at
+    /// `call_stack[f]`. Returns `None` for an out-of-range frame (a compiler
+    /// bug — a ref outliving its borrower).
+    fn locals_for_ref_frame(&self, frame: usize) -> Option<&Vec<Option<InterpValue>>> {
+        if frame == self.frame_depth {
+            Some(&self.locals)
+        } else if frame < self.call_stack.len() {
+            Some(&self.call_stack[frame].locals)
+        } else {
+            None
+        }
+    }
+
+    /// Mutable counterpart of [`Self::locals_for_ref_frame`] for writes through
+    /// a `Ref` (e.g. `*r = v` or `*r.field = v`).
+    fn write_target_locals_mut(
+        &mut self,
+        frame: usize,
+    ) -> Option<&mut Vec<Option<InterpValue>>> {
+        if frame == self.frame_depth {
+            Some(&mut self.locals)
+        } else if frame < self.call_stack.len() {
+            Some(&mut self.call_stack[frame].locals)
+        } else {
+            None
+        }
+    }
+
     /// §4: evaluate a `const` / `const fn` MIR body to its value.
     ///
     /// This is const-evaluation: run the body to completion (terminating at
@@ -180,11 +227,14 @@ pub fn recursion_depth(&self) -> usize {
 
 /// run_body.
     pub fn run_body(&mut self, body: &Body) -> InterpResult<()> {
+        self.current_body_owner = Some(body.owner);
+        self.current_arg_count = body.arg_count;
         self.current_body = Some(body.clone());
         self.current_bb = BasicBlockIdx::from_raw(0);
         self.locals = vec![None; body.locals.len()];
         self.local_decls = body.locals.iter().cloned().collect();
         self.call_stack.clear();
+        self.frame_depth = 0;
         self.step_count = 0;
         self.recursion_depth = 1;
         self.run_current_function()
@@ -268,6 +318,7 @@ pub fn recursion_depth(&self) -> usize {
                         self.local_decls = caller_body.locals.iter().cloned().collect();
                         self.write_place(&frame.return_place, ret_val)?;
                         self.recursion_depth -= 1;
+                        self.frame_depth -= 1;
                         body = caller_body;
                         continue;
                     } else {
@@ -335,7 +386,10 @@ pub fn recursion_depth(&self) -> usize {
                     };
 
                     self.call_stack.push(caller_frame);
+                    self.frame_depth += 1;
                     self.local_decls = callee_body.locals.iter().cloned().collect();
+                    self.current_body_owner = Some(callee_body.owner);
+                    self.current_arg_count = callee_body.arg_count;
                     self.locals = callee_locals;
                     body = callee_body;
                     bb_idx = BasicBlockIdx::from_raw(0);
@@ -469,7 +523,14 @@ pub fn recursion_depth(&self) -> usize {
                 self.write_place(place, val)?;
             }
             StatementKind::StorageLive(local) => {
-                self.locals[local.index()] = None;
+                // Argument locals (indices 1..=arg_count) are already
+                // initialized by the caller at function entry. `StorageLive`
+                // for an argument local would wrongly wipe the passed
+                // argument, so skip those (see for-loop method-call desugar).
+                let idx = local.index();
+                if !(idx >= 1 && idx <= self.current_arg_count) {
+                    self.locals[idx] = None;
+                }
             }
             StatementKind::StorageDead(_local) => {}
             StatementKind::Nop => {}
@@ -492,9 +553,12 @@ pub fn recursion_depth(&self) -> usize {
             }
             Rvalue::Ref(place, _borrow_kind) => {
                 let local_idx = place.local.index();
-                Ok(InterpValue::Ref(local_idx))
+                Ok(InterpValue::Ref {
+                    frame: self.frame_depth,
+                    local: local_idx,
+                })
             }
-            Rvalue::Aggregate(_kind, operands) => {
+            Rvalue::Aggregate(kind, operands) => {
                 let mut values = Vec::with_capacity(operands.len());
                 for op in operands {
                     values.push(self.eval_operand(op)?);
@@ -502,6 +566,21 @@ pub fn recursion_depth(&self) -> usize {
                 if values.is_empty() {
                     Ok(InterpValue::Unit)
                 } else {
+                    // For enum ADTs, prepend the discriminant as `fields[0]` so that
+                    // `SwitchInt` and `Rvalue::Discriminant` can read the variant
+                    // index from the value. `read_place`'s `Downcast` projection
+                    // strips this tag so the payload remains at its natural field
+                    // indices. Struct/tuple/closure aggregates are left untagged.
+                    if let AggregateKind::Adt(adt_id, variant, _substs) = kind {
+                        if let Some(def) = self.tcx.adt_def(*adt_id) {
+                            if def.kind == AdtKind::Enum {
+                                let mut tagged = Vec::with_capacity(values.len() + 1);
+                                tagged.push(InterpValue::Int(variant.index() as i128));
+                                tagged.extend(values);
+                                return Ok(InterpValue::Aggregate(tagged));
+                            }
+                        }
+                    }
                     Ok(InterpValue::Aggregate(values))
                 }
             }
@@ -567,12 +646,22 @@ pub fn recursion_depth(&self) -> usize {
                     // pointer-to-pointer cast is identity at this value level.
                     CastKind::PtrToPtr | CastKind::FnPtrToPtr => Ok(val),
                     CastKind::PtrToInt => match val {
-                        InterpValue::Ref(addr) => Ok(InterpValue::Uint(addr as u128)),
+                        InterpValue::Ref { frame, local } => {
+                            Ok(InterpValue::Uint(
+                                ((frame as u128) << 48) | (local as u128),
+                            ))
+                        }
                         _ => Err(InterpError::Panic("PtrToInt on non-reference".into())),
                     },
                     CastKind::IntToPtr => match val {
-                        InterpValue::Uint(addr) => Ok(InterpValue::Ref(addr as usize)),
-                        InterpValue::Int(addr) if addr >= 0 => Ok(InterpValue::Ref(addr as usize)),
+                        InterpValue::Uint(addr) => Ok(InterpValue::Ref {
+                            frame: (addr >> 48) as usize,
+                            local: (addr & ((1u128 << 48) - 1)) as usize,
+                        }),
+                        InterpValue::Int(addr) if addr >= 0 => Ok(InterpValue::Ref {
+                            frame: 0,
+                            local: addr as usize,
+                        }),
                         _ => Err(InterpError::Panic("IntToPtr on non-integer".into())),
                     },
                 }
@@ -778,6 +867,24 @@ pub fn recursion_depth(&self) -> usize {
             (UnOp::Not, InterpValue::Uint(u)) => Ok(InterpValue::Uint(!*u)),
             (UnOp::Neg, InterpValue::Int(i)) => Ok(InterpValue::Int(-*i)),
             (UnOp::Neg, InterpValue::Float(f)) => Ok(InterpValue::Float(-*f)),
+            // `Deref` on a `Ref` *value* (as produced by `*x` where `x: &T`) reads
+            // the pointee out of the referenced frame's locals. This is required
+            // for `Drop`/`fn` bodies that dereference a `&mut` field (e.g. a
+            // `&mut i32` counter incremented inside `drop`).
+            (UnOp::Deref, InterpValue::Ref { frame, local }) => {
+                let frame_locals = self.locals_for_ref_frame(*frame).ok_or_else(|| {
+                    InterpError::Panic(format!("deref of Ref from dead frame {frame}"))
+                })?;
+                frame_locals
+                    .get(*local)
+                    .and_then(|opt| opt.as_ref())
+                    .cloned()
+                    .ok_or_else(|| {
+                        InterpError::Panic(format!(
+                            "deref of uninitialized local {local} (frame {frame})"
+                        ))
+                    })
+            }
             _ => Err(InterpError::Panic(format!(
                 "unsupported unary op: {:?} on {:?}",
                 op, val
@@ -792,7 +899,13 @@ pub fn recursion_depth(&self) -> usize {
             .get(idx)
             .and_then(|opt| opt.as_ref())
             .cloned()
-            .ok_or_else(|| InterpError::Panic(format!("read from uninitialized local {}", idx)))?;
+            .ok_or_else(|| {
+                let owner = self.current_body_owner;
+                InterpError::Panic(format!(
+                    "read from uninitialized local {} (owner={:?})",
+                    idx, owner
+                ))
+            })?;
 
         // Keep track of the current type to compute offsets for ConstantIndex.
         let mut current_ty = self
@@ -804,18 +917,18 @@ pub fn recursion_depth(&self) -> usize {
         for proj in place.projection.iter() {
             match proj {
                 ProjectionElem::Deref => match val {
-                    InterpValue::Ref(target) => {
-                        val = self
-                            .locals
-                            .get(target)
-                            .and_then(|opt| opt.as_ref())
-                            .cloned()
+                    InterpValue::Ref { frame, local } => {
+                        let target = local;
+                        let frame_locals = self
+                            .locals_for_ref_frame(frame)
                             .ok_or_else(|| {
                                 InterpError::Panic(format!(
-                                    "deref of uninitialized local {}",
-                                    target
+                                    "deref of Ref from dead frame {frame}"
                                 ))
                             })?;
+                        val = frame_locals.get(target).and_then(|opt| opt.as_ref()).cloned().ok_or_else(|| {
+                            InterpError::Panic(format!("deref of uninitialized local {target} (frame {frame})"))
+                        })?;
                         // Update current_ty based on the new value.
                         if let Some(decl) = self.local_decls.get(target) {
                             current_ty = decl.ty;
@@ -895,8 +1008,14 @@ pub fn recursion_depth(&self) -> usize {
                     }
                 }
                 ProjectionElem::Downcast(_variant_idx) => {
-                    // no change, but we may need to adjust current_ty.
-                    // For now, keep current_ty.
+                    // For enum values, the discriminant tag is stored as
+                    // `fields[0]`. Stripping it exposes the payload at its
+                    // natural field indices so the following `Field` projections
+                    // line up. Scalar (non-aggregate) values (e.g. plain ints)
+                    // are left unchanged — `Downcast` is a no-op for them.
+                    if let InterpValue::Aggregate(fields) = &val {
+                        val = InterpValue::Aggregate(fields[1..].to_vec());
+                    }
                 }
                 ProjectionElem::ConstantIndex {
                     offset,
@@ -980,15 +1099,16 @@ pub fn recursion_depth(&self) -> usize {
                     // Actually better: (base_ptr + start, new_len).
                     // But we can just represent as (start, new_len) for simplicity.
                     let elem_size = self.get_element_size(current_ty)?;
-                    let data_ptr = if let InterpValue::Ref(ptr) = val {
-                        ptr + start * elem_size
+                    let data_ptr = if let InterpValue::Ref { frame, local } = val {
+                        let ptr = local + start * elem_size;
+                        InterpValue::Ref { frame, local: ptr }
                     } else {
                         // For non-ref aggregates, we can't compute ptr.
                         // We'll just use the index start as a placeholder.
-                        0
+                        InterpValue::Ref { frame: 0, local: 0 }
                     };
                     val = InterpValue::Aggregate(vec![
-                        InterpValue::Ref(data_ptr),
+                        data_ptr,
                         InterpValue::Int(new_len as i128),
                     ]);
                 }
@@ -998,15 +1118,32 @@ pub fn recursion_depth(&self) -> usize {
     }
 
     pub(crate) fn write_place(&mut self, place: &Place, val: InterpValue) -> InterpResult<()> {
+        self.write_place_frame(self.frame_depth, place, val)
+    }
+
+    /// Frame-aware write: `frame` is the depth of the locals block that owns
+    /// `place.local`. Needed so that `*r = v` (where `r` is a `Ref` borrowed
+    /// from an ancestor frame) writes into the correct frame's locals rather
+    /// than the current one (plan §1: `next(&mut self)` mutating `main`'s
+    /// `Counter`).
+    fn write_place_frame(
+        &mut self,
+        frame: usize,
+        place: &Place,
+        val: InterpValue,
+    ) -> InterpResult<()> {
         let idx = place.local.index();
-        if idx >= self.locals.len() {
+        let frame_locals = self
+            .write_target_locals_mut(frame)
+            .ok_or_else(|| InterpError::Panic(format!("write to dead frame {frame}")))?;
+        if idx >= frame_locals.len() {
             return Err(InterpError::Panic(format!(
                 "local index out of bounds: {}",
                 idx
             )));
         }
         if place.projection.is_empty() {
-            self.locals[idx] = Some(val);
+            frame_locals[idx] = Some(val);
             return Ok(());
         }
 
@@ -1014,16 +1151,15 @@ pub fn recursion_depth(&self) -> usize {
 
         if let Some(ProjectionElem::Deref) = place.projection.first() {
             if proj_count > 1 {
-                let base_val = self
-                    .locals
+                let base_val = frame_locals
                     .get(idx)
                     .and_then(|opt| opt.as_ref())
                     .cloned()
                     .ok_or_else(|| {
-                        InterpError::Panic(format!("write to uninitialized local {}", idx))
+                        InterpError::Panic(format!("write to uninitialized local {idx}"))
                     })?;
-                let target_local = match base_val {
-                    InterpValue::Ref(target) => target,
+                let target = match base_val {
+                    InterpValue::Ref { frame, local } => (frame, local),
                     _ => {
                         return Err(InterpError::Panic(
                             "deref projection on non-reference value".into(),
@@ -1031,48 +1167,53 @@ pub fn recursion_depth(&self) -> usize {
                     }
                 };
                 let target_place = Place {
-                    local: LocalIdx::from_raw(target_local as u32),
+                    local: LocalIdx::from_raw(target.1 as u32),
                     projection: place.projection[1..].to_vec().into_boxed_slice(),
                 };
-                return self.write_place(&target_place, val);
+                return self.write_place_frame(target.0, &target_place, val);
             } else {
-                let base_val = self
-                    .locals
+                let base_val = frame_locals
                     .get(idx)
                     .and_then(|opt| opt.as_ref())
                     .cloned()
                     .ok_or_else(|| {
-                        InterpError::Panic(format!("write to uninitialized local {}", idx))
+                        InterpError::Panic(format!("write to uninitialized local {idx}"))
                     })?;
-                let target_local = match base_val {
-                    InterpValue::Ref(target) => target,
+                let target = match base_val {
+                    InterpValue::Ref { frame, local } => (frame, local),
                     _ => {
                         return Err(InterpError::Panic(
                             "deref projection on non-reference value".into(),
                         ));
                     }
                 };
-                if target_local >= self.locals.len() {
+                let target_frame_locals = self
+                    .write_target_locals_mut(target.0)
+                    .ok_or_else(|| InterpError::Panic(format!("write through ref to dead frame {}", target.0)))?;
+                if target.1 >= target_frame_locals.len() {
                     return Err(InterpError::Panic(format!(
                         "write through ref to invalid local {}",
-                        target_local
+                        target.1
                     )));
                 }
-                self.locals[target_local] = Some(val);
+                target_frame_locals[target.1] = Some(val);
                 return Ok(());
             }
         }
 
-        let base_val = self
-            .locals
+        let base_val = frame_locals
             .get(idx)
             .and_then(|opt| opt.as_ref())
             .cloned()
-            .ok_or_else(|| InterpError::Panic(format!("write to uninitialized local {}", idx)))?;
+            .ok_or_else(|| InterpError::Panic(format!("write to uninitialized local {idx}")))?;
+        drop(frame_locals);
 
         let modified =
             self.write_through_projections_with_locals(base_val, &place.projection, val)?;
-        self.locals[idx] = Some(modified);
+        let frame_locals = self
+            .write_target_locals_mut(frame)
+            .ok_or_else(|| InterpError::Panic(format!("write to dead frame {frame}")))?;
+        frame_locals[idx] = Some(modified);
         Ok(())
     }
 
@@ -1281,7 +1422,10 @@ pub fn recursion_depth(&self) -> usize {
                     self.interp_value_to_u128(&fields[0])
                 }
             }
-            InterpValue::Ref(idx) => *idx as u128,
+            InterpValue::Ref { frame, local } => {
+                let _ = frame;
+                *local as u128
+            }
             InterpValue::Float(f) => f.to_bits() as u128,
             InterpValue::String(s) => s.len() as u128,
             InterpValue::Fn(_) | InterpValue::ConstRef(_) => 0,
@@ -1301,7 +1445,7 @@ pub fn recursion_depth(&self) -> usize {
                     self.interp_value_to_bool(&fields[0])
                 }
             }
-            InterpValue::Ref(_) => Ok(true),
+            InterpValue::Ref { .. } => Ok(true),
             InterpValue::Float(f) => Ok(*f != 0.0),
             InterpValue::String(s) => Ok(!s.is_empty()),
             InterpValue::Fn(_) | InterpValue::ConstRef(_) => Ok(true),
@@ -1338,15 +1482,14 @@ pub fn recursion_depth(&self) -> usize {
                     ))
                 }
             }
-            InterpValue::Ref(target) => {
+            InterpValue::Ref { frame, local } => {
                 let target_val = self
-                    .locals
-                    .get(*target)
+                    .locals_for_ref_frame(*frame)
+                    .and_then(|fl| fl.get(*local))
                     .and_then(|opt| opt.as_ref())
                     .ok_or_else(|| {
                         InterpError::Panic(format!(
-                            "slice reference to uninitialized local {}",
-                            target
+                            "slice reference to uninitialized local {local} (frame {frame})"
                         ))
                     })?;
                 self.slice_length_from_value(target_val)
@@ -1361,14 +1504,16 @@ pub fn recursion_depth(&self) -> usize {
     fn get_length_of_aggregate(&self, val: &InterpValue) -> InterpResult<usize> {
         match val {
             InterpValue::Aggregate(fields) => Ok(fields.len()),
-            InterpValue::Ref(target) => {
+            InterpValue::Ref { frame, local } => {
                 // Dereference to get the aggregate.
                 let target_val = self
-                    .locals
-                    .get(*target)
+                    .locals_for_ref_frame(*frame)
+                    .and_then(|fl| fl.get(*local))
                     .and_then(|opt| opt.as_ref())
                     .ok_or_else(|| {
-                        InterpError::Panic(format!("deref of uninitialized local {}", target))
+                        InterpError::Panic(format!(
+                            "deref of uninitialized local {local} (frame {frame})"
+                        ))
                     })?;
                 self.get_length_of_aggregate(target_val)
             }
@@ -1407,7 +1552,10 @@ pub fn recursion_depth(&self) -> usize {
         match val {
             InterpValue::Aggregate(fields) if fields.len() == 2 => {
                 let ptr = match &fields[0] {
-                    InterpValue::Ref(p) => *p,
+                    InterpValue::Ref { frame, local } => {
+                        let _ = frame;
+                        *local
+                    }
                     InterpValue::Int(i) => *i as usize,
                     _ => 0,
                 };
@@ -1418,14 +1566,16 @@ pub fn recursion_depth(&self) -> usize {
                 };
                 Ok((ptr, len))
             }
-            InterpValue::Ref(target) => {
+            InterpValue::Ref { frame, local } => {
                 // Dereference to get the aggregate.
                 let target_val = self
-                    .locals
-                    .get(*target)
+                    .locals_for_ref_frame(*frame)
+                    .and_then(|fl| fl.get(*local))
                     .and_then(|opt| opt.as_ref())
                     .ok_or_else(|| {
-                        InterpError::Panic(format!("deref of uninitialized local {}", target))
+                        InterpError::Panic(format!(
+                            "deref of uninitialized local {local} (frame {frame})"
+                        ))
                     })?;
                 self.get_slice_base_and_len(target_val, ty)
             }
