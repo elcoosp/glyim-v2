@@ -145,7 +145,7 @@ impl<'a> FnCtxt<'a> {
                 name: *name,
                 ty: *ty,
                 span: *span,
-                pat: thir::Pattern::binding(*name, Mutability::Not, *ty, *span),
+                pat: thir::Pattern::binding(_local_id, *name, Mutability::Not, *ty, *span),
                 local: _local_id,
             });
         }
@@ -284,5 +284,68 @@ impl<'a> FnCtxt<'a> {
             .map(|(eid, (_expr, ty))| (eid, ty))
             .collect();
         (body, expr_types)
+    }
+
+    /// Type-check a single *statement* HIR node (`let`/`assign`/`return`/expr)
+    /// and lower it to a `thir::Stmt`. This is the single source of truth for
+    /// how statements are checked — used both by the top-level driving loop in
+    /// `check` and by `Expr::Block` in `check_expr` (which previously called
+    /// `check_expr` on statement nodes, hitting the `Expr::Let`/`Expr::Assign`
+    /// arms that erroneously returned `thir::Expr::err`, corrupting any
+    /// statement nested inside a block/if-body).
+    pub(crate) fn check_stmt_to_thir(&mut self, stmt_id: glyim_hir::ExprId, is_tail: bool) -> thir::Stmt {
+        let expr = &self.body.exprs[stmt_id];
+        let span = self.expr_span(stmt_id);
+        match expr {
+            Expr::Let { pat, value } => {
+                let (value_expr, value_ty) = self.check_expr(*value);
+                let pat_thir = self.check_pattern(*pat, value_ty);
+                if is_tail {
+                    self.unify(Ty::UNIT, self.return_ty, span);
+                }
+                let name = match &pat_thir.kind {
+                    thir::PatternKind::Binding { name, .. } => *name,
+                    _ => self.ctx.resolver().intern("_"),
+                };
+                thir::Stmt::Let {
+                    name,
+                    ty: value_ty,
+                    pat: pat_thir,
+                    init: Some(value_expr),
+                    span,
+                }
+            }
+            Expr::Assign { lhs, rhs } => {
+                let (lhs_expr, lhs_ty) = self.check_expr(*lhs);
+                let (rhs_expr, rhs_ty) = self.check_expr(*rhs);
+                self.unify(rhs_ty, lhs_ty, span);
+                if is_tail {
+                    self.unify(Ty::UNIT, self.return_ty, span);
+                }
+                thir::Stmt::Assign {
+                    lhs: lhs_expr,
+                    rhs: rhs_expr,
+                    span,
+                }
+            }
+            Expr::Return { value } => {
+                let value_opt = value.map(|val_id| {
+                    let (val_expr, val_ty) = self.check_expr(val_id);
+                    self.unify(val_ty, self.return_ty, span);
+                    val_expr
+                });
+                thir::Stmt::Return {
+                    value: value_opt,
+                    span,
+                }
+            }
+            _ => {
+                let (thir_expr, ty) = self.check_expr(stmt_id);
+                if is_tail && self.return_ty != Ty::UNIT {
+                    self.unify(ty, self.return_ty, span);
+                }
+                thir::Stmt::Expr { expr: thir_expr }
+            }
+        }
     }
 }
