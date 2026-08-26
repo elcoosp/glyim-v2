@@ -435,12 +435,22 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::Param);
         if self.current_kind() == SyntaxKind::And {
             self.bump(); // &
-            if self.current_kind() == SyntaxKind::KwMut {
+            let is_mut = self.current_kind() == SyntaxKind::KwMut;
+            if is_mut {
                 self.bump(); // mut
             }
             if self.current_kind() == SyntaxKind::KwSelf {
-                self.bump(); // self
-                self.finish_node();
+                // `&mut self` / `&self`: build a `RefType` node whose inner is
+                // produced by `parse_type` (which yields the correct
+                // `PathType(self)` child). This makes the receiver reference
+                // survive to typeck as `&mut Self` / `&Self`. Without it,
+                // `lower_param` sees no recognised type node and the receiver
+                // is typed as the pointee, breaking every `&self` / `&mut self`
+                // method.
+                self.start_node(SyntaxKind::RefType);
+                self.parse_type();
+                self.finish_node(); // RefType
+                self.finish_node(); // Param
                 return;
             }
             self.bump_expected(SyntaxKind::Ident);
@@ -450,7 +460,9 @@ impl<'a> Parser<'a> {
             self.bump(); // mut
             if self.current_kind() == SyntaxKind::KwSelf {
                 self.bump(); // self
-                self.finish_node();
+                // `mut self` (by-value mutable self): no reference — leave the
+                // receiver as the bare pointee (matches Rust `fn f(mut self)`).
+                self.finish_node(); // Param
                 return;
             }
             self.bump_expected(SyntaxKind::Ident);
@@ -458,7 +470,8 @@ impl<'a> Parser<'a> {
             self.parse_type();
         } else if self.current_kind() == SyntaxKind::KwSelf {
             self.bump(); // self
-            self.finish_node();
+            // `self` (by-value): bare pointee, no reference.
+            self.finish_node(); // Param
             return;
         } else {
             self.bump_expected(SyntaxKind::Ident);
