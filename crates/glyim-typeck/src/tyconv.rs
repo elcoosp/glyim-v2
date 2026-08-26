@@ -365,11 +365,40 @@ pub fn resolve_fn_sig(
     span: Span,
     self_ty: Option<Ty>,
 ) -> FnSig {
-    let param_map = build_param_tys(ctx, generic_params);
+    let mut param_map = build_param_tys(ctx, generic_params);
+    // Register `self` / `Self` as the impl's `Self` type so that a `&mut self`
+    // / `&self` receiver (now lowered as `Ref(Path(self))`) resolves to
+    // `&mut Self` / `&Self` instead of an unresolved `self` path. Method
+    // receivers are references to `Self`, never the bare pointee.
+    if let Some(st) = self_ty {
+        param_map.insert(ctx.resolver().intern("self"), st);
+        param_map.insert(ctx.resolver().intern("Self"), st);
+    }
 
     let mut param_tys = Vec::with_capacity(params.len());
+    let self_name = ctx.resolver().intern("self");
     for param in params {
-        let ty = if let Some(ty_ref) = &param.ty {
+        // Robust `self` / `&self` / `&mut self` receiver typing. Method
+        // receivers are always `Self` (by value), `&Self`, or `&mut Self`.
+        // We build the receiver type directly from the impl's `Self` type so
+        // the reference is never lost (the parser now lowers `&mut self` as
+        // `Ref(PathType(self))`, but path resolution of `self` is fragile and
+        // previously dropped the reference, typing the receiver as the bare
+        // pointee). This keeps every `&self` / `&mut self` method working.
+        let ty = if param.name == self_name {
+            match self_ty {
+                Some(st) => match &param.ty {
+                    Some(glyim_hir::TypeRef::Ref { mutability, .. }) => {
+                        ctx.mk_ref(Region::Erased, st, *mutability)
+                    }
+                    _ => st,
+                },
+                None => {
+                    let var = infer.new_ty_var(ctx);
+                    ctx.mk_ty(TyKind::Infer(InferVar::Ty(var)))
+                }
+            }
+        } else if let Some(ty_ref) = &param.ty {
             let resolved = resolve_type_ref(
                 ctx,
                 infer,
@@ -386,11 +415,6 @@ pub fn resolve_fn_sig(
                 resolved
             }
         } else if param.name == ctx.resolver().intern("self") {
-            // Impl/trait method `self` (e.g. `&mut self`) with no explicit
-            // HIR type. Mirror Rust: type it as the impl's `Self` so it does
-            // not fall through to an unconstrained inference variable (which
-            // would later recurse infinitely when the body accesses fields
-            // through `self`).
             match self_ty {
                 Some(st) => st,
                 None => {
