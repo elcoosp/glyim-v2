@@ -1422,6 +1422,39 @@ impl<'a> MirBuilder<'a> {
             (discr_op, scrutinee.ty)
         };
 
+        // Materialize the *whole* scrutinee into a local so that match-arm
+        // patterns can be bound to MIR locals (mirroring `let` pattern
+        // binding in `bind_pattern`). Without this, variables bound by a
+        // `match` arm -- e.g. `match self.state { Start { f0, fut0 } => .. }`
+        // from the async state-machine desugar -- receive no `local_var_map`
+        // entry and `VarRef(var_id)` falls back to
+        // `LocalIdx::from_raw(var_id)`, colliding with the `self` parameter
+        // (M4/M5 async multi-await). For slice-dispatch matches the
+        // discriminant is the *length*, not the value, so binding arm patterns
+        // against it would be wrong; those keep the original behavior.
+        let scrut_local: Option<glyim_mir::LocalIdx> = if !slice_dispatch {
+            let local = self.alloc_local(
+                scrutinee.ty,
+                glyim_core::primitives::Mutability::Not,
+                span,
+            );
+            self.push_stmt(
+                glyim_mir::StatementKind::Assign(
+                    glyim_mir::Place::new(local),
+                    glyim_mir::Rvalue::Use(discr_op.clone()),
+                ),
+                span,
+            );
+            Some(local)
+        } else {
+            None
+        };
+        // The SwitchInt discriminates on the materialized scrutinee local.
+        let discr_op = match scrut_local {
+            Some(sl) => glyim_mir::Operand::Copy(glyim_mir::Place::new(sl)),
+            None => discr_op,
+        };
+
         let mut switch_targets: Vec<(u128, BasicBlockIdx)> = Vec::new();
         let mut arm_blocks: Vec<(BasicBlockIdx, &thir::MatchArm)> = Vec::new();
         let otherwise_bb = self.new_block();
@@ -1450,6 +1483,16 @@ impl<'a> MirBuilder<'a> {
 
         for (i, (arm_bb, arm)) in arm_blocks.iter().enumerate() {
             self.current_block = Some(*arm_bb);
+            // Bind the arm pattern's variables into MIR locals so that
+            // `VarRef`s inside the arm body resolve correctly (M4/M5 async
+            // state-machine: `match self.state { Start { f0, fut0 } => .. }`).
+            // Skipped for slice-dispatch matches, where the discriminant is the
+            // slice *length* rather than the value.
+            if !slice_dispatch {
+                if let Some(sl) = scrut_local {
+                    self.bind_pattern(&arm.pat, Some(sl), arm.pat.span);
+                }
+            }
             if let Some(guard) = &arm.guard {
                 let guard_op = self.lower_expr_to_operand(guard);
                 let arm_body_bb = self.new_block();
