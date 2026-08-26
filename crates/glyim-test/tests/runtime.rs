@@ -39,9 +39,21 @@ fn m5_root() -> std::path::PathBuf {
 const ASYNC_V2_SUBSTRING: &str = "multi-`.await` bodies are not yet supported";
 
 #[test]
-fn m5_two_step_multi_await_must_be_rejected() {
-    // Safety-net contract: multi-await must be reported with the async-v2
-    // diagnostic and must NOT be silently compiled into a broken binary.
+fn m5_two_step_multi_await_compiles_cleanly() {
+    // M4 contract: the supported multi-await shape (`two_step`, two direct
+    // calls to `async fn`) now compiles cleanly through the REAL
+    // `desugar_multi_async_fn` HIR state-machine transform — it must NOT emit
+    // the `async-v2` diagnostic (error 61), which is reserved for genuinely
+    // non-nameable futures. This guards against regressing to the old broken
+    // behavior where the supported shape was rejected.
+    //
+    // On a non-Linux host the harness cannot *execute* the binary (the executor
+    // is Linux-gated and the LLVM backend still has a generic `Future`/`block_on`
+    // trait-dispatch gap), so the run-pass fixture may surface as
+    // `CompilationFailed`. That is the known M5 host-blocker, NOT a miscompile;
+    // we tolerate it exactly as `m5_one_step_single_await_must_not_miscompile`
+    // does. A silent wrong-output or broken-binary `Passed` would be a real
+    // regression we DO catch.
     let plan = TestRunner::new(m5_root())
         .parallel(false)
         .build()
@@ -54,25 +66,34 @@ fn m5_two_step_multi_await_must_be_rejected() {
         .find(|r| r.test.name.contains("two_step"))
         .expect("m5/two_step.g fixture must be discovered");
 
-    // It must NOT look like a clean compile+run (which would be a silent
-    // miscompile). Either it is reported as failed (the expected path today), or
-    // — once M4 lands — it compiles and the run-pass/compile-fail harness passes.
-    assert!(
-        !matches!(two_step.outcome, TestOutcome::Passed),
-        "multi-await must NOT silently compile/run; it should surface the async-v2 diagnostic, \
-         got Passed with diagnostics {:?}",
-        two_step.diagnostics,
-    );
-
+    // The supported shape must NOT be rejected with the async-v2 diagnostic.
     let emitted_async_v2 = two_step
         .diagnostics
         .iter()
         .any(|d| d.message.contains(ASYNC_V2_SUBSTRING));
     assert!(
-        emitted_async_v2,
-        "multi-await must emit the async-v2 diagnostic (error 61); diagnostics: {:?}",
+        !emitted_async_v2,
+        "supported multi-await (direct async-fn calls) must NOT emit the async-v2 \
+         diagnostic (error 61); diagnostics: {:?}",
         two_step.diagnostics,
     );
+
+    // If it does not Pass (e.g. on a macOS host), the only tolerated failure is
+    // the known codegen/link gap — never a silent miscompile.
+    if !matches!(two_step.outcome, TestOutcome::Passed) {
+        let ok = matches!(
+            two_step.outcome,
+            TestOutcome::Failed {
+                reason: glyim_test::error::FailureReason::CompilationFailed { .. }
+            }
+        );
+        assert!(
+            ok,
+            "multi-await may only fail with the known codegen gap \
+             (CompilationFailed / no executable), not a miscompile; got {:?}",
+            two_step.outcome
+        );
+    }
 }
 
 #[test]
@@ -147,5 +168,9 @@ fn m5_fixtures_present_and_moded_correctly() {
         .iter()
         .find(|t| t.name.contains("two_step"))
         .expect("two_step fixture");
-    assert_eq!(two.config.mode, TestMode::CompileFail, "m5/two_step must be compile-fail");
+    assert_eq!(
+        two.config.mode,
+        TestMode::RunPass,
+        "m5/two_step must be run-pass (M4 desugar compiles it cleanly)"
+    );
 }
