@@ -1,10 +1,12 @@
 use glyim_borrowck::BorrowckCtx;
-use glyim_core::def_id::{AdtId, ConstDefId};
-use glyim_hir::{CrateHir, ItemKind};
+use glyim_core::def_id::{AdtId, ConstDefId, FnDefId, LocalDefId};
+use glyim_core::interner::Name;
+use glyim_core::primitives::{Mutability, UintTy};
+use glyim_hir::{CrateHir, ItemKind, TypeRef};
 use glyim_lower::{AdtDef, AdtKind, AdtVariant, LowerCtx};
 use glyim_mir::{Body, LocalDecl, LocalIdx, MirConst, MirConstKind};
 use glyim_span::Span;
-use glyim_type::{TyCtx, TyKind};
+use glyim_type::{FieldIdx, GenericArg, Region, Ty, TyCtx, TyKind};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use tracing::warn;
@@ -118,6 +120,17 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
         }
     }
 
+    fn field_index_by_name(
+        &self,
+        adt_id: AdtId,
+        _variant_idx: u32,
+        name: Name,
+    ) -> Option<FieldIdx> {
+        self.ty_ctx
+            .field_index(adt_id, name)
+            .map(|idx| FieldIdx::from_raw(idx as u32))
+    }
+
     fn push_span(&self, span: Span) {
         self.span_stack.borrow_mut().push(span);
     }
@@ -149,6 +162,151 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
             ty,
             span: Span::DUMMY,
         })
+    }
+
+    /// Phase 1 (GLYIM_DESTUB_PLAN): resolve `Iterator::next` for a for-loop's
+    /// iterable type. Typeck threads this through the THIR `For.next` node when
+    /// it can resolve the `impl Iterator` via its def-map; this method is the
+    /// lowering-context fallback that resolves it directly from the program's
+    /// HIR `impl Iterator for <iter_ty>` (read-only over the frozen `TyCtx` +
+    /// `CrateHir`). Without it, every for-loop in a production build fell back
+    /// to the one-iteration path. Mirrors typeck's `resolve_trait_method_fn`
+    /// scan but needs no `InferCtx`/`def_map`: the iterable type is concrete.
+    fn iterator_next_fn(&self, iter_ty: Ty, _elem_ty: Ty) -> Option<glyim_lower::IteratorNextInfo> {
+        let iter_name = self.ty_ctx.resolver().intern("Iterator");
+        let next_name = self.ty_ctx.resolver().intern("next");
+        for (_id, item) in self.hir.items.iter_enumerated() {
+            let ItemKind::Impl(impl_item) = &item.kind else {
+                continue;
+            };
+            // The impl must be for the `Iterator` trait.
+            let Some(trait_path) = &impl_item.trait_ref else {
+                continue;
+            };
+            let Some(trait_last) = trait_path.segments.last() else {
+                continue;
+            };
+            if trait_last.name != iter_name {
+                continue;
+            }
+            // The impl's `Self` type must match the for-loop's iterable type.
+            let Some(self_ty) = self.resolve_type_ref_to_ty(&impl_item.self_ty) else {
+                continue;
+            };
+            if !self.ty_struct_eq(self_ty, iter_ty) {
+                continue;
+            }
+            // Find the `next` method and its body's `FnDefId`.
+            for method in &impl_item.methods {
+                if method.name != next_name {
+                    continue;
+                }
+                let Some(body_id) = method.body else {
+                    continue;
+                };
+                let local: LocalDefId = self.hir.body_owners[body_id];
+                let fn_def_id = FnDefId::from_raw(local.to_raw());
+                let fn_substs = self.ty_ctx.intern_substitution(vec![]);
+                let fn_ty = self.ty_ctx.mk_ty(TyKind::FnDef(fn_def_id, fn_substs));
+                // The `next` body's return type is the real `Option<elem_ty>`.
+                let option_ty = self
+                    .ty_ctx
+                    .fn_sig(fn_def_id)
+                    .map(|s| s.output)
+                    .unwrap_or_else(|| self.ty_ctx.error_ty());
+                let ref_iter_ty = self.ty_ctx.mk_ref(Region::Erased, iter_ty, Mutability::Mut);
+                let discr_ty = self.ty_ctx.mk_ty(TyKind::Uint(UintTy::U8));
+                return Some(glyim_lower::IteratorNextInfo {
+                    fn_def_id,
+                    fn_substs,
+                    fn_ty,
+                    option_ty,
+                    discr_ty,
+                    ref_iter_ty,
+                });
+            }
+        }
+        None
+    }
+}
+
+impl<'a> PipelineLowerCtx<'a> {
+    /// Resolve a HIR `TypeRef` to a `Ty` read-only, using the frozen `TyCtx`'s
+    /// by-name ADT table. Supports the shapes a for-loop iterable's `Self` can
+    /// take: plain ADTs (`Counter`, `Range<T>`) and references (`&mut T`).
+    fn resolve_type_ref_to_ty(&self, tr: &TypeRef) -> Option<Ty> {
+        match tr {
+            TypeRef::Path(path) => {
+                let seg = path.segments.last()?;
+                let name = seg.name;
+                let adt_id = self.ty_ctx.adt_id_by_name(name)?;
+                let substs = match &seg.generic_args {
+                    Some(args) => {
+                        let gen_args: Vec<GenericArg> = args
+                            .iter()
+                            .filter_map(|a| self.resolve_type_ref_to_ty(a).map(GenericArg::Ty))
+                            .collect();
+                        self.ty_ctx.intern_substitution(gen_args)
+                    }
+                    None => self.ty_ctx.intern_substitution(vec![]),
+                };
+                Some(self.ty_ctx.mk_ty(TyKind::Adt(adt_id, substs)))
+            }
+            TypeRef::Ref { inner, mutability } => {
+                let inner_ty = self.resolve_type_ref_to_ty(inner)?;
+                Some(self.ty_ctx.mk_ref(Region::Erased, inner_ty, *mutability))
+            }
+            _ => None,
+        }
+    }
+
+    /// Structural type equality for concrete types (the for-loop iterable is
+    /// always concrete). Compares by ADT identity + recursive substitution
+    /// args, so a fresh `mk_ty` handle for the same logical type still matches
+    /// the typeck-resolved `iter_ty` handle.
+    fn ty_struct_eq(&self, a: Ty, b: Ty) -> bool {
+        let ka = self.ty_ctx.ty_kind(a);
+        let kb = self.ty_ctx.ty_kind(b);
+        match (ka, kb) {
+            (TyKind::Adt(a_id, a_sub), TyKind::Adt(b_id, b_sub)) => {
+                if a_id != b_id {
+                    return false;
+                }
+                let a_args = self.ty_ctx.substitution_args(*a_sub);
+                let b_args = self.ty_ctx.substitution_args(*b_sub);
+                if a_args.len() != b_args.len() {
+                    return false;
+                }
+                a_args.iter().zip(b_args.iter()).all(|(x, y)| match (x, y) {
+                    (GenericArg::Ty(xt), GenericArg::Ty(yt)) => self.ty_struct_eq(*xt, *yt),
+                    _ => x == y,
+                })
+            }
+            (TyKind::Ref(_, a_inner, a_mut), TyKind::Ref(_, b_inner, b_mut)) => {
+                a_mut == b_mut && self.ty_struct_eq(*a_inner, *b_inner)
+            }
+            (TyKind::Slice(a_inner), TyKind::Slice(b_inner)) => self.ty_struct_eq(*a_inner, *b_inner),
+            (TyKind::Array(a_inner, _), TyKind::Array(b_inner, _)) => {
+                self.ty_struct_eq(*a_inner, *b_inner)
+            }
+            (TyKind::Tuple(a_sub), TyKind::Tuple(b_sub)) => {
+                let a_args = self.ty_ctx.substitution_args(*a_sub);
+                let b_args = self.ty_ctx.substitution_args(*b_sub);
+                a_args.len() == b_args.len()
+                    && a_args.iter().zip(b_args.iter()).all(|(x, y)| match (x, y) {
+                        (GenericArg::Ty(xt), GenericArg::Ty(yt)) => self.ty_struct_eq(*xt, *yt),
+                        _ => x == y,
+                    })
+            }
+            (TyKind::Bool, TyKind::Bool)
+            | (TyKind::Unit, TyKind::Unit)
+            | (TyKind::Never, TyKind::Never)
+            | (TyKind::Char, TyKind::Char) => true,
+            (TyKind::Int(x), TyKind::Int(y)) => x == y,
+            (TyKind::Uint(x), TyKind::Uint(y)) => x == y,
+            (TyKind::Float(x), TyKind::Float(y)) => x == y,
+            _ => a == b,
+        }
     }
 }
 
@@ -306,7 +464,7 @@ mod tests {
     use glyim_core::arena::IndexVec;
     use glyim_core::interner::Interner;
     use glyim_core::primitives::IntTy;
-    use glyim_type::{GenericArg, Substitution, TyCtxMut};
+    use glyim_type::{GenericArg, TyCtxMut};
 
     /// Phase 6 (GLYIM_DESTUB_PLAN): `cv_const` must fold a `Range` const into a
     /// real `MirConstKind::Aggregate([start, end])` instead of falling back to
