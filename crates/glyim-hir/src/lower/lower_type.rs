@@ -121,7 +121,12 @@ pub(crate) fn lower_path_from_type(node: &SyntaxNode, interner: &mut Interner) -
 
     for el in node.children_with_tokens() {
         match el {
-            glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Ident => {
+            glyim_syntax::SyntaxElement::Token(t)
+                if t.kind() == SyntaxKind::Ident
+                    || t.kind() == SyntaxKind::KwSelf
+                    || t.kind() == SyntaxKind::KwSuper
+                    || t.kind() == SyntaxKind::KwCrate =>
+            {
                 flush_pending(&mut segments, &mut pending_args);
                 segments.push(PathSegment {
                     name: interner.intern(t.text()),
@@ -131,7 +136,10 @@ pub(crate) fn lower_path_from_type(node: &SyntaxNode, interner: &mut Interner) -
             glyim_syntax::SyntaxElement::Node(n) if n.kind() == SyntaxKind::UsePath => {
                 for t in n.children_with_tokens() {
                     if let glyim_syntax::SyntaxElement::Token(tt) = t
-                        && tt.kind() == SyntaxKind::Ident
+                        && (tt.kind() == SyntaxKind::Ident
+                            || tt.kind() == SyntaxKind::KwSelf
+                            || tt.kind() == SyntaxKind::KwSuper
+                            || tt.kind() == SyntaxKind::KwCrate)
                     {
                         flush_pending(&mut segments, &mut pending_args);
                         segments.push(PathSegment {
