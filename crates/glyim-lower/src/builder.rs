@@ -36,6 +36,13 @@ pub struct MirBuilder<'a> {
     pub(crate) var_map: std::collections::HashMap<Name, LocalIdx>,
     pub(crate) capture_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
     pub(crate) param_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
+    /// Maps a type-checker `LocalVarId` (carried by `VarRef` and by
+    /// `PatternKind::Binding::var_id`) to the MIR `LocalIdx` this builder
+    /// allocated for that binding. The type-checker's `LocalVarId` space and
+    /// the MIR local-index space are NOT aligned (temporaries interleave
+    /// between user-variable allocations), so `VarRef(local_var_id)` must be
+    /// resolved through this map rather than `LocalIdx::from_raw(var_id)`.
+    pub(crate) local_var_map: std::collections::HashMap<thir::LocalVarId, LocalIdx>,
     pub(crate) current_block: Option<BasicBlockIdx>,
     /// Stack of enclosing loops for break/continue resolution.
     pub(crate) loop_stack: Vec<LoopInfo>,
@@ -85,6 +92,7 @@ impl<'a> MirBuilder<'a> {
             var_map: std::collections::HashMap::new(),
             capture_map: std::collections::HashMap::new(),
             param_map: std::collections::HashMap::new(),
+            local_var_map: std::collections::HashMap::new(),
             current_block: None,
             loop_stack: Vec::new(),
             drop_flags: std::collections::HashMap::new(),
@@ -133,10 +141,12 @@ impl<'a> MirBuilder<'a> {
             match &param.pat.kind {
                 thir::PatternKind::Binding {
                     name,
+                    var_id,
                     mutability: _,
                     subpattern,
                 } => {
                     self.var_map.insert(*name, local);
+                    self.local_var_map.insert(*var_id, local);
                     if let Some(sub) = subpattern {
                         self.bind_pattern(sub, Some(local), param.span);
                     }
@@ -148,7 +158,27 @@ impl<'a> MirBuilder<'a> {
             }
         }
 
-        for stmt in &thir.stmts {
+        for (i, stmt) in thir.stmts.iter().enumerate() {
+            let is_last = i + 1 == thir.stmts.len();
+            if is_last {
+                // The function body's tail expression (a `Stmt::Expr` pushed
+                // by the type-checker as the final statement) is the function's
+                // return value. Route it into the return slot (local 0) instead
+                // of a discarded temporary, otherwise a non-`()` function that
+                // ends in a bare expression returns an uninitialized slot
+                // (interpreter panics "read from uninitialized local 0"). For
+                // `()` tails this also writes a valid `Unit` so the `Return`
+                // terminator reads a populated slot.
+                if let thir::Stmt::Expr { expr } = stmt {
+                    let rvalue = self.lower_expr_to_rvalue(expr);
+                    let ret_place = glyim_mir::Place::new(LocalIdx::from_raw(0));
+                    self.push_stmt(
+                        glyim_mir::StatementKind::Assign(ret_place, rvalue),
+                        expr.span,
+                    );
+                    continue;
+                }
+            }
             self.lower_stmt(stmt);
         }
 
@@ -362,6 +392,7 @@ impl<'a> MirBuilder<'a> {
             };
             let local = builder.alloc_local(capture.ty, mutability, span);
             builder.capture_map.insert(capture.local, local);
+            builder.local_var_map.insert(capture.local, local);
         }
 
         // Allocate locals for parameters and populate param_map.
@@ -374,6 +405,7 @@ impl<'a> MirBuilder<'a> {
             };
             let local = builder.alloc_local(param.ty, mutability, param.span);
             builder.param_map.insert(param.local, local);
+            builder.local_var_map.insert(param.local, local);
         }
 
         // Set arg_count to include captures + original params.
