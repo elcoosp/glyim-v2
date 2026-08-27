@@ -6,7 +6,6 @@ use glyim_core::primitives::*;
 use glyim_span::Span;
 use glyim_type::*;
 
-#[allow(missing_docs)]
 glyim_core::define_idx!(LocalVarId);
 
 #[derive(Clone, Debug)]
