@@ -22,10 +22,25 @@ impl<'a> Parser<'a> {
             SyntaxKind::And => {
                 self.start_node(SyntaxKind::RefType);
                 self.bump(); // &
-                if self.current_kind() == SyntaxKind::KwMut {
-                    self.bump(); // mut
+                // Optional `mut` and/or lifetime, in either order:
+                // `&mut`, `&'a`, `&'a mut`, `&mut 'a`.
+                loop {
+                    if self.current_kind() == SyntaxKind::KwMut {
+                        self.bump();
+                        continue;
+                    }
+                    if self.current_kind() == SyntaxKind::Lifetime {
+                        self.bump();
+                        continue;
+                    }
+                    break;
                 }
                 self.parse_type();
+                self.finish_node();
+            }
+            SyntaxKind::Lifetime => {
+                self.start_node(SyntaxKind::Lifetime);
+                self.bump();
                 self.finish_node();
             }
             SyntaxKind::Star => {
@@ -127,6 +142,23 @@ impl<'a> Parser<'a> {
                 self.parse_path();
                 if self.current_kind() == SyntaxKind::Lt {
                     self.parse_type_arg_list();
+                } else if self.current_kind() == SyntaxKind::LParen {
+                    // Function-trait shorthand: `FnOnce(Args)` / `Fn(Args)`,
+                    // optionally `-> Ret` (desugars to `Output = Ret`).
+                    self.start_node(SyntaxKind::GenericArgList);
+                    self.bump(); // (
+                    while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
+                        self.parse_type();
+                        if self.current_kind() == SyntaxKind::Comma {
+                            self.bump();
+                        }
+                    }
+                    self.expect(SyntaxKind::RParen);
+                    self.finish_node(); // GenericArgList
+                }
+                if self.current_kind() == SyntaxKind::Arrow {
+                    self.bump();
+                    self.parse_type(); // function-trait Output
                 }
                 self.finish_node();
             }
