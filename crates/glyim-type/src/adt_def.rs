@@ -6,8 +6,10 @@ use glyim_core::interner::Name;
 /// arity-correct match-arm skeletons in the LSP (plan §5.1) and to carry
 /// variant shape in structured diagnostics (plan §5.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum VariantStyle {
     /// `Variant` — no associated data.
+    #[default]
     Unit,
     /// `Variant(a, b)` — positional fields.
     Tuple,
@@ -15,11 +17,6 @@ pub enum VariantStyle {
     Struct,
 }
 
-impl Default for VariantStyle {
-    fn default() -> Self {
-        crate::adt_def::VariantStyle::Unit
-    }
-}
 
 #[derive(Clone, Debug)]
 /// AdtDef.
