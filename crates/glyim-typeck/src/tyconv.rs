@@ -651,13 +651,16 @@ pub fn resolve_path_type(
         // well-typed (no spurious `unresolved type` diagnostic) and lets the
         // rest of typeck treat it as a real, comparable type.
         if matches!(ctx.ty_kind(self_ty), TyKind::Param(_)) || ctx.name_str(first.name) == "Self" {
-            let trait_def_id = if matches!(ctx.ty_kind(self_ty), TyKind::Param(_)) {
-                // For a generic param, use its registered trait bound(s).
+            // `Self::Item` (or an abstract `Self` that lowered to a param) must
+            // be projected against the *trait* that declares `Item`, not by
+            // looking up a param bound (there is no bound registered for the
+            // bare name `Self`). A generic *receiver* param (`F::Output`) uses
+            // its own trait bound instead.
+            let trait_def_id = if ctx.name_str(first.name) == "Self" {
+                ctx.find_trait_with_assoc_type(assoc_name)
+            } else {
                 ctx.param_bounds_for(first.name)
                     .and_then(|traits| traits.first().copied())
-            } else {
-                // `Self::Item` — find the trait that declares `Item`.
-                ctx.find_trait_with_assoc_type(assoc_name)
             };
             if let Some(tid) = trait_def_id {
                 let substs = ctx.intern_substitution(vec![GenericArg::Ty(self_ty)]);
