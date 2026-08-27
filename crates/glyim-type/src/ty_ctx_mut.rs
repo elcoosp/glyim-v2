@@ -89,6 +89,12 @@ pub struct TyCtxMut {
     /// `AdtId`s with an explicit `Drop` impl (or owning builtins). Mirrors the
     /// `drop_impls` set on the frozen `TyCtx`, consulted by `needs_drop`.
     drop_impls: HashSet<AdtId>,
+    /// Concrete trait-method dispatch table (mirrors `TyCtx::impl_method_fns`).
+    /// Populated during `typeck_crate` from `impl Trait for Type` items;
+    /// carried into the frozen `TyCtx` for monomorphization / interpreter
+    /// devirtualization.
+    pub(crate) impl_method_fns:
+        HashMap<(glyim_core::def_id::TraitDefId, AdtId), HashMap<Name, FnDefId>>,
 }
 
 impl TyCtxMut {
@@ -122,6 +128,7 @@ impl TyCtxMut {
             lang_items: LangItems::default(),
             synthetic_adt_counter: 2_000_000,
             drop_impls: HashSet::new(),
+            impl_method_fns: HashMap::new(),
         };
         // sentinels
         assert_eq!(
@@ -230,6 +237,7 @@ impl TyCtxMut {
             lang_items: ctx.lang_items.clone(),
             synthetic_adt_counter: 2_000_000,
             drop_impls: ctx.drop_impls.clone(),
+            impl_method_fns: ctx.impl_method_fns.clone(),
         }
     }
 
@@ -853,6 +861,7 @@ impl TyCtxMut {
             body_tys: self.body_tys.clone(),
             lang_items: self.lang_items.clone(),
             drop_impls: self.drop_impls.clone(),
+            impl_method_fns: self.impl_method_fns.clone(),
         }
     }
 
@@ -879,6 +888,7 @@ impl TyCtxMut {
             body_tys: self.body_tys,
             lang_items: self.lang_items,
             drop_impls: self.drop_impls,
+            impl_method_fns: self.impl_method_fns,
         }
     }
 
@@ -908,6 +918,23 @@ impl TyCtxMut {
     /// declared, replacing the previously-divergent per-crate guesses.
     pub fn mark_has_drop(&mut self, adt_id: AdtId) {
         self.drop_impls.insert(adt_id);
+    }
+
+    /// Register that `impl trait_def_id for <adt_id>` provides `method_name`
+    /// via the function `fn_def_id`. Populated during `typeck_crate` from
+    /// `impl Trait for Type` items; carried into the frozen `TyCtx` for
+    /// monomorphization / interpreter devirtualization.
+    pub fn register_impl_method(
+        &mut self,
+        trait_def_id: glyim_core::def_id::TraitDefId,
+        adt_id: AdtId,
+        method_name: Name,
+        fn_def_id: FnDefId,
+    ) {
+        self.impl_method_fns
+            .entry((trait_def_id, adt_id))
+            .or_default()
+            .insert(method_name, fn_def_id);
     }
 
     fn compute_adt_interior_mutability(&mut self, adt_id: AdtId) -> bool {
