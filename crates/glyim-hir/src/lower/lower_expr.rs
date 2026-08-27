@@ -142,8 +142,8 @@ pub(crate) fn lower_block_to_expr(
 
     let expr = Expr::Block { stmts, tail };
 
-    let eid = body.alloc_expr(expr, node_span(node));
-    eid
+    
+    body.alloc_expr(expr, node_span(node))
 }
 
 /// Convert a pattern into an expression (for LHS of assignment). Kept for the
@@ -301,13 +301,13 @@ pub(crate) fn lower_expr(
             // loop over the `Future` trait.
             let operand = node
                 .children()
-                .find(|c| is_expr_node(c))
+                .find(is_expr_node)
                 .and_then(|c| lower_expr(&c, interner, body, diags, struct_field_map));
             let operand = match operand {
                 Some(e) => e,
                 None => {
-                    let eid = body.alloc_expr(Expr::Missing, node_span(node));
-                    eid
+                    
+                    body.alloc_expr(Expr::Missing, node_span(node))
                 }
             };
             let expr = Expr::Await { expr: operand };
