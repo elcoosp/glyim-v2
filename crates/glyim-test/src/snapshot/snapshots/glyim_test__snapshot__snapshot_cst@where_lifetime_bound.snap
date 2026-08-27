@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 18
 expression: tree
 ---
 SourceFile@0..24
@@ -25,7 +24,8 @@ SourceFile@0..24
             Ident@18..19 "T"
         Colon@19..20 ":"
         Bound@20..22
-          Lifetime@20..22 "'a"
+          Lifetime@20..22
+            Lifetime@20..22 "'a"
     Block@22..24
       LBrace@22..23 "{"
       RBrace@23..24 "}"

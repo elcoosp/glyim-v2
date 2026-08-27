@@ -1,6 +1,5 @@
 ---
 source: crates/glyim-test/src/snapshot/mod.rs
-assertion_line: 18
 expression: tree
 ---
 SourceFile@0..163
@@ -68,7 +67,7 @@ SourceFile@0..163
           LitExpr@99..100
             IntLit@99..100 "0"
         RBrace@100..101 "}"
-    FnDef@101..146
+    FnDef@101..162
       KwFn@101..103 "fn"
       Ident@103..106 "map"
       TypeParamList@106..111
@@ -104,23 +103,28 @@ SourceFile@0..163
           UsePath@132..133
             Ident@132..133 "F"
         Gt@133..134 ">"
-      WhereClause@134..146
+      WhereClause@134..161
         KwWhere@134..139 "where"
-        WherePredicate@139..146
+        WherePredicate@139..161
           PathType@139..140
             UsePath@139..140
               Ident@139..140 "F"
           Colon@140..141 ":"
-          Bound@141..146
-            PathType@141..146
+          Bound@141..161
+            PathType@141..161
               UsePath@141..146
                 Ident@141..146 "FnMut"
-    LParen@146..147 "("
-    Ident@147..151 "Self"
-    ColonColon@151..153 "::"
-    Ident@153..157 "Item"
-    RParen@157..158 ")"
-    Arrow@158..160 "->"
-    Ident@160..161 "B"
-    Semicolon@161..162 ";"
+              GenericArgList@146..158
+                LParen@146..147 "("
+                PathType@147..157
+                  UsePath@147..157
+                    Ident@147..151 "Self"
+                    ColonColon@151..153 "::"
+                    Ident@153..157 "Item"
+                RParen@157..158 ")"
+              Arrow@158..160 "->"
+              PathType@160..161
+                UsePath@160..161
+                  Ident@160..161 "B"
+      Semicolon@161..162 ";"
     RBrace@162..163 "}"
