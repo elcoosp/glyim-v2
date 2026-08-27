@@ -67,23 +67,11 @@ impl fmt::Debug for Ty {
     }
 }
 
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(TyVar);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(IntVar);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(FloatVar);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(RegionVid);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(ConstVar);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(FieldIdx);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
