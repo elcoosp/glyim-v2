@@ -745,6 +745,7 @@ impl TyCtxMut {
     /// the same `Adt(adt_id, _)` compare equal even when they are distinct arena
     /// allocations. Used to key associated-type lookups by logical type rather
     /// than by `Ty` handle (plan unstub-5 P5).
+    #[allow(dead_code)]
     fn same_adt(&self, a: Ty, b: Ty) -> bool {
         match (self.ty_kind(a), self.ty_kind(b)) {
             (TyKind::Adt(id_a, _), TyKind::Adt(id_b, _)) => id_a == id_b,
@@ -762,13 +763,14 @@ impl TyCtxMut {
         trait_def_id: glyim_core::def_id::TraitDefId,
         assoc_name: Name,
     ) -> Option<Ty> {
-        
+        // Exact (self_ty, trait) key match. `Ty` equality is by interned raw
+        // index; the frozen `TyCtx` (used by codegen) adds `by_adt` /
+        // param-placeholder fallbacks, but the mutation phase only needs the
+        // exact registration. A single registered entry is keyed here, so the
+        // inner `find` can never be ambiguous — no first-match hazard.
         self.impl_assoc_types
-            .iter()
-            .find(|((key_self, key_trait), _)| {
-                *key_trait == trait_def_id && self.same_adt(self_ty, *key_self)
-            })
-            .and_then(|(_, entries)| {
+            .get(&(self_ty, trait_def_id))
+            .and_then(|entries| {
                 entries
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
