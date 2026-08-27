@@ -128,6 +128,15 @@ impl<'a> MonoCtx<'a> {
                 MonoItem::DropGlue { ty } => drop_glue_body(*ty),
             };
 
+            // Devirtualize generic-bound trait method calls
+            // (`f.poll()` where `f: F: Trait`) against the *concrete* receiver
+            // types that monomorphization has substituted. Each
+            // `VirtualMethod` constant is rewritten in place to a direct
+            // `Fn(def_id)` constant so the existing `scan_terminator` `Fn` arm
+            // enqueues the impl and codegen sees a static call.
+            let mut body = body;
+            self.devirtualize(&mut body);
+
             self.scan_body_for_refs(&body);
             let symbol = format!("{:?}", item);
             let id = self.items.push(MonoItemData {
@@ -161,6 +170,51 @@ impl<'a> MonoCtx<'a> {
             {
                 let drop_ty = local_decl.ty;
                 self.enqueue(MonoItem::DropGlue { ty: drop_ty });
+            }
+        }
+    }
+
+    /// Rewrite every `VirtualMethod` callee constant in `body` to a direct
+    /// `Fn(def_id)` constant, resolving the impl function against the
+    /// monomorphized (concrete) receiver type of the call's first argument.
+    /// No-op when no type context is attached or when a receiver type cannot
+    /// be recovered. After rewriting, `scan_terminator`'s `Fn` arm enqueues
+    /// the resolved function automatically.
+    fn devirtualize(&self, body: &mut Arc<glyim_mir::Body>) {
+        let Some(ty_ctx) = self.ty_ctx else {
+            return;
+        };
+        let body_mut = Arc::make_mut(body);
+        for block in body_mut.basic_blocks.iter_mut() {
+            if let TerminatorKind::Call { func, args, .. } = &mut block.terminator.kind {
+                let recv_ty = args.first().and_then(|a| match a {
+                    Operand::Constant(c) => Some(c.ty),
+                    Operand::Copy(p) | Operand::Move(p) => {
+                        body_mut.locals.get(p.local).map(|d| d.ty)
+                    }
+                });
+                if let Operand::Constant(c) = func {
+                    if let MirConstKind::VirtualMethod {
+                        trait_def_id,
+                        method_name,
+                    } = c.kind
+                    {
+                        if let (Some(recv_ty), Some(fn_def_id)) = (
+                            recv_ty,
+                            recv_ty.and_then(|rt| {
+                                ty_ctx.resolve_trait_method(trait_def_id, rt, method_name)
+                            }),
+                        ) {
+                            let substs = Substitution::empty();
+                            let fn_ty = ty_ctx.mk_ty(TyKind::FnDef(fn_def_id, substs));
+                            *c = glyim_mir::MirConst {
+                                kind: MirConstKind::Fn(fn_def_id, substs),
+                                ty: fn_ty,
+                                span: c.span,
+                            };
+                        }
+                    }
+                }
             }
         }
     }
