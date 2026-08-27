@@ -373,12 +373,10 @@ fn compute_move_dataflow(
         // desugar's poll loop, where every `.await`'s future is a `Call`
         // destination that is immediately moved into the suspended state.
         if let glyim_mir::TerminatorKind::Call { destination, .. } = &block_data.terminator.kind
-        {
-            if let Some(mp_idx) = move_paths.find(destination) {
+            && let Some(mp_idx) = move_paths.find(destination) {
                 record_init(&mut move_paths, mp_idx, &mut block_inits[bi]);
                 record_init(&mut move_paths, mp_idx, &mut block_dead_inits[bi]);
             }
-        }
     }
 
     let mut predecessors: Vec<Vec<BasicBlockIdx>> = vec![Vec::new(); num_blocks];
@@ -684,6 +682,7 @@ enum UsedPlace<'a> {
     Inspect(&'a Place),
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_stmt_use_after_move(
     stmt: &glyim_mir::Statement,
     block_idx: glyim_mir::BasicBlockIdx,
@@ -769,7 +768,7 @@ fn collect_rvalue_used_places<'a>(rvalue: &'a Rvalue, places: &mut SmallVec<[Use
 fn check_place_use_after_move(
     used_place: &UsedPlace<'_>,
     stmt: &glyim_mir::Statement,
-    block_idx: glyim_mir::BasicBlockIdx,
+    _block_idx: glyim_mir::BasicBlockIdx,
     moved: &BitSet,
     dead: &BitSet,
     move_paths: &mut MovePathArena,
