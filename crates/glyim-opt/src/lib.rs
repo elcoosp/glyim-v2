@@ -44,10 +44,9 @@ pub struct Optimized {
 /// optimize.
 pub fn optimize(ctx: &TyCtx, body: &Arc<Body>) -> Optimized {
     let mut body = (**body).clone();
-    // Validate well-formedness up front (de-stubbing plan §8.8). Gated to debug
-    // builds so it never affects release codegen, but catches any later pass
-    // that produces an ill-formed body during development.
-    #[cfg(debug_assertions)]
+    // Validate well-formedness up front (de-stubbing plan §8.8). Runs
+    // unconditionally so release builds also catch any later pass that
+    // produces an ill-formed body.
     {
         if let Err(e) = validate::validate_body(ctx, &body) {
             panic!("MIR failed validation before optimization: {:?}", e);
