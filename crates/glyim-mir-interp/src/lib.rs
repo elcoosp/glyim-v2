@@ -23,7 +23,6 @@
     clippy::collapsible_if
 )]
 use glyim_core::{primitives::TargetInfo, BinOp, CrateId, DefId, LocalDefId, UnOp};
-use glyim_core::def_id::{AdtId, FnDefId, TraitDefId};
 use glyim_layout::{LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
 use glyim_type::{AdtKind, FieldIdx, Substitution, Ty, TyCtx, TyKind};
