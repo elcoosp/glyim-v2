@@ -249,9 +249,16 @@ pub(crate) fn lower_param(
     let pat = if name_text == "_" {
         Pat::Wild
     } else {
+        let mutability = if node.children_with_tokens().any(
+            |c| matches!(&c, glyim_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::KwMut),
+        ) {
+            Mutability::Mut
+        } else {
+            Mutability::Not
+        };
         Pat::Binding {
             name,
-            mutability: Mutability::Not,
+            mutability,
             subpattern: None,
         }
     };
