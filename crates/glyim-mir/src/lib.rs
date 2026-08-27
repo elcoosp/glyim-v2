@@ -12,14 +12,8 @@ use glyim_core::primitives::*;
 use glyim_span::Span;
 use glyim_type::*;
 
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(BasicBlockIdx);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(LocalIdx);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(VariantIdx);
 
 #[derive(Clone, Debug)]
