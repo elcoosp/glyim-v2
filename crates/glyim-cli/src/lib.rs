@@ -220,7 +220,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             match build_proc_macro_dependencies(&deps) {
                 Ok(reg) => Some(reg),
                 Err(e) => {
-                    return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                    return Err(vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                         "proc-macro dependency build failed: {e}"
                     ))]);
                 }
@@ -278,7 +278,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         )?;
         let bitcode_dir = object_path.with_extension("thin-bc");
         std::fs::create_dir_all(&bitcode_dir).map_err(|e| {
-            vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+            vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                 "ThinLTO: failed to create bitcode dir {}: {}",
                 bitcode_dir.display(),
                 e
@@ -287,14 +287,14 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
         let bitcode_paths = llvm
             .emit_thinlto_bitcode_files(&artifacts.mir_bodies, &bitcode_dir)
             .map_err(|e| {
-                vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                     "ThinLTO per-CGU bitcode emission failed: {:?}",
                     e
                 ))]
             })?;
         let thin_objects =
             linker::thin_lto_link(&bitcode_paths, args.opt_level, &bitcode_dir).map_err(|e| {
-                vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+                vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                     "ThinLTO thin-link failed: {}",
                     e
                 ))]
@@ -305,7 +305,7 @@ pub(crate) fn run_with_args(args: CliArgs) -> Result<(), Vec<glyim_diag::GlyimDi
             )]
         })?;
         std::fs::copy(&thin_obj, &object_path).map_err(|e| {
-            vec![glyim_diag::GlyimDiagnostic::internal_error(&format!(
+            vec![glyim_diag::GlyimDiagnostic::internal_error(format!(
                 "ThinLTO: failed to copy thin-linked object to {}: {}",
                 object_path.display(),
                 e
