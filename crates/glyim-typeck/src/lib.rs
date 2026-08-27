@@ -50,7 +50,6 @@ use glyim_type::{
     AdtDef, AdtKind, FieldDef, GenericArg, ImplPolarity, MethodDef, Predicate,
     TraitDef, TraitPredicate, TraitRef, Ty, TyCtx, TyCtxMut, VariantDef, FnSig,
 };
-use glyim_type::display::PrintTy;
 
 #[derive(Clone, Debug)]
 /// TypeckResult.
@@ -398,7 +397,7 @@ pub fn typeck_crate(
     // trait without a full trait solver. Name-keyed and crate-wide; parameter
     // names are interned and unique within a function.
     {
-        let mut register_bounds = |ctx: &mut TyCtxMut, params: &[glyim_hir::GenericParam],
+        let register_bounds = |ctx: &mut TyCtxMut, params: &[glyim_hir::GenericParam],
                                    where_clauses: &[glyim_hir::where_clause::WhereClause]| {
             for gp in params {
                 if let glyim_hir::GenericParamKind::Type { bounds, .. } = &gp.kind {
