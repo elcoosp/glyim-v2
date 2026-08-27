@@ -23,15 +23,27 @@ pub enum Poll<T> {
     Pending,
 }
 
-/// A handle to wake a parked task. No-op in this single-threaded executor.
-#[derive(Debug, Clone, Copy)]
-pub struct Waker;
+use std::sync::{Arc, Condvar, Mutex};
+
+/// A handle to wake a parked task. Backed by a shared `(ready-flag,
+/// condvar)` pair supplied by [`block_on`]; `wake` flips the flag and
+/// notifies so the executor's wait is released instead of spinning.
+#[derive(Debug, Clone)]
+pub struct Waker {
+    pair: Arc<(Mutex<bool>, Condvar)>,
+}
 
 impl Waker {
-    /// Wake the associated task. No-op here (the executor keeps polling).
-    pub fn wake(&self) {}
-    /// Wake by reference. No-op here.
-    pub fn wake_by_ref(&self) {}
+    /// Wake the associated task: mark it ready and release the executor's wait.
+    pub fn wake(&self) {
+        let (lock, cvar) = &*self.pair;
+        *lock.lock().unwrap() = true;
+        cvar.notify_one();
+    }
+    /// Wake by reference. Identical to [`Waker::wake`] for this executor.
+    pub fn wake_by_ref(&self) {
+        self.wake();
+    }
 }
 
 /// Per-poll context handed to [`Future::poll`].
@@ -42,7 +54,11 @@ pub struct Context {
 impl Context {
     /// Construct a `Context` carrying the given [`Waker`].
     pub fn new() -> Context {
-        Context { waker: Waker }
+        Context {
+            waker: Waker {
+                pair: Arc::new((Mutex::new(false), Condvar::new())),
+            },
+        }
     }
 
     /// Borrow the [`Waker`] for this poll.
@@ -67,21 +83,24 @@ pub trait Future {
 
 /// Drive `future` to completion, polling until it returns [`Poll::Ready`].
 ///
-/// This is a single-threaded, co-operative loop: between polls the executor
-/// yields to the scheduler (here, just spins) so a real waker could resume it.
-/// A `Pending` result keeps the loop alive; the no-op waker means a future
-/// that never becomes `Ready` would spin indefinitely, which is the expected
-/// "not yet a reactor" limitation documented in `KNOWN_GAPS.md`.
+/// On [`Poll::Pending`] the executor parks on the waker's condvar rather than
+/// busy-spinning: a real async task calls `cx.waker().wake()` (typically from a
+/// reactor) to resume. A future that returns `Pending` without ever waking the
+/// waker would block here — which is the correct "no reactor scheduled me"
+/// behaviour once `async fn` / `.await` desugaring lands, since a genuine
+/// pending future must always signal re-poll via its waker.
 pub fn block_on<F: Future>(mut future: F) -> F::Output {
     let mut cx = Context::new();
     loop {
         match future.poll(&mut cx) {
             Poll::Ready(value) => return value,
             Poll::Pending => {
-                // Cooperative yield point. In the single-threaded MVP there is
-                // nothing else to run, so we simply re-poll. A real executor
-                // would hand control to the scheduler / reactor here.
-                std::thread::yield_now();
+                let (lock, cvar) = &*cx.waker.pair;
+                let mut ready = lock.lock().unwrap();
+                while !*ready {
+                    ready = cvar.wait(ready).unwrap();
+                }
+                *ready = false;
             }
         }
     }
@@ -99,11 +118,14 @@ mod tests {
 
     impl Future for PendingThenReady {
         type Output = i32;
-        fn poll(&mut self, _cx: &mut Context) -> Poll<i32> {
+        fn poll(&mut self, cx: &mut Context) -> Poll<i32> {
             if self.remaining == 0 {
                 Poll::Ready(self.value)
             } else {
                 self.remaining -= 1;
+                // Signal the executor to re-poll us: a pending future must
+                // always wake its waker so `block_on` resumes it.
+                cx.waker().wake();
                 Poll::Pending
             }
         }
