@@ -79,6 +79,8 @@ pub enum SyntaxKind {
 /// Variant.
     KwMove,
 /// Variant.
+    KwMacro,
+/// Variant.
     KwMacroRules,
 /// Variant.
     KwAsync,
@@ -95,6 +97,8 @@ pub enum SyntaxKind {
     StringLit,
 /// Variant.
     CharLit,
+/// Variant.
+    ByteLit,
 /// Variant.
     BoolLit,
 /// Variant.
@@ -148,6 +152,16 @@ pub enum SyntaxKind {
     StarEq,
 /// Variant.
     SlashEq,
+/// Variant.
+    OrEq,
+/// Variant.
+    AndEq,
+/// Variant.
+    CaretEq,
+/// Variant.
+    ShlEq,
+/// Variant.
+    ShrEq,
     // Punctuation
 /// Variant.
     Arrow,
