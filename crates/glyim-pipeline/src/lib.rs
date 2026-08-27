@@ -399,6 +399,53 @@ pub struct MirCompilation {
     pub ty_ctx: Arc<glyim_type::TyCtx>,
 }
 
+impl MirCompilation {
+    /// Monomorphize the whole program starting from `entry` (a function's
+    /// `FnDefId`), returning the concrete MIR bodies keyed by `DefId`.
+    ///
+    /// Generic functions (e.g. `block_on<F: Future>`) are instantiated with
+    /// their concrete argument types via [`glyim_lower::mono::MonoCtx`] and the
+    /// substitution machinery in `mono_cache`, so a call like
+    /// `block_on::<TwoFuture>(f)` yields a `block_on` body whose receiver `f`
+    /// has the concrete type `TwoFuture`. Trait-method calls (`f.poll()`) are
+    /// devirtualized against that concrete type during this pass, turning the
+    /// `VirtualMethod` callee into a static `Fn` reference.
+    ///
+    /// The returned bodies are suitable for the in-process
+    /// `glyim_mir_interp` interpreter: add each `(owner, body)` pair to the
+    /// interpreter's function table and run the entry body.
+    pub fn monomorphize(
+        &self,
+        entry: glyim_core::def_id::FnDefId,
+    ) -> Vec<(glyim_core::def_id::DefId, Arc<glyim_mir::Body>)> {
+        use glyim_lower::mono::{MonoCtx, MonoItem};
+
+        let mut mono = MonoCtx::new();
+        mono.with_ty_ctx(&self.ty_ctx);
+        let sink = std::cell::RefCell::new(DiagSink::new());
+        let mir_bodies =
+            crate::mono_cache::make_mir_body_provider(&self.bodies, &sink, &self.ty_ctx);
+        let drop_glue = |_ty: glyim_type::Ty| {
+            Arc::new(glyim_mir::Body::dummy(glyim_core::def_id::DefId::new(
+                glyim_core::def_id::CrateId::from_raw(0),
+                glyim_core::def_id::LocalDefId::from_raw(0),
+            )))
+        };
+        mono.collect(
+            &[MonoItem::Fn {
+                def_id: entry,
+                substs: glyim_type::Substitution::empty(),
+            }],
+            &mir_bodies,
+            &drop_glue,
+        );
+        mono.items()
+            .iter()
+            .map(|it| (it.body.owner, it.body.clone()))
+            .collect()
+    }
+}
+
 /// Compile a single source file to MIR only (no backend code generation).
 ///
 /// This is the entry point used by `glyip test` and other runners that execute
