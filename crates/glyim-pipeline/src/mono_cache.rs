@@ -2,7 +2,7 @@
 //! Mono item caching for the pipeline.
 
 use glyim_core::Mutability;
-use glyim_core::def_id::{CrateId, DefId, FnDefId, LocalDefId};
+use glyim_core::def_id::{CrateId, DefId, LocalDefId};
 use glyim_diag::{DiagSink, GlyimDiagnostic};
 use glyim_lower::mono::MonoItemData;
 use glyim_mir::{
