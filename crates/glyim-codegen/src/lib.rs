@@ -129,8 +129,10 @@ impl LayoutProvider for GlyimLayoutProvider {
 /// transforms) so existing byte-exact tests remain stable. Levels `O1` and
 /// above additionally run the peephole pass (see [`BytecodeBackend::peephole`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum OptLevel {
     /// No optimization: emit lowering output verbatim.
+    #[default]
     O0,
     /// Peephole optimizations: constant folding and trivial dead-code removal.
     O1,
@@ -140,11 +142,6 @@ pub enum OptLevel {
     O3,
 }
 
-impl Default for OptLevel {
-    fn default() -> Self {
-        OptLevel::O0
-    }
-}
 
 /// BytecodeBackend.
 pub struct BytecodeBackend {
@@ -554,7 +551,7 @@ impl BytecodeBackend {
     /// The `const_is_int` record (populated during emission) ensures float and
     /// string constants are never folded, so this pass is type-safe.
     fn peephole(&self, bc: &mut Vec<u8>) {
-        let mut instrs = decode_bytecode(bc);
+        let instrs = decode_bytecode(bc);
         let ints = self.const_is_int.borrow();
         let mut int_iter = ints.iter().copied();
         let mut out: Vec<Instr> = Vec::with_capacity(instrs.len());
