@@ -736,7 +736,6 @@ impl TyCtxMut {
             TyKind::Adt(adt_id, _) => Some(*adt_id),
             _ => None,
         };
-        
         self.impl_assoc_types
             .iter()
             .find(|((sty, _), entries)| {
