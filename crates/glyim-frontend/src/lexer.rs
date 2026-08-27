@@ -94,10 +94,26 @@ impl<'a> Lexer<'a> {
 
             match ch {
                 'a'..='z' | 'A'..='Z' | '_' => {
-                    self.lex_ident_or_keyword();
-                    let text = &self.source[start..self.pos];
-                    let kind = lookup_keyword(text);
-                    tokens.push(Token::new(kind, self.span(start, self.pos), text));
+                    // Byte literals: `b'x'` or `b"..."` (and uppercase `B`).
+                    let nb = self.peek_next();
+                    if (self.source[start..self.pos + 1].chars().count() == 1)
+                        && (self.source[start..].starts_with('b')
+                            || self.source[start..].starts_with('B'))
+                        && (nb == Some('\'') || nb == Some('"'))
+                    {
+                        self.lex_byte_lit();
+                        let text = &self.source[start..self.pos];
+                        tokens.push(Token::new(
+                            SyntaxKind::ByteLit,
+                            self.span(start, self.pos),
+                            text,
+                        ));
+                    } else {
+                        self.lex_ident_or_keyword();
+                        let text = &self.source[start..self.pos];
+                        let kind = lookup_keyword(text);
+                        tokens.push(Token::new(kind, self.span(start, self.pos), text));
+                    }
                 }
                 '0'..='9' => {
                     let kind = self.lex_number();
@@ -329,11 +345,20 @@ impl<'a> Lexer<'a> {
                 }
                 '^' => {
                     self.advance();
-                    tokens.push(Token::new(
-                        SyntaxKind::Caret,
-                        self.span(start, self.pos),
-                        "^",
-                    ));
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        tokens.push(Token::new(
+                            SyntaxKind::CaretEq,
+                            self.span(start, self.pos),
+                            "^=",
+                        ));
+                    } else {
+                        tokens.push(Token::new(
+                            SyntaxKind::Caret,
+                            self.span(start, self.pos),
+                            "^",
+                        ));
+                    }
                 }
                 '@' => {
                     self.advance();
@@ -641,6 +666,38 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn lex_byte_lit(&mut self) {
+        // Current token start is the `b`/`B`; the char after it is the opening
+        // quote (`'` or `"`). Consume the `b`, the opening quote, then the body.
+        self.advance(); // consume `b`/`B`
+        let open = match self.peek() {
+            Some(c @ ('\'' | '"')) => c,
+            _ => return,
+        };
+        self.advance(); // consume opening quote
+        let mut terminated = false;
+        while let Some(ch) = self.peek() {
+            if ch == open {
+                self.advance(); // consume closing quote
+                terminated = true;
+                break;
+            }
+            if ch == '\\' {
+                self.advance(); // skip backslash
+                self.advance(); // skip escaped char
+            } else {
+                self.advance();
+            }
+        }
+        if !terminated {
+            let end = self.pos;
+            self.diagnostics.push(GlyimDiagnostic::lex_error(
+                self.span(end, end),
+                "unterminated byte literal".to_string(),
+            ));
+        }
+    }
+
     fn lex_dot(&mut self) -> SyntaxKind {
         self.advance();
         if self.peek() == Some('.') {
@@ -739,7 +796,12 @@ impl<'a> Lexer<'a> {
             SyntaxKind::LtEq
         } else if self.peek() == Some('<') {
             self.advance();
-            SyntaxKind::Shl
+            if self.peek() == Some('=') {
+                self.advance();
+                SyntaxKind::ShlEq
+            } else {
+                SyntaxKind::Shl
+            }
         } else {
             SyntaxKind::Lt
         }
@@ -752,7 +814,12 @@ impl<'a> Lexer<'a> {
             SyntaxKind::GtEq
         } else if self.peek() == Some('>') {
             self.advance();
-            SyntaxKind::Shr
+            if self.peek() == Some('=') {
+                self.advance();
+                SyntaxKind::ShrEq
+            } else {
+                SyntaxKind::Shr
+            }
         } else {
             SyntaxKind::Gt
         }
@@ -763,6 +830,9 @@ impl<'a> Lexer<'a> {
         if self.peek() == Some('&') {
             self.advance();
             SyntaxKind::AndAnd
+        } else if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::AndEq
         } else {
             SyntaxKind::And
         }
@@ -773,6 +843,9 @@ impl<'a> Lexer<'a> {
         if self.peek() == Some('|') {
             self.advance();
             SyntaxKind::OrOr
+        } else if self.peek() == Some('=') {
+            self.advance();
+            SyntaxKind::OrEq
         } else {
             SyntaxKind::Or
         }
@@ -837,6 +910,7 @@ fn lookup_keyword(ident: &str) -> SyntaxKind {
         "static" => SyntaxKind::KwStatic,
         "async" => SyntaxKind::KwAsync,
         "await" => SyntaxKind::KwAwait,
+        "macro" => SyntaxKind::KwMacro,
         "macro_rules" => SyntaxKind::KwMacroRules,
         "_" => SyntaxKind::Underscore,
         _ => SyntaxKind::Ident,
