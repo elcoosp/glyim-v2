@@ -3,7 +3,7 @@
 
 use crate::{ConstEvaluator, ConstValue};
 use glyim_core::interner::{Interner, Name};
-use glyim_core::primitives::{FloatTy, IntTy, UintTy};
+use glyim_core::primitives::{IntTy, UintTy};
 use glyim_hir::{Body, Expr, ExprId, Literal, Path, TypeRef};
 use glyim_span::{ByteIdx, FileId, Span};
 use glyim_type::TyCtxMut;
