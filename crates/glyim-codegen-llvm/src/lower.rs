@@ -6,7 +6,6 @@ use glyim_core::arena::IndexVec;
 use glyim_core::primitives::*;
 use glyim_diag::{CompResult, GlyimDiagnostic};
 use glyim_layout::{FieldsShape, LayoutComputer, PassMode, Size, TagEncoding, VariantsShape};
-use glyim_core::def_id::ClosureId;
 use glyim_mir::VariantIdx;
 use glyim_mir::{
     AggregateKind, BasicBlockIdx, Body, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
@@ -3459,9 +3458,13 @@ pub(crate) fn lower_body<'ctx>(
         // (unit) result, and return 0 to the host.
         let callee = module
             .get_function(&fn_name)
-            .unwrap_or_else(|| function);
-        main_builder.build_call(callee, &[], "call_glyim_main");
-        main_builder.build_return(Some(&i32_type.const_int(0, false)));
+            .unwrap_or(function);
+        main_builder
+            .build_call(callee, &[], "call_glyim_main")
+            .expect("failed to build main call");
+        main_builder
+            .build_return(Some(&i32_type.const_int(0, false)))
+            .expect("failed to build main return");
     }
 
     Ok(())
