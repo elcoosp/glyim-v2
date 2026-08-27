@@ -15,6 +15,21 @@ use crate::check_body::FnCtxt;
 use crate::thir;
 use crate::unify::{literal_ty, thir_literal};
 
+/// How a method call (`recv.method(..)`) should be dispatched after
+/// type-checking.
+#[derive(Clone)]
+pub(crate) enum MethodDispatch {
+    /// The receiver's type has a concrete `impl` providing this method, so the
+    /// call is statically resolved to that impl function. Lowered to a direct
+    /// `Call` of `FnDefId`.
+    Static(FnDefId),
+    /// The receiver is a generic param (`f: F` where `F: Trait`), so the
+    /// concrete `impl` is unknown until monomorphization. Carries the trait so
+    /// the call can be devirtualized against the instantiated receiver type.
+    /// Lowered to a `DynamicCall` carrying the trait + method identity.
+    Virtual(TraitDefId),
+}
+
 /// Collect the enum variant indices covered by a THIR `Pattern`. Used by the
 /// match-exhaustiveness diagnostic (plan §22.1). A `Wild` or plain `Binding`
 /// pattern is a catch-all (covers every variant); an `Or` pattern covers the
@@ -758,15 +773,66 @@ impl<'a> FnCtxt<'a> {
                 for &arg_id in args {
                     arg_exprs.push(self.check_expr(arg_id).0);
                 }
-                let method_ty = self.resolve_method_call(recv_ty, *method, span);
-                let ret_ty = self.extract_return_ty(method_ty, span);
-                let thir_expr = thir::Expr {
-                    kind: thir::ExprKind::Call {
-                        func: Box::new(recv_expr),
-                        args: arg_exprs,
-                    },
-                    ty: ret_ty,
-                    span,
+                let (ret_ty, dispatch) = self.resolve_method_call(recv_ty, *method, span);
+                let ret_ty = self.extract_return_ty(ret_ty, span);
+                let thir_expr = match dispatch {
+                    Some(MethodDispatch::Static(fn_def_id)) => {
+                        // Static dispatch: call the concrete impl function
+                        // directly. `self` is the first argument (the
+                        // receiver); the remaining `arg_exprs` are the method's
+                        // explicit parameters.
+                        let substs = self.ctx.intern_substitution(vec![]);
+                        let fn_ty = self.ctx.mk_ty(TyKind::FnDef(fn_def_id, substs));
+                        let callee = thir::Expr {
+                            kind: thir::ExprKind::FnRef(fn_def_id),
+                            ty: fn_ty,
+                            span,
+                        };
+                        let mut call_args = Vec::with_capacity(arg_exprs.len() + 1);
+                        call_args.push(recv_expr);
+                        call_args.extend(arg_exprs);
+                        thir::Expr {
+                            kind: thir::ExprKind::Call {
+                                func: Box::new(callee),
+                                args: call_args,
+                            },
+                            ty: ret_ty,
+                            span,
+                        }
+                    }
+                    Some(MethodDispatch::Virtual(trait_def_id)) => {
+                        // Generic-bound receiver (`f: F` where `F: Trait`):
+                        // the concrete impl is unknown until monomorphization.
+                        // Carry the trait + method identity so the call can be
+                        // devirtualized against the instantiated receiver type.
+                        let mut dyn_args = Vec::with_capacity(arg_exprs.len() + 1);
+                        dyn_args.push(recv_expr.clone());
+                        dyn_args.extend(arg_exprs);
+                        thir::Expr {
+                            kind: thir::ExprKind::DynamicCall {
+                                receiver: Box::new(recv_expr),
+                                trait_def_id,
+                                method_name: *method,
+                                args: dyn_args,
+                            },
+                            ty: ret_ty,
+                            span,
+                        }
+                    }
+                    None => {
+                        // No dispatch resolved and no diagnostic was emitted
+                        // (shouldn't happen — resolve_method_call always
+                        // diagnoses). Fall back to treating the receiver as the
+                        // callee to avoid an ICE, matching historical behavior.
+                        thir::Expr {
+                            kind: thir::ExprKind::Call {
+                                func: Box::new(recv_expr),
+                                args: arg_exprs,
+                            },
+                            ty: ret_ty,
+                            span,
+                        }
+                    }
                 };
                 (thir_expr, ret_ty)
             }
@@ -1452,7 +1518,7 @@ impl<'a> FnCtxt<'a> {
         glyim_type::is_valid_cast(self.ctx, from, to)
     }
 
-    fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> Ty {
+    fn resolve_method_call(&mut self, recv_ty: Ty, method_name: Name, span: Span) -> (Ty, Option<MethodDispatch>) {
         // §9.1 / §9.2: collect *every* impl whose Self type unifies with the
         // receiver and that defines `method_name`. If more than one matches,
         // this is an ambiguous method call — surface all candidates (rustc's
@@ -1482,8 +1548,8 @@ impl<'a> FnCtxt<'a> {
         ];
 
         let recv_is_param = matches!(self.ctx.ty_kind(recv_ty), TyKind::Param(_));
-        let collect_for = |this: &mut Self, step_ty: Ty| -> Vec<(Ty, Ty)> {
-            let mut found: Vec<(Ty, Ty)> = Vec::new();
+        let collect_for = |this: &mut Self, step_ty: Ty| -> Vec<(Ty, Ty, Option<MethodDispatch>)> {
+            let mut found: Vec<(Ty, Ty, Option<MethodDispatch>)> = Vec::new();
             for (_id, item) in this.hir.items.iter_enumerated() {
                 if let glyim_hir::ItemKind::Impl(impl_item) = &item.kind {
                     let param_map =
@@ -1539,7 +1605,11 @@ impl<'a> FnCtxt<'a> {
                                 } else {
                                     Ty::UNIT
                                 };
-                            found.push((impl_self_ty, return_ty));
+                            let fn_def_id = method
+                                .body
+                                .and_then(|bid| this.body_owner_map.get(&bid).copied())
+                                .map(|local| FnDefId::from_raw(local.to_raw()));
+                            found.push((impl_self_ty, return_ty, fn_def_id.map(MethodDispatch::Static)));
                         }
                     }
                 }
@@ -1547,7 +1617,7 @@ impl<'a> FnCtxt<'a> {
             found
         };
 
-        let mut candidates: Vec<(Ty, Ty)> = Vec::new();
+        let mut candidates: Vec<(Ty, Ty, Option<MethodDispatch>)> = Vec::new();
         for &step in steps.iter().chain(autoref_steps.iter()) {
             let found = collect_for(self, step);
             if !found.is_empty() {
@@ -1602,7 +1672,7 @@ impl<'a> FnCtxt<'a> {
                                         } else {
                                             Ty::UNIT
                                         };
-                                        candidates.push((recv_ty, return_ty));
+                                        candidates.push((recv_ty, return_ty, Some(MethodDispatch::Virtual(tid))));
                                         break;
                                     }
                                 }
@@ -1645,14 +1715,14 @@ impl<'a> FnCtxt<'a> {
                         }
                     }
                 }
-                return Ty::ERROR;
+                return (Ty::ERROR, None);
             }
         }
 
         if candidates.len() > 1 {
             let list: Vec<String> = candidates
                 .iter()
-                .map(|(self_ty, _)| format!("  {}", PrintTy::new(*self_ty, &*self.ctx)))
+                .map(|(self_ty, _, _)| format!("  {}", PrintTy::new(*self_ty, &*self.ctx)))
                 .collect();
             self.diagnostics.push(GlyimDiagnostic::type_error(
                 span,
@@ -1665,10 +1735,10 @@ impl<'a> FnCtxt<'a> {
             ));
             // Still return the first candidate's type so downstream typing is
             // not worse than before; the diagnostic is the real signal.
-            return candidates[0].1;
+            return (candidates[0].1, None);
         }
 
-        candidates[0].1
+        (candidates[0].1, candidates[0].2.clone())
     }
 
     /// Resolve a path-qualified trait method call `Trait::method(receiver, ..)`
