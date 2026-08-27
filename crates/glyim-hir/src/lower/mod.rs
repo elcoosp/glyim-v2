@@ -279,12 +279,12 @@ pub(crate) fn lower_crate_raw(
         }
     }
 
-    let mut hir = CrateHir {
+    
+
+    CrateHir {
         items,
         bodies,
         body_owners,
         interner: interner.clone(),
-    };
-
-    hir
+    }
 }
