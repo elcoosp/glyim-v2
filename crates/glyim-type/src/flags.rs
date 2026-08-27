@@ -5,7 +5,6 @@ use crate::substitution::*;
 use crate::ty::*;
 use bitflags::bitflags;
 
-#[allow(missing_docs)]
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     #[doc = "Flags summarizing properties of a type."]
