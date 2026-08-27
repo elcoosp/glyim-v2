@@ -949,6 +949,13 @@ impl BytecodeBackend {
                         bc.extend_from_slice(&0i64.to_le_bytes());
                         self.const_is_int.borrow_mut().push(true);
                     }
+                    // Devirtualized by monomorphization before codegen; should
+                    // not survive to this point. Treated as a unit placeholder.
+                    MirConstKind::VirtualMethod { .. } => {
+                        bc.push(OP_LOAD_CONST);
+                        bc.extend_from_slice(&0i64.to_le_bytes());
+                        self.const_is_int.borrow_mut().push(true);
+                    }
                 }
                 Ok(())
             }
