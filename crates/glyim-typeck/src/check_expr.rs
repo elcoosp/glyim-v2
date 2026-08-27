@@ -63,6 +63,67 @@ fn collect_covered_variants(pat: &thir::Pattern, out: &mut HashSet<u32>, has_wil
     }
 }
 
+/// Align an impl-level generic parameter carried inside a formal receiver type
+/// with the corresponding concrete argument type, recording the mapping
+/// `param_index -> concrete_arg` into `subst`.
+///
+/// Example: a method of `impl<T> Future for ReadyT<T>` has formal receiver
+/// `&mut ReadyT<T_impl>`. When called with a `ReadyT<i32>` argument, this maps
+/// `T_impl.index -> i32` so the method's return type `Poll<T_impl>` instantiates
+/// to `Poll<i32>` at the call site instead of keeping the rigid impl param.
+///
+/// Handles `Ref`/`Adt` wrappers and recurses into the ADT's generic args, which
+/// may themselves be `Ref`/`Adt` (e.g. `Box<Vec<T>>`). Positionally aligns the
+/// formal's generic args with the actual's; a `Param` in the formal position is
+/// mapped to the actual's argument at that position.
+fn align_impl_param_subst(
+    ctx: &glyim_type::TyCtxMut,
+    formal: glyim_type::Ty,
+    actual: glyim_type::Ty,
+    subst: &mut std::collections::HashMap<u32, glyim_type::GenericArg>,
+) {
+    let formal = match ctx.ty_kind(formal) {
+        glyim_type::TyKind::Ref(_, inner, _) => *inner,
+        other => match other {
+            glyim_type::TyKind::Adt(..) => formal,
+            _ => return,
+        },
+    };
+    let actual = match ctx.ty_kind(actual) {
+        glyim_type::TyKind::Ref(_, inner, _) => *inner,
+        other => match other {
+            glyim_type::TyKind::Adt(..) => actual,
+            _ => return,
+        },
+    };
+    let (TyKind::Adt(_, fsub), TyKind::Adt(_, asub)) =
+        (ctx.ty_kind(formal), ctx.ty_kind(actual))
+    else {
+        return;
+    };
+    let formal_args = ctx.substitution_args(*fsub);
+    let actual_args = ctx.substitution_args(*asub);
+    if formal_args.len() != actual_args.len() {
+        return;
+    }
+    for (fa, aa) in formal_args.iter().zip(actual_args.iter()) {
+        match fa {
+            glyim_type::GenericArg::Ty(ft) => {
+                if let glyim_type::TyKind::Param(p) = ctx.ty_kind(*ft) {
+                    subst.insert(p.index, aa.clone());
+                } else {
+                    // Recurse into nested ADT args (e.g. Box<Vec<T>>).
+                    align_impl_param_subst(ctx, *ft, match aa {
+                        glyim_type::GenericArg::Ty(t) => *t,
+                        _ => continue,
+                    }, subst);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 impl<'a> FnCtxt<'a> {
     pub fn check_expr(&mut self, expr_id: ExprId) -> (thir::Expr, Ty) {
         if let Some(cached) = self.expr_cache.get(&expr_id) {
@@ -673,8 +734,29 @@ impl<'a> FnCtxt<'a> {
                             self.ctx.substitution_args(sig.inputs).to_vec();
                         for (i, arg_expr) in arg_exprs.iter().enumerate() {
                             if let Some(GenericArg::Ty(param_ty)) = inputs.get(i) {
+                                // Direct bare-param formal (e.g. `fn id<T>(x: T)`):
+                                // map the param index to the argument's concrete type.
                                 if let TyKind::Param(pt) = self.ctx.ty_kind(*param_ty) {
                                     subst.insert(pt.index, GenericArg::Ty(arg_expr.ty));
+                                } else {
+                                    // Structural alignment: a formal that is an
+                                    // `Adt`/`Ref(Adt)` whose generic args carry the
+                                    // *impl's* type parameters (e.g. the `self`
+                                    // receiver `&mut ReadyT<T_impl>` of an
+                                    // `impl<T> Trait for ReadyT<T>` method). Align
+                                    // each `Param` in the formal's ADT args with the
+                                    // corresponding concrete argument ADT args so the
+                                    // impl-level parameter is instantiated at the
+                                    // call site (T_impl := i32). Without this the
+                                    // method's return type keeps the rigid impl
+                                    // param and unification against the caller's
+                                    // concrete type fails (mismatched types: T vs i32).
+                                    align_impl_param_subst(
+                                        &self.ctx,
+                                        *param_ty,
+                                        arg_expr.ty,
+                                        &mut subst,
+                                    );
                                 }
                             }
                         }
