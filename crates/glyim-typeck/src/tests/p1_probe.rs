@@ -88,3 +88,34 @@ fn p1a_generic_impl_concrete_arg_projection() {
     }
     assert_no_errors(&output.diagnostics);
 }
+
+#[test]
+#[ignore = "KNOWN GAP (p1d/Phase 5): same root as p1a-gen — generic impl<T> does not \
+scope its type param T into the impl body, and the impl's T is not unified with \
+the self-ADT's structural param (ReadyT<T>'s T). So autoderef through a generic \
+smart pointer (`impl<T> Deref for Box<T>`) is not yet wired. Concrete (non-generic) \
+Deref impls populate the registry (see deref_impl.rs)."]
+fn p1d_deref_autoderef() {
+    // A smart-pointer `Box<T>` that derefs to `T`; calling an inherent method on
+    // the inner type through the wrapper must autoderef. Verifies Phase 5
+    // (Deref autoderef for ADTs) end-to-end via the real pipeline.
+    let src = r#"
+        struct Box<T> { ptr: T }
+        impl<T> Deref for Box<T> {
+            type Target = T;
+        }
+        struct Inner { value: i32 }
+        impl Inner {
+            fn get(&self) -> i32 { self.value }
+        }
+        fn main() -> i32 {
+            let b = Box { ptr: Inner { value: 9 } };
+            b.get()
+        }
+    "#;
+    let output = compile(src);
+    for d in &output.diagnostics {
+        eprintln!("DIAG: {:?}", d.message);
+    }
+    assert_no_errors(&output.diagnostics);
+}
