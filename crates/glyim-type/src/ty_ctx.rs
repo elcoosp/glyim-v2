@@ -60,6 +60,14 @@ pub struct TyCtx {
     /// still correctly reported as needing drop glue. Populated via
     /// `TyCtxMut::mark_has_drop`.
     pub(crate) drop_impls: HashSet<AdtId>,
+    /// Concrete trait-method dispatch table, populated during typeck from
+    /// `impl Trait for Type` items: maps `(trait_def_id, Self-AdtId)` to the
+    /// method name → `FnDefId` of that impl's method. Lets monomorphization
+    /// and the MIR interpreter devirtualize a generic-bound call
+    /// (`f.poll()` where `f: F: Future`) once the receiver's concrete type is
+    /// known, without re-scanning the HIR.
+    pub(crate) impl_method_fns:
+        HashMap<(glyim_core::def_id::TraitDefId, AdtId), HashMap<Name, FnDefId>>,
 }
 
 impl TyCtx {
@@ -467,6 +475,46 @@ impl TyCtx {
             .get(&adt_id)
             .map(|d| d.generic_params.len())
             .unwrap_or(0)
+    }
+
+    /// Resolve a trait method call on a *concrete* receiver type to the
+    /// implementing function's `FnDefId`. Used to devirtualize generic-bound
+    /// calls (`f.poll()` where `f: F: Future` becomes a call on the
+    /// monomorphized `TwoFuture`) at monomorphization and interpretation time,
+    /// without re-scanning the HIR.
+    ///
+    /// `recv_ty` is the (already-concrete) type of the call's first argument
+    /// (the receiver). The receiver may be `Self`, `&Self`, or `&mut Self`, so
+    /// all three shapes are probed. Returns `None` if no `impl` of
+    /// `trait_def_id` for the receiver's underlying ADT defines `method_name`.
+    pub fn resolve_trait_method(
+        &self,
+        trait_def_id: glyim_core::def_id::TraitDefId,
+        recv_ty: Ty,
+        method_name: Name,
+    ) -> Option<FnDefId> {
+        // Peel any leading reference(s) so the impl lookup sees the underlying
+        // `Self` ADT. A method call `f.poll()` carries a `&mut Self` receiver,
+        // but the `impl Future for TwoFuture` is keyed on `TwoFuture` itself.
+        let mut base = recv_ty;
+        while let TyKind::Ref(_, inner, _) = self.ty_kind(base) {
+            base = *inner;
+        }
+        let candidates = [
+            base,
+            self.mk_ref(Region::Erased, base, Mutability::Not),
+            self.mk_ref(Region::Erased, base, Mutability::Mut),
+        ];
+        for cand in candidates {
+            if let TyKind::Adt(adt_id, _) = self.ty_kind(cand) {
+                if let Some(methods) = self.impl_method_fns.get(&(trait_def_id, *adt_id)) {
+                    if let Some(&fn_def_id) = methods.get(&method_name) {
+                        return Some(fn_def_id);
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Whether `adt_id` has an explicit `Drop` impl (or is a registered owning
