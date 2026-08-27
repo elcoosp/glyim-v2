@@ -896,104 +896,39 @@ impl<'a> MirBuilder<'a> {
 
             thir::ExprKind::DynamicCall {
                 receiver,
-                method_index,
+                trait_def_id,
+                method_name,
                 args,
             } => {
-                let _receiver = receiver;
-                // Lower the receiver (a fat pointer) to a temporary local so we can project into it.
-                let recv_val = self.lower_expr_to_rvalue(receiver);
-                let recv_local = self.alloc_local(
-                    receiver.ty,
-                    glyim_core::primitives::Mutability::Mut,
-                    expr.span,
-                );
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(glyim_mir::Place::new(recv_local), recv_val),
-                    expr.span,
-                );
-                let recv_place = glyim_mir::Place::new(recv_local);
-
-                // Extract the data pointer (field 0) and vtable pointer (field 1) from the fat pointer.
-                let data_place = self.place_with_projection(
-                    recv_place.clone(),
-                    ProjectionElem::Field(FieldIdx::from_raw(0)),
-                );
-                let vtable_place = self.place_with_projection(
-                    recv_place.clone(),
-                    ProjectionElem::Field(FieldIdx::from_raw(1)),
-                );
-
-                // Allocate a local for the vtable pointer. Use Ty::USIZE as a pointer-sized integer.
-                let vtable_ptr_local = self.alloc_local(
-                    Ty::USIZE,
-                    glyim_core::primitives::Mutability::Mut,
-                    expr.span,
-                );
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(
-                        glyim_mir::Place::new(vtable_ptr_local),
-                        glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(vtable_place)),
-                    ),
-                    expr.span,
-                );
-
-                let _method_index = method_index;
-                // Allocate a local for the method index and store the constant index.
-                let method_idx_local = self.alloc_local(
-                    Ty::USIZE,
-                    glyim_core::primitives::Mutability::Not,
-                    expr.span,
-                );
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(
-                        glyim_mir::Place::new(method_idx_local),
-                        glyim_mir::Rvalue::Use(glyim_mir::Operand::Constant(glyim_mir::MirConst {
-                            kind: glyim_mir::MirConstKind::Uint(*method_index as u128),
-                            ty: Ty::USIZE,
-                            span: expr.span,
-                        })),
-                    ),
-                    expr.span,
-                );
-
-                // Project into the vtable to get the method pointer.
-                let method_ptr_place = self.place_with_projection(
-                    glyim_mir::Place::new(vtable_ptr_local),
-                    ProjectionElem::Index(method_idx_local),
-                );
-
-                // Allocate a local for the method pointer. Use Ty::ERROR because we don't have
-                // a way to allocate a FnPtr type from an immutable TyCtx. The LLVM backend will
-                // construct the function type from the arguments and return type.
-                let method_fn_local = self.alloc_local(
-                    Ty::ERROR,
-                    glyim_core::primitives::Mutability::Mut,
-                    expr.span,
-                );
-                self.push_stmt(
-                    glyim_mir::StatementKind::Assign(
-                        glyim_mir::Place::new(method_fn_local),
-                        glyim_mir::Rvalue::Use(glyim_mir::Operand::Copy(method_ptr_place)),
-                    ),
-                    expr.span,
-                );
-
-                let _args = args;
-                // Prepare arguments: data pointer is the receiver (self), followed by the rest of the args.
-                let mut mir_args = Vec::with_capacity(args.len() + 1);
-                mir_args.push(glyim_mir::Operand::Copy(data_place));
+                // Generic-bound method call (`f.poll()` where `f: F: Trait`).
+                // The concrete impl is unknown until monomorphization, so we
+                // carry the trait + method identity in a `VirtualMethod`
+                // constant. Monomorphization rewrites this to a direct
+                // `Call` of the resolved `FnDefId`; the MIR interpreter resolves
+                // it on the fly against the (concrete) receiver type.
+                //
+                // `args` already has the receiver as its first element
+                // (typeck prepends it), so we lower them verbatim.
+                let func_const = glyim_mir::MirConst {
+                    kind: glyim_mir::MirConstKind::VirtualMethod {
+                        trait_def_id: *trait_def_id,
+                        method_name: *method_name,
+                    },
+                    ty: expr.ty,
+                    span: expr.span,
+                };
+                let mut mir_args = Vec::with_capacity(args.len());
                 for arg in args {
                     mir_args.push(self.lower_expr_to_operand(arg));
                 }
 
-                // Call the method pointer.
                 let dest_local =
                     self.alloc_local(expr.ty, glyim_core::primitives::Mutability::Mut, expr.span);
                 let dest_place = glyim_mir::Place::new(dest_local);
                 let next_bb = self.new_block();
                 self.terminate(
                     glyim_mir::TerminatorKind::Call {
-                        func: glyim_mir::Operand::Move(glyim_mir::Place::new(method_fn_local)),
+                        func: glyim_mir::Operand::Constant(func_const),
                         args: mir_args,
                         destination: dest_place.clone(),
                         target: Some(next_bb),
@@ -1402,7 +1337,57 @@ impl<'a> MirBuilder<'a> {
             .iter()
             .any(|a| matches!(&a.pat.kind, thir::PatternKind::Slice { .. }));
 
+        let enum_dispatch = if let TyKind::Adt(adt_id, _substs) = self.ctx.ty_ctx().ty_kind(scrutinee.ty) {
+            self.ctx.adt_def(*adt_id).kind == crate::lower::AdtKind::Enum
+        } else {
+            false
+        };
+
+        // Always materialize the *whole* scrutinee into a local so that
+        // match-arm patterns can be bound to MIR locals (mirroring `let`
+        // pattern binding in `bind_pattern`). Without this, variables bound by
+        // a `match` arm -- e.g. `match self.state { Start { f0, fut0 } => .. }`
+        // from the async state-machine desugar -- receive no `local_var_map`
+        // entry and `VarRef(var_id)` falls back to
+        // `LocalIdx::from_raw(var_id)`, colliding with the `self` parameter
+        // (M4/M5 async multi-await). For slice/enum dispatch the *switch*
+        // discriminates on a derived value (length / discriminant), but the
+        // arm-pattern fields are still projected off the whole value.
+        let full_scrut_op = if enum_dispatch {
+            // Enum scrutinees are matched *in place*: the switch reads the
+            // discriminant and arm patterns project fields off the temp. Copy
+            // the place into the temp rather than `Move`-ing it out of the
+            // owner (e.g. `self.state` where `self: &mut Self`) — otherwise the
+            // later `Discriminant(self.state)` read is a use of a partially
+            // moved value, which borrowck (B0001) correctly rejects. The
+            // interpreter tolerates the move, but the desugared async poll body
+            // must be borrow-check clean (M4/M5 compile-correctness gate).
+            let scrutinee_place = self.lower_expr_to_place(scrutinee);
+            glyim_mir::Operand::Copy(scrutinee_place)
+        } else {
+            self.lower_expr_to_operand(scrutinee)
+        };
+        let scrut_local: Option<glyim_mir::LocalIdx> = if !slice_dispatch {
+            let local = self.alloc_local(
+                scrutinee.ty,
+                glyim_core::primitives::Mutability::Not,
+                span,
+            );
+            self.push_stmt(
+                glyim_mir::StatementKind::Assign(
+                    glyim_mir::Place::new(local),
+                    glyim_mir::Rvalue::Use(full_scrut_op.clone()),
+                ),
+                span,
+            );
+            Some(local)
+        } else {
+            None
+        };
+
+        // The discriminator the `SwitchInt` switches on.
         let (discr_op, switch_ty) = if slice_dispatch {
+            // Slice/array matches dispatch on the *length* of the scrutinee.
             let scrutinee_place = self.lower_expr_to_place(scrutinee);
             let len_local =
                 self.alloc_local(Ty::USIZE, glyim_core::primitives::Mutability::Not, span);
@@ -1417,42 +1402,36 @@ impl<'a> MirBuilder<'a> {
                 glyim_mir::Operand::Copy(glyim_mir::Place::new(len_local)),
                 Ty::USIZE,
             )
-        } else {
-            let discr_op = self.lower_expr_to_operand(scrutinee);
-            (discr_op, scrutinee.ty)
-        };
-
-        // Materialize the *whole* scrutinee into a local so that match-arm
-        // patterns can be bound to MIR locals (mirroring `let` pattern
-        // binding in `bind_pattern`). Without this, variables bound by a
-        // `match` arm -- e.g. `match self.state { Start { f0, fut0 } => .. }`
-        // from the async state-machine desugar -- receive no `local_var_map`
-        // entry and `VarRef(var_id)` falls back to
-        // `LocalIdx::from_raw(var_id)`, colliding with the `self` parameter
-        // (M4/M5 async multi-await). For slice-dispatch matches the
-        // discriminant is the *length*, not the value, so binding arm patterns
-        // against it would be wrong; those keep the original behavior.
-        let scrut_local: Option<glyim_mir::LocalIdx> = if !slice_dispatch {
-            let local = self.alloc_local(
-                scrutinee.ty,
-                glyim_core::primitives::Mutability::Not,
-                span,
-            );
+        } else if enum_dispatch {
+            // Enum matches dispatch on the *discriminant* (the variant tag), not
+            // the whole value. Switching on the full value can never match a
+            // `Variant { .. }` pattern, so every arm's switch-value list is
+            // empty and the `SwitchInt` would fall through to the FIRST arm
+            // unconditionally -- which breaks the async state-machine desugar
+            // (M4/M5): `match self.state { Start => .., S0 => .., .. }` would
+            // always re-enter `Start`, suspending forever. Emit
+            // `Discr = Discriminant(scrut)` and switch on `Discr` (u8).
+            let scrutinee_place = self.lower_expr_to_place(scrutinee);
+            let discr_local =
+                self.alloc_local(Ty::U8, glyim_core::primitives::Mutability::Not, span);
             self.push_stmt(
                 glyim_mir::StatementKind::Assign(
-                    glyim_mir::Place::new(local),
-                    glyim_mir::Rvalue::Use(discr_op.clone()),
+                    glyim_mir::Place::new(discr_local),
+                    glyim_mir::Rvalue::Discriminant(scrutinee_place),
                 ),
                 span,
             );
-            Some(local)
+            (
+                glyim_mir::Operand::Copy(glyim_mir::Place::new(discr_local)),
+                Ty::U8,
+            )
         } else {
-            None
-        };
-        // The SwitchInt discriminates on the materialized scrutinee local.
-        let discr_op = match scrut_local {
-            Some(sl) => glyim_mir::Operand::Copy(glyim_mir::Place::new(sl)),
-            None => discr_op,
+            // Scalar / bool / char scrutinees: switch on the value directly.
+            let discr_op = match scrut_local {
+                Some(sl) => glyim_mir::Operand::Copy(glyim_mir::Place::new(sl)),
+                None => full_scrut_op,
+            };
+            (discr_op, scrutinee.ty)
         };
 
         let mut switch_targets: Vec<(u128, BasicBlockIdx)> = Vec::new();
@@ -1578,6 +1557,21 @@ impl<'a> MirBuilder<'a> {
                             "failed to evaluate `const` pattern at compile time",
                         ));
                     }
+                }
+            }
+            thir::PatternKind::Struct {
+                adt_id,
+                variant_idx,
+                ..
+            } => {
+                // A `Variant { .. }` pattern on an *enum* scrutinee matches when
+                // the discriminant equals `variant_idx`. Integer/scalar
+                // patterns already populate the switch; this is the enum arm.
+                // (Struct scrutinees are matched by field, not discriminant, so
+                // on a struct ADT this pattern contributes no switch value.)
+                let is_enum = self.ctx.adt_def(*adt_id).kind == crate::lower::AdtKind::Enum;
+                if is_enum {
+                    targets.push((*variant_idx as u128, arm_bb));
                 }
             }
             _ => {}
