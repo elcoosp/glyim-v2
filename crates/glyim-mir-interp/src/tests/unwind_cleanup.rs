@@ -443,7 +443,7 @@ fn unwind_skips_callers_with_no_cleanup() {
     for (id, body) in &funcs {
         interp.add_function(*id, body.clone());
     }
-    let (entry_id, _) = &funcs[0];
+    let (_entry_id, _) = &funcs[0];
     let result = interp.run_body(&funcs[0].1);
     let err = result.expect_err("panic with no recovery must unwind to the top");
     assert!(
