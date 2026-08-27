@@ -189,7 +189,9 @@ pub enum ExprKind {
 /// Struct.
         receiver: Box<Expr>,
 /// Struct.
-        method_index: usize,
+        trait_def_id: TraitDefId,
+/// Struct.
+        method_name: Name,
 /// Struct.
         args: Vec<Expr>,
     },
