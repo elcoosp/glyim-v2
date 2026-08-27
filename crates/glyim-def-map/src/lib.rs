@@ -34,8 +34,6 @@ use glyim_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(ModuleId);
 
 #[derive(Clone, Debug)]
