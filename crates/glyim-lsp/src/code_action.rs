@@ -52,10 +52,7 @@ fn collect_unused_imports(source: &str, used_names: &HashSet<String>) -> Vec<(St
 fn parse_missing_variant_shapes(
     diag: &GlyimDiagnostic,
 ) -> Option<Vec<(String, glyim_diag::VariantShape)>> {
-    match &diag.structured {
-        Some(StructuredDiagnosticData::MissingMatchVariants(shapes)) => Some(shapes.clone()),
-        None => None,
-    }
+    diag.structured.as_ref().map(|StructuredDiagnosticData::MissingMatchVariants(shapes)| shapes.clone())
 }
 
 /// Build the match-arm pattern text for a missing variant given its shape
