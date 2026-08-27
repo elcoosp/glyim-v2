@@ -103,6 +103,11 @@ impl DropFlags {
         // `arr[i] = ...` (a `ProjectionElem::Index` onto the array local).
         // Atomic array literals lower to a single `Aggregate` rvalue and never
         // produce such assignments, so they stay on the fast path.
+        //
+        // A leading `Deref` (e.g. `*p[i] = x` where `p: &mut [T; N]`) is still
+        // an element-wise assignment to the array behind the reference, so we
+        // key on the place's base local (the local the projection is rooted at,
+        // after stripping a leading `Deref`) — that is `place.local` itself.
         let mut loop_built: HashSet<LocalIdx> = HashSet::new();
         for block in body.basic_blocks.iter() {
             for stmt in &block.statements {
