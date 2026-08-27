@@ -379,6 +379,11 @@ impl<'ctx, 'a> LoweringCtx<'ctx, 'a> {
             MirConstKind::Error => Err(vec![GlyimDiagnostic::internal_error(
                 "internal compiler error: MirConstKind::Error reached codegen",
             )]),
+            // Devirtualized by monomorphization before LLVM codegen; should not
+            // survive to this point.
+            MirConstKind::VirtualMethod { .. } => Err(vec![GlyimDiagnostic::internal_error(
+                "internal compiler error: MirConstKind::VirtualMethod reached LLVM codegen (not devirtualized)",
+            )]),
         }
     }
 
