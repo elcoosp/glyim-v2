@@ -31,7 +31,7 @@ pub(crate) fn collect_generic_params(
                 // `TypeParam` (the `:` itself is a token, not a node).
                 let bounds: Vec<TypeRef> = tp
                     .children()
-                    .filter(|c| is_type_node(c))
+                    .filter(is_type_node)
                     .filter_map(|b| lower_type_ref(&b, interner))
                     .collect();
                 generic_params.push(GenericParam {
@@ -124,7 +124,7 @@ pub(crate) fn lower_fn_def(
                 let name = interner.intern(&name_str);
                 let bounds: Vec<TypeRef> = tp
                     .children()
-                    .filter(|c| is_type_node(c))
+                    .filter(is_type_node)
                     .filter_map(|b| lower_type_ref(&b, interner))
                     .collect();
                 generic_params.push(crate::GenericParam {
