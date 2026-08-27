@@ -71,6 +71,15 @@ pub struct Interpreter<'tcx> {
     /// correct frame's locals instead of the callee's own (plan §1: for-loop
     /// `next(&mut self)`).
     frame_depth: usize,
+    /// Per-absolute-depth frame generation. `frame_generations[d]` holds the
+    /// generation stamped on the frame currently occupying depth `d`. When a
+    /// frame is popped, its slot's generation is reset to 0, so a `Ref` that
+    /// captured `frame == d` can be checked against `call_stack[d].generation`
+    /// to detect the "borrower frame was popped and its slot reused" case
+    /// (use-after-free style aliasing). See `locals_for_ref_frame`.
+    frame_generations: Vec<u64>,
+    /// Monotonic counter feeding `CallFrame::generation` / `frame_generations`.
+    next_frame_gen: u64,
     /// Cross-frame unwind payload (plan §7.2). When a callee panics and this
     /// frame resumes at the caller's cleanup edge, `pending_unwind` holds the
     /// original panic so that once the caller's own cleanups finish and it
@@ -89,6 +98,10 @@ struct CallFrame {
     /// callee — where the caller should resume when this frame unwinds
     /// (plan §7.2). Mirrors MIR `TerminatorKind::Call::cleanup`.
     unwind_target: Option<BasicBlockIdx>,
+    /// Monotonic generation assigned when this frame was pushed. Used to
+    /// detect a `Ref` whose borrower frame was popped and whose slot was
+    /// later reused by an unrelated call (use-after-free style aliasing).
+    generation: u64,
 }
 
 impl<'tcx> Interpreter<'tcx> {
@@ -111,6 +124,8 @@ impl<'tcx> Interpreter<'tcx> {
             local_decls: Vec::new(),
             call_stack: Vec::new(),
             frame_depth: 0,
+            frame_generations: Vec::new(),
+            next_frame_gen: 0,
             pending_unwind: None,
         }
     }
@@ -183,11 +198,15 @@ pub fn recursion_depth(&self) -> usize {
     /// `self.locals`. Every ancestor frame is parked in `self.call_stack`,
     /// which is ordered outermost-first, so ancestor depth `f` is at
     /// `call_stack[f]`. Returns `None` for an out-of-range frame (a compiler
-    /// bug — a ref outliving its borrower).
+    /// bug — a ref outliving its borrower), or when the frame that occupied
+    /// depth `f` has since been popped and its slot reused by an unrelated
+    /// call (detected via the per-frame `generation` counter).
     fn locals_for_ref_frame(&self, frame: usize) -> Option<&Vec<Option<InterpValue>>> {
         if frame == self.frame_depth {
             Some(&self.locals)
-        } else if frame < self.call_stack.len() {
+        } else if frame < self.call_stack.len()
+            && self.call_stack[frame].generation == self.frame_generations.get(frame).copied().unwrap_or(0)
+        {
             Some(&self.call_stack[frame].locals)
         } else {
             None
@@ -204,7 +223,9 @@ pub fn recursion_depth(&self) -> usize {
     fn decls_for_ref_frame(&self, frame: usize) -> Option<&[LocalDecl]> {
         if frame == self.frame_depth {
             Some(&self.local_decls)
-        } else if frame < self.call_stack.len() {
+        } else if frame < self.call_stack.len()
+            && self.call_stack[frame].generation == self.frame_generations.get(frame).copied().unwrap_or(0)
+        {
             Some(self.call_stack[frame].body.locals.as_slice())
         } else {
             None
@@ -212,14 +233,16 @@ pub fn recursion_depth(&self) -> usize {
     }
 
     /// Mutable counterpart of [`Self::locals_for_ref_frame`] for writes through
-    /// a `Ref` (e.g. `*r = v` or `*r.field = v`).
+    /// a `Ref` (e.g. `*r = v` or `*r.field = v).
     fn write_target_locals_mut(
         &mut self,
         frame: usize,
     ) -> Option<&mut Vec<Option<InterpValue>>> {
         if frame == self.frame_depth {
             Some(&mut self.locals)
-        } else if frame < self.call_stack.len() {
+        } else if frame < self.call_stack.len()
+            && self.call_stack[frame].generation == self.frame_generations.get(frame).copied().unwrap_or(0)
+        {
             Some(&mut self.call_stack[frame].locals)
         } else {
             None
@@ -334,6 +357,12 @@ pub fn recursion_depth(&self) -> usize {
                         self.write_place(&frame.return_place, ret_val)?;
                         self.recursion_depth -= 1;
                         self.frame_depth -= 1;
+                        // Invalidate this depth's generation so a stale
+                        // `Ref { frame: depth }` cannot alias a reused slot.
+                        let popped = self.frame_depth;
+                        if let Some(g) = self.frame_generations.get_mut(popped) {
+                            *g = 0;
+                        }
                         body = caller_body;
                         continue;
                     } else {
@@ -432,7 +461,18 @@ pub fn recursion_depth(&self) -> usize {
                         return_place: destination,
                         target_bb: next_bb,
                         unwind_target: cleanup,
+                        generation: self.next_frame_gen,
                     };
+
+                    // Record the generation for this absolute depth so a
+                    // cross-frame `Ref { frame: depth }` can later detect if
+                    // this frame was popped and its slot reused.
+                    let depth = self.frame_depth;
+                    if self.frame_generations.len() <= depth {
+                        self.frame_generations.resize(depth + 1, 0);
+                    }
+                    self.frame_generations[depth] = self.next_frame_gen;
+                    self.next_frame_gen = self.next_frame_gen.wrapping_add(1);
 
                     self.call_stack.push(caller_frame);
                     self.frame_depth += 1;
