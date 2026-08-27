@@ -203,17 +203,15 @@ fn colon_colon_eq_produces_two_tokens() {
 #[test]
 fn shift_left_eq_produces_two_tokens() {
     let tokens = lex_tokens("<<=");
-    assert_eq!(tokens.len(), 2);
-    assert_eq!(tokens[0].kind, SyntaxKind::Shl);
-    assert_eq!(tokens[1].kind, SyntaxKind::Eq);
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::ShlEq);
 }
 
 #[test]
 fn shift_right_eq_produces_two_tokens() {
     let tokens = lex_tokens(">>=");
-    assert_eq!(tokens.len(), 2);
-    assert_eq!(tokens[0].kind, SyntaxKind::Shr);
-    assert_eq!(tokens[1].kind, SyntaxKind::Eq);
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::ShrEq);
 }
 
 #[test]
