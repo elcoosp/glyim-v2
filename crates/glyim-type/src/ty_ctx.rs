@@ -13,7 +13,6 @@ use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, FnDefId, LocalDefId, OpaqueTyId, TraitDefId};
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::Mutability;
-use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 
 /// TyCtx.
@@ -216,15 +215,14 @@ impl TyCtx {
                 continue;
             }
             for (n, ty) in entries.iter() {
-                if *n == assoc_name {
-                    if found != Some(*ty) {
+                if *n == assoc_name
+                    && found != Some(*ty) {
                         if found.is_some() {
                             ambiguous = true;
                             break;
                         }
                         found = Some(*ty);
                     }
-                }
             }
             if ambiguous {
                 break;
@@ -406,15 +404,12 @@ impl TyCtx {
                 // target types would require building a fresh `Ty`, which the
                 // frozen `TyCtx` cannot do; that is acceptable because real
                 // `Deref` impls use `type Target = T`.
-                if let Some((_self_params, target)) = self.deref_registry.template(*adt_id) {
-                    if let TyKind::Param(p) = self.ty_kind(*target) {
-                        if let Some(arg) = self.substitution_args(*sub).get(p.index as usize) {
-                            if let GenericArg::Ty(t) = arg {
+                if let Some((_self_params, target)) = self.deref_registry.template(*adt_id)
+                    && let TyKind::Param(p) = self.ty_kind(*target)
+                        && let Some(arg) = self.substitution_args(*sub).get(p.index as usize)
+                            && let GenericArg::Ty(t) = arg {
                                 return Some(*t);
                             }
-                        }
-                    }
-                }
                 None
             }
             _ => None,
@@ -506,13 +501,11 @@ impl TyCtx {
             self.mk_ref(Region::Erased, base, Mutability::Mut),
         ];
         for cand in candidates {
-            if let TyKind::Adt(adt_id, _) = self.ty_kind(cand) {
-                if let Some(methods) = self.impl_method_fns.get(&(trait_def_id, *adt_id)) {
-                    if let Some(&fn_def_id) = methods.get(&method_name) {
+            if let TyKind::Adt(adt_id, _) = self.ty_kind(cand)
+                && let Some(methods) = self.impl_method_fns.get(&(trait_def_id, *adt_id))
+                    && let Some(&fn_def_id) = methods.get(&method_name) {
                         return Some(fn_def_id);
                     }
-                }
-            }
         }
         None
     }
