@@ -20,6 +20,7 @@ mod method_call;
 mod multi_seg_path;
 mod obligation;
 mod pattern_matching;
+mod p1_probe;
 mod projection_typeck;
 mod ref_mut;
 mod ref_x;
