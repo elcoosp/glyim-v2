@@ -2,7 +2,6 @@ use crate::builder::{LoopInfo, MirBuilder};
 use crate::lower_terminator::TerminatorExt;
 use glyim_const_eval::{ConstEvaluator, ConstValue};
 use glyim_core::TargetInfo;
-use glyim_core::def_id::ClosureId;
 use glyim_core::primitives::{BinOp, Mutability};
 use glyim_diag::GlyimDiagnostic;
 use glyim_layout::LayoutComputer;
@@ -10,7 +9,7 @@ use glyim_mir::{
     self, BasicBlockIdx, CastKind, LocalIdx, MirConst, MirConstKind, Operand, Place,
     ProjectionElem, Rvalue, StatementKind, SwitchTargets, TerminatorKind,
 };
-use glyim_type::{self, FieldIdx, Substitution, Ty, TyKind};
+use glyim_type::{self, FieldIdx, Ty, TyKind};
 use glyim_typeck::thir;
 
 impl<'a> MirBuilder<'a> {
@@ -852,8 +851,8 @@ impl<'a> MirBuilder<'a> {
                 // `__glyim_fn_{closure_id}`. The captures come first, followed
                 // by the closure's own parameters (see `lower_closure`).
                 self.lower_closure(
-                    &_thir_body,
-                    &captures,
+                    _thir_body,
+                    captures,
                     *closure_id,
                     *closure_substs,
                     expr.span,
@@ -895,7 +894,7 @@ impl<'a> MirBuilder<'a> {
             }
 
             thir::ExprKind::DynamicCall {
-                receiver,
+                receiver: _,
                 trait_def_id,
                 method_name,
                 args,
