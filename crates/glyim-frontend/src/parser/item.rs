@@ -22,6 +22,8 @@ impl<'a> Parser<'a> {
                     | SyntaxKind::KwType
                     | SyntaxKind::KwExtern
                     | SyntaxKind::KwAsync
+                    | SyntaxKind::KwMacro
+                    | SyntaxKind::KwMacroRules
             ) {
                 self.error("expected item after 'unsafe'");
                 return;
@@ -108,7 +110,7 @@ impl<'a> Parser<'a> {
                 self.expect(SyntaxKind::Semicolon);
                 self.finish_node();
             }
-            SyntaxKind::KwMacroRules => {
+            SyntaxKind::KwMacroRules | SyntaxKind::KwMacro => {
                 self.parse_macro_def();
             }
             SyntaxKind::KwExtern => {
@@ -232,10 +234,18 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_macro_def(&mut self) {
         self.start_node(SyntaxKind::MacroDef);
-        self.bump_expected(SyntaxKind::KwMacroRules);
-        self.bump(); // !
-        self.bump_expected(SyntaxKind::Ident); // macro name
-        // Body: { arms }
+        // Two accepted forms with different token orders:
+        //   `macro_rules! name { ... }`  -> macro_rules ! name
+        //   `macro name! { ... }`        -> macro name !
+        if self.current_kind() == SyntaxKind::KwMacroRules {
+            self.bump_expected(SyntaxKind::KwMacroRules);
+            self.bump_expected(SyntaxKind::Bang); // !
+            self.bump_expected(SyntaxKind::Ident); // macro name
+        } else {
+            self.bump_expected(SyntaxKind::KwMacro);
+            self.bump_expected(SyntaxKind::Ident); // macro name
+            self.bump_expected(SyntaxKind::Bang); // !
+        }
         self.expect(SyntaxKind::LBrace);
         while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
             // Skip separators between arms
@@ -439,6 +449,12 @@ impl<'a> Parser<'a> {
             if is_mut {
                 self.bump(); // mut
             }
+            // Optional lifetime on a reference receiver/param: `&'a self`,
+            // `&'a T`, `&mut 'a self`. Bump it so the lifetime survives to
+            // typeck instead of erroring as a bare Ident.
+            if self.current_kind() == SyntaxKind::Lifetime {
+                self.bump();
+            }
             if self.current_kind() == SyntaxKind::KwSelf {
                 // `&mut self` / `&self`: build a `RefType` node whose inner is
                 // produced by `parse_type` (which yields the correct
@@ -495,6 +511,8 @@ impl<'a> Parser<'a> {
             SyntaxKind::LParen => {
                 self.bump(); // (
                 while self.current_kind() != SyntaxKind::RParen && self.current().is_some() {
+                    // Tuple-struct fields may carry a visibility modifier.
+                    self.parse_visibility();
                     self.parse_type();
                     if self.current_kind() == SyntaxKind::Comma {
                         self.bump();
@@ -650,6 +668,8 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Semicolon);
                     self.finish_node();
                 }
+                SyntaxKind::KwExtern => self.parse_extern_block(),
+                SyntaxKind::KwUnsafe => self.parse_item(),
                 _ => {
                     self.error(format!(
                         "expected trait item, found {:?}",
@@ -661,6 +681,44 @@ impl<'a> Parser<'a> {
         }
         self.expect(SyntaxKind::RBrace);
         self.finish_node(); // TraitDef
+    }
+
+    pub(crate) fn parse_extern_block(&mut self) {
+        // `extern "C" { ... }` foreign block (used as an impl/trait item or
+        // statement). The `extern "C" fn foo()` form is handled by parse_fn_def.
+        self.start_node(SyntaxKind::ExternBlock);
+        self.bump(); // extern
+        if self.current_kind() == SyntaxKind::StringLit {
+            self.bump(); // ABI string
+        }
+        if self.current_kind() == SyntaxKind::LBrace {
+            self.bump(); // {
+            while self.current_kind() != SyntaxKind::RBrace && self.current().is_some() {
+                match self.current_kind() {
+                    SyntaxKind::KwFn => self.parse_fn_def(),
+                    SyntaxKind::KwStatic => {
+                        self.start_node(SyntaxKind::StaticDef);
+                        self.bump(); // static
+                        if self.current_kind() == SyntaxKind::KwMut {
+                            self.bump();
+                        }
+                        self.bump_expected(SyntaxKind::Ident);
+                        self.expect(SyntaxKind::Colon);
+                        self.parse_type();
+                        self.expect(SyntaxKind::Semicolon);
+                        self.finish_node();
+                    }
+                    _ => {
+                        self.error("expected fn or static in extern block");
+                        self.bump();
+                    }
+                }
+            }
+            self.expect(SyntaxKind::RBrace);
+        } else {
+            self.expect(SyntaxKind::Semicolon);
+        }
+        self.finish_node();
     }
 
     pub(crate) fn parse_impl_def(&mut self) {
@@ -703,6 +761,8 @@ impl<'a> Parser<'a> {
                     self.expect(SyntaxKind::Semicolon);
                     self.finish_node();
                 }
+                SyntaxKind::KwExtern => self.parse_extern_block(),
+                SyntaxKind::KwUnsafe => self.parse_item(),
                 _ => {
                     self.error(format!(
                         "expected impl item, found {:?}",
@@ -738,7 +798,17 @@ impl<'a> Parser<'a> {
             self.finish_node(); // WherePredicate
             if self.current_kind() == SyntaxKind::Comma {
                 self.bump();
-                continue;
+                // A trailing comma before the function body/terminator is valid
+                // (e.g. `where T: Foo, {`). Only continue if another predicate
+                // actually follows.
+                match self.current_kind() {
+                    SyntaxKind::Ident
+                    | SyntaxKind::Lifetime
+                    | SyntaxKind::KwSelf
+                    | SyntaxKind::KwSuper
+                    | SyntaxKind::KwCrate => continue,
+                    _ => break,
+                }
             }
             break;
         }
@@ -753,7 +823,13 @@ impl<'a> Parser<'a> {
             && self.current().is_some()
         {
             self.start_node(SyntaxKind::TypeParam);
-            self.bump_expected(SyntaxKind::Ident);
+            // A lifetime parameter (`'a`) is also valid here: `impl<'a, T>`.
+            // Bump it as a bare Lifetime leaf; the TypeParam node still wraps it.
+            if self.current_kind() == SyntaxKind::Lifetime {
+                self.bump();
+            } else {
+                self.bump_expected(SyntaxKind::Ident);
+            }
             if self.current_kind() == SyntaxKind::Colon {
                 self.bump();
                 loop {
@@ -800,6 +876,13 @@ impl<'a> Parser<'a> {
             && self.current().is_some()
         {
             self.parse_type();
+            // Associated-type binding: `Trait<Assoc = T>` (e.g.
+            // `IntoIterator<Item = T>`). The binder `Ident = Type` is a single
+            // generic argument.
+            if self.current_kind() == SyntaxKind::Eq {
+                self.bump(); // =
+                self.parse_type();
+            }
             if self.current_kind() == SyntaxKind::Comma {
                 self.bump();
             }
