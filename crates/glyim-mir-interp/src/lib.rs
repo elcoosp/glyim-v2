@@ -1284,7 +1284,6 @@ pub fn recursion_depth(&self) -> usize {
             .and_then(|opt| opt.as_ref())
             .cloned()
             .ok_or_else(|| InterpError::Panic(format!("write to uninitialized local {idx}")))?;
-        drop(frame_locals);
 
         let modified =
             self.write_through_projections_with_locals(base_val, &place.projection, val)?;
