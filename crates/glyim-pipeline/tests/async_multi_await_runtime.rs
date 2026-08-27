@@ -90,7 +90,7 @@ fn is_state_machine(body: &Body) -> bool {
         let bi = bb_idx.index();
         // Detect a back-edge: any terminator targeting a strictly-earlier block.
         for succ in successor_idxs(&bb.terminator.kind) {
-            if (succ as usize) < bi {
+            if succ < bi {
                 has_back_edge = true;
             }
         }
