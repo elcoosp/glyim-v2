@@ -320,15 +320,16 @@ impl TyCtx {
                             .all(|f| self.is_sized(f.ty))
                     })
                 } else {
-                    // Unknown/unregistered ADT: assume sized (matches the
-                    // conservative default used elsewhere for unregistered types).
-                    // Surface this in debug builds so an unregistered ADT that
-                    // *should* be sized-checked is not silently accepted.
+                    // Unknown/unregistered ADT: conservatively treat as
+                    // *un*sized so generic `T: Sized` bounds and codegen do not
+                    // silently accept a type whose layout we cannot know.
+                    // Surface in debug builds so a genuinely sized-but-unregistered
+                    // ADT is not silently mishandled.
                     debug_assert!(
                         false,
-                        "is_sized: unknown/unregistered ADT {adt_id:?}; assuming sized"
+                        "is_sized: unknown/unregistered ADT {adt_id:?}; assuming UNSIZED"
                     );
-                    true
+                    false
                 }
             }
             _ => true,
