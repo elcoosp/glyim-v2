@@ -331,7 +331,8 @@ fn canonical_build_config(opts: &crate::config::BuildOptions) -> String {
         None => "none",
     };
     format!(
-        "release={};target={};backend={};opt_level={};lto={}",
+        "compiler={};release={};target={};backend={};opt_level={};lto={}",
+        env!("CARGO_PKG_VERSION"),
         opts.release,
         opts.target.as_deref().unwrap_or(""),
         opts.backend,
