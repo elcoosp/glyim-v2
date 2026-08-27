@@ -9,9 +9,8 @@ use glyim_lower::post_mono_checks::{
 };
 use glyim_lower::partition::partition;
 use glyim_mir::Body;
-use glyim_solve::{InferenceTable, SimpleTraitSolver, TraitContext};
+use glyim_solve::{InferenceTable, SimpleTraitSolver};
 use glyim_solve::solver::ImplDef;
-use glyim_core::def_id::ImplDefId;
 use glyim_type::TraitRef;
 use glyim_typeck::tyconv;
 use rayon::prelude::*;
@@ -522,7 +521,7 @@ pub fn compile_file_to_mir(
     // previously made this path OOB-panic). After elaboration we re-freeze and
     // publish the updated context.
     {
-        let frozen: &glyim_type::TyCtx = &*ty_ctx_guard;
+        let frozen: &glyim_type::TyCtx = &ty_ctx_guard;
         let mut elaborator = frozen.to_mut();
         for (_owner, body_arc) in bodies.iter_mut() {
             let mut body = (**body_arc).clone();
