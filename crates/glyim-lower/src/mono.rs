@@ -1,14 +1,11 @@
 //! Monomorphization: instantiate generic MIR bodies with concrete types.
-use std::collections::HashMap;
 
 use glyim_core::arena::IndexVec;
 use glyim_core::def_id::{ConstDefId, CrateId, DefId, FnDefId, LocalDefId, StaticDefId};
-use glyim_mir::{self, MirConstKind, Operand, Place, Rvalue, StatementKind, TerminatorKind};
+use glyim_mir::{self, MirConstKind, Operand, Rvalue, StatementKind, TerminatorKind};
 use glyim_type::*;
 use std::sync::Arc;
 
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(MonoItemId);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -269,7 +266,7 @@ impl<'a> MonoCtx<'a> {
         }
     }
 
-    fn scan_terminator(&mut self, kind: &TerminatorKind, body: &glyim_mir::Body) {
+    fn scan_terminator(&mut self, kind: &TerminatorKind, _body: &glyim_mir::Body) {
         match kind {
             TerminatorKind::Call { func, args, .. } => {
                 // Instantiate the callee from the substitution carried by the
