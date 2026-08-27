@@ -199,12 +199,9 @@ impl<'a> MonoCtx<'a> {
                         method_name,
                     } = c.kind
                     {
-                        if let (Some(recv_ty), Some(fn_def_id)) = (
-                            recv_ty,
-                            recv_ty.and_then(|rt| {
-                                ty_ctx.resolve_trait_method(trait_def_id, rt, method_name)
-                            }),
-                        ) {
+                        if let Some(fn_def_id) = recv_ty.and_then(|rt| {
+                            ty_ctx.resolve_trait_method(trait_def_id, rt, method_name)
+                        }) {
                             let substs = Substitution::empty();
                             let fn_ty = ty_ctx.mk_ty(TyKind::FnDef(fn_def_id, substs));
                             *c = glyim_mir::MirConst {
