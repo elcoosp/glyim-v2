@@ -317,6 +317,7 @@ struct Frame {
 }
 
 /// The virtual machine: a stack of call frames plus the shared operand stack.
+#[derive(Default)]
 pub struct Vm {
     /// The operand stack (shared across the whole execution).
     stack: Vec<Value>,
@@ -327,10 +328,7 @@ pub struct Vm {
 impl Vm {
     /// Create an empty VM (no frames).
     pub fn new() -> Vm {
-        Vm {
-            stack: Vec::new(),
-            frames: Vec::new(),
-        }
+        Vm::default()
     }
 
     /// Execute the module's entry function.
