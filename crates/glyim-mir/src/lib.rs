@@ -440,9 +440,20 @@ pub enum MirConstKind {
     Fn(FnDefId, Substitution),
 #[allow(missing_docs)]
     ConstRef(ConstDefId, Substitution),
-    /// A constant aggregate (tuple, array, or struct) whose every field is
-    /// itself a constant. Enables constant propagation of `Aggregate` rvalues
-    /// with all-constant operands (plan §15.3).
+    /// A trait-method reference that must be devirtualized at
+    /// monomorphization (or resolved at interpretation) against the concrete
+    /// type of the call's first argument (the receiver). Used for calls on a
+    /// generic-bound receiver (`f.poll()` where `f: F` and `F: Future`): the
+    /// concrete `impl` method `FnDefId` is not known until the generic is
+    /// instantiated, so the method identity is carried here and resolved from
+    /// the receiver's (monomorphized) type via `TyCtx::resolve_trait_method`.
+    VirtualMethod {
+        /// The trait the method belongs to.
+        trait_def_id: TraitDefId,
+        /// The method name within the trait.
+        method_name: Name,
+    },
+    /// Variant.
     Aggregate(Vec<MirConst>),
 /// Variant.
     Error,
