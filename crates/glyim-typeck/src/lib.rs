@@ -597,6 +597,30 @@ pub fn typeck_crate(
                         },
                     );
 
+                    // Populate the trait-method dispatch table so generic-bound
+                    // calls (`f.poll()`) can be devirtualized at mono/interp
+                    // time. Only `impl Trait for Adt` (concrete self) is
+                    // registered; the self ADT id is needed as the dispatch key.
+                    if let (Some(trait_path), Some(self_ty)) =
+                        (&impl_item.trait_ref, self_ty_opt)
+                    {
+                        if let Some(trait_def_id) = tyconv::resolve_path_to_trait_def_id(
+                            def_map,
+                            &ctx,
+                            trait_path,
+                            impl_span,
+                        ) {
+                            if let glyim_type::TyKind::Adt(self_adt_id, _) = ctx.ty_kind(self_ty) {
+                                ctx.register_impl_method(
+                                    trait_def_id,
+                                    *self_adt_id,
+                                    method.name,
+                                    FnDefId::from_raw(local_def_id.to_raw()),
+                                );
+                            }
+                        }
+                    }
+
                     process_where_clauses(
                         &mut ctx,
                         &mut infer,
