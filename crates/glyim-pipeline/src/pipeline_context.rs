@@ -140,13 +140,12 @@ impl<'a> LowerCtx for PipelineLowerCtx<'a> {
         if let Some(idx) = adt.fields.iter_enumerated().find(|(_, f)| f.name == name) {
             return Some(FieldIdx::from_raw(idx.0.index() as u32));
         }
-        if let Some(variant) = adt.variants.get(variant_idx as usize) {
-            if let Some(idx) =
+        if let Some(variant) = adt.variants.get(variant_idx as usize)
+            && let Some(idx) =
                 variant.fields.iter_enumerated().find(|(_, f)| f.name == name)
             {
                 return Some(FieldIdx::from_raw(idx.0.index() as u32));
             }
-        }
         None
     }
 
