@@ -22,8 +22,8 @@ use glyim_diag::GlyimDiagnostic;
 use glyim_span::Span;
 
 use crate::{
-    Body, BodyId, CrateHir, EnumItem, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Literal, Name,
-    Param, Path, PathKind, PathSegment, StructKind, TypeRef, Variant, Visibility,
+    Body, BodyId, CrateHir, Expr, ExprId, FnItem, Item, ItemId, ItemKind, Literal, Name,
+    Param, Path, PathKind, PathSegment, Visibility,
 };
 
 use crate::lower::lower_async::desugar_async;
@@ -32,7 +32,7 @@ use crate::lower::lower_async::desugar_async;
 /// containing `n_awaits` `Expr::Await` statements followed by a tail path. The
 /// `Expr::Await` nodes are injected directly (the source parser would drop them).
 fn build_async_hir(n_awaits: usize) -> CrateHir {
-    let mut interner = Interner::new();
+    let interner = Interner::new();
     let two_name: Name = interner.intern("two");
     let a_name: Name = interner.intern("a");
     let b_name: Name = interner.intern("b");
@@ -40,7 +40,7 @@ fn build_async_hir(n_awaits: usize) -> CrateHir {
 
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     // Helper to build a bare path expression.
-    let mut path_expr = |interner: &Interner, n: Name, exprs: &mut IndexVec<ExprId, Expr>| -> ExprId {
+    let path_expr = |_interner: &Interner, n: Name, exprs: &mut IndexVec<ExprId, Expr>| -> ExprId {
         let p = Path {
             segments: vec![PathSegment {
                 name: n,
@@ -143,47 +143,6 @@ fn enum_item_names(hir: &CrateHir) -> Vec<String> {
     out
 }
 
-/// Variant names of the (first) enum whose name contains `substr`.
-fn enum_variant_names(hir: &CrateHir, substr: &str) -> Option<Vec<String>> {
-    for item in hir.items.iter() {
-        if let ItemKind::Enum(e) = &item.kind {
-            let name = hir.interner.resolve(item.name).to_string();
-            if name.contains(substr) {
-                return Some(
-                    e.variants
-                        .iter()
-                        .map(|v: &Variant| hir.interner.resolve(v.name).to_string())
-                        .collect(),
-                );
-            }
-        }
-    }
-    None
-}
-
-/// Field names of the `Start` variant of the `*State` enum.
-fn state_start_field_names(hir: &CrateHir) -> Option<Vec<String>> {
-    for item in hir.items.iter() {
-        if let ItemKind::Enum(e) = &item.kind {
-            let name = hir.interner.resolve(item.name).to_string();
-            if name.contains("State") {
-                let start = e
-                    .variants
-                    .iter()
-                    .find(|v| hir.interner.resolve(v.name) == "Start")?;
-                return Some(
-                    start
-                        .fields
-                        .iter()
-                        .map(|f| hir.interner.resolve(f.name).to_string())
-                        .collect(),
-                );
-            }
-        }
-    }
-    None
-}
-
 /// §1.1 routing: a function with exactly ONE `.await` must NOT produce a
 /// state-enum-backed future (it stays on the existing single-poll path).
 #[test]
@@ -236,7 +195,7 @@ fn multi_await_is_rejected_with_diagnostic() {
 /// compile-time diagnostic rather than silently miscompiling it into an
 /// infinite-`Pending` hang.
 fn build_async_hir_with_loop_await() -> CrateHir {
-    let mut interner = Interner::new();
+    let interner = Interner::new();
     let bad_name: Name = interner.intern("bad");
     let a_name: Name = interner.intern("a");
     let b_name: Name = interner.intern("b");
@@ -245,7 +204,7 @@ fn build_async_hir_with_loop_await() -> CrateHir {
     let mut exprs: IndexVec<ExprId, Expr> = IndexVec::new();
     let mut pats: IndexVec<crate::PatId, crate::Pat> = IndexVec::new();
 
-    let path_expr = |interner: &Interner, n: Name, exprs: &mut IndexVec<ExprId, Expr>| -> ExprId {
+    let path_expr = |_interner: &Interner, n: Name, exprs: &mut IndexVec<ExprId, Expr>| -> ExprId {
         let p = Path {
             segments: vec![PathSegment {
                 name: n,
