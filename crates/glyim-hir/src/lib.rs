@@ -38,17 +38,9 @@ use glyim_core::path::PathKind;
 use glyim_core::primitives::*;
 use glyim_span::Span;
 
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(ExprId);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(PatId);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(BodyId);
-#[allow(missing_docs)]
-#[allow(missing_docs)]
 glyim_core::define_idx!(ItemId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
