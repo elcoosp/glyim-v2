@@ -21,13 +21,9 @@
 
 use fixedbitset::FixedBitSet;
 use glyim_borrowck::compute_liveness;
-use glyim_core::arena::IndexVec;
 use glyim_mir::{
-    BasicBlockData, BasicBlockIdx, Body, LocalDecl, LocalIdx, Operand, SourceInfo, StatementKind,
-    Terminator, TerminatorKind,
+    BasicBlockIdx, Body, LocalIdx, TerminatorKind,
 };
-use glyim_span::Span;
-use glyim_core::primitives::Mutability;
 
 /// A suspend point: a basic block whose terminator `Call`s `Future::poll`.
 ///
@@ -184,12 +180,12 @@ pub struct ResumeArmPlan {
 /// on this host. The function returns the plan so the caller can drive the
 /// real emission.
 pub fn transform_async_body(body: &Body) -> AsyncTransformPlan {
-    let plan = plan_async_transform(body);
+    
     // A body with no suspend sites resolves on the first poll; a body with a
     // single suspend site is handled by the single-poll desugar; only bodies
     // with >1 suspend site require the full state machine (M3 codegen). The
     // analysis is valid for all three cases, so just return the plan.
-    plan
+    plan_async_transform(body)
 }
 
 // ---------------------------------------------------------------------------
@@ -199,8 +195,11 @@ pub fn transform_async_body(body: &Body) -> AsyncTransformPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glyim_core::arena::IndexVec;
     use glyim_core::def_id::FnDefId;
-    use glyim_mir::{MirConst, MirConstKind, Place};
+    use glyim_core::primitives::Mutability;
+    use glyim_mir::{BasicBlockData, LocalDecl, MirConst, MirConstKind, Operand, Place, SourceInfo, Terminator, TerminatorKind};
+    use glyim_span::Span;
     use glyim_type::{Substitution, Ty};
 
     /// Build a minimal `Body` with `n_locals` locals and `n_calls` basic blocks
