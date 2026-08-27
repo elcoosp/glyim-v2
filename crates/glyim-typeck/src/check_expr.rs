@@ -729,22 +729,22 @@ impl<'a> FnCtxt<'a> {
 
                 // DEBUG: print callee + ret_ty for EVERY call
                 {
-                    let cn = if let Expr::Path(p) = &self.body.exprs[*func] {
+                    let _cn = if let Expr::Path(p) = &self.body.exprs[*func] {
                         p.as_name().map(|n| self.ctx.name_str(n).to_string()).or_else(|| Some(format!("{:?}", p)))
                     } else { None };
-                    let raw_name = if let Expr::Path(p) = &self.body.exprs[*func] {
+                    let _raw_name = if let Expr::Path(p) = &self.body.exprs[*func] {
                         Some(p.segments.iter().map(|s| format!("{:?}=`{}`", s.name, self.ctx.name_str(s.name))).collect::<Vec<_>>().join("::"))
                     } else { None };
-                    let dbg_def = if is_fn_def { Some(def_id) } else { None };
+                    let _dbg_def = if is_fn_def { Some(def_id) } else { None };
                     let dbg_sigout = if is_fn_def { self.ctx.fn_sig(def_id).map(|s| PrintTy::new(s.output, &*self.ctx)) } else { None };
-                    let sigout_str = match dbg_sigout {
+                    let _sigout_str = match dbg_sigout {
                         Some(p) => format!("{}", p),
                         None => "<none>".to_string(),
                     };
                 }
 
                 if matches!(self.ctx.ty_kind(ret_ty), TyKind::Error) {
-                    let callee_name = if let Expr::Path(p) = &self.body.exprs[*func] {
+                    let _callee_name = if let Expr::Path(p) = &self.body.exprs[*func] {
                         p.as_name().map(|n| self.ctx.name_str(n))
                     } else {
                         None
