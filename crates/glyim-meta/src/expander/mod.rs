@@ -1037,12 +1037,14 @@ fn delim_char(kind: SyntaxKind) -> char {
 }
 
 /// Spacing rule matching real `stringify!`: no space before a closing or
-/// separator punctuation, no space after an opening punctuation, space
-/// everywhere else.
+/// separator punctuation, no space after an opening punctuation, no space
+/// after `#` (so `#[attr]` / `#![crate_attr]` stay fused), space everywhere
+/// else.
 fn needs_space_before(prev: &str, next: &str) -> bool {
     let next_closes = matches!(next, "," | ";" | ")" | "]" | "}");
     let prev_opens = matches!(prev, "(" | "[" | "{");
-    !(next_closes || prev_opens)
+    let prev_hash = prev == "#";
+    !(next_closes || prev_opens || prev_hash)
 }
 
 /// Recursively find the first string-literal token in a flattened token tree,
