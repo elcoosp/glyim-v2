@@ -27,6 +27,7 @@ impl<'a> Parser<'a> {
             | SyntaxKind::KwWhile
             | SyntaxKind::KwFor
             | SyntaxKind::KwLoop
+            | SyntaxKind::KwMatch
             | SyntaxKind::KwReturn
             | SyntaxKind::KwBreak
             | SyntaxKind::KwContinue
@@ -54,6 +55,9 @@ impl<'a> Parser<'a> {
                 if self.peek_kind() == Some(SyntaxKind::LBrace) {
                     self.start_node(SyntaxKind::ExprStmt);
                     self.parse_expr();
+                    if self.current_kind() == SyntaxKind::Semicolon {
+                        self.bump();
+                    }
                     self.finish_node();
                 } else {
                     self.parse_item();
@@ -62,6 +66,9 @@ impl<'a> Parser<'a> {
             SyntaxKind::LBrace => {
                 self.start_node(SyntaxKind::ExprStmt);
                 self.parse_expr();
+                if self.current_kind() == SyntaxKind::Semicolon {
+                    self.bump();
+                }
                 self.finish_node();
             }
             _ => {
@@ -72,6 +79,7 @@ impl<'a> Parser<'a> {
                         | SyntaxKind::FloatLit
                         | SyntaxKind::StringLit
                         | SyntaxKind::CharLit
+                        | SyntaxKind::ByteLit
                         | SyntaxKind::KwTrue
                         | SyntaxKind::KwFalse
                         | SyntaxKind::KwSelf
