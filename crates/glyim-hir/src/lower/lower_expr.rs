@@ -725,7 +725,6 @@ fn lower_binary_expr(
                 rhs: rhs_id,
             };
             let eid = body.alloc_expr(expr, node_span(node));
-            eprintln!("[LOWER_BIN] returning Some({:?}) op={:?}", eid, op);
             return Some(eid);
         }
     }
