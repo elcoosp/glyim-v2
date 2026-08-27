@@ -31,6 +31,11 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::MinusEq
                 | SyntaxKind::StarEq
                 | SyntaxKind::SlashEq
+                | SyntaxKind::OrEq
+                | SyntaxKind::AndEq
+                | SyntaxKind::CaretEq
+                | SyntaxKind::ShlEq
+                | SyntaxKind::ShrEq
         ) {
             self.start_node_at(cp, SyntaxKind::AssignExpr);
             self.bump();
@@ -41,6 +46,29 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_range_expr(&mut self) {
         let cp = self.checkpoint();
+        // Range-from / inclusive-range-from: `..end` or `..=end` (no start).
+        // Must be checked before parse_or_expr, otherwise the leading `..`
+        // is seen as an unexpected primary.
+        if matches!(
+            self.current_kind(),
+            SyntaxKind::DotDot | SyntaxKind::DotDotEq
+        ) {
+            self.start_node_at(cp, SyntaxKind::RangeExpr);
+            self.bump();
+            if !matches!(
+                self.current_kind(),
+                SyntaxKind::Eq
+                    | SyntaxKind::Semicolon
+                    | SyntaxKind::Comma
+                    | SyntaxKind::RParen
+                    | SyntaxKind::RBrace
+                    | SyntaxKind::RBracket
+            ) {
+                self.parse_or_expr();
+            }
+            self.finish_node();
+            return;
+        }
         self.parse_or_expr();
         if matches!(
             self.current_kind(),
@@ -501,6 +529,7 @@ impl<'a> Parser<'a> {
             | SyntaxKind::FloatLit
             | SyntaxKind::StringLit
             | SyntaxKind::CharLit
+            | SyntaxKind::ByteLit
             | SyntaxKind::KwTrue
             | SyntaxKind::KwFalse => {
                 self.start_node(SyntaxKind::LitExpr);
@@ -554,7 +583,13 @@ impl<'a> Parser<'a> {
                 self.bump(); // return
                 if !matches!(
                     self.current_kind(),
-                    SyntaxKind::Semicolon | SyntaxKind::RBrace
+                    SyntaxKind::Semicolon
+                        | SyntaxKind::RBrace
+                        | SyntaxKind::Comma
+                        | SyntaxKind::FatArrow
+                        | SyntaxKind::RParen
+                        | SyntaxKind::RBracket
+                        | SyntaxKind::Eq
                 ) {
                     self.parse_expr();
                 }
@@ -565,7 +600,13 @@ impl<'a> Parser<'a> {
                 self.bump(); // break
                 if !matches!(
                     self.current_kind(),
-                    SyntaxKind::Semicolon | SyntaxKind::RBrace
+                    SyntaxKind::Semicolon
+                        | SyntaxKind::RBrace
+                        | SyntaxKind::Comma
+                        | SyntaxKind::FatArrow
+                        | SyntaxKind::RParen
+                        | SyntaxKind::RBracket
+                        | SyntaxKind::Eq
                 ) {
                     self.parse_expr();
                 }
