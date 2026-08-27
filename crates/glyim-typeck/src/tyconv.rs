@@ -616,7 +616,7 @@ pub fn resolve_path_type(
 
     // Check ADTs (structs, enums, unions)
     if path.as_name().is_some()
-        && let Some(ty) = resolve_name_to_adt_ty(ctx, infer, def_map, diagnostics, path, span)
+        && let Some(ty) = resolve_name_to_adt_ty(ctx, infer, def_map, diagnostics, path, param_map, span)
     {
         return ty;
     }
@@ -916,6 +916,7 @@ fn resolve_name_to_adt_ty(
     def_map: &glyim_def_map::CrateDefMap,
     diagnostics: &mut Vec<GlyimDiagnostic>,
     path: &glyim_hir::Path,
+    param_map: &HashMap<Name, Ty>,
     span: Span,
 ) -> Option<Ty> {
     let adt_id = match path.as_name().and_then(|name| {
@@ -965,7 +966,7 @@ fn resolve_name_to_adt_ty(
         }
         for arg in args {
             let resolved =
-                resolve_type_ref(ctx, infer, def_map, diagnostics, arg, &HashMap::new(), span);
+                resolve_type_ref(ctx, infer, def_map, diagnostics, arg, param_map, span);
             substs.push(GenericArg::Ty(resolved));
         }
     } else {
