@@ -51,6 +51,7 @@ use glyim_diag::{DiagSeverity, ErrorCategory, ErrorCode, GlyimDiagnostic};
 /// are appended to `hir.items`. `Expr::Await` nodes in the poll bodies are
 /// rewritten into poll matches.
 pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>) {
+    let initial_len = hir.items.len();
     let async_items: Vec<ItemId> = hir
         .items
         .iter_enumerated()
