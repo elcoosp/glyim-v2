@@ -78,15 +78,42 @@ pub(crate) fn run_lto<'ctx>(
 ///
 /// Setting the embedded `ThinLTO` module-summary flag is performed via raw
 /// `llvm-sys` FFI (`LLVMAddModuleFlag`) — inkwell 0.10 does not wrap the
-/// module-flag API. The bitcode written here is valid ThinLTO input regardless;
-/// embedding the summary flag is a tracked refinement that does not change the
-/// consume contract (`emit_thinlto_bitcode_writes_file_with_summary` pins the
-/// real output).
+/// module-flag API. This embeds a `ThinLTO` module flag (behavior `Error`, so
+/// conflicting summaries are rejected at thin-link time) marking the bitcode
+/// as valid ThinLTO input that carries a module summary; without it the
+/// thin-link would treat the module as a regular (non-summary) input. The
+/// bitcode written here is valid ThinLTO input regardless; embedding the
+/// summary flag is what lets the thin-link actually perform cross-module
+/// inlining rather than silently downgrading to a single-module pass.
 pub fn emit_thinlto_bitcode<'ctx>(
     module: &Module<'ctx>,
     _target_machine: &TargetMachine,
     out_path: &Path,
 ) -> Result<(), String> {
+    // Embed the `ThinLTO` module-summary flag via raw llvm-sys FFI. Behavior
+    // `Error` means a conflicting flag on the same module is a hard error
+    // (there should never be one, but this guards the invariant). The value is
+    // an `MDString` metadata node (the API requires `LLVMMetadataRef`, not a
+    // `Value`), marking the bitcode as carrying a module summary so the
+    // thin-link performs cross-module inlining rather than downgrading to a
+    // single-module pass.
+    unsafe {
+        use llvm_sys::core::{
+            LLVMAddModuleFlag, LLVMGetModuleContext, LLVMMDStringInContext2,
+        };
+        use llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorError;
+        use std::os::raw::c_char;
+        let ctx = LLVMGetModuleContext(module.as_mut_ptr());
+        let value = LLVMMDStringInContext2(ctx, b"1\0".as_ptr() as *const c_char, 1);
+        let name = b"ThinLTO\0".as_ptr() as *const c_char;
+        LLVMAddModuleFlag(
+            module.as_mut_ptr(),
+            LLVMModuleFlagBehaviorError,
+            name,
+            8,
+            value,
+        );
+    }
     // Serialize to a memory buffer first, then write the bytes to disk. Under
     // LLVM 22 `LLVMWriteBitcodeToFile` silently emits a 0-byte file for
     // content-bearing modules (it works for empty modules, which is why the
