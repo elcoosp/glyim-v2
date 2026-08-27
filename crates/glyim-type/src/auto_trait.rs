@@ -5,7 +5,6 @@ use glyim_core::def_id::AdtId;
 use glyim_core::primitives::Mutability;
 use std::collections::{HashMap, HashSet};
 
-#[allow(missing_docs)]
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     #[doc = "Auto-trait capability flags."]
