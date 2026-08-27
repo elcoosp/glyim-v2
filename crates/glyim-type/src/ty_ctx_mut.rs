@@ -13,8 +13,6 @@ use glyim_core::def_id::{AdtId, ClosureId, ConstDefId, CrateId, DefId, FnDefId, 
 use glyim_core::interner::{Interner, Name};
 use glyim_core::primitives::{IntTy, Mutability, UintTy};
 use crate::lang_items::{LangItem, LangItems};
-use indexmap::IndexSet;
-use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -294,7 +292,8 @@ impl TyCtxMut {
             return ty;
         }
         let kind = self.ty_kind(ty).clone();
-        let r = match kind {
+        
+        match kind {
             TyKind::Param(pt) => {
                 if let Some(repl) = subst.get(&pt.index) {
                     match repl {
@@ -418,8 +417,7 @@ impl TyCtxMut {
                 self.mk_ty(TyKind::Slice(new_inner))
             }
             _ => ty,
-        };
-        r
+        }
     }
 
 /// mk_ref.
@@ -725,7 +723,8 @@ impl TyCtxMut {
             TyKind::Adt(adt_id, _) => Some(*adt_id),
             _ => None,
         };
-        let result = self.impl_assoc_types
+        
+        self.impl_assoc_types
             .iter()
             .find(|((sty, _), entries)| {
                 let sty_matches = match self_adt {
@@ -739,8 +738,7 @@ impl TyCtxMut {
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
-            });
-        result
+            })
     }
 
     /// Structural ADT-type equality with the arena: two `Ty`s that both denote
@@ -764,7 +762,8 @@ impl TyCtxMut {
         trait_def_id: glyim_core::def_id::TraitDefId,
         assoc_name: Name,
     ) -> Option<Ty> {
-        let r = self.impl_assoc_types
+        
+        self.impl_assoc_types
             .iter()
             .find(|((key_self, key_trait), _)| {
                 *key_trait == trait_def_id && self.same_adt(self_ty, *key_self)
@@ -774,8 +773,7 @@ impl TyCtxMut {
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
-            });
-        r
+            })
     }
 
     /// Query the traits a generic parameter (by name) is bound to. Populated
@@ -792,7 +790,7 @@ impl TyCtxMut {
     pub fn find_trait_with_assoc_type(&self, assoc_name: Name) -> Option<glyim_core::def_id::TraitDefId> {
         self.trait_defs
             .iter()
-            .find(|(_, def)| def.associated_types.iter().any(|n| *n == assoc_name))
+            .find(|(_, def)| def.associated_types.contains(&assoc_name))
             .map(|(id, _)| *id)
     }
 
