@@ -40,7 +40,7 @@ use glyim_span::Span;
 
 use crate::{
     AssociatedTy, Body, BodyId, EnumItem, Expr, ExprId, Field, ImplItem, ImplMethod, Item, ItemId,
-    ItemKind, Literal, MatchArm, Param, Pat, Path, PathKind, PathSegment, StructItem, TypeRef,
+    ItemKind, MatchArm, Param, Pat, Path, PathKind, PathSegment, StructItem, TypeRef,
     Variant,
 };
 use glyim_diag::{DiagSeverity, ErrorCategory, ErrorCode, GlyimDiagnostic};
@@ -51,7 +51,7 @@ use glyim_diag::{DiagSeverity, ErrorCategory, ErrorCode, GlyimDiagnostic};
 /// are appended to `hir.items`. `Expr::Await` nodes in the poll bodies are
 /// rewritten into poll matches.
 pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>) {
-    let initial_len = hir.items.len();
+    let _initial_len = hir.items.len();
     let async_items: Vec<ItemId> = hir
         .items
         .iter_enumerated()
@@ -94,8 +94,7 @@ pub fn desugar_async(hir: &mut crate::CrateHir, diags: &mut Vec<GlyimDiagnostic>
         if loop_await {
             let await_expr = first_loop_await_expr(&hir.bodies[body_id.unwrap()], root_expr_id(&hir.bodies[body_id.unwrap()]));
             let span = await_expr
-                .map(|eid| hir.bodies[body_id.unwrap()].expr_spans.get(eid).copied())
-                .flatten()
+                .and_then(|eid| hir.bodies[body_id.unwrap()].expr_spans.get(eid).copied())
                 .unwrap_or(Span::DUMMY);
             diags.push(GlyimDiagnostic::new(
                 ErrorCode {
@@ -142,14 +141,12 @@ fn root_expr_id(body: &Body) -> ExprId {
 /// Build an `Expr::Path(self)` reference expression for the `self` receiver.
 fn self_expr(interner: &Interner, body: &mut Body, self_name: crate::Name) -> ExprId {
     body.alloc_expr(
-        Expr::Path(plain_path(interner, &interner.resolve(self_name).to_string())),
+        Expr::Path(plain_path(interner, interner.resolve(self_name))),
         Span::DUMMY,
     )
 }
 
 struct SuspendPoint {
-    /// 0-indexed suspension id, assigned in the order `.await`s execute.
-    id: usize,
     /// The `ExprId` of the `Expr::Await` node itself (`expr` is the future).
     await_expr: ExprId,
 }
@@ -164,7 +161,6 @@ fn collect_suspend_points(body: &Body, root: ExprId, out: &mut Vec<SuspendPoint>
             Expr::Await { expr } => {
                 walk(body, *expr, out);
                 out.push(SuspendPoint {
-                    id: out.len(),
                     await_expr: id,
                 });
             }
@@ -530,7 +526,7 @@ fn desugar_one_async_fn(hir: &mut crate::CrateHir, item_id: ItemId) {
     for (i, p) in original_params.iter().enumerate() {
         let field_name = interner.intern(&format!("f{}", i));
         let var_id = wrapper_body.alloc_expr(
-            Expr::Path(plain_path(interner, &interner.resolve(p.name).to_string())),
+            Expr::Path(plain_path(interner, interner.resolve(p.name))),
             Span::DUMMY,
         );
         wrapper_fields.push((field_name, var_id));
@@ -597,16 +593,11 @@ fn rewrite_for_poll(
         .map(|i| ExprId::from_raw(i as u32))
         .find(|&rid| matches!(body.exprs[rid], Expr::Block { .. }));
     let tail_id = match root_block {
-        Some(rid) => {
-            if let Expr::Block { tail, .. } = &body.exprs[rid] {
-                match *tail {
-                    Some(t) => t,
-                    None => return,
-                }
-            } else {
-                return;
-            }
-        }
+        Some(rid) => match &body.exprs[rid] {
+            Expr::Block { tail: Some(t), .. } => *t,
+            Expr::Block { .. } => return,
+            _ => return,
+        },
         // Non-block body: the sole/top-level expr is the tail.
         None => ExprId::from_raw(0),
     };
@@ -1037,7 +1028,6 @@ fn build_future_impl(
 /// proof before declaring M4 fully verified. Shapes whose future type is NOT
 /// statically nameable fall back to the `async-v2` diagnostic (see below).
 #[allow(clippy::too_many_lines)]
-#[allow(dead_code)]
 fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mut Vec<GlyimDiagnostic>) {
 
     let mut item = hir.items[item_id].clone();
@@ -1058,7 +1048,7 @@ fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mu
     let fn_name_str = interner.resolve(fn_name).to_string();
     let future_name = format!("{}Future", fn_name_str);
     let state_name = format!("{}State", future_name);
-    let output_id = interner.intern("Output");
+    let _output_id = interner.intern("Output");
     let poll_id = interner.intern("poll");
     let ready_id = interner.intern("Ready");
     let pending_id = interner.intern("Pending");
@@ -1235,7 +1225,7 @@ fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mu
     // helper: copy_expr_renamed (free fn) copies an expr from work_body into poll_body, renaming names.
 
     let self_path_expr = poll_body.alloc_expr(
-        Expr::Path(plain_path(interner, &interner.resolve(self_name).to_string())),
+        Expr::Path(plain_path(interner, interner.resolve(self_name))),
         Span::DUMMY,
     );
     let state_field_expr = poll_body.alloc_expr(
@@ -1296,7 +1286,7 @@ fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mu
         );
         stmts.push(fut_let);
         let fut_path = poll_body.alloc_expr(
-            Expr::Path(plain_path(interner, &interner.resolve(fut_local_name).to_string())),
+            Expr::Path(plain_path(interner, interner.resolve(fut_local_name))),
             Span::DUMMY,
         );
         let poll_call = poll_body.alloc_expr(
@@ -1427,7 +1417,7 @@ fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mu
             let rename_k = arm_rename(k);
             let fut_name = interner.intern(&format!("fut{}", k));
             let fut_path = poll_body.alloc_expr(
-                Expr::Path(plain_path(interner, &interner.resolve(fut_name).to_string())),
+                Expr::Path(plain_path(interner, interner.resolve(fut_name))),
                 Span::DUMMY,
             );
             let poll_call = poll_body.alloc_expr(
@@ -1508,7 +1498,7 @@ fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mu
                 } else {
                     // tail itself is the await; the result is the Ready value.
                     poll_body.alloc_expr(
-                        Expr::Path(plain_path(interner, &interner.resolve(interner.intern("__v")).to_string())),
+                        Expr::Path(plain_path(interner, interner.resolve(interner.intern("__v")))),
                         Span::DUMMY,
                     )
                 };
@@ -1637,7 +1627,7 @@ fn desugar_multi_async_fn(hir: &mut crate::CrateHir, item_id: ItemId, diags: &mu
     for (i, p) in original_params.iter().enumerate() {
         let field_name = interner.intern(&format!("f{}", i));
         let var_id = wrapper_body.alloc_expr(
-            Expr::Path(plain_path(interner, &interner.resolve(p.name).to_string())),
+            Expr::Path(plain_path(interner, interner.resolve(p.name))),
             Span::DUMMY,
         );
         start_fields.push((field_name, var_id));
@@ -1699,7 +1689,7 @@ fn copy_expr_renamed(
         Expr::Path(p) => {
             if let Some(name) = p.as_name() {
                 if let Some(new) = rename.get(&name) {
-                    Expr::Path(plain_path(interner, &interner.resolve(*new).to_string()))
+                    Expr::Path(plain_path(interner, interner.resolve(*new)))
                 } else {
                     Expr::Path(p.clone())
                 }
@@ -1882,7 +1872,7 @@ fn build_state_struct(
     original_params: &[Param],
     v_names: &[crate::Name],
     extra: &[(crate::Name, crate::Name)],
-    self_name: crate::Name,
+    _self_name: crate::Name,
 ) -> ExprId {
     let mut fields: Vec<(crate::Name, ExprId)> = Vec::new();
     for (i, _p) in original_params.iter().enumerate() {
@@ -1891,13 +1881,13 @@ fn build_state_struct(
         // (see `start_pat` / `s_pat`), so reference it as a bare local.
         fields.push((
             fname,
-            body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(fname).to_string())), Span::DUMMY),
+            body.alloc_expr(Expr::Path(plain_path(interner, interner.resolve(fname))), Span::DUMMY),
         ));
     }
     for &v in v_names {
         fields.push((
             v,
-            body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(v).to_string())), Span::DUMMY),
+            body.alloc_expr(Expr::Path(plain_path(interner, interner.resolve(v))), Span::DUMMY),
         ));
     }
     // `extra` are (struct_field_name, value_local_name) pairs — e.g. the just
@@ -1907,7 +1897,7 @@ fn build_state_struct(
     for &(field_name, value_name) in extra {
         fields.push((
             field_name,
-            body.alloc_expr(Expr::Path(plain_path(interner, &interner.resolve(value_name).to_string())), Span::DUMMY),
+            body.alloc_expr(Expr::Path(plain_path(interner, interner.resolve(value_name))), Span::DUMMY),
         ));
     }
     body.alloc_expr(
@@ -1923,7 +1913,7 @@ fn build_state_struct(
 /// `self.state = <struct_expr>`.
 fn assign_state(body: &mut Body, interner: &Interner, state_field_name: crate::Name, value: ExprId) -> ExprId {
     let self_path = body.alloc_expr(
-        Expr::Path(plain_path(interner, &interner.resolve(interner.intern("self")).to_string())),
+        Expr::Path(plain_path(interner, interner.resolve(interner.intern("self")))),
         Span::DUMMY,
     );
     let lhs = body.alloc_expr(
@@ -2089,11 +2079,8 @@ fn await_infos_await_exprs(body: &Body) -> Vec<ExprId> {
                 stack.push(*rhs);
             }
             Expr::Field { receiver, .. } => stack.push(*receiver),
-            Expr::Return { value } => {
-                if let Some(v) = value {
-                    stack.push(*v);
-                }
-            }
+            Expr::Return { value: Some(v) } => stack.push(*v),
+            Expr::Return { value: None } => {}
             _ => {}
         }
     }
@@ -2151,11 +2138,8 @@ fn stmt_contains(body: &Body, container: ExprId, target: ExprId) -> bool {
                 stack.push(*rhs);
             }
             Expr::Field { receiver, .. } => stack.push(*receiver),
-            Expr::Return { value } => {
-                if let Some(v) = value {
-                    stack.push(*v);
-                }
-            }
+            Expr::Return { value: Some(v) } => stack.push(*v),
+            Expr::Return { value: None } => {}
             _ => {}
         }
     }
@@ -2209,7 +2193,7 @@ fn rewrite_expr(
                 rest: false,
             };
             let v_path = body.alloc_expr(
-                Expr::Path(plain_path(interner, &interner.resolve(v_name).to_string())),
+                Expr::Path(plain_path(interner, interner.resolve(v_name))),
                 Span::DUMMY,
             );
             // Poll::Pending — unit variant pattern.
