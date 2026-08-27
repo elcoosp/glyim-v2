@@ -41,10 +41,12 @@ use std::sync::Mutex;
 pub struct TypeArena {
     /// Stable heap storage for `TyKind` entries (boxed so addresses survive
     /// `Vec` reallocations). Never moved/freed after allocation.
+    #[allow(clippy::vec_box)]
     types: *mut Vec<Box<TyKind>>,
     /// Parallel stable storage for type flags.
     type_flags: *mut Vec<TypeFlags>,
     /// Stable storage for substitution argument lists (boxed smallvecs).
+    #[allow(clippy::vec_box)]
     substitution_data: *mut Vec<Box<SmallVec<[GenericArg; 4]>>>,
     /// Fast structural de-duplication so the same logical type maps to the same
     /// `Ty` handle (the "interning" property) within a compilation.
@@ -97,10 +99,11 @@ impl TypeArena {
         // SAFETY: `types` is stable heap storage; this compilation is
         // single-threaded, so no concurrent write reallocates the `Vec` while
         // we hold the resulting `&TyKind`.
+        #[allow(clippy::borrowed_box)]
         unsafe {
             let v: &Vec<Box<TyKind>> = &*self.types;
             let b: &Box<TyKind> = &v[ty.index()];
-            &**b
+            b
         }
     }
 
@@ -135,10 +138,11 @@ impl TypeArena {
         }
         // SAFETY: `substitution_data` is stable heap storage; single-threaded
         // per compilation.
+        #[allow(clippy::borrowed_box)]
         unsafe {
             let v: &Vec<Box<SmallVec<[GenericArg; 4]>>> = &*self.substitution_data;
             let b: &Box<SmallVec<[GenericArg; 4]>> = &v[sub.index() as usize];
-            &***b
+            b
         }
     }
 }
