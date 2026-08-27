@@ -1077,6 +1077,7 @@ dependencies = [
 name = "glyim-lang-alloc"
 version = "0.1.0"
 dependencies = [
+ "glyim-codegen",
  "glyim-frontend",
  "glyim-span",
  "glyim-test",
