@@ -7,7 +7,7 @@
 
 use super::super::*;
 use glyim_core::def_id::{CrateId, DefId, LocalDefId};
-use glyim_core::primitives::{BinOp, Mutability, UnOp};
+use glyim_core::primitives::{BinOp, Mutability};
 use glyim_span::Span;
 use glyim_type::Ty;
 use std::sync::Arc;
@@ -48,53 +48,6 @@ fn fold_body(op: BinOp, a: i128, b: i128) -> Body {
     body.basic_blocks[BasicBlockIdx::from_raw(0)]
         .statements
         .push(stmt);
-    body
-}
-
-/// A body with a single block: `_1 = - - (<const c>); trap` (double negation).
-fn double_neg_body(c: i128) -> Body {
-    let mut body = Body::dummy(DefId::new(CrateId::from_raw(0), LocalDefId::from_raw(0)));
-    body.locals.push(LocalDecl {
-        ty: Ty::ERROR,
-        mutability: Mutability::Not,
-        source_info: SourceInfo::new(Span::DUMMY),
-    });
-    let stmt = Statement {
-        kind: StatementKind::Assign(
-            Place::new(LocalIdx::from_raw(1)),
-            Rvalue::UnaryOp(
-                UnOp::Neg,
-                Operand::Constant(MirConst {
-                    kind: MirConstKind::Int(c),
-                    ty: Ty::ERROR,
-                    span: Span::DUMMY,
-                }),
-            ),
-        ),
-        source_info: SourceInfo::new(Span::DUMMY),
-    };
-    body.basic_blocks[BasicBlockIdx::from_raw(0)]
-        .statements
-        .push(stmt);
-    // Wrap in a second Neg (constant operand) so the two OP_NEG are adjacent:
-    // `- -7` lowers to `LOAD_CONST 7; OP_NEG; OP_NEG`.
-    let stmt2 = Statement {
-        kind: StatementKind::Assign(
-            Place::new(LocalIdx::from_raw(1)),
-            Rvalue::UnaryOp(
-                UnOp::Neg,
-                Operand::Constant(MirConst {
-                    kind: MirConstKind::Int(c),
-                    ty: Ty::ERROR,
-                    span: Span::DUMMY,
-                }),
-            ),
-        ),
-        source_info: SourceInfo::new(Span::DUMMY),
-    };
-    body.basic_blocks[BasicBlockIdx::from_raw(0)]
-        .statements
-        .push(stmt2);
     body
 }
 
