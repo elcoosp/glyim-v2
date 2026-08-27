@@ -389,7 +389,20 @@ impl TyCtxMut {
                 if let Some(resolved) =
                     self.resolve_associated_type(new_self, trait_ref.def_id, proj.item_name)
                 {
-                    resolved
+                    // The impl's associated type is frequently expressed in terms
+                    // of the impl's own generic parameters (e.g.
+                    // `impl<T> Future for Ready<T> { type Output = T }` registers
+                    // `Output = T`). After resolving we must substitute those impl
+                    // parameters with the concrete type arguments carried by
+                    // `new_self` (e.g. `Ready<i32>` -> `T := i32`), otherwise the
+                    // projection normalizes to a dangling `Param` and unification
+                    // against the caller's concrete type fails.
+                    let impl_subst = self.impl_param_subst(new_self, trait_ref.def_id, proj.item_name);
+                    if !impl_subst.is_empty() {
+                        self.subst_ty(resolved, &impl_subst)
+                    } else {
+                        resolved
+                    }
                 } else {
                     self.mk_ty(TyKind::Projection(new_proj))
                 }
@@ -768,14 +781,108 @@ impl TyCtxMut {
         // param-placeholder fallbacks, but the mutation phase only needs the
         // exact registration. A single registered entry is keyed here, so the
         // inner `find` can never be ambiguous — no first-match hazard.
-        self.impl_assoc_types
+        let exact = self
+            .impl_assoc_types
             .get(&(self_ty, trait_def_id))
             .and_then(|entries| {
                 entries
                     .iter()
                     .find(|(name, _)| *name == assoc_name)
                     .map(|(_, ty)| *ty)
-            })
+            });
+        if exact.is_some() {
+            return exact;
+        }
+        // By-ADT fallback: an impl's associated type is keyed by the self type's
+        // ADT, not a specific `Ty` handle. When `self_ty` is a concrete
+        // instantiation of a *generic* impl (e.g. `ReadyT<i32>` matching
+        // `impl<T> Future for ReadyT<T>`), the exact key misses but the ADT
+        // matches — resolve to the impl's associated type, which
+        // `subst_ty`'s `impl_param_subst` then specializes (T := i32).
+        let self_adt = match self.ty_kind(self_ty) {
+            TyKind::Adt(id, _) => Some(*id),
+            _ => None,
+        };
+        if let Some(adt) = self_adt {
+            for ((sty, tid), entries) in self.impl_assoc_types.iter() {
+                if *tid != trait_def_id {
+                    continue;
+                }
+                let matches = matches!(self.ty_kind(*sty), TyKind::Adt(b, _) if b == &adt)
+                    && entries.iter().any(|(n, _)| *n == assoc_name);
+                if matches {
+                    return entries
+                        .iter()
+                        .find(|(name, _)| *name == assoc_name)
+                        .map(|(_, ty)| *ty);
+                }
+            }
+        }
+        None
+    }
+
+    /// Build a substitution that replaces an impl's own generic parameters with
+    /// the concrete type arguments carried by `concrete_self` (`new_self`).
+    ///
+    /// Example: for `impl<T> Future for Ready<T> { type Output = T }` the assoc
+    /// type registers `Output = T` where `T` is the impl's parameter. When we
+    /// normalize `Ready<i32>::Output`, `concrete_self` is `Ready<i32>`; this
+    /// finds the impl's `Self` pattern `Ready<T>`, aligns `T` (position 0) with
+    /// `i32` (position 0 of `Ready<i32>`), and returns `{ T.index -> i32 }`. The
+    /// caller applies it so the normalized type becomes `i32` rather than the
+    /// dangling `T`.
+    pub(crate) fn impl_param_subst(
+        &self,
+        concrete_self: Ty,
+        trait_def_id: glyim_core::def_id::TraitDefId,
+        _assoc_name: Name,
+    ) -> std::collections::HashMap<u32, GenericArg> {
+        let mut map = std::collections::HashMap::new();
+        let concrete_args: Vec<GenericArg> = match self.ty_kind(concrete_self) {
+            TyKind::Adt(_, substs) => self.substitution_args(*substs).to_vec(),
+            TyKind::Tuple(substs) => self.substitution_args(*substs).to_vec(),
+            _ => return map,
+        };
+        // Find the impl registered for this trait whose `Self` ADT matches.
+        for ((impl_self, tid), _) in self.impl_assoc_types.iter() {
+            if *tid != trait_def_id {
+                continue;
+            }
+            let impl_args: Option<Vec<GenericArg>> = match self.ty_kind(*impl_self) {
+                TyKind::Adt(_, substs) => Some(self.substitution_args(*substs).to_vec()),
+                TyKind::Tuple(substs) => Some(self.substitution_args(*substs).to_vec()),
+                _ => None,
+            };
+            let Some(impl_args) = impl_args else { continue };
+            // ADT identity already established by the trait key + substs match
+            // below; require the same arity then align param positions.
+            if impl_args.len() != concrete_args.len() {
+                continue;
+            }
+            let mut matched = true;
+            for (ia, ca) in impl_args.iter().zip(concrete_args.iter()) {
+                match ia {
+                    GenericArg::Ty(it) if matches!(self.ty_kind(*it), TyKind::Param(_)) => {
+                        if let TyKind::Param(p) = self.ty_kind(*it) {
+                            map.insert(p.index, ca.clone());
+                        }
+                    }
+                    _ => {
+                        // Non-param impl arg (e.g. concrete) must match the
+                        // concrete argument positionally; otherwise this impl is
+                        // not the one we want.
+                        if ia != ca {
+                            matched = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if matched {
+                return map;
+            }
+        }
+        map
     }
 
     /// Query the traits a generic parameter (by name) is bound to. Populated
