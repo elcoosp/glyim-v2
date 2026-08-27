@@ -919,8 +919,8 @@ fn resolve_name_to_adt_ty(
     span: Span,
 ) -> Option<Ty> {
     let adt_id = match path.as_name().and_then(|name| {
-        let res = ctx.adt_id_by_name(name);
-        res
+        
+        ctx.adt_id_by_name(name)
     }) {
         Some(id) => id,
         None => {
