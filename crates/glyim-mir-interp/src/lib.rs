@@ -23,11 +23,10 @@
     clippy::collapsible_if
 )]
 use glyim_core::{primitives::TargetInfo, BinOp, CrateId, DefId, LocalDefId, UnOp};
-use glyim_core::def_id::AdtId;
+use glyim_core::def_id::{AdtId, FnDefId, TraitDefId};
 use glyim_layout::{LayoutComputer, SimpleLayoutComputer};
 use glyim_mir::*;
-use glyim_type::Ty;
-use glyim_type::{AdtKind, FieldIdx, TyCtx};
+use glyim_type::{AdtKind, FieldIdx, Substitution, Ty, TyCtx, TyKind};
 use std::collections::HashMap;
 
 mod interp_error;
@@ -196,6 +195,23 @@ pub fn recursion_depth(&self) -> usize {
         }
     }
 
+    /// Like [`Self::locals_for_ref_frame`] but resolves the *type* of a local in
+    /// the frame a `Ref` points at. The interpreter only keeps the current
+    /// frame's `local_decls` in `self.local_decls`; ancestor frames live in
+    /// `call_stack[f].body.local_decls`. Reading `self.local_decls` for a
+    /// cross-frame ref would return the wrong local's type and corrupt
+    /// `current_ty` (which the `Field` projection uses to decide enum
+    /// discriminant skipping) — this helper returns the correct frame's decls.
+    fn decls_for_ref_frame(&self, frame: usize) -> Option<&[LocalDecl]> {
+        if frame == self.frame_depth {
+            Some(&self.local_decls)
+        } else if frame < self.call_stack.len() {
+            Some(self.call_stack[frame].body.locals.as_slice())
+        } else {
+            None
+        }
+    }
+
     /// Mutable counterpart of [`Self::locals_for_ref_frame`] for writes through
     /// a `Ref` (e.g. `*r = v` or `*r.field = v`).
     fn write_target_locals_mut(
@@ -341,6 +357,40 @@ pub fn recursion_depth(&self) -> usize {
                     target,
                     cleanup,
                 } => {
+                    // Devirtualize a generic-bound trait method call
+                    // (`f.poll()` where `f: F: Trait`) against the *concrete*
+                    // receiver type carried in the first argument. The MIR was
+                    // lowered with `func = Constant(VirtualMethod{trait,method})`;
+                    // rewrite it to a direct `Constant(Fn(fn_def_id))` so the
+                    // rest of the call machinery (including `resolve_callee`)
+                    // sees a static function.
+                    let func = if let Operand::Constant(MirConst {
+                        kind: MirConstKind::VirtualMethod { trait_def_id, method_name },
+                        span,
+                        ..
+                    }) = &func
+                    {
+                        if let Some(recv_ty) = args.first().and_then(|a| self.operand_ty(a)) {
+                            let resolved = self.tcx.resolve_trait_method(*trait_def_id, recv_ty, *method_name);
+                            if let Some(fn_def_id) = resolved
+                            {
+                                Operand::Constant(MirConst {
+                                    kind: MirConstKind::Fn(
+                                        fn_def_id,
+                                        Substitution::empty(),
+                                    ),
+                                    ty: recv_ty,
+                                    span: *span,
+                                })
+                            } else {
+                                func
+                            }
+                        } else {
+                            func
+                        }
+                    } else {
+                        func
+                    };
                     // Plan §12.1: a closure value is an aggregate
                     // `[Fn(def_id), captures...]`. `resolve_callee` unpacks that,
                     // returning the callee id *and* the captured values so they
@@ -722,6 +772,11 @@ pub fn recursion_depth(&self) -> usize {
                 Ok(InterpValue::Aggregate(values))
             }
             MirConstKind::Error => Err(InterpError::Panic("Error const encountered".into())),
+            // Devirtualized at the `Call` terminator before being evaluated as a
+            // value; should never be reached as an operand constant.
+            MirConstKind::VirtualMethod { .. } => {
+                Err(InterpError::Panic("VirtualMethod const reached eval_const".into()))
+            }
         }
     }
 
@@ -929,12 +984,16 @@ pub fn recursion_depth(&self) -> usize {
                         val = frame_locals.get(target).and_then(|opt| opt.as_ref()).cloned().ok_or_else(|| {
                             InterpError::Panic(format!("deref of uninitialized local {target} (frame {frame})"))
                         })?;
-                        // Update current_ty based on the new value.
-                        if let Some(decl) = self.local_decls.get(target) {
-                            current_ty = decl.ty;
-                        } else {
-                            current_ty = Ty::ERROR;
-                        }
+                        // Update current_ty from the *referenced* frame's decls,
+                        // not `self.local_decls` (which only holds the current
+                        // frame). A cross-frame `&mut self` ref would otherwise
+                        // read the wrong frame's local type and corrupt the
+                        // enum discriminant skip in the `Field` projection below.
+                        let decl_ty = self
+                            .decls_for_ref_frame(frame)
+                            .and_then(|decls| decls.get(target))
+                            .map(|decl| decl.ty);
+                        current_ty = decl_ty.unwrap_or(Ty::ERROR);
                     }
                     _ => {
                         return Err(InterpError::Panic(
@@ -946,10 +1005,25 @@ pub fn recursion_depth(&self) -> usize {
                     let fi = field_idx.index();
                     match val {
                         InterpValue::Aggregate(ref fields) => {
-                            val = fields.get(fi).cloned().ok_or_else(|| {
+                            // Enum values are laid out as `[tag, ...payload]` in
+                            // this interpreter (see `Rvalue::Aggregate` /
+                            // `ProjectionElem::Downcast`). A `Field` projection on
+                            // an enum must therefore skip the discriminant tag,
+                            // exactly like an explicit `Downcast` would. Structs
+                            // and tuples have no tag, so they index directly.
+                            let is_enum = if let TyKind::Adt(adt_id, _) = self.tcx.ty_kind(current_ty) {
+                                self.tcx
+                                    .adt_def(*adt_id)
+                                    .map(|d| d.kind == AdtKind::Enum)
+                                    .unwrap_or(false)
+                            } else {
+                                false
+                            };
+                            let adjusted = if is_enum { fi + 1 } else { fi };
+                            val = fields.get(adjusted).cloned().ok_or_else(|| {
                                 InterpError::Panic(format!(
                                     "field index {} out of bounds (len {})",
-                                    fi,
+                                    adjusted,
                                     fields.len()
                                 ))
                             })?;
@@ -1015,6 +1089,11 @@ pub fn recursion_depth(&self) -> usize {
                     // are left unchanged — `Downcast` is a no-op for them.
                     if let InterpValue::Aggregate(fields) = &val {
                         val = InterpValue::Aggregate(fields[1..].to_vec());
+                        // The tag has been removed, so the value is now the bare
+                        // variant payload. Mark the type as non-enum (ERROR
+                        // sentinel) so the subsequent `Field` projection indexes
+                        // the payload directly instead of adding a +1 for the tag.
+                        current_ty = Ty::ERROR;
                     }
                 }
                 ProjectionElem::ConstantIndex {
@@ -1244,9 +1323,11 @@ pub fn recursion_depth(&self) -> usize {
                             self.write_through_projections_with_locals(inner, rest, val)?;
                         Ok(InterpValue::Aggregate(fields))
                     }
-                    _ => Err(InterpError::Panic(
-                        "field projection on non-aggregate".into(),
-                    )),
+                    _ => {
+                        Err(InterpError::Panic(
+                            "field projection on non-aggregate".into(),
+                        ))
+                    }
                 }
             }
             ProjectionElem::Index(index_local) => {
@@ -1406,6 +1487,19 @@ pub fn recursion_depth(&self) -> usize {
                     "indirect call through non-function value: {other:?}"
                 ))),
             },
+        }
+    }
+
+    /// Type of an operand, derived from its constant or (for `Copy`/`Move`)
+    /// the local declaration. Used to recover the *concrete* receiver type of a
+    /// devirtualized `VirtualMethod` call so it can be resolved against the
+    /// trait-method dispatch table.
+    fn operand_ty(&self, operand: &Operand) -> Option<Ty> {
+        match operand {
+            Operand::Constant(c) => Some(c.ty),
+            Operand::Copy(place) | Operand::Move(place) => {
+                self.local_decls.get(place.local.index()).map(|d| d.ty)
+            }
         }
     }
 
