@@ -49,10 +49,10 @@ fn p1a_concrete_impl_output_projection() {
 }
 
 #[test]
-#[ignore = "KNOWN GAP (p1a): generic impl<T> method bodies do not yet scope the \
-impl's type param T into the body (unresolved type T), so the associated-type \
-projection normalizes (F::Output -> i32) but the impl method body fails to \
-type-check. Concrete (non-generic) impl projection is fixed and covered above."]
+#[ignore = "KNOWN GAP (p1a): after the generic-impl `collect_generic_params` fix, the \
+impl's type param T now scopes into the impl body, but the impl's T index is not \
+yet unified with the self-ADT's structural T at the call site (mismatched types: \
+T vs i32). Concrete (non-generic) impl projection is fixed and covered above."]
 fn p1a_generic_impl_concrete_arg_projection() {
     // Generic impl `impl<T> Future for ReadyT<T>` with a concrete `ReadyT<i32>`
     // argument. Requires impl-param substitution (T := i32) during projection

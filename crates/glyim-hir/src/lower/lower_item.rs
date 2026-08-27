@@ -605,7 +605,7 @@ pub(crate) fn lower_impl_def(
             trait_ref,
             self_ty,
             methods,
-            generic_params: Vec::new(),
+            generic_params: collect_generic_params(node, interner),
             where_clauses: Vec::new(),
             associated_types,
         }),
